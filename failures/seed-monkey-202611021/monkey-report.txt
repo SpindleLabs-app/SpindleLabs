@@ -1,0 +1,3 @@
+Monkey, seeds 202611020-202611021: 2 session(s) of 2000 actions in Chromium; 1 FAILED
+failure: selection agrees: clicking hidden Body 1 (Box: 20 × 30 × 12 mm) selected "body:feature-3" | seed 202611021 at action 1436; replay: cd apps/fission && npm run build && FISSION_SEED=202611021 MONKEY_STEPS=2000 node e2e/monkey.mjs
+actions.json: the shortest list found before shrinking ran out of time, not the shortest there is
