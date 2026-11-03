@@ -1,26 +1,26 @@
-Fuzzing (the STL reader, the project loader, the sketch-extrude and timeline sessions and the kernel fuzz targets), all runs so far (updated 2026-11-02 03:32 UTC)
-  hours of fuzzing: 37.9
-  timeline rounds 133, inputs 332500, rounds that found something 0, last: none yet
-  sessions rounds 20313, inputs 40626000, rounds that found something 19, last: 1300073639247023807 (commit 0a2363b on main)
-  stack    rounds 1335, inputs 33375, rounds that found something 0, last: none yet
-  project  rounds 96331, inputs 192662000, rounds that found something 45, last: 11112622042180314866 (commit e329120 on main)
+Fuzzing (the STL reader, the project loader, the sketch-extrude and timeline sessions and the kernel fuzz targets), all runs so far (updated 2026-11-03 04:50 UTC)
+  hours of fuzzing: 40.4
+  timeline rounds 141, inputs 352500, rounds that found something 0, last: none yet
+  sessions rounds 21577, inputs 43154000, rounds that found something 19, last: 1300073639247023807 (commit 0a2363b on main)
+  stack    rounds 1550, inputs 38750, rounds that found something 0, last: none yet
+  project  rounds 103871, inputs 207742000, rounds that found something 45, last: 11112622042180314866 (commit e329120 on main)
 fuzz/log.csv has one line per round; fuzz/failures/seed-<seed>/ has each failing round's
 fuzz-report.txt and its shrunk failing inputs.
 
-Simulated users (timeline sessions on the real kernel, Tier 3 item 4; fuzz/numbers.jsonl), updated 2026-11-02 03:32 UTC
-  last run (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41377594032, commit ffd5dcf on main): 40 sessions in 8 rounds
-    rebuilds right:           100% (0 wrong of 19,222)
-    references right:         100% (0 wrong of 126,984)
-    bodies passing validate:  100% (0 failed or crashed of 1,071,340); 0 inputs refused as the user's
-    rebuilds with a feature failed as the model says (the user's doing, shown in words): 26.2%
-    rebuild from scratch against features built: -19.1 ms + 0.844 ms per feature (fastest at each of 145 counts)
-      by features built: 1-5: 5.13 ms a rebuild, 1.68 per feature (1,628); 6-10: 10.2 ms a rebuild, 1.28 per feature (1,685); 11-20: 16.1 ms a rebuild, 1.06 per feature (2,906); 21-40: 35 ms a rebuild, 1.18 per feature (4,044); 41-80: 69.6 ms a rebuild, 1.19 per feature (5,805); 81+: 113 ms a rebuild, 1.13 per feature (3,003)
-      per feature, biggest timelines over smallest: 0.67x (above 1, each feature costs more in a bigger timeline)
-  all runs on main so far: 390 sessions in 78 rounds (times as multiples of the calibration workload)
-    rebuilds right:           100% (0 wrong of 187,663)
-    references right:         100% (0 wrong of 1,255,596)
-    bodies passing validate:  100% (0 failed or crashed of 9,308,299); 0 inputs refused as the user's
-    rebuilds with a feature failed as the model says (the user's doing, shown in words): 20%
-    rebuild from scratch against features built: -0.381 x + 0.0124 x per feature (fastest at each of 150 counts)
-      by features built: 1-5: 0.0546 x a rebuild, 0.0182 per feature (15,857); 6-10: 0.129 x a rebuild, 0.0161 per feature (16,648); 11-20: 0.249 x a rebuild, 0.0163 per feature (28,492); 21-40: 0.51 x a rebuild, 0.0171 per feature (43,262); 41-80: 0.985 x a rebuild, 0.0168 per feature (56,682); 81+: 1.6 x a rebuild, 0.0166 per feature (25,163)
-      per feature, biggest timelines over smallest: 0.91x (above 1, each feature costs more in a bigger timeline)
+Simulated users (timeline sessions on the real kernel, Tier 3 item 4; fuzz/numbers.jsonl), updated 2026-11-03 04:50 UTC
+  last run (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41574971676, commit 46c4f4b on main): 40 sessions in 8 rounds
+    rebuilds right:           100% (0 wrong of 19,351)
+    references right:         100% (0 wrong of 130,366)
+    bodies passing validate:  100% (0 failed or crashed of 1,059,107); 0 inputs refused as the user's
+    rebuilds with a feature failed as the model says (the user's doing, shown in words): 28.9%
+    rebuild from scratch against features built: -26.5 ms + 0.953 ms per feature (fastest at each of 138 counts)
+      by features built: 1-5: 3.21 ms a rebuild, 1.02 per feature (1,366); 6-10: 7.69 ms a rebuild, 0.963 per feature (1,647); 11-20: 16.9 ms a rebuild, 1.09 per feature (3,062); 21-40: 35.1 ms a rebuild, 1.2 per feature (4,739); 41-80: 71.5 ms a rebuild, 1.21 per feature (5,734); 81+: 118 ms a rebuild, 1.23 per feature (2,644)
+      per feature, biggest timelines over smallest: 1.21x (above 1, each feature costs more in a bigger timeline)
+  all runs on main so far: 430 sessions in 86 rounds (times as multiples of the calibration workload)
+    rebuilds right:           100% (0 wrong of 207,014)
+    references right:         100% (0 wrong of 1,385,962)
+    bodies passing validate:  100% (0 failed or crashed of 10,367,406); 0 inputs refused as the user's
+    rebuilds with a feature failed as the model says (the user's doing, shown in words): 20.9%
+    rebuild from scratch against features built: -0.383 x + 0.0123 x per feature (fastest at each of 150 counts)
+      by features built: 1-5: 0.0541 x a rebuild, 0.0179 per feature (17,223); 6-10: 0.128 x a rebuild, 0.016 per feature (18,295); 11-20: 0.249 x a rebuild, 0.0163 per feature (31,554); 21-40: 0.511 x a rebuild, 0.0171 per feature (48,001); 41-80: 0.992 x a rebuild, 0.0169 per feature (62,416); 81+: 1.61 x a rebuild, 0.0167 per feature (27,807)
+      per feature, biggest timelines over smallest: 0.93x (above 1, each feature costs more in a bigger timeline)
