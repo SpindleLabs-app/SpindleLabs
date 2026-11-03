@@ -1,4 +1,4 @@
-SpindleLabs random testing, all runs so far (updated 2026-11-03 01:41 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-11-03 23:28 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -16,9 +16,9 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit 46c4f4b on main, 2026-11-03 01:41 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41541861917)
-  OK Design: shape to STL: 4 clicks (baseline 4), slowest 0.77 s = 31.10× the fixed workload (baseline 1.16 s)
-  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 1.16 s = 45.80× the fixed workload (baseline 9.70 s)
+  tested commit 46c4f4b on main, 2026-11-03 23:28 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41715964830)
+  FLAG Design: shape to STL: slowest 1.68 s = 40.56× the fixed workload, baseline 1.16 s (45% over, flag above 15%, fail above 100%)
+  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.35 s = 56.81× the fixed workload (baseline 9.70 s)
   PENDING Box to laser panels: waits for Laser (L1–L3), X13
   PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
   PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
@@ -27,41 +27,41 @@ Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, 
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit 46c4f4b on main, 2026-11-03 01:41 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41541861917)
-  seed 1793660421, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793660421 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  bracket-two-holes: 50 rebuilds, fastest 2.9 ms, slowest 6.1 ms, OK
-  enclosure: 50 rebuilds, fastest 1.8 ms, slowest 5.6 ms, OK
-  gear: 50 rebuilds, fastest 16.5 ms, slowest 60.1 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.5 ms, slowest 2.3 ms, OK
-  stepped-boss: 50 rebuilds, fastest 2.7 ms, slowest 5.9 ms, OK
-  thirty-features: 50 rebuilds, fastest 10.6 ms, slowest 19.1 ms, OK
+  tested commit 46c4f4b on main, 2026-11-03 23:28 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41715964830)
+  seed 1793738942, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793738942 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  bracket-two-holes: 50 rebuilds, fastest 2.7 ms, slowest 3.5 ms, OK
+  enclosure: 50 rebuilds, fastest 1.7 ms, slowest 4.2 ms, OK
+  gear: 50 rebuilds, fastest 15.5 ms, slowest 43.4 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 1.2 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.6 ms, slowest 27.1 ms, OK
+  thirty-features: 50 rebuilds, fastest 10.2 ms, slowest 19.0 ms, OK
   | metric | baseline | now | change | |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0421 | +2.9% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0404 | -1.2% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0257 | -9.5% |  |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0262 | -7.7% |  |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.2429 | +0.7% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2355 | -2.4% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0055 | -15.4% | better: lower the baseline? |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.0058 | -10.8% |  |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.0395 | +1.3% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.0384 | -1.5% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1561 | -4.4% |  |
-  0 metric(s) failed, 0 flagged, 1 better.
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.1547 | -5.2% |  |
+  0 metric(s) failed, 0 flagged, 0 better.
   Golden STEP files: 27 bodies read by OpenCascade, 0 disagreement(s)
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit 46c4f4b on main, 2026-11-03 01:41 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41541861917)
-  Monkey, seeds 202611020-202611021: 2 session(s) of 2000 actions in Chromium; 1 FAILED
-  seed 202611020: pass (2000 actions)
-  seed 202611021: FAIL: selection agrees: clicking hidden Body 1 (Box: 20 × 30 × 12 mm) selected "body:feature-3"
+  tested commit 46c4f4b on main, 2026-11-03 23:28 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41715964830)
+  Monkey, seeds 202611030-202611031: 2 session(s) of 2000 actions in Chromium; every check passed after every action
+  seed 202611030: pass (2000 actions)
+  seed 202611031: pass (2000 actions)
 monkey/log.txt has one line per night.
 
 Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):
-  tested commit 46c4f4b on main, 2026-11-03 01:41 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41541861917)
+  tested commit 46c4f4b on main, 2026-11-03 23:28 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41715964830)
   UNEXPLAINED survivor at packages/core/src/model/project.ts:74: packages/core/src/model/project.ts | StringLiteral | "NewerFormatError" => ""
   core: 11 survivors, all explained: false
   1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
@@ -69,8 +69,8 @@ Latest TypeScript mutation run (packages/testing/stryker, survivors must be kill
   UNEXPLAINED survivor at workspaces/design/src/document.ts:655: workspaces/design/src/document.ts | Regex | /side:(?=(?:hole-\d+-)?piece-\d+(?![\w-]))/g => /side:(?=(?:hole-\d+-)?piece-\d(?![\w-]))/g
   UNEXPLAINED survivor at workspaces/design/src/document.ts:672: workspaces/design/src/document.ts | ConditionalExpression | id == null => false
   UNEXPLAINED survivor at workspaces/design/src/document.ts:673: workspaces/design/src/document.ts | ConditionalExpression | f === undefined => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:674: workspaces/design/src/document.ts | ConditionalExpression | kind === null || isPrimitive(kind) => false
   UNEXPLAINED survivor at workspaces/design/src/document.ts:674: workspaces/design/src/document.ts | LogicalOperator | kind === null || isPrimitive(kind) => kind === null && isPrimitive(kind)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:674: workspaces/design/src/document.ts | ConditionalExpression | kind === null || isPrimitive(kind) => false
   UNEXPLAINED survivor at workspaces/design/src/document.ts:678: workspaces/design/src/document.ts | ConditionalExpression | kind === null => false
   UNEXPLAINED survivor at workspaces/design/src/document.ts:1034: workspaces/design/src/document.ts | ConditionalExpression | kind === null => false
   UNEXPLAINED survivor at workspaces/design/src/document.ts:680: workspaces/design/src/document.ts | BooleanLiteral | false => true
@@ -108,15 +108,14 @@ Latest TypeScript mutation run (packages/testing/stryker, survivors must be kill
   UNEXPLAINED survivor at packages/storage/src/autosave.ts:212: packages/storage/src/autosave.ts | LogicalOperator | read === null || read.written === null => read === null && read.written === null
   UNEXPLAINED survivor at packages/storage/src/autosave.ts:212: packages/storage/src/autosave.ts | ConditionalExpression | read === null => false
   UNEXPLAINED survivor at packages/storage/src/autosave.ts:212: packages/storage/src/autosave.ts | ConditionalExpression | read.written === null => false
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:225: packages/storage/src/autosave.ts | BlockStatement | { if (journalVersion === null) return; try { const entry = journal?.getItem(key); if (entry == null) return; const read = readJournalEntry(entry); if (read.written !== null) journal?.setItem(key, journalEntry(read.text, read.written, read.kept, at, read.writer ?? null)); } catch { // left naming the older state: the next visit keeps it as a separate project, so nothing is lost } } => {}
   UNEXPLAINED survivor at packages/storage/src/autosave.ts:227: packages/storage/src/autosave.ts | BlockStatement | { const entry = journal?.getItem(key); if (entry == null) return; const read = readJournalEntry(entry); if (read.written !== null) journal?.setItem(key, journalEntry(read.text, read.written, read.kept, at, read.writer ?? null)); } => {}
   UNEXPLAINED survivor at packages/storage/src/autosave.ts:229: packages/storage/src/autosave.ts | ConditionalExpression | entry == null => true
   UNEXPLAINED survivor at packages/storage/src/autosave.ts:231: packages/storage/src/autosave.ts | ConditionalExpression | read.written !== null => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:231: packages/storage/src/autosave.ts | EqualityOperator | read.written !== null => read.written === null
+  UNEXPLAINED survivor at packages/storage/src/autosave.ts:231: packages/storage/src/autosave.ts | ConditionalExpression | read.written !== null => false
   UNEXPLAINED survivor at packages/storage/src/autosave.ts:231: packages/storage/src/autosave.ts | OptionalChaining | journal?.setItem => journal.setItem
   UNEXPLAINED survivor at packages/storage/src/store.ts:128: packages/storage/src/store.ts | ConditionalExpression | by === null => false
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:83: packages/storage/src/unsaved.ts | StringLiteral | "Untitled" => ""
   UNEXPLAINED survivor at packages/storage/src/unsaved.ts:85: packages/storage/src/unsaved.ts | ArrowFunction | () => globalThis.crypto?.randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}` => () => undefined
+  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:83: packages/storage/src/unsaved.ts | StringLiteral | "Untitled" => ""
   UNEXPLAINED survivor at packages/storage/src/unsaved.ts:85: packages/storage/src/unsaved.ts | LogicalOperator | globalThis.crypto?.randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}` => globalThis.crypto?.randomUUID?.() && `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   UNEXPLAINED survivor at packages/storage/src/unsaved.ts:85: packages/storage/src/unsaved.ts | OptionalChaining | globalThis.crypto?.randomUUID?.() => globalThis.crypto?.randomUUID()
   UNEXPLAINED survivor at packages/storage/src/unsaved.ts:85: packages/storage/src/unsaved.ts | OptionalChaining | globalThis.crypto?.randomUUID => globalThis.crypto.randomUUID
@@ -136,8 +135,8 @@ Latest TypeScript mutation run (packages/testing/stryker, survivors must be kill
   UNEXPLAINED survivor at packages/storage/src/unsaved.ts:229: packages/storage/src/unsaved.ts | BlockStatement | { return false; } => {}
   UNEXPLAINED survivor at packages/storage/src/unsaved.ts:230: packages/storage/src/unsaved.ts | BooleanLiteral | false => true
   explained.json lists a mutant that no longer survives (remove it): packages/storage/src/autosave.ts | ConditionalExpression | written === null => false
-  storage: 77 survivors, all explained: false
-  40 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  storage: 76 survivors, all explained: false
+  39 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
   UNEXPLAINED survivor at packages/core/src/model/files.ts:158: packages/core/src/model/files.ts | ConditionalExpression | file.head.length !== file.size => false
   UNEXPLAINED survivor at packages/core/src/model/files.ts:161: packages/core/src/model/files.ts | ConditionalExpression | typeof value === "object" && value !== null && !Array.isArray(value) => true
   UNEXPLAINED survivor at packages/core/src/model/files.ts:161: packages/core/src/model/files.ts | LogicalOperator | typeof value === "object" && value !== null && !Array.isArray(value) => typeof value === "object" && value !== null || !Array.isArray(value)
@@ -151,8 +150,8 @@ Latest TypeScript mutation run (packages/testing/stryker, survivors must be kill
   model: 50 survivors, all explained: false
   10 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
   svg: 4 survivors, all explained: true
-  UNEXPLAINED survivor at packages/viewport/src/views.ts:176: packages/viewport/src/views.ts | ConditionalExpression | fovDeg < 180 => true
   UNEXPLAINED survivor at packages/viewport/src/views.ts:176: packages/viewport/src/views.ts | EqualityOperator | fovDeg < 180 => fovDeg <= 180
+  UNEXPLAINED survivor at packages/viewport/src/views.ts:176: packages/viewport/src/views.ts | ConditionalExpression | fovDeg < 180 => true
   viewport: 35 survivors, all explained: false
   2 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
   UNEXPLAINED survivor at packages/ai/src/context.ts:34: packages/ai/src/context.ts | ConditionalExpression | typeof f.id === "string" => true
