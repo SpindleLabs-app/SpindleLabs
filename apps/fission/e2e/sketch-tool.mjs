@@ -141,21 +141,6 @@ async function check(name, fn, known) {
   }
 }
 
-/**
- * Found by WebKit and Firefox (testing catch-up TC4, docs/progress/cad.md):
- * their number box takes the letter typed into the grid box, so it shows "Type the
- * grid size in mm." when it loses focus, which pushes Extrude down between
- * the press and the release of the click on it, and the click is lost.
- * WebKit 27 (Playwright 1.64, #238) no longer takes the letter, so the
- * rectangle check passes there and only Firefox keeps the mark; the check
- * below that types the bad grid size on purpose still fails in every engine.
- */
-const GRID_ERROR_MOVES_EXTRUDE = {
-  engines: ["firefox"],
-  bug: "an invalid grid size's message moves Extrude mid-click (sketch-panel.ts)",
-  symptom: /^Extrude's OK on: timed out; the page shows .*grid error "Type the grid size in mm\. The grid stays at [^"]* mm\."$/,
-};
-
 try {
   await check("Create sketch asks for a plane: the origin planes are drawn, all three offered (26d), Escape cancels", async () => {
     const page = await fresh();
@@ -386,7 +371,7 @@ try {
     await page.keyboard.press("r");
     assert.equal(await page.isVisible("#sketch-panel"), false);
     await page.context().close();
-  }, GRID_ERROR_MOVES_EXTRUDE);
+  });
 
   await check("an invalid grid size's message doesn't move Extrude from under the click: a closed rectangle still opens Extrude with OK on", async () => {
     const page = await fresh();
@@ -402,10 +387,19 @@ try {
     await page.focus("#sketch-grid");
     await page.keyboard.press("Control+A");
     await page.keyboard.press("e");
+    // Extrude stays where it was when the box loses focus and the message appears: the release lands on it.
+    const before = await page.locator("#sketch-extrude").boundingBox();
+    await page.locator("#sketch-grid").blur();
+    await until(page, () => document.querySelector("#sketch-grid-error")?.hidden === false, null, "the grid error shown");
+    assert.deepEqual(await page.locator("#sketch-extrude").boundingBox(), before, "Extrude moved when the grid error appeared");
+    if (shots) await page.screenshot({ path: `${shots}/grid-error-under-buttons-1280.png` });
+    await page.focus("#sketch-grid");
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("e");
     await page.click("#sketch-extrude");
     await until(page, () => document.querySelector("#extrude-ok")?.disabled === false, null, "Extrude's OK on");
     await page.context().close();
-  }, { ...GRID_ERROR_MOVES_EXTRUDE, engines: ["chromium", "firefox", "webkit"] });
+  });
 
   await check("a hover still being rounded when Ctrl+Z is pressed doesn't bring back the click the undo dropped", async () => {
     const page = await fresh();

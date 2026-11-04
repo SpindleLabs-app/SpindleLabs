@@ -31,6 +31,7 @@ export const TOOL_HELP: Record<ToolKind, string> = {
   arc: "Click the start, then the end, then a point the arc passes through. For the end you can type its length and angle from the start. Escape drops the ends.",
   centre: "Click the centre, then the start, then where the arc ends: it goes round the way you move the pointer, past half a turn if you go that far. You can type the radius and angle for the start, and how far round the arc goes for the end. Escape drops the centre and start.",
   tangent: "Click the end of a line or arc, then where the arc ends: it leaves the line smoothly, and the next click carries on from its end. You can type the end's length and angle from the start. Escape ends it.",
+  select: "Click a line, circle or arc to select it; Shift+click adds or takes one out, a click on empty space clears. Delete or Backspace (or the Delete button) removes what is selected; points only it used go with it. Pick a tool to draw again.",
   project: "Click an edge of a body before this sketch to bring it in, or a face to bring in all its edges. Projected edges follow the body when it changes; they can be snapped to and extruded, but not moved.",
 };
 
@@ -43,7 +44,7 @@ export interface SketchPanel {
   showTool(kind: ToolKind): void;
   /** What the sketch holds and whether it makes a closed outline, or why not. */
   showStatus(text: string): void;
-  /** A message under the grid size: a grid the kernel refused, or a point it could not place; while a plane is picked, why a face can't be sketched on. Empty hides it. */
+  /** A message under the panel's buttons (so it never moves them mid-click): a grid the kernel refused, or a point it could not place; while a plane is picked, why a face can't be sketched on. Empty hides it. */
   showError(message: string): void;
   /** Puts `grid` (as typed) back in the grid box: the last size taken, after a refused one. */
   showGrid(grid: string): void;
@@ -125,11 +126,14 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
         label,
         snapLabel,
         button("Look at", "sketch-look-at", () => on.lookAt(), "sketch-look-at"),
-        gridError,
         status,
         el("div", { className: "sketch-buttons" }),
+        // Under the buttons, not above them: a bad grid size is judged when the box loses focus, which is the press on
+        // Extrude or Finish sketch, and a message appearing above them pushed the button down before the release, so the
+        // click was lost (the Firefox bug pinned in e2e/sketch-tool.mjs since TC4; every engine when a letter was typed).
+        gridError,
       );
-      box.lastElementChild!.append(button("Finish sketch", "sketch-finish", () => on.finish(), "sketch-finish"), button("Extrude", "sketch-extrude", () => on.extrude(), "sketch-finish"));
+      box.querySelector(".sketch-buttons")!.append(button("Finish sketch", "sketch-finish", () => on.finish(), "sketch-finish"), button("Extrude", "sketch-extrude", () => on.extrude(), "sketch-finish"));
       box.hidden = false;
     },
     showGrid(grid) {

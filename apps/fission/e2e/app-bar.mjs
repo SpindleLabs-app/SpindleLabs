@@ -382,6 +382,55 @@ try {
       await page.context().close();
     }
   });
+  // Pressing AI, Guide or Community again closes it (Ben's quick win 1): the AI panel hides, the guide closes,
+  // Community goes back to the workspace it was opened from. At 375 px they are behind Menu.
+  for (const [width, tap] of [[1280, false], [375, true]]) {
+    await check(`${width} px${tap ? ", taps" : ""}: AI, Guide and Community close when pressed again`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        const bar = async (id) => {
+          if (tap) await page.tap("#menu-toggle");
+          await press(page, `#${id}`, tap);
+        };
+        await bar("assistant-toggle");
+        assert.equal(await page.isVisible("#assistant"), true, "AI opens");
+        await bar("assistant-toggle");
+        assert.equal(await page.isVisible("#assistant"), false, "AI pressed again closes");
+        assert.equal(await page.getAttribute("#assistant-toggle", "aria-pressed"), "false");
+        await switchTo(page, "image", tap);
+        await until(page, () => document.body.dataset.activeWorkspace === "image", null, "Image");
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "community", null, "Community");
+        assert.equal(await page.getAttribute("#community", "aria-pressed"), "true");
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "image", null, "Community pressed again goes back to Image");
+        assert.equal(await page.getAttribute("#community", "aria-pressed"), "false");
+        // Through the workspace menu and back: Community still returns to the last workspace shown.
+        await switchTo(page, "design", tap);
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "community", null, "Community again");
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "design", null, "back to Design");
+        await bar("guide-open");
+        await page.waitForSelector("dialog.guide[open]");
+        assert.equal(await page.getAttribute("#guide-open", "aria-pressed"), "true");
+        // The guide covers the whole screen, so the bar's button is pressed by its keyboard activation (or a screen reader).
+        await page.evaluate(() => document.getElementById("guide-open").click());
+        await until(page, () => !document.querySelector("dialog.guide"), null, "Guide pressed again closes");
+        assert.equal(await page.getAttribute("#guide-open", "aria-pressed"), "false");
+        // Closed by its own Close button: the next press opens it again, once.
+        await bar("guide-open");
+        await page.waitForSelector("dialog.guide[open]");
+        await page.click("dialog.guide .guide-close");
+        await until(page, () => !document.querySelector("dialog.guide"), null, "Close closes");
+        await bar("guide-open");
+        await page.waitForSelector("dialog.guide[open]");
+        assert.equal(await page.$$eval("dialog.guide", (d) => d.length), 1, "one guide");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
 } finally {
   if (errors.length) {
     failed++;

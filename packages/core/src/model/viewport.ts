@@ -75,8 +75,20 @@ export interface SketchDrawing {
    * `picks` (step 27d, the Project tool): while it is edited, a click or a
    * hover also says which body edge or face is under the pointer
    * (SketchPointer `edge`, `face`), and lights it as a hover does.
+   * `picked` and `hover` (the Select tool, Design's sketch-select.ts): the
+   * curves selected, drawn lit, and the one under the pointer, drawn
+   * lighter, as segments; each absent when none.
    */
-  editing?: { grid: number; gridSnap?: boolean; points: readonly SketchXY[]; preview: readonly (readonly [SketchXY, SketchXY])[]; snap?: { label: string; marks: readonly (readonly [SketchXY, SketchXY])[] }; picks?: true };
+  editing?: {
+    grid: number;
+    gridSnap?: boolean;
+    points: readonly SketchXY[];
+    preview: readonly (readonly [SketchXY, SketchXY])[];
+    snap?: { label: string; marks: readonly (readonly [SketchXY, SketchXY])[] };
+    picks?: true;
+    picked?: readonly (readonly [SketchXY, SketchXY])[];
+    hover?: readonly (readonly [SketchXY, SketchXY])[];
+  };
 }
 
 /** An origin plane drawn small at the origin to be picked (Create sketch); one not offered is drawn faint and can't be clicked. */
@@ -127,6 +139,10 @@ export interface SketchPointer {
    */
   edge?: number | null;
   face?: number | null;
+  /** A click with Shift held (the sketch's Select tool adds to its picks); absent for a move or without Shift. */
+  shift?: true;
+  /** A click made by a finger (the Select tool reaches further for one); absent for a mouse or pen. */
+  touch?: true;
 }
 
 /** A closed sketch outline Extrude offers to pick in the view (UX1b), by its sketch's id, in its plane's frame (as sketch_outline gives it). */

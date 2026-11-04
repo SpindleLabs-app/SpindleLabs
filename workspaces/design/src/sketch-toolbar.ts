@@ -15,7 +15,7 @@ import { iconSvg, TOOL_ICON_SIZE, withIcon, type IconName } from "@fission/ui";
 import { SKETCH_TOOLS, type ToolKind } from "./sketch-tool.ts";
 
 /** Each sketch tool's icon (U0f). */
-export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project" };
+export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select" };
 
 export interface SketchToolbarEvents {
   /** A tool chosen, from its button or the Create menu. */
@@ -26,6 +26,8 @@ export interface SketchToolbarEvents {
   snap(on: boolean): void;
   /** Type pressed (phone width only): the keys go to the typed-size boxes. */
   type(): void;
+  /** Delete pressed: the sketch curves the Select tool picked are taken out (sketch-select.ts). */
+  remove(): void;
 }
 
 /** One row of the Create menu: the tool's name and the key that chooses it (none for a tool without one). */
@@ -65,6 +67,9 @@ export const SNAP_TITLE = {
   off: "Snap off: points go exactly where you click. Click to turn it on again.",
 } as const;
 
+/** Delete's tooltip while nothing is picked (it is off). */
+export const NOTHING_PICKED = "Delete: select a line, circle or arc first";
+
 /** Finish Sketch's tooltip. */
 export const FINISH_TITLE = "Finish Sketch: back to modelling, with the camera at the home view. The sketch stays as drawn.";
 
@@ -91,6 +96,8 @@ export interface SketchToolbar {
   showTool(kind: ToolKind): void;
   /** Shows Type (only ever drawn at phone width on a touch screen, sketchbar.css) while the typed-size boxes show. */
   showType(on: boolean): void;
+  /** How many sketch curves the Select tool has picked: Delete is on only for one or more. */
+  showPicked(count: number): void;
   /** Takes the sketch's toolbar away (the menu too). */
   hide(): void;
   /** Whether the Create menu is open (Escape closes it first). */
@@ -143,6 +150,33 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   // Type (sketch hunt 2026-11-01): at phone width the typed-size boxes take no taps until typed in, since beside the finger
   // they swallowed the next tap of a line drawn down; this puts the keys in their first box. In the toolbar, not over the
   // view, so it never covers where a sketch is tapped; wider screens never show it (a digit starts typing there).
+  // Select and Delete (missing basics, 2026-11-04), at the end of the tools' row after a divider: the Select tool picks
+  // single lines, circles and arcs (Escape with nothing half drawn chooses it too, as in Fusion), and Delete takes them
+  // out. In the row, not a group of their own, so at phone width they wrap with the tools and show without a sideways
+  // swipe (app hunt 2026-11-04); on a phone, with no keyboard, these two buttons are the way.
+  const divider = document.createElement("span");
+  divider.className = "sketchbar-divider";
+  divider.setAttribute("aria-hidden", "true");
+  const selectButton = button("Select", "sketch-tool-select");
+  selectButton.title = "Select (Escape): click a line, circle or arc, Shift+click for more";
+  selectButton.setAttribute("aria-label", "Select");
+  selectButton.setAttribute("aria-keyshortcuts", "Escape");
+  selectButton.className = "toolbar-group-tool";
+  selectButton.addEventListener("click", () => {
+    closeMenu();
+    on.tool("select");
+  });
+  const deleteButton = button("Delete", "sketch-delete");
+  deleteButton.title = NOTHING_PICKED;
+  deleteButton.setAttribute("aria-label", "Delete");
+  deleteButton.setAttribute("aria-keyshortcuts", "Delete Backspace");
+  deleteButton.className = "toolbar-group-tool";
+  deleteButton.disabled = true;
+  deleteButton.addEventListener("click", () => {
+    closeMenu();
+    on.remove();
+  });
+  row.append(divider, withIcon(selectButton, "select", TOOL_ICON_SIZE), withIcon(deleteButton, "delete", TOOL_ICON_SIZE));
   const typeButton = button("Type", "sketch-type");
   typeButton.className = "sketchbar-type"; // not a tool: no icon, never pressed
   typeButton.title = "Type a size";
@@ -345,6 +379,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     for (const t of tools) t.button.setAttribute("aria-pressed", String(t.kind === kind));
     for (const r of rows) r.item.setAttribute("aria-checked", String(r.kind === kind));
     for (const g of groups) g.item.classList.toggle("sketchbar-menu-holds", g.kinds.includes(kind));
+    selectButton.setAttribute("aria-pressed", String(kind === "select"));
   };
   return {
     show(tool) {
@@ -355,6 +390,10 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     showTool,
     showType(on) {
       typeButton.hidden = !on;
+    },
+    showPicked(count) {
+      deleteButton.disabled = count === 0;
+      deleteButton.title = count === 0 ? NOTHING_PICKED : `Delete the ${count === 1 ? "selected curve" : `${count} selected curves`} (Delete or Backspace)`;
     },
     hide() {
       closeMenu();

@@ -354,6 +354,15 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
   const labels: string[] = [];
   /** Where the line tool is: a chain started (its last point) or not. */
   let chain = false;
+  /** Whether Escape with no chain going chose the Select tool (missing basics, 2026-11-04): L goes back to drawing first. */
+  let selecting = false;
+  /** Before drawing: back to the line tool from Select, as a user would. */
+  const drawing = async () => {
+    if (!selecting) return;
+    await a.key("sketch-line");
+    selecting = false;
+    reached.add("line again after Select");
+  };
   const done: string[] = [];
   const check = (what: string): string | null => {
     const want = volumeOf(specs, shown);
@@ -411,6 +420,7 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
         if (editing !== null && dirty) rebuilt();
         editing = step.i;
         chain = false;
+        selecting = false; // a sketch opens with the line tool
       }
     } else if (step.do === "close") {
       if (editing === null) continue;
@@ -419,6 +429,7 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
       // The chain must not be running: Escape first, as a user would.
       if (chain) await a.key("clear-selection");
       chain = false;
+      await drawing();
       const x0 = 100 * editing;
       await a.click(x0, 30);
       await a.click(x0, 0);
@@ -429,6 +440,7 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
     } else if (step.do === "stray") {
       if (editing === null) continue;
       if (chain) await a.key("clear-selection");
+      await drawing();
       const x0 = 100 * editing;
       await a.click(x0 + step.x, step.y);
       await a.click(x0 + step.x + step.len, step.y);
@@ -439,6 +451,8 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
       record(next, "Draw line");
     } else if (step.do === "escape") {
       await a.key("clear-selection");
+      // Escape ends a chain going; with none, in an open sketch, it chooses Select.
+      if (!chain && editing !== null) selecting = true;
       chain = false;
     } else if (step.do === "finish") {
       if (editing === null) continue;
@@ -483,7 +497,7 @@ test(`seeded: ${SEEDS} sessions × ${STEPS} steps of Edit Sketch, drawing, Finis
   if (only !== null) return;
   // The 25a5 hunt's failing session, kept (it failed before strays got rows of their own).
   assert.equal(await runSession(18, randomSteps(18, 120, randomSpecs(18).specs.length), designWorkspace, reached), null);
-  const every = ["open by menu", "open by bar", "open by row", "refused: already open", "switch after drawing", "switch with nothing drawn", "closed: builds", "closed: strays still there", "stray: breaks a closing outline", "stray: on an open outline", "finish after drawing", "finish with nothing drawn", "undo inside a sketch", "undo outside a sketch", "redo inside a sketch", "redo outside a sketch"];
+  const every = ["line again after Select", "open by menu", "open by bar", "open by row", "refused: already open", "switch after drawing", "switch with nothing drawn", "closed: builds", "closed: strays still there", "stray: breaks a closing outline", "stray: on an open outline", "finish after drawing", "finish with nothing drawn", "undo inside a sketch", "undo outside a sketch", "redo inside a sketch", "redo outside a sketch"];
   assert.deepEqual(every.filter((c) => !reached.has(c)), [], `reached: ${[...reached].join(", ")}`);
 });
 
