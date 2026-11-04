@@ -235,10 +235,11 @@ export class BodyCache {
    */
   async body(spec: BodySpec, copy = 0): Promise<BodyHandle> {
     if (this.closed) throw new Error(CLOSED);
-    const key = copy === 0 ? JSON.stringify(spec) : JSON.stringify(["copy", copy, spec]);
-    const hit = this.bodies.get(key);
+    const key = JSON.stringify(spec);
+    const at = copy === 0 ? key : `${key}#copy${copy}`;
+    const hit = this.bodies.get(at);
     if (hit) return hit.handle;
-    const asked = this.building.get(key);
+    const asked = this.building.get(at);
     if (asked) return asked;
     const build = this.kernel.call("body_build", spec).then((handle) => {
       if (this.closed) {
@@ -246,15 +247,15 @@ export class BodyCache {
         void this.kernel.call("body_free", handle).catch(() => {});
         throw new Error(CLOSED);
       }
-      this.bodies.set(key, { handle });
-      this.keys.set(handle, key);
+      this.bodies.set(at, { handle });
+      this.keys.set(handle, at);
       return handle;
     });
-    this.building.set(key, build);
+    this.building.set(at, build);
     try {
       return await build;
     } finally {
-      this.building.delete(key);
+      this.building.delete(at);
     }
   }
 
