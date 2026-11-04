@@ -154,3 +154,28 @@ test("a distance under 0.001 mm or over 1 km is refused in the preview in OK's w
   assert.equal(a.extrudeShown()!.preview, null);
   assert.ok(await a.close());
 });
+
+// Bug hunt 2026-11-04 (E2b): OK, then Escape while the kernel builds the extrude, then E again (the same last sketch is
+// chosen): the cancelled extrude must not be recorded when the build lands.
+test("an extrude cancelled with Escape while OK was building is not recorded when Extrude is opened again", async () => {
+  const s = addSketch(partDocument("box", 10, 10, 10));
+  const a = await app(drawRectangle(s.doc, s.id, [20, 0], [40, 30]).doc);
+  await a.key("extrude-tool");
+  const box = a.$("#extrude-distance") as HTMLInputElement;
+  box.value = "5";
+  box.dispatchEvent(new a.window.Event("input", { bubbles: true }) as unknown as Event);
+  await a.settle();
+  const before = a.doc().timeline.features.length;
+
+  a.hold();
+  (a.$("#extrude-ok") as HTMLButtonElement).click();
+  a.press("clear-selection"); // Escape: Extrude shuts
+  assert.equal(a.$("#extrude-panel")!.hidden, true, "Escape shut Extrude");
+  a.press("extrude-tool"); // E again: the same (last) sketch is chosen
+  assert.equal(a.$("#extrude-panel")!.hidden, false, "Extrude open again");
+  await a.release();
+
+  assert.equal(a.doc().timeline.features.length, before, `the cancelled extrude was recorded: ${a.doc().timeline.features.map((f) => f.intent.summary).join(" | ")}`);
+  assert.equal(a.$("#extrude-panel")!.hidden, false, "the new Extrude panel was shut by the old OK");
+  await a.close();
+});

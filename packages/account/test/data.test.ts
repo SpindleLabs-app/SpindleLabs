@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { authClient } from "../src/auth.ts";
-import { accountData, PENDING_EMAIL_KEY } from "../src/data.ts";
-import { fakeService, KEY, memoryStore, SERVICE, seededRandom } from "./fake-service.ts";
+import { accountData, PENDING_EMAIL_KEY, SEEN_EMAIL_KEY } from "../src/data.ts";
+import { fakeService, KEY, memoryStore, SERVICE, seededRandom, USER } from "./fake-service.ts";
 
 const APP = "https://spindlelabs.app/";
 
@@ -15,7 +15,7 @@ async function signedIn() {
   const go = new URL((await client.beginSignIn())!);
   const r = await client.finishSignIn(`${APP}?code=${svc.approve(go.searchParams.get("code_challenge")!)}`);
   assert.equal(r.kind, "signed-in");
-  return { clock, svc, store, client, data: accountData(client) };
+  return { clock, svc, store, client, data: accountData(client, store) };
 }
 
 test("the email choice starts as no, and a yes is recorded for this person only", async () => {
@@ -95,4 +95,52 @@ test("a request the service refuses is reported as refused", async () => {
 
 test("a yes ticked before sign-in waits under its own stored name", () => {
   assert.equal(PENDING_EMAIL_KEY, "spindle.account.email-choice");
+});
+
+test("the last email choice seen shows at once, and the service's answer puts it right", async () => {
+  const { svc, store, client, data } = await signedIn();
+  assert.equal(data.lastEmailChoice(), null); // nothing seen yet: the dialog waits for the service
+  assert.deepEqual(await data.setEmailChoice(true), { kind: "ok", value: true });
+  assert.equal(data.lastEmailChoice(), true); // what was saved shows next time, with no request
+  const before = svc.calls.length;
+  assert.equal(data.lastEmailChoice(), true);
+  assert.equal(svc.calls.length, before, "reading the last choice asks nothing of the service");
+  // Changed to no on another device: the service's answer wins and becomes the last choice seen.
+  svc.profile = { email_opt_in: false };
+  assert.deepEqual(await data.emailChoice(), { kind: "ok", value: false });
+  assert.equal(data.lastEmailChoice(), false);
+  // A save that fails leaves the last choice as it was.
+  svc.mode = "down";
+  assert.deepEqual(await data.setEmailChoice(true), { kind: "failed", reason: "offline" });
+  assert.equal(data.lastEmailChoice(), false);
+  svc.mode = "up";
+  // Another person's choice, or a damaged value, is never shown.
+  store.setItem(SEEN_EMAIL_KEY, "someone-else:yes");
+  assert.equal(data.lastEmailChoice(), null);
+  store.setItem(SEEN_EMAIL_KEY, `${USER.id}:maybe`);
+  assert.equal(data.lastEmailChoice(), null);
+  // Signing out forgets it, and signed out nothing is shown.
+  await data.setEmailChoice(true);
+  data.forgetEmailChoice();
+  assert.equal(store.getItem(SEEN_EMAIL_KEY), null);
+  await data.setEmailChoice(true);
+  await client.signOut();
+  assert.equal(data.lastEmailChoice(), null);
+});
+
+test("deleting the account forgets the last email choice seen", async () => {
+  const { store, data } = await signedIn();
+  await data.setEmailChoice(true);
+  assert.notEqual(store.getItem(SEEN_EMAIL_KEY), null);
+  assert.deepEqual(await data.deleteAccount(), { kind: "ok", value: true });
+  assert.equal(store.getItem(SEEN_EMAIL_KEY), null);
+});
+
+test("with storage blocked, the last email choice is simply not known", async () => {
+  const { client } = await signedIn();
+  const blocked = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+  const data = accountData(client, blocked);
+  assert.deepEqual(await data.setEmailChoice(true), { kind: "ok", value: true });
+  assert.equal(data.lastEmailChoice(), null);
+  data.forgetEmailChoice();
 });

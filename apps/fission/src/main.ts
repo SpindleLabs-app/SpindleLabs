@@ -692,6 +692,8 @@ const file = fileMenu(document, {
   },
 });
 $("file-bar").prepend(file.element);
+/** What Open says when the last project's changes, refused because another tab saved, were kept as project `name`. */
+const keptApartWords = (name: string) => `Changes made in this tab couldn't be stored, because the project was changed in another tab, so they're kept in this browser as a separate project, “${name}”.`;
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
@@ -716,11 +718,12 @@ function openProject(text: string, fileName = "") {
   // copy no one can reach (real-use hunt B3). Looked up while it opens; a store that can't answer means a new copy.
   const copy = canKeep ? storedCopy(store, project).catch(() => undefined) : Promise.resolve(undefined);
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
-  // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet.
-  autosave?.finish();
+  // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
+  // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
+  const apart = autosave?.finish() ?? null;
   autosave = null;
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
-  fileStatus("");
+  fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
   openedName = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
   // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
@@ -846,9 +849,9 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
     if (e instanceof Unreadable) return fileStatus(e.message);
     return fileStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
   }
-  fileStatus("");
   const into = route.importer.workspace;
-  if (!into) return; // the shell itself (a project) has already shown it
+  if (!into) return; // the shell itself (a project) has already shown it, and said what it says (openProject)
+  fileStatus("");
   pool.forget(into); // mounted afresh, to show what it opened
   if (split?.id === into) mountSplit(into); // where it already is
   else show(into);

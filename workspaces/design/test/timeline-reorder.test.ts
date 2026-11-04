@@ -56,15 +56,54 @@ test("hand-worked: a drop that would roll back the sketch being edited is refuse
   const doc = moveMarker(threeItems(), "sketch-2");
   assert.deepEqual(dropState(doc, "feature-1", 3, "sketch-2"), { kind: "moves" });
   // Sketch 1 first (Sketch 1, box, Extrude 1), the marker on the box (place 2), Sketch 1 edited. The box dragged
-  // to the front (place 0) gives box, Sketch 1, Extrude 1 with the marker still on the box, now place 1: Sketch 1
-  // at index 1 would come after it, rolled back. Refused with the marker's words.
+  // to the front (place 0) gives box, Sketch 1, Extrude 1. The marker stays in its gap (changed on purpose, owner's
+  // decision 2026-11-04, Fusion's rule; it used to go with the box to place 1 and roll Sketch 1 back, refused): it
+  // goes onto Sketch 1, the item before the box, place 2, so Sketch 1 stays built and the drop moves.
   const front = bar.barEdit(threeItems(), { kind: "item", id: "sketch-2", place: 0 });
   assert.equal(front.kind, "edit");
   const d2 = moveMarker((front as { doc: DesignDocument }).doc, "feature-1");
   assert.deepEqual(order(d2), ["sketch-2", "feature-1", "feature-3"]);
-  assert.deepEqual(dropState(d2, "feature-1", 0, "sketch-2"), { kind: "refused", message: "The marker can't go before Sketch 1 while it is being edited: finish the sketch first" });
-  // With no sketch edited the same drop just moves.
-  assert.deepEqual(dropState(d2, "feature-1", 0), { kind: "moves" });
+  assert.deepEqual(dropState(d2, "feature-1", 0, "sketch-2"), { kind: "moves" });
+  // The marker on Sketch 1 instead (place 1), and Sketch 1 itself dragged after the box (place 2): box, Sketch 1,
+  // Extrude 1, the marker left in its gap, which is now the start. Sketch 1 at index 1 would be rolled back: refused
+  // with the marker's words. With no sketch edited the same drop just moves.
+  const d3 = moveMarker((front as { doc: DesignDocument }).doc, "sketch-2");
+  assert.deepEqual(dropState(d3, "sketch-2", 2, "sketch-2"), { kind: "refused", message: "The marker can't go before Sketch 1 while it is being edited: finish the sketch first" });
+  assert.deepEqual(dropState(d3, "sketch-2", 2), { kind: "moves" });
+});
+
+/** Box 1, Cylinder 1, Sphere 1, the marker on `on`. */
+function presets(on: string): DesignDocument {
+  let doc = partDocument("box", 40, 30, 20);
+  doc = insertPreset(doc, "cylinder", 20, 20, 10).doc;
+  doc = insertPreset(doc, "sphere", 10, 10, 10).doc;
+  return moveMarker(doc, on);
+}
+/** Each item's id and whether it is rolled back, in the bar's order. */
+const rolled = (doc: DesignDocument) => bar.timelineBarItems(doc).items.map((i) => `${i.id}${i.rolledBack ? " rolled back" : ""}`);
+
+test("hand-worked (bug hunt 2 C3, owner's decision 2026-11-04: Fusion's rule): dragging the item the marker is on leaves the marker in its gap, so only the dragged item can change", () => {
+  // Box 1 | Cylinder 1, Sphere 1: the marker on the box (place 1), only the box built.
+  const boxOnly = presets("feature-1");
+  assert.deepEqual(rolled(boxOnly), ["feature-1", "feature-2 rolled back", "feature-3 rolled back"]);
+  // The box dragged to the end (place 3). Taken out, the box leaves its gap with nothing before it: the start. The
+  // order is Cylinder 1, Sphere 1, Box 1, all after the marker: the two the user didn't touch stay rolled back, and
+  // the box, dropped past the marker, is rolled back too. (It used to carry the marker and build all three.)
+  const end = bar.barEdit(boxOnly, { kind: "item", id: "feature-1", place: 3 });
+  assert.ok(end.kind === "edit");
+  assert.equal(end.doc.timeline.marker, "start");
+  assert.deepEqual(rolled(end.doc), ["feature-2 rolled back", "feature-3 rolled back", "feature-1 rolled back"]);
+  // Box 1, Cylinder 1 | Sphere 1: the marker on the cylinder (place 2). The cylinder dragged to the front (place 0):
+  // its gap is now just after the box, so the marker goes onto the box. Cylinder 1, Box 1 | Sphere 1: the sphere stays
+  // rolled back, and both before the marker still build. (It used to carry the marker to place 1, rolling the box back.)
+  const front = bar.barEdit(presets("feature-2"), { kind: "item", id: "feature-2", place: 0 });
+  assert.ok(front.kind === "edit");
+  assert.equal(front.doc.timeline.marker, "feature-1");
+  assert.deepEqual(rolled(front.doc), ["feature-2", "feature-1", "feature-3 rolled back"]);
+  // The cylinder dragged to the end instead (place 3): Box 1 | Sphere 1, Cylinder 1, the cylinder now rolled back.
+  const past = bar.barEdit(presets("feature-2"), { kind: "item", id: "feature-2", place: 3 });
+  assert.ok(past.kind === "edit");
+  assert.deepEqual(rolled(past.doc), ["feature-1", "feature-3 rolled back", "feature-2 rolled back"]);
 });
 
 /** Three items 24 px wide, 2 px apart, from 12 px (the row's padding): [12, 36], [38, 62], [64, 88]; their middles 24, 50 and 76. */
@@ -308,8 +347,9 @@ interface MItem {
  * refused when what it is built from would come after it ("X can't go
  * before Y: it is built from Y"), or an item built from it before it ("X
  * can't go after Y: Y is built from it"), or, while a sketch is edited,
- * when that sketch would come after the marker, which stays on the item it
- * names.
+ * when that sketch would come after the marker, which stays in its gap: on
+ * the item it names, or when that is the item dragged, on the item before
+ * it or at the start (owner's decision 2026-11-04, Fusion's rule).
  */
 function predict(items: readonly MItem[], marker: string | null, k: number, p: number, editing: string | null): { state: "stays" | "moves" | "refused"; message?: string; order?: string[] } {
   if (p === k || p === k + 1) return { state: "stays" };
@@ -322,7 +362,8 @@ function predict(items: readonly MItem[], marker: string | null, k: number, p: n
   const user = next.findIndex((i, j) => j < to && i.uses === item.id);
   if (user >= 0) return { state: "refused", message: `${item.name} can't go after ${next[user].name}: ${next[user].name} is built from it` };
   if (editing !== null) {
-    const m = marker === "start" ? 0 : marker === null ? next.length : next.findIndex((i) => i.id === marker) + 1;
+    const stays = marker === item.id ? (k === 0 ? "start" : items[k - 1].id) : marker;
+    const m = stays === "start" ? 0 : stays === null ? next.length : next.findIndex((i) => i.id === stays) + 1;
     const e = next.findIndex((i) => i.id === editing);
     if (e >= m) return { state: "refused", message: `The marker can't go before ${next[e].name} while it is being edited: finish the sketch first` };
   }

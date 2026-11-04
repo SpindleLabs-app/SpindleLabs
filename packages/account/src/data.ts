@@ -3,7 +3,7 @@
 // rules (supabase/migrations) decide what each request may touch; this only
 // asks and checks the answers.
 
-import type { AuthClient, PersonReply } from "./auth.ts";
+import type { AuthClient, PersonReply, SmallStore } from "./auth.ts";
 
 type Failed = Exclude<PersonReply, { kind: "ok" }>;
 export type DataResult<T> = { readonly kind: "ok"; readonly value: T } | Failed;
@@ -11,23 +11,69 @@ export type DataResult<T> = { readonly kind: "ok"; readonly value: T } | Failed;
 /** Where a choice made before signing in waits for the return from the sign-in page. */
 export const PENDING_EMAIL_KEY = "spindle.account.email-choice";
 
-export function accountData(client: AuthClient) {
+/**
+ * The email choice this browser last read or saved, so the account dialog can show it at once instead of an unticked
+ * box while the service answers: `<user id>:yes` or `<user id>:no`. Only a copy: the service's answer always wins.
+ */
+export const SEEN_EMAIL_KEY = "spindle.account.email-seen";
+
+/** `store` keeps the last email choice seen (SEEN_EMAIL_KEY); without one nothing is remembered. */
+export function accountData(client: AuthClient, store?: SmallStore) {
+  function remember(userId: string, yes: boolean): void {
+    try {
+      store?.setItem(SEEN_EMAIL_KEY, `${userId}:${yes ? "yes" : "no"}`);
+    } catch {
+      // Storage blocked: the dialog just waits for the service, as before.
+    }
+  }
+  function forgetSeen(): void {
+    try {
+      store?.removeItem(SEEN_EMAIL_KEY);
+    } catch {
+      // Storage blocked: nothing was kept.
+    }
+  }
   return {
-    /** Whether the person said yes to emails. Off unless they ticked the box. */
+    /**
+     * The email choice last seen in this browser for the person signed in now, without asking the service: true, false,
+     * or null when none was seen (another person's, a damaged value, signed out, storage blocked).
+     */
+    lastEmailChoice(): boolean | null {
+      const state = client.state();
+      if (state.kind !== "signed-in") return null;
+      let kept: string | null = null;
+      try {
+        kept = store?.getItem(SEEN_EMAIL_KEY) ?? null;
+      } catch {
+        return null;
+      }
+      if (kept === `${state.user.id}:yes`) return true;
+      if (kept === `${state.user.id}:no`) return false;
+      return null;
+    },
+
+    /** Forgets the last email choice seen (signing out, deleting the account). */
+    forgetEmailChoice: forgetSeen,
+
+    /** Whether the person said yes to emails. Off unless they ticked the box. Remembered as the last choice seen. */
     async emailChoice(): Promise<DataResult<boolean>> {
+      const state = client.state();
       const r = await client.asPerson("GET", "profiles?select=email_opt_in");
       if (r.kind !== "ok") return r;
       const rows = r.body;
       if (!Array.isArray(rows) || rows.length !== 1 || typeof rows[0]?.email_opt_in !== "boolean") return { kind: "failed", reason: "malformed" };
+      if (state.kind === "signed-in") remember(state.user.id, rows[0].email_opt_in);
       return { kind: "ok", value: rows[0].email_opt_in };
     },
 
-    /** Records a yes or no to emails; the database stamps when. */
+    /** Records a yes or no to emails; the database stamps when. Remembered as the last choice seen once saved. */
     async setEmailChoice(yes: boolean): Promise<DataResult<boolean>> {
       const state = client.state();
       if (state.kind !== "signed-in") return { kind: "signed-out" };
       const r = await client.asPerson("PATCH", `profiles?id=eq.${encodeURIComponent(state.user.id)}`, { email_opt_in: yes === true });
-      return r.kind === "ok" ? { kind: "ok", value: yes } : r;
+      if (r.kind !== "ok") return r;
+      remember(state.user.id, yes === true);
+      return { kind: "ok", value: yes };
     },
 
     /** Everything the service keeps about the person, as JSON text to save. */
@@ -43,6 +89,7 @@ export function accountData(client: AuthClient) {
       const r = await client.asPerson("POST", "rpc/delete_my_account");
       if (r.kind !== "ok") return r;
       client.forget();
+      forgetSeen();
       return { kind: "ok", value: true };
     },
   };

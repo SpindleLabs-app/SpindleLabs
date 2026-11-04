@@ -59,7 +59,7 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set() };
+  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve() };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
@@ -86,7 +86,10 @@ function fakeService() {
       // The data API, as the database's rules allow it for the one signed-in person.
       if (!svc.profile || !svc.tokens.has((req.headers().authorization ?? "").replace("Bearer ", ""))) return json(route, 401, { message: "JWT invalid" });
       const what = url.pathname.slice("/rest/v1/".length);
-      if (req.method() === "GET" && what === "profiles") return json(route, 200, [{ email_opt_in: svc.profile.email_opt_in }]);
+      if (req.method() === "GET" && what === "profiles") {
+        await svc.profileHeld; // a slow service, for the check that the last choice seen shows at once
+        return json(route, 200, [{ email_opt_in: svc.profile.email_opt_in }]);
+      }
       if (req.method() === "PATCH" && what === "profiles" && url.searchParams.get("id") === "eq.7f3c2a10-0000-4000-8000-000000000001") {
         svc.profile.email_opt_in = body.email_opt_in;
         return route.fulfill({ status: 204, headers: cors });
@@ -277,6 +280,35 @@ try {
     await page.waitForFunction(() => /no emails/.test(document.querySelector("#account .account-emails .account-small")?.textContent ?? ""));
     assert.deepEqual(svc.profile, { email_opt_in: false });
     if (shots) await page.screenshot({ path: `${shots}/account-signed-in-1280.png` });
+    await context.close();
+  });
+
+  await check("switch on: reopened, the email box shows the last choice seen at once, then the service's answer puts it right", async () => {
+    // Owner's report: the box showed unticked for a moment on every open until the service answered.
+    const { page, svc, context } = await fresh(ON_URL);
+    await page.locator("#account-open").waitFor();
+    await page.click("#account-open");
+    await page.click("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    await page.click("#account-open");
+    await page.waitForFunction(() => document.getElementById("account-emails")?.disabled === false);
+    await page.check("#account-emails");
+    await page.waitForFunction(() => /you'll get emails/.test(document.querySelector("#account .account-emails .account-small")?.textContent ?? ""));
+    await page.click("#account .account-close");
+    // The service now answers slowly. Reopening shows the yes straight away, before any answer.
+    let release;
+    svc.profileHeld = new Promise((r) => (release = r));
+    await page.click("#account-open");
+    assert.equal(await page.isChecked("#account-emails"), true, "the last choice seen shows at once");
+    assert.equal(await page.isDisabled("#account-emails"), false, "and can be changed at once");
+    // Changed to no on another device: when the answer comes, the box follows it.
+    svc.profile.email_opt_in = false;
+    release();
+    await page.waitForFunction(() => document.getElementById("account-emails")?.checked === false);
+    // Signing out forgets it, so the next person on this browser never sees it.
+    await page.click("#account .account-action:text('Sign out')");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Sign in");
+    assert.equal(await page.evaluate(() => localStorage.getItem("spindle.account.email-seen")), null);
     await context.close();
   });
 

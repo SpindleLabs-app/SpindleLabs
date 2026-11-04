@@ -68,6 +68,31 @@ export function insideOutline(outline: Outline, p: SketchXY): boolean {
   return insideLoop(outline.outer, p) && !outline.holes.some((h) => insideLoop(h, p));
 }
 
+/**
+ * The area a loop bounds, exactly. A circle: πr². A path: the shoelace
+ * area of its chord polygon plus, for each arc, the segment between it and
+ * its chord, r²(θ − sin θ)/2 with θ = 4·atan|β| its turn; added for a
+ * positive bulge (the segment on the right of a → b, so arc-then-chord-back
+ * runs counter-clockwise), taken away for a negative one; the size of that.
+ */
+export function loopArea(loop: Loop): number {
+  if ("circle" in loop) return Math.PI * loop.circle.radius ** 2;
+  let twice = 0;
+  for (const { a, b, bulge } of piecesOf(loop.path)) {
+    twice += a[0] * b[1] - b[0] * a[1];
+    if (bulge === 0) continue;
+    const { radius } = arcCircle(a, b, bulge);
+    const turn = 4 * Math.atan(Math.abs(bulge));
+    twice += Math.sign(bulge) * radius * radius * (turn - Math.sin(turn));
+  }
+  return Math.abs(twice) / 2;
+}
+
+/** The area of the region an outline bounds: its outer loop's less its holes'. */
+export function outlineArea(outline: Outline): number {
+  return loopArea(outline.outer) - outline.holes.reduce((sum, h) => sum + loopArea(h), 0);
+}
+
 /** The most an arc drawn as straight pieces strays from the true arc, as a share of its radius (1/2000: 0.005 mm on a 10 mm circle). */
 export const FILL_SAG = 5e-4;
 /**

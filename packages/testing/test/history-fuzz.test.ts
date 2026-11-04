@@ -528,7 +528,9 @@ function session(seed: bigint, steps: number) {
           continue;
         }
         assert.ok("doc" in got, `${at}: moving ${item.id} to ${to} was refused (${"message" in got ? got.message : ""})`);
-        after = { ...m, items };
+        // The marker stays in its gap (owner's decision 2026-11-04): moved off the item dragged elsewhere, onto the one before it, or the start.
+        const k = m.items.indexOf(item);
+        after = { ...m, items, marker: m.marker === item.id && k !== to ? (k === 0 ? "start" : m.items[k - 1].id) : m.marker };
         next = got.doc;
         label = TIMELINE_STEPS.reorder(name);
         counts[m.items.indexOf(item) === to ? "reorderedInPlace" : "reorders"]++;

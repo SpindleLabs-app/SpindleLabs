@@ -14,7 +14,9 @@
 //     reloads without asking, and closing while a change waits asks first,
 //     and staying keeps the page;
 //   - browser storage full: a reload shows the last width, Save writes it,
-//     and it is stored once there is room (real-use hunt B1).
+//     and it is stored once there is room (real-use hunt B1);
+//   - two tabs: a file opened in the tab whose saves are refused keeps that
+//     tab's edit as a separate project, and says so (round 2 hunt A5).
 // Every page comes back saying Saved, with no journal entry left.
 // Run with `npm run e2e` (after `npm run build`); `E2E_BROWSER` picks the engine.
 import assert from "node:assert/strict";
@@ -218,6 +220,56 @@ try {
     await page.reload(); // the store as it is again
     await volume(page, "42,000 mm³");
     assert.equal(await status(page), "saved");
+    await context.close();
+  });
+
+  await check("two tabs: a file opened in the tab whose saves are refused keeps that tab's edit as a separate project, and says so (round 2 hunt A5)", async () => {
+    // Tab A and tab B on the stored box (40 · 30 · 20 = 24,000 mm³). A makes it 50 wide (30,000) and stores it; B, still
+    // on 40, makes it 60 wide (36,000), and its save is refused: another tab changed it. B then opens a file. Before
+    // the fix, B's 60 was dropped without a word; now it is stored as a separate project and the top bar names it.
+    const { context, page: a } = await fresh(1280);
+    const b = await open(context, "24,000 mm³");
+    await until(b, () => document.querySelector("#save-status").dataset.state === "saved", null, "B on the stored box");
+    const [download] = await Promise.all([a.waitForEvent("download"), a.click("#save")]);
+    const file = JSON.parse(readFileSync(await download.path(), "utf8"));
+    file.workspaces.design.timeline.features[0].intent.parameters.width = 70;
+    await typeWidth(a, "50");
+    await volume(a, "30,000 mm³");
+    await until(a, () => document.querySelector("#save-status").dataset.state === "saved", null, "A's 50 stored");
+    await b.bringToFront();
+    await typeWidth(b, "60");
+    await volume(b, "36,000 mm³");
+    await until(b, () => document.querySelector("#save-status").textContent.includes("changed in another tab"), null, "B's save refused");
+    const asked = [];
+    b.on("dialog", (d) => (asked.push(d.message()), d.dismiss()));
+    await b.setInputFiles("#open-file", { name: "seventy.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(file)) });
+    await volume(b, "42,000 mm³"); // 70 · 30 · 20: the file opened, nothing asked
+    assert.deepEqual(asked, []);
+    const said = await b.textContent("#file-status");
+    assert.match(said, /changed in another tab, so they're kept in this browser as a separate project, “.+ \(from another tab\)”/, said);
+    // Every stored project, straight from the store: one is B's 60, named "… (from another tab)".
+    const kept = () =>
+      b.evaluate(
+        () =>
+          new Promise((resolve, reject) => {
+            const r = indexedDB.open("fission", 1);
+            r.onerror = () => reject(r.error);
+            r.onsuccess = () => {
+              const all = r.result.transaction("kv").objectStore("kv").getAll();
+              all.onsuccess = () =>
+                resolve(
+                  all.result
+                    .map((v) => (typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v))
+                    .filter((v) => v?.workspaces?.design)
+                    .map((v) => `${v.name} ${v.workspaces.design.timeline?.features?.[0]?.intent?.parameters?.width}`),
+                );
+              all.onerror = () => reject(all.error);
+            };
+          }),
+      );
+    for (let i = 0; i < 50 && !(await kept()).some((k) => k.endsWith("(from another tab) 60")); i++) await b.waitForTimeout(100);
+    assert.ok((await kept()).some((k) => k.endsWith("(from another tab) 60")), `B's 60-wide edit is stored: ${JSON.stringify(await kept())}`);
+    assert.ok((await kept()).some((k) => k.endsWith(" 50") && !k.includes("(from another tab)")), "A's 50 as it was");
     await context.close();
   });
 
