@@ -1,14 +1,15 @@
 /* The supports hint after a slice (slice-print.ts, overhang.ts): one small
    row straight after the status line, the words on the left and a plain
    (not filled) button on the right that flips the Supports choice. Muted
-   like the status; "recommended" gets the status's blue accent edge. */
-.slice-print-supports-hint { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; padding: 4px 0 4px 10px; color: #b7c0cc; font-size: 0.92em; border-left: 3px solid #4b5668; scroll-margin-bottom: 76px; }
+   like the status; "recommended" gets the accent edge. Theme tokens only,
+   so light mode follows. */
+.slice-print-supports-hint { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; padding: 4px 0 4px 10px; color: var(--text-soft); font-size: 0.92em; border-left: 3px solid var(--line-strong); scroll-margin-bottom: 76px; }
 .slice-print-supports-hint[hidden] { display: none; }
-.slice-print-supports-hint[data-recommended="true"] { border-left-color: var(--look-accent, #4aa8ff); color: #dbe3ee; }
-.slice-print-supports-hint button { flex: none; height: 36px; padding: 0 12px; background: transparent; color: inherit; border: 1px solid #3a4558; border-radius: var(--look-radius-s, 6px); font: inherit; cursor: pointer; }
-.slice-print-supports-hint button:hover { background: #263142; }
+.slice-print-supports-hint[data-recommended="true"] { border-left-color: var(--look-accent); color: var(--text); }
+.slice-print-supports-hint button:not(#none) { flex: none; min-height: var(--look-target); padding: 0 12px; background: transparent; color: inherit; border: 1px solid var(--line-strong); border-radius: var(--look-radius-s); font: inherit; cursor: pointer; }
+.slice-print-supports-hint button:not(#none):hover { background: var(--surface-raised); color: var(--text); }
 .slice-print-supports-hint button[hidden] { display: none; }
 @media (max-width: 640px) {
   .slice-print-supports-hint { scroll-margin-bottom: 128px; }
-  .slice-print-supports-hint button { height: 44px; }
+  .slice-print-supports-hint button:not(#none) { min-height: var(--look-target-touch); }
 }

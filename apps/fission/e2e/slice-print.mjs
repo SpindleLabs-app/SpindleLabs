@@ -221,7 +221,10 @@ for (const [width, height, tap] of [[1280, 800, false], [1280, 470, false], [375
       await page.$eval("#slice-print-supports-hint", (e) => e.scrollIntoView({ block: "nearest" }));
       for (const id of ["slice-print-supports-hint", "slice-print-supports-flip", "slice-print-go", "slice-print-close"]) assert.ok(await onScreen(id), `${id} on screen`);
       // A plain button, not the filled blue one: Slice and download stays the only one.
-      assert.notEqual(await page.$eval("#slice-print-supports-flip", (b) => getComputedStyle(b).backgroundColor), await page.$eval("#slice-print-go", (b) => getComputedStyle(b).backgroundColor));
+      if (!tap) await page.mouse.move(1, 1); // the row can appear under the pointer left on Slice and download, lit as hovered
+      const fill = (sel) => page.$eval(sel, (b) => [getComputedStyle(b).backgroundImage, getComputedStyle(b).backgroundColor]);
+      assert.notEqual((await fill("#slice-print-go"))[0], "none", "Slice and download is filled");
+      assert.deepEqual(await fill("#slice-print-supports-flip"), ["none", "rgba(0, 0, 0, 0)"], "the switch is plain");
       if (tap) assert.ok((await page.$eval("#slice-print-supports-flip", (b) => b.getBoundingClientRect().height)) >= 44, "44 px to tap");
       if (shots) await page.screenshot({ path: `${shots}/supports-hint-${width}x${height}.png` });
       await press("#slice-print-supports-flip");
