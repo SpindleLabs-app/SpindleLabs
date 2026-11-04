@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -118,7 +118,7 @@ export const KERNEL_NOT_DOWNLOADED = "The geometry kernel didn't start (its file
 /** A watch that fires this much later than it was due means the device slept or the page was frozen. */
 const LATE_TIMER_MS = 1000;
 
-const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "bad-request", "unknown-body", "too-many-bodies", "internal"];
+const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "non-manifold-result", "bad-request", "unknown-body", "too-many-bodies", "internal"];
 
 /**
  * A failed kernel call: `message` to show the user, `kind` and `inputs` for
@@ -127,12 +127,29 @@ const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "b
 export class KernelError extends Error {
   readonly kind: KernelErrorKind;
   readonly inputs: KernelInput[];
+  /** Where a "non-manifold-result" would touch itself; empty for every other kind. */
+  readonly touches: KernelTouch[];
   constructor(failure: KernelFailure) {
     // Its name stays "Error", so String(e) reads as it always has.
     super(failure.message);
     this.kind = failure.kind;
     this.inputs = failure.inputs;
+    this.touches = failure.touches ?? [];
   }
+}
+
+const isPoint = (p: unknown): p is [number, number, number] => Array.isArray(p) && p.length === 3 && p.every((x) => typeof x === "number" && Number.isFinite(x));
+
+/** The places of a "non-manifold-result" the kernel sent, each checked; any malformed place is left out. */
+function touchesOf(value: unknown): KernelTouch[] {
+  if (!Array.isArray(value)) return [];
+  const out: KernelTouch[] = [];
+  for (const t of value as { at?: unknown; from?: unknown; to?: unknown; point?: unknown }[]) {
+    if (typeof t !== "object" || t === null) continue;
+    if (t.at === "edge" && isPoint(t.from) && isPoint(t.to)) out.push({ at: "edge", from: [...t.from], to: [...t.to] });
+    else if (t.at === "corner" && isPoint(t.point)) out.push({ at: "corner", point: [...t.point] });
+  }
+  return out;
 }
 
 /**
@@ -142,9 +159,10 @@ export class KernelError extends Error {
  */
 export function kernelFailure(e: unknown): KernelFailure {
   const message = e instanceof Error ? e.message : String(e);
-  const fields = (typeof e === "object" && e !== null ? e : {}) as { kind?: unknown; inputs?: unknown };
+  const fields = (typeof e === "object" && e !== null ? e : {}) as { kind?: unknown; inputs?: unknown; touches?: unknown };
   const kind = KINDS.includes(fields.kind as KernelErrorKind) ? (fields.kind as KernelErrorKind) : "internal";
   const inputs = kind !== "internal" && Array.isArray(fields.inputs) ? (fields.inputs as KernelInput[]) : [];
+  if (kind === "non-manifold-result") return { kind, inputs, message, touches: touchesOf(fields.touches) };
   return { kind, inputs, message };
 }
 
