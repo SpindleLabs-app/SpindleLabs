@@ -3,7 +3,7 @@
 // are unit-tested; workspace.ts applies them on every selection change.
 
 import type { Feature, GeometryReference, ViewportHighlight } from "@fission/core";
-import { builds, makesBody, partFeature, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, builds, makesBody, partFeature, type DesignDocument } from "./document.ts";
 import { readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
 import { bodyOf, findInScene, resolveInScene, type Scene, type ShownBody } from "./scene.ts";
 import { outlineSourceOf } from "./sketch.ts";
@@ -164,19 +164,25 @@ export function panelPart(items: readonly GeometryReference[], scene: Scene | nu
  * sketch deleted or emptied (25c1), drops it. A body whose feature is no
  * longer in the timeline (`inTimeline`: deleted, or its insert undone) is
  * left out of both lists, with no note: the user took it away (hunt 11-01: a gone body stayed selected
- * and, its id given again, came back selected on a body never picked).
+ * and, its id given again, came back selected on a body never picked). So is a body
+ * `hidden` says is hidden, and a face or edge of one not shown (issue #279: an
+ * Undo that hid a selected body left it selected, unseen).
  */
 export function survivors(
   items: readonly GeometryReference[],
   scene: Scene,
   outlineIds: readonly string[] = [],
   inTimeline: (featureId: string) => boolean = () => true,
+  hidden: (bodyId: string) => boolean = () => false,
 ): { kept: GeometryReference[]; dropped: GeometryReference[]; shared: GeometryReference[] } {
   const kept: GeometryReference[] = [];
   const dropped: GeometryReference[] = [];
   const shared: GeometryReference[] = [];
   for (const item of items) {
     const r = readDesignReference(item);
+    // A hidden body (issue #279), or a face or edge of one, is not drawn: it leaves with no note, as hiding it by its eye clears the selection.
+    if (item.kind === "body" && bodyItem(item.id) !== null && hidden(item.id)) continue;
+    if (r && r.kind !== "body" && bodyOf(scene, item) < 0 && hidden(bodyIdOf(r.featureId))) continue;
     let keep = true;
     const profile = readProfileReference(item);
     if (profile !== null) keep = outlineIds.includes(profile);

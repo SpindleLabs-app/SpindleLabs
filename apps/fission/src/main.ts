@@ -219,6 +219,8 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
 
 type Page = WorkspaceId | "community";
 let current: Page = "design";
+/** The workspace shown last, where Community goes back to when pressed again. */
+let lastWorkspace: WorkspaceId = "design";
 
 // Warm workspaces (X7). Each pane has four slots, found by id
 // (#toolbar or #split-toolbar…; the timeline row along the bottom from
@@ -306,6 +308,7 @@ function showPage(page: Page) {
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
+  if (workspace) lastWorkspace = workspace.id;
   if (swap) {
     if (swap === "community") closeSplit();
     else mountSplit(swap);
@@ -316,7 +319,8 @@ function showPage(page: Page) {
   if (location.hash !== `#${page}`) history.replaceState(null, "", `#${page}`);
 }
 
-$("community").addEventListener("click", () => show("community"));
+// Community pressed again closes it, back to the workspace it was opened from (like AI and Guide).
+$("community").addEventListener("click", () => show(current === "community" ? lastWorkspace : "community"));
 
 // Split view (X3): Split (over the viewport, wide screens only) puts a
 // second workspace beside the first; the choice in its pane changes which;
@@ -925,6 +929,9 @@ $("settings-open").addEventListener("click", () => {
 settingsDialog.addEventListener("click", (e) => {
   if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
 });
+// Optional accounts (accounts.config.mjs): with the switch off, the build has no account code and contacts no service.
+declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
+if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCOUNTS__!));
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
