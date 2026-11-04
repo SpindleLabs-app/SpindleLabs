@@ -4,6 +4,7 @@
 // the browser alone, so Settings works offline with no account; storage that
 // is off or full never throws, the settings just don't stick.
 
+import { CUSTOM_NAMES, DEFAULT_CUSTOM, parseHex, toHex, type CustomColours } from "./custom-theme.ts";
 import { THEME_CHOICES, type ThemeChoice } from "./theme-choice.ts";
 
 export interface SettingsSection {
@@ -68,6 +69,9 @@ export interface SettingsParts {
   /** The stored theme choice and the way to change it (U2a); the Theme row shows only when both are given. */
   theme?: ThemeChoice;
   onTheme?: (choice: ThemeChoice) => void;
+  /** The Custom theme's three colours and the way to change them; applies at once and returns what it adjusted, in words (Ben, 2026-11-04). */
+  custom?: CustomColours;
+  onCustom?: (colours: CustomColours) => string[];
 }
 
 /** Fill the dialog: a header with Close, then one card per section. */
@@ -115,6 +119,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
         }
         themeRow.append(el("span", undefined, "Theme"), group);
         card.append(themeRow);
+        if (parts.custom && parts.onCustom) card.append(customBlock(el, parts.custom, parts.onCustom, () => group.querySelector<HTMLElement>('[aria-checked="true"]')?.dataset.choice ?? "", group));
       }
       const row = el("div", "settings-row");
       const label = el("span", undefined, "Keyboard shortcuts");
@@ -134,4 +139,70 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
     body.append(card);
   }
   dialog.replaceChildren(header, body);
+}
+
+type El = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => HTMLElementTagNameMap[K];
+
+/** The Custom theme's block: a colour picker and a hex box for each of primary, secondary and highlight, what was adjusted, and Reset. Shown while Custom is the chosen theme. */
+function customBlock(el: El, start: CustomColours, apply: (c: CustomColours) => string[], chosen: () => string, group: HTMLElement): HTMLElement {
+  const block = el("div", "settings-custom");
+  const colours: CustomColours = { ...start };
+  const notes = el("p", "settings-custom-notes");
+  notes.setAttribute("role", "status");
+  const inputs = new Map<keyof CustomColours, { picker: HTMLInputElement; hex: HTMLInputElement }>();
+  const send = () => {
+    notes.textContent = apply({ ...colours }).join(" ");
+  };
+  const hint: Record<keyof CustomColours, string> = { primary: "the page and panels", secondary: "the 3D view's sky and ground", highlight: "what is chosen, like the tool you picked" };
+  for (const key of ["primary", "secondary", "highlight"] as const) {
+    const row = el("label", "settings-row settings-custom-row");
+    row.dataset.colour = key;
+    const name = el("span", undefined, CUSTOM_NAMES[key]);
+    name.append(el("small", "settings-custom-hint", ` ${hint[key]}`));
+    const picker = el("input", "settings-custom-picker");
+    picker.type = "color";
+    picker.value = toHex(parseHex(colours[key]) ?? parseHex(DEFAULT_CUSTOM[key])!);
+    picker.setAttribute("aria-label", `${CUSTOM_NAMES[key]} colour`);
+    const hex = el("input", "settings-custom-hex");
+    hex.type = "text";
+    hex.value = colours[key];
+    hex.maxLength = 7;
+    hex.spellcheck = false;
+    hex.setAttribute("aria-label", `${CUSTOM_NAMES[key]} hex`);
+    picker.addEventListener("input", () => {
+      hex.value = picker.value;
+      colours[key] = picker.value;
+      send();
+    });
+    // A hex typed in applies once it is a whole colour; a half-typed one waits.
+    hex.addEventListener("input", () => {
+      const rgb = parseHex(hex.value);
+      if (!rgb) return;
+      colours[key] = toHex(rgb);
+      picker.value = colours[key];
+      send();
+    });
+    hex.addEventListener("change", () => {
+      if (!parseHex(hex.value)) notes.textContent = `${CUSTOM_NAMES[key]} "${hex.value}" is not a hex colour (like #1a2b3c); the last good one is kept.`;
+    });
+    inputs.set(key, { picker, hex });
+    row.append(name, picker, hex);
+    block.append(row);
+  }
+  const reset = el("button", "settings-action", "Reset to standard");
+  reset.type = "button";
+  reset.addEventListener("click", () => {
+    for (const [key, { picker, hex }] of inputs) {
+      colours[key] = DEFAULT_CUSTOM[key];
+      picker.value = DEFAULT_CUSTOM[key];
+      hex.value = DEFAULT_CUSTOM[key];
+    }
+    send();
+  });
+  block.append(notes, reset);
+  const show = () => (block.hidden = chosen() !== "custom");
+  show();
+  // The choice buttons are in `group`: follow them.
+  new (group.ownerDocument.defaultView?.MutationObserver ?? MutationObserver)(show).observe(group, { attributes: true, subtree: true, attributeFilter: ["aria-checked"] });
+  return block;
 }
