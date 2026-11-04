@@ -29,7 +29,7 @@ test("setViewTheme copies a palette over the live colours, and dark puts every o
   const stop = onViewTheme((t) => seen.push(t));
   setViewTheme("light");
   assert.equal(viewTheme(), "light");
-  assert.deepEqual(backdropAt(0), [243, 246, 251]); // the top row of the light sky
+  assert.deepEqual(backdropAt(0), [234, 244, 255]); // the top row of the light sky
   assert.equal(SKETCH_COLOURS.line, PALETTES.light.sketch.line);
   assert.equal(BUILD_AREA_COLOURS.outside, PALETTES.light.buildArea.outside);
   assert.equal(GROUND_GRID.centre, PALETTES.light.ground.centre);
@@ -44,11 +44,11 @@ test("setViewTheme copies a palette over the live colours, and dark puts every o
 });
 
 test("light: every sketch and grid line reads on the sky's middle at 3 : 1 or better (hand-worked for the sketch line)", () => {
-  const middle: Rgb = [(243 + 203) / 2, (246 + 212) / 2, (251 + 226) / 2]; // (223, 229, 238.5)
+  const middle: Rgb = [(234 + 176) / 2, (244 + 208) / 2, (255 + 244) / 2]; // (205, 226, 249.5)
   // The sketch line 0x0b6fcf = (11, 111, 207): linear (0.0033, 0.1589, 0.6239), luminance 0.0007 + 0.1136 + 0.0450 = 0.1593.
-  // The sky's middle: linear (0.7379, 0.7835, 0.8546), luminance 0.1569 + 0.5604 + 0.0617 = 0.7790.
-  // (0.7790 + 0.05) / (0.1593 + 0.05) = 3.96.
-  assert.ok(Math.abs(contrast(hex(PALETTES.light.sketch.line), middle) - 3.96) < 0.1, `${contrast(hex(PALETTES.light.sketch.line), middle)}`);
+  // The sky's middle: linear (0.6105, 0.7605, 0.9516), luminance 0.1298 + 0.5439 + 0.0687 = 0.7424.
+  // (0.7424 + 0.05) / (0.1593 + 0.05) = 3.78.
+  assert.ok(Math.abs(contrast(hex(PALETTES.light.sketch.line), middle) - 3.78) < 0.1, `${contrast(hex(PALETTES.light.sketch.line), middle)}`);
   const weak: string[] = [];
   for (const [name, value] of Object.entries(PALETTES.light.sketch)) {
     if (["grid", "hover", "planeOff"].includes(name)) continue; // the grid is meant to be faint; hover is a light tint on purpose; the quiet plane is
