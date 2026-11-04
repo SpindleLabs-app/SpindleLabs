@@ -61,6 +61,34 @@ test("kernelFailure keeps the kernel's kind, inputs and message", () => {
   assert.equal(String(e), "Error: width must be between 0.001 and 1000000 mm, got -1");
 });
 
+test("a thin result keeps its kind and the places it is too thin", () => {
+  // What the kernel throws since step 36c3 when a boolean's result would have a wall, gap or
+  // step thinner than 0.001 mm or an edge shorter: kind "thin-result" and `thin`, each an
+  // edge (its two ends) or a gap (the nearest points of its two sides), in world mm.
+  const message = "it would leave a gap or sliver thinner than 1 µm: an edge 5e-4 mm long, from [0, 0, 0] to [0.0005, 0, 0]";
+  const thin = [
+    { at: "edge", from: [0, 0, 0], to: [0.0005, 0, 0] },
+    { at: "gap", from: [2, 2, 0.0009], to: [2, 2, 0] },
+  ];
+  const failure = kernelFailure(Object.assign(new Error(message), { kind: "thin-result", inputs: [], thin }));
+  assert.deepEqual(failure, { kind: "thin-result", inputs: [], message, thin });
+  const e = new KernelError(failure);
+  assert.equal(e.kind, "thin-result");
+  assert.deepEqual(e.thin, thin);
+  assert.deepEqual(e.touches, []);
+  // A place that isn't one (a point of two numbers, a word, an `at` that is a corner or
+  // unknown, a number that isn't finite) is left out; the rest are kept.
+  const odd = [{ at: "gap", from: [1, 1], to: [1, 1, 1] }, "gap", { at: "corner", from: [0, 0, 0], to: [0, 0, 1] }, { at: "edge", from: [0, NaN, 0], to: [0, 0, 1] }, { at: "gap", from: [3, 4, 5], to: [3, 4, 5.0005] }];
+  assert.deepEqual(kernelFailure(Object.assign(new Error(message), { kind: "thin-result", inputs: [], thin: odd })).thin, [{ at: "gap", from: [3, 4, 5], to: [3, 4, 5.0005] }]);
+  // No list at all: the kind stands with no places.
+  assert.deepEqual(kernelFailure(Object.assign(new Error(message), { kind: "thin-result", inputs: [] })).thin, []);
+  // Every other kind carries no thin places, even if the error had some (a non-manifold
+  // result keeps only its touches).
+  const other = kernelFailure(Object.assign(new Error("x"), { kind: "non-manifold-result", inputs: [], thin }));
+  assert.equal(other.thin, undefined);
+  assert.deepEqual(new KernelError(other).thin, []);
+});
+
 test("a non-manifold result keeps its kind and the places it touches", () => {
   // What the kernel throws since step 36b when a boolean's result would touch itself: kind
   // "non-manifold-result" and `touches`, each an edge (from, to) or a corner, in world mm.
