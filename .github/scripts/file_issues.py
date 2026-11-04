@@ -5,8 +5,8 @@ test-results branch (with the golden models' golden/seed-golden-<seed>/
 golden-report.txt: one kind per failing model, step 28b; and the monkey's
 monkey/seed-monkey-<seed>/monkey-report.txt: one kind per failing seed, hunt 3f), and by collect-fuzz.sh after a "Fuzzing" run (its
 fuzz-<target>/seed-<seed>/fuzz-report.txt: one kind per failure line). Every failure folder the run produced (endless.sh's
-seed-<seed>/: the harness report, the OpenCascade disagreements and
-the devious parts' output) is
+seed-<seed>/: the harness report, the OpenCascade disagreements,
+the devious parts' output and the boolean leg's output and judge, issue #22) is
 reduced to its kinds: a harness failure's kind is the operation and the
 message with every number replaced by #, an oracle disagreement's kind is
 the shape, whether its profile has arcs, and which check failed. So a
@@ -195,6 +195,45 @@ def devious_kinds(output):
     return kinds
 
 
+def boolean_kinds(output):
+    """Kinds in booleans-output.txt (the boolean leg of a random-testing
+    round, issue #22): the boolean chains' failing cases, read like the
+    harness's report.txt; and every test that panicked with a message no
+    case line explains, named by its test with the numbers taken out."""
+    kinds = [(f"boolean chains, {k.removeprefix('harness, ')}", line) for k, line in harness_kinds(output)]
+    lines = output.splitlines()
+    for i, line in enumerate(lines):
+        m = re.match(r"thread '([^']+)'.* panicked at ", line)
+        if not m:
+            continue
+        after = [l.rstrip() for l in lines[i + 1:i + 6] if l.strip() and not l.startswith("note: run with")]
+        msg = after[0].strip() if after else ""
+        if kinds and msg.startswith("Stateful kernel test:"):
+            continue  # the chains' own summary: their cases are kinds already
+        kinds.append((f"boolean test {m.group(1)}: {numbers_out(msg).strip()[:150]}", "\n".join([line] + after[:4])))
+    return kinds
+
+
+def judge_kinds(judge):
+    """Kinds in booleans-judge.txt (the judge's verdict on the kernel's
+    boolean answers, issue #22): one per indented 'line N (<family and
+    case> at <size>, <op>): <what differs>' line, the size and numbers
+    taken out (a case's own too), so
+    one disagreement at every scale is one kind."""
+    kinds = []
+    for line in judge.splitlines():
+        m = re.match(r"\s+line \d+ \((.+?)(?: at [^,]+)?, (\w+)\): (.*)$", line)
+        if m:
+            what = f"{numbers_out(m.group(1))}, {m.group(2)}: {numbers_out(m.group(3)).strip()}"[:150]
+            kinds.append((f"boolean judge disagrees, {what}", line.strip()))
+    return kinds
+
+
+# The output each leg of a round leaves when it fails, read for a crash
+# without a report: the leg that failed, not the harness that passed.
+LEG_OUTPUTS = (("booleans-output.txt", "boolean tests"), ("devious-output.txt", "devious parts"), ("harness-output.txt", "harness"))
+
+
 def kinds_of(folder_files):
     """{kind: example} for one failure folder, given {file name: text}."""
     found = []
@@ -210,10 +249,17 @@ def kinds_of(folder_files):
         found += oracle_kinds(folder_files["oracle-disagreements.txt"])
     if "devious-output.txt" in folder_files:
         found += devious_kinds(folder_files["devious-output.txt"])
-    if not found and "harness-output.txt" in folder_files:
-        # The harness died before writing a report (a crash outside a case).
-        tail = [l for l in folder_files["harness-output.txt"].splitlines() if l.strip()][-3:]
-        found.append(("harness crashed without a report", "\n".join(tail)))
+    if "booleans-output.txt" in folder_files:
+        found += boolean_kinds(folder_files["booleans-output.txt"])
+    if "booleans-judge.txt" in folder_files:
+        found += judge_kinds(folder_files["booleans-judge.txt"])
+    # A leg died before writing a report (a crash outside a case): the
+    # first leg in LEG_OUTPUTS whose output is there (each but the
+    # harness's is kept only when that leg failed).
+    leg = next((l for l in LEG_OUTPUTS if l[0] in folder_files), None)
+    if not found and leg:
+        tail = [l for l in folder_files[leg[0]].splitlines() if l.strip()][-3:]
+        found.append((f"{leg[1]} crashed without a report", "\n".join(tail)))
     out = {}
     for kind, example in found:
         out.setdefault(kind, example)
@@ -529,6 +575,26 @@ def texts(action, kind, hits, run_url, commit, branch):
             "main reopens it; one closed as not planned is not reported again."
         )
         return f"Devious parts: {kind.removeprefix('devious part ').removeprefix('devious ')}"[:250], body
+    if action == "create" and kind.startswith("boolean "):
+        body = (
+            f"{MARK.format(key(kind))}\n"
+            f"Random testing's booleans (the boolean chains, the identities and the kernel's answers to the "
+            f"generator's pairs, judged against the exact models) found a new kind of problem ({where}).\n\n"
+            f"**Kind:** {kind}\n\n"
+            f"Example (seed `{seed}`):\n{fenced(example)}\n\n"
+            f"Seen in {len(seeds)} round(s):\n{seed_list(seeds)}\n\n"
+            "Each folder is on the test-results branch: booleans-output.txt is the boolean leg's output (a chain's "
+            "failing case, or the test that panicked), booleans-judge.txt the judge's verdict, the .json file the "
+            "shortest failing chain and failure-dumps/*/index.html the bodies in 3D. Replay in kernel/ with "
+            "`FISSION_SEED=<seed> FISSION_STATEFUL_CASES=2000 cargo test --release --test stateful "
+            "stateful_boolean_chains -- --nocapture`, or `FISSION_SEED=<seed> FISSION_BOOLEAN_SEEDS=1 cargo test "
+            "--release --test boolean_identities --test boolean_answers`. Work out by hand whether the kernel or "
+            "the model is wrong, and keep the case as a test first.\n\n"
+            "Close this issue as completed once it is fixed (with a regression test), or as not planned "
+            "if it is not a SpindleLabs bug (say why in a comment): a kind closed as fixed that comes back on "
+            "main reopens it; one closed as not planned is not reported again."
+        )
+        return f"Random testing (booleans): {kind.removeprefix('boolean ')}"[:250], body
     if action == "create" and kind.startswith("check "):
         body = (
             f"{MARK.format(key(kind))}\n"
@@ -597,7 +663,7 @@ def read_folders(incoming):
             if not (name.startswith("seed-") and os.path.isdir(path)):
                 continue
             files = {}
-            for f in ("report.txt", "oracle-disagreements.txt", "harness-output.txt", "devious-output.txt", "fuzz-report.txt", "golden-report.txt", "monkey-report.txt"):
+            for f in ("report.txt", "oracle-disagreements.txt", "harness-output.txt", "devious-output.txt", "booleans-output.txt", "booleans-judge.txt", "fuzz-report.txt", "golden-report.txt", "monkey-report.txt"):
                 p = os.path.join(path, f)
                 if os.path.isfile(p):
                     with open(p, errors="replace") as fh:
