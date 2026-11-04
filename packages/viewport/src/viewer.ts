@@ -1420,6 +1420,8 @@ export class Viewer implements SharedViewport {
       // The Select tool's: the curve under the pointer lighter, the selected ones lit over it.
       if (d.editing.hover && d.editing.hover.length > 0) segments(d.editing.hover, SKETCH_COLOURS.hover, 3.5);
       if (d.editing.picked && d.editing.picked.length > 0) segments(d.editing.picked, SKETCH_COLOURS.picked, 3.6);
+      if (d.editing.constraints && d.editing.constraints.length > 0) segments(d.editing.constraints, SKETCH_COLOURS.constraint, 3.7);
+      if (d.editing.fighting && d.editing.fighting.length > 0) segments(d.editing.fighting, SKETCH_COLOURS.lost, 3.8);
       if (d.editing.preview.length > 0) segments(d.editing.preview, SKETCH_COLOURS.preview, 4);
       if (d.editing.points.length > 0) {
         const g = new THREE.BufferGeometry();
@@ -1445,6 +1447,8 @@ export class Viewer implements SharedViewport {
     this.element.dataset.sketchPreview = edited ? edited.preview.map((s) => s.map(xy).join(" ")).join(" | ") : "";
     this.element.dataset.sketchSnap = edited?.snap?.label ?? "";
     this.element.dataset.sketchPicked = String(edited?.picked?.length ?? 0);
+    this.element.dataset.sketchConstraints = String(edited?.constraintCount ?? 0);
+    this.element.dataset.sketchFighting = String(edited?.fighting?.length ?? 0);
     this.labelSketches();
   }
 

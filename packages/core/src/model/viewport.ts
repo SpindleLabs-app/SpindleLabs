@@ -88,6 +88,15 @@ export interface SketchDrawing {
     picks?: true;
     picked?: readonly (readonly [SketchXY, SketchXY])[];
     hover?: readonly (readonly [SketchXY, SketchXY])[];
+    /**
+     * The sketch's constraints (step 47d2, Design's constraint-tool.ts): each
+     * one's mark as segments, and `fighting`, the marks and curves of the
+     * constraints and arcs that fought the one just refused, drawn red.
+     * `constraintCount` is how many constraints the sketch holds. Each absent when none.
+     */
+    constraints?: readonly (readonly [SketchXY, SketchXY])[];
+    fighting?: readonly (readonly [SketchXY, SketchXY])[];
+    constraintCount?: number;
   };
 }
 

@@ -13,9 +13,10 @@
 
 import { iconSvg, TOOL_ICON_SIZE, withIcon, type IconName } from "@fission/ui";
 import { SKETCH_TOOLS, type ToolKind } from "./sketch-tool.ts";
+import { CONSTRAINT_TOOLS } from "./constraint-tool.ts";
 
 /** Each sketch tool's icon (U0f). */
-export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select" };
+export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select", horizontal: "horizontal", vertical: "vertical", coincident: "coincident", fix: "fix" };
 
 export interface SketchToolbarEvents {
   /** A tool chosen, from its button or the Create menu. */
@@ -177,6 +178,20 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     on.remove();
   });
   row.append(divider, withIcon(selectButton, "select", TOOL_ICON_SIZE), withIcon(deleteButton, "delete", TOOL_ICON_SIZE));
+  // The constraint tools (step 47d2), after a divider in the same row, so at phone width they wrap with the rest.
+  const constraintDivider = divider.cloneNode() as HTMLElement;
+  const constraintButtons = CONSTRAINT_TOOLS.map((t) => {
+    const b = button(t.label, `sketch-tool-${t.kind}`);
+    b.title = `${t.label} constraint`;
+    b.setAttribute("aria-label", `${t.label} constraint`);
+    b.className = "toolbar-group-tool";
+    b.addEventListener("click", () => {
+      closeMenu();
+      on.tool(t.kind);
+    });
+    return { kind: t.kind as ToolKind, button: b };
+  });
+  row.append(constraintDivider, ...constraintButtons.map((c) => withIcon(c.button, TOOL_ICONS[c.kind], TOOL_ICON_SIZE)));
   const typeButton = button("Type", "sketch-type");
   typeButton.className = "sketchbar-type"; // not a tool: no icon, never pressed
   typeButton.title = "Type a size";
@@ -380,6 +395,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     for (const r of rows) r.item.setAttribute("aria-checked", String(r.kind === kind));
     for (const g of groups) g.item.classList.toggle("sketchbar-menu-holds", g.kinds.includes(kind));
     selectButton.setAttribute("aria-pressed", String(kind === "select"));
+    for (const c of constraintButtons) c.button.setAttribute("aria-pressed", String(c.kind === kind));
   };
   return {
     show(tool) {

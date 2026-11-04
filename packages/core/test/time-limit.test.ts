@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -266,4 +266,15 @@ test("supports cost by the overhangs they hold up, tree supports far more (slice
     const promised = sliceUnits(plateOnColumn(plate, column), layer, 15, style);
     assert.ok(promised >= 2 * needed, `${plate} mm plate on a ${column} mm column at ${layer} mm, ${style}: ${promised.toFixed(0)} units for ${needed} needed`);
   }
+});
+
+test("a sketch solve's units grow with its arcs cubed", () => {
+  // 100 arcs (the most): 6e-4 × 100³ = 600 units, above the 535 ms ÷ 1.76 ms = 304 the costliest took.
+  const arcs = (n: number) => JSON.stringify({ points: [], constraints: Array.from({ length: n }, () => ["arc", 0, 1, 2]) });
+  assert.ok(Math.abs(solveUnits(arcs(100)) - 600) < 1e-9);
+  assert.equal(UNITS_PER_ARC_CUBED * 1e6, 600);
+  // Lines only: no Newton, so the floor alone.
+  assert.equal(solveUnits(JSON.stringify({ points: [[0, 0], [1, 1]], constraints: [["horizontal", 0, 1]] })), 0);
+  assert.equal(callUnits("solve_sketch", [arcs(10)] as never, () => undefined), solveUnits(arcs(10)));
+  assert.equal(callUnits("solve_sketch", [7] as never, () => undefined), 0);
 });
