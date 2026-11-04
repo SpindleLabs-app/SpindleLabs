@@ -8,7 +8,7 @@ import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, typ
 import { saveFile, STL_KIND } from "@fission/ui";
 import { bodyFeatures } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, partFeature, shapeOf, type DesignDocument } from "./document.ts";
-import { endSpec } from "./move-tool.ts";
+import { endSpecs } from "./move-tool.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
@@ -206,7 +206,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
       };
       try {
         const files: StlFile[] = [];
-        for (const f of features) files.push(await ctx.kernel.call("export_stl", await endSpec(ctx.kernel, doc, f), kindOf(f)));
+        // Every body's end at once: one rebuild for all the moved ones, not one each (clumsy hunt 2026-11-04).
+        const specs = await endSpecs(ctx.kernel, doc, features);
+        for (const [i, f] of features.entries()) files.push(await ctx.kernel.call("export_stl", specs[i], kindOf(f)));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
         const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;

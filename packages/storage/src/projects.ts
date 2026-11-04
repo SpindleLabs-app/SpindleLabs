@@ -8,7 +8,7 @@
 //                 the next visit's recovery, bringing the deleted project back.
 
 import { ProjectChangedError, type ProjectStore } from "./store.ts";
-import { NEWER_PREFIX, unsavedKey, type JournalStorage } from "./unsaved.ts";
+import { asideKeysOf, NEWER_PREFIX, unsavedKey, type JournalStorage } from "./unsaved.ts";
 
 /**
  * Stores project `id` again as the store holds it, with its save time `at` (the summary's `modified` when it was
@@ -34,7 +34,13 @@ export async function bringForward(store: ProjectStore, id: string, at: Date): P
  */
 export async function forget(store: ProjectStore, journal: JournalStorage | null, id: string): Promise<void> {
   await store.remove(id);
-  for (const key of [unsavedKey(id), NEWER_PREFIX + id]) {
+  let aside: string[] = [];
+  try {
+    aside = journal ? asideKeysOf(journal, id) : []; // another tab's change to it, put aside (clumsy hunt 2026-11-04)
+  } catch {
+    // storage off: nothing was kept there to come back
+  }
+  for (const key of [unsavedKey(id), NEWER_PREFIX + id, ...aside]) {
     try {
       journal?.removeItem(key);
     } catch {

@@ -12,7 +12,7 @@
 import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, StlFile, SupportStyle } from "@fission/core";
 import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
-import { endSpec } from "./move-tool.ts";
+import { endSpecs } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
 import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
 
@@ -308,7 +308,7 @@ export function stlHighestZ(stl: Uint8Array): number {
 async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = [];
-  for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
+  for (const spec of await endSpecs(kernel, doc, features)) files.push(await kernel.call("export_stl", spec, "body")); // one rebuild for all the moved bodies (clumsy hunt 2026-11-04)
   const height = Math.max(...files.map((f) => stlHighestZ(f.bytes))) - Math.min(...files.map((f) => stlLowestZ(f.bytes)));
   return { stl: stackStl(files.map((f) => f.bytes)), note: levelNoteOf(files.map((f) => f.bytes)), height };
 }

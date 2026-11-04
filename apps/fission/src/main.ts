@@ -1058,7 +1058,21 @@ if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCO
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
+// An OK the kernel still checks (Extrude, Move, Edit feature) is held in the history: Undo or Redo pressed meanwhile
+// waits for it, in the order pressed, so it takes back that OK and not the step before (clumsy hunt 2026-11-04).
+let pressesWaiting = 0;
+let pressed: Promise<void> = Promise.resolve();
 function undoRedo(which: "undo" | "redo") {
+  if (pressesWaiting === 0 && !ctx.history.busy()) return undoRedoNow(which);
+  pressesWaiting++;
+  pressed = pressed
+    .then(() => ctx.history.whenIdle())
+    .then(() => {
+      pressesWaiting--;
+      undoRedoNow(which);
+    });
+}
+function undoRedoNow(which: "undo" | "redo") {
   try {
     ctx.history[which]();
   } catch (e) {
