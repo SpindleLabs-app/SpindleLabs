@@ -208,6 +208,7 @@ The kernel's boolean substeps and their design notes are in the private kernel r
   - [x] 35e2i. An edited Move's bodies can be changed (the 35e2b leftover): with Edit feature open on a Move its bodies are picked as a new Move's are, so a click in the view or on a Bodies row puts one in or takes it out (`workspace.ts` `picksBodies`, `pickMoveBodies`; `move-tool.ts` `editedBodies` keeps the hidden or unbuilt bodies it holds, which can't be clicked); a body made after the Move is let go with "Box 2 is made after Move 1 in the timeline, so Move 1 can't move it." (`move.ts` `madeAfter`); the preview draws a body taken out back where it was before the Move and one put in moved (`editedMoveMesh(…, bodies)`); OK changes the Move's bodies, their names and its words as one undo step (`changedMove(…, bodies)`, refused with every body taken out). Checked: `workspaces/design/test/move-bodies.test.ts` (the change, its refusals, the preview and the picks by hand; 2,000 seeded chains against the chain built again), `move.journey.ts` (real kernel by hand, a later Move still applied; the app: put in from a Bodies row, taken out and refused from the view, preview point for point what OK builds, Undo; every body taken out), the timeline sessions (`set-move` now changes bodies a time in three; the model's `move-bodies-kept` and its Design plant caught), `apps/fission/e2e/move-bodies.mjs` (1280 mouse, 375 taps: the STL by hand). Planted: an edited Move not picking, OK or the preview ignoring the picks, the picks kept after, the refusal silent, the preview's take-out and put-in steps, later bodies allowed, hidden ones dropped, `dependsOn` unchanged: all caught (the first also in the browser at both widths). Next: the phone check of Finish Extrude at 0 (35e2j), then snapping onto curved faces (35e2k).
   - [x] 35e2j. Finish Extrude at 0 on a phone (the 35e2g follow-up): with the Properties sheet shut, a tap on the bar's Finish Extrude at 0 mm shows "Drag the arrow or type a distance first…" on the bar itself, makes nothing and leaves Extrude open (already so: `phone-float.ts` shows the panel's error on the bar). Checked: `e2e/extrude.mjs`'s 375 px check taps `#float-finish` at 0 and reads `#float-why`; with the bar's Extrude error list emptied it fails at 375 px (planted, caught). Next: snapping onto curved faces (35e2k): a cylinder or arc-side face by its axis (the line through the centres of its round edges), landing on another axis; a sphere face by its centre (its round edge's centre), landing on a centre; `move-snap.ts` `snapPart` in place of `SNAP_CURVED_FACE`.
   - [x] 35e2k. Snap onto curved faces (the 35e2d leftover): Move's Snap now takes a round side (a cylinder's side, or the round end of a slot or any arc's side) by its axis, the line through the centres of its round edges, middle on middle, and lays it along another round side's axis, coaxial, the way a shaft goes into a hole; a sphere snaps by its centre (its equator's centre) onto another sphere's, without turning. Each kind lands only on its own kind, refused in words otherwise ("A sphere lands only on a sphere: pick one on another body."); a curved face with nothing to find its axis or centre by is still refused (`move-snap.ts` `roundSide`, `sphereCentre`, `snapPart`, `snappedValues`). Checked: `workspaces/design/test/move-snap.test.ts` (by hand: an upright cylinder's side along a lying one, 90° about Y, middle on middle; a slanted axis either way round, 45°; a slot's arc side by its farthest arcs, not its centroid; a sphere onto a sphere with the boxes' 30° kept; the refusals; 2,000 seeded snaps now over all five kinds), `move-snap.journey.ts` (the app on the real kernel: a slot's round end along a lying cylinder, a ball into a ball and a ball onto a flat face refused, by hand; 100 seeded snaps of boxes, cylinders, slots and spheres built by the kernel), `e2e/move-drag.mjs` (a file with a lying cylinder and a slot: the end snapped onto the side at 1280 mouse and 375 finger, boxes and STL worked by hand). Planted: nearest arcs instead of farthest, any round edge as a sphere's equator, the sphere's turn dropped, the axis's sign not evened out, the first centre instead of the middle, spheres not handled, round sides refused: all caught (the last also in the browser at both widths). Next: Combine (35f) when Ben decides.
+- [ ] 35e2l. Measure, moved to right after Combine (owner's order, 2026-11-03; day-sized plan chunk 4a). Duplicate and Mirror stay where they are.
 - [ ] 35f. The Combine tool: a panel (target body, tool bodies, Join, Cut or Intersect, Keep tools off by default as in Fusion), a timeline feature like any other, its refusals in words on its row; browser checks at 1280 and 375 px.
 
 ## Testing catch-up after step 22 (TC1–TC5)
@@ -246,6 +247,8 @@ Combine (35f, 35g)
 2. 35f2a+35f3. The safety net on every result, and the "Report this problem" design: 10 h
 3. 35f4+35f2. Fusion hand tests with Ben, and the Fusion 360 Gallery replay (replaces L1): 18 h
 4. 35g+L3. Combine bug hunt, and the second outside oracle on cases with nothing touching: 22 h
+4a. 35e2l. Measure (owner's order, 2026-11-03: right after Combine): distance between two points, edges or faces and the angle between two, in words, a timeline-free tool with its panel, browser checks at 1280 and 375 px: 14 h
+4b. 35f6. Report a bug, built from the 35f3 design (owner's ask, 2026-11-03; before the quiet beta, roadmap B1): offered on any kernel failure or refusal and whenever the user doubts a result; holds the bodies involved, the timeline steps, the app and kernel versions and the user's description; the user sees exactly what is sent and agrees first; reports go somewhere private: 16 h
 - 35f5 (public Combine) is a gate, not a chunk: it waits on 36a, 36c2, a long clean streak of nightlies and Ben's yes.
 
 Faces on faces (36)
@@ -304,16 +307,18 @@ Chamfer and fillets (44, 45, 46)
 49. 46d. The fillet hunt (major step): 20 h
 - 46e (the free-form fillet surface) only if Ben wants fillets complete before 47: 46e1 and 46e2, 22 h each.
 
-Fillets done: 49 chunks, about 870 hours, plus 15% for blow-ups, about 42 days of round-the-clock work from the start of chunk 1 (the primary roadmap thread runs day and night; waiting on Ben or a usage slow-down adds to it).
+Added on 2026-11-04 (owner's asks): 4a and 4b, 30 hours, which moves fillets about a day and a half later. Fillets done: 49 chunks, about 870 hours, plus 15% for blow-ups, about 42 days of round-the-clock work from the start of chunk 1 (the primary roadmap thread runs day and night; waiting on Ben or a usage slow-down adds to it).
 
 After fillets (rougher; resized when 46 is done)
 - 47a. Solver test harness and hand-worked sketches, before any solver code: 16 h
 - 47b. Solver core: coincident, horizontal, vertical: 20 h
 - 47c. Thousands of seeded random sketches against the SolveSpace oracle: 18 h
 - 47d. Planted solver bugs the tests must catch, and drag tests in the browser: 16 h
+- 47e. Editable dimensions, moved up from 50 (owner's order, 2026-11-03): 16 h
+- 47f. Construction lines (new, owner's ask, 2026-11-03): 12 h
 - 48. Profile detection: 16 h
 - 49. Parallel, perpendicular, equal, tangent: 18 h
-- 50+51. Editable dimensions and constraint status colours: 20 h
+- 51. Constraint status colours (dimensions moved up to 47e): 10 h
 - 52a. Trim, extend and mirror: 16 h
 - 52b. Offset: 20 h
 - 53a. Extrude symmetric and to-face: 14 h
