@@ -165,7 +165,8 @@ function modelDrag(m: Model, k: number, p: number, editing: string | null): [Mod
   if (from > to) return [m, { kind: "refused", message: `${item.name} can't go before ${items[from].name}: it is built from ${items[from].name}` }];
   const user = items.findIndex((i, j) => j < to && i.uses === item.id);
   if (user >= 0) return [m, { kind: "refused", message: `${item.name} can't go after ${items[user].name}: ${items[user].name} is built from it` }];
-  const next = { ...m, items };
+  // The marker stays in its gap (owner's decision 2026-11-04): off the item dragged, onto the one before it, or the start.
+  const next = { items, marker: m.marker === item.id ? (k === 0 ? "start" : m.items[k - 1].id) : m.marker };
   const no = rollsBack(next, editing);
   if (no) return [m, { kind: "refused", message: no }];
   return [next, { kind: "edit", step: `Move ${item.name} in the timeline` }];
