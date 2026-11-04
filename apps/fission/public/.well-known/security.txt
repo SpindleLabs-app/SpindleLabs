@@ -1,0 +1,6 @@
+# How to report a security problem in SpindleLabs (RFC 9116).
+# Please email us privately first, and give us a chance to fix it before telling anyone else.
+Contact: mailto:ben@spindlelabs.app
+Expires: 2027-10-31T16:00:00.000Z
+Preferred-Languages: en
+Canonical: https://spindlelabs.app/.well-known/security.txt
