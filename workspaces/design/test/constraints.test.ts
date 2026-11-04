@@ -13,7 +13,7 @@ import { seeded } from "../../../packages/testing/src/index.ts";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { addConstraint, deleteConstraint, lineEnds, MIN_FEATURE, readAnswer, solverRequest, type Added, type NewConstraint } from "../src/constraints.ts";
 import { partDocument, readDesignDocument, type DesignDocument, type Sketch, type SketchConstraint } from "../src/document.ts";
-import { addSketch, deleteCurve, drawArc, drawLine } from "../src/sketch.ts";
+import { addSketch, deleteCurve, drawArc, drawLine, projectEdges } from "../src/sketch.ts";
 
 const kernel = nodeKernel();
 const LINEAR = 1e-5;
@@ -181,21 +181,47 @@ test("constraints are saved and read back; a file's bad constraints are refused 
   const h = ok(await addConstraint(kernel, doc, id, { kind: "horizontal", a: "point-3", b: "point-4" }));
   const read = readDesignDocument(JSON.parse(JSON.stringify(h.doc)));
   assert.deepEqual(sketchOf(read, id).constraints, sketchOf(h.doc, id).constraints);
-  const withList = (list: unknown[]) => {
+  // Constraint ids are the document's ids (47d4 review): shaped as Design makes them and under the counter, so these
+  // lists' ids are constraint-100 on, with the counter moved above them.
+  const withList = (list: unknown[], change: (raw: DesignDocument) => void = () => {}) => {
     const raw = JSON.parse(JSON.stringify(h.doc));
     raw.sketches.find((s: Sketch) => s.id === id).constraints = list;
+    raw.nextId = 10_000;
+    change(raw);
     return () => readDesignDocument(raw);
   };
-  assert.throws(withList([{ id: "c", kind: "tangent", a: "point-3", b: "point-4" }]), /constraint c is a tangent, which this SpindleLabs can.t read yet/);
-  assert.throws(withList([{ id: "c", kind: "fix", point: "point-9" }]), /constraint c fixes point-9, which is not one of the sketch's points/);
-  assert.throws(withList([{ id: "c", kind: "vertical", a: "point-3", b: "point-3" }]), /joins point point-3 to itself/);
-  assert.throws(withList([{ id: "c", kind: "vertical", a: "point-3" }]), /names undefined|names .*not one of/);
+  assert.throws(withList([{ id: "constraint-100", kind: "tangent", a: "point-3", b: "point-4" }]), /constraint constraint-100 is a tangent, which this SpindleLabs can.t read yet/);
+  assert.throws(withList([{ id: "constraint-100", kind: "fix", point: "point-9" }]), /constraint constraint-100 fixes point-9, which is not one of the sketch's points/);
+  assert.throws(withList([{ id: "constraint-100", kind: "vertical", a: "point-3", b: "point-3" }]), /joins point point-3 to itself/);
+  assert.throws(withList([{ id: "constraint-100", kind: "vertical", a: "point-3" }]), /names undefined|names .*not one of/);
   assert.throws(withList([{ kind: "fix", point: "point-3" }]), /constraint 1 has no id/);
-  assert.throws(withList([{ id: "c", kind: "fix", point: "point-3" }, { id: "c", kind: "fix", point: "point-4" }]), /two constraints are called c$/);
+  assert.throws(withList([{ id: "constraint-100", kind: "fix", point: "point-3" }, { id: "constraint-100", kind: "fix", point: "point-4" }]), /two constraints are called constraint-100$/);
   // 8,000 constraints is the solver's limit; one more is refused.
-  const many = (n: number) => Array.from({ length: n }, (_, k) => ({ id: `c${k}`, kind: "fix", point: "point-3" }));
+  const many = (n: number) => Array.from({ length: n }, (_, k) => ({ id: `constraint-${100 + k}`, kind: "fix", point: "point-3" }));
   assert.doesNotThrow(withList(many(8000)));
   assert.throws(withList(many(8001)), /8001 constraints, more than the 8000/);
+  // Regressions (47d4 review). An id at the counter: a new constraint would repeat it, and the design would never open again.
+  const fix = (cid: string) => [{ id: cid, kind: "fix", point: "point-3" }];
+  assert.throws(withList(fix("constraint-9"), (raw) => void (raw.nextId = 9)), /nextId 9 is not above constraint-9/);
+  // An id another object has (Select's Delete took the line with it), and ids no Design object has.
+  assert.throws(withList(fix("line-5")), /Design id line-5 is used twice/);
+  for (const bad of ["__proto__", ""]) assert.throws(withList(fix(bad)), /is not shaped like Design's ids/);
+  // On a point pinned to a body's edge, or made by a projection: a body's edit moves it without a solve.
+  const pinned = (raw: DesignDocument) => {
+    raw.sketches.find((s) => s.id === id)!.pins = [{ point: "point-3", kind: "endpoint", name: "v1", feature: "feature-1" } as never];
+    const item = raw.timeline.features.find((f) => f.id === id)!;
+    item.dependsOn = [...new Set([...item.dependsOn, "feature-1"])];
+  };
+  assert.doesNotThrow(withList([], pinned), "the pinned file itself opens");
+  assert.throws(withList(fix("constraint-100"), pinned), /constraint constraint-100 names point-3, which follows a body's edge/);
+  // A projected line (27d), made by projectEdges, and a constraint on its end.
+  const projected = projectEdges(h.doc, id, [{ feature: "feature-1", edge: "front+top", shape: { kind: "line", a: [0, 10], b: [10, 10] } }]).doc;
+  const made = sketchOf(projected, id).points.at(-1)!.id;
+  const raw = JSON.parse(JSON.stringify(projected));
+  assert.doesNotThrow(() => readDesignDocument(JSON.parse(JSON.stringify(raw))), "the projected file itself opens");
+  raw.sketches.find((s: Sketch) => s.id === id).constraints.push({ id: `constraint-${raw.nextId}`, kind: "fix", point: made });
+  raw.nextId++;
+  assert.throws(() => readDesignDocument(raw), new RegExp(`names ${made}, which follows a body's edge`));
 });
 
 /** Every constraint of the sketch holds at its points: horizontal and vertical exactly (one group), coincident exactly, fix where it was fixed. */
