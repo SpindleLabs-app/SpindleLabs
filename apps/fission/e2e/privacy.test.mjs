@@ -76,3 +76,7 @@ test("the check can fail: a page missing a service, or an unlisted address, is c
   assert.equal(covered("tracker.example.net", CONTACTED) || NOT_CONTACTED.some((n) => n.host === "tracker.example.net"), false);
   assert.equal(covered("eu.api.anthropic.com", CONTACTED), true); // a subdomain of a named service counts as that service
 });
+
+test("the privacy page has no unfilled blanks", () => {
+  assert.equal(/\{\{|\}\}/.test(page), false, "privacy.html still has a {{…}} blank to fill");
+});
