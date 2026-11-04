@@ -11,7 +11,7 @@ import { bodyFeatures } from "../src/browser.ts";
 import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
-import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -598,6 +598,34 @@ test("a refusal is put in words a beginner can act on, worked by hand", () => {
   assert.equal(refusalWords("layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"), "The part is about 256.2 mm tall, and the P1S prints up to 256 mm. Make it shorter or split it into pieces.");
   // Anything else is kept.
   assert.equal(refusalWords("something else broke"), "Something else broke");
+});
+
+test("a part too tall for the P1S is called by its own height, not by the first layer over the limit (slicer hunt 11-04, ui 2)", async () => {
+  // Given the part's height, the words use it: a box from z 0 to 400 is 400 mm tall, whatever layer the engine names.
+  assert.equal(refusalWords("layer 1280 reaches z = 256.2 mm, above the printer's 256 mm", 400), "The part is 400 mm tall, and the P1S prints up to 256 mm. Make it shorter or split it into pieces.");
+  // On the shipped build: boxes 260, 300 and 400 mm tall (from z 0, so the height is the box's) are each called by theirs.
+  const kernel = nodeKernel();
+  for (const h of [260, 300, 400]) {
+    const doc = partDocument("box", 20, 20, h);
+    let words = "";
+    await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured").then(
+      () => assert.fail(`${h} mm sliced`),
+      (e) => (words = refusalOf(e)),
+    );
+    assert.equal(words, `The part is ${h} mm tall, and the P1S prints up to 256 mm. Make it shorter or split it into pieces.`);
+  }
+  // The plain slice says the same.
+  const doc = partDocument("box", 20, 20, 300);
+  await assert.rejects(sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS), (e) => (assert.match(refusalOf(e), /^The part is 300 mm tall/), true));
+  // Anything that is not an Error is put in words too.
+  assert.equal(refusalOf("plain words"), "Plain words");
+  // The dialog says it: Slice and download on a 300 mm box, its slice the shipped build's.
+  const t = dialog(async (c) => ({ print: await printFileOf(kernel, doc, bodyFeatures(doc), c, "textured"), saved: true }));
+  t.d.ask();
+  t.$("slice-print-go").click();
+  for (let i = 0; i < 200 && !/tall/.test(t.$("slice-print-status").textContent ?? ""); i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(t.$("slice-print-status").textContent, "The part is 300 mm tall, and the P1S prints up to 256 mm. Make it shorter or split it into pieces.");
+  await t.window.happyDOM.close();
 });
 
 test("closing the dialog drops a slice still running: nothing is saved; reopened, it still says Slicing… and the buttons stay off", async () => {

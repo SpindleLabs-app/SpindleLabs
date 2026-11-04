@@ -182,24 +182,55 @@ export function levelNote(lowest: readonly number[]): string {
   return `Body ${at + 1} starts ${gap} mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.`;
 }
 
-/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, and the note on their heights. */
-async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string }> {
+/** The highest z in a binary STL, as stlLowestZ reads it; NaN when it holds no triangle. */
+export function stlHighestZ(stl: Uint8Array): number {
+  const view = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+  const count = stl.length >= 84 ? Math.min(view.getUint32(80, true), Math.floor((stl.length - 84) / 50)) : 0;
+  let high = -Infinity;
+  for (let t = 0; t < count; t++) {
+    for (let c = 0; c < 3; c++) high = Math.max(high, view.getFloat32(84 + t * 50 + 12 + c * 12 + 8, true));
+  }
+  return count > 0 ? high : NaN;
+}
+
+/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, the note on their heights, and how tall they are together. */
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = [];
   for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
-  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNote(files.map((f) => stlLowestZ(f.bytes))) };
+  const height = Math.max(...files.map((f) => stlHighestZ(f.bytes))) - Math.min(...files.map((f) => stlLowestZ(f.bytes)));
+  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNote(files.map((f) => stlLowestZ(f.bytes))), height };
+}
+
+/** The height of the bodies a refusal was for (slicer hunt 2026-11-04, ui 2), so its words can say how tall the part really is. */
+const refusedHeights = new WeakMap<object, number>();
+
+/** Calls the engine; a refusal remembers the bodies' height for refusalOf. */
+async function engine<T>(height: number, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (e) {
+    if (typeof e === "object" && e !== null && Number.isFinite(height)) refusedHeights.set(e, height);
+    throw e;
+  }
+}
+
+/** A failed slice in words for the dialog: refusalWords of its message, with the part's own height when the engine said it is too tall. */
+export function refusalOf(e: unknown): string {
+  const height = typeof e === "object" && e !== null ? refusedHeights.get(e) : undefined;
+  return refusalWords(e instanceof Error ? e.message : String(e), height);
 }
 
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
 export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
-  const { stl, note } = await bodiesStl(kernel, doc, features);
-  return { ...(await kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip)), levelNote: note };
+  const { stl, note, height } = await bodiesStl(kernel, doc, features);
+  return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note };
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
 export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
-  const { stl, note } = await bodiesStl(kernel, doc, features);
-  return { ...(await kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip)), levelNote: note };
+  const { stl, note, height } = await bodiesStl(kernel, doc, features);
+  return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note };
 }
 
 /**
@@ -248,9 +279,9 @@ export class SliceDropped extends Error {
 /**
  * The engine's refusal in words for a beginner: "the part ... runs from (-22, 118) to (278, 138), off the 256 × 256 mm bed"
  * becomes how wide the part is and what the plate takes; "layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"
- * becomes how tall; "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do. Any other message is kept, starting with a capital.
+ * becomes how tall (the part's `height` when known, else about the layer's); "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do. Any other message is kept, starting with a capital.
  */
-export function refusalWords(message: string): string {
+export function refusalWords(message: string, height?: number): string {
   const across = /runs from \((-?[\d.]+), (-?[\d.]+)\) to \((-?[\d.]+), (-?[\d.]+)\), off the (\d+) × (\d+) mm bed/.exec(message);
   if (across) {
     const [w, d] = [Number(across[3]) - Number(across[1]), Number(across[4]) - Number(across[2])];
@@ -258,6 +289,8 @@ export function refusalWords(message: string): string {
     return `The part is ${Math.round(wide * 10) / 10} mm ${w >= d ? "wide" : "deep"}, and the P1S's plate takes ${across[5]} × ${across[6]} mm. Make it smaller or split it into pieces.`;
   }
   const tall = /reaches z = ([\d.]+) mm, above the printer's ([\d.]+) mm/.exec(message);
+  // The engine names the first layer over the limit, not the part's top: given the part's height, say that (slicer hunt 2026-11-04, ui 2).
+  if (tall && height !== undefined && Number.isFinite(height) && height > 0) return `The part is ${Math.round(height * 10) / 10} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
   if (tall) return `The part is about ${tall[1]} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
   const air = /starts in mid-air at z = (-?[\d.]+) mm, around \((-?[\d.]+), (-?[\d.]+)\), with nothing under it/.exec(message);
   if (air) return `Part of the model hangs in the air ${air[1]} mm above the plate, around (${air[2]}, ${air[3]}) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.`;
@@ -585,7 +618,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     } catch (e) {
       end();
       if (e instanceof SliceDropped) say("", false);
-      else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
+      else say(refusalOf(e), true);
     } finally {
       busy = false;
       go.disabled = preview.disabled = false;
@@ -605,7 +638,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     } catch (e) {
       end();
       if (e instanceof SliceDropped) say("", false);
-      else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
+      else say(refusalOf(e), true);
     } finally {
       busy = false;
       go.disabled = preview.disabled = false;
