@@ -160,6 +160,54 @@ try {
       }
     });
   }
+  // Bug hunt 2026-11-04 (E1): Snap in an edited Move onto a body just clicked out of it. Move 1 slides both bodies
+  // 100 along x; edited, the cylinder clicked out (the preview draws it back at the origin); Snap, the box's top,
+  // then the cylinder's top where it is drawn. Worked by hand: a face lands on a face facing it, so the box is turned
+  // half a turn about X and its top centre lands on the cylinder's top centre (0, 0, 20): the box spans x −20..20,
+  // y −15..15, z 20..40, the cylinder (out of the Move) x −20..20, y −20..20, z 0..20; together x −20..20, y −20..20,
+  // z 0..40. Before the fix the box landed where Move 1 had put the cylinder, x 80..120.
+  await check("1280 px: Snap in an edited Move onto a body taken out of it lands on that body where it is drawn", async () => {
+    const page = await fresh(1280, 800, false);
+    try {
+      await insertPreset(page, "cylinder", false);
+      await until(page, () => document.querySelector("#volume")?.textContent !== "24,000 mm³", null, "the cylinder built");
+      await rebuilt(page);
+      await page.click('[data-view="top"]');
+      await settle(page);
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press("m");
+      await opened(page);
+      await at(page, [35, 25, 20]);
+      await named(page, "Body: Box 1", "Box 1 picked");
+      await at(page, [-10, -10, 20]);
+      await named(page, "Bodies: Box 1, Cylinder 1", "the cylinder picked too");
+      await page.fill("#move-x", "100");
+      await page.click("#move-ok");
+      await closed(page);
+      await rebuilt(page);
+      await page.click('[data-view="top"]');
+      await settle(page);
+      await editMove(page, false);
+      await named(page, "Bodies: Box 1, Cylinder 1", "the edit opens on both");
+      await at(page, [90, -10, 20]); // the cylinder where Move 1 put it
+      await named(page, "Body: Box 1", "the cylinder clicked out");
+      await nextFrame(page);
+      // Zoomed out so the origin, where the cylinder is drawn now, is on screen too.
+      const b = await canvasBox(page);
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 300);
+      await settle(page);
+      await page.click("#move-snap");
+      await at(page, [120, 15, 20]); // the box's top, drawn still slid 100
+      await at(page, [0, 0, 20]); // the cylinder's top, drawn back at the origin
+      await page.click("#move-ok");
+      await closed(page);
+      await rebuilt(page);
+      near(await stlBounds(page, false), [[-20, 20], [-20, 20], [0, 40]], "the box upside down on the cylinder where the cylinder ends up");
+    } finally {
+      await page.context().close();
+    }
+  });
 } finally {
   await browser.close();
   await server.close();
