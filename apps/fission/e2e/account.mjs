@@ -59,11 +59,7 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-<<<<<<< HEAD
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [] };
-=======
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve() };
->>>>>>> origin/main
+  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [] };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
