@@ -10,7 +10,8 @@
 // 4. an outline touching itself is refused in plain words, never "0e0 mm";
 // 5. the whole design's STL names the hidden body it leaves out;
 // 6. a cylinder under 0.002 mm across and a slot no wider than it is deep are
-//    refused in the properties, never recorded as failed parts (clumsy hunt 2026-11-04).
+//    refused in the properties, never recorded as failed parts (clumsy hunt 2026-11-04);
+// 7. a double-click on a timeline item that slides under the pointer still opens Edit.
 // Screenshots at 1280 and 375 px go to E2E_SHOTS when set. Run with
 // `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -219,6 +220,22 @@ try {
     assert.equal(await slot.getAttribute("#undo", "title"), slotUndo, "no undo step recorded");
     if (shots) await slot.screenshot({ path: `${shots}/upright-slot-1280.png` });
     await slot.context().close();
+  });
+
+  await check("double-clicking a timeline item after picking one to its left opens Edit, not its ⋯ menu (1280 px)", async () => {
+    // Clumsy hunt 2026-11-04: the first click picks the item and the bar redraws, the earlier item's ⋯ goes, the item slides
+    // about 30 px left and its own ⋯ comes under the pointer, so the second click opened the menu instead of Edit.
+    const page = await fresh(1280, false);
+    for (const kind of ["box", "cylinder", "sphere"]) await insertPreset(page, kind);
+    await until(page, () => document.querySelectorAll("#timeline li[data-item]").length === 3 && document.querySelector("#viewport").dataset.rebuilding !== "true", null, "three items");
+    const li = (id) => `#timeline li[data-item="${id}"]`;
+    await page.click(li("feature-1"));
+    await page.waitForTimeout(700); // a plain click first, as a person looking at it
+    await page.dblclick(li("feature-2"));
+    await until(page, () => !document.getElementById("feature-edit")?.hidden && document.getElementById("feature-edit")?.offsetParent !== null, null, "Edit feature open");
+    assert.match(await text(page, "#feature-edit-title"), /Cylinder 1/);
+    assert.equal(await page.evaluate(() => document.getElementById("row-menu")?.open ?? false), false, "no item menu open");
+    await page.context().close();
   });
 
   await check("an outline touching itself is refused in plain words (1280 px)", async () => {
