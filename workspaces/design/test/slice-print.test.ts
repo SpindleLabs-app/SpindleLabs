@@ -152,13 +152,22 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   await t.settle();
   assert.deepEqual(t.files[1], { format: "p1s", plate: "smooth", nozzle: "standard" });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-smooth\.gcode\.3mf: /);
+  // The four plates Bambu sells for the P1S that PLA prints on (no Engineering Plate: Bambu's PLA profile doesn't list it).
+  assert.deepEqual([...plate.options].map((o) => [o.value, o.textContent]), [["textured", "Textured PEI plate"], ["smooth", "Smooth PEI or High Temp plate"], ["cool_plate", "Cool Plate"], ["supertack_plate", "Cool Plate SuperTack"]]);
+  for (const [value, part, n] of [["cool_plate", "cool", 2], ["supertack_plate", "supertack", 3]] as const) {
+    plate.value = value;
+    t.$("slice-print-go").click();
+    await t.settle();
+    assert.deepEqual(t.files[n], { format: "p1s", plate: value, nozzle: "standard" });
+    assert.match(t.$("slice-print-status").textContent!, new RegExp(`^Saved spindlelabs-0\\.2mm-2w-15pc-${part}\\.gcode\\.3mf: `));
+  }
   // Plain G-code: the plate box greys out, and the file is .gcode.
   format.value = "gcode";
   format.dispatchEvent(new t.window.Event("change") as unknown as Event);
   assert.equal(plate.disabled, true);
   t.$("slice-print-go").click();
   await t.settle();
-  assert.equal(t.files[2].format, "gcode");
+  assert.equal(t.files[4].format, "gcode");
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc\.gcode: /);
   // The plain option says it isn't for the P1S (its start primes a line across the corner the P1S keeps clear).
   assert.match(format.querySelector('option[value="gcode"]')!.textContent!, /not for the P1S/);
@@ -570,6 +579,22 @@ test("the cube's P1S print file on the shipped build: a package the printer chec
   const smoothFiles = storedZip(smooth.package);
   assert.match(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.json")), /"bed_type":"hot_plate"/);
   assert.doesNotMatch(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode")), /G29\.1 Z-0\.04/);
+  // Bambu's Generic PLA heats the bed to 55 °C on the textured and smooth plates, 35 °C on the Cool Plate and 45 °C on the
+  // SuperTack (Ben's Bambu Studio file: cool_plate_temp 35, supertack_plate_temp 45), first layer and the rest alike;
+  // the bed goes off (S0) at the end. Each smooth-faced plate has no trim and its own key.
+  const beds = (g: string) => (g.match(/^M140 S\d+/gm) ?? []).concat(g.match(/^M190 S\d+/gm) ?? []);
+  assert.deepEqual(beds(gcode), ["M140 S55", "M140 S0", "M190 S55"]);
+  assert.deepEqual(beds(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode"))), ["M140 S55", "M140 S0", "M190 S55"]);
+  for (const [plate, key, name, bed] of [["cool_plate", "cool_plate", "Cool Plate", 35], ["supertack_plate", "supertack_plate", "Supertack Plate", 45]] as const) {
+    const files = storedZip((await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, plate)).package);
+    const g = new TextDecoder().decode(files.get("Metadata/plate_1.gcode"));
+    assert.match(new TextDecoder().decode(files.get("Metadata/plate_1.json")), new RegExp(`"bed_type":"${key}"`));
+    assert.deepEqual(beds(g), [`M140 S${bed}`, "M140 S0", `M190 S${bed}`], plate);
+    assert.match(g, new RegExp(`^; curr_bed_type = ${name}$`, "m"));
+    assert.doesNotMatch(g, /G29\.1 Z-0\.04/);
+    // Only the plate's own lines change, not one move.
+    assert.deepEqual(layerMoves(g), layerMoves(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode"))), plate);
+  }
   // Two code paths agreeing: the same layer moves as the plain slice of the same choices; 3 walls differ, so the comparison can fail.
   const plain = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
   assert.deepEqual(layerMoves(gcode), layerMoves(plain.gcode));
