@@ -1165,6 +1165,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     rebuildsOn.set(view, (rebuildsOn.get(view) ?? 0) + 1);
     view.dataset.rebuilding = "true";
     try {
+      // The bar and the browser show `doc` at once, before the kernel settles it (a slow kernel: a phone, a big design):
+      // a second drag on a bar still showing the last design would land elsewhere than its line showed (hunt2 C1).
+      // showBuilt draws them again for the settled design.
+      drawBrowser(doc);
+      showFailed(doc);
       const next = await settled(doc);
       // A newer show() started while the kernel settled this one: it draws the newer design (an older ask answered
       // later must not show over it). Put away meanwhile (an Undo that unmounted this Design), the bar and browser
@@ -1877,6 +1882,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (holdUnfinished("Extrude")) return;
     leaveEdit();
     leaveMove();
+    extrudeOpenings++;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const editing = mode.kind === "edit" ? mode.tool.sketch : null;
     if (mode.kind !== "none") leaveSketch();
@@ -1897,7 +1903,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (chosen) void checkExtrude(chosen);
   }
 
+  /** Each opening and closing of the Extrude panel counted: an OK whose build lands after it changed is out of date (bug hunt 11-04, E2). */
+  let extrudeOpenings = 0;
   function leaveExtrude() {
+    extrudeOpenings++;
     extruding = null;
     extrudeBox.hide();
     viewport.showExtrude(null);
@@ -2109,6 +2118,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   async function finishExtrude(typed: string) {
     const id = extruding?.sketch;
     if (!id) return;
+    const opened = extrudeOpenings;
     const distance = Number(typed);
     if (typed.trim() === "" || !Number.isFinite(distance)) return extrudeBox.showError("Type the distance in mm.");
     if (distance === 0) return extrudeBox.showError(ZERO_OK);
@@ -2125,11 +2135,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
     } catch (e) {
-      if (extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));
+      if (extrudeOpenings === opened && extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));
       return;
     }
-    // Something else changed the design while the kernel worked: this extrude is out of date.
-    if (extruding?.sketch !== id || designDoc() !== before) return;
+    // Closed or opened again, another sketch chosen, or something else changed the design, while the kernel worked: this extrude is out of date.
+    if (extrudeOpenings !== opened || extruding?.sketch !== id || designDoc() !== before) return;
     leaveExtrude();
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
@@ -2263,6 +2273,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     if (mode.kind !== "none") leaveSketch();
+    moveOpenings++;
+    dragCalledOff = false;
     const doc = designDoc();
     if (id !== null) {
       const f = doc.timeline.features.find((x) => x.id === id)!;
@@ -2375,18 +2387,37 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * (`draggedValues`), so the typed values follow the drag and the preview
    * and handles follow the box; a box typed after the drag is the user's.
    */
+  /** Escape called the held drag off (bug hunt 11-04, E6): the viewer still holds it, so its moves are let go until its release. */
+  let dragCalledOff = false;
+  /** The handle held while `dragFrom` is set. */
+  let dragHandle: MoveParam | null = null;
   const onMovePointer: SharedViewport["onMovePointer"] = (pointer) => {
+    if (dragCalledOff) {
+      if (pointer.done) dragCalledOff = false;
+      return;
+    }
     if (!moveBox.shown) return;
     if (dragFrom === null) {
       const read = readMoveBoxes(moveBox.typed);
       if ("bad" in read) return moveBox.showError(`Type the ${MOVE_BOX_WORDS[read.bad]}.`);
       dragFrom = read.values;
     }
+    dragHandle = pointer.handle;
     moveBox.setValue(pointer.handle, draggedValues(dragFrom, pointer.handle, pointer.amount)[pointer.handle]);
     moveBox.dragging(pointer.done ? null : pointer.handle); // the box being changed glows while the drag lasts
     if (pointer.done) dragFrom = null;
     previewMove();
   };
+
+  /** The held handle's drag called off: its box back to its number at the press, the rest of the drag let go. */
+  function callOffMoveDrag() {
+    if (dragFrom === null) return;
+    if (dragHandle !== null) moveBox.setValue(dragHandle, dragFrom[dragHandle]);
+    dragFrom = null;
+    dragCalledOff = true;
+    moveBox.dragging(null);
+    previewMove();
+  }
 
   function startSnap() {
     if (!moveBox.shown || moveBodies.length === 0) return;
@@ -2426,7 +2457,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moving) return moveBox.showError(SNAP_MOVING);
     const read = readMoveBoxes(moveBox.typed);
     if ("bad" in read) return moveBox.showError(`Type the ${MOVE_BOX_WORDS[read.bad]}.`);
-    const ends = snapEnds(designDoc(), resultsNow, moveBox.editing, snapping.from.body, snapping.from.part, got.part);
+    const ends = snapEnds(designDoc(), resultsNow, moveBox.editing, snapping.from.body, snapping.from.part, got.part, { body: body.body, bodies: moveBodies });
     const r = snappedValues(read.values, ends.from, ends.to);
     if ("refused" in r) return moveBox.showError(r.refused);
     moveBox.setValues(r.values);
@@ -2435,9 +2466,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     previewMove();
   }
 
+  /** Each opening and closing of the Move panel counted: an OK whose check lands after it changed is out of date (bug hunt 11-04, E2). */
+  let moveOpenings = 0;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
   function leaveMove() {
     if (!moveBox.shown) return;
+    moveOpenings++;
     const edited = moveBox.editing !== null;
     moveBox.hide();
     moveBodies = [];
@@ -2478,6 +2512,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return moveBox.showError(e instanceof Error ? e.message : String(e));
     }
     if (next === before) return leaveMove();
+    const opened = moveOpenings;
     moveBox.busy(true);
     let refused: string | null;
     try {
@@ -2485,8 +2520,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
-    // Closed, or opened on another Move, while the kernel looked: this OK is out of date.
-    if (!moveBox.shown || moveBox.editing !== id) return;
+    // Closed, or opened again (on this Move or another), while the kernel looked: this OK is out of date.
+    if (moveOpenings !== opened) return;
     moveBox.busy(false);
     if (designDoc() !== before) return moveBox.showError(MOVE_CHANGED);
     if (refused !== null) return moveBox.showError(refused);
@@ -2929,18 +2964,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // Enter is the Extrude panel's OK with the focus on the view (after a drag of the arrow) or nowhere; anything else focused (a button, a timeline item) takes its own Enter.
       if (id === "extrude-ok") {
         const active = ctx.properties.ownerDocument.activeElement;
+        // A browser row clicked to pick a body or sketch keeps the focus; it counts as the view, or Enter would click it again and let the pick go (bug hunt 11-04, E3).
+        const onView = !active || active === active.ownerDocument.body || viewport.element.contains(active) || (ctx.browser.contains(active) && active.matches(".tree-row"));
         // Enter is the Move panel's OK the same way (35e2b).
         if (moveBox.shown && !extrudeBox.shown) {
-          if (active && active !== active.ownerDocument.body && !viewport.element.contains(active)) return false;
-          return void ctx.history.hold(finishMove(moveBox.typed)), true;
+          if (!onView) return false;
+          if (moveBox.ready) void ctx.history.hold(finishMove(moveBox.typed)); // busy while the kernel checks: a second Enter records nothing twice
+          return true;
         }
-        if (!extrudeBox.shown || (active && active !== active.ownerDocument.body && !viewport.element.contains(active))) return false;
+        if (!extrudeBox.shown || !onView) return false;
         if (extrudeBox.ready) void ctx.history.hold(finishExtrude(extrudeBox.typed));
         return true;
       }
       if (id === "clear-selection" && editBox.editing !== null) return leaveEdit(), true;
       // Escape while Snap picks stops the snap, and only that (35e2d).
       if (id === "clear-selection" && moveBox.shown && snapping) return stopSnap(), true;
+      // Escape while a Move handle is held calls off the drag, and only that: its box back to its number at the press (E6).
+      if (id === "clear-selection" && moveBox.shown && dragFrom !== null) return callOffMoveDrag(), true;
       if (id === "clear-selection" && moveBox.shown) return leaveMove(), true;
       // M opens Move outside a sketch (Fusion's key); in a sketch the key does what it would.
       if (id === "move-tool") return mode.kind === "none" ? (startMove(), true) : false;

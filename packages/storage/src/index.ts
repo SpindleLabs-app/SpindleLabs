@@ -23,3 +23,4 @@ export { ASK_MS, OPENING_KEY, reopenGuard, SETTLED_MS, type MarkStorage, type Op
 export function localStore(readers: readonly DataReader[]): ProjectStore {
   return projectStore(indexedDbKeyValue(), readers);
 }
+export { bringForward, forget } from "./projects.ts";

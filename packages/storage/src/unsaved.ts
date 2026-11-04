@@ -65,6 +65,16 @@ const asideId = (key: string): string | null => {
   return key.startsWith(ASIDE_PREFIX) && slash > ASIDE_PREFIX.length && slash < key.length - 1 ? key.slice(slash + 1) : null;
 };
 
+/** Every aside key holding an entry for project `id` (another tab's change to it). Throws as the storage does. */
+export function asideKeysOf(journal: JournalStorage, id: string): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < journal.length; i++) {
+    const k = journal.key(i);
+    if (k !== null && asideId(k) === id) keys.push(k);
+  }
+  return keys;
+}
+
 /**
  * Before `writer` journals project `id`: an entry there written by another writer (another tab that went, or will
  * go, before its save lands) is copied to its own aside key, so the key can take `writer`'s without losing it. An
@@ -223,7 +233,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
           problems.push(`changes made to "${project.name}" in another tab couldn't be kept as a separate project (${message(copyFailed)}); they stay in this browser, and the next visit tries again`);
           continue;
         }
-        problems.push(`changes made to "${project.name}" in another tab weren't stored before it closed, and newer work was saved since, so they're kept as a separate project, "${name}", and the newer work as it was`);
+        problems.push(`changes made to "${project.name}" in another tab weren't stored before it closed, and newer work was saved since, so they're kept as a separate project, "${name}" (File > Projects in this browser opens it), and the newer work as it was`);
         remove(journal, k);
         continue;
       }

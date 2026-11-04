@@ -236,10 +236,11 @@ test("a save expecting a save time is refused when the store's differs by a mill
   assert.equal(widthOf(await store.open("p")), 41);
 });
 
-test("a stale tab finishing (another project opened) stores nothing and leaves nothing to be put back", async () => {
+test("a stale tab finishing (another project opened) keeps its change as a separate project, not over the other tab's work", async () => {
   // Stored 40 at t = 0, both tabs knowing save time 0. A stores 45 at t = 1000. B changes to 25 at t = 1100 and opens
   // another project at once (finish): 25 is journalled, then its save after the flight expects 0, finds 1000 and is
-  // refused, so the entry goes too: a next visit reads 45, A's work.
+  // refused. Before round 2 hunt A5 the entry just went, and 25 with it; now 25 is stored as "Box (from another tab)",
+  // behind A's work, and then the entry goes: a next visit reads 45, A's work, and the copy is there for the list.
   const clock = fakeClock();
   const store = projectStore(memoryKeyValue(), [], clock.now);
   const journal = fakeStorage();
@@ -248,18 +249,52 @@ test("a stale tab finishing (another project opened) stores nothing and leaves n
   let b = part(40);
   const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
   const tabA = startAutosave(store, "p", () => a, () => {}, opts);
-  const tabB = startAutosave(store, "p", () => b, () => {}, opts);
+  const tabB = startAutosave(store, "p", () => b, () => {}, { ...opts, newId: () => "copy-1" });
   a = part(45);
   tabA.changed();
   await clock.advance(1100);
   b = part(25);
   tabB.changed();
-  tabB.finish();
+  assert.equal(tabB.finish(), null, "the refusal is found only by finish's own save");
+  await settle();
   await settle();
   await settle();
   assert.equal(journal.items.size, 0);
   assert.deepEqual(await recoverUnsaved(store, journal, []), []);
   assert.equal(widthOf(await store.open("p")), 45);
+  assert.equal(widthOf(await store.open("copy-1")), 25, "B's change kept");
+  assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+  assert.equal((await store.list())[0].id, "p", "A's work is still what a visit opens");
+});
+
+test("a tab whose saves are refused, finished (Open), keeps its unstored change as a separate project and names it (round 2 hunt A5)", async () => {
+  // Stored 40 at t = 0, both tabs knowing save time 0. A stores 50 at t = 1000. B changes to 60 at t = 1100; its save
+  // at t = 2100 is refused ("changed in another tab"). B then opens a file (finish at t = 2200): its 60 was dropped
+  // without a word. Now finish stores 60 at once as "Box (from another tab)", behind A's 50, and says that name.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let a = part(40);
+  let b = part(40);
+  const bSaid: string[] = [];
+  const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+  const tabA = startAutosave(store, "p", () => a, () => {}, opts);
+  const tabB = startAutosave(store, "p", () => b, (s) => bSaid.push(s.state === "error" ? s.message : s.state), { ...opts, newId: () => "copy-1" });
+  a = part(50);
+  tabA.changed();
+  await clock.advance(1100);
+  b = part(60);
+  tabB.changed();
+  await clock.advance(1100);
+  assert.equal(bSaid.at(-1), "This project was changed in another tab. Reload to see the newer version.");
+  assert.equal(tabB.finish(), "Box (from another tab)");
+  await settle();
+  assert.equal(widthOf(await store.open("p")), 50, "A's work as it was");
+  assert.equal(widthOf(await store.open("copy-1")), 60, "B's refused change kept");
+  assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+  assert.equal((await store.list())[0].id, "p", "kept behind: A's work is still what a visit opens");
+  assert.equal(journal.items.size, 0, "nothing left to be put back over A's work");
 });
 
 // Real-use hunt S1 / B1b (2026-11-01): tab B, stale, journals its change when its page is hidden, before its save

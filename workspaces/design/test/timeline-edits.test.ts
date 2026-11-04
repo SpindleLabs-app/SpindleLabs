@@ -132,13 +132,19 @@ test("a reorder past a dependency is refused either way, with its message", () =
   assert.deepEqual(order(ok.doc), ["sketch-2", "feature-1", "feature-11"]);
 });
 
-test("a reorder keeps the marker on the item it names", () => {
+test("a reorder of the marker's own item leaves the marker in its gap (changed on purpose, owner's decision 2026-11-04: Fusion's rule)", () => {
+  // It used to carry the marker with it, so this drop built everything after it.
   const d = moveMarker(part(), "feature-1");
   const r = reorderItem(d, "feature-1", 2);
   assert.ok("doc" in r);
-  assert.equal(r.doc.timeline.marker, "feature-1");
-  // Everything is now before it, so everything builds.
-  assert.ok(r.doc.timeline.features.every((f) => builds(r.doc, f)));
+  // Box 1 was first, the marker just after it: with the box taken out, the gap is at the start.
+  assert.equal(r.doc.timeline.marker, "start");
+  // So nothing builds: the two items after the marker stay rolled back, and the box dropped after them is rolled back too.
+  assert.ok(r.doc.timeline.features.every((f) => !builds(r.doc, f)));
+  // The marker on another item stays on it.
+  const other = reorderItem(moveMarker(part(), "sketch-2"), "feature-1", 2);
+  assert.ok("doc" in other);
+  assert.equal(other.doc.timeline.marker, "sketch-2");
 });
 
 test("a reorder to a place outside the timeline is refused", () => {

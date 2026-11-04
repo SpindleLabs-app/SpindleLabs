@@ -1,7 +1,7 @@
 // Move, Timeline and undo bug hunt (2026-11-01) regressions: an edited Move's "Centre of the bodies".
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { insertMove, NO_MOVE, partDocument, type MoveValues } from "@fission/design";
+import { bodyReference, insertMove, NO_MOVE, partDocument, type MoveValues } from "@fission/design";
 import { app } from "./design-app.ts";
 
 const v = (o: Partial<MoveValues>): MoveValues => ({ ...NO_MOVE, ...o });
@@ -61,4 +61,58 @@ test("a Move holding a body deleted since: an edit can take the deleted body out
   (a.$("#move-ok") as HTMLButtonElement).click();
   await a.settle();
   assert.equal(a.$("#move-error")!.hidden, true, `bodies line "${bodies}", error: ${a.$("#move-error")!.textContent}`);
+});
+
+// Bug hunt 2026-11-04 (E2): OK, then Escape while the kernel still checks the Move, then M: the cancelled Move must
+// not be recorded when the check lands, and the new Move panel must stay open (the stale check compared only ids, and a
+// new Move's id is null).
+test("a Move cancelled with Escape while OK was checked is not recorded into a new Move opened meanwhile", async () => {
+  const a = await app(partDocument("box", 40, 30, 20));
+  a.selection.set([bodyReference("body:feature-1")]);
+  await a.key("move-tool");
+  const x = a.$("#move-x") as HTMLInputElement;
+  x.value = "10";
+  x.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  await a.settle();
+  const before = a.doc().timeline.features.length; // 1: Box 1
+
+  a.hold(); // a slow kernel: OK's check doesn't answer yet
+  (a.$("#move-ok") as HTMLButtonElement).click();
+  a.press("clear-selection"); // Escape: the panel shuts, the user takes it as cancelled
+  assert.equal(a.$("#move-panel")!.hidden, true, "Escape shut the panel");
+  a.selection.set([bodyReference("body:feature-1")]);
+  a.press("move-tool");
+  assert.equal(a.$("#move-panel")!.hidden, false, "the new Move panel is open");
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "0", "the new Move starts at 0");
+  await a.release();
+
+  assert.equal(a.doc().timeline.features.length, before, `the cancelled Move was recorded: ${a.doc().timeline.features.map((f) => f.intent.summary).join(" | ")}`);
+  assert.equal(a.$("#move-panel")!.hidden, false, "the new Move panel was shut by the old OK");
+  await a.close();
+});
+
+// Bug hunt 2026-11-04 (E6): Escape while a Move arrow is held calls off only the drag (the box back to its number at
+// the press), keeping the Move, its typed numbers and its bodies, as Escape on a timeline drag does.
+test("Escape while a Move arrow is held calls off the drag, keeping the Move and its typed numbers", async () => {
+  const a = await app(partDocument("box", 40, 30, 20));
+  a.selection.set([bodyReference("body:feature-1")]);
+  await a.key("move-tool");
+  const y = a.$("#move-y") as HTMLInputElement;
+  y.value = "7";
+  y.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  await a.settle();
+  await a.movePointer({ handle: "x", amount: 12.4, done: false }); // the X arrow held, 12 mm out
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "12");
+  await a.key("clear-selection"); // Escape with the arrow still held
+  assert.equal(a.$("#move-panel")!.hidden, false, "Escape mid-drag shut the whole Move panel");
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "0", "X back to its number at the press");
+  assert.equal((a.$("#move-y") as HTMLInputElement).value, "7", "the typed Y kept");
+  // The viewer still holds the arrow until it is let go: its later moves and its release change nothing.
+  await a.movePointer({ handle: "x", amount: 20.2, done: false });
+  await a.movePointer({ handle: "x", amount: 20.2, done: true });
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "0", "the called-off drag's later moves are let go");
+  // A new drag after it works as before: 5 mm out from the X of 0.
+  await a.movePointer({ handle: "x", amount: 5.1, done: true });
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "5", "a new drag moves the box again");
+  await a.close();
 });
