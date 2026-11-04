@@ -569,6 +569,25 @@ export function progressWords(p: SliceProgress | null): string {
   }
 }
 
+/** The least time constant of the bar's creep while the file is written: even after a quick slice, it creeps slowly. */
+export const FILE_CRAWL_MIN_MS = 5_000;
+
+/** The furthest the creep goes: the end is the engine's to say. */
+const FILE_CRAWL_TOP = 0.99;
+
+/**
+ * Where the bar stands `inFileMs` into writing the file, from `fraction` where the engine left it, after `beforeMs` of
+ * slicing before the file (slicer hunt 2026-11-04, ui 4: the engine tells nothing while it writes the file, which can
+ * be most of a long slice, so the bar sat at 95 % as if hung). It creeps toward 0.99, never past it, with a time
+ * constant of twice the time before the file (the file took 1.4 to 4 times that in the hunt's long slices), at least
+ * FILE_CRAWL_MIN_MS: honest that it is still working, without claiming to know how far.
+ */
+export function fileCrawl(fraction: number, beforeMs: number, inFileMs: number): number {
+  if (!(fraction < FILE_CRAWL_TOP) || !(inFileMs > 0)) return fraction;
+  const tau = Math.max(FILE_CRAWL_MIN_MS, Number.isFinite(beforeMs) ? 2 * beforeMs : 0);
+  return fraction + (FILE_CRAWL_TOP - fraction) * (1 - Math.exp(-inFileMs / tau));
+}
+
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
   slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
@@ -772,14 +791,36 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     stage.textContent = progressWords(null);
     bar.hidden = false;
     let best = 0;
+    const win = document.defaultView;
+    const now = () => win?.performance?.now() ?? Date.now();
+    const started = now();
+    // While the engine writes the file it tells nothing: the bar creeps on by itself (fileCrawl), saying how long.
+    let creep: ReturnType<typeof setInterval> | null = null;
+    const stopCreep = () => {
+      if (creep !== null) win?.clearInterval(creep);
+      creep = null;
+    };
+    const startCreep = () => {
+      const fileAt = now();
+      const from = best;
+      creep =
+        win?.setInterval(() => {
+          const inFile = now() - fileAt;
+          meter.value = Math.max(meter.value, fileCrawl(from, fileAt - started, inFile));
+          if (inFile >= 1000) stage.textContent = `Still writing the file… ${Math.floor(inFile / 1000)} s so far`;
+        }, 250) ?? null;
+    };
     const stop = events.onProgress?.((p) => {
       // Forward only: two calls (the plain slice after the file) each start from 0.
       if (!(p.fraction >= best)) return;
       best = p.fraction;
-      meter.value = Math.min(1, Math.max(0, p.fraction));
-      stage.textContent = progressWords(p);
+      meter.value = Math.max(creep === null ? 0 : meter.value, Math.min(1, Math.max(0, p.fraction)));
+      if (creep === null || p.stage !== "file" || p.fraction >= 1) stage.textContent = progressWords(p);
+      if (p.fraction >= 1) stopCreep();
+      else if (p.stage === "file" && creep === null) startCreep();
     });
     return () => {
+      stopCreep();
       stop?.();
       bar.hidden = true;
     };

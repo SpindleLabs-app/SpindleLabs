@@ -13,7 +13,7 @@ import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
 import { fileNameFor } from "@fission/ui";
 import { PRESET_PICKED_KEY, writePresets, type PrintPreset } from "../src/slice-presets.ts";
-import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, stopSlices, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, stopSlices, fileCrawl, FILE_CRAWL_MIN_MS, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -1013,5 +1013,50 @@ test("the progress bar follows the engine's reports while a slice runs, only for
   assert.equal($("slice-print-progress").hidden, true, "the bar goes when the slice ends");
   assert.equal(stopped, 1, "and stops listening");
   assert.equal(tell, null);
+  await window.happyDOM.close();
+});
+
+test("while the engine writes the file, which tells no progress, the bar keeps creeping on and says how long it has been (slicer hunt 11-04, ui 4)", async () => {
+  // By hand: from 0.95, with 10 s of slicing before the file (so a time constant of 2 × 10 = 20 s), 20 s into writing
+  // the bar is 0.95 + (0.99 - 0.95) × (1 - e^-1) = 0.95 + 0.04 × 0.632121 = 0.975285; it never passes 0.99.
+  assert.ok(Math.abs(fileCrawl(0.95, 10_000, 20_000) - 0.975285) < 1e-6, `${fileCrawl(0.95, 10_000, 20_000)}`);
+  assert.equal(fileCrawl(0.95, 10_000, 0), 0.95);
+  assert.ok(fileCrawl(0.95, 10_000, 1e9) <= 0.99);
+  // A quick slice before the file still creeps slowly: the time constant is at least FILE_CRAWL_MIN_MS.
+  assert.ok(Math.abs(fileCrawl(0.95, 0, FILE_CRAWL_MIN_MS) - (0.95 + 0.04 * (1 - Math.exp(-1)))) < 1e-9);
+  // A bar already past 0.99 stays where it is; nonsense times give the fraction as it was.
+  assert.equal(fileCrawl(0.995, 10_000, 5_000), 0.995);
+  assert.equal(fileCrawl(0.95, Number.NaN, Number.NaN), 0.95);
+  // In the dialog: the file stage's report, then the bar moves on by itself and the words say it is still writing.
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  let tell: ((p: SliceProgress) => void) | null = null;
+  let finish!: () => void;
+  const d = slicePrint(slot, {
+    slice: () => new Promise((r) => (finish = () => r({ print: print(), saved: true, name: "part.gcode.3mf" }))),
+    preview: async () => {},
+    onProgress: (l) => ((tell = l), () => void (tell = null)),
+  });
+  const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
+  const meter = $<HTMLProgressElement>("slice-print-meter");
+  d.ask();
+  $("slice-print-go").click();
+  tell!({ fraction: 0.95, stage: "file", done: 0, total: 1 });
+  assert.equal(meter.value, 0.95);
+  assert.equal($("slice-print-stage").textContent, "Writing the file…");
+  await new Promise((r) => setTimeout(r, 1300));
+  assert.ok(meter.value > 0.95 && meter.value < 0.99, `the bar crept on: ${meter.value}`);
+  assert.match($("slice-print-stage").textContent ?? "", /^Still writing the file… [12] s so far$/);
+  // The engine's own end puts the bar at the end.
+  tell!({ fraction: 1, stage: "file", done: 1, total: 1 });
+  assert.equal(meter.value, 1);
+  const at = meter.value;
+  await new Promise((r) => setTimeout(r, 600));
+  assert.equal(meter.value, at, "no creeping once the engine said it is done");
+  finish();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal($("slice-print-progress").hidden, true);
   await window.happyDOM.close();
 });
