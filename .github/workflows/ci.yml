@@ -97,8 +97,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 -m unittest discover -s .github/scripts
-      # The optional accounts' database rules, on a throwaway PostgreSQL (the runner has its server programs).
-      - name: The accounts database's rules
+      - name: The accounts database's rules (supabase/test, on a throwaway PostgreSQL)
         run: python3 -m unittest discover -s supabase/test
       - name: The committed kernel build is the released one
         run: python3 .github/scripts/check_kernel_build.py
