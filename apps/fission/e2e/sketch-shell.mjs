@@ -32,7 +32,7 @@ function grey() {
 const png = grey();
 
 const server = await preview({ preview: { port: 4201, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4201/";
+const url = "http://localhost:4201/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 
