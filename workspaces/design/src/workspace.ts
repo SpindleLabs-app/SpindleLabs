@@ -54,6 +54,7 @@ import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
+import { curveAt, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
@@ -1334,7 +1335,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start("") });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked() });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -1372,6 +1373,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A typed arc angle goes the pointer's way round however little it went (typed-entry.ts withLocks): the preview from the tool the click will use.
     viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
+    sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
     const width = viewport.element.clientWidth;
     sketchBar.showType(typedFields(editing.tool).length > 0);
@@ -1729,10 +1731,55 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const n = curveCount(sketch);
     try {
       const { current, value } = await outlineOf(sketch);
-      if (current) sketchBox.showStatus(value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : `${n}, not closed: ${value.open}.`);
+      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : `${n}, not closed: ${value.open}.`;
     } catch (e) {
-      sketchBox.showStatus(`${n}: ${e instanceof Error ? e.message : String(e)}`);
+      outlineWords = `${n}: ${e instanceof Error ? e.message : String(e)}`;
     }
+    showSketchStatus();
+  }
+  /** The outline's words as last asked (`showOutline`), shown with what the Select tool has picked. */
+  let outlineWords = "";
+  function showSketchStatus() {
+    if (mode.kind !== "edit") return;
+    const tool = mode.tool;
+    const picks = tool.kind === "select" ? selectStatus(designDoc().sketches.find((s) => s.id === tool.sketch), tool.picked) : "";
+    sketchBox.showStatus(picks ? `${outlineWords} ${picks}` : outlineWords);
+  }
+
+  /**
+   * Delete (the key, Backspace or the sketch toolbar's button) with the Select
+   * tool's picks: they go from the sketch as one undo step ("Delete line",
+   * "Delete 3 curves"), in turn behind the clicks before it, settled as a
+   * click is, so an extrude whose outline this breaks keeps its last shape
+   * (the owner's rule, rebuild.ts). False when nothing is picked, so the key
+   * does what it would.
+   */
+  function deletePicked(): boolean {
+    if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
+    const sketchId = mode.tool.sketch;
+    if (stillPicked(designDoc().sketches.find((s) => s.id === sketchId), mode.tool.picked).length === 0) return false;
+    const changes = toolChanges;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes) return;
+      const before = designDoc();
+      const sketch = before.sketches.find((s) => s.id === sketchId);
+      const ids = stillPicked(sketch, mode.tool.picked);
+      if (ids.length === 0) return;
+      let next: DesignDocument;
+      try {
+        next = await settleKept(kernel, before, deleteCurves(before, sketchId, ids), bodies);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      // Undo, Escape or a tool change while the kernel looked: the delete was for a sketch no longer there.
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes || designDoc() !== before) return;
+      mode.tool = { ...mode.tool, picked: [], hover: null };
+      sketchBox.showError("");
+      applySketchEdit(next, deleteStep(sketch, ids), sketchId);
+      drawSketches();
+      await showOutline();
+    });
+    return true;
   }
 
   // Extrude (step 21d; UX1b, Fusion's feel): click a closed sketch in the view (or its row in the
@@ -2480,6 +2527,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (pointer.kind === "click") projectAt(pointer);
       return drawSketches();
     }
+    // The Select tool snaps nothing and places nothing: the curve within a snap's reach of the pointer lights, and a click picks it (Shift adds).
+    if (mode.tool.kind === "select") {
+      ++moves;
+      hovered = lastMove = null;
+      mode.snap = null;
+      mode.pointer = at;
+      const tool = mode.tool;
+      const sketch = designDoc().sketches.find((s) => s.id === tool.sketch);
+      const hit = at && sketch ? curveAt(sketch, at, SNAP_PIXELS * (pointer.pixel ?? 0)) : null;
+      if (pointer.kind !== "click") mode.tool = { ...tool, hover: hit };
+      else {
+        mode.tool = { ...tool, picked: pickCurve(stillPicked(sketch, tool.picked), hit, pointer.shift === true), hover: hit };
+        sketchBox.showError("");
+        showSketchStatus();
+      }
+      return drawSketches();
+    }
     if (pointer.kind === "move") {
       lastHover = at ? pointer : null;
       enteredStill = false;
@@ -2845,6 +2909,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         drawSketches();
         return true;
       }
+      // Escape with nothing half drawn (missing basics, 2026-11-04, as in Fusion): the picks go, else the Select tool is chosen.
+      if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind === "select" && mode.tool.picked.length > 0) {
+        mode.tool = { ...mode.tool, picked: [] };
+        showSketchStatus();
+        drawSketches();
+        return true;
+      }
+      if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind !== "select") return chooseTool("select"), true;
+      // Delete or Backspace in a sketch with curves picked takes them out; otherwise the key does what it would.
+      if ((id === "delete-selection" || id === "delete-selection-back") && mode.kind === "edit") return deletePicked();
       // L, R, C and A choose the line, rectangle, circle and arc tools while a sketch is edited; otherwise the key does what it would.
       // A digit, point or minus while a line or rectangle is part drawn starts typing its size in the first box (SF4).
       const typedKey = typedSizeKey(id);
