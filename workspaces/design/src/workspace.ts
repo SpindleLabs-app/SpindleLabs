@@ -1132,6 +1132,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     rebuildsOn.set(view, (rebuildsOn.get(view) ?? 0) + 1);
     view.dataset.rebuilding = "true";
     try {
+      // The bar and the browser show `doc` at once, before the kernel settles it (a slow kernel: a phone, a big design):
+      // a second drag on a bar still showing the last design would land elsewhere than its line showed (hunt2 C1).
+      // showBuilt draws them again for the settled design.
+      drawBrowser(doc);
+      showFailed(doc);
       await showBuilt(await settled(doc), kind);
     } finally {
       const left = rebuildsOn.get(view)! - 1;
