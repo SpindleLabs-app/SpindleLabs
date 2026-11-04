@@ -2033,12 +2033,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function keysAfterTap() {
     const changes = toolChanges;
     let done = false;
+    const heard = new AbortController(); // taken off when given, so no click listener outlives the tap (or this workspace)
     const give = () => {
       if (done) return;
       done = true;
+      heard.abort();
       if (mode.kind === "edit" && toolChanges === changes && typedFields(mode.tool).length > 0) typed.start("");
     };
-    viewport.element.ownerDocument.addEventListener("click", give, { capture: true, once: true });
+    viewport.element.ownerDocument.addEventListener("click", give, { capture: true, once: true, signal: heard.signal });
     setTimeout(give, 400);
   }
 
@@ -2060,14 +2062,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     drawSketches();
     typed.start("");
   }
-  viewport.element.addEventListener("dblclick", (e) => {
+  // A label's double-click, or its tap with the Dimension tool; heard from `listen` to `sleep` only, since the view's
+  // element outlives this workspace (a listener left on it kept every closed workspace's panels in memory).
+  const onLabelDblclick = (e: MouseEvent) => {
     const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
     if (label?.dataset.dimension) editDimension(label.dataset.dimension);
-  });
-  viewport.element.addEventListener("click", (e) => {
+  };
+  const onLabelClick = (e: MouseEvent) => {
     const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
     if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
-  });
+  };
 
   function constrain(sketchId: string, add: NewConstraint) {
     const changes = toolChanges;
@@ -3217,6 +3221,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showMoveHandles();
     viewport.element.addEventListener("pointermove", onViewportMove);
     viewport.element.addEventListener("pointerdown", onViewportMove); // a tap moves no pointer first
+    viewport.element.addEventListener("dblclick", onLabelDblclick);
+    viewport.element.addEventListener("click", onLabelClick);
     resized?.observe(viewport.element);
     globalThis.addEventListener?.("keydown", onHeldKey);
     globalThis.addEventListener?.("keyup", onHeldKey);
@@ -3248,6 +3254,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showMoveHandles(null);
     viewport.element.removeEventListener("pointermove", onViewportMove);
     viewport.element.removeEventListener("pointerdown", onViewportMove);
+    viewport.element.removeEventListener("dblclick", onLabelDblclick);
+    viewport.element.removeEventListener("click", onLabelClick);
     resized?.disconnect();
     globalThis.removeEventListener?.("keydown", onHeldKey);
     globalThis.removeEventListener?.("keyup", onHeldKey);
