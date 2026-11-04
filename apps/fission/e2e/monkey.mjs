@@ -50,7 +50,8 @@ import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelV
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
 const STEPS = Number(process.env.MONKEY_STEPS || 60);
-const url = `http://localhost:${PORT}/?test-hooks#design`;
+// Combine is switched on (35f1d: the hidden tool, `?combine`), so the monkey presses it long before it goes public.
+const url = `http://localhost:${PORT}/?test-hooks&combine#design`;
 const here = (p) => new URL(p, import.meta.url);
 
 /** "1-3,7" as [1, 2, 3, 7]. */
@@ -92,16 +93,16 @@ async function open(browser) {
   await page.goto(url);
   // A new project starts empty (U0c): ready once the kernel has said its version and the start hint shows.
   await page.waitForFunction(() => /kernel v/.test(document.getElementById("version")?.textContent ?? "") && document.querySelector("#start-hint")?.hidden === false, null, { timeout: 20000 });
-  return { context, page, errors, saved: null, savedName: "Untitled.spindle", known: new Set(), design: null, seen: new Set() };
+  return { context, page, errors, saved: null, savedName: "Untitled.spindle", known: new Set(), design: null, seen: new Set(), combined: new Set(), tried: 0 };
 }
 
 /** In the page: what can be clicked, typed into and right-clicked now, each with a selector a replay can find again. */
 function offered() {
   // The modelling flow (sketch, draw, extrude, delete, start fresh: File ▾'s New, U0f2a) is picked more often than the other workspaces (DESIGN ▾'s items, U0f2b).
-  const HOT = '#create-sketch, [id^="sketch-"], [id^="extrude"], #file-menu, [id^="start-fresh"], [id^="delete-ask"], [id^="row-menu"], #finish-sketch, [data-workspace="design"], #extrude-panel button, #sketch-panel button, #feature-edit button';
+  const HOT = '#create-sketch, [id^="sketch-"], [id^="extrude"], #file-menu, [id^="start-fresh"], [id^="delete-ask"], [id^="row-menu"], #finish-sketch, [data-workspace="design"], #extrude-panel button, #sketch-panel button, #feature-edit button, #modify-menu, #modify-menu-combine, #combine-panel button';
   const COLD = '#workspace-menu, [data-workspace]:not([data-workspace="design"]), #community, #split-toggle';
   // The controls of the mode the app is in (a sketch, the Extrude panel, the Edit feature panel (25a5), a dialog, a menu): a user mostly works there.
-  const LOCAL = "#sketch-panel, .sketchbar, #typed-entry, #extrude-panel, dialog[open], #row-menu, #feature-edit";
+  const LOCAL = "#sketch-panel, .sketchbar, #typed-entry, #extrude-panel, dialog[open], #row-menu, #feature-edit, #combine-panel";
   const KEYS = ["workspace", "op", "shape", "node", "nav", "view", "item", "field", "kind"];
   const sel = (e) => {
     if (e.id) return `#${CSS.escape(e.id)}`;
@@ -131,7 +132,9 @@ function offered() {
   // Browser rows and the timeline bar's items (24f3: a right-click opens the item's menu: marker here, suppress, delete).
   const rows = [...document.querySelectorAll("#browser .tree-row[data-node], #timeline li[data-item]")].filter(usable).map((e) => ({ sel: sel(e), sketch: (e.dataset.node ?? e.dataset.item).startsWith("sketch"), body: /^body-\d+$/.test(e.dataset.node ?? "") }));
   const prompt = [...document.querySelectorAll('[id^="sketch-plane-"]')].some(usable);
-  return { targets, inputs, rows, prompt, sketching: document.querySelector("#viewport")?.dataset.sketching === "true" };
+  // Combine (35f1d) can be made: the flag shows it in Modify ▾ and there are two bodies to pick.
+  const combine = document.getElementById("modify-menu") !== null && document.querySelectorAll('#browser .tree-row[data-node^="body-"]').length >= 2;
+  return { targets, inputs, rows, prompt, combine, sketching: document.querySelector("#viewport")?.dataset.sketching === "true" };
 }
 
 /** In the page: what the Design view shows now (null when Design is not on screen). */
@@ -155,7 +158,9 @@ function shown() {
     extruding: document.getElementById("extrude-panel") !== null && document.getElementById("extrude-panel").getClientRects().length > 0,
     // Move or Rotate open: a body row's click adds that body to the ones moved, as Fusion's selection box does (35e2b, issue #221).
     // Its own hidden flag, not whether it is drawn: on a phone an open panel can wait in the shut sheet.
-    moving: document.getElementById("move-panel")?.hidden === false,
+    moving: document.getElementById("move-panel")?.hidden === false || document.getElementById("combine-panel")?.hidden === false,
+    // The bodies an open Move previews where they would go: each a body of its own in the kernel until OK or Cancel.
+    previewing: document.getElementById("move-panel")?.hidden === false ? document.querySelectorAll('#browser .tree-row[data-node^="body-"][aria-current="true"]').length : 0,
   };
 }
 
@@ -186,6 +191,9 @@ async function settle(page) {
   fail("settles", "the page was still changing 6 s after the action");
 }
 
+/** More than Save's double-click time (REPEAT_MS, 500 ms), so each of the monkey's saves is a press of its own. */
+const SAVE_GAP_MS = 600;
+
 /**
  * Save: the file's text, which also becomes the file `open` reopens. Only a
  * project file counts: a Download STL clicked earlier finishes when the
@@ -196,6 +204,11 @@ async function settle(page) {
  */
 async function save(s, stray = false) {
   const project = (d) => d.suggestedFilename().endsWith(".spindle");
+  // Save takes presses closer than 500 ms to the one before as one press, a double-click (packages/ui press-guard.ts,
+  // REPEAT_MS): the monkey saves after every action, often sooner than a person could, so it waits that out first.
+  const since = Date.now() - (s.savedAt ?? -Infinity);
+  if (since < SAVE_GAP_MS) await s.page.waitForTimeout(SAVE_GAP_MS - since);
+  s.savedAt = Date.now();
   const click = (stray) => {
     if (stray) Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["SpindleLabs STL: stray"])), download: "fission-box.stl" }).click();
     document.getElementById("save").click();
@@ -265,6 +278,8 @@ async function check(s) {
   }
   s.seen.add(key);
   s.design = design;
+  // Combines made in the run (35f1d), each id once: how often the monkey got the hidden tool all the way to OK.
+  for (const f of design.timeline.features) if (f.intent.type === "combine") s.combined.add(f.id);
   if (view.design) {
     const failed = new Set(view.failed);
     const want = expectedView(design, failed);
@@ -276,7 +291,8 @@ async function check(s) {
       if (verdict !== null && (verdict === "fails") !== failed.has(id)) fail("failed items match the file", `${f.intent.summary} (${id}) ${failed.has(id) ? "is marked failed" : "is not marked failed"}, but by its sizes it ${verdict === "fails" ? "fails" : "builds"}`);
     }
     // Finding 5: a row for each solid that built, none for one that failed, each "Body n" by its place among the solids that build.
-    const rows = want.rows.map((r) => `${r.row} Body ${r.place}`);
+    // A Combine's piece is the kernel's to make (monkey-core.mjs): its row counts when the app shows it.
+    const rows = want.rows.map((r) => `${r.row} Body ${r.place}`).filter((r, i) => !want.rows[i].piece || view.rows.includes(r));
     if (JSON.stringify(view.rows) !== JSON.stringify(rows)) fail("Bodies group matches the file", `rows ${JSON.stringify(view.rows)}, the file builds ${JSON.stringify(rows)}`);
     // A rebuild still running may hold a body it is about to free, so a count over is read again before it counts as a leak.
     let held = await s.page.evaluate(() => window.fissionTest.bodyCount());
@@ -284,9 +300,10 @@ async function check(s) {
       await s.page.waitForTimeout(500);
       held = await s.page.evaluate(() => window.fissionTest.bodyCount());
     }
-    // Each body built is kept once in the kernel (rebuild.ts's BodyCache; two equal bodies share one), so the kernel never holds more than the Bodies group lists, and one more while the Extrude panel previews.
-    const extra = view.extruding ? 1 : 0;
-    if (held > view.bodies + extra) fail("no kernel body leaks", `the kernel holds ${held} bodies, the Bodies group lists ${view.bodies}${extra ? " and the Extrude panel is open" : ""}`);
+    // Each body built is kept once in the kernel (rebuild.ts's BodyCache; two equal bodies share one), so the kernel never holds more than the Bodies group lists, and one more while the Extrude panel previews, and one for each body an open Move previews.
+    // A built Combine's inputs and the bodies a built Move moved, as they were, are kept too, so each builds again at once (`want.held`).
+    const extra = (view.extruding ? 1 : 0) + view.previewing + want.held;
+    if (held > view.bodies + extra) fail("no kernel body leaks", `the kernel holds ${held} bodies, the Bodies group lists ${view.bodies}${view.extruding ? " and the Extrude panel is open" : ""}${view.previewing ? `, and Move previews ${view.previewing}` : ""}${want.held ? `, and its Moves and Combines keep ${want.held} bodies as they were` : ""}`);
   }
   if (s.errors.length) fail("no errors", s.errors.splice(0).join(" | "));
 }
@@ -424,12 +441,49 @@ async function act(s, a) {
       same("save then open gives the same file", before, await save(s));
       return true;
     }
+    case "combine": {
+      // 35f1d: Modify ▾'s Combine, a target and a tool picked by their Bodies rows, an operation, Keep tools, then OK
+      // (or Cancel): what a person does with the panel, all of it through the real buttons.
+      const view = await settle(page);
+      if (!view.design || view.sketching || view.dialogs.length || view.extruding || view.moving) return false;
+      const rows = await page.$$eval('#browser .tree-row[data-node^="body-"]', (rs) => rs.map((r) => r.dataset.node));
+      if (rows.length < 2) return false;
+      const target = rows[Math.floor(a.a * rows.length)];
+      const others = rows.filter((r) => r !== target);
+      const tool = others[Math.floor(a.b * others.length)];
+      await page.evaluate(() => document.getElementById("modify-menu")?.click());
+      if (!(await page.evaluate(() => document.getElementById("modify-menu-combine") !== null))) return false;
+      await page.evaluate(() => document.getElementById("modify-menu-combine").click());
+      if (!(await page.evaluate(() => document.getElementById("combine-panel")?.hidden === false))) return false;
+      // A body selected before Combine opened is its target already: a click on it would take it out again.
+      for (const row of [target, tool]) {
+        if (await page.evaluate((row) => document.querySelector(`#browser .tree-row[data-node="${row}"]`)?.getAttribute("aria-current") === "true", row)) continue;
+        await page.evaluate((row) => document.querySelector(`#browser .tree-row[data-node="${row}"]`)?.click(), row);
+        await settle(page);
+      }
+      // The operation must be in reach once both bodies are picked (35f1d: at phone width it was in the shut sheet, so
+      // this waited 30 s); a panel the picks closed (a Cancel, an Escape) has nothing to choose.
+      if (await page.evaluate(() => document.getElementById("combine-panel")?.hidden === false && document.getElementById("combine-hint")?.hidden === true)) {
+        await page.selectOption("#combine-operation", a.op, { timeout: 5000 }).catch(() => fail("combine reachable", "Combine's operation is out of reach with its bodies picked"));
+      }
+      await page.evaluate((keep) => {
+        const box = document.getElementById("combine-keep");
+        if (box && box.checked !== keep) box.click();
+      }, a.keep);
+      // Tried: OK pressed with both fields filled, so the kernel answered (a Combine made, or refused in words: curved
+      // bodies wait for step 37). The night counts these too, since the monkey's bodies are often spheres.
+      if (a.ok && (await page.evaluate(() => document.getElementById("combine-ok")?.disabled === false))) s.tried++;
+      await page.evaluate((ok) => document.getElementById(ok ? "combine-ok" : "combine-cancel")?.click(), a.ok);
+      return true;
+    }
     case "select-bodies": {
       // Each body in turn, by its Bodies row: the selection, the Feature panel, the Body panel's volume and the highlighted faces must all be that body's.
       const view = await settle(page);
       if (!view.design || view.sketching || view.dialogs.length || view.extruding || view.moving || !s.saved) return false;
       const design = JSON.parse(s.saved).workspaces.design;
-      const { rows } = expectedView(design, new Set(view.failed));
+      const model = expectedView(design, new Set(view.failed));
+      // A Combine's piece counts when the app shows it (as in the per-step check).
+      const rows = model.rows.filter((r) => !r.piece || view.rows.includes(`${r.row} Body ${r.place}`));
       if (rows.length !== view.bodies) return false; // the per-step check reports that
       const blocks = [];
       const wrong = []; // every disagreement, so the message shows the whole pattern
@@ -438,9 +492,9 @@ async function act(s, a) {
       // bodyHidden; issues #42 and #248: a click landing on that eye left the monkey expecting every row to select).
       const shut = new Set(design.hidden ?? []);
       const folderShut = shut.has("folder-bodies");
-      const isHidden = (id) => folderShut || shut.has(`body:${id}`);
-      const inView = rows.filter((r) => !isHidden(r.id)).length;
-      for (const { row, place, id } of rows) {
+      const isHidden = (body) => folderShut || shut.has(body);
+      const inView = rows.filter((r) => !isHidden(r.body)).length;
+      for (const { row, place, id, body, combined } of rows) {
         await page.evaluate((row) => document.querySelector(`#browser .tree-row[data-node="${row}"]`).click(), row);
         await settle(page);
         const got = await page.evaluate(() => ({
@@ -453,17 +507,19 @@ async function act(s, a) {
         }));
         const f = design.timeline.features.find((x) => x.id === id);
         const name = `Body ${place} (${f.intent.summary})`;
-        if (isHidden(id)) {
+        if (isHidden(body)) {
           if (got.selection !== "") wrong.push(`clicking hidden ${name} selected "${got.selection}"`);
           blocks.push([]);
           continue;
         }
-        if (got.selection !== `body:${id}`) wrong.push(`clicking ${name} selected "${got.selection}"`);
+        // A piece is its own body ("body:<combine>/piece:k"), made by its Combine.
+        if (got.selection !== body) wrong.push(`clicking ${name} selected "${got.selection}"`);
         if (got.intent !== f.intent.summary) wrong.push(`with ${name} selected the Feature panel says "${got.intent}"`);
         const faces = /faces ([\d,]*)/.exec(got.highlight)?.[1].split(",").filter(Boolean).map(Number) ?? [];
         const shownFaces = Number(/(\d+) F/.exec(got.topology)?.[1]);
         if (!got.stale) {
-          const want = modelVolume(design, f);
+          // A Combine's target and pieces are what the kernel made of them, which the file alone can't say.
+          const want = combined ? null : modelVolume(design, f);
           const volume = Number(got.volume.replace(/[^\d.]/g, ""));
           // The panel rounds to a few figures (fmt in properties.ts); 0.5% is far inside the gap between any two different bodies the monkey makes, and far outside the kernel's 1e-6 relative volume error.
           if (want !== null && !(Math.abs(volume - want) <= 0.005 * want)) wrong.push(`with ${name} selected the Body panel shows ${got.volume}, but that body is ${want.toPrecision(6)} mm³`);
@@ -538,10 +594,10 @@ async function run(browser, { actions, random, steps }) {
       if (process.env.MONKEY_VERBOSE) console.log(`  ${i + 1}. ${did ? "" : "(not on the page) "}${JSON.stringify(a)}`);
       await check(s);
     }
-    return { actions: done, failure: null, known: [...s.known] };
+    return { actions: done, failure: null, known: [...s.known], combined: s.combined.size, tried: s.tried };
   } catch (e) {
     const failure = e instanceof Failure ? { check: e.check, message: e.detail } : { check: "the tester itself", message: e.stack ?? String(e) };
-    return { actions: done, failure, known: [...s.known] };
+    return { actions: done, failure, known: [...s.known], combined: s.combined.size, tried: s.tried };
   } finally {
     await s.context.close();
   }
@@ -552,9 +608,15 @@ async function main() {
   const browser = await launch();
   const results = here("./monkey-results/");
   let failed = 0;
+  let combinesMade = 0;
+  let combinesTried = 0;
   const report = async (name, seed, out) => {
+    combinesMade += out.combined ?? 0;
+    combinesTried += out.tried ?? 0;
     const known = out.known.length ? `; known bug seen: ${out.known.join(", ")}` : "";
-    if (!out.failure) return console.log(`${name}: pass (${out.actions.length} actions${known})`);
+    // How many Combines the run made (35f1d): the hidden tool is only tested where the monkey gets it to OK.
+    const combines = out.tried || out.combined ? `, ${out.combined} Combine${out.combined === 1 ? "" : "s"} made of ${out.tried} tried` : "";
+    if (!out.failure) return console.log(`${name}: pass (${out.actions.length} actions${combines}${known})`);
     failed++;
     console.log(`${name}: FAIL at action ${out.actions.length}: ${out.failure.check}: ${out.failure.message}`);
     mkdirSync(results, { recursive: true });
@@ -612,8 +674,11 @@ async function main() {
     await browser.close();
     await server.close();
   }
+  // Read by monkey_night.py: a night that never got Combine to OK has not tested it (35f1d).
+  console.log(`monkey: ${combinesMade} Combine${combinesMade === 1 ? "" : "s"} made, ${combinesTried} tried`);
   console.log(failed ? `monkey: ${failed} failed` : "monkey: all passed");
   process.exitCode = failed ? 1 : 0;
 }
 
 await main();
+
