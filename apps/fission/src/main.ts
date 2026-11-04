@@ -20,7 +20,8 @@ import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf,
 import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { listedProjects } from "./projects.ts";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -677,6 +678,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 // Save the shell's. Save also stays one click, as the icon beside it.
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
+  projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
   saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, run: () => void save(true) },
   where: () => {
@@ -741,6 +743,52 @@ function openProject(text: string, fileName = "") {
     }),
   );
 }
+
+/**
+ * Opens the project kept here as `id` (File > Projects in this browser, U6a; round 2 hunt A2/A3) in place of the open
+ * one, which is kept as it is (finish, as Open does). Throws, leaving the open project as it was, when it can't be
+ * read. Once it has shown it is kept under its own id, and stored again as it is with a new save number
+ * (bringForward), so a reload opens it; one that freezes the tab building it is never brought forward, so a reload
+ * opens the last project as before (security audit S2).
+ */
+async function openStored(id: string, modified: Date | null) {
+  await started;
+  // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
+  const kept = keptEntry(local, id);
+  const project = kept === null ? await store.open(id) : projectFromJson(kept, workspaces);
+  // Changes this tab couldn't store (another tab saved since) are kept as a separate project, and said, as Open does (round 2 hunt A5).
+  const apart = autosave?.finish() ?? null;
+  autosave = null;
+  guard.finished();
+  fileStatus(apart === null ? "" : keptApartWords(apart));
+  replaceProject(project);
+  statusBeforeOpening ??= shownStatus;
+  saveStatus({ state: "saving" });
+  whileOpening(OPENING_FILE, () => {
+    statusBeforeOpening = null;
+    keep(id, kept === null, kept === null ? modified : null, kept !== null);
+    if (kept !== null) return saveStatus({ state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
+    if (modified === null) return autosave?.changed(); // no save time to expect: its first save stores it, and lists it first
+    // "Saving…" until it is the project a reload opens (leaving meanwhile asks first), unless an edit's own save took over the mark.
+    const waiting: AutosaveStatus = { state: "saving" };
+    saveStatus(waiting);
+    const mine = autosave;
+    const done = (s: AutosaveStatus) => void (autosave === mine && shownStatus === waiting && saveStatus(s));
+    bringForward(store, id, modified).then(
+      () => done({ state: "saved" }),
+      (e) => {
+        done({ state: "saved" }); // the project itself is stored as it was: only which one a reload opens is not
+        fileStatus(`"${project.name || "Untitled"}" is open, but this browser couldn't mark it as the last project (${e instanceof Error ? e.message : String(e)}), so a reload may open another one: File > Projects in this browser reaches it.`);
+      },
+    );
+  });
+}
+const projects = listedProjects(document, {
+  store,
+  journal: local,
+  openId: () => (autosave === null ? null : (document.body.dataset.projectId ?? null)),
+  open: openStored,
+});
 
 // While a project opens (the last one reopened, or a file), the top bar
 // offers to start a new one instead once it has taken OFFER_MS, so a big
