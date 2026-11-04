@@ -10,7 +10,7 @@ import { pinProperties } from "./properties.mjs";
 import { startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4179, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4179/";
+const url = "http://localhost:4179/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 
@@ -60,7 +60,7 @@ try {
       // Worked out from the table: Design is on screen, so it comes first, then the
       // app's keys; no placeholder binds a key and Image binds none yet.
       assert.deepEqual(await listed(page), [
-        { title: "Design on screen", rows: ["Esc: Clear the selection", "Enter: OK in the Extrude, Move or Rotate panel", "M: Move bodies (outside a sketch)", "Shift+R: Rotate bodies (outside a sketch)", "E: Extrude", "S: Search the commands by name (outside a sketch)", "Ctrl+C: Copy the selected profile as SVG", "L: Line tool (in a sketch)", "R: Rectangle tool (in a sketch)", "C: Circle tool (in a sketch)", "A: 3-point arc tool (in a sketch)", "P: Project tool (in a sketch)", "0 1 2 3 4 5 6 7 8 9 . -: Type a length or width (while drawing a line or rectangle)"] },
+        { title: "Design on screen", rows: ["Esc: Clear the selection", "Enter: OK in the Extrude, Move or Rotate panel", "M: Move bodies (outside a sketch)", "Shift+R: Rotate bodies (outside a sketch)", "E: Extrude", "S: Search the commands by name (outside a sketch)", "Ctrl+C: Copy the selected profile as SVG", "L: Line tool (in a sketch)", "R: Rectangle tool (in a sketch)", "C: Circle tool (in a sketch)", "A: 3-point arc tool (in a sketch)", "P: Project tool (in a sketch)", "Delete Backspace: Delete the selected sketch curves (in a sketch)", "0 1 2 3 4 5 6 7 8 9 . -: Type a length or width (while drawing a line or rectangle)"] },
         { title: "Everywhere", rows: ["?: Show the keyboard shortcuts", "Ctrl+V: Paste files into the project (a project file, an image…)", "Ctrl+Z: Undo", "Ctrl+Shift+Z Ctrl+Y: Redo"] },
       ]);
       await page.screenshot({ path: "e2e/shortcuts.png" });

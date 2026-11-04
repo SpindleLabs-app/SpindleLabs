@@ -75,8 +75,20 @@ export interface SketchDrawing {
    * `picks` (step 27d, the Project tool): while it is edited, a click or a
    * hover also says which body edge or face is under the pointer
    * (SketchPointer `edge`, `face`), and lights it as a hover does.
+   * `picked` and `hover` (the Select tool, Design's sketch-select.ts): the
+   * curves selected, drawn lit, and the one under the pointer, drawn
+   * lighter, as segments; each absent when none.
    */
-  editing?: { grid: number; gridSnap?: boolean; points: readonly SketchXY[]; preview: readonly (readonly [SketchXY, SketchXY])[]; snap?: { label: string; marks: readonly (readonly [SketchXY, SketchXY])[] }; picks?: true };
+  editing?: {
+    grid: number;
+    gridSnap?: boolean;
+    points: readonly SketchXY[];
+    preview: readonly (readonly [SketchXY, SketchXY])[];
+    snap?: { label: string; marks: readonly (readonly [SketchXY, SketchXY])[] };
+    picks?: true;
+    picked?: readonly (readonly [SketchXY, SketchXY])[];
+    hover?: readonly (readonly [SketchXY, SketchXY])[];
+  };
 }
 
 /** An origin plane drawn small at the origin to be picked (Create sketch); one not offered is drawn faint and can't be clicked. */
@@ -127,6 +139,10 @@ export interface SketchPointer {
    */
   edge?: number | null;
   face?: number | null;
+  /** A click with Shift held (the sketch's Select tool adds to its picks); absent for a move or without Shift. */
+  shift?: true;
+  /** A click made by a finger (the Select tool reaches further for one); absent for a mouse or pen. */
+  touch?: true;
 }
 
 /** A closed sketch outline Extrude offers to pick in the view (UX1b), by its sketch's id, in its plane's frame (as sketch_outline gives it). */
@@ -252,6 +268,16 @@ export interface SharedViewport {
    * pointer is drawn hovered.
    */
   onPick: ((pick: ViewportPick) => void) | null;
+  /**
+   * Called on a right-click, or a finger held still (HOLD_MS), on the view
+   * while onPick is set and nothing else hears the pointer (no Extrude,
+   * sketch or offered planes): what is under it as a click would pick it
+   * (`shift` false), and where on the screen (client pixels). Returns
+   * whether it opened a menu: then the browser's own stays shut and the
+   * held finger's release picks nothing. The shown workspace sets it and
+   * puts back null on hide; absent, a right-click does nothing of the app's.
+   */
+  onMenu?: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null;
   /** Draws these sketches (replacing the ones drawn before); an empty list draws none. While one is being edited the ground grid gives way to its own. */
   showSketches(drawings: readonly SketchDrawing[]): void;
   /**

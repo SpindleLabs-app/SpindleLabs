@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -59,6 +59,34 @@ test("kernelFailure keeps the kernel's kind, inputs and message", () => {
   assert.deepEqual(e.inputs, failure.inputs);
   // Printed as any Error was, which tests matching /^Error: …/ rely on.
   assert.equal(String(e), "Error: width must be between 0.001 and 1000000 mm, got -1");
+});
+
+test("a thin result keeps its kind and the places it is too thin", () => {
+  // What the kernel throws since step 36c3 when a boolean's result would have a wall, gap or
+  // step thinner than 0.001 mm or an edge shorter: kind "thin-result" and `thin`, each an
+  // edge (its two ends) or a gap (the nearest points of its two sides), in world mm.
+  const message = "it would leave a gap or sliver thinner than 1 µm: an edge 5e-4 mm long, from [0, 0, 0] to [0.0005, 0, 0]";
+  const thin = [
+    { at: "edge", from: [0, 0, 0], to: [0.0005, 0, 0] },
+    { at: "gap", from: [2, 2, 0.0009], to: [2, 2, 0] },
+  ];
+  const failure = kernelFailure(Object.assign(new Error(message), { kind: "thin-result", inputs: [], thin }));
+  assert.deepEqual(failure, { kind: "thin-result", inputs: [], message, thin });
+  const e = new KernelError(failure);
+  assert.equal(e.kind, "thin-result");
+  assert.deepEqual(e.thin, thin);
+  assert.deepEqual(e.touches, []);
+  // A place that isn't one (a point of two numbers, a word, an `at` that is a corner or
+  // unknown, a number that isn't finite) is left out; the rest are kept.
+  const odd = [{ at: "gap", from: [1, 1], to: [1, 1, 1] }, "gap", { at: "corner", from: [0, 0, 0], to: [0, 0, 1] }, { at: "edge", from: [0, NaN, 0], to: [0, 0, 1] }, { at: "gap", from: [3, 4, 5], to: [3, 4, 5.0005] }];
+  assert.deepEqual(kernelFailure(Object.assign(new Error(message), { kind: "thin-result", inputs: [], thin: odd })).thin, [{ at: "gap", from: [3, 4, 5], to: [3, 4, 5.0005] }]);
+  // No list at all: the kind stands with no places.
+  assert.deepEqual(kernelFailure(Object.assign(new Error(message), { kind: "thin-result", inputs: [] })).thin, []);
+  // Every other kind carries no thin places, even if the error had some (a non-manifold
+  // result keeps only its touches).
+  const other = kernelFailure(Object.assign(new Error("x"), { kind: "non-manifold-result", inputs: [], thin }));
+  assert.equal(other.thin, undefined);
+  assert.deepEqual(new KernelError(other).thin, []);
 });
 
 test("a non-manifold result keeps its kind and the places it touches", () => {
@@ -727,6 +755,43 @@ test("a slice's progress reaches the listeners while its call waits, and stops w
     worker.answer(2, {});
     await again;
     assert.deepEqual(heard, [0.25, 0.5]);
+  }));
+
+test("stopping the slices lets the kernel go only while one waits: the slice fails as stopped, the calls behind it as restarted, the design hears once (slicer hunt 11-04, ui 3)", () =>
+  withFakeWorker(async (client, old) => {
+    old.ready(1);
+    let heard = 0;
+    client.onRestart(() => heard++);
+    // Nothing slicing: nothing is stopped, the kernel is kept.
+    const count = client.call("body_count");
+    assert.equal(client.stopSlicing(), false);
+    assert.equal(old.terminated, false);
+    old.answer(1, 0);
+    assert.equal(await count, 0);
+    // A slice running, an edit's call waiting behind it.
+    const made = FakeWorker.made;
+    const sliced = client.call("print_file_stl", new Uint8Array(84), 0.2, 2, 15, "tree", "textured", "standard", true, false);
+    const edit = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
+    assert.equal(client.stopSlicing(), true);
+    await assert.rejects(sliced, (e: KernelError) => e instanceof KernelError && e.message === KERNEL_SLICE_STOPPED);
+    await assert.rejects(edit, (e: KernelError) => e.message === KERNEL_RESTARTED);
+    assert.equal(old.terminated, true);
+    assert.equal(FakeWorker.made, made + 1);
+    assert.equal(heard, 1);
+    // The fresh kernel answers at once: nothing waits behind the stopped slice.
+    const fresh = FakeWorker.last;
+    fresh.ready(1);
+    const next = client.call("body_count");
+    assert.deepEqual(fresh.posted, [{ id: 4, op: "body_count", args: [] }]);
+    fresh.answer(4, 0);
+    assert.equal(await next, 0);
+    // A slice waiting behind another call is stopped too (the plain slice after the file's).
+    const first = client.call("body_count");
+    const queued = client.call("slice_stl", new Uint8Array(84), 0.2, 2, 15, "off");
+    assert.equal(client.stopSlicing(), true);
+    await assert.rejects(first, (e: KernelError) => e.message === KERNEL_RESTARTED);
+    await assert.rejects(queued, (e: KernelError) => e.message === KERNEL_SLICE_STOPPED);
+    assert.equal(heard, 2);
   }));
 
 test("the worker's progress poster sends a stage's reports at most every PROGRESS_EVERY_MS, but every new stage and the end at once", () => {

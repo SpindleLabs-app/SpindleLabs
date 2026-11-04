@@ -64,6 +64,9 @@
 // - New items go in just after the marker, and the marker moves onto them.
 // - Deleting the item the marker is on moves the marker to the item before
 //   it ("start" if there is none).
+// - Moving the item the marker is on to another place does the same: the
+//   marker stays in its gap, so nothing else rolls back or builds (Fusion's
+//   rule, owner's decision 2026-11-04).
 //
 // `faults` plants the bugs the session tests use to prove the harness
 // catches them (timeline-session.ts); real code never passes any.
@@ -1046,6 +1049,8 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
     case "reorder": {
       const k = doc.items.findIndex((i) => i.id === op.item);
       const [item] = doc.items.splice(k, 1);
+      // The marker stays in its gap (hunt2 C3): moved off the item dragged, onto the one before it, or the start.
+      const marker = doc.marker === op.item ? (k === 0 ? "start" : doc.items[k - 1].id) : doc.marker;
       doc.items.splice(op.to, 0, item);
       if (!faults.has("reorder-past-dependency")) {
         const at = (id: string) => doc.items.findIndex((i) => i.id === id);
@@ -1054,6 +1059,7 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
         if (deps(item).some((d) => at(d) > op.to)) return { kind: "refused", cause: "before-dependency" };
         if (doc.items.some((i, j) => j < op.to && deps(i).includes(item.id))) return { kind: "refused", cause: "after-dependent" };
       }
+      if (k !== op.to) doc.marker = marker;
       return { kind: "done", ids: [] };
     }
     case "suppress":

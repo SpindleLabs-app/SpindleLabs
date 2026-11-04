@@ -20,6 +20,7 @@ type PickHandler = (pick: ViewportPick) => void;
 type SketchHandler = (pointer: SketchPointer) => void;
 type ExtrudeHandler = (pointer: ExtrudePointer) => void;
 type MoveHandler = (pointer: MovePointer) => void;
+type MenuHandler = (pick: ViewportPick, at: { x: number; y: number }) => boolean;
 
 /**
  * Returns a maker of panes over `scene` (the Viewer). The viewer has one
@@ -33,11 +34,13 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
   const sketchers = new Map<object, SketchHandler>(); // the same rule for the sketch pointer
   const extruders = new Map<object, ExtrudeHandler>(); // and for Extrude's (UX1b)
   const movers = new Map<object, MoveHandler>(); // and for Move's handles (35e2c)
+  const menus = new Map<object, MenuHandler>(); // and for the view's menu on a body
   const sync = () => {
     scene.onPick = [...pickers.values()].at(-1) ?? null;
     scene.onSketchPointer = [...sketchers.values()].at(-1) ?? null;
     scene.onExtrudePointer = [...extruders.values()].at(-1) ?? null;
     scene.onMovePointer = [...movers.values()].at(-1) ?? null;
+    scene.onMenu = [...menus.values()].at(-1) ?? null;
   };
   return (view) => {
     const key = {};
@@ -83,6 +86,14 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       set onSketchPointer(handler: SketchHandler | null) {
         sketchers.delete(key);
         if (handler) sketchers.set(key, handler);
+        sync();
+      },
+      get onMenu() {
+        return menus.get(key) ?? null;
+      },
+      set onMenu(handler: MenuHandler | null | undefined) {
+        menus.delete(key);
+        if (handler) menus.set(key, handler);
         sync();
       },
       get onPick() {

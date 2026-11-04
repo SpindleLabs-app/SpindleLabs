@@ -9,17 +9,21 @@
 
 import type { DataReader } from "@fission/core";
 import { indexedDbKeyValue } from "./indexeddb.ts";
-import { projectStore, type ProjectStore } from "./store.ts";
+import { projectStore } from "./store.ts";
+import { versionedStore, type VersionedStore } from "./versions.ts";
 
 export { indexedDbKeyValue } from "./indexeddb.ts";
 export { memoryKeyValue, type KeyValue } from "./key-value.ts";
 export { startAutosave, QUIET_MS, STORAGE_ANSWER_MS, STORAGE_NOT_ANSWERING, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
 export { ProjectChangedError, projectStore, storedCopy, type ProjectStore, type ProjectSummary } from "./store.ts";
 export { keepStorage, type PersistentStorage } from "./persist.ts";
-export { fromAnotherTab, journalEntry, keptEntry, NEWER_PREFIX, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
+export { ASIDE_PREFIX, asideKey, fromAnotherTab, journalEntry, keptEntry, NEWER_PREFIX, putAsideOthers, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
 export { ASK_MS, OPENING_KEY, reopenGuard, SETTLED_MS, type MarkStorage, type OpeningChannel, type ReopenGuard } from "./reopen.ts";
 
 /** The store for this browser, kept in IndexedDB. `readers` are the workspace plugins. */
-export function localStore(readers: readonly DataReader[]): ProjectStore {
-  return projectStore(indexedDbKeyValue(), readers);
+export function localStore(readers: readonly DataReader[]): VersionedStore {
+  const kv = indexedDbKeyValue();
+  return versionedStore(projectStore(kv, readers), kv, readers);
 }
+export { bringForward, forget } from "./projects.ts";
+export { storageFull, versionedStore, VERSION_GAP_MS, VERSION_LIMIT, type VersionedStore } from "./versions.ts";

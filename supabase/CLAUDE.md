@@ -1,0 +1,7 @@
+# Accounts database
+
+The optional accounts' database (Supabase: PostgreSQL with row level security). Designs are never stored here. Read with the root CLAUDE.md; the app side is `packages/account` and `apps/fission/src/account.ts`.
+
+- `migrations/`: the schema, applied in name order by the Supabase CLI (`supabase db push`). Never edit a migration that has been applied to the live project; add a new one. Every public table gets row level security and starts by revoking Supabase's default grants to `anon` and `authenticated`; grants are column by column where a person may change anything.
+- `migrations/20261104000000_accounts.sql`: `profiles` (the email choice, unticked by default, with the time it last changed as the consent record), `plans` (free/pro/team, written only by the server), `ai_allowance` (never read by the browser; `my_allowance()` gives the whole percentage used, rounded down, at most 100), `my_data()` (everything kept about the person), `delete_my_account()` (removes the sign-in and every row through the foreign keys), and the trigger giving a first sign-in its rows.
+- `test/test_database.py` (`python3 -m unittest discover -s supabase/test`, run by CI): a throwaway PostgreSQL with `test/auth_stub.sql` (Supabase's roles, `auth.users`, `auth.uid()` and its default grants), then every migration, acting as signed-in people, as nobody and as the owner. Fails, never skips, when PostgreSQL's server programs are missing.

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from file_issues import MARK, MAX_NEW, OVERFLOW, cap, check_kinds, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
+from file_issues import MARK, MAX_NEW, OVERFLOW, boolean_kinds, cap, check_kinds, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, judge_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
 
 # Lines copied from real reports on the test-results branch.
 ROTATE_A = ("  seed 0x12849982fbf1: step 3 (Rotate { target: 1, pivot: [0.0, 0.0, 0.0], axis: [1.0, 0.0, 0.0], "
@@ -107,6 +107,86 @@ class Kinds(unittest.TestCase):
         got = kinds_of({"harness-output.txt": "running 1 test\nthread panicked at src/x.rs:1\nerror: test failed\n"})
         self.assertEqual(list(got), ["harness crashed without a report"])
         self.assertIn("panicked", got["harness crashed without a report"])
+
+    # Issue #22: rounds filed as "harness crashed without a report" had
+    # passed the harness and failed the boolean leg, whose output and judge
+    # were never read. The shapes of real seed folders, made-up contents.
+    BOOL_CHAIN = (
+        "Stateful kernel test: 1180 cases over 1 seed(s) [\"0xa86f37aaeae7\"] in 6.1s\nFailures: 1\n"
+        "  seed 0xa86f37aaeae7: step 6 (Boolean { target: 0, tool: 1, kind: Union, keep_tool: false, shift: Some([0.25, 0.0, -0.25]) }): "
+        "Union body 0: volume 8.5 is not 8 (minimal chain: 6 ops)\n"
+        "  saved regression: /x/seeda86f37aaeae7-c1fe576616905573.json\n"
+        "thread 'stateful_boolean_chains' (4239) panicked at tests/x.rs:1:5:\n"
+        "Stateful kernel test: 1180 cases over 1 seed(s) [\"0xa86f37aaeae7\"] in 6.1s\n")
+    BOOL_PANIC = (
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 44 filtered out; finished in 5.15s\n"
+        "the_kernel_answers_every_pair --- FAILED\nfailures:\n\n---- the_kernel_answers_every_pair stdout ----\n"
+        "30c answers: all families: bodies 281  empty 47  not yet 272  refused 0  crashed 0\n\n"
+        "thread 'the_kernel_answers_every_pair' (4510) panicked at tests/y.rs:2:9:\n"
+        "boxes apart: 3 answers, at least 4 wanted\n"
+        "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n")
+    JUDGE = (
+        "Judged 6 lines: 5 agree, 1 disagree\n"
+        "  not yet (a later step): boxes apart 2\n"
+        "Manifold: 6 lines compared\n"
+        "  line 352 (boxes apart at 100 km, union): OpenCascade's counts [(12, 24, 16, 2, 0)] where the model has [(6, 12, 8, 1, 0)]\n")
+    PASSED = "running 1 test\ntest stateful_random_chains ... ok\ntest result: ok. 1 passed; 0 failed\n"
+
+    def test_issue_22_a_boolean_chain_failure_is_its_kind(self):
+        got = kinds_of({"report.txt": "Stateful kernel test: 2017 cases\nFailures: 0\n", "harness-output.txt": self.PASSED,
+                        "booleans-output.txt": self.BOOL_CHAIN})
+        # The chains' summary panic is not a second kind: its case is named.
+        self.assertEqual(list(got), ["boolean chains, Boolean: Union body #: volume # is not #"])
+        self.assertIn("seed 0xa86f37aaeae7: step 6", got[list(got)[0]])
+
+    def test_issue_22_a_boolean_test_that_panicked_is_its_kind(self):
+        got = kinds_of({"report.txt": "Failures: 0\n", "harness-output.txt": self.PASSED, "booleans-output.txt": self.BOOL_PANIC})
+        self.assertEqual(list(got), ["boolean test the_kernel_answers_every_pair: boxes apart: # answers, at least # wanted"])
+        self.assertIn("panicked at", got[list(got)[0]])
+        # The chains' summary panic with no case line is still a kind.
+        lone = "thread 'stateful_boolean_chains' (9) panicked at tests/x.rs:1:5:\nStateful kernel test: 1 cases\n"
+        self.assertEqual([k for k, _ in boolean_kinds(lone)], ["boolean test stateful_boolean_chains: Stateful kernel test: # cases"])
+        self.assertEqual(boolean_kinds(self.PASSED), [])
+
+    def test_issue_22_a_judge_disagreement_is_its_kind_at_every_size(self):
+        got = kinds_of({"report.txt": "Failures: 0\n", "harness-output.txt": self.PASSED, "booleans-judge.txt": self.JUDGE})
+        kind = "boolean judge disagrees, boxes apart, union: OpenCascade's counts [(#, #, #, #, #)] where the model has [(#, #, #, #, #)]"
+        self.assertEqual(list(got), [kind])
+        # The same disagreement at another size, with other counts: one kind.
+        other = "  line 94 (boxes apart at origin, union): OpenCascade's counts [(6, 12, 8, 1, 0)] where the model has [(12, 24, 16, 2, 0)]"
+        self.assertEqual([k for k, _ in judge_kinds(other)], [kind])
+        sub = "  line 95 (boxes apart at origin, subtract): edges 24 where the model has 12; vertices 16 where the model has 8"
+        self.assertEqual([k for k, _ in judge_kinds(sub)], ["boolean judge disagrees, boxes apart, subtract: edges # where the model has #; vertices # where the model has #"])
+        # A number in the case's name is taken out too.
+        off = ["  line 9 (boxes apart -1.0 apart at 1 km, intersect): body 0 read from STEP: volume 2 where the kernel has 1",
+               "  line 7 (boxes apart -1.1 apart at origin, intersect): body 0 read from STEP: volume 3 where the kernel has 1"]
+        self.assertEqual({k for line in off for k, _ in judge_kinds(line)},
+                         {"boolean judge disagrees, boxes apart # apart, intersect: body # read from STEP: volume # where the kernel has #"})
+        # A judge that agrees (the summary and "not yet" lines) is no kind.
+        self.assertEqual(judge_kinds(self.JUDGE.rsplit("  line", 1)[0]), [])
+
+    def test_issue_22_a_crash_names_the_leg_that_failed(self):
+        got = kinds_of({"report.txt": "Failures: 0\n", "harness-output.txt": self.PASSED,
+                        "booleans-output.txt": "Compiling x\nerror: could not compile `fission-kernel`\n"})
+        self.assertEqual(list(got), ["boolean tests crashed without a report"])
+        self.assertIn("could not compile", got["boolean tests crashed without a report"])
+        # Its issue says how to replay the boolean leg.
+        title, body = texts("create", "boolean tests crashed without a report", [("1", "x")], "https://run", "abc", "main")
+        self.assertEqual(title, "Random testing (booleans): tests crashed without a report")
+        self.assertIn("stateful_boolean_chains", body)
+        self.assertIn("--test boolean_answers", body)
+
+    def test_issue_22_the_boolean_files_are_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            seed = os.path.join(d, "endless-a-0", "seed-26664604497651")
+            os.makedirs(seed)
+            for name, text in (("report.txt", "Failures: 0\n"), ("harness-output.txt", self.PASSED),
+                               ("booleans-output.txt", self.BOOL_PANIC), ("booleans-judge.txt", self.JUDGE)):
+                with open(os.path.join(seed, name), "w") as f:
+                    f.write(text)
+            found = gather(read_folders(d))
+        self.assertEqual(sorted(k.split(",")[0].split(":")[0] for k in found),
+                         ["boolean judge disagrees", "boolean test the_kernel_answers_every_pair"])
 
     def test_one_kind_per_folder_once(self):
         got = kinds_of({"report.txt": ROTATE_A + "\n" + ROTATE_B + "\n", "oracle-disagreements.txt": DISAGREE})
@@ -443,6 +523,34 @@ class Checks(unittest.TestCase):
                 f.write("success\n")
             reports, _ = file_issues.read_checks(d)
         self.assertEqual(reports, {"fuzz-kernel-sketch/job-status.txt": "success\n"})
+
+    def test_a_failures_bodies_and_picture_are_linked(self):
+        # Ben (2026-11-04): a nightly issue shows the failing bodies, to open in a CAD program, and a picture,
+        # without replaying the seed. The links point at the folder collect puts on the test-results branch.
+        import file_issues
+        with tempfile.TemporaryDirectory() as d:
+            dump = os.path.join(d, "fuzz-kernel-boolean", "seed-42", "failure-dumps", "input-1-crash-ab")
+            os.makedirs(dump)
+            for f in ["index.html", "target.step", "target.obj", "target.stl", "Union_0.step", "Union_0.obj", "picture.png"]:
+                open(os.path.join(dump, f), "w").close()
+            # A second dump of the same round, later by name: only the first is shown.
+            os.makedirs(os.path.join(d, "fuzz-kernel-boolean", "seed-42", "failure-dumps", "input-2-crash-cd"))
+            base = "https://github.com/o/r/blob/test-results/fuzz/failures/seed-42/failure-dumps/input-1-crash-ab/"
+            got = file_issues.attachments(d, "42", "fuzz/failures", "o/r")
+            self.assertEqual(got.splitlines(), [
+                f"![a picture of input-1-crash-ab]({base}picture.png?raw=true)",
+                "",
+                f"Its bodies, to open in a CAD program (STEP) or a mesh viewer (OBJ): "
+                f"[target.step]({base}target.step) · [target.obj]({base}target.obj) · "
+                f"[Union_0.step]({base}Union_0.step) · [Union_0.obj]({base}Union_0.obj) · "
+                f"[the 3D page]({base}index.html) (download it and open it in a browser)",
+            ])
+            # No picture (the browser failed): the bodies alone.
+            os.remove(os.path.join(dump, "picture.png"))
+            self.assertTrue(file_issues.attachments(d, "42", "fuzz/failures", "o/r").startswith("Its bodies"))
+            # No dump, no repo or no such seed: nothing.
+            self.assertEqual(file_issues.attachments(d, "7", "failures", "o/r"), "")
+            self.assertEqual(file_issues.attachments(d, "42", "fuzz/failures", ""), "")
 
     def test_check_texts_and_the_whole_run(self):
         kind = "check the golden job failed with nothing more specific reported"

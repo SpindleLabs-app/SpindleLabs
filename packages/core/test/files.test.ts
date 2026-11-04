@@ -82,9 +82,18 @@ test("binary STL by its size alone, worked out by hand, and only when named .stl
   assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 134))), is("stl"));
   assert.deepEqual(identifyFile(file("part.stl", binaryStl(2, 184))), is("stl"));
   assert.deepEqual(identifyFile(file("empty.stl", binaryStl(0, 84))), is("stl"));
-  // One byte short or over: the count and the size disagree.
+  // One byte short: the count says more triangles than the file holds.
   assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 133))), renamed("stl"));
-  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 135))), renamed("stl"));
+  // Round 2 hunt B1: a few bytes after the last triangle (padding some exporters add; common readers take it) is still
+  // an STL, up to 49 of them (134 + 49 = 183 holds one whole triangle and 49 bytes); at 50 more (184) the size holds two
+  // whole triangles, so a count of 1 disagrees with it. (Before, 135 was refused as damaged or renamed.)
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 135))), is("stl"));
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 183))), is("stl"));
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 184))), renamed("stl"));
+  // A count of 0 with triangles after it (writers that stream and never go back to fill it in): the triangles are the
+  // size's, 84 + 50 · 3 = 234 bytes, so an STL; with bytes past a whole triangle (235), nothing says what it holds.
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(0, 234))), is("stl"));
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(0, 235))), renamed("stl"));
   // Shorter than the header and count.
   assert.deepEqual(identifyFile(file("part.stl", new Uint8Array(83))), renamed("stl"));
   // The same bytes with another name are just bytes.
@@ -102,6 +111,10 @@ test("ASCII STL and DXF need their extension: their signatures are too weak alon
   assert.deepEqual(identifyFile(file("cube.txt", stl)), unknown);
   assert.deepEqual(identifyFile(file("cube.stl", "solid")), is("stl")); // the word alone, then the end
   assert.deepEqual(identifyFile(file("notes.stl", "solidarity")), renamed("stl")); // a longer word is not the keyword
+  // Round 2 hunt B1: some old exporters write the keyword in capitals; readers match it whatever its case.
+  assert.deepEqual(identifyFile(file("CUBE.STL", "SOLID CUBE\n  FACET NORMAL 0 0 1\n")), is("stl"));
+  assert.deepEqual(identifyFile(file("cube.stl", "Solid")), is("stl"));
+  assert.deepEqual(identifyFile(file("notes.stl", "SOLIDARITY")), renamed("stl"));
   // A text DXF opens with group code 0 and the value SECTION, one per line, padded or not, LF or CRLF.
   const dxf = "  0\r\nSECTION\r\n  2\r\nHEADER\r\n";
   assert.deepEqual(identifyFile(file("plate.dxf", dxf)), is("dxf"));
@@ -140,6 +153,9 @@ test("routing: a registered importer takes its formats; the rest are refused wit
   assert.ok(old?.kind === "open" && old.importer === shell && old.format === "project");
   // The messages, written out in full.
   assert.equal(refusal(registry, file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
+  // Round 2 hunt B1: the valid but quirky ones get the same words, not "damaged, or renamed from another type".
+  for (const quirky of [binaryStl(3, 84 + 50 * 3 + 2), binaryStl(0, 84 + 50 * 3), bytes("SOLID PART\nFACET NORMAL 0 0 1\n")])
+    assert.equal(refusal(registry, file("part.stl", quirky)), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
   assert.equal(refusal(registry, file("logo.svg", "<svg/>")), "Couldn't open “logo.svg”: SpindleLabs can't open SVG drawings yet. Vector and Laser will take them as outlines.");
   assert.equal(refusal(registry, file("plate.dxf", "0\nSECTION\n")), "Couldn't open “plate.dxf”: SpindleLabs can't open DXF drawings yet. Laser will take them as outlines.");
   assert.equal(refusal(registry, file("bracket.step", "ISO-10303-21;")), "Couldn't open “bracket.step”: SpindleLabs can't open STEP models yet. Design will take them as exact solids.");
@@ -161,6 +177,34 @@ test("routing: one file at a time, nothing for nothing, and the lists follow wha
   assert.equal(refusal(registry, file("a.png", new Uint8Array(PNG))), "Couldn't open “a.png”: SpindleLabs can't open PNG images yet. Image will take them as images.");
   registry.registerImporter(importer(["jpeg"], "image"));
   assert.equal(refusal(registry, file("x", "?")), "Couldn't open “x”: SpindleLabs doesn't know this type of file. It opens JPEG images.");
+});
+
+test("routing with only some workspaces listed (the public app: Design and Slice, Ben 2026-11-04): an unlisted workspace's importer is not used, and no message names it", () => {
+  const registry = new RepresentationRegistry();
+  const shell = importer(["project"], null);
+  const image = importer(["png", "jpeg"], "image");
+  registry.registerImporter(shell);
+  registry.registerImporter(image);
+  const publicApp = (w: string) => w === "design" || w === "slice";
+  const refusedIn = (f: FileHead) => {
+    const r = routeFiles(registry, [f], publicApp);
+    assert.equal(r?.kind, "refused");
+    return r?.kind === "refused" ? r.message : "";
+  };
+  // Image is registered but unlisted: a PNG is refused, the sentence naming Image left out.
+  assert.equal(refusedIn(file("photo.png", new Uint8Array([...PNG]))), "Couldn't open “photo.png”: SpindleLabs can't open PNG images yet.");
+  // SVG's planned workspaces (Vector, Laser) are both unlisted; STL's (Design) is listed and still named.
+  assert.equal(refusedIn(file("logo.svg", "<svg/>")), "Couldn't open “logo.svg”: SpindleLabs can't open SVG drawings yet.");
+  assert.equal(refusedIn(file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
+  // What it opens leaves images out.
+  assert.equal(refusedIn(file("notes.docx", "PK\x03\x04")), "Couldn't open “notes.docx”: SpindleLabs doesn't know this type of file. It opens SpindleLabs projects (.spindle).");
+  // A project, opened by the shell (no workspace), still opens.
+  const project = routeFiles(registry, [file("plate.spindle", projectToJson(emptyProject()))], publicApp);
+  assert.ok(project?.kind === "open" && project.importer === shell);
+  // The same PNG with every workspace listed opens in Image, as before.
+  const all = routeFiles(registry, [file("photo.png", new Uint8Array([...PNG]))], () => true);
+  assert.ok(all?.kind === "open" && all.importer === image);
+  assert.deepEqual(image.opened, []);
 });
 
 test("one importer per format: a second is refused and the first stays", () => {
@@ -348,6 +392,23 @@ test("an image over MAX_IMAGE_BYTES is refused by its size, before the shell rea
   assert.equal(refusal(registry, png(Math.round(1.1 * MAX_IMAGE_BYTES))), "Couldn't open “big.png”: it is 563.2 MB, and an image may be at most 512 MB.");
   const jpeg = { name: "big.jpg", size: MAX_IMAGE_BYTES + 1, head: new Uint8Array([0xff, 0xd8, 0xff]) };
   assert.match(refusal(registry, jpeg), /an image may be at most 512 MB/);
+  // The image limit is the images' alone (issue #273): an STL mesh past it, with a workspace taking STL, still opens.
+  const mesh = importer(["stl"], "design");
+  registry.registerImporter(mesh);
+  const stl = routeFiles(registry, [{ name: "scan.stl", size: MAX_IMAGE_BYTES + 1, head: new TextEncoder().encode("solid scan\n") }]);
+  assert.ok(stl?.kind === "open" && stl.importer === mesh && stl.format === "stl");
+});
+
+test("issue #273: a project's JSON is a project only named as one, and only when the head is the whole file", () => {
+  // The key spelled with an escape (\u0056 is "V") reads as formatVersion only once parsed, so the quick look at the
+  // head doesn't know it: the name and the parse decide.
+  const json = '{"format\\u0056ersion": 1}';
+  assert.deepEqual(identifyFile(file("plate.spindle", json)), { ok: true, format: "project" });
+  // Named like an STL mesh, it is not taken as a project: an STL that isn't one.
+  assert.deepEqual(identifyFile(file("part.stl", json)), { ok: false, reason: "renamed", claimed: "stl" });
+  // The head read is only the start of a file one byte longer: the rest is unread, so it can't be told to parse.
+  const head = new TextEncoder().encode(json);
+  assert.deepEqual(identifyFile({ name: "plate.spindle", size: head.length + 1, head }), { ok: false, reason: "renamed", claimed: "project" });
 });
 
 test("a dropped folder is refused as a folder, not as a file that can't be read", () => {

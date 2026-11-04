@@ -361,6 +361,13 @@ async function refindSession(seed: number, steps: number, plugin = designWorkspa
         for (const item of gone) {
           const { rd, b } = onBody(item);
           if (rd && rd.kind !== "body" && b && (rd.kind === "face" ? b.names.faces : b.names.edges).includes(rd.part!)) return fail(step, `${item.id} taken out, but its body still has it`);
+          // An item deleted (or its insert undone) takes its faces and edges with it, with no note, as its body (selection.ts
+          // survivors; view menu journey 2026-11-04: they used to stay selected). Every other one taken out is named.
+          if (rd && !a.doc().timeline.features.some((f) => f.id === rd.featureId)) {
+            if (a.note().includes(referenceLabel(item))) return fail(step, `${item.id} of a deleted item named in the note`);
+            reach("gone-with-its-item");
+            continue;
+          }
           if (!a.note().includes(referenceLabel(item))) return fail(step, `${item.id} taken out without the note naming it: ${JSON.stringify(a.note())}`);
         }
         if (now.some((x) => !before.some((y) => y.id === x.id))) return fail(step, "an edit added to the selection");
@@ -397,7 +404,7 @@ async function refindSession(seed: number, steps: number, plugin = designWorkspa
 
 test(`seeded: ${SEEDS} sessions × ${STEPS} steps of picks, Edit feature, Edit Sketch, Undo, Redo, suppress, the marker and deletes keep the selection on its faces by name`, async () => {
   for (let seed = 1; seed <= SEEDS; seed++) assert.equal(await refindSession(seed, STEPS), null);
-  for (const k of ["pick", "edit", "edit-refused", "edit-sketch", "shape", "undo", "redo", "suppress", "marker", "delete", "dropped", "kept-through-an-edit"])
+  for (const k of ["pick", "edit", "edit-refused", "edit-sketch", "shape", "undo", "redo", "suppress", "marker", "delete", "dropped", "kept-through-an-edit", "gone-with-its-item"])
     assert.ok((REACHED[k] ?? 0) >= 3, `${k} reached ${REACHED[k] ?? 0} times: ${JSON.stringify(REACHED)}`);
 });
 

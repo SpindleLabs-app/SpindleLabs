@@ -66,6 +66,8 @@ const CONSENT_KEY = "fission.ai.consent:";
 const AI_COMMANDS = DESIGN_COMMANDS.filter((c) => c.op === "set_part");
 const SHORT: Record<AIProviderKind, string> = { "in-browser": "in browser", ollama: "Ollama", "api-key": "API key", "browser-built-in": "built-in" };
 
+const CHANGED_WHILE_ASKING = "The project changed while the AI was answering, so its answer was for the project as it was before. Nothing was changed. Ask again.";
+
 const escape = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const list = (items: readonly string[]) => `<ul>${items.map((i) => `<li>${escape(i)}</li>`).join("")}</ul>`;
 
@@ -583,10 +585,16 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     });
   }
 
-  /** The in-browser model's download, confirmed once with its size. */
+  /**
+   * The in-browser model's download, confirmed once with its size. The size
+   * comes from the site that keeps the model's files, so even that request
+   * waits until the user has said yes to it (audit S13/L7): nothing leaves
+   * the browser before a choice.
+   */
   async function confirmDownload(s: ProviderSettings): Promise<boolean> {
     const id = s.model ?? IN_BROWSER_MODEL;
     if (store.get(`fission.ai.downloaded:${id}`) === "1") return true;
+    if (!window.confirm(`${id} runs in your browser after a one-time download from huggingface.co. To show you its size first, SpindleLabs asks huggingface.co for the model's file list (only that address is requested, nothing of yours is sent). Ask now?`)) return false;
     const bytes = await inBrowserDownloadSize(id);
     const ok = window.confirm(`${id} is downloaded once to run in your browser: ${(bytes / 1e6).toFixed(0)} MB. Download it now?`);
     if (ok) store.set(`fission.ai.downloaded:${id}`, "1");
@@ -631,15 +639,20 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       if (s.kind === "in-browser" && !(await confirmDownload(s))) return say("Nothing was downloaded or sent.");
       // What Design says about itself (25c3): its timeline, the sizes a set_part keeps, and whether Accept changes the part or adds a body.
       const view = viewOf(host);
+      // The project as the AI is told about it: an answer that arrives after the user changed it (opened a file, typed a size) was made for the old one, so it is refused, never previewed or applied.
+      const asked = projectToJson(host.project());
+      const changedWhileAsking = () => projectToJson(host.project()) !== asked;
       const offered = view.commands ?? AI_COMMANDS;
       const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, offered, view.notes), messages: [{ role: "user", content: words }] }, offered, showProgress);
       if (!answer.ok) return say(answer.error, true);
       // No commands: the AI says it can't do this with the commands it has (AI5c). Shown, never stood in for.
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
+      if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);
       const design = host.design();
       if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
       // What only the kernel can judge (an extrude's outline) is asked before the preview, so a change that can't be made is never offered (AI7c).
       const problem = await design.check?.(answer.commands);
+      if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);
       if (problem) return say(`That can't be done: ${problem} Nothing was changed.`, true);
       const shown = previewOf(view, answer.commands);
       const { before } = shown;
@@ -648,7 +661,8 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
         history: host.history,
         run: (c) => void design.run!(c),
         current: () => ({ ...before }),
-        state: () => projectToJson(host.project()),
+        // Undo and Redo set Design up afresh, leaving `design` unmounted even when the saved text is the same again: that counts as a change, so Accept is refused rather than run on a Design no longer on screen.
+        state: () => (host.design() === design ? projectToJson(host.project()) : "Design was set up again"),
       });
       pending = action;
       showProgress({ stage: "checking", attempt: answer.attempts, fraction: PREVIEWING, working: answer.explanation, commands: answer.commands.length }, "Making the preview…");

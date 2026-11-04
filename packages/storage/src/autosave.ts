@@ -31,8 +31,8 @@
 //     (unsaved.ts, own-save.test.ts).
 
 import { projectToJson, type Project } from "@fission/core";
-import { ProjectChangedError, type ProjectStore } from "./store.ts";
-import { journalEntry, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
+import { ProjectChangedError, writerId, type ProjectStore } from "./store.ts";
+import { asideKey, fromAnotherTab, journalEntry, putAsideOthers, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
 
 export type AutosaveStatus =
   /** Changes are waiting for the quiet moment, or being written now. */
@@ -79,6 +79,8 @@ export interface AutosaveOptions {
   now?: () => Date;
   /** This autosave's name in its saves and journal entries (store.ts `writerId`); a fresh random one by default. */
   writer?: string;
+  /** The id for a separate project `finish()` keeps refused changes as; a fresh random one by default. */
+  newId?: () => string;
 }
 
 export interface Autosave {
@@ -100,9 +102,16 @@ export interface Autosave {
    * store doesn't hold it yet, goes to the journal at once and is stored
    * after any save in flight. For a project being replaced (another opened,
    * a new one started) within the quiet moment of its last change, which
-   * `stop()` would drop (timeline hunt follow-up).
+   * `stop()` would drop (timeline hunt follow-up). When this tab's saves
+   * are refused (another tab saved since, or the last visit's changes are
+   * kept), the project as it is now is stored as a separate project named
+   * `fromAnotherTab`, behind the newer work, as recovery keeps a stale
+   * tab's change (unsaved.ts), and its name returned (round 2 hunt A5:
+   * Open dropped those changes); the same when finish's own save is
+   * refused, found only then (returning null). Null when nothing is kept
+   * apart.
    */
-  finish(): void;
+  finish(): string | null;
 }
 
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
@@ -130,7 +139,7 @@ export function startAutosave(
   id: string,
   project: () => Project,
   onStatus: (status: AutosaveStatus) => void = () => {},
-  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date(), fromKept = false, writer = freshWriter() }: AutosaveOptions = {},
+  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date(), fromKept = false, writer = freshWriter(), newId = freshWriter }: AutosaveOptions = {},
 ): Autosave {
   let timer: unknown = null;
   let inFlight = false;
@@ -166,6 +175,14 @@ export function startAutosave(
   let version = 0;
   let storedVersion = 0;
   const key = unsavedKey(id);
+  /** This autosave's name as its journal entries carry it (one that isn't a writer id is carried as none). */
+  const ownName = writerId(writer) ?? "";
+  /** Whether the entry under `key` is this autosave's (or has no writer, as before entries named one). Throws as the storage does. */
+  const ownEntry = () => {
+    const entry = journal?.getItem(key);
+    const by = entry == null ? undefined : readJournalEntry(entry).writer;
+    return by === undefined || by === ownName;
+  };
   let journalVersion: number | null = (() => {
     try {
       return journal?.getItem(key) != null ? 0 : null;
@@ -205,6 +222,13 @@ export function startAutosave(
     try {
       if (journalVersion !== null) {
         if (journalVersion > v) return;
+        // This tab's entry may have been put aside by another tab's since (clumsy hunt 2026-11-04): it goes from there,
+        // and the key, holding that other tab's entry now, is left for its own tab or the next visit.
+        journal?.removeItem(asideKey(id, ownName));
+        if (!ownEntry()) {
+          journalVersion = null;
+          return;
+        }
       } else {
         const entry = at === null ? null : journal?.getItem(key);
         const read = entry == null ? null : readJournalEntry(entry);
@@ -225,10 +249,12 @@ export function startAutosave(
   const rebase = (at: Date) => {
     if (journalVersion === null) return;
     try {
-      const entry = journal?.getItem(key);
+      // Where this tab's entry is: its key, or aside when another tab's took the key since.
+      const where = ownEntry() ? key : asideKey(id, ownName);
+      const entry = journal?.getItem(where);
       if (entry == null) return;
       const read = readJournalEntry(entry);
-      if (read.written !== null) journal?.setItem(key, journalEntry(read.text, read.written, read.kept, at, read.writer ?? null));
+      if (read.written !== null) journal?.setItem(where, journalEntry(read.text, read.written, read.kept, at, read.writer ?? null));
     } catch {
       // left naming the older state: the next visit keeps it as a separate project, so nothing is lost
     }
@@ -323,6 +349,16 @@ export function startAutosave(
     unfollow();
   }
 
+  /**
+   * Stores `text` (the project read at `at`) as a separate project under a new id, named `fromAnotherTab`, behind the
+   * newer work (it never becomes the project a visit opens): its name, and whether the store took it.
+   */
+  const keepApart = (text: string, at: Date): { name: string; kept: Promise<boolean> } => {
+    const project = JSON.parse(text) as Project; // written by projectToJson just before
+    const name = fromAnotherTab(project.name);
+    return { name, kept: store.save(newId(), { ...project, name }, at, undefined, true).then(() => true, () => false) };
+  };
+
   return {
     changed,
     leaving() {
@@ -332,6 +368,8 @@ export function startAutosave(
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
+          // Another tab's entry there, not stored yet, is moved aside first, never written over (clumsy hunt 2026-11-04).
+          putAsideOthers(journal, id, writer);
           journal.setItem(key, journalEntry(projectToJson(project()), stamp(), owner, base, writer));
           journalVersion = version;
           kept = true;
@@ -348,7 +386,7 @@ export function startAutosave(
     },
     stop,
     finish() {
-      if (stopped) return;
+      if (stopped) return null;
       const v = version;
       const at = stamp();
       let text: string | null = null;
@@ -360,12 +398,15 @@ export function startAutosave(
         }
       }
       stop();
-      if (text === null || conflicted || keptFromLastVisit()) return; // after another tab's save: nothing of this one's can be stored
+      if (text === null) return null;
+      // After another tab's save, nothing of this one's can be stored under its id: kept apart instead.
+      if (conflicted || keptFromLastVisit()) return keepApart(text, at).name;
       // The store holds it already, unless a save of another state is running: that one lands after, so this
       // state is stored again behind it (app sweep 2026-10-28, finding 14).
-      if (text === written && !inFlight) return stored(v, writtenAt);
+      if (text === written && !inFlight) return (stored(v, writtenAt), null);
       if (journal) {
         try {
+          putAsideOthers(journal, id, writer); // another tab's entry is kept, aside (clumsy hunt 2026-11-04)
           journal.setItem(key, journalEntry(text, at, owner, base, writer)); // kept now, should the page go before the store's save
           journalVersion = v;
         } catch {
@@ -383,9 +424,10 @@ export function startAutosave(
           stored(v, at);
           rebase(at);
         } catch (e) {
-          // Kept in the journal (when it could be written), put back on the next visit; unless another tab saved
-          // since, when putting it back would overwrite that tab's work.
-          if (e instanceof ProjectChangedError && journalVersion === v) {
+          // Kept in the journal (when it could be written), put back on the next visit. Refused because another tab
+          // saved since: kept apart as a separate project, and the entry goes once that is stored (the entry names the
+          // state it was made from, so should the copy fail, the next visit keeps it apart too, never over that work).
+          if (e instanceof ProjectChangedError && (await keepApart(last, at).kept) && journalVersion === v) {
             try {
               journal?.removeItem(key);
               journalVersion = null;
@@ -395,6 +437,7 @@ export function startAutosave(
           }
         }
       });
+      return null;
     },
   };
 }

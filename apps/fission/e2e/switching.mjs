@@ -14,7 +14,7 @@ import { startWithBox } from "./start.mjs";
 const LIMIT_MS = 100;
 
 const server = await preview({ preview: { port: 4178, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4178/";
+const url = "http://localhost:4178/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 
@@ -42,6 +42,8 @@ async function fresh(width = 1280, plant = null) {
  */
 const switchTo = (page, id) =>
   page.evaluate(async (id) => {
+    // Community pressed while on screen closes it (back to the last workspace), so going "to" it when already there is no switch at all.
+    if (id === "community" && document.body.dataset.activeWorkspace === "community") return 0;
     if (id !== "community") document.getElementById("workspace-menu").click();
     const target = id === "community" ? document.getElementById("community") : document.querySelector(`#workspace-menu-menu [data-workspace="${id}"]`);
     const t0 = performance.now();
@@ -66,7 +68,8 @@ const stats = (xs) => {
 };
 const fmt = (ms) => `${ms.toFixed(1)} ms`;
 
-const ORDER = ["image", "render", "slice", "vector", "community", "design"];
+// Laser, not Slice: DESIGN ▾'s Slice opens Slice for printing in Design, not a workspace (src/listed-workspaces.ts).
+const ORDER = ["image", "render", "laser", "vector", "community", "design"];
 
 /**
  * Times every switch of ORDER on `page`: the first visits, then five rounds

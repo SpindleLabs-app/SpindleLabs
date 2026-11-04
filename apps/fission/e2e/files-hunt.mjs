@@ -65,7 +65,7 @@ const UPRIGHT = {
 };
 
 const server = await preview({ ...(process.env.E2E_DIST ? { build: { outDir: process.env.E2E_DIST } } : {}), preview: { port: 4211, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4211/";
+const url = "http://localhost:4211/?all-workspaces"; // pictures open in Image only with every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
 await page.addInitScript(() => indexedDB.deleteDatabase("fission"));

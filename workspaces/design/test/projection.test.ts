@@ -12,7 +12,7 @@ import { emptyProject, projectFromJson, projectToJson, type BodyView, type Plane
 import { bodyIdOf, insertPreset, partDocument, readDesignDocument, type DesignDocument, type Sketch } from "../src/document.ts";
 import { sketchEdgeTargets } from "../src/face-edges.ts";
 import { deleteItem, hideBody } from "../src/timeline-edits.ts";
-import { addFaceSketch, addSketch, deleteCurve, drawLine, drawRectangle, movePoint, pinNewPoints, PROJECTED_POINT, projectEdges, sketchCurves, unproject, type EdgeToProject } from "../src/sketch.ts";
+import { addFaceSketch, addSketch, deleteCurve, drawArc, drawLine, drawRectangle, movePoint, pinNewPoints, PROJECTED_POINT, projectEdges, sketchCurves, unproject, type EdgeToProject } from "../src/sketch.ts";
 import { cornerOrder, edgeNamed, edgeShape, MIN_LENGTH, placesOf, profileCurves, PROJECTED_OPEN, projectedOpen, PROJECT_HELD, PROJECT_NOTHING, PROJECT_UNNAMED, projectAfter, projectionWords, projectPick, REFUSED, sketchEdgeCurves, type EdgeShape } from "../src/projection.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { followedSketch } from "../src/rebuild.ts";
@@ -305,6 +305,27 @@ test("hand-worked (27e): a projected curve lying exactly on one the outline has 
   const chord: EdgeToProject = { feature: "feature-1", edge: "chord", shape: { kind: "line", a: [-5, 0], b: [5, 0] } };
   assert.deepEqual(profileCurves(sketchOf(projectEdges(doc, id, [arc(0, [5, 0], [-5, 0]), arc(1, [5, 0], [-5, 0]), chord]).doc, id)).map((c) => c.kind), ["arc", "line"]);
   assert.equal(profileCurves(sketchOf(projectEdges(doc, id, [arc(0, [5, 0], [-5, 0]), arc(1, [-5, 0], [5, 0])]).doc, id)).length, 2);
+});
+
+test("hand-worked: a face's closed projected loop joins the outline only where the sketch's own curves need it to close", () => {
+  const { doc, id } = onGround();
+  const { view } = box();
+  // The box's top, all four edges, from XY: the rectangle (0, 0) to (40, 30), each corner two projected ends.
+  const names = ["front+top", "right+top", "back+top", "left+top"];
+  const top = projectEdges(doc, id, [4, 5, 6, 7].map((e, k): EdgeToProject => ({ feature: "feature-1", edge: names[k], shape: edgeShape(view, e, XY) as EdgeShape }))).doc;
+  const ownOf = (d: DesignDocument) => sketchOf(d, id).curves.filter((c) => !sketchOf(d, id).projected!.some((p) => p.made === c.id));
+  // A 10 × 10 rectangle drawn from the projected corner (0, 0): its four lines close by themselves (each own end meets
+  // another own end), so the outline is those four, not eight with four ends at (0, 0).
+  const square = drawRectangle(top, id, [0, 0], [10, 10]).doc;
+  assert.equal(ownOf(square).length, 4);
+  assert.deepEqual(profileCurves(sketchOf(square, id)).map((c) => c.id).sort(), ownOf(square).map((c) => c.id).sort());
+  // An arc drawn from the projected corner (40, 0) round (20, 0) to the corner (0, 0): its two free ends are joined by the
+  // projected front edge (0, 0) to (40, 0), the shortest way between them (the other way round is the three other edges,
+  // 30 + 40 + 30 = 100 mm against 40), so the outline is the arc and that line: a half disc.
+  const corner = (x: number, y: number) => sketchOf(top, id).points.find((p) => p.x === x && p.y === y)!.id;
+  const arched = drawArc(top, id, corner(40, 0), corner(0, 0), [20, 0]).doc;
+  const front = sketchOf(arched, id).projected!.find((p) => p.edge === "front+top")!.made;
+  assert.deepEqual(profileCurves(sketchOf(arched, id)).map((c) => c.id).sort(), [ownOf(arched)[0].id, front].sort());
 });
 
 test("a projected curve is on another when every point it has is within SAME_PLACE of that one's (0.9 ×), not past it (1.1 ×)", () => {

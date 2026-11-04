@@ -18,24 +18,31 @@ import {
   addFaceSketch,
   addSketch,
   BodyCache,
+  buildSpec,
   builtBody,
+  changePreset,
   deleteCurve,
   drawCircle,
+  drawLine,
   drawnFrame,
   drawRectangle,
   extrudeSketch,
   facePlane,
+  featureSpec,
   followedDoc,
   greyedBy,
   joinBodies,
+  lastFeature,
   partDocument,
   projectEdges,
   projectPick,
   readDesignDocument,
   rebuildTimeline,
+  settleKept,
   shownBodies,
   suppressItem,
   type DesignDocument,
+  type EdgeToProject,
   type TimelineBuild,
 } from "@fission/design";
 import { emptyProject, projectFromJson, projectToJson, type Plane } from "@fission/core";
@@ -222,6 +229,19 @@ test("hand-worked: the box's front face picked from XZ projects its four edges, 
   assert.deepEqual(flat.edges.map((e) => (e.shape.kind === "point" ? `point ${e.shape.at}` : ends(e.shape))).sort(), ["0,0 40,0", "0,0 40,0", "point 0,0", "point 40,0"]);
 });
 
+test("hand-worked: a 10 × 10 rectangle drawn from a corner of the box's projected top extrudes to 10 · 10 · 5 = 500 mm³ (its own loop is the outline)", async () => {
+  // The box's four top edges projected into a sketch on XY, seen as the rectangle (0, 0) to (40, 30), for reference.
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const line = (edge: string, a: [number, number], b: [number, number]): EdgeToProject => ({ feature: "feature-1", edge, shape: { kind: "line", a, b } });
+  const four = [line("front+top", [0, 0], [40, 0]), line("right+top", [40, 0], [40, 30]), line("back+top", [40, 30], [0, 30]), line("left+top", [0, 30], [0, 0])];
+  // Drawn from the projected corner (0, 0) (the rectangle reuses the point there) to (10, 10): its own four lines close.
+  const drawn = drawRectangle(projectEdges(s.doc, s.id, four).doc, s.id, [0, 0], [10, 10]).doc;
+  const up = extrudeSketch(drawn, s.id, 5).doc;
+  // Before the fix all eight lines were the outline and the kernel said "4 ends meet at (0, 0)".
+  const body = await buildSpec(kernel, await featureSpec(kernel, up, lastFeature(up)));
+  assert.ok(Math.abs(body.volume - 500) < 1e-9, `volume ${body.volume}`);
+});
+
 test("in the app: a file whose projection names an edge the cylinder hasn't got opens with the circle where it was, warned on the panel, the sketch's row and its bar item", async () => {
   const s = start();
   const projected = await projectRim(s.doc, s.xy, s.cylinder);
@@ -238,4 +258,34 @@ test("in the app: a file whose projection names an edge the cylinder hasn't got 
   const c = projectedCurve(a.doc(), s.xy);
   assert.ok("centre" in c && near(c.centre, [60, 15]) && c.radius === 5, JSON.stringify(c));
   assert.ok(await a.close(), "every body freed");
+});
+
+test("regression (hunt A, 2026-11-04): a projected edge that follows its box away from the lines it closed loses the sketch, so its extrude keeps its last shape", async () => {
+  // Sketch 1 on XY over a 40 × 30 × 20 box: its top right edge (40, 0, 20)–(40, 30, 20) projected, seen from above as
+  // (40, 30)–(40, 0), closed by drawn lines (40, 0)–(20, 15)–(40, 30) into a triangle, extruded 5.
+  const xy = addSketch(partDocument("box", 40, 30, 20));
+  const { build, scene } = await built(xy.doc);
+  const k = scene.bodies.findIndex((b) => b.feature === "feature-1");
+  const view = scene.bodies[k].view;
+  const e = view.edge_types.findIndex((t, j) => t === "line" && view.edge_vertices[j].every((v) => view.vertex_points[v][0] === 40 && view.vertex_points[v][2] === 20));
+  assert.ok(e >= 0, "the box has its top right edge");
+  const pick = projectPick(xy.doc, xy.id, scene, frameOf(build, xy.id), { edge: scene.edgeStart[k] + e });
+  assert.equal(pick.edges.length, 1);
+  let doc = projectEdges(xy.doc, xy.id, pick.edges).doc;
+  doc = drawLine(doc, xy.id, [40, 0], [20, 15]).doc;
+  doc = drawLine(doc, xy.id, [20, 15], [40, 30]).doc;
+  const ex = extrudeSketch(doc, xy.id, 5);
+  // The box made 30 wide: the projected edge goes to (30, 30)–(30, 0), 10 from the drawn lines' ends at x = 40, so nothing
+  // closes the triangle and the sketch is lost. Judged on the edge where it was drawn, nothing was kept and the extrude failed.
+  const settled = await settleKept(kernel, ex.doc, changePreset(ex.doc, "feature-1", "box", 30, 30, 20));
+  const c = projectedCurve(settled, xy.id);
+  assert.ok("ends" in c && c.ends.every((p) => p[0] === 30), JSON.stringify(c));
+  const kept = settled.kept?.[ex.id];
+  assert.ok(kept !== undefined, "Extrude 1 keeps a shape");
+  // The triangle as drawn, each curve with its own two ends: the projected (40, 30)–(40, 0), the drawn (40, 0)–(20, 15)
+  // and (20, 15)–(40, 30); so (20, 15), (40, 0) and (40, 30) twice each.
+  assert.deepEqual(kept.points.map((p) => [p.x, p.y]).sort(), [[20, 15], [20, 15], [40, 0], [40, 0], [40, 30], [40, 30]]);
+  const { build: after } = await built(settled);
+  const r = after.results[ex.id];
+  assert.ok(r.status === "built" && r.warning?.cause === "open-outline" && builtBody(after, ex.id) !== undefined, JSON.stringify(r));
 });

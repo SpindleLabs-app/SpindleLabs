@@ -628,6 +628,55 @@ try {
     await page.context().close();
   });
 
+  await check("regression (app hunt 2026-11-04): a distance typed, then Undo before the preview build answers: no arrow is left drawn once the panel is gone", async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    // The kernel's answers to `window.holdOp` requests wait until window.releaseHeld().
+    await context.addInitScript(() => {
+      const Real = window.Worker;
+      window.holdOp = null;
+      window.held = [];
+      window.releaseHeld = () => window.held.splice(0).forEach((f) => f());
+      window.Worker = class extends Real {
+        constructor(...a) {
+          super(...a);
+          const holding = new Set();
+          const post = this.postMessage.bind(this);
+          this.postMessage = (m, ...rest) => {
+            if (m?.op && m.op === window.holdOp) holding.add(m.id);
+            return post(m, ...rest);
+          };
+          const real = Object.getOwnPropertyDescriptor(Real.prototype, "onmessage");
+          Object.defineProperty(this, "onmessage", {
+            configurable: true,
+            get: () => real.get.call(this),
+            set: (f) => real.set.call(this, (event) => (holding.delete(event.data?.id) ? window.held.push(() => f(event)) : f(event))),
+          });
+        }
+      };
+    });
+    await context.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+    await page.goto(url + "#design");
+    await startWithBox(page);
+    await pinProperties(page);
+    await drawn(page, [[0, 0], [40, 0], [40, 30], [0, 30], [0, 0]]);
+    await points(page, "0,0 40,0 40,30 0,30");
+    await page.click("#sketch-extrude");
+    await extrudeStatus(page, "Sketch 1 makes a closed outline");
+    await until(page, () => !!document.querySelector("#viewport").dataset.arrow, null, "the arrow at 0 mm");
+    await page.evaluate(() => (window.holdOp = "body_build"));
+    await page.fill("#extrude-distance", "25");
+    await until(page, () => window.held.length > 0, null, "a preview build held");
+    await page.click("#undo");
+    await until(page, () => !document.querySelector("#extrude-panel:not([hidden])"), null, "the panel gone");
+    await page.evaluate(() => ((window.holdOp = null), window.releaseHeld()));
+    await page.waitForTimeout(1000);
+    assert.equal(await data(page, "arrow"), "", "no Extrude panel on screen, so no Extrude arrow on the view");
+    await context.close();
+  });
+
   await check("no errors in the console", async () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

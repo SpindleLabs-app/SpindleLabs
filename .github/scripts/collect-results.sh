@@ -133,7 +133,7 @@ add_run() {
     mkdir -p ts-mutants
     {
       echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"
-      for t in core design storage model svg viewport ai naming combine; do
+      for t in core design storage account model svg viewport ai naming combine; do
         if [ -s "$IN/ts-mutants-$t/$t.txt" ]; then cat "$IN/ts-mutants-$t/$t.txt"; else echo "$t: no report (the job stopped before the check)"; fi
       done
     } >ts-mutants/latest.txt
@@ -189,6 +189,10 @@ add_run() {
 
 git config user.name "github-actions[bot]"
 git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+# A picture of each failure's 3D page beside it (dump_pictures.sh, next to
+# this script, with the runner's headless Chrome): best effort,
+# one "pictures N of M" line; file_issues.py shows it in the issue.
+bash "$(dirname "$0")/dump_pictures.sh" "$IN" 2>/dev/null || true
 pushed=0
 for attempt in 1 2 3 4 5; do
   git branch -qD test-results 2>/dev/null

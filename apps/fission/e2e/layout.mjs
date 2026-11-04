@@ -15,6 +15,8 @@
 // single lines like Fusion's (a long label ends in "…" with the whole of it
 // in the tooltip), the Timeline and Origin groups start folded, a row's ⋯
 // shows only under the mouse, and a five-item design needs no scroll bar.
+// Loading the page (fresh, or reopening a saved part, at 1280, 1920 and 375 px)
+// never makes the window scroll, so no scroll bar flashes while it settles.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -23,7 +25,7 @@ import { preview } from "vite";
 import { closePanels, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4198, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4198/";
+const url = "http://localhost:4198/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 const shots = process.env.E2E_SHOTS;
@@ -335,6 +337,66 @@ const check = async (name, fn) => {
   await fn();
   console.log(`ok - ${name}`);
 };
+
+/**
+ * Loading the page never makes the window scroll (Ben 2026-11-04: on a
+ * refresh the right and bottom scroll bars flashed in and out until the page
+ * settled). The 3D view's canvas, sized in pixels before the toolbar and the
+ * timeline filled in, stuck out of the window until its next resize, and on
+ * Windows, whose scroll bars take room, each bar shown resized the view again.
+ * Watched from before the page's first script: at every frame, and at every
+ * resize of the view (this observer is made before the view's own, so it runs
+ * first, while a canvas that lags is still the old size), the page's content
+ * must fit the window. `breakIt` puts the canvas back in the page's flow at
+ * its drawing size, the old way, before the page loads.
+ */
+async function loadOverflows(width, { project = false, breakIt = false } = {}) {
+  const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: width < 700 });
+  const page = await context.newPage();
+  page.on("pageerror", (e) => errors.push(e.message));
+  if (breakIt) {
+    await page.addInitScript(() => {
+      const style = () => document.head.append(Object.assign(document.createElement("style"), { textContent: "#viewport > canvas:not(#none) { position: static !important; width: auto !important; height: auto !important; }" }));
+      if (document.head) style();
+      else document.addEventListener("DOMContentLoaded", style);
+    });
+  }
+  await page.addInitScript(() => {
+    const seen = [];
+    window.__overflows = seen;
+    const look = (when) => {
+      const d = document.documentElement;
+      if (!d || !document.body) return;
+      if (d.scrollWidth > d.clientWidth || d.scrollHeight > d.clientHeight) seen.push(`${when} at ${Math.round(performance.now())} ms: ${d.scrollWidth} × ${d.scrollHeight} in a ${d.clientWidth} × ${d.clientHeight} window`);
+    };
+    const resized = new ResizeObserver(() => look("a resize"));
+    const found = new MutationObserver(() => {
+      const view = document.getElementById("viewport");
+      if (!view) return;
+      resized.observe(view);
+      found.disconnect();
+    });
+    found.observe(document, { childList: true, subtree: true });
+    const frame = () => {
+      look("a frame");
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+  await page.goto(url);
+  if (project) {
+    await startWithBox(page);
+    await page.waitForTimeout(1500); // autosaved, so the reload opens it
+    await page.evaluate(() => (window.__overflows.length = 0));
+    await page.reload();
+  }
+  await page.locator("#timeline .timeline-bar").waitFor();
+  if (project) await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+  await page.waitForTimeout(1500); // settled
+  const seen = await page.evaluate(() => window.__overflows);
+  await context.close();
+  return seen;
+}
 
 try {
   const page = await fresh(1280);
@@ -686,6 +748,17 @@ try {
     await phone.evaluate(() => document.exitFullscreen());
   });
   await phone.context().close();
+
+  await check("loading the page never makes the window scroll (no flashing scroll bars)", async () => {
+    for (const [width, project] of [[1280, false], [1280, true], [1920, false], [375, false], [375, true]]) {
+      const seen = await loadOverflows(width, { project });
+      assert.deepEqual(seen, [], `at ${width} px${project ? ", reopening a saved part" : ""}, the page stuck out of the window while it loaded`);
+    }
+    // The old way (the canvas in the page's flow at its drawing size) must fail it.
+    const old = await loadOverflows(1280, { breakIt: true });
+    assert.ok(old.length > 0, "with the canvas in the page's flow, the load is seen sticking out of the window");
+    console.log(`  the old way: ${old[0]}`);
+  });
 
   assert.deepEqual(errors, [], "no page errors");
   console.log("layout: all checks passed");

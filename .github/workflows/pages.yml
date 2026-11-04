@@ -29,11 +29,24 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
+      # The live build drops the ?test-hooks debug surface (window.fissionTest); the test
+      # build keeps it (vite.config.ts __TEST_HOOKS__, audit S12).
       - run: npm run build
         working-directory: apps/fission
+        env:
+          FISSION_NO_TEST_HOOKS: "1"
+      - name: The live bundle carries no debug surface
+        run: |
+          if grep -rl 'fissionTest' apps/fission/dist; then
+            echo "The ?test-hooks debug surface leaked into the live build (audit S12)." >&2
+            exit 1
+          fi
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: apps/fission/dist
+          # security.txt lives in dist/.well-known/, which is hidden (starts with a dot)
+          # and would otherwise be left out (.github/scripts/test_security_txt.py).
+          include-hidden-files: true
 
   deploy:
     needs: build

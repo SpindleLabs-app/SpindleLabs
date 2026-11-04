@@ -29,7 +29,7 @@ const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 const rect = (page, sel) => page.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
 
-async function fresh(width, touch) {
+async function fresh(width, touch, query = "") {
   const context = await browser.newContext({ viewport: { width, height: width > 640 ? 800 : 667 }, hasTouch: touch, isMobile: touch, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -38,7 +38,7 @@ async function fresh(width, touch) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  await page.goto(url + "#design");
+  await page.goto(url + query + "#design");
   await page.waitForSelector("#start-hint", { state: "visible" });
   await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
   return page;
@@ -170,12 +170,14 @@ try {
         assert.deepEqual(await menuRows(page), [
           ["start-fresh", "new", true],
           ["open", "open", false],
+          ["file-projects", "folder", false],
+          ["file-versions", "undo", false],
           ["file-save", "save", false],
           ["file-save-as", "save", false],
           ["file-export-stl", "export", true],
           ["file-slice-print", "export", true],
         ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Save As…", "Export STL", "Slice for printing"]);
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Projects in this browser…", "Earlier versions…", "Save", "Save As…", "Export STL", "Slice for printing"]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
         assert.equal(await page.getAttribute("#file-slice-print", "title"), NO_BODY);
@@ -283,8 +285,9 @@ try {
   }
 
   for (const [width, tap] of [[1280, false], [375, true]]) {
+    // With every workspace listed (?all-workspaces, src/listed-workspaces.ts): ten items, as the menu must still hold; the public app's two are in e2e/workspace-list.mjs.
     await check(`${width} px${tap ? ", taps" : ""}: DESIGN ▾ names the page on screen; choosing an item shows that workspace, marks it and renames the button; Escape and a press outside close it`, async () => {
-      const page = await fresh(width, tap);
+      const page = await fresh(width, tap, "?all-workspaces");
       try {
         const label = () => page.textContent("#workspace-menu");
         assert.equal(await label(), "Design ▾");
@@ -306,9 +309,9 @@ try {
         await page.mouse.click(width / 2, (width > 640 ? 800 : 667) - 60);
         assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false", "a press outside closes it");
         // A placeholder is chosen as before: its page says Coming soon.
-        await switchTo(page, "slice", tap);
+        await switchTo(page, "laser", tap);
         assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
-        assert.equal(await label(), "Slice ▾");
+        assert.equal(await label(), "Laser ▾");
         await switchTo(page, "design", tap);
         await until(page, () => document.body.dataset.activeWorkspace === "design", null, "Design again");
         assert.equal(await label(), "Design ▾");
@@ -342,6 +345,10 @@ try {
       await page.focus("#file-menu");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "open", "New is off on the empty design: Open… first");
+      await page.keyboard.press("ArrowDown");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-projects", "Projects in this browser… next (U6a)");
+      await page.keyboard.press("ArrowDown");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-versions", "then Earlier versions… (3b)");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-save");
       const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Enter")]);
@@ -382,6 +389,55 @@ try {
       await page.context().close();
     }
   });
+  // Pressing AI, Guide or Community again closes it (Ben's quick win 1): the AI panel hides, the guide closes,
+  // Community goes back to the workspace it was opened from. At 375 px they are behind Menu.
+  for (const [width, tap] of [[1280, false], [375, true]]) {
+    await check(`${width} px${tap ? ", taps" : ""}: AI, Guide and Community close when pressed again`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        const bar = async (id) => {
+          if (tap) await page.tap("#menu-toggle");
+          await press(page, `#${id}`, tap);
+        };
+        await bar("assistant-toggle");
+        assert.equal(await page.isVisible("#assistant"), true, "AI opens");
+        await bar("assistant-toggle");
+        assert.equal(await page.isVisible("#assistant"), false, "AI pressed again closes");
+        assert.equal(await page.getAttribute("#assistant-toggle", "aria-pressed"), "false");
+        await switchTo(page, "image", tap);
+        await until(page, () => document.body.dataset.activeWorkspace === "image", null, "Image");
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "community", null, "Community");
+        assert.equal(await page.getAttribute("#community", "aria-pressed"), "true");
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "image", null, "Community pressed again goes back to Image");
+        assert.equal(await page.getAttribute("#community", "aria-pressed"), "false");
+        // Through the workspace menu and back: Community still returns to the last workspace shown.
+        await switchTo(page, "design", tap);
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "community", null, "Community again");
+        await bar("community");
+        await until(page, () => document.body.dataset.activeWorkspace === "design", null, "back to Design");
+        await bar("guide-open");
+        await page.waitForSelector("dialog.guide[open]");
+        assert.equal(await page.getAttribute("#guide-open", "aria-pressed"), "true");
+        // The guide covers the whole screen, so the bar's button is pressed by its keyboard activation (or a screen reader).
+        await page.evaluate(() => document.getElementById("guide-open").click());
+        await until(page, () => !document.querySelector("dialog.guide"), null, "Guide pressed again closes");
+        assert.equal(await page.getAttribute("#guide-open", "aria-pressed"), "false");
+        // Closed by its own Close button: the next press opens it again, once.
+        await bar("guide-open");
+        await page.waitForSelector("dialog.guide[open]");
+        await page.click("dialog.guide .guide-close");
+        await until(page, () => !document.querySelector("dialog.guide"), null, "Close closes");
+        await bar("guide-open");
+        await page.waitForSelector("dialog.guide[open]");
+        assert.equal(await page.$$eval("dialog.guide", (d) => d.length), 1, "one guide");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
 } finally {
   if (errors.length) {
     failed++;

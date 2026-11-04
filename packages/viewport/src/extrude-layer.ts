@@ -9,7 +9,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { DisplayMesh, ExtrudeShow, OfferedProfile } from "@fission/core";
-import { insideOutline, loopPoints } from "./extrude-pick.ts";
+import { insideOutline, loopPoints, outlineArea } from "./extrude-pick.ts";
 import { unhidden } from "./picking.ts";
 import { rayOnPlane, toWorld, yAxisOf } from "./sketch-view.ts";
 
@@ -21,6 +21,8 @@ export const EXTRUDE_COLOURS = { fill: 0x6cc4ff, preview: 0x4aa3ff, arrow: 0x4aa
 export const FILL_OPACITY = { offered: 0.16, faceOffered: 0, hover: 0.36, chosen: 0.5 };
 /** How see-through the preview's faces are (its edges are drawn solid). */
 export const PREVIEW_OPACITY = 0.45;
+/** Two outlines under the pointer within this share of the distance (at least 1 mm's) are as near: the smaller is picked (profileAt). */
+export const TIE_REL = 1e-9;
 
 /** The arrow's shape along its length 1: a shaft of radius 0.05 to 0.68, then a head of radius 0.15 to the tip. */
 const SHAFT = { radius: 0.05, length: 0.68 };
@@ -145,15 +147,22 @@ export class ExtrudeLayer {
    * The offered outline a ray from `from` along the unit `dir` meets
    * first, where the body doesn't hide it (picking.ts `unhidden`, given the
    * distance to the first body face along the ray, null for none), or null.
+   * Outlines met as far away (on one plane, within TIE_REL of the
+   * distance) go to the one bounding the smaller area, so a circle drawn
+   * inside a rectangle is picked inside it, as Fusion picks the smallest
+   * region; then to the first offered (sketches before faces).
    */
   profileAt(from: Vec3, dir: Vec3, firstFace: number | null): string | null {
-    let best: { id: string; distance: number } | null = null;
+    let best: { id: string; distance: number; area: number } | null = null;
     for (const p of this.shown?.profiles ?? []) {
       const at = rayOnPlane(from, dir, p.plane);
       if (!at || !insideOutline(p.outline, at)) continue;
       const w = toWorld(p.plane, at);
       const distance = Math.hypot(w[0] - from[0], w[1] - from[1], w[2] - from[2]);
-      if (unhidden(distance, firstFace) && (!best || distance < best.distance)) best = { id: p.id, distance };
+      if (!unhidden(distance, firstFace)) continue;
+      const area = outlineArea(p.outline);
+      const tie = best !== null && Math.abs(distance - best.distance) <= TIE_REL * Math.max(1, distance, best.distance);
+      if (!best || (tie ? area < best.area : distance < best.distance)) best = { id: p.id, distance, area };
     }
     return best?.id ?? null;
   }

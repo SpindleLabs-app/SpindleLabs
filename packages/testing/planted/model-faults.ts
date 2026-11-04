@@ -208,7 +208,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   "kept-not-forgotten": {
     what: "settleKept never forgets a kept shape and extrudeSpec builds from it even when the sketch is whole again",
     edits: [
-      { file: REBUILD, find: "      if (await makesOutline(kernel, after, sketch)) continue;", replace: "      if (keptOf(after, f) === undefined && (await makesOutline(kernel, after, sketch))) continue;" },
+      { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch)) continue;", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch))) continue;" },
       {
         file: REBUILD,
         find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel);",
@@ -585,7 +585,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "greys-ignore-pins": {
     what: "the timeline's own reading of what is greyed (document.ts, for the bar, the browser and which bodies are shown) leaves pins out, so it disagrees with the rebuild about a sketch pinned to a suppressed body",
     edits: [
-      { file: DOCUMENT, find: "sketchInputs(f, document.sketches.find((s) => s.id === f.id))", replace: "sketchInputs(f, { projected: document.sketches.find((s) => s.id === f.id)?.projected })" },
+      { file: DOCUMENT, find: "sketchInputs(f, a.contents.get(f.id))", replace: "sketchInputs(f, { projected: a.contents.get(f.id)?.projected })" },
       { file: DOCUMENT, find: "sketchInputs(f, contents.get(f.id))", replace: "sketchInputs(f, { projected: contents.get(f.id)?.projected })" },
     ],
     run: ["naming"],
@@ -652,7 +652,10 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "projections-in-outline": {
     what: "every projected curve is part of the sketch's outline, so a projected edge snapped to (not closed by the sketch's own lines) breaks the outline",
-    edits: [{ file: PROJECTION, find: "  return curves.filter((_, k) => joined.has(k));", replace: "  return [...curves];" }],
+    edits: [
+      { file: PROJECTION, find: "  if (own) return curves.filter((c, k) => !projected.has(c.id) || taken.has(k));", replace: "  if (own) return [...curves];" },
+      { file: PROJECTION, find: "  return curves.filter((_, k) => joined.has(k));", replace: "  return [...curves];" },
+    ],
     run: ["naming"],
     caught: "Fusion answers",
   },

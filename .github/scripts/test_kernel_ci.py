@@ -202,6 +202,43 @@ exec {real} "$@"
         self.assertIn("runs/other/log.txt", files)
         self.assertIn("runs/7-1/fuzz-kernel-extrude/tests.log", files)
 
+    def test_a_save_in_a_busy_hour_keeps_trying(self):
+        # Regression (kernel PR #129's run, 2026-11-04): with many branch runs saving at once, two mutant shards
+        # that passed lost the race six times running and gave up, turning the run red. Here another job lands
+        # just before each of the save's first eight pushes; the save must still land, after all of them.
+        t = self.tmp.name
+        rival = os.path.join(t, "rival")
+        subprocess.run(["git", "clone", "-q", self.remote, rival], check=True, capture_output=True)
+        real = shutil.which("git")
+        shim = os.path.join(t, "bin")
+        os.makedirs(shim)
+        count = os.path.join(t, "pushes")
+        with open(os.path.join(shim, "git"), "w") as f:
+            f.write(f"""#!/bin/sh
+for a in "$@"; do
+  if [ "$a" = push ]; then
+    n=$(cat {count} 2>/dev/null || echo 0); n=$((n + 1)); echo $n >{count}
+    if [ $n -le 8 ]; then
+      {real} -C {rival} pull -q --rebase origin main >/dev/null 2>&1
+      mkdir -p {rival}/runs/other-$n && echo $n >{rival}/runs/other-$n/log.txt
+      {real} -C {rival} -c user.name=t -c user.email=t@t add -A >/dev/null 2>&1
+      {real} -C {rival} -c user.name=t -c user.email=t@t commit -qm rival-$n >/dev/null 2>&1
+      {real} -C {rival} push -q origin HEAD:main >/dev/null 2>&1
+    fi
+  fi
+done
+exec {real} "$@"
+""")
+        os.chmod(os.path.join(shim, "git"), 0o755)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(RESULTS_REPO=self.remote, RESULTS_PATH="runs/7-1", SAVE_WAIT_SCALE="0",
+                   PATH=shim + os.pathsep + os.environ["PATH"])
+        out = subprocess.run(["bash", SCRIPT, "save", "mutants-shard-3", self.logs], capture_output=True, text=True, env=env)
+        self.assertEqual((out.returncode, out.stdout), (0, "saved mutants-shard-3\n"), out.stderr)
+        files = self.saved()
+        self.assertIn("runs/other-8/log.txt", files)
+        self.assertIn("runs/7-1/mutants-shard-3/tests.log", files)
+
     def test_a_refused_push_says_why_without_naming_files(self):
         # The way GitHub refuses a file over 100 MB, from a hook.
         hook = os.path.join(self.remote, "hooks", "pre-receive")
