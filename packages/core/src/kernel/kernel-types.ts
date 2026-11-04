@@ -292,6 +292,8 @@ export type KernelErrorKind =
   | "invalid-result"
   /** A boolean's result would touch itself (two parts meeting only along an edge or at a corner): the user's to fix, by overlapping the parts or moving them apart; `touches` says where. */
   | "non-manifold-result"
+  /** A boolean's result would have a wall, gap or step thinner than 0.001 mm, or an edge shorter: the user's to fix, by making it at least that or lining the faces up exactly; `thin` says where. */
+  | "thin-result"
   /** The call was malformed (wrong form, a handle that isn't a whole number from 1): the app's bug. */
   | "bad-request"
   /** A body handle the kernel doesn't hold: freed, or never made. */
@@ -326,7 +328,12 @@ export interface KernelFailure {
   message: string;
   /** Where a "non-manifold-result" would touch itself (always there for that kind, never for another). */
   touches?: KernelTouch[];
+  /** Where a "thin-result" would be too thin (always there for that kind, never for another). */
+  thin?: KernelThin[];
 }
 
 /** One place a boolean's result would touch itself, in world mm: a stretch of edge, or a corner. */
 export type KernelTouch = { at: "edge"; from: [number, number, number]; to: [number, number, number] } | { at: "corner"; point: [number, number, number] };
+
+/** One place a boolean's result would be too thin, in world mm: an edge too short (its two ends), or a gap (the nearest points of its two sides). */
+export type KernelThin = { at: "edge" | "gap"; from: [number, number, number]; to: [number, number, number] };
