@@ -210,6 +210,7 @@ try {
     await rowButton(page, "Untitled", "project-keep").tap();
     await rowButton(page, "Untitled", "project-open").tap();
     await volume(page, "30,000 mm³");
+    await saved(page); // until then the mark says Saving… and leaving asks first, as after any change
     await page.reload();
     await volume(page, "30,000 mm³");
     await showList(page, true);
