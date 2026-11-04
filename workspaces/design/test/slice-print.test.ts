@@ -54,8 +54,12 @@ test("print time in words rounds to the nearest minute, worked by hand", () => {
 test("plastic left out is warned about from half a hundredth of a mm³ (it rounds to 0.01): 0.9× stays quiet, 1.1× warns", () => {
   assert.equal(unprintedWords(print()), null);
   assert.equal(unprintedWords(print({ unprintedVolume: 0.005 * 0.9 })), null);
-  assert.equal(unprintedWords(print({ unprintedVolume: 0.005 * 1.1 })), "Some of the part is thinner than one printed line, so about 0.01 mm³ of it won't print.");
+  assert.equal(unprintedWords(print({ unprintedVolume: 0.005 * 1.1 })), "Some walls are thinner than about 0.65 mm, which can't be printed yet, so about 0.01 mm³ of the part won't print: make them at least 0.65 mm thick.");
   assert.match(unprintedWords(print({ unprintedVolume: 12.345 }))!, /about 12\.35 mm³/);
+  // Slicer hunt 2026-11-04 (SH2): walls from 0.43 to 0.64 mm are left out too, though wider than one 0.4 mm line, so the
+  // words name the thickness that prints (0.65 mm), never "thinner than one printed line".
+  assert.doesNotMatch(unprintedWords(print({ unprintedVolume: 90 }))!, /one printed line/);
+  assert.match(unprintedWords(print({ unprintedVolume: 90 }))!, /at least 0\.65 mm thick\.$/);
   // Not a number (an engine fault) gives no figure to warn with.
   assert.equal(unprintedWords(print({ unprintedVolume: Number.NaN })), null);
 });
@@ -209,7 +213,7 @@ test("the dialog says a refusal in the engine's words, warns about plastic left 
   answer = async () => ({ print: print({ unprintedVolume: 2 }), saved: false });
   t.$("slice-print-go").click();
   await t.settle();
-  assert.equal(t.$("slice-print-status").textContent, "Sliced, but not saved: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling). Some of the part is thinner than one printed line, so about 2.00 mm³ of it won't print.");
+  assert.equal(t.$("slice-print-status").textContent, "Sliced, but not saved: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling). Some walls are thinner than about 0.65 mm, which can't be printed yet, so about 2.00 mm³ of the part won't print: make them at least 0.65 mm thick.");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), true);
   // A key pressed in the dialog never reaches the app's shortcuts.
   t.$("slice-print-go").dispatchEvent(new t.window.KeyboardEvent("keydown", { key: "e", bubbles: true }) as unknown as Event);

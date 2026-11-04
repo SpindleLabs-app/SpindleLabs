@@ -324,13 +324,15 @@ export function printWords(print: PrintFacts): string {
 }
 
 /**
- * The warning for plastic the slice leaves out, or null: a part thinner
- * than one line (0.4 mm) has no wall to print. Under a hundredth of a
- * mm³ rounds to nothing in the words, so it is not worth a warning.
+ * The warning for plastic the slice leaves out, or null: walls under about
+ * 0.65 mm aren't printed yet (not only those thinner than one 0.4 mm line:
+ * slicer hunt 2026-11-04, SH2), so the words say what thickness prints.
+ * Under a hundredth of a mm³ rounds to nothing in the words, so it is not
+ * worth a warning.
  */
 export function unprintedWords(print: Pick<PrintFacts, "unprintedVolume">): string | null {
   if (!(print.unprintedVolume >= 0.005)) return null;
-  return `Some of the part is thinner than one printed line, so about ${print.unprintedVolume.toFixed(2)} mm³ of it won't print.`;
+  return `Some walls are thinner than about 0.65 mm, which can't be printed yet, so about ${print.unprintedVolume.toFixed(2)} mm³ of the part won't print: make them at least 0.65 mm thick.`;
 }
 
 /**
