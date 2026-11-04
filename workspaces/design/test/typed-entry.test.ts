@@ -132,7 +132,7 @@ test("the boxes each tool shows, its anchor, and the live values", () => {
   assert.deepEqual(typedFields({ kind: "line", sketch: s.id, from: [0, 0] }), ["length", "angle"]);
   assert.deepEqual(typedFields({ kind: "rectangle", sketch: s.id, corner: [0, 0] }), ["width", "height"]);
   for (const kind of ["circle", "arc", "tangent"] as const) assert.deepEqual(typedFields(startTool(kind, s.id)), []);
-  assert.deepEqual(typedFields({ kind: "circle", sketch: s.id, centre: [0, 0] }), [], "circles come later");
+  assert.deepEqual(typedFields({ kind: "circle", sketch: s.id, centre: [0, 0] }), ["diameter"], "a circle's diameter once it has its centre");
   // After a line (0, 0) → (10, 0) the chain's start is the point id of (10, 0).
   const one = clickAt(clickAt(s.doc, startTool("line", s.id), [0, 0]).doc, clickAt(s.doc, startTool("line", s.id), [0, 0]).tool, [10, 0]);
   assert.equal(typeof (one.tool as LineTool).from, "string");

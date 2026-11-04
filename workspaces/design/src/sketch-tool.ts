@@ -98,6 +98,8 @@ export interface CircleTool {
   kind: "circle";
   sketch: string;
   centre: SketchXY | null;
+  /** A radius from a typed diameter (typed-entry.ts `withLocks`): exactly half of it, used instead of the distance to the click. */
+  radius?: number;
 }
 
 /** The 3-point arc tool on one sketch: the start clicked, then the end, or null before each. */
@@ -330,12 +332,15 @@ export const SAME_CIRCLE = "There is a circle this size round this centre alread
 function circleClick(doc: DesignDocument, tool: CircleTool, at: SketchXY): { doc: DesignDocument; tool: CircleTool; drew: boolean; note?: string } {
   const sketch = sketchOf(doc, tool.sketch);
   if (tool.centre === null) return { doc, tool: { ...tool, centre: [at[0], at[1]] }, drew: false };
-  const radius = distance(tool.centre, at);
-  if (radius === 0) return { doc, tool, drew: false, note: NO_RADIUS };
-  if (underMin(radius, 0, false)) return { doc, tool, drew: false, note: SMALL_CIRCLE };
+  // A typed diameter's radius is exact intent, never the distance to a click rounded onto the circle.
+  // The tool given back never keeps it: the boxes hold the typed size, and a cleared box must clear it.
+  const radius = tool.radius ?? distance(tool.centre, at);
+  const kept: CircleTool = { kind: "circle", sketch: tool.sketch, centre: tool.centre };
+  if (radius === 0) return { doc, tool: kept, drew: false, note: NO_RADIUS };
+  if (underMin(radius, 0, false)) return { doc, tool: kept, drew: false, note: SMALL_CIRCLE };
   const centre: LineEnd = pointAt(sketch, tool.centre) ?? tool.centre;
-  if (typeof centre === "string" && sketch.curves.some((c) => c.kind === "circle" && c.centre === centre && Math.abs(c.radius - radius) <= SAME_PLACE)) return { doc, tool, drew: false, note: SAME_CIRCLE };
-  return { doc: drawCircle(doc, tool.sketch, centre, radius).doc, tool: { ...tool, centre: null }, drew: true };
+  if (typeof centre === "string" && sketch.curves.some((c) => c.kind === "circle" && c.centre === centre && Math.abs(c.radius - radius) <= SAME_PLACE)) return { doc, tool: kept, drew: false, note: SAME_CIRCLE };
+  return { doc: drawCircle(doc, tool.sketch, centre, radius).doc, tool: { ...kept, centre: null }, drew: true };
 }
 
 /**
