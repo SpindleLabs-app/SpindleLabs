@@ -274,10 +274,14 @@ export interface EdgeFrom {
   crossing: [{ body: BodyHandle; face: number }, { body: BodyHandle; face: number }][];
 }
 
-/** What body_boolean gives: the result bodies' handles, and for each, where its faces and edges came from (indexed like its faces and edges). */
+/**
+ * What body_boolean gives: the result bodies' handles, and for each, where its faces and edges came from (indexed like
+ * its faces and edges). `faces[i]` is face i's first origin, the input face whose surface it is on; `also[i]` the other
+ * input faces merged into it, side by side in one plane (empty for most faces; a kernel from before merges sends none).
+ */
 export interface BooleanResult {
   bodies: BodyHandle[];
-  history: { faces: FaceFrom[]; edges: EdgeFrom[] }[];
+  history: { faces: FaceFrom[]; also?: FaceFrom[][]; edges: EdgeFrom[] }[];
 }
 
 /** What kind of failure a kernel call had. */
@@ -286,6 +290,8 @@ export type KernelErrorKind =
   | "invalid-input"
   /** A result failed validation: a kernel bug. */
   | "invalid-result"
+  /** A boolean's result would touch itself (two parts meeting only along an edge or at a corner): the user's to fix, by overlapping the parts or moving them apart; `touches` says where. */
+  | "non-manifold-result"
   /** The call was malformed (wrong form, a handle that isn't a whole number from 1): the app's bug. */
   | "bad-request"
   /** A body handle the kernel doesn't hold: freed, or never made. */
@@ -318,4 +324,9 @@ export interface KernelFailure {
   kind: KernelErrorKind;
   inputs: KernelInput[];
   message: string;
+  /** Where a "non-manifold-result" would touch itself (always there for that kind, never for another). */
+  touches?: KernelTouch[];
 }
+
+/** One place a boolean's result would touch itself, in world mm: a stretch of edge, or a corner. */
+export type KernelTouch = { at: "edge"; from: [number, number, number]; to: [number, number, number] } | { at: "corner"; point: [number, number, number] };

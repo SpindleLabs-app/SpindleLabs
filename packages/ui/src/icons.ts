@@ -50,6 +50,9 @@ export const ICONS = {
   "centre-arc": [tone("M10.5 15A1.5 1.5 0 1 0 13.5 15A1.5 1.5 0 1 0 10.5 15Z"), line("M4 15A8 8 0 0 1 20 15M12 15 6.5 9.5")],
   "tangent-arc": [tone("M2.5 18A1.5 1.5 0 1 0 5.5 18A1.5 1.5 0 1 0 2.5 18Z"), line("M4 18H11M11 18A6 6 0 0 0 17 12V4")],
   project: [tone("M4 14 12 18 20 14 12 10Z"), line("M4 14 12 18 20 14 12 10ZM12 3V9M9.5 6.5 12 9 14.5 6.5")],
+  // Select (an arrow pointer) and Delete (a bin), for single sketch curves (missing basics, 2026-11-04).
+  select: [tone("M6 3V18L10 14.5 13 21 15.5 20 12.5 13.5H18Z"), line("M6 3V18L10 14.5 13 21 15.5 20 12.5 13.5H18Z")],
+  delete: [tone("M7 7H17L16 21H8Z"), line("M7 7H17L16 21H8ZM4.5 7H19.5M9.5 7V4H14.5V7M10.5 10.5V17.5M13.5 10.5V17.5")],
   finish: [tone("M4 12A8 8 0 1 1 20 12A8 8 0 1 1 4 12Z"), line("M8 12.5 11 15.5 16.5 9")],
   snap: [tone("M5 4H10V12A2 2 0 0 0 14 12V4H19V12A7 7 0 0 1 5 12Z"), line("M5 4H10V12A2 2 0 0 0 14 12V4H19V12A7 7 0 0 1 5 12ZM5 8H10M14 8H19")],
   // Files and the app.

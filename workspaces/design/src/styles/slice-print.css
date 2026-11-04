@@ -1,40 +1,90 @@
 /* Slice for printing (slice-print.ts): the dialog with the file, plate and
-   the beginner's four choices and what the slice came to. Its look follows Start
-   fresh's dialog; the go button is the app's accent rather than a
-   warning, since slicing changes nothing in the design. ":not(#none)"
-   lifts a rule over the base layout's "#workspace button". */
-.slice-print { max-width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 16px 18px 0; background: #161d2a; color: #e6e9ee; border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+   the beginner's choices and what the slice came to. A floating card in the
+   new look, like the Move and Extrude panels: the app's own font in the lists
+   (the base layout's "label select" is monospace, for numbers), 36 px fields
+   with one chevron, quiet labels, the first-version note and any refusal as an
+   amber note, and one filled bright-blue button, Slice and download, with
+   Preview plain and Close quiet. ":not(#none)" lifts a rule over the base
+   layout's "#workspace button". */
+.slice-print { max-width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 14px 18px 0; background: #161d2a; color: #e6e9ee; border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .slice-print::backdrop { background: rgba(0, 0, 0, 0.5); }
-.slice-print h2 { margin: 0 0 8px; font-size: 1.1em; }
-.slice-print p { margin: 0 0 12px; line-height: 1.45; color: #c4cbd5; }
-.slice-print #slice-print-untested { color: #f0a35e; }
-.slice-print .slice-print-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 0 0 12px; }
-.slice-print .slice-print-choice { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 0; font-size: 0.92em; color: #c4cbd5; }
-.slice-print .slice-print-check { flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; align-self: end; padding-bottom: 6px; }
-.slice-print .slice-print-check input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: #4f8cff; }
-.slice-print select { width: 100%; }
+.slice-print h2 { margin: 0; font-size: 1.1em; font-weight: 600; white-space: nowrap; }
+.slice-print p { margin: 0 0 8px; line-height: 1.4; font-size: 0.92em; color: #b7c0cc; }
+/* The first-version note: amber words on a faint amber card with an amber edge, as a note, not a shout. */
+.slice-print #slice-print-untested, .slice-print #slice-print-status.slice-print-bad { padding: 6px 10px; color: #f3b77a; background: rgba(240, 163, 94, 0.08); border: 1px solid rgba(240, 163, 94, 0.22); border-left: 3px solid #f0a35e; border-radius: var(--look-radius-s); }
+.slice-print #slice-print-untested { margin-bottom: 12px; }
+
+/* The choices: two columns where there is room, the name over its list. The two tick boxes share the last row's right
+   half, so the dialog is one row shorter than with a row each (it must fit a 470 px laptop window). */
+.slice-print .slice-print-choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 14px; margin: 0 0 12px; }
+.slice-print .slice-print-choice { grid-column: span 2; display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin: 0; min-width: 0; font-size: 0.85em; color: #8b95a3; }
+.slice-print .slice-print-check { grid-column: span 1; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; align-self: end; min-height: 36px; font-size: 0.92em; color: #e6e9ee; cursor: pointer; white-space: nowrap; }
+.slice-print .slice-print-check input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--look-accent); cursor: pointer; }
+
+/* Lists in the app's own font, the same field as Move's boxes, one chevron drawn here so every browser shows the same. */
+.slice-print select { flex: none; appearance: none; -webkit-appearance: none; width: 100%; height: var(--look-target); min-width: 0; box-sizing: border-box; padding: 0 30px 0 10px; font: inherit; font-size: 0.95rem; color: #e6e9ee; background: var(--look-field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b95a3' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center; border: 1px solid #232c3b; border-radius: var(--look-radius-s); cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.slice-print select:hover:not(:disabled) { border-color: #34435a; }
+.slice-print select:focus-visible { outline: none; border-color: var(--look-accent); box-shadow: 0 0 0 1px rgba(74, 168, 255, 0.35); }
+.slice-print select:disabled { opacity: 0.45; cursor: default; }
+
+.slice-print #slice-print-status { scroll-margin-bottom: 76px; color: #b7c0cc; }
 .slice-print #slice-print-status:empty { display: none; }
-.slice-print #slice-print-status.slice-print-bad { color: #f0a35e; }
-.slice-print #slice-print-status { scroll-margin-bottom: 76px; }
+
 /* The buttons stay in view at the bottom, whatever the window's height, and wrap onto a second line rather than run out
-   of the dialog's left side (Close was cut off at 320 and 340 px: phone hunt 11-01; at 375 px they fit one row with
-   2 px to spare, so a font a little wider wraps them there too). */
-.slice-print .slice-print-actions { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0 -18px; padding: 10px 18px 16px; background: #161d2a; }
-.slice-print #slice-print-go:not(#none) { font-weight: 600; }
+   of the dialog's left side (Close was cut off at 320 and 340 px: phone hunt 11-01). A hairline parts them from the
+   choices scrolling under them. */
+.slice-print .slice-print-actions { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0 -18px; padding: 10px 18px 14px; background: #161d2a; border-top: 1px solid rgba(120, 165, 230, 0.1); }
+.slice-print .slice-print-actions button:not(#none) { min-height: var(--look-target); padding: 0 14px; }
+/* Close: quiet, words only. Preview: the plain button. Slice and download: the dialog's one filled button, as OK in Move and Extrude. */
+.slice-print #slice-print-close:not(#none) { background: transparent; border-color: transparent; color: #b7c0cc; }
+.slice-print #slice-print-close:not(#none):hover { background: #1e2735; color: #e6e9ee; }
+.slice-print #slice-print-go:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
+.slice-print #slice-print-go:not(#none):hover { filter: brightness(1.08); }
+.slice-print .slice-print-actions button:not(#none):disabled { opacity: 0.45; cursor: default; filter: none; }
+
 @media (max-width: 640px) {
   .slice-print button:not(#none), .slice-print select { min-height: 44px; }
-  /* Advice scrolled into view stays clear of the buttons when they wrap onto two rows of 44 px: 10 + 44 + 8 + 44 + 16 =
-     122 px, and a little (one row is 70 px; phone-sideways.mjs checks the bar is never taller than this margin). */
+  .slice-print select { height: 44px; font-size: 16px; padding-right: 28px; }
+  /* Close, Preview and Slice and download on one line at 375 px: Close is words, so it needs little room. */
+  .slice-print .slice-print-actions { gap: 6px; }
+  .slice-print .slice-print-actions button:not(#none) { min-height: 44px; padding: 0 12px; }
+  .slice-print #slice-print-close:not(#none) { padding: 0 8px; }
+  /* Advice scrolled into view stays clear of the buttons when they wrap onto two rows of 44 px: 10 + 44 + 8 + 44 + 14 + 1
+     = 121 px, and a little (one row is 69 px; phone-sideways.mjs checks the bar is never taller than this margin). */
   .slice-print #slice-print-status { scroll-margin-bottom: 128px; }
-  /* One column on a phone: each choice a row, its name beside its list. */
-  .slice-print .slice-print-choices { grid-template-columns: 1fr; gap: 6px; }
-  .slice-print .slice-print-choice { flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; font-size: 1em; color: inherit; }
-  .slice-print .slice-print-choice select { width: min(240px, 60vw); }
-  .slice-print .slice-print-check { justify-content: flex-start; min-height: 44px; padding-bottom: 0; }
-  .slice-print p { margin-bottom: 8px; }
+  /* One column on a phone: each choice a row, its name beside its list; the two tick boxes share the last row. */
+  .slice-print .slice-print-choices { grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+  /* The names in one column and the lists lined up in another (the Preset list too, slice-presets.css), each list as
+     wide as the rest of the line, so the longest names are not cut. */
+  .slice-print .slice-print-choice:not(.slice-print-check) { grid-column: 1 / -1; display: grid; grid-template-columns: 5.6em minmax(0, 1fr); align-items: center; gap: 8px; font-size: 1em; color: #b7c0cc; white-space: nowrap; }
+  .slice-print .slice-print-choice select { width: 100%; }
+  .slice-print .slice-print-check { grid-column: auto; justify-content: flex-start; min-height: 44px; color: #e6e9ee; }
 }
-/* The progress bar while a slice runs (slice-print.ts, showProgress): full width, the stage under it. */
+/* The progress bar while a slice runs (slice-print.ts, showProgress): full width, a thin bright-blue line, the stage under it. */
 .slice-print .slice-print-progress { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; }
 .slice-print .slice-print-progress[hidden] { display: none; }
-.slice-print #slice-print-meter { width: 100%; height: 10px; accent-color: var(--look-accent, #4c8dff); }
-.slice-print #slice-print-stage { font-size: 0.9em; color: #c4cbd5; min-height: 1.2em; }
+.slice-print #slice-print-meter { width: 100%; height: 6px; appearance: none; -webkit-appearance: none; border: 0; border-radius: var(--look-radius-pill); background: var(--look-field); overflow: hidden; accent-color: var(--look-accent); }
+.slice-print #slice-print-meter::-webkit-progress-bar { background: var(--look-field); border-radius: var(--look-radius-pill); }
+.slice-print #slice-print-meter::-webkit-progress-value { background: var(--look-accent); border-radius: var(--look-radius-pill); }
+.slice-print #slice-print-meter::-moz-progress-bar { background: var(--look-accent); border-radius: var(--look-radius-pill); }
+.slice-print #slice-print-stage { font-size: 0.85em; color: #8b95a3; min-height: 1.2em; }
+/* The heading line: the heading, and the presets (slice-presets.ts, styles in slice-presets.css) beside it where there
+   is room, so the dialog grows no taller; a hairline under it parts the dialog's controls from what it is about. */
+.slice-print .slice-print-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 0 -18px 10px; padding: 0 18px 10px; border-bottom: 1px solid rgba(120, 165, 230, 0.1); }
+@media (max-width: 640px) {
+  .slice-print .slice-print-top { gap: 8px; }
+}
+/* A short laptop window (Ben 10-31: 470 px high, where Supports was once cut off): every choice and button still on
+   screen without scrolling, by drawing the same dialog a little tighter (32 px lists, closer rows). */
+@media (min-width: 641px) and (max-height: 620px) {
+  .slice-print { padding-top: 10px; }
+  .slice-print .slice-print-top { margin-bottom: 8px; padding-bottom: 6px; }
+  .slice-print p { margin-bottom: 6px; }
+  .slice-print #slice-print-untested { margin-bottom: 8px; padding-top: 3px; padding-bottom: 3px; }
+  .slice-print .slice-print-choices { row-gap: 5px; margin-bottom: 8px; }
+  .slice-print .slice-print-choice { gap: 2px; }
+  .slice-print select { height: 32px; }
+  .slice-print .slice-print-check { min-height: 32px; gap: 8px; }
+  .slice-print .slice-print-actions { padding-top: 8px; padding-bottom: 10px; }
+  .slice-print .slice-print-actions button:not(#none) { min-height: 34px; }
+}

@@ -61,6 +61,33 @@ test("kernelFailure keeps the kernel's kind, inputs and message", () => {
   assert.equal(String(e), "Error: width must be between 0.001 and 1000000 mm, got -1");
 });
 
+test("a non-manifold result keeps its kind and the places it touches", () => {
+  // What the kernel throws since step 36b when a boolean's result would touch itself: kind
+  // "non-manifold-result" and `touches`, each an edge (from, to) or a corner, in world mm.
+  const message = "the parts only touch along a line; overlap the parts or move them apart by at least 0.001 mm";
+  const touches = [
+    { at: "edge", from: [1, 1, 0.5], to: [1, 1, 1] },
+    { at: "corner", point: [0, 0, 2] },
+  ];
+  const failure = kernelFailure(Object.assign(new Error(message), { kind: "non-manifold-result", inputs: [], touches }));
+  assert.deepEqual(failure, { kind: "non-manifold-result", inputs: [], message, touches });
+  const e = new KernelError(failure);
+  assert.equal(e.kind, "non-manifold-result");
+  assert.deepEqual(e.touches, touches);
+  // Before this the app read the kind as "internal", a kernel bug, and dropped the places.
+  assert.notEqual(failure.kind, "internal");
+  // A place that isn't one (a point of two numbers, a word, an unknown `at`, a number that
+  // isn't finite) is left out; the rest are kept.
+  const odd = [{ at: "edge", from: [1, 1], to: [1, 1, 1] }, "edge", { at: "face", point: [0, 0, 0] }, { at: "corner", point: [0, Infinity, 0] }, { at: "corner", point: [3, 4, 5] }];
+  assert.deepEqual(kernelFailure(Object.assign(new Error(message), { kind: "non-manifold-result", inputs: [], touches: odd })).touches, [{ at: "corner", point: [3, 4, 5] }]);
+  // No list at all: the kind stands with no places.
+  assert.deepEqual(kernelFailure(Object.assign(new Error(message), { kind: "non-manifold-result", inputs: [] })).touches, []);
+  // Every other kind carries no places, even if the error had some.
+  const other = kernelFailure(Object.assign(new Error("x"), { kind: "invalid-input", inputs: [], touches }));
+  assert.equal(other.touches, undefined);
+  assert.deepEqual(new KernelError(other).touches, []);
+});
+
 test("anything else thrown is an internal failure with no inputs", () => {
   // A WASM crash: a plain Error with no kind.
   assert.deepEqual(kernelFailure(new Error("unreachable")), { kind: "internal", inputs: [], message: "unreachable" });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emptyProject, FORMAT_VERSION, readProject } from "../src/model/project.ts";
+import { emptyProject, FORMAT_VERSION, NewerFormatError, readProject } from "../src/model/project.ts";
 
 test("a saved project reads back unchanged", () => {
   const p = emptyProject("Bracket");
@@ -15,6 +15,8 @@ test("a version 1 file (before live links) is upgraded, keeping everything else"
 
 test("files from a newer SpindleLabs, and things that are not projects, are refused clearly", () => {
   assert.throws(() => readProject({ ...emptyProject(), formatVersion: 3 }), /saved by a newer SpindleLabs \(format 3; this one reads up to 2\)/);
+  // It is a NewerFormatError, named so when written out (a log line reads "NewerFormatError: …", issue #274).
+  assert.throws(() => readProject({ ...emptyProject(), formatVersion: 3 }), (e: unknown) => e instanceof NewerFormatError && e.name === "NewerFormatError" && String(e).startsWith("NewerFormatError: "));
   assert.throws(() => readProject([]), /expected an object/);
   assert.throws(() => readProject({ name: "x" }), /no format version/);
   assert.throws(() => readProject({ formatVersion: 1.5 }), /no format version/);
