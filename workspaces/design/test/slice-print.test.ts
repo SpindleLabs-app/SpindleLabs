@@ -12,7 +12,7 @@ import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
 import { fileNameFor } from "@fission/ui";
-import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, stopSlices, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -654,6 +654,73 @@ test("closing the dialog drops a slice still running: nothing is saved; reopened
   assert.equal(t.$("slice-print-status").textContent, "", "a dropped slice says nothing");
   assert.equal(t.$<HTMLButtonElement>("slice-print-go").disabled, false);
   assert.equal(t.$<HTMLButtonElement>("slice-print-preview").disabled, false);
+  await t.window.happyDOM.close();
+});
+
+test("while a slice runs Close reads Cancel, and it or Escape stops the engine, so edits don't wait behind it (slicer hunt 11-04, ui 3)", async () => {
+  // The shipped build for the bodies' files; the engine's calls wait until stopped, as a long slice does.
+  const real = nodeKernel();
+  const engineCalls: string[] = [];
+  let stops = 0;
+  let stop: (() => void) | null = null;
+  const kernel = {
+    call: ((op: string, ...args: unknown[]) => {
+      if (op !== "slice_stl" && op !== "print_file_stl") return (real.call as (...a: unknown[]) => Promise<unknown>)(op, ...args);
+      engineCalls.push(op);
+      return new Promise((_, reject) => (stop = () => reject(new Error("The slice was stopped."))));
+    }) as typeof real.call,
+    stopSlicing() {
+      stops++;
+      const s = stop;
+      stop = null;
+      s?.();
+      return s !== null;
+    },
+  };
+  const doc = partDocument("box", 20, 20, 20);
+  let saved = 0;
+  const t = dialog(async (c, f, alive) => {
+    const print = await printFileOf(kernel, doc, bodyFeatures(doc), c, f.plate);
+    if (alive()) saved++;
+    return { print, saved: true };
+  });
+  const until = async (what: () => boolean) => {
+    for (let i = 0; i < 300 && !what(); i++) await new Promise((r) => setTimeout(r, 5));
+    assert.ok(what());
+  };
+  const close = () => t.$<HTMLButtonElement>("slice-print-close");
+  t.d.ask();
+  assert.equal(close().textContent, "Close");
+  t.$("slice-print-go").click();
+  assert.equal(close().textContent, "Cancel", "while it slices");
+  await until(() => engineCalls.length === 1);
+  close().click();
+  assert.equal(stops, 1, "Cancel stopped the engine");
+  assert.equal(t.d.open, false, "and closed the dialog");
+  await until(() => close().textContent === "Close");
+  assert.equal(saved, 0);
+  // Reopened, it slices again at once; Escape (the dialog's own close) stops it the same way.
+  t.d.ask();
+  assert.equal(t.$<HTMLButtonElement>("slice-print-go").disabled, false);
+  t.$("slice-print-go").click();
+  await until(() => engineCalls.length === 2);
+  (t.$("slice-print-dialog") as HTMLDialogElement).close();
+  assert.equal(stops, 2);
+  await until(() => close().textContent === "Close");
+  // Stopped while the bodies' files are still being made: the engine is never asked.
+  t.d.ask();
+  t.$("slice-print-go").click();
+  close().click();
+  await until(() => close().textContent === "Close");
+  assert.equal(engineCalls.length, 2, "no third slice reached the engine");
+  // With no slice running, Close just closes: nothing is stopped.
+  t.d.ask();
+  close().click();
+  assert.equal(stops, 3);
+  // No slice left: stopping asks no kernel.
+  stopSlices();
+  assert.equal(stops, 3);
+  assert.equal(saved, 0);
   await t.window.happyDOM.close();
 });
 

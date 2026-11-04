@@ -329,16 +329,59 @@ export function refusalOf(e: unknown): string {
   return refusalWords(e instanceof Error ? e.message : String(e), height);
 }
 
+/** A slice under way (sliceBodies, printFileOf): its kernel, and whether it was stopped before it reached the engine. */
+interface SliceRun {
+  kernel: KernelCalls;
+  stopped: boolean;
+}
+
+/** The slices under way now, so the dialog's Cancel and Close can stop them (stopSlices). */
+const runs = new Set<SliceRun>();
+
+/**
+ * Stops every slice under way (slicer hunt 2026-11-04, ui 3: Close left the engine working for up to 75 s, every edit
+ * waiting behind it): one still making the bodies' files never asks the engine, and the engine is let go from one
+ * already asked (KernelCalls.stopSlicing), so the design is built again at once. Each such slice fails.
+ */
+export function stopSlices(): void {
+  for (const run of runs) {
+    run.stopped = true;
+    run.kernel.stopSlicing?.();
+  }
+}
+
+/** `slice` (the bodies' files, then the engine) as a run stopSlices can stop. */
+async function asRun<T>(kernel: KernelCalls, slice: (run: SliceRun) => Promise<T>): Promise<T> {
+  const run: SliceRun = { kernel, stopped: false };
+  runs.add(run);
+  try {
+    return await slice(run);
+  } finally {
+    runs.delete(run);
+  }
+}
+
+/** The bodies' files for `run`, or SliceDropped if it was stopped while they were made. */
+async function runStl(run: SliceRun, doc: DesignDocument, features: readonly Feature[]) {
+  const stl = await bodiesStl(run.kernel, doc, features);
+  if (run.stopped) throw new SliceDropped();
+  return stl;
+}
+
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
-  const { stl, note, height } = await bodiesStl(kernel, doc, features);
-  return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note };
+export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
+  return asRun(kernel, async (run) => {
+    const { stl, note, height } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note };
+  });
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
-export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
-  const { stl, note, height } = await bodiesStl(kernel, doc, features);
-  return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note };
+export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
+  return asRun(kernel, async (run) => {
+    const { stl, note, height } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note };
+  });
 }
 
 /**
@@ -723,9 +766,20 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       bar.hidden = true;
     };
   };
-  // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt 2026-10-31).
+  // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt
+  // 2026-10-31), and the engine is stopped, so the design's edits don't wait behind it (slicer hunt 2026-11-04, ui 3).
+  // While a slice runs, Close says Cancel: it stops the slice and closes the dialog, whose choices stay for next time.
   let generation = 0;
-  dialog.addEventListener("close", () => generation++);
+  dialog.addEventListener("close", () => {
+    generation++;
+    if (busy) stopSlices();
+  });
+  const working = (on: boolean) => {
+    busy = on;
+    go.disabled = preview.disabled = on;
+    close.textContent = on ? "Cancel" : "Close";
+    close.title = on ? "Stops the slice; nothing is saved." : "";
+  };
   const alive = () => {
     const mine = generation;
     return () => mine === generation && dialog.open;
@@ -738,42 +792,42 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     });
   go.addEventListener("click", async () => {
     if (busy) return;
-    busy = true;
-    go.disabled = preview.disabled = true;
+    working(true);
+    const mine = alive();
     say("Slicing…", false);
     const end = showProgress();
     try {
-      const { print, saved, name } = await events.slice(choices(), file(), alive());
+      const { print, saved, name } = await events.slice(choices(), file(), mine);
       end();
       const warnings = [unprintedWords(print), print.levelNote || null].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
       end();
-      if (e instanceof SliceDropped) say("", false);
+      // Dropped (closed, or stopped by Cancel): nothing to say, the engine's "stopped" included.
+      if (e instanceof SliceDropped || !mine()) say("", false);
       else say(refusalOf(e), true);
     } finally {
-      busy = false;
-      go.disabled = preview.disabled = false;
+      working(false);
     }
   });
   preview.addEventListener("click", async () => {
     if (busy) return;
-    busy = true;
-    go.disabled = preview.disabled = true;
+    working(true);
+    const mine = alive();
     say("Slicing…", false);
     const end = showProgress();
     try {
-      await events.preview(choices(), file(), alive());
+      await events.preview(choices(), file(), mine);
       end();
       say("", false);
       dialog.close();
     } catch (e) {
       end();
-      if (e instanceof SliceDropped) say("", false);
+      // Dropped (closed, or stopped by Cancel): nothing to say, the engine's "stopped" included.
+      if (e instanceof SliceDropped || !mine()) say("", false);
       else say(refusalOf(e), true);
     } finally {
-      busy = false;
-      go.disabled = preview.disabled = false;
+      working(false);
     }
   });
   close.addEventListener("click", () => dialog.close());
