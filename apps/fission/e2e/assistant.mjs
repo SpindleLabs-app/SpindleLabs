@@ -985,6 +985,44 @@ try {
     }
   });
 
+  await check("the in-browser model's size isn't asked of huggingface.co until the user says yes; saying no sends nothing (audit S13/L7)", async () => {
+    const { page } = await fresh([], { gpu: true });
+    const hf = [];
+    await page.context().route("https://huggingface.co/**", (route) => {
+      hf.push(route.request().url());
+      // Two weight files: 600 MB + 300 MB, so the size prompt must say 900 MB.
+      return route.fulfill({ headers: { "access-control-allow-origin": "*", "content-type": "application/json" }, body: JSON.stringify({ records: [{ nbytes: 6e8 }, { nbytes: 3e8 }] }) });
+    });
+    const dialogs = [];
+    let answers = [];
+    page.on("dialog", (d) => {
+      dialogs.push({ text: d.message(), hfBefore: hf.length });
+      return answers.shift() ? d.accept() : d.dismiss();
+    });
+    try {
+      await looked(page);
+      await page.selectOption("#ai-provider", "in-browser");
+      // 1. No to the size request: nothing at all reaches huggingface.co.
+      answers = [false];
+      await ask(page, "make it taller");
+      await page.waitForFunction(() => /Nothing was downloaded or sent\./.test(document.querySelector("#ai-result").textContent));
+      assert.equal(dialogs.length, 1);
+      assert.match(dialogs[0].text, /asks huggingface\.co for the model's file list/);
+      assert.deepEqual(hf, []);
+      // 2. Yes to the size request, no to the download: one request for the file list, after the yes, then the size is shown.
+      answers = [true, false];
+      await ask(page, "make it taller");
+      await page.waitForFunction(() => /Nothing was downloaded or sent\./.test(document.querySelector("#ai-result").textContent) && document.querySelector("#ai-ask-button").disabled === false);
+      assert.equal(dialogs.length, 3);
+      assert.equal(dialogs[1].hfBefore, 0, "the size question came before any request");
+      assert.match(dialogs[2].text, /: 900 MB\. Download it now\?$/);
+      assert.equal(hf.length, 1);
+      assert.match(hf[0], /\/resolve\/main\/ndarray-cache\.json$/);
+    } finally {
+      await page.close();
+    }
+  });
+
   await check("a page from before an update: the in-browser runner can't be loaded, and the panel says to reload, not the browser's import error (real-use hunt A4)", async () => {
     const { page } = await fresh([], { open: false, gpu: true });
     const before = errors.length;

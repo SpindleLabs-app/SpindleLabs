@@ -8,7 +8,7 @@
 // Escape empties the boxes and leaves them (a second Escape,
 // outside, ends the line as before). Styles: src/styles/typed-entry.css.
 
-import { readAngle, readLength, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
+import { readAngle, readDiameter, readLength, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
 import { keepInside } from "./pointer-hint.ts";
 
 export interface TypedBoxEvents {
@@ -21,9 +21,9 @@ export interface TypedBoxEvents {
 }
 
 /** Each box's label (read by people and the e2e test) and how its text is read. */
-export const FIELD_LABELS: Record<TypedField, string> = { length: "Length", angle: "Angle", width: "Width", height: "Height", radius: "Radius", sweep: "Arc angle" };
-const UNITS: Record<TypedField, string> = { length: "mm", angle: "°", width: "mm", height: "mm", radius: "mm", sweep: "°" };
-const read = (field: TypedField, text: string): Reading => (field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : readLength(text));
+export const FIELD_LABELS: Record<TypedField, string> = { length: "Length", angle: "Angle", width: "Width", height: "Height", radius: "Radius", sweep: "Arc angle", diameter: "Diameter" };
+const UNITS: Record<TypedField, string> = { length: "mm", angle: "°", width: "mm", height: "mm", radius: "mm", sweep: "°", diameter: "mm" };
+const read = (field: TypedField, text: string): Reading => (field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : field === "diameter" ? readDiameter(text) : readLength(text));
 
 /** The boxes sit this far right of and below the point they are given (typed-entry.css translate). */
 const BOX_OFFSET = { x: 18, y: 14 };

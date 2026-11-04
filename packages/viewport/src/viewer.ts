@@ -176,7 +176,7 @@ export class ViewportView {
       }
       // Sketching: a click places a point on the sketch's plane, it picks nothing.
       const plane = this.host.sketchPlane();
-      if (plane) return this.host.sketchPointer({ kind: "click", ...this.pointerOn(e.clientX, e.clientY, plane), ...this.sketchPick(e.clientX, e.clientY) });
+      if (plane) return this.host.sketchPointer({ kind: "click", ...this.pointerOn(e.clientX, e.clientY, plane), ...this.sketchPick(e.clientX, e.clientY), ...(e.shiftKey ? { shift: true as const } : {}), ...(e.pointerType === "touch" ? { touch: true as const } : {}) });
       // Picking where a sketch goes: the face under the pointer, else the nearest offered plane, never an edge (26d).
       if (this.host.offeredFaces()) return this.host.pick({ ...this.planeTarget(e.clientX, e.clientY), edge: null, shift: e.shiftKey });
       const edge = this.edgeAt(e.clientX, e.clientY);
@@ -941,7 +941,7 @@ export class ViewportView {
 }
 
 /** The sketch colours (sRGB): the edited sketch's lines bright, finished ones quieter, the grid faint, the axes red (x) and green (y). */
-const SKETCH_COLOURS = { line: 0x6cc4ff, finished: 0x8b95a3, projected: 0xc77dff, projectedFinished: 0x9d6fc4, lost: 0xff6b6b, preview: 0xffb454, snap: 0x4dff88, point: 0xffffff, grid: 0xaab4c3, axisX: 0xe5534b, axisY: 0x57ab5a, plane: 0x6cc4ff, planeOff: 0x8b95a3 };
+const SKETCH_COLOURS = { picked: 0xffe14d, hover: 0xb8e4ff, line: 0x6cc4ff, finished: 0x8b95a3, projected: 0xc77dff, projectedFinished: 0x9d6fc4, lost: 0xff6b6b, preview: 0xffb454, snap: 0x4dff88, point: 0xffffff, grid: 0xaab4c3, axisX: 0xe5534b, axisY: 0x57ab5a, plane: 0x6cc4ff, planeOff: 0x8b95a3 };
 /**
  * How opaque the sketch grid's major lines are (minor ones fade in up to
  * this as they spread apart, sketch-view's minorStrength): light and see-
@@ -1327,6 +1327,9 @@ export class Viewer implements SharedViewport {
       this.editedWorld = [...d.lines.flatMap(([a, b]) => [at(a), at(b)]), ...d.editing.points.map(at), ...projectedWorld];
       segments(d.lines, SKETCH_COLOURS.line, 3);
       segments(shown.lines, SKETCH_COLOURS.projected, 3);
+      // The Select tool's: the curve under the pointer lighter, the selected ones lit over it.
+      if (d.editing.hover && d.editing.hover.length > 0) segments(d.editing.hover, SKETCH_COLOURS.hover, 3.5);
+      if (d.editing.picked && d.editing.picked.length > 0) segments(d.editing.picked, SKETCH_COLOURS.picked, 3.6);
       if (d.editing.preview.length > 0) segments(d.editing.preview, SKETCH_COLOURS.preview, 4);
       if (d.editing.points.length > 0) {
         const g = new THREE.BufferGeometry();
@@ -1351,6 +1354,7 @@ export class Viewer implements SharedViewport {
     this.element.dataset.sketchPoints = edited ? edited.points.map(xy).join(" ") : "";
     this.element.dataset.sketchPreview = edited ? edited.preview.map((s) => s.map(xy).join(" ")).join(" | ") : "";
     this.element.dataset.sketchSnap = edited?.snap?.label ?? "";
+    this.element.dataset.sketchPicked = String(edited?.picked?.length ?? 0);
     this.labelSketches();
   }
 

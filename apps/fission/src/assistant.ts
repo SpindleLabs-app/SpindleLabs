@@ -585,10 +585,16 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     });
   }
 
-  /** The in-browser model's download, confirmed once with its size. */
+  /**
+   * The in-browser model's download, confirmed once with its size. The size
+   * comes from the site that keeps the model's files, so even that request
+   * waits until the user has said yes to it (audit S13/L7): nothing leaves
+   * the browser before a choice.
+   */
   async function confirmDownload(s: ProviderSettings): Promise<boolean> {
     const id = s.model ?? IN_BROWSER_MODEL;
     if (store.get(`fission.ai.downloaded:${id}`) === "1") return true;
+    if (!window.confirm(`${id} runs in your browser after a one-time download from huggingface.co. To show you its size first, SpindleLabs asks huggingface.co for the model's file list (only that address is requested, nothing of yours is sent). Ask now?`)) return false;
     const bytes = await inBrowserDownloadSize(id);
     const ok = window.confirm(`${id} is downloaded once to run in your browser: ${(bytes / 1e6).toFixed(0)} MB. Download it now?`);
     if (ok) store.set(`fission.ai.downloaded:${id}`, "1");
