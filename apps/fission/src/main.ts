@@ -16,7 +16,7 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
@@ -663,10 +663,15 @@ $("save").addEventListener("click", () => void save());
 const SAVE_AS_TITLE = "Save As…: save the whole project under a name and in a place you choose";
 // Open takes what a drop or paste takes (X6): every format with an importer,
 // routed by its contents, so a PNG opens in Image and a project as a project.
-$<HTMLInputElement>("open-file").accept = FILE_FORMATS.filter((f) => representations.importerFor(f.format))
+// A format whose workspace the public app doesn't list (images: Image) is left out, and refused if dropped (listed-workspaces.ts).
+const listedImporter = (format: FileFormat) => {
+  const importer = representations.importerFor(format);
+  return importer && (!importer.workspace || listed.some((w) => w.id === importer.workspace)) ? importer : null;
+};
+$<HTMLInputElement>("open-file").accept = FILE_FORMATS.filter((f) => listedImporter(f.format))
   .flatMap((f) => (f.format === "project" ? [".spindle", ".json"] : f.extensions))
   .join(",");
-const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFor(f.format)).map((f) => f.many).join(", ")}`;
+const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).map((f) => f.many).join(", ")}`;
 // File ▾ (U0f2a), first on the bar as in Fusion: New and the exports are
 // the workspace's in use (the pane last clicked, as for keys), Open and
 // Save the shell's. Save also stays one click, as the icon beside it.
@@ -826,7 +831,7 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
     if (e instanceof Unreadable) return fileStatus(e.message);
     throw e;
   }
-  const route = routeFiles(representations, heads);
+  const route = routeFiles(representations, heads, (w) => listed.some((l) => l.id === w)); // an unlisted workspace's files are refused (listed-workspaces.ts)
   if (!route) return;
   if (route.kind === "refused") return fileStatus(route.message);
   const file = files[0];

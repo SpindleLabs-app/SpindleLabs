@@ -15,3 +15,4 @@ export const ALL_WORKSPACES_SWITCH = "all-workspaces";
 export function listedWorkspaces<T extends { id: string }>(all: readonly T[], everything: boolean): T[] {
   return everything ? [...all] : all.filter((w) => PUBLIC_WORKSPACES.includes(w.id));
 }
+

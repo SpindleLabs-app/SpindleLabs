@@ -7,7 +7,8 @@
 // reason why there is nothing to slice, in the file message line). There is
 // no Split, as there is no second workspace to put beside Design. The other
 // workspaces still open by their links (#image), and `?all-workspaces`, the
-// developers' switch, lists all ten as before. 1280 px with a mouse and
+// developers' switch, lists all ten as before. A picture dropped or opened
+// is refused in plain words rather than opening the hidden Image. 1280 px with a mouse and
 // 375 px with a finger. Screenshots go to E2E_SHOTS when set. Run with
 // `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -15,7 +16,7 @@ import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { fileItem, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4273, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4273/";
@@ -119,6 +120,30 @@ try {
     await page.click('#workspace-menu-menu [data-workspace="slice"]');
     await page.waitForSelector("#slice-print-dialog[open]");
     assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), "design");
+    await page.context().close();
+  });
+
+  await check("a PNG dropped on the view is refused in plain words, naming no hidden workspace, and Open offers no images", async () => {
+    const page = await fresh(1280, false);
+    await page.locator("#start-hint").waitFor();
+    // The 8 bytes every PNG starts with and an IHDR chunk's start: enough to be identified as one (the file is refused before it is read).
+    const bytes = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52];
+    const taken = await page.evaluate((bytes) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array(bytes)], "logo.png"));
+      const el = document.querySelector("#viewport");
+      el.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const d = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt });
+      el.dispatchEvent(d);
+      return d.defaultPrevented;
+    }, bytes);
+    assert.equal(taken, true, "the drop is taken (not left to the browser, which would leave the app)");
+    await page.waitForFunction(() => document.querySelector("#file-status")?.textContent !== "");
+    assert.equal(await page.textContent("#file-status"), "Couldn't open “logo.png”: SpindleLabs can't open PNG images yet.");
+    assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), "design", "still in Design, not Image");
+    const accept = (await page.getAttribute("#open-file", "accept")).split(",");
+    assert.deepEqual(accept, [".spindle", ".json"], "Open offers projects only");
+    assert.deepEqual(await fileItem(page, "open"), [false, "Open SpindleLabs projects (.spindle)"]);
     await page.context().close();
   });
 

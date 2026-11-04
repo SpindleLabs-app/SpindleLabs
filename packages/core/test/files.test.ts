@@ -163,6 +163,34 @@ test("routing: one file at a time, nothing for nothing, and the lists follow wha
   assert.equal(refusal(registry, file("x", "?")), "Couldn't open “x”: SpindleLabs doesn't know this type of file. It opens JPEG images.");
 });
 
+test("routing with only some workspaces listed (the public app: Design and Slice, Ben 2026-11-04): an unlisted workspace's importer is not used, and no message names it", () => {
+  const registry = new RepresentationRegistry();
+  const shell = importer(["project"], null);
+  const image = importer(["png", "jpeg"], "image");
+  registry.registerImporter(shell);
+  registry.registerImporter(image);
+  const publicApp = (w: string) => w === "design" || w === "slice";
+  const refusedIn = (f: FileHead) => {
+    const r = routeFiles(registry, [f], publicApp);
+    assert.equal(r?.kind, "refused");
+    return r?.kind === "refused" ? r.message : "";
+  };
+  // Image is registered but unlisted: a PNG is refused, the sentence naming Image left out.
+  assert.equal(refusedIn(file("photo.png", new Uint8Array([...PNG]))), "Couldn't open “photo.png”: SpindleLabs can't open PNG images yet.");
+  // SVG's planned workspaces (Vector, Laser) are both unlisted; STL's (Design) is listed and still named.
+  assert.equal(refusedIn(file("logo.svg", "<svg/>")), "Couldn't open “logo.svg”: SpindleLabs can't open SVG drawings yet.");
+  assert.equal(refusedIn(file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
+  // What it opens leaves images out.
+  assert.equal(refusedIn(file("notes.docx", "PK\x03\x04")), "Couldn't open “notes.docx”: SpindleLabs doesn't know this type of file. It opens SpindleLabs projects (.spindle).");
+  // A project, opened by the shell (no workspace), still opens.
+  const project = routeFiles(registry, [file("plate.spindle", projectToJson(emptyProject()))], publicApp);
+  assert.ok(project?.kind === "open" && project.importer === shell);
+  // The same PNG with every workspace listed opens in Image, as before.
+  const all = routeFiles(registry, [file("photo.png", new Uint8Array([...PNG]))], () => true);
+  assert.ok(all?.kind === "open" && all.importer === image);
+  assert.deepEqual(image.opened, []);
+});
+
 test("one importer per format: a second is refused and the first stays", () => {
   const registry = new RepresentationRegistry();
   const first = importer(["png"], "image");
