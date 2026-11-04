@@ -36,14 +36,14 @@ const shots = process.env.E2E_SHOTS;
 
 const until = (page, fn, arg, what, timeout = 8000) => page.waitForFunction(fn, arg, { timeout }).catch(async () => assert.fail(`${what}: timed out`));
 
-async function fresh(width, height, touch) {
+async function fresh(width, height, touch, query = "") {
   framed = HOME;
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
-  await page.goto(url + "#design");
+  await page.goto(url + query + "#design");
   await startWithBox(page, touch);
   return sheetsClearFor(page);
 }
@@ -284,6 +284,12 @@ const SLOT_END = [25 + 5 * 0.6, 5 - 5 * 0.8, 2.5];
 const ROUND_SIDE = [-30, (-10 * 0.8) / Math.hypot(0.8, 0.55), 30 + (10 * 0.55) / Math.hypot(0.8, 0.55)];
 
 let failed = 0;
+/** The camera unmoved: the same to 1e-6 mm (the view works its pose out again each frame, to a few ulps). */
+function stayed(now, was, what) {
+  const flat = (c) => [...c.position, ...c.target, ...c.up];
+  assert.ok(flat(now).every((v, k) => Math.abs(v - flat(was)[k]) <= 1e-6), `${what}: ${JSON.stringify(was)} to ${JSON.stringify(now)}`);
+}
+
 async function check(name, fn) {
   try {
     await fn();
@@ -544,6 +550,42 @@ try {
       await page.context().close();
     }
   });
+  // Clumsy-user hunt (11-04, after the 47d4 review's sketch points): in Pan or Zoom mode a drag of a Move handle also
+  // moved the camera, since the view's own Pan and Zoom listener heard the same press. The handle alone moves now.
+  for (const mode of ["pan", "zoom"]) {
+    await check(`1280 px, ${mode === "pan" ? "Pan" : "Zoom"} mode: the X arrow dragged 15.3 mm fills 15 and the camera stays; so does Rotate's Z grip`, async () => {
+      const page = await fresh(1280, 800, false, "?test-hooks");
+      try {
+        await page.click("#move");
+        await opened(page);
+        await pressAt(page, [20, 15, 20], false);
+        await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked");
+        await page.click(`#view-controls [data-nav=${mode}]`);
+        const camera = () => page.evaluate(() => window.fissionTest.camera());
+        const cam = await camera();
+        await dragArrow(page, 0, 15.3, false);
+        assert.equal(await boxValue(page, "x"), "15", "15.3 mm snaps to 15");
+        stayed(await camera(), cam, "the camera moved with the arrow");
+        await page.keyboard.press("Escape");
+        await closed(page);
+        // A click in Pan mode pans, so the box is picked for Rotate in Orbit mode, then the mode set again.
+        await page.click("#view-controls [data-nav=orbit]");
+        await page.click("#rotate");
+        await opened(page);
+        // The box stays picked from Move; a click on it now would let it go.
+        if ((await page.evaluate(() => document.body.dataset.selection)) !== "body:feature-1") await pressAt(page, [6, 4, 20], false);
+        await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked for Rotate");
+        await page.click(`#view-controls [data-nav=${mode}]`);
+        stayed(await camera(), cam, "the camera where it was");
+        await dragRingZ(page, 90, false);
+        assert.equal(await boxValue(page, "turnZ"), "90", "a quarter turn");
+        stayed(await camera(), cam, "the camera moved with the grip");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
   await check("1280 px: a drag whose release never arrives (Alt-Tab, a dialog mid-drag) ends at the next move with no button held", async () => {
     // Backlog 2026-10-29 (weak-spot hunt D, F1c): the box kept following a hovering pointer until the next click.
     const page = await fresh(1280, 800, false);
