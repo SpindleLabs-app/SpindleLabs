@@ -1066,14 +1066,20 @@ if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCO
 // waits for it, in the order pressed, so it takes back that OK and not the step before (clumsy hunt 2026-11-04).
 let pressesWaiting = 0;
 let pressed: Promise<void> = Promise.resolve();
+/** The presses of each button still waiting (clumsy-user hunt 2026-11-04: a waiting Undo looked as if nothing had happened). */
+const waitingOn = { undo: 0, redo: 0 };
 function undoRedo(which: "undo" | "redo") {
   if (pressesWaiting === 0 && !ctx.history.busy()) return undoRedoNow(which);
   pressesWaiting++;
+  waitingOn[which]++;
+  showUndoRedo();
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
+      waitingOn[which]--;
       undoRedoNow(which);
+      showUndoRedo();
     });
 }
 function undoRedoNow(which: "undo" | "redo") {
@@ -1091,8 +1097,13 @@ function showUndoRedo() {
   ] as const;
   for (const [id, verb, label, chord] of buttons) {
     const b = $<HTMLButtonElement>(id);
-    b.disabled = label === null;
-    b.title = label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    // Pressed while an OK is still being worked out, it waits for it (History.whenIdle) and says so: lit and pulsing
+    // (styles/undo-redo.css), its title saying why, until the press has been carried out.
+    const waiting = waitingOn[id] > 0;
+    b.toggleAttribute("aria-busy", waiting);
+    if (waiting) b.setAttribute("aria-busy", "true");
+    b.disabled = label === null && !waiting;
+    b.title = waiting ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
 // At phone width the pair leaves the bar for the main viewport's
