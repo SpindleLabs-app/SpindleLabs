@@ -1,7 +1,7 @@
 /* The hint by the pointer while sketching (pointer-hint.ts): a small
    light label up and to the right of the pointer, clear of the typed
    boxes below it, never taking a click. */
-.pointer-hint { position: absolute; z-index: 19; pointer-events: none; transform: translate(18px, -30px); padding: 2px 6px; font-size: 12px; line-height: 16px; white-space: nowrap; color: #1d2228; background: rgba(240, 242, 245, 0.95); border: 1px solid #9aa3ad; border-radius: 3px; }
+.pointer-hint { position: absolute; z-index: 19; pointer-events: none; transform: translate(18px, -30px); padding: 2px 6px; font-size: 12px; line-height: 16px; white-space: nowrap; color: var(--text-1d2228); background: var(--fill-240-242-245-095); border: 1px solid var(--line-9aa3ad); border-radius: 3px; }
 .pointer-hint[hidden] { display: none; }
 /* Phone width: above the finger, centred on it. */
 @media (max-width: 640px) {
@@ -12,7 +12,7 @@
    covers the spot clicked. A word with no place to break (a refused grid
    size quoted in full: 1e308 is 309 digits) breaks anywhere, so it stays in
    the box and never makes the page scroll sideways (monkey seed 202610290). */
-.pointer-hint.pointer-hint-note { white-space: normal; overflow-wrap: anywhere;width: max-content; max-width: min(300px, calc(100% - 16px)); transform: translate(18px, calc(-100% - 14px)); color: #8a1c12; background: rgba(255, 244, 242, 0.97); border-color: #c4554a; }
+.pointer-hint.pointer-hint-note { white-space: normal; overflow-wrap: anywhere;width: max-content; max-width: min(300px, calc(100% - 16px)); transform: translate(18px, calc(-100% - 14px)); color: var(--text-8a1c12); background: var(--fill-255-244-242-097); border-color: var(--line-c4554a); }
 @media (max-width: 640px) {
   .pointer-hint.pointer-hint-note { transform: translate(-50%, calc(-100% - 32px)); }
 }

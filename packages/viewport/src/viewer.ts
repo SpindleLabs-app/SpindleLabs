@@ -118,6 +118,11 @@ export class ViewportView {
     this.element = container;
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.autoClearColor = false; // paintBackdrop paints the colour every frame; depth and stencil still clear
+    // The canvas fills the view by its style and never sizes it: in the page's flow, its width and height in pixels
+    // (set by the renderer) held the view at its last size until the next resize ran, so while the page loaded (the
+    // toolbar and timeline filling in under a canvas sized before them) it stuck out of the window for a frame or two,
+    // and with scroll bars that take room (Windows) both bars flashed in and out until it settled (Ben 11-04).
+    Object.assign(this.renderer.domElement.style, { position: "absolute", inset: "0", width: "100%", height: "100%", display: "block" });
     container.appendChild(this.renderer.domElement);
     this.legend.className = "overlay-legend";
     this.legend.hidden = true;
@@ -898,7 +903,7 @@ export class ViewportView {
   private resize() {
     const { clientWidth: w, clientHeight: h } = this.element;
     if (w === 0 || h === 0) return;
-    this.renderer.setSize(w, h);
+    this.renderer.setSize(w, h, false); // the drawing size only: the style above keeps the canvas the view's size
     // A phone turned upright (or a view made narrower) kept the camera, so the part that filled the wide view ran
     // off both sides of the tall one (phone hunt 11-01): when the width changes, the camera moves along its line of
     // sight so the narrower field of view covers what it did (`refitScale`; turning back undoes it exactly). Not on the
