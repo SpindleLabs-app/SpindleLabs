@@ -242,7 +242,8 @@ MUTANTS_FINE = {"0", "2", "3", "124", "130"}
 def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
     """Kinds for failures without a failure folder. reports: {path in the
     incoming folder: text} for journeys/report.txt, journeys/soak.json,
-    ts-mutants-*/<t>.txt and mutants-*/exit-code.txt; jobs: {job: result}
+    ts-mutants-*/<t>.txt, mutants-*/exit-code.txt and any leg's
+    job-status.txt (its own result: "success" makes it clean); jobs: {job: result}
     (the workflow's `needs`); explained_dirs: the incoming folders whose
     failure folders gave a kind; present_dirs: every incoming folder, so a
     red matrix job's leg that left a folder with no kind is still filed when
@@ -292,6 +293,11 @@ def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
                 found.append((f"check whole-kernel mutants: {why}", f"{top}: exit code {code}"))
             else:
                 clean_dirs.add(top)
+        elif path.endswith("/job-status.txt") and path.count("/") == 1:
+            # A matrix leg's own result, written by its save step (the job's result in JOBS is one for every leg):
+            # a leg that passed is clean beside a sibling leg that failed (kernel-results #25).
+            if text.strip() == "success":
+                clean_dirs.add(top)
         if found:
             dirs_with_kinds.add(top)
             kinds += found
@@ -326,6 +332,7 @@ def read_checks(incoming):
             names = [f for f in sorted(os.listdir(d)) if f.endswith(".txt")]
         elif run.startswith("mutants-"):
             names = ["exit-code.txt"]
+        names = names + ["job-status.txt"]
         for f in names:
             p = os.path.join(d, f)
             if os.path.isfile(p):

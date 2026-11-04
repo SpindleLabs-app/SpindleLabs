@@ -160,6 +160,48 @@ class Save(unittest.TestCase):
         self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "saved test-0\n", ""))
         self.assertIn("runs/7-1/test-0/tests.log", self.saved())
 
+    def test_a_save_that_races_another_lands_with_no_git_identity(self):
+        # Regression: the 2026-11-03 nightly's extrude leg printed "saved fuzz-kernel-extrude" but its folder never
+        # reached kernel-results. Another leg pushed first; the runner has no git identity, so the rebase that
+        # follows a refused push stopped ("Committer identity unknown") with HEAD on the other leg's commit, and
+        # the next push of HEAD was "up to date": a success that saved nothing. Here a git shim pushes a rival
+        # commit just before the save's first push, with HOME empty as on a runner.
+        t = self.tmp.name
+        rival = os.path.join(t, "rival")
+        subprocess.run(["git", "clone", "-q", self.remote, rival], check=True, capture_output=True)
+        os.makedirs(os.path.join(rival, "runs", "other"))
+        with open(os.path.join(rival, "runs", "other", "log.txt"), "w") as f:
+            f.write("the other leg\n")
+        g = ["git", "-C", rival, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(g + ["add", "-A"], check=True)
+        subprocess.run(g + ["commit", "-qm", "rival"], check=True)
+        real = shutil.which("git")
+        shim = os.path.join(t, "bin")
+        os.makedirs(shim)
+        flag = os.path.join(t, "raced")
+        with open(os.path.join(shim, "git"), "w") as f:
+            f.write(f"""#!/bin/sh
+for a in "$@"; do
+  if [ "$a" = push ] && [ ! -e {flag} ]; then
+    touch {flag}
+    {real} -C {rival} push -q origin HEAD:main >/dev/null 2>&1
+  fi
+done
+exec {real} "$@"
+""")
+        os.chmod(os.path.join(shim, "git"), 0o755)
+        home = os.path.join(t, "home")
+        os.makedirs(home)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(RESULTS_REPO=self.remote, RESULTS_PATH="runs/7-1", HOME=home, GIT_CONFIG_NOSYSTEM="1",
+                   PATH=shim + os.pathsep + os.environ["PATH"])
+        out = subprocess.run(["bash", SCRIPT, "save", "fuzz-kernel-extrude", self.logs], capture_output=True, text=True, env=env)
+        self.assertTrue(os.path.exists(flag), "the shim never raced the save")
+        self.assertEqual((out.returncode, out.stdout), (0, "saved fuzz-kernel-extrude\n"), out.stderr)
+        files = self.saved()
+        self.assertIn("runs/other/log.txt", files)
+        self.assertIn("runs/7-1/fuzz-kernel-extrude/tests.log", files)
+
     def test_a_refused_push_says_why_without_naming_files(self):
         # The way GitHub refuses a file over 100 MB, from a hook.
         hook = os.path.join(self.remote, "hooks", "pre-receive")
