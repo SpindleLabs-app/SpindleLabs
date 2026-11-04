@@ -42,6 +42,8 @@ async function fresh(width = 1280, plant = null) {
  */
 const switchTo = (page, id) =>
   page.evaluate(async (id) => {
+    // Community pressed while on screen closes it (back to the last workspace), so going "to" it when already there is no switch at all.
+    if (id === "community" && document.body.dataset.activeWorkspace === "community") return 0;
     if (id !== "community") document.getElementById("workspace-menu").click();
     const target = id === "community" ? document.getElementById("community") : document.querySelector(`#workspace-menu-menu [data-workspace="${id}"]`);
     const t0 = performance.now();
