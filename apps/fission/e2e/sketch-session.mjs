@@ -55,7 +55,7 @@ const STEP = { line: "Draw line", rectangle: "Draw rectangle", circle: "Draw cir
  * stacks of what was drawn. `others` counts the segments other sketches draw.
  */
 function sketchModel(others = 0) {
-  return { lines: [], circles: [], tool: "line", pending: null, undo: [], redo: [], others };
+  return { lines: [], circles: [], tool: "line", pending: null, selecting: false, undo: [], redo: [], others };
 }
 const snapshot = (m) => ({ lines: [...m.lines], circles: [...m.circles] });
 const pointsOf = (m) => new Set([...m.lines.flatMap((l) => [key(l.a), key(l.b)]), ...m.circles.map((c) => key(c.centre))]);
@@ -217,10 +217,13 @@ async function randomStep(page, m, r) {
     await page.keyboard.press(tool[0]); // L, R or C
     m.tool = tool;
     m.pending = null;
+    m.selecting = false;
     return `key ${tool[0]}`;
   }
   if (roll < 0.18) {
     await page.keyboard.press("Escape");
+    // Escape ends a shape half drawn; with none, it chooses the Select tool (missing basics, 2026-11-04, Fusion's way).
+    if (m.pending === null) m.selecting = true;
     m.pending = null;
     return "Escape";
   }
@@ -237,13 +240,20 @@ async function randomStep(page, m, r) {
     }
     return `undo ${back}, redo ${again}`;
   }
+  // In Select a click picks rather than draws: the tool's key first, as a person going back to drawing presses it.
+  let back = "";
+  if (m.selecting) {
+    await page.keyboard.press(m.tool[0]);
+    m.selecting = false;
+    back = `key ${m.tool[0]} (back from Select), `;
+  }
   const at = [XS[Math.floor(r() * XS.length)], YS[Math.floor(r() * YS.length)]];
   // Off the node by up to 2 mm each way: the kernel snaps it back.
   await clickPlane(page, [at[0] + (r() - 0.5) * 4, at[1] + (r() - 0.5) * 4], TOP);
   const shownBefore = JSON.stringify(expected(m));
   const drew = click(m, at);
   m.unseen = JSON.stringify(expected(m)) === shownBefore;
-  return `${m.tool} at ${at}${drew ? "" : " (no drawing)"}`;
+  return `${back}${m.tool} at ${at}${drew ? "" : " (no drawing)"}`;
 }
 
 async function startSketch(page) {

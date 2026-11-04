@@ -76,6 +76,42 @@ test("hand-worked: Escape chooses Select, a click 0.5 mm off the 40 × 30 rectan
   assert.equal(await handWorked(designWorkspace), null);
 });
 
+const status = (a: Awaited<ReturnType<typeof app>>) => a.$("#sketch-status")!.textContent ?? "";
+
+/** The app hunt's findings of 2026-11-04 (C-sketch), as a check the plants run through too. */
+async function huntFindings(plugin: WorkspacePlugin): Promise<string | null> {
+  // Sketch 1: line-4 from (0,0) to (20,0), circle-6 round (50,0) radius 5.
+  const s = addSketch(partDocument("box", 10, 10, 10));
+  const one = drawLine(s.doc, s.id, [0, 0], [20, 0]);
+  const circle = drawCircle(one.doc, s.id, [50, 0], 5);
+  const a = await app(circle.doc, plugin);
+  const fail = async (why: string) => (await a.close(), why);
+  await a.menu(s.id, "edit-sketch");
+  await a.key("clear-selection");
+  await a.click(10, 0);
+  if (!status(a).includes("Selected: 1 line.")) return fail(`a pick's words are missing: "${status(a)}"`);
+  // Finding 1: L (any tool) drops the picks and their words with them.
+  await a.key("sketch-line");
+  if (status(a).includes("Selected")) return fail(`after L the panel still says "${status(a)}"`);
+  await a.key("clear-selection");
+  // Finding 2: a finger 1.2 mm (12 px of 0.1 mm) off the circle's rim picks it, beyond a mouse's 1 mm reach and inside a finger's 2.4 mm;
+  // a mouse there picks nothing, and a finger 2.6 mm off picks nothing either (0.9× and 1.1×-like bounds of the 24 px reach: 2.16 and 2.64 mm).
+  await a.click(56.2, 0);
+  if (pickedSegments(a) !== 0) return fail("a mouse 1.2 mm off the rim picked the circle");
+  await a.click(56.2, 0, {}, false, true);
+  if (pickedSegments(a) !== 64) return fail(`a finger 1.2 mm off the rim lit ${pickedSegments(a)} segments, not the circle's 64`);
+  await a.click(50, 5 + 2.16, {}, false, true);
+  if (pickedSegments(a) !== 64) return fail("a finger at 0.9× its reach off the rim did not pick the circle");
+  await a.click(50, 5 + 2.64, {}, false, true);
+  if (pickedSegments(a) !== 0) return fail("a finger at 1.1× its reach off the rim picked something");
+  if (!(await a.close())) return "bodies left in the kernel's store";
+  return null;
+}
+
+test("app hunt 2026-11-04: a tool chosen drops the picks' words; a finger reaches 24 px, a mouse 10 (0.9× picks, 1.1× doesn't)", async () => {
+  assert.equal(await huntFindings(designWorkspace), null);
+});
+
 test("hand-worked: Shift+click picks a circle and a line, Backspace takes both out as \"Delete 2 curves\", with the circle's centre; Escape clears picks without leaving Select", async () => {
   // Sketch 1 (no extrude): line-4 from (0,0) to (20,0) (points 2, 3), circle-6 round (50,0) radius 5 (point-5), line-9 from (0,40) to (20,40).
   const s = addSketch({ ...partDocument("box", 10, 10, 10) });
@@ -297,7 +333,11 @@ const PLANTS: { name: string; find: string; replace: string }[] = [
   // Shift is ignored: every click picks only what it is on.
   { name: "shift-ignored", find: "hit, pointer.shift === true)", replace: "hit, false)" },
   // The reach is one pixel, not a snap's ten: a click 0.5 mm off a curve misses it.
-  { name: "reach-one-pixel", find: "curveAt(sketch, at, SNAP_PIXELS * (pointer.pixel ?? 0))", replace: "curveAt(sketch, at, pointer.pixel ?? 0)" },
+  { name: "reach-one-pixel", find: "curveAt(sketch, at, PICK_PIXELS[pointer.touch ? \"touch\" : \"mouse\"] * (pointer.pixel ?? 0))", replace: "curveAt(sketch, at, pointer.pixel ?? 0)" },
+  // A finger reaches no further than a mouse.
+  { name: "touch-reach-as-mouse", find: "PICK_PIXELS[pointer.touch ? \"touch\" : \"mouse\"]", replace: "PICK_PIXELS.mouse" },
+  // Choosing a tool leaves the picks' words in the panel (app hunt 2026-11-04, finding 1).
+  { name: "tool-keeps-words", find: "    showSketchStatus(); // a tool chosen drops the Select tool's picks, and their words (app hunt 2026-11-04)\n", replace: "" },
   // Escape leaves the picks as they are.
   { name: "escape-keeps-picks", find: "        mode.tool = { ...mode.tool, picked: [] };\n", replace: "" },
   // The delete is not settled: an extrude whose outline it breaks loses its shape.
@@ -328,10 +368,11 @@ test("each bug planted in workspace.ts is caught by the hand-worked case or the 
   // The copy unplanted passes, so a catch is the plant's and not the copying's.
   const clean = await planted({ name: "none", find: "let fits = 0;", replace: "let fits = 0;" });
   assert.equal(await handWorked(clean), null);
+  assert.equal(await huntFindings(clean), null);
   for (let seed = 1; seed <= 3; seed++) assert.equal(await runSession(seed, randomSteps(seed, STEPS), clean), null);
   for (const plant of PLANTS) {
     const design = await planted(plant);
-    let caught = await handWorked(design);
+    let caught = (await handWorked(design)) ?? (await huntFindings(design));
     for (let seed = 1; seed <= SEEDS && caught === null; seed++) caught = await runSession(seed, randomSteps(seed, STEPS), design);
     assert.ok(caught !== null, `${plant.name} was not caught`);
     if (process.env.FISSION_PLANTED_REPORT) console.log(`${plant.name}: ${caught}`);

@@ -8,7 +8,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { partDocument, readDesignDocument, type DesignDocument, type Sketch } from "../src/document.ts";
 import { addSketch, drawArc, drawCircle, drawLine } from "../src/sketch.ts";
-import { curveAt, deleteCurves, deleteStep, pickCurve, pickedWords, selectStatus, stillPicked, toArc, toCurve, toSegment } from "../src/sketch-select.ts";
+import { SNAP_PIXELS } from "../src/snap.ts";
+import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, pickedWords, selectStatus, stillPicked, toArc, toCurve, toSegment } from "../src/sketch-select.ts";
 import { sketchDrawings, startTool, toolBusy, type SelectTool } from "../src/sketch-tool.ts";
 
 const near = (got: number, want: number) => assert.ok(Math.abs(got - want) <= 1e-12 * Math.max(1, Math.abs(want)), `${got} is not ${want}`);
@@ -111,6 +112,11 @@ test("boundary: a click 0.9 × the reach from a line picks it, 1.1 × the reach 
   // And past the arc's end: (−0.9, 30) is 0.9 from its end (0, 30) but outside its sweep; (−1.1, 30) is 1.1 away.
   assert.equal(curveAt(s, [-0.9, 30], reach), "arc-13");
   assert.equal(curveAt(s, [-1.1, 30], reach), null);
+});
+
+test("the pick's reach: a snap's 10 px with a mouse, 24 px for a finger (Move's handles' room)", () => {
+  assert.equal(PICK_PIXELS.mouse, SNAP_PIXELS);
+  assert.equal(PICK_PIXELS.touch, 24);
 });
 
 test("the nearest curve wins; on a tie the later drawn, which lies on top", () => {

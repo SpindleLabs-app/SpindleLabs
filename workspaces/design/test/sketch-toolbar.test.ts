@@ -47,13 +47,16 @@ function bar() {
   return { doc, slot, t, $, chosen, snaps, finished: () => finished, removed: () => removed };
 }
 
-test("hidden until shown; shown, the Create group comes first, then Select, the modelling buttons, Snap, and Finish Sketch last", () => {
+test("hidden until shown; shown, the Create group comes first, then the modelling buttons, Snap, and Finish Sketch last", () => {
   const { slot, t, $ } = bar();
   assert.equal($("sketch-create").closest<HTMLElement>(".tool-group")!.hidden, true);
   assert.equal($("finish-sketch").closest<HTMLElement>(".tool-group")!.hidden, true);
   t.show("line");
   const groups = [...slot.children].map((g) => (g as HTMLElement).getAttribute("aria-label") ?? g.id);
-  assert.deepEqual(groups, ["Create", "Select", "modelling", "Snapping", "Finish"]);
+  assert.deepEqual(groups, ["Create", "modelling", "Snapping", "Finish"]);
+  // Select and Delete end the Create group's row of tools (so at phone width they wrap with them, app hunt 2026-11-04).
+  const row = [...$("sketch-tool-line").parentElement!.querySelectorAll("button")].map((b) => b.id);
+  assert.deepEqual(row.slice(-3), ["sketch-tool-select", "sketch-delete", "sketch-type"]);
   assert.equal($("sketch-tool-select").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-snap").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-create").closest<HTMLElement>(".tool-group")!.hidden, false);

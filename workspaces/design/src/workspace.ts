@@ -54,7 +54,7 @@ import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
-import { curveAt, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
@@ -1638,6 +1638,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sketchBox.showTool(kind);
     sketchBar.showTool(kind);
     sketchBox.showError("");
+    showSketchStatus(); // a tool chosen drops the Select tool's picks, and their words (app hunt 2026-11-04)
     drawSketches();
   }
 
@@ -2535,7 +2536,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       mode.pointer = at;
       const tool = mode.tool;
       const sketch = designDoc().sketches.find((s) => s.id === tool.sketch);
-      const hit = at && sketch ? curveAt(sketch, at, SNAP_PIXELS * (pointer.pixel ?? 0)) : null;
+      const hit = at && sketch ? curveAt(sketch, at, PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0)) : null;
       if (pointer.kind !== "click") mode.tool = { ...tool, hover: hit };
       else {
         mode.tool = { ...tool, picked: pickCurve(stillPicked(sketch, tool.picked), hit, pointer.shift === true), hover: hit };

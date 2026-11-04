@@ -150,6 +150,33 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   // Type (sketch hunt 2026-11-01): at phone width the typed-size boxes take no taps until typed in, since beside the finger
   // they swallowed the next tap of a line drawn down; this puts the keys in their first box. In the toolbar, not over the
   // view, so it never covers where a sketch is tapped; wider screens never show it (a digit starts typing there).
+  // Select and Delete (missing basics, 2026-11-04), at the end of the tools' row after a divider: the Select tool picks
+  // single lines, circles and arcs (Escape with nothing half drawn chooses it too, as in Fusion), and Delete takes them
+  // out. In the row, not a group of their own, so at phone width they wrap with the tools and show without a sideways
+  // swipe (app hunt 2026-11-04); on a phone, with no keyboard, these two buttons are the way.
+  const divider = document.createElement("span");
+  divider.className = "sketchbar-divider";
+  divider.setAttribute("aria-hidden", "true");
+  const selectButton = button("Select", "sketch-tool-select");
+  selectButton.title = "Select (Escape): click a line, circle or arc, Shift+click for more";
+  selectButton.setAttribute("aria-label", "Select");
+  selectButton.setAttribute("aria-keyshortcuts", "Escape");
+  selectButton.className = "toolbar-group-tool";
+  selectButton.addEventListener("click", () => {
+    closeMenu();
+    on.tool("select");
+  });
+  const deleteButton = button("Delete", "sketch-delete");
+  deleteButton.title = NOTHING_PICKED;
+  deleteButton.setAttribute("aria-label", "Delete");
+  deleteButton.setAttribute("aria-keyshortcuts", "Delete Backspace");
+  deleteButton.className = "toolbar-group-tool";
+  deleteButton.disabled = true;
+  deleteButton.addEventListener("click", () => {
+    closeMenu();
+    on.remove();
+  });
+  row.append(divider, withIcon(selectButton, "select", TOOL_ICON_SIZE), withIcon(deleteButton, "delete", TOOL_ICON_SIZE));
   const typeButton = button("Type", "sketch-type");
   typeButton.className = "sketchbar-type"; // not a tool: no icon, never pressed
   typeButton.title = "Type a size";
@@ -266,37 +293,6 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   const closeGroups = () => groups.forEach(closeGroup);
   create.append(menu);
 
-  // Select and Delete (missing basics, 2026-11-04): the Select tool picks single lines, circles and arcs
-  // (Escape with nothing half drawn chooses it too, as in Fusion), and Delete takes them out; on a phone,
-  // with no keyboard, these two buttons are the way.
-  const selectGroup = group("sketchbar-select toolbar-group", "Select");
-  const selectRow = document.createElement("div");
-  selectRow.className = "toolbar-group-row";
-  const selectName = document.createElement("span");
-  selectName.className = "tool-group-name toolbar-group-name";
-  selectName.textContent = "Select";
-  selectGroup.append(selectRow, selectName);
-  const selectButton = button("Select", "sketch-tool-select");
-  selectButton.title = "Select (Escape): click a line, circle or arc, Shift+click for more";
-  selectButton.setAttribute("aria-label", "Select");
-  selectButton.setAttribute("aria-keyshortcuts", "Escape");
-  selectButton.className = "toolbar-group-tool";
-  selectButton.addEventListener("click", () => {
-    closeMenu();
-    on.tool("select");
-  });
-  const deleteButton = button("Delete", "sketch-delete");
-  deleteButton.title = NOTHING_PICKED;
-  deleteButton.setAttribute("aria-label", "Delete");
-  deleteButton.setAttribute("aria-keyshortcuts", "Delete Backspace");
-  deleteButton.className = "toolbar-group-tool";
-  deleteButton.disabled = true;
-  deleteButton.addEventListener("click", () => {
-    closeMenu();
-    on.remove();
-  });
-  selectRow.append(withIcon(selectButton, "select", TOOL_ICON_SIZE), withIcon(deleteButton, "delete", TOOL_ICON_SIZE));
-
   // Finish Sketch, at the far right.
   const finishGroup = group("sketchbar-finish", "Finish");
   const finish = withIcon(button("Finish Sketch", "finish-sketch"), "finish");
@@ -320,7 +316,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   };
   showSnap(true);
 
-  slot.prepend(create, selectGroup);
+  slot.prepend(create);
   slot.append(snapGroup, finishGroup);
 
   /** A press anywhere but the menu and its button closes the menu. */
@@ -388,7 +384,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   return {
     show(tool) {
       showTool(tool);
-      create.hidden = selectGroup.hidden = snapGroup.hidden = finishGroup.hidden = false;
+      create.hidden = snapGroup.hidden = finishGroup.hidden = false;
     },
     showSnap,
     showTool,
@@ -401,7 +397,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     },
     hide() {
       closeMenu();
-      create.hidden = selectGroup.hidden = snapGroup.hidden = finishGroup.hidden = true;
+      create.hidden = snapGroup.hidden = finishGroup.hidden = true;
     },
     get menuOpen() {
       return !menu.hidden;

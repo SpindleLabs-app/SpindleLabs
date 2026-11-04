@@ -141,6 +141,8 @@ export interface SketchPointer {
   face?: number | null;
   /** A click with Shift held (the sketch's Select tool adds to its picks); absent for a move or without Shift. */
   shift?: true;
+  /** A click made by a finger (the Select tool reaches further for one); absent for a mouse or pen. */
+  touch?: true;
 }
 
 /** A closed sketch outline Extrude offers to pick in the view (UX1b), by its sketch's id, in its plane's frame (as sketch_outline gives it). */

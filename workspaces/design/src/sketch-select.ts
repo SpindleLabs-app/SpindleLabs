@@ -9,6 +9,14 @@ import type { SketchXY } from "@fission/core";
 import type { DesignDocument, Sketch, SketchCurve } from "./document.ts";
 import { deleteCurve } from "./sketch.ts";
 
+/**
+ * How far from a curve a click still picks it, in screen pixels: a snap's
+ * reach (snap.ts SNAP_PIXELS) with a mouse, more for a finger, as Move's
+ * handles allow (viewport MOVE_GRAB_PX; app hunt 2026-11-04: a tap 12 px
+ * off a circle's rim picked nothing).
+ */
+export const PICK_PIXELS = { mouse: 10, touch: 24 } as const;
+
 /** Distance between two points. */
 const apart = (p: SketchXY, q: SketchXY): number => Math.hypot(p[0] - q[0], p[1] - q[1]);
 

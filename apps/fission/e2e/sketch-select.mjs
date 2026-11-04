@@ -157,10 +157,12 @@ try {
     const page = await fresh(375, true);
     await sketchOnXY(page, true);
     await drawBoth(page, true);
-    // 44 px tall to tap, measured before the tap (a pressed button shrinks a little while held).
+    // 44 px tall to tap, measured before the tap (a pressed button shrinks a little while held), and on screen without
+    // a sideways swipe of the toolbar (app hunt 2026-11-04: page.tap scrolls a button into view, a finger doesn't).
     for (const id of ["#sketch-tool-select", "#sketch-delete"]) {
       const box = await page.locator(id).boundingBox();
       assert.ok(box && box.height >= 44, `${id} is ${box?.height} px tall, under 44`);
+      assert.ok(box.x >= 0 && box.x + box.width <= 375, `${id} is off screen at x ${box.x}..${box.x + box.width}`);
     }
     await page.tap("#sketch-tool-select");
     await until(page, () => document.querySelector("#sketch-tool-select")?.getAttribute("aria-pressed") === "true", null, "Select chosen by its button");
