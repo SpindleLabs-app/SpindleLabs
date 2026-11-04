@@ -65,13 +65,25 @@ save)
   left=""
   [ "$big" = 0 ] || left=" ($big over 50 MB left out)"
   cd "$work/r"
-  git -c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com add -A >/dev/null
-  git -c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com commit -qm "kernel-ci $dest" >/dev/null
-  # Several jobs save at once: rebase onto whatever landed meanwhile.
+  # The runner has no git identity of its own: every command that makes a
+  # commit, the rebase below included, is given one.
+  id=(-c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com)
+  subject="kernel-ci $dest"
+  git "${id[@]}" add -A >/dev/null
+  git "${id[@]}" commit -qm "$subject" >/dev/null
+  # Several jobs save at once: rebase onto whatever landed meanwhile. Only a
+  # push whose HEAD is still this save's commit counts: a rebase that stopped
+  # leaves HEAD on another job's commit, and pushing that is "up to date", a
+  # success that saves nothing (the 2026-11-03 nightly lost a folder so).
   for _ in 1 2 3 4 5 6; do
-    git push -q origin HEAD:main 2>"$work/push" && { echo "saved $job$left"; exit 0; }
+    if [ "$(git log -1 --format=%s HEAD)" = "$subject" ]; then
+      git push -q origin HEAD:main 2>"$work/push" && { echo "saved $job$left"; exit 0; }
+    else
+      echo "rejected: the rebase lost the commit" >"$work/push"
+      git rebase --abort >/dev/null 2>&1 || true
+    fi
     sleep $((RANDOM % 5 + 1))
-    git pull -q --rebase origin main 2>/dev/null || true
+    git "${id[@]}" pull -q --rebase origin main >/dev/null 2>&1 || git rebase --abort >/dev/null 2>&1 || true
   done
   # Why, in words only: the push's own message can name private files.
   why=$(grep -oE 'GH001|exceeds|rejected|non-fast-forward|denied|403|timed out|Could not resolve' "$work/push" | sort -u | paste -sd, - || true)

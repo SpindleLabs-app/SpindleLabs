@@ -196,8 +196,12 @@ jobs:
         env:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
+          # This leg's own result (the job's is one for every leg): file_issues.py
+          # counts a leg that passed as clean beside one that failed.
+          JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
+          echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
           cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
           .github/scripts/kernel_ci.sh save endless-a-${{ matrix.job }} "$RUNNER_TEMP/out"
 
@@ -254,8 +258,12 @@ jobs:
         env:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
+          # This leg's own result (the job's is one for every leg): file_issues.py
+          # counts a leg that passed as clean beside one that failed.
+          JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
+          echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
           cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
           .github/scripts/kernel_ci.sh save endless-b-${{ matrix.job }} "$RUNNER_TEMP/out"
 

@@ -414,6 +414,36 @@ class Checks(unittest.TestCase):
         self.assertEqual([k for k, _ in check_kinds(shards, {"mutants": "failure"}, set(), ["mutants-0", "mutants-1"])],
                          ["check whole-kernel mutants: the unmutated tests failed"])
 
+    def test_issue_25_fuzz_legs_that_passed_are_not_silent(self):
+        # kernel-results #25: on the 2026-11-04 night (run 41764133320) only the boolean leg of the kernel fuzz
+        # job failed, and its failure folder gave kinds (#26-#28); the extrude, placed and sketch legs passed and
+        # saved their logs. The job is one result for the whole matrix, so the passing legs' folders were called
+        # silent and a second issue said the job "failed with nothing more specific". Each leg now writes its own
+        # result (job-status.txt) beside its logs.
+        legs = ["fuzz-kernel-boolean", "fuzz-kernel-extrude", "fuzz-kernel-placed", "fuzz-kernel-sketch"]
+        passed = {f"{d}/job-status.txt": "success\n" for d in legs[1:]}
+        self.assertEqual(check_kinds(passed, {"kernel": "failure"}, {"fuzz-kernel-boolean"}, legs), [])
+        red = "check the kernel job failed with nothing more specific reported"
+        # The run as it was, with no leg's result: the passing legs are silent (the false alarm #25 filed).
+        self.assertEqual(check_kinds({}, {"kernel": "failure"}, {"fuzz-kernel-boolean"}, legs),
+                         [(red, "job kernel: failure (no kind from fuzz-kernel-extrude, fuzz-kernel-placed, fuzz-kernel-sketch)")])
+        # A leg that failed with no kind (its oracle self-test, say) is still silent and filed, by name.
+        failed = {**passed, "fuzz-kernel-placed/job-status.txt": "failure\n"}
+        self.assertEqual(check_kinds(failed, {"kernel": "failure"}, {"fuzz-kernel-boolean"}, legs),
+                         [(red, "job kernel: failure (no kind from fuzz-kernel-placed)")])
+        # Every leg passed but the job is red (a step after the save): still filed, the legs can't explain it.
+        clean = {**passed, "fuzz-kernel-boolean/job-status.txt": "success\n"}
+        self.assertEqual(check_kinds(clean, {"kernel": "failure"}, set(), legs), [(red, "job kernel: failure")])
+        # read_checks reads each folder's job-status.txt.
+        import file_issues
+        with tempfile.TemporaryDirectory() as d:
+            for leg in legs:
+                os.makedirs(os.path.join(d, leg))
+            with open(os.path.join(d, "fuzz-kernel-sketch", "job-status.txt"), "w") as f:
+                f.write("success\n")
+            reports, _ = file_issues.read_checks(d)
+        self.assertEqual(reports, {"fuzz-kernel-sketch/job-status.txt": "success\n"})
+
     def test_check_texts_and_the_whole_run(self):
         kind = "check the golden job failed with nothing more specific reported"
         title, body = texts("create", kind, [("run", "job golden: failure")], "u", "c", "main")
