@@ -105,7 +105,7 @@ test("a body's id must start with body: (catches the ^ dropped) and its number's
   const d = clone(partDocument("box", 40, 30, 20)) as Record<string, any>;
   assert.equal(d.version, 7);
   const bodies = (b: unknown) => ({ ...clone(d), bodies: [b] });
-  refused(bodies({ id: "xbody:feature-1", number: 1 }), 'Design body xbody:feature-1 is not "body:" and the id of an item that makes a body');
+  refused(bodies({ id: "xbody:feature-1", number: 1 }), 'Design body xbody:feature-1 is not "body:" and the id of an item that makes a body, or a piece of a Combine');
   refused(bodies({ id: "body:feature-1", number: [1] }), "Design body body:feature-1's number a list is not a counting number");
   refused(bodies({ id: "body:feature-1", number: "1" }), 'Design body body:feature-1\'s number "1" is not a counting number');
 });
@@ -196,15 +196,16 @@ test("a Move of two bodies must depend on both items in order; the refusal lists
   refused(d, MISMATCH);
 });
 
-test("a Move of a piece the bodies list names passes the Move's check (the list is refused after, by its own check, which names the piece) (catches the piece test of isBodyOf made false, every, undefined)", () => {
-  // Pieces aren't written in files yet (the bodies list holds an item's own bodies only, 35f1), but the Move's check already
-  // accepts one the list names: so the refusal comes from the list's check, after the Moves'. The mutants refuse at the Move.
+test("a Move of a piece is checked against the bodies list and the piece's maker: only a Combine's piece the list names is a body (catches the piece test of isBodyOf made false, every, undefined)", () => {
+  // Since 35f1 a piece is a Combine's ("body:<combine>/piece:<k>"): a box's piece is no body even when the list names it,
+  // so the Move's own check refuses it, before the list's. A Move of a Combine's piece the list names reads
+  // (test/combine-document.test.ts, the later Combine using one; the mutants refuse it there).
   const d = movedBox();
   d.timeline.features[2].intent.parameters.bodies = ["body:feature-1/piece:1"];
   d.bodies.push({ id: "body:feature-1/piece:1", number: 3 });
   d.nextBody = 4;
-  refused(d, 'Design body body:feature-1/piece:1 is not "body:" and the id of an item that makes a body');
-  // The control: not in the list, the Move's own check refuses it.
+  refused(d, "Design move feature-3 moves body:feature-1/piece:1, which is not a body made before it in the timeline");
+  // Not in the list: refused the same way.
   d.bodies.pop();
   refused(d, "Design move feature-3 moves body:feature-1/piece:1, which is not a body made before it in the timeline");
 });
@@ -214,8 +215,8 @@ test("hiding a piece of an item that isn't there is refused by the hidden check,
   d.hidden = ["body:feature-2/piece:1"];
   d.bodies.push({ id: "body:feature-2/piece:1", number: 3 });
   d.nextBody = 4;
-  // The control: feature-2 exists, so the hidden check passes and the bodies list's check refuses the piece.
-  refused(d, 'Design body body:feature-2/piece:1 is not "body:" and the id of an item that makes a body');
+  // The control: feature-2 exists but is no Combine (35f1: a piece is a Combine's), so the hidden check refuses its piece.
+  refused(d, "Design data hides body:feature-2/piece:1, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
   // feature-7 is no item: the hidden check refuses it there (the mutant lets it through to the list's check).
   d.hidden = ["body:feature-7/piece:1"];
   d.bodies[2].id = "body:feature-7/piece:1";

@@ -47,7 +47,8 @@ const PART = { face: new RegExp(`^${FACE}$`), edge: new RegExp(`^${FACE}[+>]${FA
 export function readDesignReference(ref: GeometryReference): { kind: GeometryReference["kind"]; featureId: string; part?: string } | null {
   const m = /^(body|face|edge):([^:/]+)(?:\/(.+))?$/.exec(ref.id);
   if (!m || m[1] !== ref.kind) return null;
-  if (m[1] === "body") return m[3] === undefined ? { kind: "body", featureId: m[2] } : null;
+  // A Combine's piece (35f1): "body:<the Combine>/piece:<k>", its feature the Combine.
+  if (m[1] === "body") return m[3] === undefined ? { kind: "body", featureId: m[2] } : bodyItem(ref.id) !== null ? { kind: "body", featureId: m[2], part: m[3] } : null;
   if (m[3] === undefined || !PART[m[1] as "face" | "edge"].test(m[3])) return null;
   return { kind: ref.kind, featureId: m[2], part: m[3] };
 }

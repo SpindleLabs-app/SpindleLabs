@@ -1,7 +1,7 @@
 """The nightly long monkey sessions (hunt 3f): turns apps/fission/e2e/monkey.mjs's
 output into the night's report and one failure folder per failing seed.
 
-  python3 monkey_night.py <monkey log> <monkey-results dir> <out dir> <first seed> <seeds> <steps>
+  python3 monkey_night.py <monkey log> <monkey-results dir> <out dir> <first seed> <seeds> <steps> [combine]
 
 The monkey prints one line per seed ("seed 7: pass (2000 actions)" or
 "seed 7: FAIL at action 65: <check>: <message>"), then for a failure the
@@ -17,6 +17,14 @@ as clean. So is the monkey's own self-test failing ("self-test <name>: FAIL:
 "monkey: N failed" summary counting more failures than the log has FAIL
 lines (folder seed-monkey-unexplained): the monkey's count is the last word.
 
+With "combine" (the nightly job, 35f1d) the night must also have tried a
+Combine: the monkey ends with "monkey: N Combines made, M tried" (tried: OK
+pressed with both bodies picked, so the kernel answered, made or refused in
+words; curved bodies are refused until step 37), the report's first line
+says both, and a night with none tried (or no such line) is a failure of
+its own (folder seed-monkey-combine): the hidden Combine tool went
+untested, as it would if ?combine were dropped from the monkey's address.
+
 Exit code: 1 when any seed failed or went unreported, else 0."""
 
 import json
@@ -28,6 +36,7 @@ import sys
 LINE = re.compile(r"^seed (\d+): (pass \((\d+) actions.*\)|FAIL at action (\d+): (.*))$")
 SELF_TEST = re.compile(r"^(self-test .+?): FAIL: (.*)$")
 SUMMARY = re.compile(r"^monkey: (\d+) failed$")
+COMBINES = re.compile(r"^monkey: (\d+) Combines? made, (\d+) tried$")
 # Every failure monkey.mjs counts prints one unindented "<name>: FAIL" line.
 ANY_FAIL = re.compile(r"^\S.*?: FAIL\b")
 
@@ -80,14 +89,27 @@ def how_kept(saved):
     return ""
 
 
-def write(log, results, out, first, count, steps):
+def combines(log):
+    """The Combines the monkey says it made and tried ("monkey: N Combines made, M tried"), or None when it never said."""
+    said = [(int(m.group(1)), int(m.group(2))) for m in (COMBINES.match(line.strip()) for line in log.splitlines()) if m]
+    return said[-1] if said else None
+
+
+def write(log, results, out, first, count, steps, combine=False):
     """Writes the report and failure folders; returns the number of failed seeds."""
     seeds = list(range(first, first + count))
     seen = parse(log)
     failed = [s for s in seeds if s not in seen or not seen[s][0]]
     extra = others(log)
+    said = combines(log)
+    made, tried = said if said else (0, 0)
+    if combine and not tried:
+        text = ("the monkey tried no Combine in the night's sessions, so the hidden Combine tool went untested (is ?combine still in its address?)"
+                if said else "the monkey never said how many Combines it made (no \"monkey: N Combines made, M tried\" line)")
+        extra.append(("combine", f"FAIL: {text}", text, "the night's sessions"))
     total = len(failed) + len(extra)
-    head = (f"Monkey, seeds {first}-{first + count - 1}: {count} session(s) of {steps} actions in Chromium; "
+    made_words = f"; {made} Combine{'' if made == 1 else 's'} made of {tried} tried" if combine else ""
+    head = (f"Monkey, seeds {first}-{first + count - 1}: {count} session(s) of {steps} actions in Chromium{made_words}; "
             + (f"{total} FAILED" if total else "every check passed after every action"))
     replay = "cd apps/fission && npm run build && FISSION_SEED={seed} MONKEY_STEPS={steps} node e2e/monkey.mjs"
     lines = [head]
@@ -127,9 +149,9 @@ def write(log, results, out, first, count, steps):
 
 
 def main(argv):
-    log_path, results, out, first, count, steps = argv
+    log_path, results, out, first, count, steps = argv[:6]
     log = open(log_path, errors="replace").read() if os.path.isfile(log_path) else ""
-    failed = write(log, results, out, int(first), int(count), int(steps))
+    failed = write(log, results, out, int(first), int(count), int(steps), combine=argv[6:7] == ["combine"])
     print(open(os.path.join(out, "report.txt")).read(), end="")
     return 1 if failed else 0
 
