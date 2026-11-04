@@ -45,7 +45,7 @@ async function boxPage() {
   const page = await context.newPage();
   const warnings = [];
   page.on("console", (m) => /WebGL context|Context Lost/i.test(m.text()) && warnings.push(m.text()));
-  await page.goto("http://localhost:4185/?test-hooks");
+  await page.goto("http://localhost:4185/?test-hooks&all-workspaces");
   await page.waitForSelector("#start-hint", { state: "visible" });
   await insertPreset(page, "box");
   await untilBodies(page, 1);
@@ -188,7 +188,7 @@ for (const width of [375, 1280]) {
   try {
     const page = await context.newPage();
     await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
-    await page.goto("http://localhost:4185/?test-hooks");
+    await page.goto("http://localhost:4185/?test-hooks&all-workspaces");
     await page.waitForSelector("#start-hint", { state: "visible" });
     sheetsClearFor(page);
     const cdp = await context.newCDPSession(page);

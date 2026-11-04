@@ -16,7 +16,7 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
@@ -28,6 +28,7 @@ import { openLatest, watchKernel } from "./kernel-lost.ts";
 import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
 import { appLoaded } from "./loading.ts";
+import { ALL_WORKSPACES_SWITCH, listedWorkspaces } from "./listed-workspaces.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
@@ -73,6 +74,9 @@ for (const w of workspaces) w.registerActions?.(actions);
 // The one downstream registry: what each workspace makes from the design (Design shows them as chips).
 const downstream = new DownstreamRegistry();
 for (const w of workspaces) w.registerDownstream?.(downstream);
+// The workspaces DESIGN ▾ lists (listed-workspaces.ts); the rest stay built in, opened by their links.
+const everyWorkspace = new URLSearchParams(location.search).has(ALL_WORKSPACES_SWITCH);
+const listed = listedWorkspaces(workspaces, everyWorkspace);
 const workspaceTitle = (id: WorkspaceId) => workspaces.find((w) => w.id === id)?.title ?? id;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -276,13 +280,26 @@ const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWork
   },
   unmount: (_pane, _id, { view }) => view.unmount(), // asleep: its slots are already out of the page
 });
-// DESIGN ▾ (U0f2b): one button naming the page on screen, its menu the ten workspaces, in place of the tabs.
+// DESIGN ▾ (U0f2b): one button naming the page on screen, its menu the
+// workspaces listed (listed-workspaces.ts: Design and Slice in the public
+// app, all ten with ?all-workspaces), in place of the tabs. An unlisted
+// workspace opened by its link is still named on the button. Slice opens
+// Slice for printing on the design (its own screen is not built yet).
+const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer's file";
 const markTab = workspaceSwitcher(
   $("workspaces"),
-  workspaces.map((w) => ({ id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
-  (id) => show(id as WorkspaceId),
-  { community: "Community" },
+  listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
+  (id) => (id === "slice" ? sliceForPrinting() : show(id as WorkspaceId)),
+  { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
+/** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */
+function sliceForPrinting() {
+  if (current !== "design") show("design");
+  const entry = pool.awake("main")?.view.fileEntries?.()?.exports?.find((e) => e.id === "file-slice-print");
+  if (!entry) return;
+  if (entry.off) return fileStatus(entry.off);
+  entry.run();
+}
 
 // The assistant (AI2): changes Design's part through Design's own run, as one undo step.
 const assistant = createAssistant(
@@ -334,7 +351,7 @@ $("community").addEventListener("click", () => show(current === "community" ? la
 // second workspace gets slots of its own and a pane over a second view;
 // the project, selection, history and registries are the first one's.
 let split: { id: WorkspaceId; view: ViewportView; viewport: SharedViewport; settled: boolean; framed: boolean } | null = null;
-const splitEntries = workspaces.map((w) => ({ id: w.id, title: w.title, placeholder: w.status === "placeholder" }));
+const splitEntries = listed.map((w) => ({ id: w.id, title: w.title, placeholder: w.status === "placeholder" }));
 const shownWorkspace = () => (current === "community" ? null : current);
 /** What a workspace in `pane` sees: its own slots and that pane's viewport; the project, selection, history and registries are the one set. */
 function paneCtx(pane: PaneId, slots: Slots): WorkspaceContext {
@@ -467,7 +484,8 @@ function closeSplit() {
   $("split-toggle").setAttribute("aria-pressed", "false");
   showNotes();
 }
-{
+// Split only with every workspace listed (?all-workspaces): the public app lists no second workspace to show beside Design.
+if (everyWorkspace) {
   const toggle = Object.assign(document.createElement("button"), { id: "split-toggle", type: "button", textContent: "Split", title: "Show a second workspace beside this one" });
   toggle.setAttribute("aria-pressed", "false");
   toggle.addEventListener("click", () => {
@@ -646,10 +664,15 @@ $("save").addEventListener("click", () => void save());
 const SAVE_AS_TITLE = "Save As…: save the whole project under a name and in a place you choose";
 // Open takes what a drop or paste takes (X6): every format with an importer,
 // routed by its contents, so a PNG opens in Image and a project as a project.
-$<HTMLInputElement>("open-file").accept = FILE_FORMATS.filter((f) => representations.importerFor(f.format))
+// A format whose workspace the public app doesn't list (images: Image) is left out, and refused if dropped (listed-workspaces.ts).
+const listedImporter = (format: FileFormat) => {
+  const importer = representations.importerFor(format);
+  return importer && (!importer.workspace || listed.some((w) => w.id === importer.workspace)) ? importer : null;
+};
+$<HTMLInputElement>("open-file").accept = FILE_FORMATS.filter((f) => listedImporter(f.format))
   .flatMap((f) => (f.format === "project" ? [".spindle", ".json"] : f.extensions))
   .join(",");
-const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFor(f.format)).map((f) => f.many).join(", ")}`;
+const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).map((f) => f.many).join(", ")}`;
 // File ▾ (U0f2a), first on the bar as in Fusion: New and the exports are
 // the workspace's in use (the pane last clicked, as for keys), Open and
 // Save the shell's. Save also stays one click, as the icon beside it.
@@ -859,7 +882,7 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
     if (e instanceof Unreadable) return fileStatus(e.message);
     throw e;
   }
-  const route = routeFiles(representations, heads);
+  const route = routeFiles(representations, heads, (w) => listed.some((l) => l.id === w)); // an unlisted workspace's files are refused (listed-workspaces.ts)
   if (!route) return;
   if (route.kind === "refused") return fileStatus(route.message);
   const file = files[0];
