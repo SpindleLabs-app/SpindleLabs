@@ -2,10 +2,10 @@
    workspace on screen in capitals, a little bolder than the bar's other
    words; its menu marks the one on screen with the accent bar at its left
    and greys the ones not built yet, "Coming soon" at their right. */
-.workspace-menu .menu-button-toggle:not(#none) { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; color: #e6e8eb; }
-.workspace-menu .menu-button-item[aria-current="true"]:not(#none) { box-shadow: inset 2px 0 0 #4aa8ff; color: #e6e8eb; font-weight: 600; }
-.workspace-menu .menu-button-item[data-soon]:not(#none) { color: #8a919c; }
-.workspace-menu .menu-button-note { font-size: 12px; color: #8a919c; }
+.workspace-menu .menu-button-toggle:not(#none) { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; color: var(--text-body); }
+.workspace-menu .menu-button-item[aria-current="true"]:not(#none) { box-shadow: inset 2px 0 0 var(--accent); color: var(--text-body); font-weight: 600; }
+.workspace-menu .menu-button-item[data-soon]:not(#none) { color: var(--text-dim); }
+.workspace-menu .menu-button-note { font-size: 12px; color: var(--text-dim); }
 /* Wide screens (UX2): the button a raised pill, so it reads as the place to switch. */
 @media (min-width: 641px) {
   .workspace-menu .menu-button-toggle:not(#none) { padding: 5px 14px; background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }

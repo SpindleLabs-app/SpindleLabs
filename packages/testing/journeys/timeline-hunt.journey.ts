@@ -19,7 +19,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addSketch, deleteItem, drawRectangle, moveMarker, partDocument, suppressItem, type DesignDocument } from "@fission/design";
+import { addFaceSketch, addSketch, deleteItem, drawRectangle, facePlane, insertPreset, moveMarker, partDocument, suppressItem, type DesignDocument } from "@fission/design";
 import { app, close } from "./design-app.ts";
 
 type App = Awaited<ReturnType<typeof app>>;
@@ -153,4 +153,60 @@ test("regression (daily hunt 2026-10-23): Design mounted again on the same proje
     assert.ok(close(a.volume(), volume), `${name}: ${volume} mm³ drawn, got ${a.volume()}`);
     assert.ok(await a.close(), `${name}: every body freed`);
   }
+});
+
+// App hunt 2026-11-04 (A, settle order): with a sketch on a face, an edit's show() waits for the kernel to settle it before
+// it asks for its rebuild; a later edit whose settle needs no kernel (the face sketch deleted) asked first, and latestOnly
+// took the older edit's late ask for the newest: the view showed the design from two edits ago.
+const turns = async (n = 10) => {
+  for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r));
+};
+/** Box 1 (feature-1, 40 × 30 × 20), an empty Sketch 1 on its top face (sketch-2), Box 2 (feature-3, 10 × 10 × 10). */
+function faceSketchDesign(): DesignDocument {
+  const fs = addFaceSketch(partDocument("box", 40, 30, 20), { plane: facePlane("feature-1", "top"), feature: "feature-1" }, { plane: { origin: [0, 0, 20], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 });
+  return insertPreset(drawRectangle(fs.doc, fs.id, [5, 5], [15, 15]).doc, "box", 10, 10, 10).doc;
+}
+
+test("regression (app hunt 2026-11-04): slow kernel: Suppress Box 2, Delete Sketch 1, Unsuppress Box 2: the view shows both boxes", async () => {
+  const a = await app(faceSketchDesign());
+  const [box1, sketch, box2] = a.doc().timeline.features.map((f) => f.id);
+  // 40·30·20 + 10·10·10 = 25000.
+  assert.ok(Math.abs(a.volume() - 25000) < 1e-6, `start ${a.volume()}`);
+  a.hold();
+  menuNow(a, box2, "suppress");
+  await turns();
+  menuNow(a, sketch, "delete");
+  await turns();
+  menuNow(a, box2, "unsuppress");
+  await turns();
+  await a.release();
+  await a.settle();
+  assert.deepEqual(a.doc().timeline.features.map((f) => [f.id, f.suppressed ?? false]), [[box1, false], [box2, false]], "the file: both boxes, unsuppressed, no sketch");
+  assert.ok(Math.abs(a.volume() - 25000) < 1e-6, `the view shows ${a.volume()} mm³; the file builds 25000 (Box 2 drawn suppressed?)`);
+  const bar = [...a.window.document.querySelectorAll<HTMLElement>(".timeline-bar-item")].map((li) => li.dataset.item + (li.dataset.suppressed ? "(s)" : ""));
+  assert.deepEqual(bar, [box1, box2], "the bar shows the file's items");
+  assert.ok(await a.close());
+});
+
+test("regression (app hunt 2026-11-04): slow kernel: from the marker at the start, End, Delete Sketch 1, Suppress Box 2: the view shows Box 1 alone", async () => {
+  const start = moveMarker(faceSketchDesign(), "start");
+  const a = await app(start);
+  const [box1, sketch, box2] = a.doc().timeline.features.map((f) => f.id);
+  assert.equal(a.volume(), 0, "nothing built before the first item");
+  a.hold();
+  (a.$('[data-button="end"]') as HTMLButtonElement).click();
+  await turns();
+  menuNow(a, sketch, "delete");
+  await turns();
+  menuNow(a, box2, "suppress");
+  await turns();
+  await a.release();
+  await a.settle();
+  assert.deepEqual(a.doc().timeline.features.map((f) => [f.id, f.suppressed ?? false]), [[box1, false], [box2, true]], "the file: Box 1, Box 2 suppressed, no sketch");
+  assert.equal(a.doc().timeline.marker, undefined, "everything built");
+  const bar = [...a.window.document.querySelectorAll<HTMLElement>(".timeline-bar-item")].map((li) => li.dataset.item + (li.dataset.suppressed ? "(s)" : ""));
+  assert.deepEqual(bar, [box1, `${box2}(s)`], "the bar shows the file's items");
+  // 40·30·20 = 24000 for Box 1 alone.
+  assert.ok(Math.abs(a.volume() - 24000) < 1e-6, `the view shows ${a.volume()} mm³ (25000: Box 2 drawn though suppressed); the file builds 24000`);
+  assert.ok(await a.close());
 });

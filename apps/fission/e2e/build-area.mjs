@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
-import { openPanel, reloadEmpty, startWithBox } from "./start.mjs";
+import { chooseFile, openPanel, reloadEmpty, startWithBox } from "./start.mjs";
 import { pinProperties } from "./properties.mjs";
 
 const server = await preview({ preview: { port: 4207, strictPort: true }, logLevel: "error" });
@@ -64,13 +64,29 @@ for (const [width, height, tap] of [[1280, 800, false], [393, 852, true]]) {
       await page.press("#width", "Enter");
       await page.waitForFunction(() => document.querySelector("[data-build-area]")?.dataset.buildArea === "outside");
       const words = await page.textContent(".build-area");
-      assert.equal(words, "Too big for the P1S's plate: the bodies shown are 300 mm wide (256 × 256 mm fits).");
+      // The warm-up loop is on (Slice for printing's default), so it counts: 300 + 2 × 3.957 = 307.9 mm with it.
+      assert.equal(words, "Too big for the P1S's plate: the bodies shown are 300 mm wide, 307.9 mm with the warm-up loop (256 × 256 mm fits).");
       // The note never covers the view's own buttons.
       const note = await page.locator(".build-area").boundingBox();
       const controls = await page.locator("#view-controls").boundingBox();
       if (controls) assert.ok(note.y + note.height <= controls.y + 0.5 || note.y >= controls.y + controls.height - 0.5, `note ${JSON.stringify(note)} over the view controls ${JSON.stringify(controls)}`);
       if (tap) await page.evaluate(() => document.querySelector("#properties-toggle")?.getAttribute("aria-expanded") === "true" && document.querySelector("#properties-toggle").click());
       if (shots) await page.screenshot({ path: `${shots}/build-area-${width}-outside.png` });
+      // 250 mm wide fits alone, but not with the warm-up loop round it (250 + 7.9 = 257.9): red, saying to turn it
+      // off; unticked in Slice for printing, the box goes back to fitting, and ticked again it is red again.
+      await openPanel(page, "properties", tap);
+      await page.fill("#width", "250");
+      await page.press("#width", "Enter");
+      await page.waitForFunction(() => document.querySelector(".build-area")?.textContent.includes("250 mm wide, 257.9 mm with the warm-up loop"));
+      assert.match(await page.textContent(".build-area"), /Turn Warm-up loop off in Slice for printing and they fit\.$/);
+      if (tap) await page.evaluate(() => document.querySelector("#properties-toggle")?.getAttribute("aria-expanded") === "true" && document.querySelector("#properties-toggle").click());
+      await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      await press("#slice-print-warm-up");
+      await page.waitForFunction(() => document.querySelector("[data-build-area]")?.dataset.buildArea === "fits");
+      await press("#slice-print-warm-up");
+      await page.waitForFunction(() => document.querySelector("[data-build-area]")?.dataset.buildArea === "outside");
+      await press("#slice-print-close");
       // Kept on reload (this browser's setting): a new part shows it at once.
       await reloadEmpty(page);
       await startWithBox(page, tap);

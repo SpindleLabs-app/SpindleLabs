@@ -6,4 +6,4 @@
    background and words make it dark where a browser ignores that.
    Checked by apps/fission/e2e/select-lists.mjs. */
 .dark-select { color-scheme: dark; }
-.dark-select option, .dark-select optgroup { background-color: #161d2a; color: #e6e9ee; }
+.dark-select option, .dark-select optgroup { background-color: var(--surface); color: var(--text); }

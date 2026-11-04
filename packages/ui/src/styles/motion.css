@@ -37,7 +37,7 @@
   .motion .toolbar-group-solo .menu-button-toggle:hover .icon,
   .motion .app-bar button:not(.menu-button-item):hover:not(:disabled, [aria-disabled="true"]) .icon { transform: scale(var(--motion-nudge)); }
   /* 3. The ▾ of a menu's button and the workspace tabs' line: the tab's underline grows from the middle. */
-  .motion #topbar button[role="tab"]:not([aria-selected="true"]):hover { border-bottom-color: #4a515c; }
+  .motion #topbar button[role="tab"]:not([aria-selected="true"]):hover { border-bottom-color: var(--line-4a515c); }
 }
 
 /* 4. A menu opens with a short fade and slide from its button; at phone width it only fades (a tap-sized list that moves while it opens is harder to hit, and its place on screen is read at once). */

@@ -40,7 +40,7 @@ export class ViewCube {
   constructor(onView: (name: ViewName) => void, onOrbit: (dx: number, dy: number) => void) {
     this.element.className = "view-cube";
     this.element.setAttribute("role", "img");
-    this.element.setAttribute("aria-label", "View cube: click a face or corner to look from there, drag to orbit");
+    this.element.setAttribute("aria-label", "Orientation cube: click a face or corner to look from there, drag to orbit");
     for (const face of FACES) {
       const canvas = Object.assign(document.createElement("canvas"), { width: TEXTURE_PX, height: TEXTURE_PX });
       const texture = new THREE.CanvasTexture(canvas);

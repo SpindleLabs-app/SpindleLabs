@@ -52,6 +52,11 @@ export type TokenResult =
   | { readonly kind: "signed-out" }
   | { readonly kind: "failed"; readonly reason: "offline" | "unavailable" | "malformed" | "storage" };
 
+export type PersonReply =
+  | { readonly kind: "ok"; readonly body: unknown }
+  | { readonly kind: "signed-out" }
+  | { readonly kind: "failed"; readonly reason: "offline" | "unavailable" | "rejected" | "malformed" | "storage" };
+
 type Reply = { ok: true; body: unknown } | { ok: false; reason: "offline" | "unavailable" | "rejected" };
 
 /** The sign-in parameters Supabase adds to the return address; all are removed from the address afterwards. */
@@ -91,15 +96,17 @@ export function authClient(deps: AuthDeps) {
     return s;
   }
 
-  async function post(path: string, body: unknown, bearer?: string): Promise<Reply> {
-    const headers: Record<string, string> = { apikey: config.anonKey, "content-type": "application/json" };
+  const post = (path: string, body: unknown, bearer?: string) => request("POST", path, body, bearer);
+
+  async function request(method: "GET" | "POST" | "PATCH", path: string, body: unknown, bearer?: string, extra: Record<string, string> = {}): Promise<Reply> {
+    const headers: Record<string, string> = { ...extra, apikey: config.anonKey, "content-type": "application/json" };
     if (bearer) headers.authorization = `Bearer ${bearer}`;
     let res: Response;
     try {
       res = await deps.fetch(`${config.url}${path}`, {
-        method: "POST",
+        method,
         headers,
-        body: JSON.stringify(body),
+        body: method === "GET" ? undefined : JSON.stringify(body),
         credentials: "omit",
         redirect: "error",
         signal: AbortSignal.timeout(REQUEST_MS),
@@ -114,6 +121,23 @@ export function authClient(deps: AuthDeps) {
   }
 
   const client = {
+    /**
+     * A request to the service's data API as the signed-in person (`path` under /rest/v1/), with a token refreshed first
+     * when needed. The database's row level security decides what it may read or change.
+     */
+    async asPerson(method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<PersonReply> {
+      const t = await client.accessToken();
+      if (t.kind !== "ok") return t;
+      const reply = await request(method, `/rest/v1/${path}`, body ?? {}, t.token, method === "PATCH" ? { prefer: "return=minimal" } : {});
+      return reply.ok ? { kind: "ok", body: reply.body } : { kind: "failed", reason: reply.reason };
+    },
+
+    /** Forgets the session on this device without asking the service (after the account itself was deleted). */
+    forget(): void {
+      remove(SESSION_KEY);
+      remove(PENDING_KEY);
+    },
+
     /** Who is signed in, from this browser alone (no network). */
     state(): AccountState {
       const s = session();
