@@ -1,0 +1,12 @@
+# What SolveSpace's Python package (python-solvespace, the sketch solver's
+# outside judge in the kernel's checks; GPLv3, used only in tests, never
+# shipped) needs to build: it has no Linux wheel, so it is built from its
+# pinned source (solver-requirements.txt) with exactly these, installed first:
+# pip install --require-hashes -r .github/scripts/solver-build-requirements.txt
+# pip install --require-hashes --no-build-isolation -r .github/scripts/solver-requirements.txt
+# Python 3.12 on the x86-64 Linux runners. To update: pip download the
+# packages for that platform and replace each version and sha256 here.
+cython==3.3.1 --hash=sha256:215669fd0ce792080cd4d0748db7e1e31f424b6706a6220d08339895e6a3a03a
+packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+setuptools==84.2.1 --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
+wheel==0.48.0 --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab

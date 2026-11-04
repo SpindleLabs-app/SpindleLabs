@@ -1,0 +1,4 @@
+# SolveSpace's Python package, the sketch solver's outside judge, built from
+# its pinned source (no Linux wheel exists) with the tools in
+# solver-build-requirements.txt, installed first; see there.
+python-solvespace==3.0.8 --hash=sha256:c5c132c1151cfa4cc8719474bbbafedd109d7203317e531f9160a37aaae644b0
