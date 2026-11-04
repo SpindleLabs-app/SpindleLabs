@@ -22,6 +22,7 @@ import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
+import { versionList, versionTime } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -656,6 +657,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFo
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
+  versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
   saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, run: () => void save(true) },
   where: () => {
@@ -760,10 +762,35 @@ async function openStored(id: string, modified: Date | null) {
     );
   });
 }
+/** The open project's id when it is kept (null while a new one waits for its first change, or a file opens). */
+const keptId = () => (autosave === null ? null : (document.body.dataset.projectId ?? null));
+/**
+ * Puts the open project's version saved `at` (File > Earlier versions, missing basics 3b) in place of the project as
+ * it is now, as ONE undo step, the way Undo puts a state back: Undo takes it back. Throws, changing nothing, when it
+ * can't be read.
+ */
+async function restoreVersion(at: Date) {
+  await started;
+  const id = keptId();
+  if (id === null) throw new Error("this project isn't kept in this browser yet, so it has no earlier versions");
+  const text = projectToJson(await store.openVersion(id, at));
+  const when = versionTime(at, new Date());
+  ctx.selection.clear(); // it named faces of the project as it is now
+  // One step: the remount's amend inside it is taken into the step, not into the present (it would leave nothing to undo).
+  ctx.history.step(`Restore the version from ${when}`, () => restoreSnapshot(text));
+  fileStatus(`Restored the version from ${when}. Undo takes it back.`);
+}
+const versions = versionList(document, {
+  list: async () => {
+    const id = keptId();
+    return id === null ? null : { name: ctx.project.name, times: await store.versions(id) };
+  },
+  restore: restoreVersion,
+});
 const projects = listedProjects(document, {
   store,
   journal: local,
-  openId: () => (autosave === null ? null : (document.body.dataset.projectId ?? null)),
+  openId: keptId,
   open: openStored,
 });
 
