@@ -11,6 +11,7 @@ import { bodyFeatures } from "../src/browser.ts";
 import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
+import { fileNameFor } from "@fission/ui";
 import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
@@ -736,6 +737,30 @@ const stlOfZ = (triangles: number[][]): Uint8Array => {
   triangles.forEach((t, i) => t.forEach((z, c) => view.setFloat32(84 + i * 50 + 12 + c * 12 + 8, z, true)));
   return out;
 };
+
+test("a long project name is cut, never the settings: two slices of it keep different names (slicer hunt 11-04, package 4a)", () => {
+  // 105 characters of name: with "-0.2mm-2w-15pc-textured-high-flow" (33) and ".gcode.3mf" (10) the whole is 148, over the
+  // 120 a name may have, so the name keeps 120 - 33 - 10 = 77 characters and the settings stay whole.
+  const project = "Bracket for the garden shed door hinge, left side, second try with thicker ribs and a chamfer on the edge";
+  assert.equal(project.length, 105);
+  const a = printFileName(PRINT_DEFAULTS, "textured", "high-flow", project);
+  assert.equal(a, `${project.slice(0, 77)}-0.2mm-2w-15pc-textured-high-flow.gcode.3mf`);
+  assert.equal(a.length, 120);
+  // The save box's own cut leaves it as it is, and a second slice with other settings gets another name.
+  assert.equal(fileNameFor(a, ".gcode.3mf"), a);
+  const b = printFileName({ ...PRINT_DEFAULTS, walls: 4, infill: 40 }, "smooth", "high-flow", project);
+  assert.notEqual(fileNameFor(b, ".gcode.3mf"), fileNameFor(a, ".gcode.3mf"));
+  assert.match(fileNameFor(b, ".gcode.3mf"), /-0\.2mm-4w-40pc-smooth-high-flow\.gcode\.3mf$/);
+  // The plain file: "-0.2mm-2w-15pc" (14) and ".gcode" (6) leave the name 100 characters.
+  assert.equal(gcodeName(PRINT_DEFAULTS, project), `${project.slice(0, 100)}-0.2mm-2w-15pc.gcode`);
+  // A name cut just before a space loses the space, so the settings never follow one.
+  assert.equal(gcodeName(PRINT_DEFAULTS, `${"a".repeat(99)} b`), `${"a".repeat(99)}-0.2mm-2w-15pc.gcode`);
+  // Bytes too: 60 three-byte characters (180 bytes) with the plain file's 20 ASCII bytes is 200, the most; 61 is cut to 60.
+  assert.equal(gcodeName(PRINT_DEFAULTS, "語".repeat(61)), `${"語".repeat(60)}-0.2mm-2w-15pc.gcode`);
+  assert.equal(fileNameFor(gcodeName(PRINT_DEFAULTS, "語".repeat(61)), ".gcode"), gcodeName(PRINT_DEFAULTS, "語".repeat(61)));
+  // A short name is kept whole.
+  assert.equal(gcodeName(PRINT_DEFAULTS, "Bracket"), "Bracket-0.2mm-2w-15pc.gcode");
+});
 
 test("the lowest z of a binary STL, worked by hand; no triangle gives NaN", () => {
   // Corners' z: (5, 3, 4) and (7, -2, 9): the smallest of all six is -2.

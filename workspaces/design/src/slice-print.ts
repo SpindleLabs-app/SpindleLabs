@@ -407,7 +407,7 @@ export function refusalWords(message: string, height?: number): string {
 
 /** The plain file's name: the layer height, the walls and infill, its supports, "no-warm-up" without the loop and "grip" with Better grip, so two slices of one part never share a name. */
 export function gcodeName(choices: PrintChoices, project?: string): string {
-  return `${baseName(choices, project)}.gcode`;
+  return fitName(nameLead(project), settingsPart(choices), ".gcode");
 }
 
 /**
@@ -415,7 +415,7 @@ export function gcodeName(choices: PrintChoices, project?: string): string {
  * plate or nozzle is never taken for another's.
  */
 export function printFileName(choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle, project?: string): string {
-  return `${baseName(choices, project)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}${P1S_KIND.extension}`;
+  return fitName(nameLead(project), `${settingsPart(choices)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}`, P1S_KIND.extension);
 }
 
 /**
@@ -427,7 +427,31 @@ export const nameLead = (project?: string): string => {
   return name === "" || /^untitled$/i.test(name) ? "spindlelabs" : name;
 };
 
-const baseName = (choices: PrintChoices, project?: string) => `${nameLead(project)}-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}`;
+const settingsPart = (choices: PrintChoices) => `-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}`;
+
+/** The most a file's name may hold, as the save box cuts it (packages/ui save-file.ts): characters and bytes of UTF-8. */
+const NAME_CHARS = 120;
+const NAME_BYTES = 200;
+
+/**
+ * `lead`, `settings` and `extension` as one name, the lead cut (at whole characters, and never ending in a space) so the
+ * whole fits the save box's limits: the settings part always stays whole, so two slices of one long-named project never
+ * share a name (slicer hunt 2026-11-04, package 4a: the save box cut the settings off the end).
+ */
+function fitName(lead: string, settings: string, extension: string): string {
+  const bytes = (t: string) => new TextEncoder().encode(t).length;
+  let charsLeft = NAME_CHARS - [...settings].length - [...extension].length;
+  let bytesLeft = NAME_BYTES - bytes(settings) - bytes(extension);
+  let kept = "";
+  for (const c of lead) {
+    const size = bytes(c);
+    if (charsLeft < 1 || bytesLeft < size) break;
+    kept += c;
+    charsLeft--;
+    bytesLeft -= size;
+  }
+  return `${kept.length < lead.length ? kept.trimEnd() : kept}${settings}${extension}`;
+}
 
 /** Normal supports keep the name they had when supports were on or off. */
 const SUPPORT_SUFFIX: Record<SupportStyle, string> = { off: "", normal: "-supports", tree: "-tree-supports" };
