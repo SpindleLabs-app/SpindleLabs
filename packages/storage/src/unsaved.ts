@@ -188,7 +188,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
           problems.push(`changes made to "${project.name}" in another tab couldn't be kept as a separate project (${message(copyFailed)}); they stay in this browser, and the next visit tries again`);
           continue;
         }
-        problems.push(`changes made to "${project.name}" in another tab weren't stored before it closed, and newer work was saved since, so they're kept as a separate project, "${name}", and the newer work as it was`);
+        problems.push(`changes made to "${project.name}" in another tab weren't stored before it closed, and newer work was saved since, so they're kept as a separate project, "${name}" (File > Projects in this browser opens it), and the newer work as it was`);
         remove(journal, k);
         continue;
       }
