@@ -98,6 +98,8 @@ export function fakeService(nowS: () => number): FakeService {
   }) as typeof fetch;
   // The data API, as the database's rules allow it for the one test user.
   function data(path: string, init: RequestInit, headers: Record<string, string>): Response {
+    // As fetch does in a browser: a GET can't carry a body.
+    if (init.method === "GET" && init.body !== undefined) throw new TypeError("Request with GET/HEAD method cannot have body.");
     if (svc.mode === "down") throw new TypeError("Failed to fetch");
     if (typeof svc.mode === "number") return new Response("{}", { status: svc.mode });
     const token = headers.authorization?.replace(/^Bearer /, "") ?? "";
@@ -105,7 +107,7 @@ export function fakeService(nowS: () => number): FakeService {
     const reply = (body: unknown, status = 200) => {
       const b = svc.nextData !== undefined ? svc.nextData : body;
       svc.nextData = undefined;
-      return new Response(b === null ? null : JSON.stringify(b), { status });
+      return new Response(status === 204 ? null : JSON.stringify(b), { status });
     };
     if (init.method === "GET" && path === "profiles?select=email_opt_in") return reply([{ email_opt_in: svc.profile.email_opt_in }]);
     if (init.method === "PATCH" && path.startsWith("profiles?id=eq.")) {
@@ -114,6 +116,8 @@ export function fakeService(nowS: () => number): FakeService {
       }
       return reply(null, 204);
     }
+    // PostgREST leaves the body out when asked for return=minimal.
+    if (init.method === "POST" && path === "rpc/my_data" && headers.prefer === "return=minimal") return reply(null, 204);
     if (init.method === "POST" && path === "rpc/my_data") return reply({ account: { id: USER.id, email: USER.email }, profile: svc.profile, plan: { plan: "free" } });
     if (init.method === "POST" && path === "rpc/delete_my_account") {
       svc.profile = undefined;

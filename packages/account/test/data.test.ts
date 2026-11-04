@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { authClient } from "../src/auth.ts";
-import { accountData } from "../src/data.ts";
+import { accountData, PENDING_EMAIL_KEY } from "../src/data.ts";
 import { fakeService, KEY, memoryStore, SERVICE, seededRandom } from "./fake-service.ts";
 
 const APP = "https://spindlelabs.app/";
@@ -52,8 +52,10 @@ test("my data comes back as readable JSON with the person's email", async () => 
   const r = await data.myData();
   assert.equal(r.kind, "ok");
   if (r.kind === "ok") assert.equal(JSON.parse(r.value).account.email, "maker@example.com");
-  svc.nextData = null;
-  assert.deepEqual(await data.myData(), { kind: "failed", reason: "malformed" });
+  for (const bad of [null, "text", 5]) {
+    svc.nextData = bad;
+    assert.deepEqual(await data.myData(), { kind: "failed", reason: "malformed" }, String(bad));
+  }
 });
 
 test("deleting the account removes it at the service and signs this device out", async () => {
@@ -89,4 +91,8 @@ test("a request the service refuses is reported as refused", async () => {
   const { svc, data } = await signedIn();
   svc.mode = 403;
   assert.deepEqual(await data.setEmailChoice(true), { kind: "failed", reason: "rejected" });
+});
+
+test("a yes ticked before sign-in waits under its own stored name", () => {
+  assert.equal(PENDING_EMAIL_KEY, "spindle.account.email-choice");
 });

@@ -126,7 +126,7 @@ export function authClient(deps: AuthDeps) {
      * when needed. The database's row level security decides what it may read or change.
      */
     async asPerson(method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<PersonReply> {
-      const t = await token(true);
+      const t = await client.accessToken();
       if (t.kind !== "ok") return t;
       const reply = await request(method, `/rest/v1/${path}`, body ?? {}, t.token, method === "PATCH" ? { prefer: "return=minimal" } : {});
       return reply.ok ? { kind: "ok", body: reply.body } : { kind: "failed", reason: reply.reason };
