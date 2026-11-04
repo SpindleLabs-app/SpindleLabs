@@ -43,7 +43,7 @@ export interface SketchPanel {
   showTool(kind: ToolKind): void;
   /** What the sketch holds and whether it makes a closed outline, or why not. */
   showStatus(text: string): void;
-  /** A message under the grid size: a grid the kernel refused, or a point it could not place; while a plane is picked, why a face can't be sketched on. Empty hides it. */
+  /** A message under the panel's buttons (so it never moves them mid-click): a grid the kernel refused, or a point it could not place; while a plane is picked, why a face can't be sketched on. Empty hides it. */
   showError(message: string): void;
   /** Puts `grid` (as typed) back in the grid box: the last size taken, after a refused one. */
   showGrid(grid: string): void;
@@ -125,11 +125,14 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
         label,
         snapLabel,
         button("Look at", "sketch-look-at", () => on.lookAt(), "sketch-look-at"),
-        gridError,
         status,
         el("div", { className: "sketch-buttons" }),
+        // Under the buttons, not above them: a bad grid size is judged when the box loses focus, which is the press on
+        // Extrude or Finish sketch, and a message appearing above them pushed the button down before the release, so the
+        // click was lost (the Firefox bug pinned in e2e/sketch-tool.mjs since TC4; every engine when a letter was typed).
+        gridError,
       );
-      box.lastElementChild!.append(button("Finish sketch", "sketch-finish", () => on.finish(), "sketch-finish"), button("Extrude", "sketch-extrude", () => on.extrude(), "sketch-finish"));
+      box.querySelector(".sketch-buttons")!.append(button("Finish sketch", "sketch-finish", () => on.finish(), "sketch-finish"), button("Extrude", "sketch-extrude", () => on.extrude(), "sketch-finish"));
       box.hidden = false;
     },
     showGrid(grid) {
