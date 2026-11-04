@@ -29,7 +29,7 @@ import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revert
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
-import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, printFileName, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
+import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
@@ -458,13 +458,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       };
       if (file.format === "p1s") {
         const print = await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle);
-        return save(print, printFileName(choices, file.plate, file.nozzle, ctx.project.name), P1S_KIND, print.package);
+        return save(print, printFileName(choices, file.plate, file.nozzle, printLead(ctx.project.name, ctx.fileName?.())), P1S_KIND, print.package);
       }
       const print = await sliceBodies(kernel, doc!, features, choices);
-      return save(print, gcodeName(choices, ctx.project.name), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
+      return save(print, gcodeName(choices, printLead(ctx.project.name, ctx.fileName?.())), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
     },
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
-    async preview(choices, file, alive) {
+    async preview(choices, file, alive, changed) {
       const doc = designDoc();
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
       // The file Slice and download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
@@ -472,7 +472,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const gcode = p1s ? printMovesOf(gcodeOfPackage(p1s.package) ?? "") : null;
       const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
       if (!alive()) throw new SliceDropped();
-      openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p));
+      // A choice changed while it sliced: the preview says it shows the earlier ones, as Slice and download's result does.
+      openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p), changed() ? PREVIEW_EARLIER : undefined);
     },
     // The bar follows the engine's own reports (Ben, 2026-11-01).
     onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),

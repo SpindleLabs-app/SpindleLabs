@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
+import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -108,8 +108,9 @@ const ctx: WorkspaceContext = {
   // A new design in place of the saved or opened one: its file and name go, so Save asks where (app hunt 2026-11-04).
   startedFresh: () => {
     savedTo = null;
-    openedName = null;
+    projectFile = null;
   },
+  fileName: () => (projectFile === null ? null : baseNameOf(projectFile, PROJECT_KIND.extension)),
 };
 
 // The one undo history (step 20): whole-project snapshots, put back the way
@@ -388,6 +389,7 @@ function paneCtx(pane: PaneId, slots: Slots): WorkspaceContext {
     workspaceTitle,
     openFile: ctx.openFile,
     startedFresh: ctx.startedFresh,
+    fileName: ctx.fileName,
   };
 }
 /**
@@ -644,16 +646,21 @@ $("file-dismiss").addEventListener("click", () => fileStatus(""));
 /** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
 let savedTo: FileHandle | null = null;
 /**
- * The name of the file the project was opened from, without its ending, which Save offers (real-use hunt B5: Save
- * offered "Untitled", the name inside the file, so a quick Save made a second file beside it); a new or other project lets it go.
+ * The name of the file the project was opened from or last saved to, which Save offers (real-use hunt B5: Save
+ * offered "Untitled", the name inside the file, so a quick Save made a second file beside it), and print files take
+ * when the project has no name of its own (slicer hunt 2026-11-04, package 4b: every print file was "spindlelabs-…");
+ * a new or other project lets it go.
  */
-let openedName: string | null = null;
+let projectFile: string | null = null;
 async function save(asNew = false) {
   try {
     await started; // the project shown, not the empty one the app starts with
-    const result = await saveFile(document, { suggestedName: openedName || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
+    const result = await saveFile(document, { suggestedName: projectFile || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
     if (result.status === "failed") return fileStatus(result.message);
-    if (result.status === "saved") savedTo = result.handle;
+    if (result.status === "saved") {
+      savedTo = result.handle;
+      projectFile = result.name;
+    }
     fileStatus("");
   } catch (e) {
     fileStatus(e instanceof Error ? e.message : String(e));
@@ -705,7 +712,7 @@ const keptApartWords = (name: string) => `Changes made in this tab couldn't be s
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
-  openedName = null; // and so did its name
+  projectFile = null; // and so did its name
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -733,7 +740,7 @@ function openProject(text: string, fileName = "") {
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
-  openedName = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
+  projectFile = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
   // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
   // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
   statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
