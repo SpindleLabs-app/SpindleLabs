@@ -658,7 +658,7 @@ test("closing the dialog drops a slice still running: nothing is saved; reopened
   await t.window.happyDOM.close();
 });
 
-test("while a slice runs Close reads Cancel, and it or Escape stops the engine, so edits don't wait behind it (slicer hunt 11-04, ui 3)", async () => {
+test("while a slice runs Close reads Stop, and it or Escape stops the engine, so edits don't wait behind it (slicer hunt 11-04, ui 3)", async () => {
   // The shipped build for the bodies' files; the engine's calls wait until stopped, as a long slice does.
   const real = nodeKernel();
   const engineCalls: string[] = [];
@@ -693,10 +693,10 @@ test("while a slice runs Close reads Cancel, and it or Escape stops the engine, 
   t.d.ask();
   assert.equal(close().textContent, "Close");
   t.$("slice-print-go").click();
-  assert.equal(close().textContent, "Cancel", "while it slices");
+  assert.equal(close().textContent, "Stop", "while it slices");
   await until(() => engineCalls.length === 1);
   close().click();
-  assert.equal(stops, 1, "Cancel stopped the engine");
+  assert.equal(stops, 1, "Stop stopped the engine");
   assert.equal(t.d.open, false, "and closed the dialog");
   await until(() => close().textContent === "Close");
   assert.equal(saved, 0);

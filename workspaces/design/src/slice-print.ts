@@ -335,7 +335,7 @@ interface SliceRun {
   stopped: boolean;
 }
 
-/** The slices under way now, so the dialog's Cancel and Close can stop them (stopSlices). */
+/** The slices under way now, so the dialog's Stop and Close can stop them (stopSlices). */
 const runs = new Set<SliceRun>();
 
 /**
@@ -830,7 +830,8 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   };
   // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt
   // 2026-10-31), and the engine is stopped, so the design's edits don't wait behind it (slicer hunt 2026-11-04, ui 3).
-  // While a slice runs, Close says Cancel: it stops the slice and closes the dialog, whose choices stay for next time.
+  // While a slice runs, Close says Stop ("Cancel" is wider, and wraps the buttons onto two lines at 375 px): it stops
+  // the slice and closes the dialog, whose choices stay for next time.
   let generation = 0;
   dialog.addEventListener("close", () => {
     generation++;
@@ -849,7 +850,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const working = (on: boolean) => {
     busy = on;
     go.disabled = preview.disabled = on;
-    close.textContent = on ? "Cancel" : "Close";
+    close.textContent = on ? "Stop" : "Close";
     close.title = on ? "Stops the slice; nothing is saved." : "";
   };
   const alive = () => {
@@ -881,7 +882,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
       end();
-      // Dropped (closed, or stopped by Cancel): nothing to say, the engine's "stopped" included.
+      // Dropped (closed, or stopped by Stop): nothing to say, the engine's "stopped" included.
       if (e instanceof SliceDropped || !mine()) say("", false);
       else say(refusalOf(e), true);
     } finally {
@@ -901,7 +902,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       dialog.close();
     } catch (e) {
       end();
-      // Dropped (closed, or stopped by Cancel): nothing to say, the engine's "stopped" included.
+      // Dropped (closed, or stopped by Stop): nothing to say, the engine's "stopped" included.
       if (e instanceof SliceDropped || !mine()) say("", false);
       else say(refusalOf(e), true);
     } finally {
