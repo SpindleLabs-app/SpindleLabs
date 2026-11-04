@@ -120,6 +120,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   };
   const dialog = el("dialog", "print-preview");
   dialog.className = "print-preview";
+  dialog.dataset.scene = "dark"; // a scene of its own: dark in both themes (theme.css)
   dialog.setAttribute("aria-labelledby", "print-preview-heading");
   const head = el("div", "", "");
   head.className = "print-preview-head";
