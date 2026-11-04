@@ -16,7 +16,7 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
@@ -720,13 +720,15 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 // File ▾ (U0f2a), first on the bar as in Fusion: New and the exports are
 // the workspace's in use (the pane last clicked, as for keys), Open and
 // Save the shell's. Save also stays one click, as the icon beside it.
+/** A shell key as the user reads it here (Ctrl+S, or ⌘S on a Mac), for the File menu. */
+const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/.test(navigator.platform));
 const file = fileMenu(document, {
-  open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
+  open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
-  save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
-  saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, run: () => void save(true) },
+  save: { id: "file-save", label: "Save", title: SAVE_TITLE, key: fileKey("Mod+S"), run: () => void save() },
+  saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, key: fileKey("Mod+Shift+S"), run: () => void save(true) },
   where: () => {
     const id = panesInUse().map((p) => pool.showing(p))[0];
     return id ? workspaceTitle(id) : "Community";
@@ -1024,6 +1026,9 @@ const shellShortcuts: Record<string, (e: Event) => boolean> = {
   undo: () => (undoRedo("undo"), true),
   redo: () => (undoRedo("redo"), true),
   "redo-y": () => (undoRedo("redo"), true),
+  save: () => (void save(), true),
+  "save-as": () => (void save(true), true),
+  open: () => ($("open-file").click(), true),
   "paste-files": (e) => {
     const files = [...((e as ClipboardEvent).clipboardData?.files ?? [])];
     if (files.length === 0) return false; // text pastes as usual
