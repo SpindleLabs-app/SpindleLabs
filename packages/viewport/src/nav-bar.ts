@@ -53,8 +53,34 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
   };
   const group = () => bar.appendChild(Object.assign(document.createElement("span"), { className: "nav-group" }));
 
+  // What a left-drag does: one highlight behind the three that slides to the
+  // chosen one (U9b, styles/nav-slider.css; still under reduced motion).
   const modes = group();
+  modes.classList.add("nav-slider-group");
+  const slider = modes.appendChild(Object.assign(document.createElement("span"), { className: "nav-slider" }));
+  slider.setAttribute("aria-hidden", "true");
   const modeButtons = new Map<NavMode, HTMLButtonElement>();
+  let shown: NavMode = "orbit";
+  /** Puts the highlight on `shown`'s button: where it sits in the group, as laid out now. */
+  const place = () => {
+    const b = modeButtons.get(shown)!;
+    if (!b.offsetWidth) return; // not laid out (asleep, hidden): placed when it is
+    slider.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
+    slider.style.width = `${b.offsetWidth}px`;
+    slider.style.height = `${b.offsetHeight}px`;
+    slider.dataset.placed = shown;
+  };
+  // A new layout (the bar wrapping, the phone's 44 px buttons, a first show) moves the highlight at once, never sliding.
+  const settle = () => {
+    slider.classList.add("nav-slider-still");
+    place();
+    requestAnimationFrame(() => slider.classList.remove("nav-slider-still"));
+  };
+  if (typeof ResizeObserver === "function") {
+    const watch = new ResizeObserver(settle);
+    watch.observe(modes);
+    signal?.addEventListener("abort", () => watch.disconnect());
+  }
   for (const [mode, label, title] of MODES) {
     const b = button(label, title, mode);
     b.dataset.nav = mode;
@@ -111,6 +137,8 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
     element: bar,
     showMode(mode) {
       for (const [m, b] of modeButtons) b.setAttribute("aria-pressed", String(m === mode));
+      shown = mode;
+      place();
     },
     canLookAt(can) {
       if (look.disabled === can) look.disabled = !can;

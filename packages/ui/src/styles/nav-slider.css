@@ -1,0 +1,16 @@
+/* The bottom view bar's sliding highlight (U9b, @fission/viewport nav-bar.ts):
+   Orbit, Pan and Zoom share one blue highlight that slides to the chosen
+   one over --motion-slow, in place of each button lighting on its own. The
+   pressed button keeps its blue words and icon; its own fill and ring go,
+   the highlight being under it. Under reduced motion, and on a new layout
+   (.nav-slider-still), it is there at once. Two classes on the group so
+   these outweigh view-controls.css's pressed look, loaded after this file. */
+.nav-slider-group.nav-group { position: relative; }
+.nav-slider-group .nav-slider { position: absolute; left: 0; top: 0; width: 0; height: 0; box-sizing: border-box; border: 1px solid var(--look-accent); border-radius: var(--look-radius-pill); background: var(--look-active-fill); box-shadow: var(--look-glow); pointer-events: none; transition: transform var(--motion-slow, 220ms) var(--motion-ease, ease), width var(--motion-slow, 220ms) var(--motion-ease, ease); }
+.nav-slider-group .nav-slider:not([data-placed]) { visibility: hidden; }
+.nav-slider-group .nav-slider.nav-slider-still { transition: none; }
+.nav-slider-group.nav-group button.nav-button:not(#no-such-id) { position: relative; z-index: 1; }
+.nav-slider-group.nav-group button.nav-button:not(#no-such-id)[aria-pressed="true"] { background: transparent; border-color: transparent; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-slider-group .nav-slider { transition: none; }
+}
