@@ -636,9 +636,13 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       more.title = `${item.label}: more`;
       more.setAttribute("aria-label", `${item.label} options`);
       more.setAttribute("aria-haspopup", "menu");
+      // A finger's tap on ⋯ right after the tap that picked the item is a press of ⋯ (a phone shows it where the finger
+      // was): only a mouse's second click counts as the double-click below.
+      let pressedBy = "";
+      more.addEventListener("pointerdown", (e) => (pressedBy = e.pointerType));
       more.addEventListener("click", (e) => {
         // The second click of a double-click on the item, landed here as the bar moved under it: Edit, not the menu.
-        if (wiring.onOpen && isDoubleClickHere(lastClicks.get(slot), item.id, e.timeStamp, e.clientX, e.clientY)) {
+        if (wiring.onOpen && pressedBy === "mouse" && isDoubleClickHere(lastClicks.get(slot), item.id, e.timeStamp, e.clientX, e.clientY)) {
           lastClicks.delete(slot);
           return wiring.onOpen(item.id);
         }
