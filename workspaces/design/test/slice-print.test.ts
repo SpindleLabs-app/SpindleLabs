@@ -12,6 +12,7 @@ import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
 import { fileNameFor } from "@fission/ui";
+import { PRESET_PICKED_KEY, writePresets, type PrintPreset } from "../src/slice-presets.ts";
 import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, stopSlices, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
@@ -722,6 +723,49 @@ test("while a slice runs Close reads Cancel, and it or Escape stops the engine, 
   assert.equal(stops, 3);
   assert.equal(saved, 0);
   await t.window.happyDOM.close();
+});
+
+test("the dialog's choices outlive Design being mounted again (Undo, Redo), in the same slot; a new slot starts fresh (slicer hunt 11-04, ui 1)", async () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  // A preset picked last time, then two of its choices changed: the dialog shows it as changed.
+  const home: PrintPreset = { id: "home", name: "home P1S", printer: "bambu-p1s", settings: { ...PRINT_DEFAULTS, ...FILE_DEFAULTS, infill: 20 }, updatedAt: 1 };
+  writePresets(window.localStorage as unknown as Storage, { presets: [home], kept: [], writable: true });
+  window.localStorage.setItem(PRESET_PICKED_KEY, "home");
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  const events = { slice: async () => ({ print: print(), saved: true, name: "x" }), preview: async () => {} };
+  slicePrint(slot, events);
+  const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
+  const set = (id: string, v: string) => {
+    $<HTMLSelectElement>(id).value = v;
+    $(id).dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  assert.equal($<HTMLSelectElement>("slice-print-infill").value, "20", "the preset's");
+  set("slice-print-supports", "tree");
+  set("slice-print-plate", "smooth");
+  set("slice-print-walls", "4");
+  set("slice-print-infill", "60");
+  const listed = () => $<HTMLSelectElement>("slice-presets-list").selectedOptions[0]?.textContent;
+  assert.equal(listed(), "home P1S (changed)");
+  // Undo: Design is put away (its slot emptied) and mounted again, making a new dialog in the same slot.
+  slot.replaceChildren();
+  slicePrint(slot, events);
+  assert.deepEqual(["quality", "walls", "infill", "supports", "plate"].map((k) => $<HTMLSelectElement>(`slice-print-${k}`).value), ["0.2", "4", "60", "tree", "smooth"]);
+  assert.equal(listed(), "home P1S (changed)", "still the preset picked, still changed");
+  // The file kind too, and the plate's list goes off with it as before.
+  set("slice-print-format", "gcode");
+  slot.replaceChildren();
+  slicePrint(slot, events);
+  assert.equal($<HTMLSelectElement>("slice-print-format").value, "gcode");
+  assert.equal($<HTMLSelectElement>("slice-print-plate").disabled, true);
+  // A slot never used (a page loaded again) starts from the preset picked, as before.
+  const other = doc.createElement("div");
+  slot.remove();
+  doc.body.append(other);
+  slicePrint(other, events);
+  assert.deepEqual(["walls", "infill", "supports"].map((k) => $<HTMLSelectElement>(`slice-print-${k}`).value), ["2", "20", "off"]);
+  await window.happyDOM.close();
 });
 
 test("a slice with the dialog left open is alive when it ends (the other side of the check)", async () => {

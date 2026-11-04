@@ -585,6 +585,13 @@ export interface SlicePrint {
   readonly open: boolean;
 }
 
+/**
+ * The choices each slot's dialog had last (slicer hunt 2026-11-04, ui 1): Undo and Redo put Design away and mount it
+ * again, which makes a new dialog in the same toolbar slot, so it starts from these instead of the defaults. A page
+ * loaded again starts fresh, as its slots are new.
+ */
+const keptChoices = new WeakMap<HTMLElement, PresetSettings>();
+
 export const SLICE_PRINT_TITLE = "Slice for printing: turn the bodies shown into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA).";
 
 /**
@@ -741,6 +748,17 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     say,
     settingsOf: presetSettingsOf,
   });
+  // Mounted again (Undo, Redo): the choices the last dialog in this slot had, the preset picked marked as changed if they differ.
+  const kept = keptChoices.get(slot);
+  if (kept) {
+    for (const [k, select] of Object.entries(inputs)) select.value = String(kept[k as keyof typeof inputs]);
+    warmUp.checked = kept.warmUp;
+    grip.checked = kept.betterGrip;
+    plateFor();
+    presets.changed();
+  }
+  const keep = () => keptChoices.set(slot, { ...choices(), ...file() });
+  keep();
   // The heading and the presets share one line where there is room, so the dialog grows no taller.
   const top = document.createElement("div");
   top.className = "slice-print-top";
@@ -789,6 +807,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     c.select.addEventListener("change", () => {
       if (!busy) say("", false);
       presets.changed();
+      keep();
     });
   go.addEventListener("click", async () => {
     if (busy) return;
