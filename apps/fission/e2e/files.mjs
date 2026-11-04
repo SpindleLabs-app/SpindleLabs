@@ -377,6 +377,85 @@ try {
     }
   });
 
+  // Issue #267 (monkey seed 202611010 at action 1360): a Box became a Cylinder (its depth dropped) as a project file
+  // opened. Opening puts every workspace away on the new project (main.ts replaceProject: the project first, then
+  // each view's sleep, then its slots out of the page), and the browser committed a Shape choice as the panel left
+  // the page: the put-away Design's listener changed the new project's body. The night's stack, in order: the
+  // shell's sleep, its slots replaced, the select's change listener, set_part. Here that same moment is made by
+  // hand: the panel's own events fired as its slot is replaced, and while it is asleep.
+  /** The saved file's text (Save), and its Design data as sorted JSON so key order never counts. */
+  const saveText = async (page) => {
+    const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);
+    return import("node:fs").then(async (fs) => fs.readFileSync(await download.path(), "utf8"));
+  };
+  const sorted = (v) => (Array.isArray(v) ? v.map(sorted) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])])) : v);
+  const designOf = (text) => JSON.stringify(sorted(JSON.parse(text).workspaces.design));
+  /** In the page: keeps Design's Shape choice and width box as `window.stalePanel`, and `window.fireStale()` fires a Cylinder choice and a width of 7 on them. */
+  const keepPanel = (page) =>
+    page.evaluate(() => {
+      window.stalePanel = { shape: document.getElementById("shape"), width: document.getElementById("width") };
+      window.fireStale = () => {
+        const { shape, width } = window.stalePanel;
+        shape.value = "cylinder";
+        shape.dispatchEvent(new Event("change", { bubbles: true }));
+        const typed = width.value;
+        width.value = "7";
+        width.dispatchEvent(new Event("input", { bubbles: true }));
+        width.value = typed; // the listener has read it; only the design can tell what it did
+      };
+    });
+  const settle = (page) => page.evaluate(() => new Promise((r) => setTimeout(r, 1500)));
+
+  await check("a Shape choice or size committed as Open puts the panel away changes nothing in the opened project (#267)", async () => {
+    const page = await fresh();
+    try {
+      // The 40 × 30 × 20 box: 24,000 mm³, saved as the file to open.
+      const text = await saveText(page);
+      await keepPanel(page);
+      // The moment the browser chose that night: the slot holding the panel replaced, after Design's sleep.
+      await page.evaluate(() => {
+        const replace = Element.prototype.replaceWith;
+        Element.prototype.replaceWith = function (...nodes) {
+          if (this.contains(window.stalePanel.shape) && !window.firedStale) {
+            window.firedStale = true;
+            window.fireStale();
+          }
+          return replace.apply(this, nodes);
+        };
+      });
+      const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.evaluate(() => document.getElementById("open-file").click())]);
+      await chooser.setFiles({ name: "box.spindle", mimeType: "application/json", buffer: Buffer.from(text) });
+      await page.waitForFunction(() => window.firedStale === true && !window.stalePanel.shape.isConnected);
+      await page.waitForFunction(() => document.querySelector("#volume")?.textContent);
+      await settle(page);
+      // Still the box as the file has it: Box 1, 40 × 30 × 20, its depth kept; the panel on screen says so too.
+      assert.equal(designOf(await saveText(page)), designOf(text));
+      assert.equal(await page.textContent("#volume"), "24,000 mm³");
+      assert.equal(await page.inputValue("#shape"), "box");
+      assert.equal(await page.inputValue("#width"), "40");
+    } finally {
+      await page.close();
+    }
+  });
+
+  await check("a Shape choice or size on Design's panel while Design is asleep (another workspace shown) changes nothing (#267)", async () => {
+    const page = await fresh();
+    try {
+      const text = await saveText(page);
+      await keepPanel(page);
+      await switchTo(page, "image");
+      await page.waitForFunction(() => !window.stalePanel.shape.isConnected); // asleep: its slots are out of the page
+      await page.evaluate(() => window.fireStale());
+      await settle(page);
+      await switchTo(page, "design");
+      await page.waitForFunction(() => document.getElementById("shape") === window.stalePanel.shape); // the same panel, woken
+      assert.equal(designOf(await saveText(page)), designOf(text));
+      assert.equal(await page.textContent("#volume"), "24,000 mm³");
+    } finally {
+      await page.close();
+    }
+  });
+
   await check("no page errors", async () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

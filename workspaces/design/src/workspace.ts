@@ -2820,14 +2820,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   // The Shape choice (U0d) does what the toolbar's shape buttons did: set_part with this shape and the boxes' sizes.
+  // Asleep or put away, the panel is out of the page and edits nothing (issue #267, monkey seed 202611010): Chromium
+  // fired a Shape change as Open took the panel out of the page (main.ts replaceProject: the new project first, then
+  // each view's sleep), and the opened file's box became a cylinder. Its size boxes are held the same way.
   panel.shapeChoice.addEventListener("change", () => {
+    if (!shown) return;
     const kind = panel.shapeChoice.value as ShapeKind;
     if (kind) void setPart({ op: "set_part", shape: kind });
   });
   // Typing in one box is one undo step (the merge key), named for the box; typing for another body is another step
   // (the key names the body: Undo after typing for Body 1 put back Body 2's width typed before it, bug hunt 2026-11-01).
   inputs.forEach((input, i) => {
-    input.addEventListener("input", () => update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
+    input.addEventListener("input", () => shown && update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
     // Left (or Enter): a refused size gives way to the last one. Blur too: Firefox gives no change for a number box
     // left empty after 0 and -5 (hunt 26h, CI's browsers job).
     input.addEventListener("change", () => restoreRefused(i));
