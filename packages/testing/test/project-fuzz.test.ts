@@ -165,7 +165,8 @@ test("each build check can fail: on the hand-made timeline, and found by the fuz
     // The hand case catches it: the kept shape (Extrude 3), the marker (the cylinder), suppressed Sketch 2 (Extrude 2), the cylinder as the part.
     assert.equal(checkText(text, READERS, rules)?.kind, kind, name);
     // The fuzzer finds it in a short round, and shrinks it to a smaller file that still fails the same way.
-    const { failures } = fuzzRound(1n, 400, READERS, rules);
+    // 1,200 cases (400 until 47d2 put constraints in the files, which moved where in the seeded stream a kept shape first counts).
+    const { failures } = fuzzRound(1n, 1200, READERS, rules);
     const found = failures.find((f) => f.kind === kind);
     assert.ok(found, `${name}: the fuzzer did not find it (${failures.map((f) => f.kind).join("; ")})`);
     assert.equal(checkText(found.input, READERS, rules)?.kind, kind, name);

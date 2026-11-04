@@ -232,6 +232,24 @@ test("a drag in the second of two sketches changes only that one, and keeps the 
   assert.equal(sketchOf(got, b.id).points.find((x) => x.id === p), sketchOf(lb.doc, b.id).points.find((x) => x.id === p), "an unmoved point is kept as it was");
 });
 
+test("regression (47d4 review): an arc can't be carried across its chord through a step landing exactly flat", async () => {
+  // An arc from (10, 0) to (0, 0) round (5, 3): turn(centre, start, end) = (5)(−3) − (−3)(−5) = −30. Its centre dragged to
+  // (5, −3) at 0.5 mm a pixel goes in ⌈6 / 4⌉ = 2 steps: (5, 0), on the chord (flat, allowed), then (5, −3), +30, the arc the
+  // other way round. Against the step before (flat) that is no turn, but against where the drag began it is: refused,
+  // left at the flat step. In one step it is refused too.
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const arc = drawArc(s0.doc, s0.id, [10, 0], [0, 0], [5, 3]); // start point-3, end point-4, centre point-5
+  const tri = (d: DesignDocument) => {
+    const s = sketchOf(d, s0.id);
+    return turn(xy(s, "point-5"), xy(s, "point-3"), xy(s, "point-4"));
+  };
+  assert.equal(tri(arc.doc), -30);
+  assert.deepEqual(await dragStep(kernel, arc.doc, s0.id, "point-5", [5, -3]), { refused: ARC_TURNED });
+  const got = await dragTo(kernel, arc.doc, s0.id, "point-5", [5, -3], 0.5);
+  assert.equal(got.refused, ARC_TURNED);
+  assert.ok(tri(got.doc) <= 0, `the arc turned over: ${tri(got.doc)}`);
+});
+
 test("the newest target wins: a drag stops between steps once a newer one comes", async () => {
   // 0 → 100 mm at 1 mm a pixel is 13 steps; told after the 2nd that a newer target came, it stops there.
   const s0 = addSketch(partDocument("box", 40, 30, 20));

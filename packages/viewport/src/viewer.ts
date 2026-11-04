@@ -553,7 +553,8 @@ export class ViewportView {
       const index = nearestWithin(this.screenPoints(grab), at, SKETCH_GRAB_PX[touch ? "touch" : "mouse"]);
       if (index === null) return;
       e.preventDefault(); // keeps the focus where it was
-      e.stopPropagation();
+      // Immediate: navigate()'s listener is on this element too, and in Pan or Zoom mode it would move the camera as well (47d4 review).
+      e.stopImmediatePropagation();
       if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
       canvas.setPointerCapture(e.pointerId);
       this.pointDrag = { id: e.pointerId, grab: index, start: { x: e.clientX, y: e.clientY }, moved: false, touch };

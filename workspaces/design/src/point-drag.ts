@@ -21,8 +21,9 @@
 // - After each solve, no triangle turned over (BS3's own addition): the
 //   triangles whose turning is a jump the user didn't ask for are each
 //   arc's centre, start and end (its centre on the other side of its chord
-//   is the arc sweeping the other way round); a step that turns one over
-//   is refused. (Three points the drag itself carries across each other,
+//   is the arc sweeping the other way round); a step that turns one over,
+//   against the step before or against where the drag began (so a step
+//   landing exactly flat can't carry it across: 47d4 review), is refused. (Three points the drag itself carries across each other,
 //   like a rectangle's corner pulled past the opposite corner, turn over
 //   because the user moved them, as in Fusion, so other triangles are free.)
 // - A step that the solver refuses, that conflicts, that turns an arc
@@ -128,7 +129,7 @@ const pointsOf = (sketch: Sketch): Map<string, XY> => new Map(sketch.points.map(
  * point moved there and the sketch solved with it held (see the top
  * comment for what is refused). The caller has checked grabProblem.
  */
-export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY): Promise<DragStep> {
+export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY, origin: DesignDocument = doc): Promise<DragStep> {
   const moved = movePoint(doc, sketchId, pointId, to[0], to[1]).sketches.find((s) => s.id === sketchId)!; // throws for a sketch or point not there
   const sketch = doc.sketches.find((s) => s.id === sketchId)!;
   const request = solverRequest(moved, [pointId]);
@@ -138,7 +139,8 @@ export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchI
   const solved = new Map(request.points.map((p, i) => [p, answer.points[i]] as const));
   const tiny = shrunk(moved, solved);
   if (tiny !== null) return { refused: `That would shrink ${tiny} below ${MIN_FEATURE} mm, so the point stays where it last was.` };
-  if (turnedOver(sketch, pointsOf(sketch), solved) !== null) return { refused: ARC_TURNED };
+  const began = origin.sketches.find((s) => s.id === sketchId);
+  if (turnedOver(sketch, pointsOf(sketch), solved) !== null || (began && turnedOver(sketch, pointsOf(began), solved) !== null)) return { refused: ARC_TURNED };
   const points = sketch.points.map((p) => {
     const [x, y] = solved.get(p.id)!;
     return x === p.x && y === p.y ? p : { ...p, x, y };
@@ -157,15 +159,16 @@ export function pointOf(doc: DesignDocument, sketchId: string, pointId: string):
  * Drags point `pointId` from where it is in `doc` to `to` (`pixel` mm a
  * screen pixel), step by step (dragSteps): each step's answer to `shown`
  * as it comes, stopping at the first refused step, or as soon as `newer()`
- * says a newer target came (the rest of these steps are dropped). Gives
+ * says a newer target came (the rest of these steps are dropped); no arc
+ * turned over against `origin`, where the drag began, either. Gives
  * the last solved document (`doc` itself when no step solved) and the
  * refusal, if one stopped it.
  */
-export async function dragTo(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY, pixel: number | undefined, newer: () => boolean = () => false, shown: (doc: DesignDocument) => void = () => {}): Promise<{ doc: DesignDocument; refused: string | null }> {
+export async function dragTo(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY, pixel: number | undefined, newer: () => boolean = () => false, shown: (doc: DesignDocument) => void = () => {}, origin: DesignDocument = doc): Promise<{ doc: DesignDocument; refused: string | null }> {
   let at = doc;
   for (const step of dragSteps(pointOf(doc, sketchId, pointId), to, pixel)) {
     if (newer()) break;
-    const got = await dragStep(kernel, at, sketchId, pointId, step);
+    const got = await dragStep(kernel, at, sketchId, pointId, step, origin);
     if ("refused" in got) return { doc: at, refused: got.refused };
     at = got.doc;
     shown(at);

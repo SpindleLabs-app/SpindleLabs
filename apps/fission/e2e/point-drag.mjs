@@ -284,6 +284,59 @@ try {
     await page.context().close();
   });
 
+  await check(`${browserName} 1280 px (47d4 review): a second quick drag and a drag straight after Delete each land`, async () => {
+    const page = await fresh();
+    await sketchOnXY(page, false);
+    await page.click("#sketch-tool-line");
+    await at(page, [0, 0]);
+    await at(page, [20, 10]);
+    await shown(page, "sketchLines", "1");
+    await page.keyboard.press("Escape");
+    await page.click("#sketch-tool-line");
+    await at(page, [30, 0]);
+    await at(page, [40, 10]);
+    await shown(page, "sketchLines", "2");
+    await page.keyboard.press("Escape");
+    await page.click("#sketch-tool-select");
+    // Two drags one straight after the other: (20, 10) to (25, 20), then at once (40, 10) to (45, 25). Each lands, and each is its own undo step.
+    const mm = await mmPerPixel(page);
+    const first = await drag(page, [20, 10], [25, 20]);
+    const second = await drag(page, [40, 10], [45, 25]);
+    const last = second.frames.at(-1);
+    assert.ok(near(last[1], [25, 20], 0.5 * mm + 1e-9) && near(last[3], [45, 25], 0.5 * mm + 1e-9), `the two drags landed as ${JSON.stringify(last)} (first ${JSON.stringify(first.frames.at(-1))})`);
+    assert.ok(same(last[0], [0, 0]) && same(last[2], [30, 0]), "the other ends stayed");
+    await page.keyboard.press("Control+z");
+    await until(page, () => document.querySelector("#viewport").dataset.sketchPoints.split(" ")[3] === "40,10", null, "one undo puts back only the second drag");
+    assert.ok(near(pointsOf(await data(page, "sketchPoints"))[1], [25, 20], 0.5 * mm + 1e-9), "the first drag is still there");
+    // Delete the first line (picked by its middle), then drag the second's end at once: both happen.
+    await at(page, [12.5, 10]);
+    await shown(page, "sketchPicked", "1");
+    await page.keyboard.press("Delete");
+    await drag(page, [40, 10], [35, 20]);
+    await shown(page, "sketchLines", "1");
+    const after = await points(page);
+    assert.ok(after.length === 2 && same(after[0], [30, 0]) && near(after[1], [35, 20], 0.5 * mm + 1e-9), `after the delete and the drag: ${JSON.stringify(after)}`);
+    await page.context().close();
+  });
+
+  await check(`${browserName} 1280 px (47d4 review): in Pan mode a press on a point drags it and the camera stays`, async () => {
+    const page = await fresh();
+    await sketchOnXY(page, false);
+    await page.click("#sketch-tool-line");
+    await at(page, [0, 0]);
+    await at(page, [20, 10]);
+    await shown(page, "sketchLines", "1");
+    await page.keyboard.press("Escape");
+    await page.click("#sketch-tool-select");
+    await page.click("#view-controls [data-nav=pan]");
+    const cam = await camera(page);
+    const mm = await mmPerPixel(page);
+    const { frames } = await drag(page, [20, 10], [10, 20], { moves: 4 });
+    stayed(await camera(page), cam);
+    assert.ok(near(frames.at(-1)[1], [10, 20], 0.5 * mm + 1e-9), `the end landed at ${frames.at(-1)[1]}`);
+    await page.context().close();
+  });
+
   await check(`${browserName} 375 px: a line's end dragged by a finger lands under it; the camera stays`, async () => {
     const page = await fresh(375, true);
     await sketchOnXY(page, true);
