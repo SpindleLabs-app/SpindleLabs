@@ -31,8 +31,8 @@
 //     (unsaved.ts, own-save.test.ts).
 
 import { projectToJson, type Project } from "@fission/core";
-import { ProjectChangedError, type ProjectStore } from "./store.ts";
-import { journalEntry, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
+import { ProjectChangedError, writerId, type ProjectStore } from "./store.ts";
+import { asideKey, journalEntry, putAsideOthers, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
 
 export type AutosaveStatus =
   /** Changes are waiting for the quiet moment, or being written now. */
@@ -166,6 +166,14 @@ export function startAutosave(
   let version = 0;
   let storedVersion = 0;
   const key = unsavedKey(id);
+  /** This autosave's name as its journal entries carry it (one that isn't a writer id is carried as none). */
+  const ownName = writerId(writer) ?? "";
+  /** Whether the entry under `key` is this autosave's (or has no writer, as before entries named one). Throws as the storage does. */
+  const ownEntry = () => {
+    const entry = journal?.getItem(key);
+    const by = entry == null ? undefined : readJournalEntry(entry).writer;
+    return by === undefined || by === ownName;
+  };
   let journalVersion: number | null = (() => {
     try {
       return journal?.getItem(key) != null ? 0 : null;
@@ -205,6 +213,13 @@ export function startAutosave(
     try {
       if (journalVersion !== null) {
         if (journalVersion > v) return;
+        // This tab's entry may have been put aside by another tab's since (clumsy hunt 2026-11-04): it goes from there,
+        // and the key, holding that other tab's entry now, is left for its own tab or the next visit.
+        journal?.removeItem(asideKey(id, ownName));
+        if (!ownEntry()) {
+          journalVersion = null;
+          return;
+        }
       } else {
         const entry = at === null ? null : journal?.getItem(key);
         const read = entry == null ? null : readJournalEntry(entry);
@@ -225,10 +240,12 @@ export function startAutosave(
   const rebase = (at: Date) => {
     if (journalVersion === null) return;
     try {
-      const entry = journal?.getItem(key);
+      // Where this tab's entry is: its key, or aside when another tab's took the key since.
+      const where = ownEntry() ? key : asideKey(id, ownName);
+      const entry = journal?.getItem(where);
       if (entry == null) return;
       const read = readJournalEntry(entry);
-      if (read.written !== null) journal?.setItem(key, journalEntry(read.text, read.written, read.kept, at, read.writer ?? null));
+      if (read.written !== null) journal?.setItem(where, journalEntry(read.text, read.written, read.kept, at, read.writer ?? null));
     } catch {
       // left naming the older state: the next visit keeps it as a separate project, so nothing is lost
     }
@@ -332,6 +349,8 @@ export function startAutosave(
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
+          // Another tab's entry there, not stored yet, is moved aside first, never written over (clumsy hunt 2026-11-04).
+          putAsideOthers(journal, id, writer);
           journal.setItem(key, journalEntry(projectToJson(project()), stamp(), owner, base, writer));
           journalVersion = version;
           kept = true;
@@ -366,6 +385,7 @@ export function startAutosave(
       if (text === written && !inFlight) return stored(v, writtenAt);
       if (journal) {
         try {
+          putAsideOthers(journal, id, writer); // another tab's entry is kept, aside (clumsy hunt 2026-11-04)
           journal.setItem(key, journalEntry(text, at, owner, base, writer)); // kept now, should the page go before the store's save
           journalVersion = v;
         } catch {
