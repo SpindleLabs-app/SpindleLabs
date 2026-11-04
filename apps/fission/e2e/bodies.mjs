@@ -3,7 +3,9 @@
 // and extruded by 10 (a second body, 24d1). Both are drawn (pixel probes on
 // each top face), the view frames both, the browser's Bodies group lists
 // Body 1 and Body 2, a click on either top face selects that body's face by
-// its stable name, and Body 2's row tints only its own faces. The same at
+// its stable name, and Body 2's row tints only its own faces; a double-click
+// (a double-tap at 375 px) picks a whole body, Shift adds one, and two slow
+// clicks stay a face. The same at
 // 375 px with taps. File ▾ > New (start-fresh.ts) with both bodies there:
 // it asks, Cancel and Escape change nothing, confirmed it leaves the fresh
 // box alone, and one Undo brings everything back. Screenshots go to
@@ -54,6 +56,15 @@ async function at(page, p, view, tap) {
     return e?.tagName === "CANVAS" && e.closest("#viewport") ? "canvas" : e ? e.id || e.className || e.tagName : "nothing";
   }, [s.x, s.y]);
   if (on !== "canvas") throw new Error(`(${p}) is under ${on} on screen, not the canvas`);
+  if (tap) await page.touchscreen.tap(s.x, s.y);
+  else await page.mouse.click(s.x, s.y);
+}
+
+/** Two quick clicks (or taps) on a model point as `view` sees it: a double-click, well inside its half second. */
+async function twice(page, p, view, tap) {
+  await at(page, p, view, tap); // checks the point is on the canvas, with any sheet closed first
+  const box = await page.locator("#viewport canvas").boundingBox();
+  const s = screenPoint(box, p, view);
   if (tap) await page.touchscreen.tap(s.x, s.y);
   else await page.mouse.click(s.x, s.y);
 }
@@ -230,6 +241,32 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await page.keyboard.press("Escape");
     await until(page, () => !document.body.dataset.selection, null, "nothing selected");
     assert.deepEqual(await panelBody(page), body2);
+
+    // A double-click (a double-tap on a phone) on body 2's top picks the whole of body 2, not its face (Ben's idea,
+    // 2026-11-04: Shift-click already adds a face): its faces tinted, body 1's not, the panel naming Body 2.
+    await twice(page, top2, view, tap);
+    await until(page, () => document.body.dataset.selection?.startsWith("body:"), null, `body 2 by a double ${tap ? "tap" : "click"} (got ${await selection(page)})`);
+    const whole2 = await selection(page);
+    assert.notEqual(whole2, "body:feature-1", "the body under the pointer, not the first");
+    assert.ok(blue(await colourAt(page, top2, view)) > blue(box2) + 20, "body 2 tinted");
+    assert.ok(Math.abs(blue(await colourAt(page, [20, 15, 20], view)) - blue(box1)) < 6, "body 1 untouched");
+    assert.deepEqual(await panelBody(page), body2);
+    if (shots) await page.screenshot({ path: `${shots}/bodies-${width}-double.png` });
+    if (!tap) {
+      // Shift+double-click on body 1 adds the whole of it, and leaves no stray face of it behind.
+      await page.keyboard.down("Shift");
+      await twice(page, [20, 15, 20], view, tap);
+      await page.keyboard.up("Shift");
+      await until(page, (w) => document.body.dataset.selection === `${w} body:feature-1`, whole2, `both bodies (got ${await selection(page)})`);
+      assert.ok(blue(await colourAt(page, [20, 15, 20], view)) > blue(box1) + 20, "body 1 tinted too");
+      if (shots) await page.screenshot({ path: `${shots}/bodies-${width}-shift-double.png` });
+    }
+    // Two clicks or taps further apart than a double-click's half second are two single picks: the face, not the body.
+    await at(page, top2, view, tap);
+    await page.waitForTimeout(800);
+    await at(page, top2, view, tap);
+    await until(page, () => /^face:/.test(document.body.dataset.selection ?? ""), null, `slow clicks pick the face (got ${await selection(page)})`);
+    await page.keyboard.press("Escape");
     if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
     await page.context().close();
   });
