@@ -10,7 +10,7 @@
 // docs/progress/slice.md). Styles: src/styles/slice-print.css.
 
 import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, StlFile, SupportStyle } from "@fission/core";
-import type { SaveKind } from "@fission/ui";
+import { repeatGuard, type SaveKind } from "@fission/ui";
 import { bodyIdOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
@@ -540,6 +540,13 @@ export const nameLead = (project?: string): string => {
   return name === "" || /^untitled$/i.test(name) ? "spindlelabs" : name;
 };
 
+/**
+ * The name a print file starts with: the project's own name, or when it has none (empty or "Untitled") the name of the
+ * file it was opened from or saved to, so a saved "bracket" prints as "bracket-…", not "spindlelabs-…" (slicer hunt
+ * 2026-11-04, package 4b: the app never names a project, so every print file was "spindlelabs-…").
+ */
+export const printLead = (project: string | undefined, file: string | null | undefined): string | undefined => (nameLead(project) === "spindlelabs" && file && file.trim() !== "" ? file : project);
+
 const settingsPart = (choices: PrintChoices) => `-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}`;
 
 /** The most a file's name may hold, as the save box cuts it (packages/ui save-file.ts): characters and bytes of UTF-8. */
@@ -658,15 +665,26 @@ export function fileCrawl(fraction: number, beforeMs: number, inFileMs: number):
   return fraction + (FILE_CRAWL_TOP - fraction) * (1 - Math.exp(-inFileMs / tau));
 }
 
+/** Slice and download's words when a choice was changed while it sliced (slicer hunt 2026-11-04, ui 5). */
+export const SLICE_EARLIER = "A choice was changed while it sliced, so this is the slice of the earlier choices: slice again for the new ones.";
+/** The print preview's words when a choice was changed while its slice ran (the hunt's leftover: the preview said nothing). */
+export const PREVIEW_EARLIER = "A choice was changed while it sliced, so this preview shows the earlier choices: preview again for the new ones.";
+
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
   slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
-  /** Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b, H2c); nothing is saved. */
-  preview(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<void>;
+  /**
+   * Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b,
+   * H2c); nothing is saved. `changed()` turns true once a choice is changed while it slices: the preview then says it
+   * shows the earlier choices (PREVIEW_EARLIER).
+   */
+  preview(choices: PrintChoices, file: FileChoices, alive: () => boolean, changed: () => boolean): Promise<void>;
   /** Calls `listener` as a slice reports how far it has got (KernelCalls.onProgress); returns the way to stop. Left out: the bar just says it is slicing. */
   onProgress?(listener: (progress: SliceProgress) => void): () => void;
   /** Called when the warm-up loop or Better grip is ticked or unticked (the build area counts them). */
   extrasChanged?(extras: FirstLayerExtras): void;
+  /** The clock that tells a double press from two presses, in ms (the tests' own); left out, performance.now(). */
+  now?(): number;
 }
 
 export interface SlicePrint {
@@ -941,8 +959,15 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       presets.changed();
       keep();
     });
+  // A double press, or presses while it slices and just after, are one slice and one file (clumsy-user hunt 11-04).
+  // A disabled button hears no press, so the end of a slice counts as one: a tap that came during it waits again.
+  // A changed choice (or a preset picked) asks for a new file, so its press is meant however soon.
+  const clock = events.now ? () => events.now!() : undefined;
+  const goRepeats = repeatGuard(clock);
+  const previewRepeats = repeatGuard(clock);
+  dialog.addEventListener("change", () => (goRepeats.reset(), previewRepeats.reset()));
   go.addEventListener("click", async () => {
-    if (busy) return;
+    if (goRepeats() || busy) return;
     working(true);
     changedWhileBusy = false;
     const mine = alive();
@@ -951,7 +976,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     try {
       const { print, saved, name } = await events.slice(choices(), file(), mine);
       end();
-      const earlier = changedWhileBusy ? "A choice was changed while it sliced, so this is the slice of the earlier choices: slice again for the new ones." : null;
+      const earlier = changedWhileBusy ? SLICE_EARLIER : null;
       const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
@@ -961,16 +986,18 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       else say(refusalOf(e), true);
     } finally {
       working(false);
+      goRepeats();
     }
   });
   preview.addEventListener("click", async () => {
-    if (busy) return;
+    if (previewRepeats() || busy) return;
     working(true);
+    changedWhileBusy = false;
     const mine = alive();
     say("Slicing…", false);
     const end = showProgress();
     try {
-      await events.preview(choices(), file(), mine);
+      await events.preview(choices(), file(), mine, () => changedWhileBusy);
       end();
       say("", false);
       dialog.close();
@@ -981,6 +1008,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       else say(refusalOf(e), true);
     } finally {
       working(false);
+      previewRepeats();
     }
   });
   close.addEventListener("click", () => dialog.close());

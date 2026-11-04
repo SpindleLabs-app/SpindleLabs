@@ -153,6 +153,32 @@ await check("the wheel zooms toward the pointer: the point under it stays to wit
   }
 });
 
+await check("zooming out or in for ever stops at the 3D view's limits, and the view still zooms back (clumsy hunt 2026-11-04)", async () => {
+  // About 1,760 notches out made the camera NaN and the wheel stopped working until Fit. Now it stops at 1e8 mm
+  // (navigation.ts FARTHEST_VIEW) and at 1e-4 mm in (NEAREST_VIEW), and a notch back always moves it.
+  const page = await fresh();
+  try {
+    const box = await canvasBox(page);
+    await page.mouse.move(box.x + 0.3 * box.width, box.y + 0.4 * box.height);
+    const spin = async (deltaY, times) => {
+      for (let i = 0; i < times; i++) await page.mouse.wheel(0, deltaY);
+      await settle(page);
+    };
+    await spin(1000, 400); // ×4 a notch at most: 400 notches is far past any limit
+    const out = frame(await camera(page)).distance;
+    assert.ok(Number.isFinite(out) && Math.abs(out - 1e8) <= 1, `out: ${out} mm, want 1e8`);
+    await spin(-100, 1);
+    const back = frame(await camera(page)).distance;
+    assert.ok(Math.abs(back / out - Math.exp(-100 * 0.002)) < 1e-6, `a notch back: ×${back / out}`);
+    await spin(-1000, 400);
+    const near = frame(await camera(page)).distance;
+    assert.ok(Number.isFinite(near) && Math.abs(near - 1e-4) <= 1e-9, `in: ${near} mm, want 1e-4`);
+    assert.ok((await camera(page)).position.every(Number.isFinite), "the camera's place is a number");
+  } finally {
+    await page.context().close();
+  }
+});
+
 await check("middle-drag pans: the grabbed point follows the pointer; it never picks; Shift+middle orbits; the right button does nothing", async () => {
   const page = await fresh();
   try {
