@@ -91,7 +91,7 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
   };
   const target = fieldRow("target", "Target body");
   const tools = fieldRow("tools", "Tool bodies");
-  const operation = el("select", "combine-operation");
+  const operation = el("select", "combine-operation", "dark-select"); // styles/dark-select.css (packages/ui): the open list dark and readable
   operation.setAttribute("aria-label", "Operation");
   for (const op of COMBINE_OPERATIONS) {
     const o = el("option", "", "", OPERATION_WORDS[op]);
