@@ -23,7 +23,7 @@ const TOKEN_MAX = 8000;
 const EMAIL_MAX = 320; // RFC 5321: 64 + 1 + 255
 
 function token(v: unknown): string | undefined {
-  return typeof v === "string" && v.length > 0 && v.length <= TOKEN_MAX && !/\s/.test(v) ? v : undefined;
+  return typeof v === "string" && v.length <= TOKEN_MAX && !/\s/.test(v) ? v : undefined;
 }
 
 function user(v: unknown): AccountUser | undefined {
