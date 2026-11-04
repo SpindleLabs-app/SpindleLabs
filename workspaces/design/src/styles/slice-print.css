@@ -38,3 +38,11 @@
 .slice-print .slice-print-progress[hidden] { display: none; }
 .slice-print #slice-print-meter { width: 100%; height: 10px; accent-color: var(--look-accent, #4c8dff); }
 .slice-print #slice-print-stage { font-size: 0.9em; color: #c4cbd5; min-height: 1.2em; }
+/* The heading line: the heading, and the presets (slice-presets.ts, styles in slice-presets.css) beside it where there
+   is room. The list is 12 px taller than the heading's line: the row starts 6 px into the dialog's top padding and
+   leaves 2 px under it, so the dialog is exactly as tall as with the heading alone (22 + 8 = 34 - 6 + 2 px). */
+.slice-print .slice-print-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: -6px 0 2px; }
+.slice-print .slice-print-top h2 { margin: 0; }
+@media (max-width: 640px) {
+  .slice-print .slice-print-top { margin: 0 0 8px; }
+}

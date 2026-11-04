@@ -1,11 +1,7 @@
 /* Slicer printer presets (slice-presets.ts) in Slice for printing's heading line (slice-print.ts): the heading on the
    left, the Preset list and its buttons on the right, sharing one line where there is room so the dialog grows no
    taller (it must fit a 470 px laptop window); on a phone they wrap under the heading. Naming and deleting take the
-   bar's place in the same line. ":not(#none)" lifts a rule over the base layout's "#workspace button". */
-/* The list is 12 px taller than the heading's line: the row starts 6 px into the dialog's top padding and leaves 2 px
-   under it, so the dialog is exactly as tall as with the heading alone (22 + 8 = 34 - 6 + 2 px). */
-.slice-print .slice-print-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: -6px 0 2px; }
-.slice-print .slice-print-top h2 { margin: 0; }
+   bar's place in the same line. The heading line itself is in slice-print.css. ":not(#none)" lifts a rule over the base layout's "#workspace button". */
 .slice-presets { display: flex; flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
 .slice-presets > div { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .slice-presets > div[hidden] { display: none; }
@@ -17,7 +13,6 @@
 .slice-presets #slice-presets-editing-name, .slice-presets #slice-presets-ask { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .slice-presets #slice-presets-delete-yes:not(#none) { color: #f0a35e; }
 @media (max-width: 640px) {
-  .slice-print .slice-print-top { margin: 0 0 8px; }
   /* A phone: the bar takes its own line under the heading, the list as wide as there is room for. */
   .slice-presets { flex-basis: 100%; justify-content: stretch; }
   .slice-presets > div { flex: 1 1 auto; flex-wrap: wrap; }
