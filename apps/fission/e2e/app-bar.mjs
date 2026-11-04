@@ -29,7 +29,7 @@ const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 const rect = (page, sel) => page.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
 
-async function fresh(width, touch) {
+async function fresh(width, touch, query = "") {
   const context = await browser.newContext({ viewport: { width, height: width > 640 ? 800 : 667 }, hasTouch: touch, isMobile: touch, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -38,7 +38,7 @@ async function fresh(width, touch) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  await page.goto(url + "#design");
+  await page.goto(url + query + "#design");
   await page.waitForSelector("#start-hint", { state: "visible" });
   await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
   return page;
@@ -170,12 +170,14 @@ try {
         assert.deepEqual(await menuRows(page), [
           ["start-fresh", "new", true],
           ["open", "open", false],
+          ["file-projects", "folder", false],
+          ["file-versions", "undo", false],
           ["file-save", "save", false],
           ["file-save-as", "save", false],
           ["file-export-stl", "export", true],
           ["file-slice-print", "export", true],
         ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Save As…", "Export STL", "Slice for printing"]);
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Projects in this browser…", "Earlier versions…", "Save", "Save As…", "Export STL", "Slice for printing"]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
         assert.equal(await page.getAttribute("#file-slice-print", "title"), NO_BODY);
@@ -283,8 +285,9 @@ try {
   }
 
   for (const [width, tap] of [[1280, false], [375, true]]) {
+    // With every workspace listed (?all-workspaces, src/listed-workspaces.ts): ten items, as the menu must still hold; the public app's two are in e2e/workspace-list.mjs.
     await check(`${width} px${tap ? ", taps" : ""}: DESIGN ▾ names the page on screen; choosing an item shows that workspace, marks it and renames the button; Escape and a press outside close it`, async () => {
-      const page = await fresh(width, tap);
+      const page = await fresh(width, tap, "?all-workspaces");
       try {
         const label = () => page.textContent("#workspace-menu");
         assert.equal(await label(), "Design ▾");
@@ -306,9 +309,9 @@ try {
         await page.mouse.click(width / 2, (width > 640 ? 800 : 667) - 60);
         assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false", "a press outside closes it");
         // A placeholder is chosen as before: its page says Coming soon.
-        await switchTo(page, "slice", tap);
+        await switchTo(page, "laser", tap);
         assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
-        assert.equal(await label(), "Slice ▾");
+        assert.equal(await label(), "Laser ▾");
         await switchTo(page, "design", tap);
         await until(page, () => document.body.dataset.activeWorkspace === "design", null, "Design again");
         assert.equal(await label(), "Design ▾");
@@ -342,6 +345,10 @@ try {
       await page.focus("#file-menu");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "open", "New is off on the empty design: Open… first");
+      await page.keyboard.press("ArrowDown");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-projects", "Projects in this browser… next (U6a)");
+      await page.keyboard.press("ArrowDown");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-versions", "then Earlier versions… (3b)");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-save");
       const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Enter")]);

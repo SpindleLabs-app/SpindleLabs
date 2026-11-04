@@ -18,6 +18,7 @@ import {
   addFaceSketch,
   addSketch,
   BodyCache,
+  buildSpec,
   builtBody,
   changePreset,
   deleteCurve,
@@ -27,9 +28,11 @@ import {
   drawRectangle,
   extrudeSketch,
   facePlane,
+  featureSpec,
   followedDoc,
   greyedBy,
   joinBodies,
+  lastFeature,
   partDocument,
   projectEdges,
   projectPick,
@@ -39,6 +42,7 @@ import {
   shownBodies,
   suppressItem,
   type DesignDocument,
+  type EdgeToProject,
   type TimelineBuild,
 } from "@fission/design";
 import { emptyProject, projectFromJson, projectToJson, type Plane } from "@fission/core";
@@ -223,6 +227,19 @@ test("hand-worked: the box's front face picked from XZ projects its four edges, 
   // (0, 0) and (40, 0), each the end on the ground (z = 0).
   const flat = projectPick(s.doc, s.xy, scene, frameOf(build, s.xy), { face: scene.faceStart[k] + front });
   assert.deepEqual(flat.edges.map((e) => (e.shape.kind === "point" ? `point ${e.shape.at}` : ends(e.shape))).sort(), ["0,0 40,0", "0,0 40,0", "point 0,0", "point 40,0"]);
+});
+
+test("hand-worked: a 10 × 10 rectangle drawn from a corner of the box's projected top extrudes to 10 · 10 · 5 = 500 mm³ (its own loop is the outline)", async () => {
+  // The box's four top edges projected into a sketch on XY, seen as the rectangle (0, 0) to (40, 30), for reference.
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const line = (edge: string, a: [number, number], b: [number, number]): EdgeToProject => ({ feature: "feature-1", edge, shape: { kind: "line", a, b } });
+  const four = [line("front+top", [0, 0], [40, 0]), line("right+top", [40, 0], [40, 30]), line("back+top", [40, 30], [0, 30]), line("left+top", [0, 30], [0, 0])];
+  // Drawn from the projected corner (0, 0) (the rectangle reuses the point there) to (10, 10): its own four lines close.
+  const drawn = drawRectangle(projectEdges(s.doc, s.id, four).doc, s.id, [0, 0], [10, 10]).doc;
+  const up = extrudeSketch(drawn, s.id, 5).doc;
+  // Before the fix all eight lines were the outline and the kernel said "4 ends meet at (0, 0)".
+  const body = await buildSpec(kernel, await featureSpec(kernel, up, lastFeature(up)));
+  assert.ok(Math.abs(body.volume - 500) < 1e-9, `volume ${body.volume}`);
 });
 
 test("in the app: a file whose projection names an edge the cylinder hasn't got opens with the circle where it was, warned on the panel, the sketch's row and its bar item", async () => {

@@ -500,8 +500,23 @@ export function isDoubleClick(last: { id: string; at: number } | undefined, id: 
   return gap >= 0 && gap <= DOUBLE_CLICK_MS;
 }
 
-/** Each bar's last click on an item (by its slot), kept across the redraw the click itself causes. */
-const lastClicks = new WeakMap<HTMLElement, { id: string; at: number }>();
+/** How far (px, each way) the second click of a double-click may land from the first for `isDoubleClickHere`. */
+export const DOUBLE_CLICK_PX = 4;
+
+/**
+ * Whether a click at (x, y) on item `id`'s ⋯ is the second of a double-click
+ * on the item itself (clumsy hunt 2026-11-04): picking an item redraws the
+ * bar, an earlier item's ⋯ goes and this one's comes, the item slides, and a
+ * double-click's second click lands on the ⋯ now under the pointer. It is
+ * one when `isDoubleClick` says so and it is where the first click was.
+ */
+export function isDoubleClickHere(last: { id: string; at: number; x?: number; y?: number } | undefined, id: string, at: number, x: number, y: number): boolean {
+  if (!isDoubleClick(last, id, at) || last!.x === undefined || last!.y === undefined) return false;
+  return Math.abs(x - last!.x) <= DOUBLE_CLICK_PX && Math.abs(y - last!.y) <= DOUBLE_CLICK_PX;
+}
+
+/** Each bar's last click on an item (by its slot) and where it was, kept across the redraw the click itself causes. */
+const lastClicks = new WeakMap<HTMLElement, { id: string; at: number; x: number; y: number }>();
 
 /** What the bar's items do (step 24f3): `failed` are the rebuild's failed items (drawn red); `picked` is the item whose ⋯ shows. */
 export interface BarWiring {
@@ -594,7 +609,7 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
         lastClicks.delete(slot);
         return wiring.onOpen(item.id);
       }
-      lastClicks.set(slot, { id: item.id, at });
+      lastClicks.set(slot, { id: item.id, at, x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
       wiring.onPick?.(item.id);
     });
     li.addEventListener("keydown", (e) => {
@@ -621,7 +636,16 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       more.title = `${item.label}: more`;
       more.setAttribute("aria-label", `${item.label} options`);
       more.setAttribute("aria-haspopup", "menu");
-      more.addEventListener("click", () => {
+      // A finger's tap on ⋯ right after the tap that picked the item is a press of ⋯ (a phone shows it where the finger
+      // was): only a mouse's second click counts as the double-click below.
+      let pressedBy = "";
+      more.addEventListener("pointerdown", (e) => (pressedBy = e.pointerType));
+      more.addEventListener("click", (e) => {
+        // The second click of a double-click on the item, landed here as the bar moved under it: Edit, not the menu.
+        if (wiring.onOpen && pressedBy === "mouse" && isDoubleClickHere(lastClicks.get(slot), item.id, e.timeStamp, e.clientX, e.clientY)) {
+          lastClicks.delete(slot);
+          return wiring.onOpen(item.id);
+        }
         const r = more.getBoundingClientRect();
         wiring.onMenu?.(item.id, { x: r.left, y: r.top });
       });

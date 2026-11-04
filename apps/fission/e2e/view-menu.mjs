@@ -87,7 +87,7 @@ try {
     await page.click("#row-menu-hide");
     await until(page, () => document.getElementById("undo").title === "Undo Hide Body 1 (Ctrl+Z)", null, "Hide recorded");
     assert.equal(await menuOpen(page), false);
-    assert.equal(await highlight(page), "faces  edges ", "nothing selected once hidden");
+    await until(page, () => document.querySelector("#viewport").dataset.highlight === "faces  edges ", null, "nothing selected once hidden").catch(async (e) => assert.fail(`${e.message} (shows "${await highlight(page)}")`));
     // Hidden, the box is not there to right-click: the centre opens nothing.
     await page.mouse.click(centre.x, centre.y, { button: "right" });
     await page.waitForTimeout(300);
@@ -131,7 +131,8 @@ try {
     await shot(page, "view-menu-375");
     await page.tap("#row-menu-delete");
     await until(page, () => document.getElementById("undo").title === "Undo Delete Box 1 (Ctrl+Z)", null, "Delete recorded");
-    assert.equal(await highlight(page), "faces  edges ", "nothing selected once deleted");
+    // The selection leaves once the rebuild after the delete has run, which can be after Undo's title changes (merge queue, #306).
+    await until(page, () => document.querySelector("#viewport").dataset.highlight === "faces  edges ", null, "nothing selected once deleted").catch(async (e) => assert.fail(`${e.message} (shows "${await highlight(page)}")`));
     await page.context().close();
   });
 } finally {

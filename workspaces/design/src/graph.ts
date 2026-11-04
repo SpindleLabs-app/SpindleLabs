@@ -1,7 +1,7 @@
 // Design's timeline in the project-wide dependency graph.
 
 import type { ChangeNotes, DependencyGraph, Feature } from "@fission/core";
-import { buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, partFeature, type DesignDocument } from "./document.ts";
+import { buildingItems, isCombineItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, partFeature, type DesignDocument } from "./document.ts";
 
 /** Graph id of the part's mass properties and mesh: cheap, rebuilt at once after every change. */
 export const PART_VIEW = "design.part-view";
@@ -14,7 +14,7 @@ export function changeWords(kind: string, removed = false): string {
 
 /** What a note calls a timeline item: a sketch or an extrude of one by its name ("Sketch 2", "Extrude 1"), a preset by its kind ("the box"). */
 export function itemCalled(f: Feature): string {
-  if (isSketchItem(f) || isSketchExtrude(f) || isMoveItem(f)) return f.provenance.self.label;
+  if (isSketchItem(f) || isSketchExtrude(f) || isMoveItem(f) || isCombineItem(f)) return f.provenance.self.label;
   return changeWords(f.intent.type).slice("you changed ".length);
 }
 
@@ -24,12 +24,15 @@ export function itemCalled(f: Feature): string {
  * marker, rebuilt from its kept shape, or left out with its suppressed
  * sketch; and the part's view when the part is another feature now. The
  * first that applies: an item removed, added, suppressed or unsuppressed,
- * or changed; the marker moved; the items put in another order.
+ * or changed; the marker moved (with the order as it was); the items put
+ * in another order.
  */
 function editWords(doc: DesignDocument, before: DesignDocument, removed: readonly Feature[], direct: readonly { words: string }[]): string {
   if (removed.length > 0) return `you removed ${itemCalled(removed[0])}`;
   if (direct.length > 0) return direct[0].words;
-  if (before.timeline.marker !== doc.timeline.marker) return "you moved the timeline marker";
+  // A reorder of the marker's own item moves the marker off it too (it stays in its gap): still a reorder.
+  const order = (d: DesignDocument) => d.timeline.features.map((f) => f.id).join("\n");
+  if (before.timeline.marker !== doc.timeline.marker && order(before) === order(doc)) return "you moved the timeline marker";
   return "you reordered the timeline";
 }
 

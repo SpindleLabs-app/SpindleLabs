@@ -698,6 +698,14 @@ try {
       // At 375 px the phone's 40 px tap areas space the five items wider than the bar: the marker, after the new
       // sketch, scrolled into view first; the drag goes to the box's left edge or, when it is scrolled off, the
       // bar's (still before Sketch 2).
+      // The bar brings the picked sketch's ⋯ into view DOUBLE_CLICK_MS (500 ms) after the pick: measured before that, the
+      // drag lands where the bar no longer is (a flake on a busy machine). Wait until it has stood still for longer.
+      await page.waitForFunction(() => {
+        const list = document.querySelector("#timeline .timeline-bar");
+        const w = (window.__barStill ??= { at: performance.now(), left: list.scrollLeft, list });
+        if (w.list !== list || w.left !== list.scrollLeft) Object.assign(w, { at: performance.now(), left: list.scrollLeft, list });
+        return performance.now() - w.at > 700;
+      }, null, { timeout: 5000, polling: 50 });
       await page.locator("#timeline .timeline-bar-marker").scrollIntoViewIfNeeded();
       const bb = await boxOf("feature-1");
       const listLeft = (await page.locator("#timeline .timeline-bar").boundingBox()).x;

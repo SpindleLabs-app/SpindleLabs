@@ -17,7 +17,7 @@
 // size. So the limit of any legal call is at least HEADROOM times what it
 // needs, on any device whose calibration is as slow as its other calls.
 import type { KernelOps } from "./kernel-client.ts";
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, Loop, Outline, ShapeSpec } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, Loop, Outline, ShapeSpec, SupportStyle } from "./kernel-types.ts";
 
 /** The calibration boolean's bodies: two 10 mm cubes, the second moved 5 mm along each axis, so they overlap in a 5 mm cube (36 face pairs). */
 export const CALIBRATION_TARGET: BodySpec = { box: { width: 10, depth: 10, height: 10 } };
@@ -146,14 +146,87 @@ export const UNITS_PER_TRIANGLE_LAYER = 0.12;
 export const UNITS_PER_AREA_LAYER = 6e-4;
 
 /**
+ * Units of supports, per style, from the faces that look down above the
+ * first layer (the overhangs they hold up): per mm² of those faces seen from
+ * above, per mm² per layer under them, and per layer of the highest one
+ * (slicer hunt 2026-11-04, inputs 1: tree supports under an 80 mm plate on a
+ * 10 mm column took 15 s against the 10 s floor, the supports uncounted).
+ * Measured on the shipped build against the calibration, plates of 20 to 160
+ * mm on columns 20 to 80 mm tall, 0.12 and 0.2 mm layers: tree supports grow
+ * with the overhang's area (2.2 to 2.8 units a mm² at 100 layers under it:
+ * 15,632 for the 80 mm plate, 36,568 for 120 mm) and a little with the layers
+ * under it; normal supports by the layers (25 to 28 units a layer: 9,860 for
+ * a 40 mm plate 400 layers up), hardly by the area. Each style's figures are
+ * at least twice every one measured (time-limit.test.ts), on top of HEADROOM.
+ */
+export const SUPPORT_UNITS: Record<Exclude<SupportStyle, "off">, { perArea: number; perAreaLayer: number; perLayer: number }> = {
+  normal: { perArea: 0.1, perAreaLayer: 0.002, perLayer: 50 },
+  tree: { perArea: 4, perAreaLayer: 0.015, perLayer: 40 },
+};
+
+/** A face looks down, and may need holding up, when its normal is within 60° of straight down (the engine supports from 45°). */
+const LOOKS_DOWN = -0.5;
+
+/** One binary STL triangle's corners, as the readers below walk them. */
+function eachTriangle(stl: Uint8Array, visit: (c: number[]) => void): void {
+  const data = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+  for (let at = 0; at + 84 <= stl.byteLength; ) {
+    const count = data.getUint32(at + 80, true);
+    if (at + 84 + 50 * count > stl.byteLength) break;
+    for (let t = 0; t < count; t++) {
+      const corners = at + 84 + 50 * t + 12;
+      const c: number[] = [];
+      for (let k = 0; k < 9; k++) c.push(data.getFloat32(corners + 4 * k, true));
+      visit(c);
+    }
+    at += 84 + 50 * count;
+  }
+}
+
+/**
+ * The units of `style` supports under `stl` (read as sliceUnits reads it) at
+ * `layerHeight`: SUPPORT_UNITS times the area seen from above of the faces
+ * that look down (by their corners' winding, outward as the kernel writes
+ * them) and start above the first layer, times that area times the layers
+ * under each, and times the layers under the highest. A style not known is
+ * costed as tree, the dearer. None for "off".
+ */
+export function supportUnits(stl: Uint8Array, layerHeight: number, style: SupportStyle): number {
+  if (style === "off" || !(layerHeight > 0)) return 0;
+  const k = style === "normal" ? SUPPORT_UNITS.normal : SUPPORT_UNITS.tree;
+  let floor = Infinity;
+  eachTriangle(stl, (c) => (floor = Math.min(floor, c[2], c[5], c[8])));
+  if (!Number.isFinite(floor)) return 0;
+  let area = 0;
+  let areaLayers = 0;
+  let layers = 0;
+  eachTriangle(stl, (c) => {
+    const low = Math.min(c[2], c[5], c[8]);
+    if (!(low - floor > layerHeight)) return;
+    // Twice the area seen from above, and the normal's z times twice the whole area (the cross product of two sides).
+    const [ux, uy, uz, vx, vy, vz] = [c[3] - c[0], c[4] - c[1], c[5] - c[2], c[6] - c[0], c[7] - c[1], c[8] - c[2]];
+    const nz = ux * vy - uy * vx;
+    const whole = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, nz);
+    if (!(whole > 0) || nz / whole > LOOKS_DOWN) return;
+    const seen = -nz / 2;
+    const under = ((c[2] + c[5] + c[8]) / 3 - floor) / layerHeight;
+    area += seen;
+    areaLayers += seen * under;
+    layers = Math.max(layers, under);
+  });
+  const units = k.perArea * area + k.perAreaLayer * areaLayers + k.perLayer * layers;
+  return Number.isFinite(units) ? units : 0;
+}
+
+/**
  * The units of slicing `stl` (binary STL files back to back, as slice_stl
  * takes them) at `layerHeight` and `infill` per cent: the larger of its
  * triangles times its layers (its height over the layer height) and its
- * footprint times its layers (UNITS_PER_AREA_LAYER). A file that doesn't read
- * as STL is refused by the kernel at once, so the part read so far is all
- * that counts.
+ * footprint times its layers (UNITS_PER_AREA_LAYER), plus its supports'
+ * (supportUnits). A file that doesn't read as STL is refused by the kernel at
+ * once, so the part read so far is all that counts.
  */
-export function sliceUnits(stl: Uint8Array, layerHeight: number, infill = 15): number {
+export function sliceUnits(stl: Uint8Array, layerHeight: number, infill = 15, supports: SupportStyle = "off"): number {
   const data = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
   let triangles = 0;
   let low = Infinity;
@@ -184,7 +257,7 @@ export function sliceUnits(stl: Uint8Array, layerHeight: number, infill = 15): n
   const share = 0.25 + (Number.isFinite(infill) ? Math.min(Math.max(infill, 0), 100) : 15) / 100;
   const area = (xHigh - xLow) * (yHigh - yLow);
   const fill = Number.isFinite(area) ? UNITS_PER_AREA_LAYER * area * layers * share : 0;
-  return Math.max(UNITS_PER_TRIANGLE_LAYER * triangles * layers, fill);
+  return Math.max(UNITS_PER_TRIANGLE_LAYER * triangles * layers, fill) + supportUnits(stl, layerHeight, supports);
 }
 
 /** A built body's size, as the limits read it: its faces (for booleans) and the units of meshing it again (for its view, STL and STEP). */
@@ -303,7 +376,7 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
     case "slice_stl":
     case "print_file_stl":
-      return sliceUnits(a[0] as Uint8Array, a[1] as number, a[3] as number);
+      return sliceUnits(a[0] as Uint8Array, a[1] as number, a[3] as number, (a[4] ?? "off") as SupportStyle);
     default:
       return 0;
   }

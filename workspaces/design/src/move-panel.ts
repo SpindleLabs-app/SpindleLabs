@@ -68,6 +68,8 @@ export interface MovePanel {
   showError(message: string): void;
   /** OK off while the kernel checks the Move, so a second press can't record twice. */
   busy(on: boolean): void;
+  /** Whether OK can be pressed now (not busy while the kernel checks), as Enter in a box asks. */
+  readonly ready: boolean;
   hide(): void;
   /** Whether the panel is open. */
   readonly shown: boolean;
@@ -280,6 +282,9 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     },
     get shown() {
       return open;
+    },
+    get ready() {
+      return !ok.disabled;
     },
     get editing() {
       return editing;

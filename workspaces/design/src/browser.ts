@@ -6,7 +6,7 @@
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
 import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "./build-area.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -65,6 +65,41 @@ export function bodyFeatures(document: DesignDocument): Feature[] {
 /** No feature failed: the browser before any rebuild has answered. */
 const NONE_FAILED: ReadonlySet<string> = new Set();
 
+/** One body of the design: its id, and the item a Body row stands for (the item that made it; a Combine's piece, the Combine). */
+export interface DesignBody {
+  body: string;
+  feature: Feature;
+}
+
+/**
+ * The design's bodies, in the order their items come in the timeline
+ * (step 35f1): every body an item that builds makes, unless the last
+ * rebuild failed it (`failed`, its ids); a Combine that builds and did not
+ * fail uses up its tools (unless it keeps them), keeps its target's id,
+ * and adds the pieces the data numbers for it (`numberPieces`) that the
+ * rebuild made (`failed` holds the ids of numbered pieces it didn't). A
+ * Combine whose target or tools are not there fails in the rebuild, which
+ * says so in `failed`.
+ */
+export function designBodies(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): DesignBody[] {
+  const building = buildingItems(document);
+  const out = new Map<string, DesignBody>();
+  const pieces = new Map<string, string[]>();
+  for (const b of [...(document.bodies ?? [])].sort((x, y) => x.number - y.number))
+    if (isPiece(b.id)) pieces.set(bodyItem(b.id)!, [...(pieces.get(bodyItem(b.id)!) ?? []), b.id]);
+  for (const f of document.timeline.features) {
+    if (!building.has(f) || failed.has(f.id)) continue;
+    if (makesBody(f)) out.set(bodyIdOf(f.id), { body: bodyIdOf(f.id), feature: f });
+    else if (isCombineItem(f)) {
+      const { target, tools, keepTools } = combineBodies(f);
+      if (![target, ...tools].every((b) => out.has(b))) continue;
+      if (!keepTools) for (const t of tools) out.delete(t);
+      for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
+    }
+  }
+  return [...out.values()];
+}
+
 /**
  * The Bodies group's rows: one for each feature in `bodyFeatures` that the
  * last rebuild did not fail (`failed`, its ids), "body-n" and "Body n", n
@@ -72,11 +107,11 @@ const NONE_FAILED: ReadonlySet<string> = new Set();
  * before it fails, is suppressed or is reordered. A feature that failed has no body, so no row (bug hunt
  * 2026-10-19, finding 5: its row selected a body that did not exist).
  */
-export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): { id: string; label: string; feature: Feature }[] {
+export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): { id: string; label: string; feature: Feature; body: string }[] {
   const numbers = bodyNumbers(document);
-  return bodyFeatures(document).flatMap((f) => {
-    const n = numbers.get(bodyIdOf(f.id))!;
-    return failed.has(f.id) ? [] : [{ id: `body-${n}`, label: `Body ${n}`, feature: f }];
+  return designBodies(document, failed).flatMap(({ body, feature }) => {
+    const n = numbers.get(body);
+    return n === undefined ? [] : [{ id: `body-${n}`, label: `Body ${n}`, feature, body }];
   });
 }
 
@@ -128,7 +163,7 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       }),
     },
     { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },
-    { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", ...eye(bodyIdOf(feature.id), EYE_FOLDERS.bodies) })) },
+    { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, body }) => ({ id, label, icon: "body", ...eye(body, EYE_FOLDERS.bodies) })) },
     {
       id: "origin",
       label: "Origin",
@@ -178,8 +213,9 @@ export function rowReference(node: string, doc: DesignDocument, failed: Readonly
  */
 export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): (node: string) => GeometryReference | null {
   // A hidden body (U0f3) is not drawn, so its rows select nothing: a selection of something unseen.
-  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, bodyIdOf(r.feature.id)) ? [] : [[r.id, bodyIdOf(r.feature.id)] as const])));
-  const solids = new Map([...rows.values()].map((b) => [bodyItem(b)!, b]));
+  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, r.body) ? [] : [[r.id, r.body] as const])));
+  // A solid item's Timeline row selects the body it made, while that body is there (a Combine's piece has no item of its own).
+  const solids = new Map([...rows.values()].flatMap((b) => (isPiece(b) ? [] : [[bodyItem(b)!, b] as const])));
   // A profile, and (25c1) a sketch with curves by either of its rows: its outline.
   const outlines = new Set([...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))]);
   return (node) => {
@@ -201,7 +237,7 @@ export function eyeId(doc: DesignDocument, node: string, failed: ReadonlySet<str
   if (node.startsWith("sketches/")) return node.slice("sketches/".length);
   if (node.startsWith("body-")) {
     const row = bodyRows(doc, failed).find((r) => r.id === node);
-    return row === undefined ? null : bodyIdOf(row.feature.id);
+    return row === undefined ? null : row.body;
   }
   if (ORIGIN.some((n) => n.id === node)) return node;
   return Object.hasOwn(EYE_FOLDERS, node) ? EYE_FOLDERS[node as keyof typeof EYE_FOLDERS] : null;

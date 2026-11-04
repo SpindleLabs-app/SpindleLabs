@@ -258,8 +258,21 @@ function movesSince(doc: DesignDocument, results: Readonly<Record<string, { stat
  * Move as built, so it is where its body was before the Move; `to` taken
  * back through those same later Moves, so landing there under this Move
  * puts it where `to` is seen once the later Moves have moved it on.
+ * `target` is the body `to` is on and the bodies the edited Move holds
+ * now: one the Move moved as built but no longer holds (clicked out,
+ * 35e2i) is drawn where it will be without it (editedMoveMesh), so `to`,
+ * read off the scene as built, is first taken the same way (bug hunt
+ * 11-04, E1: the snap landed where the Move had put the body).
  */
-export function snapEnds(doc: DesignDocument, results: Readonly<Record<string, { status: string }>>, id: string | null, fromBody: string, from: SnapPart, to: SnapPart): { from: SnapPart; to: SnapPart } {
+export function snapEnds(
+  doc: DesignDocument,
+  results: Readonly<Record<string, { status: string }>>,
+  id: string | null,
+  fromBody: string,
+  from: SnapPart,
+  to: SnapPart,
+  target?: { body: string; bodies: readonly string[] },
+): { from: SnapPart; to: SnapPart } {
   const { built, later } = movesSince(doc, results, id, fromBody);
   const back: PointMap = (p, vector) => {
     let q: readonly number[] = p;
@@ -270,5 +283,14 @@ export function snapEnds(doc: DesignDocument, results: Readonly<Record<string, {
     const q = back(p, vector);
     return built === null ? q : unmovedPoint(q, built, vector);
   };
-  return { from: mappedPart(from, before), to: mappedPart(to, back) };
+  const out = target && !target.bodies.includes(target.body) ? movesSince(doc, results, id, target.body) : null;
+  const shown: PointMap = (p, vector) => {
+    if (out === null || out.built === null) return back(p, vector);
+    let q: readonly number[] = p;
+    for (const m of [...out.later].reverse()) q = unmovedPoint(q, m, vector);
+    q = unmovedPoint(q, out.built, vector);
+    for (const m of out.later) q = movedPoint(q, m, vector);
+    return back([q[0], q[1], q[2]], vector);
+  };
+  return { from: mappedPart(from, before), to: mappedPart(to, shown) };
 }

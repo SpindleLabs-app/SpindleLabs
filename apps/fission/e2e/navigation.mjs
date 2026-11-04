@@ -19,8 +19,8 @@ const browser = await launch();
 const errors = [];
 const shots = process.env.E2E_SHOTS;
 
-async function fresh(width = 1280, touch = false) {
-  const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
+async function fresh(width = 1280, touch = false, reducedMotion = "no-preference") {
+  const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch, reducedMotion });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -148,6 +148,32 @@ await check("the wheel zooms toward the pointer: the point under it stays to wit
     assert.ok(Math.abs(ratio - Math.exp(20 * 0.002 * 5)) < 1e-6, `pinch ×${ratio}`);
     // The page itself never scrolled.
     assert.equal(await page.evaluate(() => window.scrollY), 0);
+  } finally {
+    await page.context().close();
+  }
+});
+
+await check("zooming out or in for ever stops at the 3D view's limits, and the view still zooms back (clumsy hunt 2026-11-04)", async () => {
+  // About 1,760 notches out made the camera NaN and the wheel stopped working until Fit. Now it stops at 1e8 mm
+  // (navigation.ts FARTHEST_VIEW) and at 1e-4 mm in (NEAREST_VIEW), and a notch back always moves it.
+  const page = await fresh();
+  try {
+    const box = await canvasBox(page);
+    await page.mouse.move(box.x + 0.3 * box.width, box.y + 0.4 * box.height);
+    const spin = async (deltaY, times) => {
+      for (let i = 0; i < times; i++) await page.mouse.wheel(0, deltaY);
+      await settle(page);
+    };
+    await spin(1000, 400); // ×4 a notch at most: 400 notches is far past any limit
+    const out = frame(await camera(page)).distance;
+    assert.ok(Number.isFinite(out) && Math.abs(out - 1e8) <= 1, `out: ${out} mm, want 1e8`);
+    await spin(-100, 1);
+    const back = frame(await camera(page)).distance;
+    assert.ok(Math.abs(back / out - Math.exp(-100 * 0.002)) < 1e-6, `a notch back: ×${back / out}`);
+    await spin(-1000, 400);
+    const near = frame(await camera(page)).distance;
+    assert.ok(Number.isFinite(near) && Math.abs(near - 1e-4) <= 1e-9, `in: ${near} mm, want 1e-4`);
+    assert.ok((await camera(page)).position.every(Number.isFinite), "the camera's place is a number");
   } finally {
     await page.context().close();
   }
@@ -327,6 +353,72 @@ await check("phone width 375 px: the bar is whole on screen, clear of Undo and R
     assert.equal(await page.getAttribute("#viewport", "data-nav"), "pan");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375);
     if (shots) await page.screenshot({ path: `${shots}/navigation-375.png` });
+  } finally {
+    await page.context().close();
+  }
+});
+
+// U9b: Orbit, Pan and Zoom share one highlight that slides to the chosen one
+// (styles/nav-slider.css, 220 ms), and is there at once under reduced motion.
+// The highlight's place is read as a box on screen against the buttons' boxes.
+const slide = (page) =>
+  page.evaluate(() => {
+    const box = (el) => el.getBoundingClientRect().toJSON();
+    const h = document.querySelector("#view-controls .nav-slider-mark");
+    const b = Object.fromEntries([...document.querySelectorAll("#view-controls [data-nav]")].map((el) => [el.dataset.nav, box(el)]));
+    return { h: box(h), ...b, visible: getComputedStyle(h).visibility === "visible" };
+  });
+const on = (h, b) => Math.abs(h.left - b.left) < 0.5 && Math.abs(h.width - b.width) < 0.5 && Math.abs(h.top - b.top) < 0.5;
+for (const [width, touch] of [[1280, false], [375, true]]) {
+  await check(`${width} px: the bar's highlight slides from Orbit to Pan and Zoom, rests on the chosen one, and follows it back`, async () => {
+    const page = await fresh(width, touch);
+    try {
+      if (touch) await closePanels(page, true);
+      let at = await slide(page);
+      assert.ok(at.visible && on(at.h, at.orbit), `starts on Orbit: ${JSON.stringify(at)}`);
+      // Mid-slide: read every frame from the press until it rests (slow frames, as CI's software drawing has, may show
+      // none moved yet at first); at least one frame finds it strictly between Orbit and Zoom, on neither. A jump never does.
+      const lefts = await page.evaluate(async () => {
+        const h = document.querySelector("#view-controls .nav-slider-mark");
+        const zoom = document.querySelector("#view-controls [data-nav=zoom]");
+        zoom.click();
+        const out = [];
+        for (let i = 0; i < 120; i++) {
+          await new Promise((r) => requestAnimationFrame(r));
+          out.push(h.getBoundingClientRect().left);
+          if (Math.abs(out.at(-1) - zoom.getBoundingClientRect().left) < 0.5) break;
+        }
+        return out;
+      });
+      at = await slide(page);
+      assert.ok(lefts.some((x) => x > at.orbit.left + 0.5 && x < at.zoom.left - 0.5), `a frame mid-slide between Orbit and Zoom: ${JSON.stringify(lefts)} against ${JSON.stringify(at)}`);
+      await page.waitForTimeout(500); // past its 220 ms
+      at = await slide(page);
+      assert.ok(on(at.h, at.zoom), `rests on Zoom: ${JSON.stringify(at)}`);
+      assert.equal(await page.getAttribute("#view-controls [data-nav=zoom]", "aria-pressed"), "true");
+      // The pressed button's own ring is gone: one highlight, not two.
+      assert.equal(await page.$eval("#view-controls [data-nav=zoom]", (b) => getComputedStyle(b).boxShadow), "none");
+      await (touch ? page.tap("#view-controls [data-nav=pan]") : page.click("#view-controls [data-nav=pan]"));
+      await page.waitForTimeout(500);
+      at = await slide(page);
+      assert.ok(on(at.h, at.pan), `rests on Pan: ${JSON.stringify(at)}`);
+      // A key changing the mode (the viewer's own showMode) moves it too: Escape-free, the bar's Orbit.
+      await page.click("#view-controls [data-nav=orbit]");
+      await page.waitForTimeout(500);
+      assert.ok(on((await slide(page)).h, (await slide(page)).orbit), "back on Orbit");
+      if (shots) await page.screenshot({ path: `${shots}/nav-slider-${width}.png` });
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+await check("reduced motion: the highlight is on the chosen mode by the next frame, with no slide", async () => {
+  const page = await fresh(1280, false, "reduce");
+  try {
+    await page.evaluate(() => document.querySelector("#view-controls [data-nav=zoom]").click());
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
+    const at = await slide(page);
+    assert.ok(on(at.h, at.zoom), `already on Zoom: ${JSON.stringify(at)}`);
   } finally {
     await page.context().close();
   }

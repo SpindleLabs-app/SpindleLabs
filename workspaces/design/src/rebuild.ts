@@ -34,11 +34,13 @@
 // asks (Retry on its row) or changes it or anything before it: a call that
 // always runs too long would otherwise stop every fresh kernel in turn.
 
-import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
-import { bodyFrame, carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
+import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type KernelTouch, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
+import { bodyIdOf, bodyItem, buildingItems, combineBodies, isCombineItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
+import { combineNames, featureBody, type NamedBody } from "./boolean-names.ts";
+import { frameOfBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { resolveReference, sharedBy } from "./references.ts";
@@ -96,7 +98,15 @@ export type FeatureResult =
    * isn't built yet (a sketch on another plane). `curves`: the sketch
    * curves at fault, when the kernel named them.
    */
-  | { status: "failed"; cause: LostCause | "failed-input" | "error" | "timed-out"; input?: string; message: string; curves?: string[] };
+  | {
+      status: "failed";
+      cause: LostCause | "failed-input" | "error" | "timed-out";
+      input?: string;
+      message: string;
+      curves?: string[];
+      /** A Combine whose result would touch itself (35f1, the kernel's "non-manifold-result"): where, in the world, for the overlay on its row (36d). */
+      touches?: KernelTouch[];
+    }
 
 /**
  * The items whose build took the kernel too long (35d4), each with what it
@@ -154,9 +164,19 @@ export const timedOut = (e: unknown): boolean => e instanceof KernelError && e.k
 export interface BuiltBody {
   feature: string;
   handle: BodyHandle;
-  spec: BodySpec;
+  /** What builds it; null for a Combine's result (35f1), which only the kernel's store holds (`named` has its names). */
+  spec: BodySpec | null;
   curves?: CurveIds;
+  /**
+   * A Combine's result (35f1): each face's names by kernel face index and
+   * where each name comes in made order (boolean-names.ts `NamedBody`), so
+   * a later Combine names its result from them.
+   */
+  named?: Pick<NamedBody, "faces" | "made">;
+  /** A Combine's result: where the Moves before it put the target's own frame (`bodyFrame`), none when not moved. */
+  frame?: Plane;
 }
+
 
 /** Every item's result by item id, in timeline order (`order`), and every body built by body id (`bodies`). */
 export interface TimelineBuild {
@@ -191,6 +211,8 @@ export class BodyCache {
   private bodies = new Map<string, { handle: BodyHandle; view?: Promise<BodyView>; hidden?: true }>();
   /** Each kept body's key by its handle, so `view` finds it in one step (security audit S2). */
   private keys = new Map<BodyHandle, string>();
+  /** Each boolean's answer by its inputs (`boolean`); its bodies are kept in `bodies` like built ones. */
+  private booleans = new Map<string, BooleanResult>();
   /** Bodies asked of the kernel and not answered yet: the same spec asked again waits for the same answer, so asking ahead never builds twice. */
   private building = new Map<string, Promise<BodyHandle>>();
   /** Set by `close`: nothing more is built, and a body answered after it is freed at once, not kept. */
@@ -206,13 +228,18 @@ export class BodyCache {
     this.kernel = kernel;
   }
 
-  /** The body for `spec`, built once. */
-  async body(spec: BodySpec): Promise<BodyHandle> {
+  /**
+   * The body for `spec`, built once. Equal specs share one body; `copy` n > 0
+   * is its own n-th body of the same shape (35f1d: a Combine of two equal
+   * bodies in the same place hands the kernel two bodies, never one twice).
+   */
+  async body(spec: BodySpec, copy = 0): Promise<BodyHandle> {
     if (this.closed) throw new Error(CLOSED);
     const key = JSON.stringify(spec);
-    const hit = this.bodies.get(key);
+    const at = copy === 0 ? key : `${key}#copy${copy}`;
+    const hit = this.bodies.get(at);
     if (hit) return hit.handle;
-    const asked = this.building.get(key);
+    const asked = this.building.get(at);
     if (asked) return asked;
     const build = this.kernel.call("body_build", spec).then((handle) => {
       if (this.closed) {
@@ -220,16 +247,42 @@ export class BodyCache {
         void this.kernel.call("body_free", handle).catch(() => {});
         throw new Error(CLOSED);
       }
-      this.bodies.set(key, { handle });
-      this.keys.set(handle, key);
+      this.bodies.set(at, { handle });
+      this.keys.set(handle, at);
       return handle;
     });
-    this.building.set(key, build);
+    this.building.set(at, build);
     try {
       return await build;
     } finally {
-      this.building.delete(key);
+      this.building.delete(at);
     }
+  }
+
+  /**
+   * `body_boolean(target, tools, op)` once for the same inputs (35f1: the
+   * kernel keeps a body as it is, so the same handles and operation give
+   * the same answer): its result bodies are kept like built ones, freed by
+   * `keepOnly` when no rebuild holds them. Asked again once any of them is
+   * gone. A refusal is not kept: asked again, it is asked again.
+   */
+  async boolean(target: BodyHandle, tools: readonly BodyHandle[], op: BooleanOp): Promise<BooleanResult> {
+    if (this.closed) throw new Error(CLOSED);
+    const key = JSON.stringify(["boolean", target, tools, op]);
+    const hit = this.booleans.get(key);
+    if (hit && hit.bodies.every((h) => this.keys.has(h))) return hit;
+    const result = await this.kernel.call("body_boolean", target, [...tools], op);
+    if (this.closed) {
+      for (const h of result.bodies) void this.kernel.call("body_free", h).catch(() => {});
+      throw new Error(CLOSED);
+    }
+    result.bodies.forEach((handle, i) => {
+      const k = `${key}#${i}`;
+      this.bodies.set(k, { handle });
+      this.keys.set(handle, k);
+    });
+    this.booleans.set(key, result);
+    return result;
   }
 
   /** A kept body's view, asked of the kernel once it answers (a failed ask is forgotten, so the next look asks again: T6b). */
@@ -307,6 +360,8 @@ export class BodyCache {
       this.keys.delete(b.handle);
       await this.free(b.handle);
     }
+    // A boolean none of whose bodies is kept any more is forgotten (one with some kept is asked again when used).
+    for (const [key, r] of this.booleans) if (!r.bodies.some((h) => this.keys.has(h))) this.booleans.delete(key);
   }
 
   /**
@@ -343,6 +398,7 @@ export class BodyCache {
     this.bodies.clear();
     this.keys.clear();
     this.building.clear();
+    this.booleans.clear();
     this.unfreed = [];
     this.wanted = new Set();
   }
@@ -527,7 +583,7 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
     // design the last pass made, until nothing changes: a sketch held, or a point followed, moves what is built on it, so
     // a sketch on that (and its points) is placed right only on the next pass (hunt 26g: one pass placed them on the
     // body built at the held sketch's first-drawn frame). Each pass settles one more sketch of a chain, so at most one
-    // per face sketch, and a last to see nothing change.
+    // per face sketch, and a last to see nothing change. The kept shapes are decided again on each pass's design.
     for (let pass = 0; pass <= faces; pass++) {
       const now = await placed(doc);
       let changed = false;
@@ -711,13 +767,13 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   let cause: PlaneWarning["cause"] = "plane-lost";
   if (on !== undefined) {
     const view = await cache.view(on.handle);
-    const names = featureNames(featureId, { spec: on.spec, curves: on.curves }, view);
+    const names = namesOfBody(on, view);
     const ref = faceReference(plane);
     const face = resolveReference(ref, names);
     const outward = face === null ? null : view.face_normals[face];
     if (face !== null && outward) {
       // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
-      const carry = p.body === undefined ? null : carried(p.body, bodyFrame(on.spec) ?? undefined);
+      const carry = p.body === undefined ? null : carried(p.body, frameOfBody(on) ?? undefined);
       const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
       return { status: "built", placement, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId)) };
     }
@@ -788,7 +844,7 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
     if (!bodies.has(id)) {
       const b = done[id]?.status === "built" ? built[bodyIdOf(id)] : undefined;
       const view = b && (await cache.view(b.handle));
-      bodies.set(id, b && view ? { view, names: featureNames(id, { spec: b.spec, curves: b.curves }, view) } : null);
+      bodies.set(id, b && view ? { view, names: namesOfBody(b, view) } : null);
     }
     return bodies.get(id)!;
   };
@@ -844,6 +900,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
   try {
     if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index);
     if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
+    if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
       const spec = specOf(doc, f);
       return made({ handle: await cache.body(spec), spec });
@@ -899,14 +956,96 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
     from.push([body, b]);
   }
   // Built only once every body is there, so a Move that fails builds nothing.
+  // A Combine's result has no spec to move; the kernel's body_move (35f1a) moves one once the app ships with it.
+  const combined = from.find(([, b]) => b.spec === null);
+  if (combined) return { status: "failed", cause: "error", message: `${f.provenance.self.label} can't move a Combine's result yet: that comes with the next kernel release` };
   const moved: [string, BuiltBody][] = [];
   for (const [id, b] of from) {
-    const spec = movedSpec(b.spec, motions);
+    const spec = movedSpec(b.spec!, motions);
     moved.push([id, { ...b, spec, handle: spec === b.spec ? b.handle : await cache.body(spec) }]);
   }
   const holds = from.map(([, b]) => b.handle);
   for (const [id, b] of moved) bodies[id] = b;
   return { status: "built", holds };
+}
+
+/** Combine's operations as the kernel names them. */
+const KERNEL_OP: Record<string, BooleanOp> = { join: "union", cut: "subtract", intersect: "intersect" };
+
+/**
+ * A body as boolean-names.ts names it (35f1): a Combine's result with the
+ * names its Combine gave; any other with its item's face names (naming.ts),
+ * made order its item's place in the timeline.
+ */
+async function namedOf(id: string, b: BuiltBody, cache: BodyCache, place: number): Promise<NamedBody> {
+  const view = await cache.view(b.handle);
+  if (b.named !== undefined) return { id, handle: b.handle, view, faces: b.named.faces, made: b.named.made };
+  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves }, view), place);
+}
+
+/**
+ * A Combine's result (step 35f1; rules: docs/document-model.md section 8,
+ * and the behaviour answers in the kernel repo's booleans plan): greyed
+ * while an item whose body it uses is suppressed or greyed (Q3); failed
+ * naming the first of its target and tools that was deleted, isn't built
+ * or is gone (used up by an earlier Combine); else the kernel's boolean of
+ * the target with each tool in the order picked, its result named by
+ * rule 1 to 4 (`combineNames`): the piece keeping the target's id takes
+ * its place, the others are `body:<combine>/piece:<k>`, and the tools are
+ * gone from here on unless kept. All or none: a refusal (in the kernel's
+ * words, with where a result would touch itself) or a result with nothing
+ * left changes no body. The inputs are held (`holds`), so the next rebuild
+ * finds them built.
+ */
+async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
+  for (const id of f.dependsOn) {
+    const r = done[id];
+    if (r?.status === "suppressed") return { status: "greyed", by: id };
+    if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  }
+  const label = f.provenance.self.label;
+  const nameOf = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const { target, tools, operation, keepTools } = combineBodies(f);
+  const places = new Map(doc.timeline.features.map((x, i) => [x.id, i] as const));
+  const inputs: NamedBody[] = [];
+  for (const body of [target, ...tools]) {
+    const maker = bodyItem(body)!;
+    const r = done[maker];
+    if (r === undefined) return { status: "failed", cause: "deleted-input", input: maker, message: `${nameOf(maker)} was deleted, so ${label} has nothing to combine` };
+    if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${nameOf(maker)} is not built, so ${label} can't use it` };
+    const b = bodies[body];
+    if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't use ${body === bodyIdOf(maker) ? nameOf(maker) : "a piece"}: an earlier Combine used it up or left no such piece` };
+    // Equal bodies share one kernel body (`BodyCache.body`): a second pick of it gets a body of its own, so the
+    // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
+    const copies = inputs.filter((x) => x.handle === b.handle).length;
+    const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+    inputs.push(await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!));
+  }
+  const [t, ...ts] = inputs;
+  const op = KERNEL_OP[operation];
+  let result: BooleanResult;
+  try {
+    result = await cache.boolean(t.handle, ts.map((x) => x.handle), op);
+  } catch (e) {
+    if (timedOut(e)) throw e;
+    if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result")) {
+      return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}) };
+    }
+    throw e;
+  }
+  const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
+  const named = combineNames(f.id, op, t, ts, result, views);
+  if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}` };
+  const targetFeature = bodies[target].feature;
+  const targetFrame = frameOfBody(bodies[target]);
+  for (const tool of keepTools ? [] : tools) delete bodies[tool];
+  delete bodies[target];
+  const ids: string[] = [];
+  for (const nb of named.bodies) {
+    bodies[nb.id] = { feature: nb.id === target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, ...(targetFrame ? { frame: targetFrame } : {}) };
+    ids.push(nb.id);
+  }
+  return { status: "built", bodies: ids, holds: inputs.map((x) => x.handle) };
 }
 
 /** What an extrude of a sketch is built from, and the warning when that is its kept shape. */

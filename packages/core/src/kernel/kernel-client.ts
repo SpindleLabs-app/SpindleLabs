@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -104,6 +104,9 @@ export const KERNEL_RESTARTED = "The geometry kernel ran out of memory or stoppe
  */
 export const KERNEL_TOOK_TOO_LONG = "This took the geometry kernel too long, so it was stopped and started again.";
 
+/** What a slice answers when the user stopped it (stopSlicing): its kernel was let go, and nothing was made. */
+export const KERNEL_SLICE_STOPPED = "The slice was stopped.";
+
 /** What every other call sent to that kernel answers: it was never done, and the app builds again on the fresh kernel. */
 export const KERNEL_STOPPED_FOR_ANOTHER = "The geometry kernel was started again, because a call before this one took too long.";
 
@@ -118,7 +121,7 @@ export const KERNEL_NOT_DOWNLOADED = "The geometry kernel didn't start (its file
 /** A watch that fires this much later than it was due means the device slept or the page was frozen. */
 const LATE_TIMER_MS = 1000;
 
-const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "non-manifold-result", "bad-request", "unknown-body", "too-many-bodies", "internal"];
+const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "non-manifold-result", "thin-result", "bad-request", "unknown-body", "too-many-bodies", "internal"];
 
 /**
  * A failed kernel call: `message` to show the user, `kind` and `inputs` for
@@ -129,12 +132,15 @@ export class KernelError extends Error {
   readonly inputs: KernelInput[];
   /** Where a "non-manifold-result" would touch itself; empty for every other kind. */
   readonly touches: KernelTouch[];
+  /** Where a "thin-result" would be too thin; empty for every other kind. */
+  readonly thin: KernelThin[];
   constructor(failure: KernelFailure) {
     // Its name stays "Error", so String(e) reads as it always has.
     super(failure.message);
     this.kind = failure.kind;
     this.inputs = failure.inputs;
     this.touches = failure.touches ?? [];
+    this.thin = failure.thin ?? [];
   }
 }
 
@@ -152,6 +158,17 @@ function touchesOf(value: unknown): KernelTouch[] {
   return out;
 }
 
+/** The places of a "thin-result" the kernel sent, each checked; any malformed place is left out. */
+function thinOf(value: unknown): KernelThin[] {
+  if (!Array.isArray(value)) return [];
+  const out: KernelThin[] = [];
+  for (const t of value as { at?: unknown; from?: unknown; to?: unknown }[]) {
+    if (typeof t !== "object" || t === null) continue;
+    if ((t.at === "edge" || t.at === "gap") && isPoint(t.from) && isPoint(t.to)) out.push({ at: t.at, from: [...t.from], to: [...t.to] });
+  }
+  return out;
+}
+
 /**
  * Anything a kernel call threw, as plain data: the WASM kernel throws an
  * Error carrying `kind` and `inputs`; anything else (a crash, a worker bug)
@@ -159,10 +176,11 @@ function touchesOf(value: unknown): KernelTouch[] {
  */
 export function kernelFailure(e: unknown): KernelFailure {
   const message = e instanceof Error ? e.message : String(e);
-  const fields = (typeof e === "object" && e !== null ? e : {}) as { kind?: unknown; inputs?: unknown; touches?: unknown };
+  const fields = (typeof e === "object" && e !== null ? e : {}) as { kind?: unknown; inputs?: unknown; touches?: unknown; thin?: unknown };
   const kind = KINDS.includes(fields.kind as KernelErrorKind) ? (fields.kind as KernelErrorKind) : "internal";
   const inputs = kind !== "internal" && Array.isArray(fields.inputs) ? (fields.inputs as KernelInput[]) : [];
   if (kind === "non-manifold-result") return { kind, inputs, message, touches: touchesOf(fields.touches) };
+  if (kind === "thin-result") return { kind, inputs, message, thin: thinOf(fields.thin) };
   return { kind, inputs, message };
 }
 
@@ -191,6 +209,14 @@ export interface KernelCalls {
    * progress reports never calls it.
    */
   onProgress?(listener: (progress: SliceProgress) => void): () => void;
+  /**
+   * Stops every slice sent and not yet answered (slice_stl, print_file_stl), as the Slice dialog's Cancel and Close do:
+   * a kernel can't be asked to stop mid-call, so it is let go and a fresh one started, as for a call past its time
+   * limit. The slices fail with KERNEL_SLICE_STOPPED, every other call waiting with KERNEL_RESTARTED, and the listeners
+   * of onRestart hear of it (the design is built again at once, instead of waiting behind the slice: slicer hunt
+   * 2026-11-04, ui 3). True if a slice was stopped; with none waiting, the kernel is kept. The app's client has it.
+   */
+  stopSlicing?(): boolean;
 }
 
 export class KernelClient implements KernelCalls {
@@ -198,7 +224,7 @@ export class KernelClient implements KernelCalls {
   private worker!: Worker;
   private nextId = 1;
   /** The calls sent and not yet answered, in the order sent, which is the order the worker answers them; each with its size (time-limit.ts). */
-  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; units: number }>();
+  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; units: number; op: keyof KernelOps }>();
   /** Set once the worker is gone (its error event): every call fails with it. */
   private failed: KernelError | null = null;
   private restartListeners = new Set<() => void>();
@@ -352,16 +378,23 @@ export class KernelClient implements KernelCalls {
    * the bodies the old one kept are forgotten and the design is built again
    * on the new one.
    */
-  private restart(message = KERNEL_RESTARTED, slow?: number) {
+  private restart(message = KERNEL_RESTARTED, slow?: number, slicesStopped = false) {
     this.worker.terminate();
     const stopped = new KernelError({ kind: "internal", inputs: [], message });
     const tooLong = new KernelError({ kind: "timed-out", inputs: [], message: KERNEL_TOOK_TOO_LONG });
+    const sliceStopped = new KernelError({ kind: "internal", inputs: [], message: KERNEL_SLICE_STOPPED });
     const waiting = [...this.pending];
     this.pending.clear();
     this.retire();
     this.start();
-    waiting.forEach(([id, p]) => p.reject(id === slow ? tooLong : stopped));
+    waiting.forEach(([id, p]) => p.reject(id === slow ? tooLong : slicesStopped && isSlice(p.op) ? sliceStopped : stopped));
     this.restartListeners.forEach((listener) => listener());
+  }
+
+  stopSlicing(): boolean {
+    if (this.failed || ![...this.pending.values()].some((p) => isSlice(p.op))) return false;
+    this.restart(KERNEL_RESTARTED, undefined, true);
+    return true;
   }
 
   /** The kernel's files didn't download: the listeners hear of it once for this worker. */
@@ -483,12 +516,15 @@ export class KernelClient implements KernelCalls {
   private send<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], units: number): Promise<unknown> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, units });
+      this.pending.set(id, { resolve, reject, units, op });
       this.watchHead();
       this.worker.postMessage({ id, op, args } as KernelRequest);
     });
   }
 }
+
+/** The calls a slice makes, which stopSlicing stops. */
+const isSlice = (op: keyof KernelOps) => op === "slice_stl" || op === "print_file_stl";
 
 /**
  * Wraps an async function so only the result of the most recent call is

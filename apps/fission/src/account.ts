@@ -53,7 +53,7 @@ export async function startAccounts(service: { url: string; anonKey: string }): 
     random: (bytes) => void crypto.getRandomValues(bytes as Uint8Array<ArrayBuffer>),
   });
   const store = browserStore();
-  const data = accountData(client);
+  const data = accountData(client, store);
   const ui = accountUi(client, data, store);
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
@@ -154,14 +154,21 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
       const who = el("p", "account-who");
       who.append(el("strong", undefined, state.user.name || state.user.email), el("span", undefined, state.user.name ? state.user.email : ""));
       const emails = emailBox(false);
-      emails.input.disabled = true; // until the saved choice is read
+      // The choice last seen in this browser shows at once; the service's answer then puts it right if it differs
+      // (changed on another device). With none seen, the box waits for the answer.
+      const seen = data.lastEmailChoice();
+      if (seen === null) emails.input.disabled = true;
+      else emails.input.checked = seen;
+      let touched = false; // a tick or untick made before the answer came wins over it: that change is being saved
       void data.emailChoice().then((r) => {
+        if (touched) return;
         if (r.kind === "ok") {
           emails.input.checked = r.value;
           emails.input.disabled = false;
-        } else emails.hint.textContent = `Your email choice couldn't be read. ${dataWords(r)}`;
+        } else emails.hint.textContent = `Your email choice couldn't be read${seen === null ? "" : ", so this may be out of date"}. ${dataWords(r)}`;
       });
       emails.input.addEventListener("change", async () => {
+        touched = true;
         const want = emails.input.checked;
         emails.input.disabled = true;
         const r = await data.setEmailChoice(want);
@@ -176,6 +183,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
       out.type = "button";
       out.addEventListener("click", async () => {
         out.disabled = true;
+        data.forgetEmailChoice();
         const { ended } = await client.signOut();
         note = ended ? "Signed out." : "Signed out on this device. The sign-in service couldn't be reached, so the old session stops working by itself within the hour.";
         render();

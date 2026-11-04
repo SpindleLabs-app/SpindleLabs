@@ -20,6 +20,7 @@ import { launch } from "./browser.mjs";
 import { HOME, screenPoint } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { closePanels, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { pinProperties } from "./properties.mjs";
 
 const server = await preview({ preview: { port: 4231, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4231/";
@@ -376,6 +377,28 @@ try {
       await rebuilt(page);
       assert.equal(await undoTitle(page), moved, "no Edit Move step for an unchanged Move");
       assert.equal(await page.getAttribute('#timeline [data-item="feature-2"]', "title"), "2. Move 1\nMove Box 1 by (1e-7, 0, 0) mm", "its 1e-7 kept");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  // Bug hunt 2026-11-04 (E3): the panel says the bodies can be picked by their rows in the browser; the row clicked
+  // keeps the focus, and Enter then clicked it again, letting the body go, instead of being OK.
+  await check("1280 px: M, 10 in X, the box picked by its browser row, Enter: OK records Move 1", async () => {
+    const page = await fresh(1280, 800, false);
+    try {
+      await pinProperties(page);
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press("m");
+      await opened(page);
+      await page.fill("#move-x", "10");
+      await page.click("#browser [data-node=body-1]");
+      await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked by its row");
+      await page.keyboard.press("Enter");
+      await closed(page);
+      await rebuilt(page);
+      assert.deepEqual(await items(page), ["feature-1", "feature-2"], "Move 1 recorded");
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-2"]', "title"), "2. Move 1\nMove Box 1 by (10, 0, 0) mm");
     } finally {
       await page.context().close();
     }

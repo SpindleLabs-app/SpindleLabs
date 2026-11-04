@@ -6,7 +6,7 @@ import { extrudeSketch } from "../src/extrude.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as bar from "../src/timeline-bar.ts";
-import { barEdit, DOUBLE_CLICK_MS, dropIndex, DRAG_PIXELS, isDoubleClick, isDrag, itemMenu, PHONE_TAP_PAD, stepTarget, TAP_REACH, tapPlace, timelineBarItems } from "../src/timeline-bar.ts";
+import { barEdit, DOUBLE_CLICK_MS, DOUBLE_CLICK_PX, dropIndex, isDoubleClickHere, DRAG_PIXELS, isDoubleClick, isDrag, itemMenu, PHONE_TAP_PAD, stepTarget, TAP_REACH, tapPlace, timelineBarItems } from "../src/timeline-bar.ts";
 import { deleteWords } from "../src/delete-ask.ts";
 import { OPS, randomSteps, runBarSession, shrink } from "./timeline-bar-session.ts";
 
@@ -273,10 +273,11 @@ test("an item dropped at a place: before or after itself is nothing, a place it 
   assert.deepEqual(barEdit(doc, { kind: "item", id: "feature-3", place: 0 }), { kind: "refused", message: "Extrude 1 can't go before Sketch 1: it is built from Sketch 1" });
   // The sketch dropped past its extrude.
   assert.deepEqual(barEdit(doc, { kind: "item", id: "sketch-2", place: 3 }), { kind: "refused", message: "Sketch 1 can't go after Extrude 1: Extrude 1 is built from it" });
-  // With the marker on the box, Sketch 1 and its extrude are rolled back. The marker stays on the item it names,
-  // so the box dropped at place 2 (after Sketch 1) brings Sketch 1 before the marker: built again; the extrude stays rolled back.
+  // With the marker on the box, Sketch 1 and its extrude are rolled back. The marker stays in its gap (changed on
+  // purpose, owner's decision 2026-11-04: it used to go with the box and build Sketch 1): the box was first, so the
+  // gap is at the start, and the box dropped at place 2 (after Sketch 1) is rolled back with the other two.
   const past = barEdit(withMarker(doc, "feature-1"), { kind: "item", id: "feature-1", place: 2 });
-  assert.deepEqual(past.kind === "edit" && timelineBarItems(past.doc).items.map((i) => [i.id, i.rolledBack]), [["sketch-2", false], ["feature-1", false], ["feature-3", true]]);
+  assert.deepEqual(past.kind === "edit" && timelineBarItems(past.doc).items.map((i) => [i.id, i.rolledBack]), [["sketch-2", true], ["feature-1", true], ["feature-3", true]]);
   assert.throws(() => barEdit(doc, { kind: "item", id: "feature-1", place: 4 }), /can't go to place 4 of 3 items/);
   assert.throws(() => barEdit(doc, { kind: "item", id: "feature-1", place: 1.5 }), /can't go to place 1.5 of 3 items/);
   assert.throws(() => barEdit(doc, { kind: "marker", place: -1 }), /the marker can't go to place -1 of 3 items/);
@@ -292,12 +293,17 @@ test("a move that would roll back the sketch being edited is refused", () => {
   // Back one, to place 2 (just after Sketch 1): allowed.
   const back = barEdit(doc, { kind: "button", button: "back" }, "sketch-2");
   assert.equal(back.kind === "edit" && back.doc.timeline.marker, "sketch-2");
-  // A second box (feature-4) last, the marker on it. Dropping that box first (place 0) takes the marker with it to index 0,
-  // so Sketch 1 would come after the marker: refused. Without a sketch being edited the same drop is allowed.
+  // A second box (feature-4) last, the marker on it. Dropping that box first (place 0) leaves the marker in its gap, on
+  // Extrude 1, the item before the box (changed on purpose, owner's decision 2026-11-04: it used to go with the box to
+  // index 0 and roll everything else back): everything still builds, so the drop is allowed even while Sketch 1 is edited.
   const four = withMarker(insertPreset(threeItems(), "box", 10, 10, 10).doc, "feature-4");
-  assert.deepEqual(barEdit(four, { kind: "item", id: "feature-4", place: 0 }, "sketch-2"), { kind: "refused", message: words });
-  const free = barEdit(four, { kind: "item", id: "feature-4", place: 0 });
-  assert.deepEqual(free.kind === "edit" && timelineBarItems(free.doc).items.map((i) => [i.id, i.rolledBack]), [["feature-4", false], ["feature-1", true], ["sketch-2", true], ["feature-3", true]]);
+  const free = barEdit(four, { kind: "item", id: "feature-4", place: 0 }, "sketch-2");
+  assert.deepEqual(free.kind === "edit" && timelineBarItems(free.doc).items.map((i) => [i.id, i.rolledBack]), [["feature-4", false], ["feature-1", false], ["sketch-2", false], ["feature-3", false]]);
+  // Sketch 1 first (Sketch 1, box, Extrude 1), the marker on Sketch 1 (place 1). Sketch 1 itself dropped after the box
+  // (place 2) leaves the marker in its gap, now at the start: Sketch 1 would be rolled back, refused while it is edited.
+  const first = barEdit(threeItems(), { kind: "item", id: "sketch-2", place: 0 });
+  assert.ok(first.kind === "edit");
+  assert.deepEqual(barEdit(withMarker(first.doc, "sketch-2"), { kind: "item", id: "sketch-2", place: 2 }, "sketch-2"), { kind: "refused", message: words });
   // The marker on Sketch 1 itself: the box dropped after it (place 2) goes after the marker, rolled back; Sketch 1 stays built.
   const r = barEdit(withMarker(threeItems(), "sketch-2"), { kind: "item", id: "feature-1", place: 2 }, "sketch-2");
   assert.deepEqual(r.kind === "edit" && timelineBarItems(r.doc).items.map((i) => [i.id, i.rolledBack]), [["sketch-2", false], ["feature-1", true], ["feature-3", true]]);
@@ -393,6 +399,25 @@ test("hand-worked (25a3): a double-click is two clicks on one item at most DOUBL
   assert.equal(isDoubleClick(undefined, "sketch-2", 1100), false);
   assert.equal(isDoubleClick(first, "sketch-2", 999), false);
   assert.equal(isDoubleClick(first, "sketch-2", 1000), true, "two clicks in the same instant");
+});
+
+test("hand-worked: a double-click's second click that lands on the item's own ⋯ counts only at the first click's place (clumsy hunt 2026-11-04)", () => {
+  // Pick Box 1, then double-click Cylinder 1: the first click picks it, the bar redraws, Box 1's ⋯ goes and Cylinder 1's
+  // comes, Cylinder 1 slides about 30 px left, and the second click, at the same screen point, lands on its new ⋯. That
+  // click is the double-click (Edit Cylinder 1), not a press of ⋯ (its menu). A real press of ⋯ after picking the item
+  // is somewhere else on the screen than the click that picked it.
+  assert.equal(DOUBLE_CLICK_PX, 4);
+  const first = { id: "feature-2", at: 1000, x: 182, y: 770 };
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182, 770), true, "the same point");
+  // At 0.9× the reach in each direction, still the same place; at 1.1×, another place.
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182 + 0.9 * DOUBLE_CLICK_PX, 770 - 0.9 * DOUBLE_CLICK_PX), true);
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182 + 1.1 * DOUBLE_CLICK_PX, 770), false);
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182, 770 - 1.1 * DOUBLE_CLICK_PX), false);
+  // The time and the item rules are isDoubleClick's: too late, or another item's ⋯, is no double-click.
+  assert.equal(isDoubleClickHere(first, "feature-2", 1000 + 1.1 * DOUBLE_CLICK_MS, 182, 770), false);
+  assert.equal(isDoubleClickHere(first, "feature-3", 1200, 182, 770), false);
+  // A click kept without its place (a keyboard's Enter has none) never makes one here.
+  assert.equal(isDoubleClickHere({ id: "feature-2", at: 1000 }, "feature-2", 1200, 182, 770), false);
 });
 
 test("seeded: the sessions reach every outcome: nothing, Edit feature opening, each edit, a delete that asks and one that doesn't, and each refusal", () => {

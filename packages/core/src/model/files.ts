@@ -134,16 +134,23 @@ function strongFormat(head: Uint8Array): FileFormat | null {
   return null;
 }
 
-/** A binary STL: an 80-byte header, a little-endian triangle count, then exactly 50 bytes per triangle. */
+/**
+ * A binary STL: an 80-byte header, a little-endian triangle count, then 50
+ * bytes per triangle. Taken as common readers take it (round 2 hunt B1):
+ * the count the whole triangles the size holds, with up to 49 bytes after
+ * the last (padding some exporters add); or a count of 0 with exactly whole
+ * triangles after it (a writer that streams and never fills the count in).
+ */
 function isBinaryStl(file: FileHead): boolean {
   if (file.size < 84 || file.head.length < 84) return false;
   const count = new DataView(file.head.buffer, file.head.byteOffset + 80, 4).getUint32(0, true);
-  return file.size === 84 + 50 * count;
+  const whole = Math.floor((file.size - 84) / 50);
+  return count === whole || (count === 0 && (file.size - 84) % 50 === 0);
 }
 
 /** Checks a weak signature, for a file whose name already says .stl or .dxf. */
 function weakMatches(format: FileFormat, file: FileHead): boolean {
-  if (format === "stl") return /^\s*solid(\s|$)/.test(text(file.head)) || isBinaryStl(file);
+  if (format === "stl") return /^\s*solid(\s|$)/i.test(text(file.head)) || isBinaryStl(file); // any case: some old exporters write SOLID
   if (format === "dxf") {
     // Group code 0, then SECTION: the first two lines of every text DXF.
     const lines = text(file.head).split(/\r?\n/).map((l) => l.trim());
@@ -194,27 +201,36 @@ const imageTooBig = (size: number): string | null => (size > MAX_IMAGE_BYTES ? `
 /** "A", "A and B", "A, B and C". */
 const andList = (items: readonly string[]) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
-/** Routes what was dropped or pasted: one file at a time; null when there was none. */
-export function routeFiles(registry: RepresentationRegistry, files: readonly FileHead[]): FileRoute | null {
+/**
+ * Routes what was dropped or pasted: one file at a time; null when there was
+ * none. `listed` says which workspaces the app shows (the public app lists
+ * Design and Slice only, Ben 2026-11-04): an importer belonging to another
+ * is treated as missing, and the messages never name an unlisted workspace.
+ */
+export function routeFiles(registry: RepresentationRegistry, files: readonly FileHead[], listed: (workspace: WorkspaceId) => boolean = () => true): FileRoute | null {
   if (files.length === 0) return null;
   if (files.length > 1) return { kind: "refused", message: `Drop or paste one file at a time (there were ${files.length}).` };
   const file = files[0];
   const name = `“${file.name}”`;
   if (file.folder) return { kind: "refused", message: `Couldn't open ${name}: it is a folder. Drop or paste one file from inside it.` };
+  const opener = (format: FileFormat) => {
+    const importer = registry.importerFor(format);
+    return importer && (importer.workspace === null || listed(importer.workspace)) ? importer : null;
+  };
   const found = identifyFile(file);
   if (!found.ok && found.reason === "renamed")
     return { kind: "refused", message: `Couldn't open ${name}: it is named like ${formatInfo(found.claimed).one}, but its contents aren't one (it may be damaged, or renamed from another type).` };
   if (!found.ok) {
-    const opens = FILE_FORMATS.filter((f) => registry.importerFor(f.format)).map((f) => f.many);
+    const opens = FILE_FORMATS.filter((f) => opener(f.format)).map((f) => f.many);
     return { kind: "refused", message: `Couldn't open ${name}: SpindleLabs doesn't know this type of file. ${opens.length ? `It opens ${andList(opens)}.` : "It can't open any files yet."}` };
   }
-  const importer = registry.importerFor(found.format);
+  const importer = opener(found.format);
   // Refused by its size alone, before the shell reads the whole file.
   const big = found.format === "project" ? tooBig(file.size) : formatInfo(found.format).representation === "image" ? imageTooBig(file.size) : null;
   if (importer && big) return { kind: "refused", message: `Couldn't open ${name}: ${big}.` };
   if (importer) return { kind: "open", format: found.format, importer };
   const info = formatInfo(found.format);
   if (info.planned.workspaces.length === 0) return { kind: "refused", message: `Couldn't open ${name}: nothing here opens ${info.many}.` };
-  const who = andList(info.planned.workspaces.map(workspaceName));
-  return { kind: "refused", message: `Couldn't open ${name}: SpindleLabs can't open ${info.many} yet. ${who} will take them as ${info.planned.as}.` };
+  const who = andList(info.planned.workspaces.filter(listed).map(workspaceName));
+  return { kind: "refused", message: `Couldn't open ${name}: SpindleLabs can't open ${info.many} yet.${who ? ` ${who} will take them as ${info.planned.as}.` : ""}` };
 }

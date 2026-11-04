@@ -48,6 +48,48 @@ export const unsavedKey = (id: string) => UNSAVED_PREFIX + id;
  */
 export const NEWER_PREFIX = "panoshape.unsaved-newer/";
 
+/**
+ * Another tab's entry, moved out of the way when this tab must journal the same project (clumsy hunt 2026-11-04):
+ * two tabs left straight after a change each, and the second's entry replaced the first's under the one key, so the
+ * first tab's change was in no entry and no project. `asideKey` is this prefix, the writer, "/" and the project's id.
+ * The next visit puts these back after the entries under UNSAVED_PREFIX, by the same rules: over the state it was
+ * made from, else as a separate project "(from another tab)".
+ */
+export const ASIDE_PREFIX = "panoshape.unsaved-aside/";
+
+export const asideKey = (id: string, writer: string) => `${ASIDE_PREFIX}${writer}/${id}`;
+
+/** The project id an aside key holds an entry for, or null for a key that isn't one. */
+const asideId = (key: string): string | null => {
+  const slash = key.indexOf("/", ASIDE_PREFIX.length);
+  return key.startsWith(ASIDE_PREFIX) && slash > ASIDE_PREFIX.length && slash < key.length - 1 ? key.slice(slash + 1) : null;
+};
+
+/** Every aside key holding an entry for project `id` (another tab's change to it). Throws as the storage does. */
+export function asideKeysOf(journal: JournalStorage, id: string): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < journal.length; i++) {
+    const k = journal.key(i);
+    if (k !== null && asideId(k) === id) keys.push(k);
+  }
+  return keys;
+}
+
+/**
+ * Before `writer` journals project `id`: an entry there written by another writer (another tab that went, or will
+ * go, before its save lands) is copied to its own aside key, so the key can take `writer`'s without losing it. An
+ * entry with no writer is no other tab's: every tab's autosave names itself, and recovery runs before any tab
+ * saves, so it is the kept entry recovery couldn't store, which only the tab opened from it journals over (the others
+ * refuse, autosave.ts `keptFromLastVisit`). Throws as the storage does, so the caller writes nothing over it.
+ */
+export function putAsideOthers(journal: JournalStorage, id: string, writer: string): void {
+  const entry = journal.getItem(unsavedKey(id));
+  if (entry == null) return;
+  const read = readJournalEntry(entry);
+  if (read.writer === undefined || read.writer === writerId(writer)) return;
+  journal.setItem(asideKey(id, read.writer), entry);
+}
+
 /** The part of localStorage the journal uses (any of it may throw: storage off, private mode, full). */
 export interface JournalStorage extends MarkStorage {
   readonly length: number;
@@ -105,8 +147,10 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
   try {
     for (let i = 0; i < journal.length; i++) {
       const k = journal.key(i);
-      if (k !== null && ((k.startsWith(UNSAVED_PREFIX) && k.length > UNSAVED_PREFIX.length) || (k.startsWith(NEWER_PREFIX) && k.length > NEWER_PREFIX.length))) keys.push(k);
+      if (k !== null && ((k.startsWith(UNSAVED_PREFIX) && k.length > UNSAVED_PREFIX.length) || (k.startsWith(NEWER_PREFIX) && k.length > NEWER_PREFIX.length) || asideId(k) !== null)) keys.push(k);
     }
+    // Entries put aside go back after the others: each tab's own entry first, then the ones moved out of its way.
+    keys.sort((x, y) => Number(x.startsWith(ASIDE_PREFIX)) - Number(y.startsWith(ASIDE_PREFIX)));
   } catch {
     return problems; // storage off: there is no journal to read
   }
@@ -124,7 +168,8 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
   }
   for (const k of keys) {
     const held = k.startsWith(NEWER_PREFIX);
-    const id = k.slice((held ? NEWER_PREFIX : UNSAVED_PREFIX).length);
+    const aside = asideId(k);
+    const id = aside ?? k.slice((held ? NEWER_PREFIX : UNSAVED_PREFIX).length);
     let text: string | null;
     try {
       text = journal.getItem(k);
@@ -158,7 +203,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
       project = projectFromJson(text, readers);
     } catch (e) {
       if (e instanceof NewerFormatError) {
-        if (held) continue; // said when it was moved here: still kept, silently
+        if (held || aside !== null) continue; // said when it was moved here, or put aside: still kept, silently
         try {
           journal.setItem(NEWER_PREFIX + id, raw);
           journal.removeItem(k);
@@ -188,8 +233,13 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
           problems.push(`changes made to "${project.name}" in another tab couldn't be kept as a separate project (${message(copyFailed)}); they stay in this browser, and the next visit tries again`);
           continue;
         }
-        problems.push(`changes made to "${project.name}" in another tab weren't stored before it closed, and newer work was saved since, so they're kept as a separate project, "${name}", and the newer work as it was`);
+        problems.push(`changes made to "${project.name}" in another tab weren't stored before it closed, and newer work was saved since, so they're kept as a separate project, "${name}" (File > Projects in this browser opens it), and the newer work as it was`);
         remove(journal, k);
+        continue;
+      }
+      if (aside !== null) {
+        // Kept where it is, out of the way of the project's own entry, and tried again next visit.
+        problems.push(`changes made to "${project.name}" in another tab couldn't be stored (${message(e)}); they stay in this browser, and the next visit tries again`);
         continue;
       }
       problems.push(`unsaved changes from your last visit couldn't be stored (${message(e)}); they are shown, and kept in this browser until it has room: Save keeps them as a file`);
