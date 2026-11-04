@@ -423,6 +423,72 @@ try {
     }
   });
 
+  await check("Undo pressed while an OK is still with the kernel takes back that OK, not the step before (clumsy hunt 2026-11-04)", async () => {
+    // Move: Box 1 and Cylinder 1, Move Body 1 by X 10, OK, and Ctrl+Z while the kernel still checks the Move. On main the
+    // Undo ran first: it took back Insert Cylinder, and the OK, finding the design changed, recorded nothing, so the Move
+    // was lost and Redo offered the cylinder. Extrude: a 40 × 30 rectangle extruded 10, the same, losing the extrude and
+    // taking back the rectangle. Every kernel message after OK is held back 300 ms so the key always comes first.
+    const hold = (page) =>
+      page.evaluate(() => {
+        const send = Worker.prototype.postMessage;
+        Worker.prototype.postMessage = function (message, ...rest) {
+          window.kernelHeld = (window.kernelHeld ?? 0) + 1;
+          setTimeout(() => send.call(this, message, ...rest), 300);
+        };
+      });
+    const settled = (page) => page.waitForFunction(() => document.querySelector("#viewport").dataset.rebuilding === "false" && document.getElementById("redo").title !== "Nothing to redo", null, { timeout: 15000 });
+    const before = errors.length;
+    const page = await fresh();
+    try {
+      await page.click("#insert");
+      await page.click("#insert-cylinder");
+      await page.waitForFunction(() => /^Undo Insert Cylinder/.test(document.getElementById("undo").title));
+      await page.click("#move");
+      await page.click('#browser .tree-row[data-node="body-1"]');
+      await page.waitForFunction(() => !!document.getElementById("viewport").dataset.moveHandles);
+      await page.fill("#move-x", "10");
+      await hold(page);
+      await page.click("#move-ok");
+      await page.waitForFunction(() => (window.kernelHeld ?? 0) > 0); // the Move sent to the kernel, its answer held back
+      await page.keyboard.press("Control+z");
+      await settled(page);
+      assert.match(await page.getAttribute("#redo", "title"), /^Redo Move bodies/, "the Move is what Undo took back");
+      assert.match(await page.getAttribute("#undo", "title"), /^Undo Insert Cylinder/, "the cylinder is still there");
+    } finally {
+      await page.close();
+    }
+    const sketching = await fresh("#design", { box: false });
+    try {
+      sheetsClearFor(sketching);
+      await sketching.click("#create-sketch");
+      await openPanel(sketching, "properties", false);
+      await pickPlane(sketching, "XY", false);
+      await sketching.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+      await closePanels(sketching, false);
+      await sketching.click("#sketch-tool-rectangle");
+      const box = await sketching.locator("#viewport canvas").boundingBox();
+      for (const xy of [[0, 0], [40, 30]]) {
+        const p = screenPoint(box, [...xy, 0], TOP);
+        await sketching.mouse.click(p.x, p.y);
+        await sketching.waitForTimeout(150);
+      }
+      await sketching.waitForFunction(() => /closed/.test(document.querySelector("#sketch-status")?.textContent ?? ""));
+      await sketching.click("#sketch-extrude");
+      await sketching.fill("#extrude-distance", "10");
+      await sketching.waitForFunction(() => document.querySelector("#extrude-ok")?.disabled === false && (document.getElementById("extrude-panel")?.dataset.previewVolume ?? "") !== "");
+      await hold(sketching);
+      await sketching.click("#extrude-ok");
+      await sketching.waitForFunction(() => (window.kernelHeld ?? 0) > 0);
+      await sketching.keyboard.press("Control+z");
+      await settled(sketching);
+      assert.match(await sketching.getAttribute("#redo", "title"), /^Redo Extrude/, "the extrude is what Undo took back");
+      assert.match(await sketching.getAttribute("#undo", "title"), /^Undo Draw rectangle/, "the rectangle is still there");
+    } finally {
+      await sketching.close();
+    }
+    assert.deepEqual(errors.slice(before), [], "no page error");
+  });
+
   await check("two quick Undos and two quick Redos say rebuilding until the last one lands (real-use hunt C2)", async () => {
     // Every Undo and Redo remounts Design while the put-away one's rebuild may still run. Before the fix that rebuild's end
     // set data-rebuilding false while the new Design's rebuild still ran, so a check read the page too early. Each kernel

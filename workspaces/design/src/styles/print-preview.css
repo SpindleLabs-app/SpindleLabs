@@ -90,6 +90,12 @@
   display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: "play speed scrub" "layer layer layer";
   align-items: center; gap: 8px 12px; padding: 10px 14px;
 }
+/* A warning over the time-lapse (print-preview.ts), whole at every width. */
+.print-preview .print-preview-bar.print-preview-noted { grid-template-areas: "note note note" "play speed scrub" "layer layer layer"; }
+.print-preview #print-preview-warning {
+  grid-area: note; margin: 0; padding: 6px 10px; font-size: 0.82em; line-height: 1.3; color: var(--text-f3b77a);
+  background: var(--fill-240-163-94-008); border: 1px solid var(--line-240-163-94-022); border-left: 3px solid var(--text-f0a35e); border-radius: 8px;
+}
 .print-preview #print-preview-play:not(#none) {
   grid-area: play; width: 48px; height: 48px; min-width: 48px; padding: 0; border: 0; border-radius: 50%;
   background: var(--pp-accent); color: transparent; font-size: 0; cursor: pointer; position: relative;

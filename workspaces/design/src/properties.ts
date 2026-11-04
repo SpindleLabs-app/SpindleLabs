@@ -9,6 +9,7 @@ import { SHAPES } from "./commands.ts";
 import type { PartKind } from "./document.ts";
 import { SHAPE_LABELS } from "./toolbar.ts";
 import { NAME_NOTE } from "./references.ts";
+import { lengthRefused, MIN_TYPED } from "./typed-entry.ts";
 import type { SelectionRow } from "./selection.ts";
 
 export type SizeKey = "width" | "depth" | "height";
@@ -35,6 +36,34 @@ export function parameterRows(shape: PartKind): ParameterRow[] {
     { key: "depth", label: "Depth", shown: !round && !sketched },
     { key: "height", label: primitive ? "Height" : "Extrude by", shown: shape !== "sphere" },
   ];
+}
+
+/**
+ * Why the Parameters boxes' sizes `typed` can't be taken for a `kind`, in the
+ * box's own name, or null. Each shown box: a number (hunt 26g), more than
+ * 0 mm (hunt 26h), from 0.001 mm to 1 km (`lengthRefused`, app sweep
+ * 2026-10-28). Then the shape's own rules a person can break by typing
+ * ordinary sizes (clumsy hunt 2026-11-04: both reached the kernel, failed in
+ * its words and were recorded): a round shape's radius, half its diameter,
+ * is at least 0.001 mm as the sketch's Diameter box asks (`readDiameter`);
+ * a slot w × d has round ends d across joined by straights w − d long,
+ * which must be at least the 0.001 mm the modeller keeps.
+ */
+export function panelSizeRefused(kind: PartKind, typed: Record<SizeKey, string>): string | null {
+  for (const r of parameterRows(kind)) {
+    if (!r.shown) continue;
+    const text = typed[r.key];
+    const label = kind === "sketch-extrude" ? "distance" : r.label.toLowerCase();
+    const v = Number(text);
+    if (text.trim() === "" || !Number.isFinite(v)) return `Type the ${label} in mm.`;
+    if (v <= 0) return `The ${label} must be more than 0 mm.`;
+    const refused = lengthRefused(v);
+    if (refused !== null) return `The ${label}${refused.slice("A length".length)}`;
+    if (r.label === "Diameter" && v / 2 < MIN_TYPED) return `The diameter must be at least ${2 * MIN_TYPED} mm: its radius can't be under ${MIN_TYPED} mm, the smallest piece the modeller keeps.`;
+  }
+  if (kind === "slot" && Number(typed.width) - Number(typed.depth) < MIN_TYPED)
+    return `A slot's depth must be less than its width, by at least ${MIN_TYPED} mm: its round ends are as wide as it is deep.`;
+  return null;
 }
 
 // The ids are read by the e2e test (#width, #stats[data-stale], #action-note…).

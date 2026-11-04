@@ -5,11 +5,10 @@
 // the kernel's index there, and so to its stable name (naming.ts), which
 // already carries the feature that built it.
 
-import type { BodyView, DisplayMesh, Feature, GeometryReference, KernelError, Plane } from "@fission/core";
-import { bodyFrame } from "./face-sketch.ts";
-import { bodyFeatures } from "./browser.ts";
-import { bodyHidden, bodyIdOf, bodyNumbers, type DesignDocument } from "./document.ts";
-import { featureNames, type BodyNames } from "./naming.ts";
+import type { BodyView, DisplayMesh, GeometryReference, KernelError, Plane } from "@fission/core";
+import { bodyHidden, bodyItem, bodyNumbers, isPiece, numberPieces, type DesignDocument } from "./document.ts";
+import type { BodyNames } from "./naming.ts";
+import { frameOfBody, namesOfBody } from "./built-body.ts";
 import type { BodyCache, TimelineBuild } from "./rebuild.ts";
 import { designReference, readDesignReference, resolveReference, sharedBy } from "./references.ts";
 
@@ -45,36 +44,35 @@ export interface Scene {
  */
 export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cache: BodyCache, slow?: (feature: string) => void): Promise<ShownBody[]> {
   const shown: ShownBody[] = [];
-  const features = bodyFeatures(doc);
+  // Every body the rebuild holds (35f1: by body id, a Combine's pieces too, its used-up tools gone), in the order their
+  // items come in the timeline (a piece after the earlier pieces of its Combine), skipping those the eye hides.
+  const places = new Map(doc.timeline.features.map((f, i) => [f.id, i] as const));
+  const items = new Map(doc.timeline.features.map((f) => [f.id, f] as const));
+  const ids = Object.keys(build.bodies);
+  const numbers = bodyNumbers(numberPieces(doc, ids));
+  const at = (id: string) => [places.get(bodyItem(id)!) ?? Infinity, isPiece(id) ? (numbers.get(id) ?? Infinity) : 0];
+  const order = ids.filter((id) => items.has(build.bodies[id].feature) && !bodyHidden(doc, id)).sort((a, b) => at(a)[0] - at(b)[0] || at(a)[1] - at(b)[1]);
   // Every view asked at once, before the loop waits on one (security audit S2: one round trip each took minutes on a big file).
-  const built = (f: Feature) => (build.results[f.id]?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined);
-  for (const f of features) {
-    const b = built(f);
-    if (b === undefined || bodyHidden(doc, bodyIdOf(f.id))) continue;
+  for (const id of order) {
     try {
-      cache.view(b.handle).catch(() => {}); // a refusal is read in the loop below
+      cache.view(build.bodies[id].handle).catch(() => {}); // a refusal is read in the loop below
     } catch {
       // not in the cache: the loop below says so
     }
   }
-  const numbers = bodyNumbers(doc);
-  for (const f of features) {
-    const id = bodyIdOf(f.id);
-    if (bodyHidden(doc, id)) continue;
-    const b = built(f);
-    if (b === undefined) continue;
-    const spec = b.spec;
+  for (const id of order) {
+    const b = build.bodies[id];
     let view: BodyView;
     try {
       view = await cache.view(b.handle);
     } catch (e) {
       // Its kind, never its words (a KernelError's; read without importing the class, so this file stands alone: refind-planted.test.ts).
       if (!slow || (e as Partial<KernelError> | null)?.kind !== "timed-out") throw e;
-      slow(f.id);
+      slow(b.feature);
       continue;
     }
-    const frame = bodyFrame(spec);
-    shown.push({ body: id, feature: f.id, place: numbers.get(id)!, view, names: featureNames(f.id, { spec, curves: b.curves }, view), ...(frame ? { frame } : {}) });
+    const frame = frameOfBody(b);
+    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}) });
   }
   return shown;
 }
