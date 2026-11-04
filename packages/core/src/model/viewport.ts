@@ -97,6 +97,12 @@ export interface SketchDrawing {
     constraints?: readonly (readonly [SketchXY, SketchXY])[];
     fighting?: readonly (readonly [SketchXY, SketchXY])[];
     constraintCount?: number;
+    /**
+     * The points a press drags (step 47d3, the Select tool): a press within
+     * a pick's reach of one on screen grabs the nearest (SketchPointer
+     * `grab`). Absent when none can be.
+     */
+    grab?: readonly SketchXY[];
   };
 }
 
@@ -138,8 +144,20 @@ export const ORIGIN_AT_FIRST: OriginShown = { axes: [true, true, true], planes: 
  * within a few pixels; absent when the viewport can't tell.
  */
 export interface SketchPointer {
-  kind: "move" | "click";
+  /**
+   * `move` a hover, `click` a click; while the edited sketch offers points
+   * to drag (SketchDrawing editing.grab, step 47d3), a press on one that
+   * moves further than a click is `grab` (with `grab`, which one), then a
+   * `drag` for each move while it is held and a `drop` when it is let go
+   * (`cancelled` when the browser called it off). A press on one let go
+   * without moving is a click as usual. The camera hears none of it.
+   */
+  kind: "move" | "click" | "grab" | "drag" | "drop";
   at: SketchXY | null;
+  /** For a `grab`: the point pressed on, by its place in editing.grab. */
+  grab?: number;
+  /** For a `drop`: the browser called the drag off (pointercancel), so it comes to nothing. */
+  cancelled?: true;
   pixel?: number;
   /**
    * While the edited sketch asks for picks (SketchDrawing editing.picks,

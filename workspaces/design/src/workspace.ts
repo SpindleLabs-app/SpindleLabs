@@ -43,6 +43,7 @@ import { droppedNote, highlightOf, panelFocus, panelPart, selectionRows, survivo
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
 import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { dragTo, grabProblem } from "./point-drag.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
@@ -1417,10 +1418,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const designDoc = () => ctx.project.workspaces.design as DesignDocument;
   /** Counts tool changes (a tool chosen, Escape, the sketch entered again): a click the kernel was still snapping across one is dropped. */
   let toolChanges = 0;
+  /** The sketch point being dragged (47d3, onPointDrag), if one is. */
+  let pointDrag: PointDrag | null = null;
+  /** Read by the e2e tests: how many drags have ended (recorded or not), and how many steps have been solved. */
+  let dragsEnded = 0;
+  let dragSolves = 0;
 
   /** Draws every sketch, the edited one with its grid, points and preview. */
   function drawSketches() {
-    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    // A point being dragged (47d3) shows the sketch as its last solved step left it, until it is let go and recorded.
+    const doc = pointDrag && dragStillFor(pointDrag) ? pointDrag.doc : (ctx.project.workspaces.design as DesignDocument | undefined);
     if (!doc) return;
     const editing = mode.kind === "edit" ? mode : null;
     // With a size typed the preview goes where the locks put it, and the snap marks (which the locks overrule) are left out.
@@ -1810,6 +1817,121 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * arcs that fight drawn red. A tool change, undo or Escape while the
    * solver works drops the answer: it was for a sketch no longer there.
    */
+  /**
+   * A sketch point being dragged with the Select tool (47d3, point-drag.ts):
+   * the document before the press, the last solved step (`doc`, drawn), the
+   * newest pointer not yet solved toward (`want`), whether it was let go,
+   * and what the press's turn in line waits on.
+   */
+  interface PointDrag {
+    sketch: string;
+    point: string;
+    before: DesignDocument;
+    doc: DesignDocument;
+    want: SketchXY | null;
+    pixel: number | undefined;
+    running: boolean;
+    dropped: "drop" | "cancel" | null;
+    changes: number;
+    finished: () => void;
+  }
+
+  /** Whether a drag is still for what is shown: the same sketch open with the same tool, the design not changed under it (Undo). */
+  function dragStillFor(drag: PointDrag): boolean {
+    return mode.kind === "edit" && toolChanges === drag.changes && designDoc() === drag.before;
+  }
+
+  /**
+   * The Select tool's press on a point that moved (`grab`), its moves
+   * (`drag`) and its release (`drop`). A point that can't be dragged says
+   * why and nothing moves. Each move is solved toward from the last solved
+   * step, the newest winning (pumpDrag); the release records one undo step
+   * ("Move point"), in turn with the clicks, so Finish Sketch waits for it.
+   */
+  function onPointDrag(pointer: SketchPointer) {
+    if (mode.kind !== "edit") return;
+    if (pointer.kind === "grab") {
+      if (mode.tool.kind !== "select" || pointDrag) return;
+      const sketchId = mode.tool.sketch;
+      const before = designDoc();
+      const sketch = before.sketches.find((s) => s.id === sketchId);
+      const point = pointer.grab === undefined ? undefined : sketch?.points[pointer.grab];
+      if (!sketch || !point) return;
+      const problem = grabProblem(sketch, point.id);
+      sketchBox.showError(problem ?? "");
+      // Refused: nothing moves, and the drag counts as ended at once (its moves and release go nowhere).
+      if (problem !== null) return void (viewport.element.dataset.pointDrags = String(++dragsEnded));
+      let finished = () => {};
+      const done = new Promise<void>((resolve) => (finished = resolve));
+      pointDrag = { sketch: sketchId, point: point.id, before, doc: before, want: null, pixel: pointer.pixel, running: false, dropped: null, changes: toolChanges, finished };
+      inTurn(() => done);
+      return;
+    }
+    const drag = pointDrag;
+    if (!drag) return;
+    if (pointer.at) drag.want = pointer.at;
+    if (pointer.pixel !== undefined) drag.pixel = pointer.pixel;
+    if (pointer.kind === "drop") drag.dropped = pointer.cancelled ? "cancel" : "drop";
+    void pumpDrag(drag);
+  }
+
+  /** Solves a drag toward its newest pointer, one at a time, each from the last solved step, and records it once let go. */
+  async function pumpDrag(drag: PointDrag) {
+    if (drag.running) return;
+    drag.running = true;
+    try {
+      while (pointDrag === drag) {
+        if (!dragStillFor(drag)) return endDrag(drag);
+        const to = drag.want;
+        if (to === null) return drag.dropped ? await finishDrag(drag) : undefined;
+        drag.want = null;
+        const stale = () => pointDrag !== drag || !dragStillFor(drag);
+        try {
+          const got = await dragTo(kernel, drag.doc, drag.sketch, drag.point, to, drag.pixel, () => drag.want !== null || stale(), (doc) => {
+            if (stale()) return;
+            drag.doc = doc;
+            dragSolves++;
+            drawSketches();
+          });
+          if (stale()) return endDrag(drag);
+          drag.doc = got.doc;
+          sketchBox.showError(got.refused ?? "");
+        } catch (e) {
+          sketchBox.showError(e instanceof Error ? e.message : String(e));
+        }
+        drawSketches();
+      }
+    } finally {
+      drag.running = false;
+      viewport.element.dataset.dragSolves = String(dragSolves);
+    }
+  }
+
+  /** A drag let go: nothing recorded for one called off or that moved nothing; else settled as a click is (an extrude it breaks keeps its shape) and recorded as one undo step. */
+  async function finishDrag(drag: PointDrag) {
+    if (drag.dropped === "cancel" || drag.doc === drag.before) return endDrag(drag);
+    let next: DesignDocument;
+    try {
+      next = await settleKept(kernel, drag.before, drag.doc, bodies);
+    } catch (e) {
+      sketchBox.showError(e instanceof Error ? e.message : String(e));
+      return endDrag(drag);
+    }
+    if (pointDrag !== drag || !dragStillFor(drag)) return endDrag(drag);
+    pointDrag = null;
+    applySketchEdit(next, SKETCH_STEPS.move, drag.sketch);
+    endDrag(drag);
+    await showOutline();
+  }
+
+  /** The drag over: what it showed goes unless it was recorded, and its turn in line ends. */
+  function endDrag(drag: PointDrag) {
+    if (pointDrag === drag) pointDrag = null;
+    viewport.element.dataset.pointDrags = String(++dragsEnded);
+    drag.finished();
+    drawSketches();
+  }
+
   function constrain(sketchId: string, add: NewConstraint) {
     const changes = toolChanges;
     inTurn(async () => {
@@ -2637,6 +2759,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "edit") return;
     const at = pointer.at;
     if (at) pointerAt = at;
+    if (pointer.kind === "grab" || pointer.kind === "drag" || pointer.kind === "drop") return onPointDrag(pointer);
     // Step 27d: the Project tool snaps nothing and places nothing; a click projects what the viewport says is under it.
     if (mode.tool.kind === "project") {
       ++moves;
@@ -3062,6 +3185,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         drawSketches();
         return true;
       }
+      // Escape while a sketch point is held (47d3): the drag comes to nothing, the point back where it was pressed.
+      if (id === "clear-selection" && pointDrag) return endDrag(pointDrag), true;
       // Escape with nothing half drawn (missing basics, 2026-11-04, as in Fusion): the picks go, else the Select tool is chosen.
       if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind === "select" && mode.tool.picked.length > 0) {
         mode.tool = { ...mode.tool, picked: [] };
