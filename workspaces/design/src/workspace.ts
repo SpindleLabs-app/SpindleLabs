@@ -449,7 +449,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const printing = slicePrint(ctx.toolbar, {
     async slice(choices, file, alive) {
       const doc = designDoc();
-      const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
+      // By body (35f1: a Combine's pieces have no item of their own).
+      const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
       const save = async (print: PrintFacts, suggestedName: string, kind: SaveKind, bytes: Uint8Array<ArrayBuffer>) => {
         if (!alive()) throw new SliceDropped();
         const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind, bytes });
@@ -466,7 +467,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
     async preview(choices, file, alive) {
       const doc = designDoc();
-      const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
+      // By body (35f1: a Combine's pieces have no item of their own).
+      const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
       // The file Slice and download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
       const p1s = file.format === "p1s" ? await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle) : null;
       const gcode = p1s ? printMovesOf(gcodeOfPackage(p1s.package) ?? "") : null;

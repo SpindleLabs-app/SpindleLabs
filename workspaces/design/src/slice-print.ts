@@ -11,8 +11,8 @@
 
 import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, StlFile, SupportStyle } from "@fission/core";
 import type { SaveKind } from "@fission/ui";
-import type { DesignDocument } from "./document.ts";
-import { endSpec } from "./move-tool.ts";
+import { bodyIdOf, type DesignDocument } from "./document.ts";
+import { endStls } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
 import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
 
@@ -303,13 +303,15 @@ export function stlHighestZ(stl: Uint8Array): number {
 }
 
 /** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, the note on their heights, and how tall they are together. */
-async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number }> {
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
-  const files: StlFile[] = [];
-  for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
+  const files: StlFile[] = await endStls(kernel, doc, features.map((f) => ("body" in f ? { ...f, name: "body" } : { body: bodyIdOf(f.id), feature: f, name: "body" })));
   const height = Math.max(...files.map((f) => stlHighestZ(f.bytes))) - Math.min(...files.map((f) => stlLowestZ(f.bytes)));
   return { stl: stackStl(files.map((f) => f.bytes)), note: levelNoteOf(files.map((f) => f.bytes)), height };
 }
+
+/** A body to slice: an item's own (by the item), or any body by its id and the item its row stands for (35f1: a Combine's piece). */
+export type SliceBody = Feature | { body: string; feature: Feature };
 
 /** The height of the bodies a refusal was for (slicer hunt 2026-11-04, ui 2), so its words can say how tall the part really is. */
 const refusedHeights = new WeakMap<object, number>();
@@ -363,14 +365,14 @@ async function asRun<T>(kernel: KernelCalls, slice: (run: SliceRun) => Promise<T
 }
 
 /** The bodies' files for `run`, or SliceDropped if it was stopped while they were made. */
-async function runStl(run: SliceRun, doc: DesignDocument, features: readonly Feature[]) {
+async function runStl(run: SliceRun, doc: DesignDocument, features: readonly SliceBody[]) {
   const stl = await bodiesStl(run.kernel, doc, features);
   if (run.stopped) throw new SliceDropped();
   return stl;
 }
 
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
+export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
   return asRun(kernel, async (run) => {
     const { stl, note, height } = await runStl(run, doc, features);
     return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note };
@@ -378,7 +380,7 @@ export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: 
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
-export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
+export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
   return asRun(kernel, async (run) => {
     const { stl, note, height } = await runStl(run, doc, features);
     return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note };

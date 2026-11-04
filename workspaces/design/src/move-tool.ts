@@ -8,8 +8,8 @@
 // refusal before OK records anything. A Move's own document changes are
 // move.ts.
 
-import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle } from "@fission/core";
-import { bodyIdOf, bodyItem, isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
+import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle, StlFile } from "@fission/core";
+import { actsOnBodies, bodyIdOf, bodyItem, isCombineItem, isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
 import { madeAfter, movedBodies, moveValues, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
@@ -319,14 +319,43 @@ export async function refusedMove(kernel: KernelCalls, next: DesignDocument, id:
  * moved box came out where the box was made).
  */
 export async function endSpec(kernel: KernelCalls, doc: DesignDocument, f: Feature): Promise<BodySpec> {
-  if (!doc.timeline.features.some((m) => isMoveItem(m) && m.dependsOn.includes(f.id))) return featureSpec(kernel, doc, f);
+  if (!doc.timeline.features.some((m) => actsOnBodies(m) && m.dependsOn.includes(f.id))) return featureSpec(kernel, doc, f);
   const cache = new BodyCache(kernel);
   try {
     const build = await rebuildTimeline(doc, cache, kernel);
     const r = build.results[f.id];
     const body = r?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined;
-    if (body !== undefined) return body.spec;
+    if (body !== undefined && body.spec !== null) return body.spec;
+    if (body !== undefined) throw new Error(`${itemName(f)}'s body is a Combine's result, which only the kernel holds: ask for its STL by body (endStls)`);
     throw new Error(r?.status === "failed" ? r.message : `${itemName(f)} is not built`);
+  } finally {
+    await cache.close();
+  }
+}
+
+/**
+ * Each of `bodies` (by body id, with the name its STL's header gets) as
+ * binary STL, where the timeline ends it: a design with no Combine as
+ * before, each from its item's end spec (`endSpec`); one with a Combine
+ * (35f1) from one rebuild on a body store of its own, a Combine's result
+ * by its handle (it has no spec), any other body from its spec. A body the
+ * rebuild doesn't have is refused in words.
+ */
+export async function endStls(kernel: KernelCalls, doc: DesignDocument, bodies: readonly { body: string; feature: Feature; name: string }[]): Promise<StlFile[]> {
+  const files: StlFile[] = [];
+  if (!doc.timeline.features.some(isCombineItem)) {
+    for (const b of bodies) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, b.feature), b.name));
+    return files;
+  }
+  const cache = new BodyCache(kernel);
+  try {
+    const build = await rebuildTimeline(doc, cache, kernel);
+    for (const b of bodies) {
+      const built = build.bodies[b.body];
+      if (built === undefined) throw new Error(`${b.body} is not built, so it has no STL`);
+      files.push(built.spec === null ? await kernel.call("body_stl", built.handle, b.name) : await kernel.call("export_stl", built.spec, b.name));
+    }
+    return files;
   } finally {
     await cache.close();
   }
