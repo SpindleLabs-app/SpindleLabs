@@ -77,7 +77,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["p1s", "textured", "standard", "0.2", "2", "15", "off"], "the P1S's file and defaults (the stock Standard nozzle)");
+      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["", "p1s", "textured", "standard", "0.2", "2", "15", "off"], "no preset picked, then the P1S's file and defaults (the stock Standard nozzle)");
       assert.match(await page.textContent("#slice-print-untested"), /haven't been test-printed yet/);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-open.png` });
       // On the screen at phone width too.
@@ -207,7 +207,7 @@ for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [128
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      const ids = ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-warm-up", "slice-print-close", "slice-print-preview", "slice-print-go"];
+      const ids = ["slice-presets-list", "slice-presets-save-as", "slice-presets-edit", "slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-warm-up", "slice-print-close", "slice-print-preview", "slice-print-go"];
       /** Each control's box against the window and the dialog's visible area: the ids not wholly inside both. */
       const hidden = () =>
         page.evaluate((ids) => {
