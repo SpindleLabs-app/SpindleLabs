@@ -186,6 +186,11 @@
   --text-white-08: rgba(255, 255, 255, 0.8);
   --warn: #f5b14c;
   --white: #ffffff;
+  --text-a9b0b8: #a9b0b8;
+  --line-8a3a3a: #8a3a3a;
+  --text-f0b4b4: #f0b4b4;
+  --line-d05a5a: #d05a5a;
+  --text-ffd0d0: #ffd0d0;
 }
 html, body { margin: 0; height: 100%; background: var(--page); color: var(--text-body); font: 14px system-ui, sans-serif; }
 body { display: flex; flex-direction: column; }
