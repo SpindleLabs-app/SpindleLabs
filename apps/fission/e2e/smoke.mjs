@@ -943,28 +943,18 @@ try {
     assert.equal(await text("action-note"), "Exported spindlelabs-box.stl."); // the warning goes once the part fits again
   });
 
-  await check("DESIGN ▾ names Design and lists the ten workspaces, Design first and marked, the eight not built yet greyed with Coming soon", async () => {
+  await check("DESIGN ▾ names Design and lists Design and Slice only (the public app's, src/listed-workspaces.ts), Design marked, neither greyed", async () => {
     assert.equal(await page.textContent("#workspace-menu"), "Design ▾");
     assert.equal(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DESIGN ▾, as Fusion's");
     assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "design");
     await page.click("#workspace-menu");
     const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (ts) => ts.map((t) => [t.querySelector(".menu-button-name").textContent, t.querySelector(".menu-button-note")?.textContent ?? "", t.getAttribute("aria-current") === "true"]));
-    const SOON = "Coming soon";
     assert.deepEqual(items, [
       ["Design", "", true],
-      ["Render", SOON, false],
-      ["Simulate", SOON, false],
-      ["Manufacture", SOON, false],
-      ["Laser", SOON, false],
-      ["Slice", SOON, false],
-      ["Circuit", SOON, false],
-      ["Vector", SOON, false],
-      ["Image", "", false],
-      ["Layout", SOON, false],
+      ["Slice", "", false],
     ]);
-    // Greyed: a not-yet-built workspace's words are dimmer than a working one's.
-    const colour = (id) => page.$eval(`#workspace-menu-menu [data-workspace=${id}]`, (b) => getComputedStyle(b).color);
-    assert.notEqual(await colour("render"), await colour("image"));
+    // Not greyed: Slice is no placeholder (data-soon dims one, styles/workspace-menu.css) and is not off.
+    assert.deepEqual(await page.$eval('#workspace-menu-menu [data-workspace="slice"]', (b) => ["soon" in b.dataset, b.getAttribute("aria-disabled")]), [false, null]);
     await page.keyboard.press("Escape");
     assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false");
   });
@@ -978,8 +968,10 @@ try {
     await page.waitForTimeout(300); // let orbit damping settle
     const radius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
     const before = await pixel(0.5, 0.5);
+    // Each opened by its link: none is listed in the public app, and Slice's item opens Slice for printing (src/listed-workspaces.ts).
     for (const [id, title] of [["render", "Render"], ["simulate", "Simulate"], ["manufacture", "Manufacture"], ["laser", "Laser"], ["slice", "Slice"], ["circuit", "Circuit"], ["vector", "Vector"], ["layout", "Layout"]]) {
-      await switchTo(page, id);
+      await page.evaluate((hash) => (location.hash = hash), `#${id}`);
+      await page.waitForFunction((want) => document.body.dataset.activeWorkspace === want, id);
       assert.equal(await page.textContent(".placeholder h2"), title);
       assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
       assert.match(await page.textContent(".placeholder .starts-after"), /^Work starts after CAD step \d+/);
@@ -1042,7 +1034,7 @@ try {
     await switchTo(page, "design");
   });
 
-  await check("desktop: focus moves top bar, toolbar, browser, View buttons, Split, properties; panel toggles hidden", async () => {
+  await check("desktop: focus moves top bar, toolbar, browser, View buttons, properties; panel toggles hidden", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(url + "#design");
     await partShown(page);
@@ -1060,7 +1052,7 @@ try {
       if (region !== regions.at(-1)) regions.push(region);
     }
     // The View buttons and Split sit over the viewport, between the browser and properties; the timeline bar under the view (its items are stops from 24f3, for the keyboard's menu key) comes before properties in the page.
-    assert.deepEqual(regions, ["topbar", "toolbar", "browser", "view-controls", "split-toggle", "timeline", "properties"]);
+    assert.deepEqual(regions, ["topbar", "toolbar", "browser", "view-controls", "timeline", "properties"]); // no Split in the public app (src/listed-workspaces.ts)
     await page.screenshot({ path: "e2e/design-1280.png" });
   });
 
@@ -1658,7 +1650,7 @@ try {
     });
     try {
       await wide.addInitScript(() => indexedDB.deleteDatabase("fission"));
-      await wide.goto(url + "?test-hooks#design");
+      await wide.goto(url + "?test-hooks&all-workspaces#design");
       await startWithBox(wide); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
       const canvasOf = (sel) => `${sel} > canvas`;
       const image = (sel) => wide.evaluate((s) => document.querySelector(s).toDataURL(), canvasOf(sel));
@@ -1822,7 +1814,7 @@ try {
     wide.on("pageerror", (e) => noteError(e.message));
     try {
       await wide.addInitScript(() => indexedDB.deleteDatabase("fission"));
-      await wide.goto(url + "?test-hooks#design");
+      await wide.goto(url + "?test-hooks&all-workspaces#design");
       await startWithBox(wide); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
       await wide.click("#workspace-menu");
       const titles = Object.fromEntries(await wide.$$eval("#workspace-menu-menu [data-workspace]", (items) => items.map((t) => [t.dataset.workspace, t.querySelector(".menu-button-name").textContent.trim()])));
@@ -1973,7 +1965,7 @@ try {
     });
     try {
       await wide.addInitScript(() => indexedDB.deleteDatabase("fission"));
-      await wide.goto(url + "?test-hooks#design");
+      await wide.goto(url + "?test-hooks&all-workspaces#design");
       const valid = () => wide.waitForFunction(() => document.querySelector("#status")?.textContent === "valid");
       await startWithBox(wide); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
       const notesIn = (pane) => wide.$$eval(`${pane} .notes-strip .change-note`, (els) => els.map((e) => e.querySelector(".note-text").textContent));
@@ -2023,7 +2015,7 @@ try {
       // Close split: Slice is off screen, so is its note; showing Slice brings it back.
       await wide.click("#split-close");
       await wide.waitForFunction(() => !document.querySelector(".change-note"));
-      await switchTo(wide, "slice");
+      await wide.evaluate(() => (location.hash = "#slice")); // by its link: Slice's item opens Slice for printing
       await wide.waitForSelector("#viewport .change-note");
       assert.deepEqual(await notesIn("#viewport"), [text]);
     } finally {
@@ -2039,7 +2031,7 @@ try {
     });
     try {
       await wide.addInitScript(() => indexedDB.deleteDatabase("fission"));
-      await wide.goto(url + "?test-hooks#design");
+      await wide.goto(url + "?test-hooks&all-workspaces#design");
       await startWithBox(wide); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
       const notesIn = (pane) => wide.$$eval(`${pane} .notes-strip .change-note`, (els) => els.map((e) => e.querySelector(".note-text").textContent));
       // Slice's print plate stands in reading the box (feature-1); Slice beside Design shows its notes.
