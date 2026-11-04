@@ -30,6 +30,7 @@
 // Rename does, and a name another item has is refused before any preview.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
@@ -760,6 +761,81 @@ try {
       assert.match(await page.textContent("#ai-result"), /changed after this preview.*nothing was changed/s);
       await volume(page, "8,000 mm³");
       assert.equal(await undoTitle(page), "Undo Change depth (Ctrl+Z)");
+    } finally {
+      await page.close();
+    }
+  });
+
+  // Bug hunt D (2026-11-04): an answer that arrives after the user changed the project was previewed against the old one
+  // ("width 40 → 50") and Accept then put back every size of the AI's set_part on the changed one. It is refused as it arrives.
+  {
+    const answerLines = [JSON.stringify({ message: { role: "assistant", content: setPart("box", 50, 30, 20) }, done: false }) + "\n", '{"message":{"role":"assistant","content":""},"done":true}\n'];
+    const refusedWhileAsking = async (page, text) => {
+      await page.waitForSelector("#ai-preview, #ai-result .ai-error");
+      assert.match(await page.textContent("#ai-result"), /The project changed while the AI was answering.*Nothing was changed\. Ask again\./s);
+      assert.equal(await page.$("#ai-preview"), null, "no preview of an answer made for the project as it was");
+      await volume(page, text);
+    };
+    await check("an answer that arrives after the user opened another file is refused, and the opened plate is left as it is", async () => {
+      const { page } = await fresh([], { held: true });
+      try {
+        await useOllama(page);
+        await page.evaluate((l) => (globalThis.heldLines = l), answerLines);
+        await ask(page, "Make it 10 mm wider.");
+        await page.waitForSelector("#ai-progress");
+        // While the AI answers, a 70 × 70 × 5 plate is opened: 70 · 70 · 5 = 24,500 mm³.
+        const file = JSON.parse(readFileSync(new URL("./saved.spindle", import.meta.url), "utf8"));
+        const box = file.workspaces.design.timeline.features[0];
+        Object.assign(box.intent.parameters, { width: 70, depth: 70, height: 5 });
+        box.intent.summary = "Box: 70 × 70 × 5 mm";
+        await page.setInputFiles("#open-file", { name: "plate.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(file)) });
+        await volume(page, "24,500 mm³");
+        await page.evaluate(() => (globalThis.allowLines = 2));
+        await refusedWhileAsking(page, "24,500 mm³");
+      } finally {
+        await page.close();
+      }
+    });
+    await check("an answer that arrives after the user changed a size is refused, and the user's depth is kept", async () => {
+      const { page } = await fresh([], { held: true });
+      try {
+        await useOllama(page);
+        await page.evaluate((l) => (globalThis.heldLines = l), answerLines);
+        await ask(page, "Make it 10 mm wider.");
+        await page.waitForSelector("#ai-progress");
+        await page.fill("#depth", "10");
+        await volume(page, "8,000 mm³"); // 40 · 10 · 20
+        await page.evaluate(() => (globalThis.allowLines = 2));
+        await refusedWhileAsking(page, "8,000 mm³");
+        assert.equal(await page.inputValue("#depth"), "10");
+        assert.equal(await undoTitle(page), "Undo Change depth (Ctrl+Z)", "no AI step");
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  // Bug hunt D (2026-11-04): Undo then Redo sets Design up afresh; Accept ran on the Design put away, said "Done" and changed nothing.
+  await check("Accept after Undo then Redo is refused, changes nothing and throws no page error", async () => {
+    const { page } = await fresh([setPart("box", 50, 30, 20)]);
+    try {
+      await useOllama(page);
+      await ask(page, "Make it 10 mm wider.");
+      await page.waitForSelector("#ai-preview");
+      const before = errors.length;
+      await page.click("#undo");
+      await page.waitForFunction(() => document.querySelector("#volume")?.textContent !== "24,000 mm³");
+      await page.click("#redo");
+      await volume(page, "24,000 mm³"); // the project is as the preview saw it again
+      const undoBefore = await undoTitle(page);
+      await page.click("#ai-accept");
+      await page.waitForFunction(() => !document.querySelector("#ai-preview"));
+      assert.match(await page.textContent("#ai-result"), /changed after this preview.*nothing was changed/s);
+      assert.doesNotMatch(await page.textContent("#ai-result"), /Done:/);
+      await page.waitForTimeout(300);
+      await volume(page, "24,000 mm³");
+      assert.equal(await undoTitle(page), undoBefore, "no AI step");
+      assert.deepEqual(errors.slice(before), [], "no page error");
     } finally {
       await page.close();
     }
