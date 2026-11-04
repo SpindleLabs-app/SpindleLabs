@@ -8,3 +8,11 @@
 
 /** 35e2: Move (its session moves, add-move and set-move). */
 export const LANDED: ReadonlySet<string> = new Set<string>(["35e2"]);
+
+/**
+ * Steps whose session moves the timeline model answers before Design's
+ * sessions draw them (35f1d2: Combine, which the model's own sessions run
+ * from now on; Design's join it in LANDED once the kernel the app ships
+ * merges faces lying in one plane, step 36c, as rule 4 and the model say).
+ */
+export const MODEL_KNOWS: ReadonlySet<string> = new Set<string>(["35e2", "35"]);

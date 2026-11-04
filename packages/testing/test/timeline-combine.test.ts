@@ -1,0 +1,117 @@
+// The timeline model's Combine (35f1d2, src/timeline-combine.ts): the
+// oracle the random sessions trust for Combines, checked here by hand, with
+// the working next to each assertion.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { applyOp, createModel, faceKey, rebuild, resolveFace, UnmodelledCombine, type ConcreteOp, type ModelBody, type TimelineModel } from "../src/timeline-model.ts";
+
+const run = (m: TimelineModel, ...ops: ConcreteOp[]) => ops.map((op) => applyOp(m, op));
+const faces = (b: ModelBody | undefined) => (b?.faces ?? []).map((f) => [faceKey(f.name), (f.also ?? []).map(faceKey), f.area]);
+
+test("hand-worked: a Join of a 40 × 30 × 20 box and an 8 × 55 × 8 bar from the same corner, faces lying on each other merged", () => {
+  const m = createModel();
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "box", sizes: [8, 55, 8] }, { op: "add-combine", target: "item-1", tool: "item-2", operation: "join", keep: false });
+  const r = rebuild(m.doc);
+  assert.deepEqual(r.results["item-3"], { status: "built" });
+  // The bar is used up (rule 1: its body is gone), so item-2 shows none; item-1's body is the join.
+  assert.equal((r.results["item-2"] as { body?: ModelBody }).body, undefined);
+  const join = (r.results["item-1"] as { body?: ModelBody }).body;
+  // Volume: the box 40·30·20 = 24000, and the bar's part outside it, y 30..55: 8·25·8 = 1600; 25600.
+  assert.equal(join?.volume, 25600);
+  // Rule 2 and 4, faces in the target's made order then the tool's: the bottoms (z = 0), fronts (y = 0) and lefts
+  // (x = 0) lie on each other and merge, answering to both names, the target's first. Areas: bottom 40·30 + 8·25 =
+  // 1400; front 40·20 = 800 (the bar's 8·8 lies inside it); box's back (y = 30) 40·20 − 8·8 = 736, where the bar goes
+  // through; left 30·20 + 25·8 = 800; right 30·20 = 600; the bar's top beyond the box (z = 8, y 30..55) 8·25 = 200,
+  // its end (y = 55) 8·8 = 64, its right (x = 8, y 30..55) 25·8 = 200. Nine faces.
+  assert.deepEqual(faces(join), [
+    ["item-1/bottom", ["item-2/bottom"], 1400],
+    ["item-1/top", [], 1200],
+    ["item-1/front", ["item-2/front"], 800],
+    ["item-1/back", [], 736],
+    ["item-1/left", ["item-2/left"], 800],
+    ["item-1/right", [], 600],
+    ["item-2/top", [], 200],
+    ["item-2/back", [], 64],
+    ["item-2/right", [], 200],
+  ]);
+  // A reference to the bar's top follows it onto the join (rule 2); one to its bottom finds the merged face (rule 4).
+  assert.equal((resolveFace(r, { feature: "item-2", role: "top" }) as { area: number }).area, 200);
+  assert.equal(faceKey((resolveFace(r, { feature: "item-2", role: "bottom" }) as { name: Parameters<typeof faceKey>[0] }).name), "item-1/bottom");
+});
+
+// The bar 100 × 20 × 10 (item-1) cut by a 10 × 40 × 20 box (item-2) moved to (30, −10, −5) (item-3), x 30..40 right
+// through; a sketch drawn on the bar's whole top (item-4) before the Cut (item-6) is moved after it.
+function cutBar(): TimelineModel {
+  const m = createModel();
+  run(
+    m,
+    { op: "add-preset", kind: "box", sizes: [100, 20, 10] },
+    { op: "add-preset", kind: "box", sizes: [10, 40, 20] },
+    { op: "add-move", bodies: ["item-2"], shift: [30, -10, -5], turnZ: 0, pivot: [0, 0] },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [0, 0], radius: 3 }, face: { feature: "item-1", role: "top" } },
+    { op: "add-combine", target: "item-1", tool: "item-2", operation: "cut", keep: false },
+  );
+  assert.deepEqual(run(m, { op: "reorder", item: "item-6", to: 3 }), [{ kind: "done", ids: [] }]);
+  return m;
+}
+
+test("hand-worked: a Cut through a bar leaves two pieces, each split face tagged by the walls only its piece borders (rule 3)", () => {
+  const r = rebuild(cutBar().doc);
+  // Rule 1: a box's faces in made order are bottom, top, front, back, left, right; the first wholly in one piece is
+  // the left (x = 0), so the near piece x 0..30 keeps the bar's id; the far one x 40..100 is the Cut's piece.
+  const near = (r.results["item-1"] as { body?: ModelBody }).body;
+  const pieces = (r.results["item-6"] as { pieces?: ModelBody[] }).pieces ?? [];
+  assert.equal(pieces.length, 1);
+  // Volumes 30·20·10 = 6000 and 60·20·10 = 12000. The near piece borders the bar's left and the cut's wall, the tool's
+  // left (x = 30); the far one the bar's right and the tool's right (x = 40): those are the tags.
+  assert.equal(near?.volume, 6000);
+  assert.equal(pieces[0].volume, 12000);
+  assert.deepEqual(faces(near), [
+    ["item-1/bottom#item-1/left,item-2/left", [], 600],
+    ["item-1/top#item-1/left,item-2/left", [], 600],
+    ["item-1/front#item-1/left,item-2/left", [], 300],
+    ["item-1/back#item-1/left,item-2/left", [], 300],
+    ["item-1/left", [], 200],
+    ["item-2/left", [], 200],
+  ]);
+  assert.deepEqual(
+    faces(pieces[0]).map((f) => f[0]),
+    ["item-1/bottom#item-1/right,item-2/right", "item-1/top#item-1/right,item-2/right", "item-1/front#item-1/right,item-2/right", "item-1/back#item-1/right,item-2/right", "item-1/right", "item-2/right"],
+  );
+});
+
+test("hand-worked: a reference to the whole split face goes to the larger piece; the sketch drawn on it to the piece holding its origin", () => {
+  const r = rebuild(cutBar().doc);
+  // Untagged, with no point to go by (a selection): the larger top, 60·20 = 1200 mm², centred (70, 10, 10).
+  const top = resolveFace(r, { feature: "item-1", role: "top" });
+  assert.ok(top !== null && top !== "shared");
+  assert.deepEqual([top.area, top.centroid], [1200, [70, 10, 10]]);
+  // Tagged as the near piece: that one, 30·20 = 600 mm² centred (15, 10, 10).
+  const tagged = resolveFace(r, { feature: "item-1", role: "top", tag: [{ feature: "item-1", role: "left" }, { feature: "item-2", role: "left" }] });
+  assert.ok(tagged !== null && tagged !== "shared");
+  assert.deepEqual([tagged.area, tagged.centroid], [600, [15, 10, 10]]);
+  // The sketch was drawn at the top's height with its origin (0, 0, 10), a corner of the near piece: placed there,
+  // at height 10, with the split warning (not held).
+  assert.deepEqual(r.results["item-4"], { status: "built", lift: 10, plane: "plane-split" });
+  // Planted bug ("combine-first-piece"): the first carrier, never the larger, is caught by the untagged reference.
+  const first = resolveFace(r, { feature: "item-1", role: "top" }, new Set(["combine-first-piece"]));
+  assert.ok(first !== null && first !== "shared");
+  assert.equal(first.area, 600);
+});
+
+test("a Combine of a curved body is refused by the kernel's rule (error), changing no body; one of a flat body no block can model is unmodelled", () => {
+  const m = createModel();
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "cylinder", sizes: [5, 30] }, { op: "add-combine", target: "item-1", tool: "item-2", operation: "cut", keep: false });
+  const r = rebuild(m.doc);
+  assert.equal(r.results["item-3"].status, "failed");
+  assert.equal((r.results["item-3"] as { cause?: string }).cause, "error");
+  // The box and the cylinder are as they were: the box's six faces, the cylinder still built with its body.
+  assert.equal((r.results["item-1"] as { body?: ModelBody }).body?.faces.length, 6);
+  assert.ok((r.results["item-2"] as { body?: ModelBody }).body !== undefined);
+  // A triangle's extrude is flat but no block: the model can't say what Combine makes of it, and says so.
+  const t = createModel();
+  run(t, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-sketch", shape: { kind: "polygon", corners: [[0, 0], [10, 0], [0, 10]] } });
+  run(t, { op: "add-extrude", sketch: "item-2", distance: 5 });
+  run(t, { op: "add-combine", target: "item-1", tool: "item-6", operation: "join", keep: false });
+  assert.throws(() => rebuild(t.doc), UnmodelledCombine);
+});

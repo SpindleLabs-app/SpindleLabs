@@ -38,12 +38,12 @@ import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type
 import { bodyIdOf, bodyItem, buildingItems, combineBodies, isCombineItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
-import { featureNames, type BodyNames } from "./naming.ts";
-import { combineNames, featureBody, type NamedBody } from "./boolean-names.ts";
-import { frameOfBody, namesOfBody } from "./built-body.ts";
+import type { BodyNames } from "./naming.ts";
+import { combineNames, designNames, resolveFaceName, type NamedBody } from "./boolean-names.ts";
+import { frameOfBody, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
-import { resolveReference, sharedBy } from "./references.ts";
+import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
@@ -599,7 +599,8 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         }
         const { held, ...face } = content.face;
         let keep = held;
-        if (r.plane === undefined) keep = undefined;
+        // 35f1e: a sketch on a piece of its split face is placed there, so it holds nothing.
+        if (r.plane === undefined || r.plane.cause === "plane-split") keep = undefined;
         else if (held === undefined) keep = (await wasAt(content.id))?.plane;
         changed ||= keep !== held;
         const settled = keep === held ? content : { ...content, face: keep ? { ...face, held: keep } : face };
@@ -763,21 +764,38 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   }
   const plane = f.intent.parameters.plane as string;
   const p = content.face!;
-  const on = done[featureId]?.status === "built" ? bodies[bodyIdOf(featureId)] : undefined;
   let cause: PlaneWarning["cause"] = "plane-lost";
-  if (on !== undefined) {
-    const view = await cache.view(on.handle);
-    const names = namesOfBody(on, view);
-    const ref = faceReference(plane);
-    const face = resolveReference(ref, names);
-    const outward = face === null ? null : view.face_normals[face];
-    if (face !== null && outward) {
-      // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
-      const carry = p.body === undefined ? null : carried(p.body, frameOfBody(on) ?? undefined);
-      const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
-      return { status: "built", placement, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId)) };
+  const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean): Promise<FeatureResult> => {
+    // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
+    const carry = p.body === undefined ? null : carried(p.body, frameOfBody(on) ?? undefined);
+    const outward = view.face_normals[face]!;
+    const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
+    const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label) } } : {};
+    return { status: "built", placement, ...warn, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId)) };
+  };
+  if (Object.values(bodies).some((b) => b.named !== undefined)) {
+    // 35f1e, rule 3: once a Combine built, the face is found by its name on every body built so far: the one face carrying
+    // it, the piece with its tag, or (made on a whole face now split) the piece holding the origin it was drawn with,
+    // else the largest, with a warning; two alike are never guessed between. The made order is not read here (0).
+    const ids = Object.keys(bodies);
+    const list = await Promise.all(ids.map((id) => namedOf(id, bodies[id], cache, 0)));
+    const r = readDesignReference(faceReference(plane))!;
+    const found = resolveFaceName(list, designNames(list), { name: `face:${r.featureId}/${r.part}`, ...(r.tag && { tag: r.tag }), origin: p.frame.origin });
+    if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split");
+    if ("ambiguous" in found) cause = "plane-ambiguous";
+    // A name two faces of its own plain body would share carries on neither (naming.ts): ambiguous, as before a Combine.
+    const own = bodies[bodyIdOf(featureId)];
+    if ("lost" in found && own !== undefined && own.named === undefined && sharedBy(faceReference(plane), namesOfBody(own, await cache.view(own.handle))) > 1) cause = "plane-ambiguous";
+  } else {
+    const on = done[featureId]?.status === "built" ? bodies[bodyIdOf(featureId)] : undefined;
+    if (on !== undefined) {
+      const view = await cache.view(on.handle);
+      const names = namesOfBody(on, view);
+      const ref = faceReference(plane);
+      const face = resolveReference(ref, names);
+      if (face !== null && view.face_normals[face]) return place(on, view, face, false);
+      if (sharedBy(ref, names) > 1) cause = "plane-ambiguous";
     }
-    if (sharedBy(ref, names) > 1) cause = "plane-ambiguous";
   }
   return { status: "built", placement: { plane: squared(p.held ?? p.frame)!, side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } };
 }
@@ -916,7 +934,8 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     const placed = item !== undefined && isFaceSketch(item) && input?.status === "built" ? input.placement : undefined;
     const spec = await extrudeSpec(kernel, doc, f, index, placed);
     if ("status" in spec) return spec;
-    const lost = input?.status === "built" ? input.plane : undefined;
+    // 35f1e: a sketch placed on a piece of its split face is not held, so its extrude's source is not lost.
+    const lost = input?.status === "built" && input.plane?.cause !== "plane-split" ? input.plane : undefined;
     const source = lost && { ...lost, sketch: sketchId, message: `${f.provenance.self.label}'s source is lost: ${item!.provenance.self.label}'s plane is ${lost.cause === "plane-lost" ? "lost" : "ambiguous"}, so it stays where it was` };
     return made({ handle: await cache.body(spec.spec), spec: spec.spec, curves: spec.curves }, { ...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) });
   } catch (e) {
@@ -972,16 +991,8 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
 /** Combine's operations as the kernel names them. */
 const KERNEL_OP: Record<string, BooleanOp> = { join: "union", cut: "subtract", intersect: "intersect" };
 
-/**
- * A body as boolean-names.ts names it (35f1): a Combine's result with the
- * names its Combine gave; any other with its item's face names (naming.ts),
- * made order its item's place in the timeline.
- */
-async function namedOf(id: string, b: BuiltBody, cache: BodyCache, place: number): Promise<NamedBody> {
-  const view = await cache.view(b.handle);
-  if (b.named !== undefined) return { id, handle: b.handle, view, faces: b.named.faces, made: b.named.made };
-  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves }, view), place);
-}
+/** A body as boolean-names.ts names it (built-body.ts `namedBody`), its view asked of the cache. */
+const namedOf = async (id: string, b: BuiltBody, cache: BodyCache, place: number): Promise<NamedBody> => namedBody(id, b, await cache.view(b.handle), place);
 
 /**
  * A Combine's result (step 35f1; rules: docs/document-model.md section 8,

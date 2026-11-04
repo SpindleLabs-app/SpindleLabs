@@ -767,7 +767,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const r = build.results[f.id];
       if (r?.status !== "built") continue;
       const label = f.provenance.self.label;
-      if (r.plane) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.plane.message}.`, lost: true });
+      if (r.plane) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.plane.message}.`, ...(r.plane.cause !== "plane-split" && { lost: true as const }) });
       if (r.warning) out.push({ item: f.id, rows: [f.id, r.warning.sketch], sketch: r.warning.sketch, words: `${label} keeps its last shape. ${r.warning.message}.` });
       if (r.source) out.push({ item: f.id, rows: [f.id], sketch: r.source.sketch, words: `${r.source.message}.` });
       if (r.points) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.points.message}.` });
