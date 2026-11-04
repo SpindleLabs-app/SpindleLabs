@@ -1315,13 +1315,78 @@ export function sketchInputs(f: Feature, content: Pick<Sketch, "pins" | "project
   return [...new Set([...(face === null ? [] : [face]), ...(content?.pins ?? []).flatMap((p) => p.feature ?? []), ...(content?.projected ?? []).map((p) => p.feature)])];
 }
 
+/**
+ * One question's lookups and answers (app hunt 11-04): `greyedBy` and
+ * `builds` ask again about what each item is built on, so without these a
+ * stack of sketches each pinned to the two bodies before it took time
+ * exponential in its length (61 items froze the tab for 17 s on open).
+ */
+interface Asked {
+  document: DesignDocument;
+  byId: Map<unknown, Feature>;
+  sketches: Map<unknown, Feature>;
+  contents: Map<string, Sketch>;
+  marker: number | null;
+  greyed: Map<Feature, string | null>;
+  builds: Map<Feature, boolean>;
+}
+
+function asking(document: DesignDocument): Asked {
+  const { features, marker } = document.timeline;
+  const byId = new Map<unknown, Feature>();
+  const sketches = new Map<unknown, Feature>();
+  for (const f of features) {
+    if (!byId.has(f.id)) byId.set(f.id, f);
+    if (isSketchItem(f) && !sketches.has(f.id)) sketches.set(f.id, f);
+  }
+  const contents = new Map<string, Sketch>();
+  for (const s of document.sketches) if (!contents.has(s.id)) contents.set(s.id, s);
+  // The last index in range: none for "start", all for no marker, and none for a marker naming no item (findIndex's -1).
+  const end = marker === "start" ? -1 : marker === undefined ? null : features.findIndex((x) => x.id === marker);
+  return { document, byId, sketches, contents, marker: end, greyed: new Map(), builds: new Map() };
+}
+
 /** What an item is built on, of the items in the timeline: a sketch's (`sketchInputs`); an extrude of a sketch, the sketch; else nothing. */
-function inputsOf(document: DesignDocument, f: Feature): Feature[] {
-  const features = document.timeline.features;
-  if (isSketchItem(f)) return sketchInputs(f, document.sketches.find((s) => s.id === f.id)).flatMap((id) => features.find((x) => x.id === id) ?? []);
-  if (isMoveItem(f)) return f.dependsOn.flatMap((id) => features.find((x) => x.id === id) ?? []);
-  const sketch = isSketchExtrude(f) ? features.find((x) => x.id === f.intent.parameters.sketch && isSketchItem(x)) : undefined;
+function inputsOf(a: Asked, f: Feature): Feature[] {
+  if (isSketchItem(f)) return sketchInputs(f, a.contents.get(f.id)).flatMap((id) => a.byId.get(id) ?? []);
+  if (isMoveItem(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
+  const sketch = isSketchExtrude(f) ? a.sketches.get(f.intent.parameters.sketch) : undefined;
   return sketch === undefined ? [] : [sketch];
+}
+
+function greyedIn(a: Asked, f: Feature): string | null {
+  const known = a.greyed.get(f);
+  if (known !== undefined) return known;
+  // Nothing greys it while it is being asked about: an item built on itself (a file with a loop is refused when read).
+  a.greyed.set(f, null);
+  let by: string | null = null;
+  for (const input of inputsOf(a, f)) if ((by = input.suppressed ? input.id : greyedIn(a, input)) !== null) break;
+  a.greyed.set(f, by);
+  return by;
+}
+
+function buildsIn(a: Asked, f: Feature): boolean {
+  const known = a.builds.get(f);
+  if (known !== undefined) return known;
+  a.builds.set(f, false);
+  const answer = buildsNow(a, f);
+  a.builds.set(f, answer);
+  return answer;
+}
+
+function buildsNow(a: Asked, f: Feature): boolean {
+  const { document } = a;
+  const at = document.timeline.features.indexOf(f);
+  if (at < 0 || f.suppressed) return false;
+  if (a.marker !== null && at > a.marker) return false;
+  if (greyedIn(a, f) !== null) return false;
+  // A Move builds when every body it moves does.
+  if (isMoveItem(f)) return inputsOf(a, f).every((x) => buildsIn(a, x));
+  if (isSketchItem(f) || !isSketchExtrude(f)) return true;
+  const [sketch] = inputsOf(a, f);
+  // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2).
+  if (sketch === undefined) return keptOf(document, f) !== undefined;
+  return buildsIn(a, sketch);
 }
 
 /**
@@ -1332,11 +1397,7 @@ function inputsOf(document: DesignDocument, f: Feature): Feature[] {
  * null when nothing does, `f` itself suppressed included.
  */
 export function greyedBy(document: DesignDocument, f: Feature): string | null {
-  for (const input of inputsOf(document, f)) {
-    const by = input.suppressed ? input.id : greyedBy(document, input);
-    if (by !== null) return by;
-  }
-  return null;
+  return greyedIn(asking(document), f);
 }
 
 /**
@@ -1348,18 +1409,7 @@ export function greyedBy(document: DesignDocument, f: Feature): string | null {
  * the rebuild gives each item's real result.
  */
 export function builds(document: DesignDocument, f: Feature): boolean {
-  const { features, marker } = document.timeline;
-  const at = features.indexOf(f);
-  if (at < 0 || f.suppressed) return false;
-  if (marker === "start" || (marker !== undefined && at > features.findIndex((x) => x.id === marker))) return false;
-  if (greyedBy(document, f) !== null) return false;
-  // A Move builds when every body it moves does.
-  if (isMoveItem(f)) return inputsOf(document, f).every((x) => builds(document, x));
-  if (isSketchItem(f) || !isSketchExtrude(f)) return true;
-  const [sketch] = inputsOf(document, f);
-  // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2).
-  if (sketch === undefined) return keptOf(document, f) !== undefined;
-  return builds(document, sketch);
+  return buildsIn(asking(document), f);
 }
 
 /** Each item's state from the data alone, the whole timeline at once (`buildingItems`, `greyedItems`). */
@@ -1418,7 +1468,9 @@ export function greyedItems(document: DesignDocument): Map<Feature, string> {
  */
 export function partFeature(document: DesignDocument): Feature | null {
   const { features } = document.timeline;
-  for (let i = features.length - 1; i >= 0; i--) if (makesBody(features[i]) && builds(document, features[i])) return features[i];
+  // One set of answers for the whole search, so each item is worked out once.
+  const a = asking(document);
+  for (let i = features.length - 1; i >= 0; i--) if (makesBody(features[i]) && buildsIn(a, features[i])) return features[i];
   return null;
 }
 
