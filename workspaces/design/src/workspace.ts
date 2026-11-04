@@ -35,6 +35,7 @@ import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
+import { viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
@@ -1082,6 +1083,30 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const entries = menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }));
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
+  }
+
+  /**
+   * The menu on a body in the view (missing basics, Ben 2026-11-04): a right-click or a held finger on a body's face
+   * or edge selects it, as a click does (unless it is selected already, so a Shift-picked set stays), and opens its
+   * Body row's menu with Hide first. Nothing opens on empty space, while a sketch is being placed or edited, in
+   * Extrude or in a Move (their clicks pick other things), or with a box or menu already open.
+   */
+  function openViewMenu(pick: Parameters<NonNullable<SharedViewport["onMenu"]>>[0], at: { x: number; y: number }): boolean {
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    if (!doc || mode.kind !== "none" || extruding || moveBox.shown || deleting.open !== null) return false;
+    const target = viewMenuTarget(doc, lastScene, pick, failedNow);
+    const item = doc.timeline.features.find((f) => f.id === target?.feature);
+    if (!target || !item) return false;
+    if (!ctx.selection.items.some((r) => r.kind === target.item.kind && r.id === target.item.id)) ctx.selection.set([target.item]);
+    const editing = editingId();
+    const fail = (err: unknown) => panel.showError(err instanceof Error ? err.message : String(err));
+    const entries = viewMenuEntries(doc, target.feature, editing).map((e) => ({
+      ...e,
+      run: e.action === "hide" ? () => toggleHidden(target.row) : () => void chooseEntry(menuHost, target.feature, e.action, editing).catch(fail),
+    }));
+    menuAt = at;
+    deleting.menu(itemName(item), at, entries);
+    return true;
   }
 
   /**
@@ -2763,6 +2788,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Listens to picks and the selection: from mount, and again on each wake. Keys come from the shell (X7b), only while shown. */
   function listen() {
     viewport.onPick = onPick;
+    viewport.onMenu = openViewMenu;
     viewport.onSketchPointer = onSketchPointer;
     viewport.onExtrudePointer = onExtrudePointer;
     viewport.onMovePointer = onMovePointer;
@@ -2793,6 +2819,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shown = false;
     showBuildAreaWords();
     viewport.onPick = null;
+    viewport.onMenu = null;
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;
     viewport.showExtrude(null);

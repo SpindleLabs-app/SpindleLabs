@@ -180,7 +180,8 @@ export function survivors(
     let keep = true;
     const profile = readProfileReference(item);
     if (profile !== null) keep = outlineIds.includes(profile);
-    else if (r && r.kind === "body" && !inTimeline(r.featureId)) continue;
+    // A gone item's body, and its faces and edges too (view menu journey 2026-11-04: Delete left them selected).
+    else if (r && !inTimeline(r.featureId)) continue;
     else if (r && r.kind !== "body" && bodyOf(scene, item) >= 0) {
       const found = findInScene(item, scene);
       keep = found.status === "found";
