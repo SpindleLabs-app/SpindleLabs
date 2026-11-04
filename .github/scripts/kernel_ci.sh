@@ -75,14 +75,18 @@ save)
   # push whose HEAD is still this save's commit counts: a rebase that stopped
   # leaves HEAD on another job's commit, and pushing that is "up to date", a
   # success that saves nothing (the 2026-11-03 nightly lost a folder so).
-  for _ in 1 2 3 4 5 6; do
+  # In a busy hour many runs save at once (2026-11-04: two shards lost six
+  # races running), so it tries 12 times, waiting a random time up to 2, 4,
+  # 8, 16 then 32 s between tries: at most about 5 minutes in all
+  # (SAVE_WAIT_SCALE=0, for the tests, never waits).
+  for n in 1 2 3 4 5 6 7 8 9 10 11 12; do
     if [ "$(git log -1 --format=%s HEAD)" = "$subject" ]; then
       git push -q origin HEAD:main 2>"$work/push" && { echo "saved $job$left"; exit 0; }
     else
       echo "rejected: the rebase lost the commit" >"$work/push"
       git rebase --abort >/dev/null 2>&1 || true
     fi
-    sleep $((RANDOM % 5 + 1))
+    sleep $(( (RANDOM % (1 << (n < 5 ? n : 5)) + 1) * ${SAVE_WAIT_SCALE:-1} ))
     git "${id[@]}" pull -q --rebase origin main >/dev/null 2>&1 || git rebase --abort >/dev/null 2>&1 || true
   done
   # Why, in words only: the push's own message can name private files.
