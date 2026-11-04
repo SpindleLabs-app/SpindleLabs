@@ -135,3 +135,16 @@ export function constraintMarks(sketch: Sketch, size: number): Map<string, Segme
   }
   return marks;
 }
+
+/** The constraint whose mark (drawn `size` mm across) passes within `reach` mm of `at`, the nearest; null for none. The Select tool picks it, so Delete takes the constraint off. */
+export function markAt(sketch: Sketch, at: SketchXY, reach: number, size: number): string | null {
+  let best: string | null = null;
+  let nearest = Infinity;
+  for (const [id, segments] of constraintMarks(sketch, size)) {
+    for (const [a, b] of segments) {
+      const d = toSegment(at, a, b);
+      if (d <= reach && d < nearest) [best, nearest] = [id, d];
+    }
+  }
+  return best;
+}

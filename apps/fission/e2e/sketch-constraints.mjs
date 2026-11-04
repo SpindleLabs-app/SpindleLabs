@@ -7,7 +7,7 @@
 // (30, 4): the second line's start lands on (20, 0). Fix (40, 10), then
 // Coincident (0, 0) to (40, 10): two fixed points can't meet, refused, the
 // ones that fight drawn red. Ctrl+Z takes the last constraint off and its
-// point goes back. 375 px with taps: the Horizontal button on screen and
+// point goes back; Select picks a constraint's mark and Delete takes it off. 375 px with taps: the Horizontal button on screen and
 // 44 px tall, a tap on a line makes it level. Screenshots go to E2E_SHOTS
 // when set. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -175,6 +175,14 @@ try {
     await page.keyboard.press("Control+z");
     await shown(page, "sketchConstraints", "2");
     await shown(page, "sketchPoints", "0,0 20,0 30,4 40,10");
+    // Select picks the horizontal's mark, a bar 10 px above the middle of (0, 0) and (20, 0); Delete takes it off, and nothing moves.
+    await page.click("#sketch-tool-select");
+    const mm = await mmPerPixel(page);
+    await at(page, [10, 10 * mm]);
+    await until(page, () => document.querySelector("#viewport").dataset.sketchPicked !== "0", null, "the mark picked");
+    await page.keyboard.press("Delete");
+    await shown(page, "sketchConstraints", "1");
+    assert.equal(await points(page), "0,0 20,0 30,4 40,10", "nothing moved");
     await page.context().close();
   });
 

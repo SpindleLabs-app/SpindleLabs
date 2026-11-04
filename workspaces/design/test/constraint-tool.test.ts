@@ -5,7 +5,8 @@
 // the browser: apps/fission/e2e/sketch-constraints.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clickConstraint, constraintHint, constraintMarks, constraintPickAt, constraintStep, isConstraintTool, startConstraintTool } from "../src/constraint-tool.ts";
+import { clickConstraint, constraintHint, constraintMarks, constraintPickAt, constraintStep, isConstraintTool, markAt, startConstraintTool } from "../src/constraint-tool.ts";
+import { deleteCurves, deleteStep, pickedWords, stillPicked } from "../src/sketch-select.ts";
 import { partDocument, type Sketch } from "../src/document.ts";
 import { addSketch, drawLine } from "../src/sketch.ts";
 import { startTool } from "../src/sketch-tool.ts";
@@ -84,4 +85,22 @@ test("the tools start from the sketch toolbar's kinds, with their hints and undo
   assert.equal(constraintHint(startConstraintTool("fix", "s")), "Click a point to fix it where it is");
   assert.equal(constraintHint({ ...startConstraintTool("coincident", "s"), first: "p" }), "Click the point to move onto it");
   assert.equal(constraintStep("coincident"), "Coincident");
+});
+
+test("with Select, a constraint's mark is picked and Delete takes the constraint off", () => {
+  const s: Sketch = { ...oneLine(), constraints: [{ id: "constraint-9", kind: "horizontal", a: "point-3", b: "point-4" }] };
+  // Its bar at size 2 runs (4, 2)–(6, 2): from (5, 2.4) it is 0.4 away, in a reach of 0.5; from (5, 2.6), 0.6, not.
+  assert.equal(markAt(s, [5, 2.4], 0.5, 2), "constraint-9");
+  assert.equal(markAt(s, [5, 2.6], 0.5, 2), null);
+  const doc = { ...partDocument("box", 40, 30, 20), sketches: [s] };
+  assert.deepEqual(stillPicked(s, ["constraint-9", "line-5", "gone"]), ["constraint-9", "line-5"]);
+  assert.equal(pickedWords(s, ["constraint-9"]), "1 constraint");
+  assert.equal(deleteStep(s, ["constraint-9"]), "Delete constraint");
+  assert.equal(deleteStep(s, ["constraint-9", "line-5"]), "Delete 2 items");
+  const after = deleteCurves(doc, s.id, ["constraint-9"]).sketches[0];
+  assert.deepEqual(after.constraints, []);
+  assert.deepEqual(after.points, s.points, "taking a constraint off moves nothing");
+  // Both at once: the constraint, and the line with its points.
+  const both = deleteCurves(doc, s.id, ["line-5", "constraint-9"]).sketches[0];
+  assert.deepEqual([both.curves, both.constraints], [[], []]);
 });

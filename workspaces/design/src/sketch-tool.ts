@@ -737,11 +737,20 @@ function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefine
   };
   const ring = (p: SketchXY | null): (readonly [SketchXY, SketchXY])[] => (p ? circleSegments(p, size / 2) : []);
   const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[] } = {};
-  const calm = [...marks].filter(([id]) => !fighting.has(id)).flatMap(([, m]) => m);
+  // With Select (47d2), a constraint's mark is picked like a curve: lit with the picks, and lighter under the pointer.
+  const select = tool.kind === "select" ? tool : null;
+  const shownLit = new Set(select ? [...select.picked, ...(select.hover === null ? [] : [select.hover])] : []);
+  const calm = [...marks].filter(([id]) => !fighting.has(id) && !shownLit.has(id)).flatMap(([, m]) => m);
   const red = [...[...marks].filter(([id]) => fighting.has(id)).flatMap(([, m]) => m), ...lit([...fighting].filter((id) => !marks.has(id)))];
   if (calm.length > 0) out.constraints = calm;
   if (red.length > 0) out.fighting = red;
   if (s.constraints.length > 0) out.constraintCount = s.constraints.length;
+  if (select) {
+    const picked = select.picked.flatMap((id) => marks.get(id) ?? []);
+    const hover = select.hover !== null && !select.picked.includes(select.hover) ? (marks.get(select.hover) ?? []) : [];
+    if (picked.length > 0) out.picked = [...lit(select.picked), ...picked];
+    if (hover.length > 0) out.hover = hover;
+  }
   if (isConstraintTool(tool)) {
     const hover = tool.hover === null ? [] : "point" in tool.hover ? ring(at(tool.hover.point)) : lit([tool.hover.line]);
     if (hover.length > 0) out.hover = hover;
