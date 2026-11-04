@@ -10,7 +10,7 @@ import { pinProperties } from "./properties.mjs";
 import { startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4179, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4179/";
+const url = "http://localhost:4179/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 

@@ -14,7 +14,7 @@ import { startWithBox } from "./start.mjs";
 const LIMIT_MS = 100;
 
 const server = await preview({ preview: { port: 4178, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4178/";
+const url = "http://localhost:4178/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 
@@ -68,7 +68,8 @@ const stats = (xs) => {
 };
 const fmt = (ms) => `${ms.toFixed(1)} ms`;
 
-const ORDER = ["image", "render", "slice", "vector", "community", "design"];
+// Laser, not Slice: DESIGN ▾'s Slice opens Slice for printing in Design, not a workspace (src/listed-workspaces.ts).
+const ORDER = ["image", "render", "laser", "vector", "community", "design"];
 
 /**
  * Times every switch of ORDER on `page`: the first visits, then five rounds

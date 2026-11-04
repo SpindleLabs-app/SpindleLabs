@@ -62,12 +62,19 @@ export async function fileItem(page, id) {
 /**
  * DESIGN ▾ (U0f2b): shows workspace `id` (design, image, laser…) by its
  * item in the workspace button's menu, as a person would, by a click or a
- * tap on the button and then on the item.
+ * tap on the button and then on the item. A workspace the menu doesn't list
+ * (the public app lists Design and Slice only, src/listed-workspaces.ts) is
+ * opened by its link instead, as it still can be. Slice's item opens Slice
+ * for printing, not a workspace: e2e/workspace-list.mjs checks it.
  */
 export async function switchTo(page, id, tap = false) {
   const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+  const item = `#workspace-menu-menu [data-workspace="${id}"]`;
   await press("#workspace-menu");
-  await press(`#workspace-menu-menu [data-workspace="${id}"]`);
+  if ((await page.locator(item).count()) > 0) return press(item);
+  await page.keyboard.press("Escape");
+  await page.evaluate((hash) => (location.hash = hash), `#${id}`);
+  await page.waitForFunction((want) => document.body.dataset.activeWorkspace === want, id);
 }
 
 /**

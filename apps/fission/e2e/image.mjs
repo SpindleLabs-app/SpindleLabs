@@ -77,7 +77,7 @@ const broken = (() => {
   };
 
 const server = await preview({ preview: { port: 4175, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4175/";
+const url = "http://localhost:4175/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
 await page.addInitScript(() => indexedDB.deleteDatabase("fission"));

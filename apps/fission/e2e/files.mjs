@@ -37,7 +37,7 @@ function plate() {
 const png = plate();
 
 const server = await preview({ preview: { port: 4176, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4176/";
+const url = "http://localhost:4176/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 
