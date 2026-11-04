@@ -316,3 +316,31 @@ test("by hand: an edited Move's ends are taken back through the later Move of th
   // A new Move (no id) takes nothing back.
   close(snapEnds(doc, results, null, bodyIdOf(body), from, to).from.point, [105, 55, 0], "new Move");
 });
+
+// Bug hunt 2026-11-04 (E1): Snap in an edited Move onto a body just clicked out of that Move. The preview draws the
+// body back where it was made (editedMoveMesh), so that is where the user clicks; the scene's part is read as built.
+test("hand-worked: Snap in an edited Move onto a body taken out of it lands on the body where it will be, not where the Move had put it", () => {
+  // Box A (feature-1) and box B, both 10 x 10 x 10 at 0..10; Move 1 moves both by (50, 0, 0).
+  let doc = partDocument("box", 10, 10, 10);
+  const a = doc.timeline.features[0].id;
+  ({ doc } = insertPreset(doc, "box", 10, 10, 10));
+  const b = doc.timeline.features.at(-1)!.id;
+  let move: string;
+  ({ doc, id: move } = insertMove(doc, [bodyIdOf(a), bodyIdOf(b)], v({ x: 50 })));
+  const results = Object.fromEntries(doc.timeline.features.map((f) => [f.id, { status: "built" }]));
+  // As built, A's bottom face centre is (5, 5, 0) + (50, 0, 0) = (55, 5, 0) and B's top face centre (55, 5, 10).
+  const fromSeen: SnapPart = { kind: "face", point: [55, 5, 0], normal: [0, 0, -1] };
+  const toSeen: SnapPart = { kind: "face", point: [55, 5, 10], normal: [0, 0, 1] };
+  // B clicked out of the edited Move: it now holds only A; the boxes still say x = 50.
+  const ends = snapEnds(doc, results, move, bodyIdOf(a), fromSeen, toSeen, { body: bodyIdOf(b), bodies: [bodyIdOf(a)] });
+  const r = snappedValues(v({ x: 50 }), ends.from, ends.to);
+  assert.ok("values" in r, JSON.stringify(r));
+  // After OK the Move moves A alone, so B stays where it was made: its top centre is (5, 5, 10) (made at 0..10, never
+  // moved). A's bottom centre as made is (5, 5, 0), so the snapped Move must take it there: (0, 0, 10), no turn.
+  close(movedPoint([5, 5, 0], r.values), [5, 5, 10], "A's bottom lands on B's top where B will be");
+  // B still held by the Move: the part is where the Move puts it, unchanged (A's bottom onto (55, 5, 10), so x = 50, z = 10).
+  const kept = snapEnds(doc, results, move, bodyIdOf(a), fromSeen, toSeen, { body: bodyIdOf(b), bodies: [bodyIdOf(a), bodyIdOf(b)] });
+  const k = snappedValues(v({ x: 50 }), kept.from, kept.to);
+  assert.ok("values" in k, JSON.stringify(k));
+  close(movedPoint([5, 5, 0], k.values), [55, 5, 10], "with B kept in the Move the snap is as before");
+});

@@ -2390,7 +2390,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moving) return moveBox.showError(SNAP_MOVING);
     const read = readMoveBoxes(moveBox.typed);
     if ("bad" in read) return moveBox.showError(`Type the ${MOVE_BOX_WORDS[read.bad]}.`);
-    const ends = snapEnds(designDoc(), resultsNow, moveBox.editing, snapping.from.body, snapping.from.part, got.part);
+    const ends = snapEnds(designDoc(), resultsNow, moveBox.editing, snapping.from.body, snapping.from.part, got.part, { body: body.body, bodies: moveBodies });
     const r = snappedValues(read.values, ends.from, ends.to);
     if ("refused" in r) return moveBox.showError(r.refused);
     moveBox.setValues(r.values);
