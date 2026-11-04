@@ -59,7 +59,7 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], profile: { email_opt_in: false }, tokens: new Set() };
+  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set() };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
@@ -104,7 +104,7 @@ function fakeService() {
       const refresh = `refresh-${++svc.n}`;
       svc.live.add(refresh);
       svc.tokens.add(`access-${svc.n}`);
-      return json(route, 200, { access_token: `access-${svc.n}`, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: refresh, user: { id: "7f3c2a10-0000-4000-8000-000000000001", email: "ada@example.com", user_metadata: { full_name: "Ada Maker", avatar_url: "https://lh3.example/a.png" } } });
+      return json(route, 200, { access_token: `access-${svc.n}`, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: refresh, user: { id: "7f3c2a10-0000-4000-8000-000000000001", email: "ada@example.com", user_metadata: { full_name: svc.fullName, avatar_url: "https://lh3.example/a.png" } } });
     };
     if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "pkce") {
       const challenge = svc.codes.get(body.auth_code);
@@ -140,6 +140,21 @@ async function fresh(base, width = 1280, phone = false) {
   await page.waitForSelector("#settings-open", { state: "attached" });
   return { page, svc, context, elsewhere };
 }
+/** The first two top-bar items that overlap by more than 1 px (as e2e/phone-short.mjs reads them), or null. */
+const topBarOverlap = (page) =>
+  page.evaluate(() => {
+    const boxes = [...document.querySelectorAll("#topbar > *:not([hidden]), #topbar #topbar-actions > *, #topbar .app-bar > *, #topbar button")]
+      .filter((e) => e.children.length === 0 || e.tagName === "BUTTON" || e.tagName === "H1")
+      .map((e) => ({ id: e.id || e.textContent.trim().slice(0, 12), e, r: e.getBoundingClientRect() }))
+      .filter((b) => b.r.width > 2 && b.r.height > 2);
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i].r, b = boxes[j].r;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 1 && h > 1 && !boxes[i].e.contains(boxes[j].e) && !boxes[j].e.contains(boxes[i].e)) return `${boxes[i].id} overlaps ${boxes[j].id}`;
+      }
+    return null;
+  });
 const accountText = (page) => page.locator("#account-open").textContent();
 
 const scripts = (dist) => readdirSync(join(dist, "assets")).filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(dist, "assets", f), "utf8")).join("");
@@ -264,6 +279,27 @@ try {
     if (shots) await page.screenshot({ path: `${shots}/account-signed-in-1280.png` });
     await context.close();
   });
+
+  // Regression: at 761 to 899 px Sign in pushed "Saving…" under DESIGN ▾ (CI's phone-short.mjs at 844 × 390).
+  for (const width of [761, 844, 900, 999, 1000, 1100]) {
+    await check(`switch on, ${width} px: signed out and signed in with a long name, the top bar is one row with nothing overlapping`, async () => {
+      const { page, svc, context } = await fresh(ON_URL, width, width < 900);
+      svc.fullName = "Maximilianus Wolfeschlegel";
+      await page.locator("#account-open").waitFor();
+      await startWithBox(page);
+      await page.evaluate(() => { const s = document.getElementById("save-status"); if (s) s.textContent = "Saving…"; }); // the widest status
+      assert.equal(await topBarOverlap(page), null, "signed out");
+      assert.equal(await page.$eval("#topbar", (e) => Math.round(e.getBoundingClientRect().height)), 44, "signed out: one row");
+      await page.click("#account-open");
+      await page.click("#account .account-google");
+      await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Maximilianus");
+      await page.evaluate(() => { const s = document.getElementById("save-status"); if (s) s.textContent = "Saving…"; });
+      assert.equal(await topBarOverlap(page), null, "signed in");
+      assert.equal(await page.$eval("#topbar", (e) => Math.round(e.getBoundingClientRect().height)), 44, "signed in: one row");
+      if (shots) await page.screenshot({ path: `${shots}/account-bar-${width}.png`, clip: { x: 0, y: 0, width, height: 60 } });
+      await context.close();
+    });
+  }
 
   await check("switch on: Download my data saves the account's JSON; Delete asks once more, then deletes and signs out, keeping the design", async () => {
     const { page, svc, context } = await fresh(ON_URL);

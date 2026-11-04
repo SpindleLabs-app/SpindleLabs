@@ -6,6 +6,7 @@
 // signing in, or uses their session; a visit with no account sends nothing.
 
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, SESSION_KEY, type SmallStore } from "@fission/account";
+import { withIcon } from "@fission/ui";
 import "./styles/account.css";
 
 /** What signing in gives, shown beside the button. Each line must be true in the build that ships it. */
@@ -80,7 +81,10 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
   button.id = "account-open";
   button.type = "button";
   button.setAttribute("aria-haspopup", "dialog");
+  withIcon(button, "account", 16);
+  const word = button.querySelector(".tool-word")!;
   doc.getElementById("settings-open")?.before(button);
+  doc.body.classList.add("account-on"); // styles/account.css: the bar's narrow widths
 
   const dialog = el("dialog", "account");
   dialog.id = "account";
@@ -95,11 +99,11 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
     const state = client.state();
     if (state.kind === "signed-in") {
       const first = state.user.name.split(/\s+/)[0] ?? "";
-      button.textContent = first || "Account";
+      word.textContent = first || "Account";
       button.title = `Signed in as ${state.user.email || state.user.name}`;
       button.classList.add("account-signed-in");
     } else {
-      button.textContent = "Sign in";
+      word.textContent = "Sign in";
       button.title = "Sign in with Google (optional: everything works without an account)";
       button.classList.remove("account-signed-in");
     }
