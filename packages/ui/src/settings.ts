@@ -99,7 +99,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
       row.append(label, open);
       card.append(row);
     } else if (s.id === "privacy") {
-      card.append(el("p", undefined, "There is no account. Your projects are kept in this browser and nothing is sent anywhere by SpindleLabs itself. The optional AI assistant sends only what you ask it, and only once you turn it on."));
+      card.append(el("p", undefined, "Your projects are kept in this browser and are never sent to us. An account is optional and never needed to design, slice or save; signing in sends only what the privacy page lists. The optional AI assistant sends only what you ask it, and only once you turn it on."));
     } else if (s.id === "about") {
       card.append(el("p", undefined, parts.version ? `SpindleLabs, ${parts.version}` : "SpindleLabs"));
     }
