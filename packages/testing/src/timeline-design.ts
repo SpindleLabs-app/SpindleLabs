@@ -404,7 +404,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         let body = keep ? bodies.get(key) : undefined;
         if (body === undefined) {
           // 35e2: a moved body's sides are named by the shape inside the move.
-          const shape = shapeSpec(b.spec);
+          const shape = b.spec === null ? null : shapeSpec(b.spec);
           body = measure(id, shown.get(id)!, shape && "extrude" in shape ? outlineCurves(shape.extrude.profile, b.curves) : () => null);
           if (keep) bodies.set(key, body);
         }

@@ -185,7 +185,29 @@ add_run() {
     { echo ""; echo "Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):"; sed 's/^/  /' ts-mutants/latest.txt; } >>summary.txt
   fi
   if [ -f summary.txt.fuzz ]; then cat summary.txt.fuzz >>summary.txt; rm summary.txt.fuzz; fi
+  # New failures (35f1d): the kinds of problem this run found that no earlier run did (kinds-seen.txt keeps every
+  # kind found so far, as file_issues.py names them), counted in the summary's first line and one line per run in
+  # new-failures.csv. A run with none adds to the clean streak public Combine waits on (35f5).
+  touch kinds-seen.txt
+  new_kinds=$(grep -h . "$kinds_file" | sort -u | comm -23 - <(grep -h . kinds-seen.txt | sort -u))
+  new_count=$(printf '%s' "$new_kinds" | grep -c . || true)
+  [ -f new-failures.csv ] || echo "finished,new,run,commit,branch" >new-failures.csv
+  echo "$today,$new_count,$RUN_URL,$short,$BRANCH" >>new-failures.csv
+  { grep -h . "$kinds_file" kinds-seen.txt || true; } | sort -u >kinds-seen.txt.new
+  mv kinds-seen.txt.new kinds-seen.txt
+  {
+    echo "New failures this run (kinds of problem no earlier run found): $new_count"
+    [ "$new_count" -gt 0 ] && printf '%s\n' "$new_kinds" | sed 's/^/  - /'
+    echo "new-failures.csv has one line per run; kinds-seen.txt lists every kind found so far."
+    echo
+    cat summary.txt
+  } >summary.txt.new
+  mv summary.txt.new summary.txt
 }
+
+# Every kind of problem this run found, as file_issues.py names them (for the new-failures line in add_run).
+kinds_file=$(mktemp)
+python3 "$(dirname "$0")/file_issues.py" "$IN" --kinds >"$kinds_file" 2>/dev/null || : >"$kinds_file"
 
 git config user.name "github-actions[bot]"
 git config user.email "41898283+github-actions[bot]@users.noreply.github.com"

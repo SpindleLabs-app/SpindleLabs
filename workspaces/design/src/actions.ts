@@ -6,9 +6,9 @@
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
-import { bodyFeatures } from "./browser.ts";
-import { bodyHidden, bodyIdOf, bodyNumbers, partFeature, shapeOf, type DesignDocument } from "./document.ts";
-import { endSpecs } from "./move-tool.ts";
+import { designBodies } from "./browser.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, isCombineItem, partFeature, shapeOf, type DesignDocument } from "./document.ts";
+import { endStls } from "./move-tool.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
@@ -59,7 +59,7 @@ export function shownBodyFeature(ref: Selected, doc: DesignDocument, failed: Rea
   if (ref.kind !== "body") return null;
   const r = readDesignReference(ref as GeometryReference);
   if (r === null || r.kind !== "body" || failed.has(r.featureId) || bodyHidden(doc, ref.id)) return null;
-  return bodyFeatures(doc).find((f) => f.id === r.featureId) ?? null;
+  return designBodies(doc, failed).find((b) => b.body === ref.id)?.feature ?? null;
 }
 
 /**
@@ -88,7 +88,7 @@ export const ALL_HIDDEN_STL = "There is no body to download: every body is hidde
 
 /** Why the whole design's STL is empty (`shownBodyRefs` lists none): every body built is hidden, or nothing builds. */
 export const noBodyWords = (doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string =>
-  bodyFeatures(doc).some((f) => !failed.has(f.id)) ? ALL_HIDDEN_STL : NO_BODY_STL;
+  designBodies(doc, failed).length > 0 ? ALL_HIDDEN_STL : NO_BODY_STL;
 
 /** The reference to the part's body (the last solid feature that builds); null for a design with no body (24f4). */
 export function partBody(doc: DesignDocument): Selected | null {
@@ -98,7 +98,7 @@ export function partBody(doc: DesignDocument): Selected | null {
 
 /** Every body shown, for "the whole design" (the toolbar's STL button, the AI's export_stl; 25c1), in build order; none for a design with no body. */
 export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): Selected[] {
-  return bodyFeatures(doc).flatMap((f) => (failed.has(f.id) || bodyHidden(doc, bodyIdOf(f.id)) ? [] : [bodyReference(bodyIdOf(f.id))]));
+  return designBodies(doc, failed).flatMap(({ body }) => (bodyHidden(doc, body) ? [] : [bodyReference(body)]));
 }
 
 /**
@@ -109,7 +109,7 @@ export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> =
  */
 export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string {
   const numbers = bodyNumbers(doc);
-  const hidden = bodyFeatures(doc).flatMap((f) => (!failed.has(f.id) && bodyHidden(doc, bodyIdOf(f.id)) ? [numbers.get(bodyIdOf(f.id))!] : [])).sort((a, b) => a - b);
+  const hidden = designBodies(doc, failed).flatMap(({ body }) => (bodyHidden(doc, body) && numbers.has(body) ? [numbers.get(body)!] : [])).sort((a, b) => a - b);
   if (hidden.length === 0) return "";
   if (hidden.length === 1) return `Body ${hidden[0]} is hidden, so it is not in the STL: show it with its eye in the browser to include it.`;
   const list = `${hidden.slice(0, -1).join(", ")} and ${hidden.at(-1)}`;
@@ -165,9 +165,9 @@ export interface DesignRun extends WorkspaceContext {
   scene?: Scene | null;
 }
 
-/** The overlay's marks for the bodies (by feature id) that warned: their faces on `scene`, or every body when there is no scene or each shown body warned. */
+/** The overlay's marks for the bodies (by body id, 35f1) that warned: their faces on `scene`, or every body when there is no scene or each shown body warned. */
 export function warnedMarks(warned: readonly string[], scene: Scene | null | undefined): OverlayMark[] {
-  const at = scene ? warned.map((id) => scene.bodies.findIndex((b) => b.feature === id)) : [];
+  const at = scene ? warned.map((id) => scene.bodies.findIndex((b) => b.body === id)) : [];
   if (!scene || at.some((b) => b < 0) || new Set(at).size === scene.bodies.length) return [{ target: { body: true }, severity: "warning" }];
   return at.flatMap((b) => Array.from({ length: scene.bodies[b].view.faces }, (_, i) => ({ target: { face: scene.faceStart[b] + i }, severity: "warning" as const })));
 }
@@ -190,39 +190,39 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
       const doc = ctx.project.workspaces.design as DesignDocument | undefined;
       if (!doc) return { message: "There is no part to download yet.", bad: true };
       if (targets.length === 0) return { message: "Download STL takes at least one body.", bad: true };
-      const features: Feature[] = [];
+      const picked: { body: string; feature: Feature }[] = [];
       for (const target of targets) {
         // Design's own run knows the bodies the last rebuild drew (a failed one is not among them).
         const f = shownBodyFeature(target, doc);
-        if (!f || (ctx.scene && !ctx.scene.bodies.some((b) => b.feature === f.id))) return { message: `${target.id} is not a body shown in the design, so there is nothing to download.`, bad: true };
-        if (!features.includes(f)) features.push(f);
+        if (!f || (ctx.scene && !ctx.scene.bodies.some((b) => b.body === target.id))) return { message: `${target.id} is not a body shown in the design, so there is nothing to download.`, bad: true };
+        if (!picked.some((p) => p.body === target.id)) picked.push({ body: target.id, feature: f });
       }
       // Build order, whatever order they were picked in: the same bodies make the same file.
-      const order = bodyFeatures(doc);
-      features.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      const order = designBodies(doc).map((b) => b.body);
+      picked.sort((a, b) => order.indexOf(a.body) - order.indexOf(b.body));
+      const features = picked.map((p) => p.feature);
       const kindOf = (f: Feature) => {
+        // A Combine's piece is named for no one shape (35f1).
+        if (isCombineItem(f)) return "body";
         const shape = shapeOf(doc, f).shape;
         return shape === "sketch-extrude" ? "extrude" : shape;
       };
       try {
-        const files: StlFile[] = [];
-        // Every body's end at once: one rebuild for all the moved ones, not one each (clumsy hunt 2026-11-04).
-        const specs = await endSpecs(ctx.kernel, doc, features);
-        for (const [i, f] of features.entries()) files.push(await ctx.kernel.call("export_stl", specs[i], kindOf(f)));
+        const files: StlFile[] = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
         const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
         const saved = await save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), file);
         if (saved === false) return { message: "Export STL cancelled: nothing was saved.", bad: false };
         // Mark the bodies that warned on screen too: every face of one moves in single precision.
-        const warned = features.filter((_, i) => files[i].warning);
+        const warned = picked.filter((_, i) => files[i].warning);
         if (warned.length > 0)
-          ctx.viewport.setOverlay({ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: files.flatMap((f) => (f.warning ? [f.warning] : [])).join("\n"), marks: warnedMarks(warned.map((f) => f.id), ctx.scene) });
+          ctx.viewport.setOverlay({ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: files.flatMap((f) => (f.warning ? [f.warning] : [])).join("\n"), marks: warnedMarks(warned.map((p) => p.body), ctx.scene) });
         else ctx.viewport.clearOverlay(STL_OVERLAY);
         // Which body, when there are several: its browser row's number (35e: the body's own).
         const numbers = bodyNumbers(doc);
-        const place = (f: Feature) => `Body ${numbers.get(bodyIdOf(f.id))}`;
-        const warnings = features.flatMap((f, i) => (files[i].warning ? [one ? files[i].warning! : `${place(f)}: ${files[i].warning}`] : []));
+        const place = (body: string) => `Body ${numbers.get(body)}`;
+        const warnings = picked.flatMap((p, i) => (files[i].warning ? [one ? files[i].warning! : `${place(p.body)}: ${files[i].warning}`] : []));
         const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
         return { message, bad: warned.length > 0 };
       } catch (e) {
