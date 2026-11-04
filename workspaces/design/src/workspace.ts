@@ -25,7 +25,7 @@ import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from
 import { startHint } from "./start-hint.ts";
 import { browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
-import { DEFAULT_SIZES, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
+import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
@@ -856,20 +856,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return update(`Change shape to ${SHAPE_LABELS[kind] ?? kind}`);
   }
 
-  /** Why the panel's sizes for `kind` can't be taken (the first shown box that isn't from 0.001 mm to 1 km), or null. */
+  /** Why the panel's sizes for `kind` can't be taken (`panelSizeRefused`: the first shown box that isn't from 0.001 mm to 1 km, a round shape's radius, a slot's depth), or null. */
   function refusedSize(kind: PartKind): string | null {
-    for (const r of parameterRows(kind)) {
-      if (!r.shown) continue;
-      const text = inputs[SIZE_KEYS.indexOf(r.key)].value;
-      const label = kind === "sketch-extrude" ? "distance" : r.label.toLowerCase();
-      const v = Number(text);
-      if (text.trim() === "" || !Number.isFinite(v)) return `Type the ${label} in mm.`;
-      if (v <= 0) return `The ${label} must be more than 0 mm.`;
-      // Under 0.001 mm or over 1 km: the sketch boxes' and the AI's one rule (typed-entry.ts), in the box's own name (app sweep 2026-10-28).
-      const refused = lengthRefused(v);
-      if (refused !== null) return `The ${label}${refused.slice("A length".length)}`;
-    }
-    return null;
+    return panelSizeRefused(kind, Object.fromEntries(SIZE_KEYS.map((k, i) => [k, inputs[i].value])) as Record<SizeKey, string>);
   }
   /** Leaving a size box whose text was refused: the size the design last took comes back, and the words go. */
   function restoreRefused(i: number) {
@@ -892,7 +881,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // no file can hold ("Infinity" where the box takes it as typed; hunt 26g: it took the size, its undo step couldn't
     // be saved, and nothing said so), and an empty box, 0 or below (Ben's Fusion answer 8: -5 and 0 are not accepted;
     // hunt 26h: they went to the kernel and the failed part was recorded and saved). Leaving the box puts the last
-    // size back (`restoreRefused`). Under 0.001 mm or over 1 km is refused there too (`lengthRefused`); the kernel judges the rest.
+    // size back (`restoreRefused`). Under 0.001 mm or over 1 km is refused there too (`lengthRefused`), and a round shape's radius under 0.001 mm and a slot no wider than deep
+    // (`panelSizeRefused`, clumsy hunt 2026-11-04); the kernel judges the rest.
     if (next === undefined && loaded === undefined) {
       const refused = refusedSize(kind);
       if (refused !== null) return panel.showError(refused);

@@ -73,8 +73,10 @@ const DEGREES = Math.PI / 180;
 function turned(q: number[], k: 0 | 1 | 2, deg: number) {
   if (deg === 0) return;
   const [i, j] = k === 0 ? [1, 2] : k === 1 ? [2, 0] : [0, 1];
-  const c = Math.cos(deg * DEGREES);
-  const s = Math.sin(deg * DEGREES);
+  // Whole turns off first, as moveMotions does (move.ts), so a huge angle previews where it builds.
+  const r = (deg % 360) * DEGREES;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
   const [a, b] = [q[i], q[j]];
   q[i] = c * a - s * b;
   q[j] = s * a + c * b;
