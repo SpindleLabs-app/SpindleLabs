@@ -56,8 +56,8 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
   // What a left-drag does: one highlight behind the three that slides to the
   // chosen one (U9b, styles/nav-slider.css; still under reduced motion).
   const modes = group();
-  modes.classList.add("nav-slider-group");
-  const slider = modes.appendChild(Object.assign(document.createElement("span"), { className: "nav-slider" }));
+  modes.classList.add("nav-slider");
+  const slider = modes.appendChild(Object.assign(document.createElement("span"), { className: "nav-slider-mark" }));
   slider.setAttribute("aria-hidden", "true");
   const modeButtons = new Map<NavMode, HTMLButtonElement>();
   let shown: NavMode = "orbit";

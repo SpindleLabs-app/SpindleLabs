@@ -338,7 +338,7 @@ await check("phone width 375 px: the bar is whole on screen, clear of Undo and R
 const slide = (page) =>
   page.evaluate(() => {
     const box = (el) => el.getBoundingClientRect().toJSON();
-    const h = document.querySelector("#view-controls .nav-slider");
+    const h = document.querySelector("#view-controls .nav-slider-mark");
     const b = Object.fromEntries([...document.querySelectorAll("#view-controls [data-nav]")].map((el) => [el.dataset.nav, box(el)]));
     return { h: box(h), ...b, visible: getComputedStyle(h).visibility === "visible" };
   });
