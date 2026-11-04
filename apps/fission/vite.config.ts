@@ -17,7 +17,11 @@ const kernelLicence = {
 export default defineConfig({
   // Relative paths so the built site works from any URL, including GitHub Pages.
   base: "./",
-  define: { __OFFLINE_MODE__: JSON.stringify(OFFLINE_MODE) },
+  // __TEST_HOOKS__: the ?test-hooks debug surface (window.fissionTest) is built in by
+  // default so the browser tests can reach it; the live Pages build sets
+  // FISSION_NO_TEST_HOOKS=1, which makes this false so the surface is dead code and
+  // dropped from the shipped bundle (audit S12).
+  define: { __OFFLINE_MODE__: JSON.stringify(OFFLINE_MODE), __TEST_HOOKS__: JSON.stringify(process.env.FISSION_NO_TEST_HOOKS !== "1") },
   // The kernel worker imports the wasm-bindgen ES module.
   worker: { format: "es", plugins: () => [licencesPlugin({ emit: false })] },
   // third-party-licences.txt beside the app, checked against what is bundled (audit L2).
