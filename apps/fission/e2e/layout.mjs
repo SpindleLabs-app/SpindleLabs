@@ -25,7 +25,7 @@ import { preview } from "vite";
 import { closePanels, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4198, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4198/";
+const url = "http://localhost:4198/?all-workspaces"; // Split and every workspace listed (src/listed-workspaces.ts)
 const browser = await launch();
 const errors = [];
 const shots = process.env.E2E_SHOTS;
