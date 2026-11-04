@@ -26,7 +26,7 @@ import type { KernelCalls } from "@fission/core";
 import { constraintPoints, counted, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
 import { madePoints } from "./projection.ts";
 
-/** The smallest feature the kernel builds (tolerance.rs MIN_FEATURE, mm): no constraint may shrink a line or an arc below it. */
+/** The smallest feature the kernel builds (the kernel's MIN_FEATURE, mm): no constraint may shrink a line or an arc below it. */
 export const MIN_FEATURE = 1e-3;
 
 /** A constraint to add: its kind and the points it names, the first pick first. */

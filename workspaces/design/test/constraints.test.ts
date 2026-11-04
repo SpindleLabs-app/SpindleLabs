@@ -116,7 +116,7 @@ test("horizontal and vertical on one line's two ends would make it a point: refu
 test("a line made horizontal is refused at 0.9 MIN_FEATURE long and kept at 1.1", async () => {
   // Line (0, 0)–(f·MIN_FEATURE, 5): horizontal holds the start, so the end
   // comes to (f·MIN_FEATURE, 0), a line f·MIN_FEATURE long.
-  // The kernel's MIN_FEATURE is 1e-3 mm (tolerance.rs), written here by
+  // The kernel's MIN_FEATURE is 1e-3 mm, written here by
   // hand so a wrong constant in constraints.ts can't move the boundary too.
   const KERNEL_MIN_FEATURE = 1e-3;
   assert.equal(MIN_FEATURE, KERNEL_MIN_FEATURE);
