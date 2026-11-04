@@ -13,7 +13,7 @@ import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
 import { fileNameFor } from "@fission/ui";
 import { PRESET_PICKED_KEY, writePresets, type PrintPreset } from "../src/slice-presets.ts";
-import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, stopSlices, fileCrawl, FILE_CRAWL_MIN_MS, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, printLead, refusalOf, levelNote, levelNoteOf, stopSlices, fileCrawl, FILE_CRAWL_MIN_MS, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -71,7 +71,7 @@ const { Window } = await import("happy-dom");
 /** The name a stand-in saves under: the one the workspace offers. */
 const nameFor = (c: PrintChoices, f: FileChoices) => (f.format === "p1s" ? printFileName(c, f.plate, f.nozzle) : gcodeName(c));
 
-function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<void> = async () => {}) {
+function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices, f: FileChoices, alive: () => boolean, changed: () => boolean) => Promise<void> = async () => {}) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = doc.createElement("div");
@@ -87,7 +87,7 @@ function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) =
       const r = await slice(c, f, alive);
       return { ...r, name: r.name ?? nameFor(c, f) };
     },
-    preview: (c, f, alive) => (asked.push(c), files.push(f), preview(c, f, alive)),
+    preview: (c, f, alive, changed) => (asked.push(c), files.push(f), preview(c, f, alive, changed)),
   });
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
   const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -923,6 +923,18 @@ test("a long project name is cut, never the settings: two slices of it keep diff
   assert.equal(gcodeName(PRINT_DEFAULTS, "Bracket"), "Bracket-0.2mm-2w-15pc.gcode");
 });
 
+test("a project with no name of its own gives its print files its file's name (slicer hunt 11-04, package 4b)", () => {
+  // The app never names a project ("Untitled"): saved or opened as "Garden bracket", its files start with that.
+  assert.equal(printLead("Untitled", "Garden bracket"), "Garden bracket");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "standard", printLead("Untitled", "Garden bracket")), "Garden bracket-0.2mm-2w-15pc-textured.gcode.3mf");
+  assert.equal(printLead("", "Garden bracket"), "Garden bracket");
+  assert.equal(printLead(undefined, "Garden bracket"), "Garden bracket");
+  // A project that has a name keeps it; no file (or a blank one) leaves "spindlelabs".
+  assert.equal(printLead("Hinge", "Garden bracket"), "Hinge");
+  assert.equal(gcodeName(PRINT_DEFAULTS, printLead("Untitled", null)), "spindlelabs-0.2mm-2w-15pc.gcode");
+  assert.equal(gcodeName(PRINT_DEFAULTS, printLead("Untitled", "  ")), "spindlelabs-0.2mm-2w-15pc.gcode");
+});
+
 test("the lowest z of a binary STL, worked by hand; no triangle gives NaN", () => {
   // Corners' z: (5, 3, 4) and (7, -2, 9): the smallest of all six is -2.
   assert.equal(stlLowestZ(stlOfZ([[5, 3, 4], [7, -2, 9]])), -2);
@@ -1109,6 +1121,48 @@ test("while the engine writes the file, which tells no progress, the bar keeps c
   await new Promise((r) => setTimeout(r, 0));
   assert.equal($("slice-print-progress").hidden, true);
   await window.happyDOM.close();
+});
+
+test("a choice changed while a preview slices: the preview is told, so it says it shows the earlier choices (slicer hunt 11-04 leftover)", async () => {
+  let finish!: () => void;
+  const told: boolean[] = [];
+  const t = dialog(
+    async () => ({ print: print(), saved: true }),
+    (_c, _f, _alive, changed) => new Promise((r) => (finish = () => (told.push(changed()), r()))),
+  );
+  t.d.ask();
+  t.$("slice-print-preview").click();
+  t.$<HTMLSelectElement>("slice-print-walls").value = "4";
+  t.$("slice-print-walls").dispatchEvent(new t.window.Event("change") as unknown as Event);
+  finish();
+  await t.settle();
+  assert.deepEqual(told, [true]);
+  // The slice ran with the choices of the moment Preview was pressed; the next one has the new walls.
+  assert.equal(t.asked[0]!.walls, 2);
+  // Previewed again with nothing changed meanwhile: not told, though the last one was.
+  t.d.ask();
+  t.$("slice-print-preview").click();
+  finish();
+  await t.settle();
+  assert.deepEqual(told, [true, false]);
+  assert.equal(t.asked[1]!.walls, 4);
+  // A change during Slice and download, then a preview with none: the preview is not told about the earlier slice's change.
+  let done!: () => void;
+  const u = dialog(
+    () => new Promise((r) => (done = () => r({ print: print(), saved: true }))),
+    async (_c, _f, _alive, changed) => void told.push(changed()),
+  );
+  u.d.ask();
+  u.$("slice-print-go").click();
+  u.$<HTMLSelectElement>("slice-print-infill").value = "40";
+  u.$("slice-print-infill").dispatchEvent(new u.window.Event("change") as unknown as Event);
+  done();
+  await u.settle();
+  u.$("slice-print-preview").click();
+  await u.settle();
+  assert.deepEqual(told, [true, false, false]);
+  await t.window.happyDOM.close();
+  await u.window.happyDOM.close();
 });
 
 test("a choice changed while a slice runs: the result says it is the earlier choices' slice (slicer hunt 11-04, ui 5)", async () => {

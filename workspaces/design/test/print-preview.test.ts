@@ -48,7 +48,7 @@ test("hand-worked: the Show card's choices, of the kinds a print has", () => {
 
 const { Window } = await import("happy-dom");
 
-function panel(gcode: string, broken = false) {
+function panel(gcode: string, broken = false, warning?: string) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = doc.createElement("div");
@@ -61,10 +61,26 @@ function panel(gcode: string, broken = false) {
     if (broken) throw new Error("no WebGL");
     return { setTime: (t) => times.push(t), setShown: (k, travel) => shown.push({ kinds: [...k].sort(), travel }), frame() {}, resize() {}, dispose: () => void disposed++ };
   };
-  const preview = openPrintPreview(slot, p, "2 layers, 0.0 g of PLA (0.00 m of filament).", make);
+  const preview = openPrintPreview(slot, p, "2 layers, 0.0 g of PLA (0.00 m of filament).", make, warning);
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
   return { preview, times, shown, disposed: () => disposed, $, window, p };
 }
+
+test("a warning is a line of its own over the time-lapse, first in its dock; none without one (slicer hunt 11-04 leftover)", async () => {
+  const t = panel(TWO_LAYERS, false, "A choice was changed while it sliced.");
+  const note = t.$("print-preview-warning");
+  assert.equal(note.textContent, "A choice was changed while it sliced.");
+  assert.equal(note.getAttribute("role"), "status");
+  assert.equal(note.parentElement?.firstElementChild, note);
+  assert.equal(note.parentElement?.classList.contains("print-preview-noted"), true);
+  // The heading's words are the slice's alone.
+  assert.equal(t.$("print-preview-words").textContent, "2 layers, 0.0 g of PLA (0.00 m of filament).");
+  const u = panel(TWO_LAYERS);
+  assert.equal(u.$("print-preview-warning"), null);
+  assert.equal(u.$("print-preview-play").parentElement?.classList.contains("print-preview-noted"), false);
+  await t.window.happyDOM.close();
+  await u.window.happyDOM.close();
+});
 
 test("the preview opens on the finished print; the layer slider shows the print up to a layer", async () => {
   const t = panel(TWO_LAYERS);
