@@ -157,9 +157,13 @@ test("faces lying on each other by hand: two bars cut by one slab both end on it
   // The near pieces end on x = 2 facing +x and overlap too; but bar 1's far piece against bar 2's near one share no plane.
   assert.equal(facesLieOnEachOther(rebuildBooleans(timeline), "body:feature-4/piece:1", ["body:feature-5/piece:1"]), true);
   assert.equal(facesLieOnEachOther(rebuildBooleans(timeline), "body:feature-1", ["body:feature-5/piece:1"]), false);
-  // And on the real kernel the first is refused in the words the sessions stop on.
-  const { why } = await designRebuild([...timeline, { kind: "combine", id: "feature-6", target: "body:feature-1", tools: ["body:feature-2"], operation: "cut" }]);
-  assert.match(why.get("feature-6") ?? "", new RegExp(COMBINE_REFUSED));
+  // On the real kernel the first used to be refused in the words the sessions stop on; since kernel 0.33.27 (36b,
+  // faces lying on each other) it builds, and Design says what the model says: bar 1's far piece less bar 2's.
+  const full: BooleanFeature[] = [...timeline, { kind: "combine", id: "feature-6", target: "body:feature-1", tools: ["body:feature-2"], operation: "cut" }];
+  const built = await designRebuild(full);
+  assert.equal(built.why.get("feature-6"), undefined, built.why.get("feature-6"));
+  assert.equal(built.failed.has("feature-6"), false);
+  assert.equal(difference(designSaid(built.bodies, built.failed), modelSays(rebuildBooleans(full))), null);
 });
 
 interface Reach {

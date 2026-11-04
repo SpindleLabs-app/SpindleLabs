@@ -152,13 +152,22 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   await t.settle();
   assert.deepEqual(t.files[1], { format: "p1s", plate: "smooth", nozzle: "standard" });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-smooth\.gcode\.3mf: /);
+  // The four plates Bambu sells for the P1S that PLA prints on (no Engineering Plate: Bambu's PLA profile doesn't list it).
+  assert.deepEqual([...plate.options].map((o) => [o.value, o.textContent]), [["textured", "Textured PEI plate"], ["smooth", "Smooth PEI or High Temp plate"], ["cool_plate", "Cool Plate"], ["supertack_plate", "Cool Plate SuperTack"]]);
+  for (const [value, part, n] of [["cool_plate", "cool", 2], ["supertack_plate", "supertack", 3]] as const) {
+    plate.value = value;
+    t.$("slice-print-go").click();
+    await t.settle();
+    assert.deepEqual(t.files[n], { format: "p1s", plate: value, nozzle: "standard" });
+    assert.match(t.$("slice-print-status").textContent!, new RegExp(`^Saved spindlelabs-0\\.2mm-2w-15pc-${part}\\.gcode\\.3mf: `));
+  }
   // Plain G-code: the plate box greys out, and the file is .gcode.
   format.value = "gcode";
   format.dispatchEvent(new t.window.Event("change") as unknown as Event);
   assert.equal(plate.disabled, true);
   t.$("slice-print-go").click();
   await t.settle();
-  assert.equal(t.files[2].format, "gcode");
+  assert.equal(t.files[4].format, "gcode");
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc\.gcode: /);
   // The plain option says it isn't for the P1S (its start primes a line across the corner the P1S keeps clear).
   assert.match(format.querySelector('option[value="gcode"]')!.textContent!, /not for the P1S/);
@@ -367,25 +376,29 @@ test("Better grip on the shipped build: the 20 mm cube's ten brim loops after th
   assert.deepEqual(roles.slice(0, 12), ["skirt", "skirt", ...Array(10).fill("brim")]);
   assert.notEqual(roles[12], "brim");
   assert.ok(on.preview.slice(1).every((l) => l.paths.every((x) => x.role !== "brim")));
-  // The cube is centred, 118–138 mm; brim loop k's centre is 0.1 mm + 0.25 + k × 0.457 out, the outer one (k = 9) first:
-  // its least x 118 − 4.4637 = 113.5363; the warm-up loop goes round the brim's edge (4.7137 out, + 1 µm), 3 mm + 0.25
-  // further: 118 − 7.9647 = 110.0353 for its inner loop.
+  // The cube is centred, 118–138 mm, and its first layer is pulled in 0.15 mm by the bulge fix (the app's elephant-foot
+  // 0.15), 118.15–137.85; the brim and the warm-up loop go round the first layer as printed (kernel 0.33.27, slicer hunt
+  // 11-04 F1: before, round the sliced outline, the brim stood 0.25 mm off the part instead of its 0.1). Brim loop k's
+  // centre is 0.1 mm + 0.25 + k × 0.457 out, the outer one (k = 9) first: its least x 118.15 − 4.4637 = 113.6863; the
+  // warm-up loop goes round the brim's edge (4.7137 out, + 1 µm), 3 mm + 0.25 further: 118.15 − 7.9647 = 110.1853 for
+  // its inner loop.
   const least = (k: number) => Math.min(...on.preview[0].paths[k].points.filter((_, i) => i % 2 === 0));
-  assert.ok(Math.abs(least(2) - 113.5362833) < 1e-5, `${least(2)}`);
-  assert.ok(Math.abs(least(1) - 110.0352833) < 1e-5, `${least(1)}`);
+  assert.ok(Math.abs(least(2) - 113.6862833) < 1e-5, `${least(2)}`);
+  assert.ok(Math.abs(least(1) - 110.1852833) < 1e-5, `${least(1)}`);
   assert.match(on.gcode, /^;TYPE:Brim$/m);
   // The first layer is 5 °C hotter (225 for PLA's 220), back to 220 on the second, and no faster than 30 mm/s (F1800).
   assert.match(on.gcode, /^M109 S225$/m);
   assert.match(on.gcode, /^M104 S220$/m);
-  // Off: no brim; Σ (80 + 2π·d_k) = 951.23 mm of a 0.0914 mm² bead less (36.153 mm of filament), and the warm-up
-  // loop's two loops each 4.7147 mm nearer the part, 2 × 2π × 4.7147 = 59.25 mm shorter (2.252 mm): 38.405 mm less
-  // filament, and up to 12 × 2π × 0.001 mm more where the round corners' polygons lie outside their circles (0.003 mm).
+  // Off: no brim; round the 19.7 mm first layer, Σ (78.8 + 2π·d_k) = 939.23 mm of a 0.0914159 mm² bead less (35.697 mm
+  // of 1.75 mm filament, 2.405282 mm²), and the warm-up loop's two loops each 4.7147 mm nearer the part, 2 × 2π × 4.7147
+  // = 59.25 mm shorter (2.252 mm): 37.948 mm less filament, and up to 12 × 2π × 0.001 mm more where the round corners'
+  // polygons lie outside their circles (0.003 mm).
   const off = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
   assert.ok(off.preview[0].paths.every((x) => x.role !== "brim"));
   assert.doesNotMatch(off.gcode, /;TYPE:Brim/);
   assert.doesNotMatch(off.gcode, /^M109 S225$/m);
   const less = on.filamentMm - off.filamentMm;
-  assert.ok(less > 38.404 && less < 38.409, `${less}`);
+  assert.ok(less > 37.947 && less < 37.952, `${less}`);
   // The P1S's file too.
   const file = await printFileOf(kernel, doc, bodyFeatures(doc), choices, "textured");
   const g = gcodeOfPackage(file.package)!;
@@ -423,18 +436,21 @@ test("the warm-up loop on the shipped build: the 20 mm cube's first layer starts
   assert.deepEqual(roles.slice(0, 2), ["skirt", "skirt"]);
   assert.notEqual(roles[2], "skirt");
   assert.ok(on.preview.slice(1).every((l) => l.paths.every((x) => x.role !== "skirt")));
-  // The cube is centred, 118–138 mm; loop k's centre is 3 mm + 0.25 (half the 0.5 mm line) + k × 0.457 (the beads'
-  // spacing, 0.5 − 0.2 × (1 − π/4)) out: the outer one first, its least x 118 − 3.707 = 114.293, then 118 − 3.25 = 114.75.
+  // The cube is centred, 118–138 mm, its first layer pulled in 0.15 mm by the bulge fix (118.15–137.85), and the loops
+  // go round the first layer as printed (kernel 0.33.27, slicer hunt 11-04 F1). Loop k's centre is 3 mm + 0.25 (half
+  // the 0.5 mm line) + k × 0.457 (the beads' spacing, 0.5 − 0.2 × (1 − π/4)) out: the outer one first, its least x
+  // 118.15 − 3.707 = 114.443, then 118.15 − 3.25 = 114.9.
   const least = (k: number) => Math.min(...on.preview[0].paths[k].points.filter((_, i) => i % 2 === 0));
-  assert.ok(Math.abs(least(0) - 114.2929204) < 1e-5, `${least(0)}`);
-  assert.ok(Math.abs(least(1) - 114.75) < 1e-5, `${least(1)}`);
+  assert.ok(Math.abs(least(0) - 114.4429204) < 1e-5, `${least(0)}`);
+  assert.ok(Math.abs(least(1) - 114.9) < 1e-5, `${least(1)}`);
   assert.match(on.gcode, /^;TYPE:Skirt$/m);
-  // Off: none, and 80 + 2π·3.25 + 80 + 2π·3.707 = 203.71 mm less of a 0.0914 mm² bead, 7.74 mm less filament.
+  // Off: none, and round the 19.7 mm first layer 78.8 + 2π·3.25 + 78.8 + 2π·3.707 = 201.31 mm less of a 0.0914159 mm²
+  // bead, 201.31 × 0.0914159 / 2.405282 = 7.651 mm less filament.
   const off = await sliceBodies(kernel, doc, bodyFeatures(doc), { ...PRINT_DEFAULTS, warmUp: false });
   assert.ok(off.preview[0].paths.every((x) => x.role !== "skirt"));
   assert.doesNotMatch(off.gcode, /;TYPE:Skirt/);
   const less = on.filamentMm - off.filamentMm;
-  assert.ok(less > 7.741 && less < 7.744, `${less}`);
+  assert.ok(less > 7.650 && less < 7.653, `${less}`);
   // The P1S's file too.
   const file = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured");
   assert.match(gcodeOfPackage(file.package)!, /^;TYPE:Skirt$/m);
@@ -570,6 +586,22 @@ test("the cube's P1S print file on the shipped build: a package the printer chec
   const smoothFiles = storedZip(smooth.package);
   assert.match(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.json")), /"bed_type":"hot_plate"/);
   assert.doesNotMatch(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode")), /G29\.1 Z-0\.04/);
+  // Bambu's Generic PLA heats the bed to 55 °C on the textured and smooth plates, 35 °C on the Cool Plate and 45 °C on the
+  // SuperTack (Ben's Bambu Studio file: cool_plate_temp 35, supertack_plate_temp 45), first layer and the rest alike;
+  // the bed goes off (S0) at the end. Each smooth-faced plate has no trim and its own key.
+  const beds = (g: string) => (g.match(/^M140 S\d+/gm) ?? []).concat(g.match(/^M190 S\d+/gm) ?? []);
+  assert.deepEqual(beds(gcode), ["M140 S55", "M140 S0", "M190 S55"]);
+  assert.deepEqual(beds(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode"))), ["M140 S55", "M140 S0", "M190 S55"]);
+  for (const [plate, key, name, bed] of [["cool_plate", "cool_plate", "Cool Plate", 35], ["supertack_plate", "supertack_plate", "Supertack Plate", 45]] as const) {
+    const files = storedZip((await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, plate)).package);
+    const g = new TextDecoder().decode(files.get("Metadata/plate_1.gcode"));
+    assert.match(new TextDecoder().decode(files.get("Metadata/plate_1.json")), new RegExp(`"bed_type":"${key}"`));
+    assert.deepEqual(beds(g), [`M140 S${bed}`, "M140 S0", `M190 S${bed}`], plate);
+    assert.match(g, new RegExp(`^; curr_bed_type = ${name}$`, "m"));
+    assert.doesNotMatch(g, /G29\.1 Z-0\.04/);
+    // Only the plate's own lines change, not one move.
+    assert.deepEqual(layerMoves(g), layerMoves(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode"))), plate);
+  }
   // Two code paths agreeing: the same layer moves as the plain slice of the same choices; 3 walls differ, so the comparison can fail.
   const plain = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
   assert.deepEqual(layerMoves(gcode), layerMoves(plain.gcode));
