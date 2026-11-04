@@ -193,9 +193,17 @@ try {
         if (shots) await page.screenshot({ path: `${shots}/combine-${width}-empty.png` });
         await at(page, TOP1, tap);
         await fields(page, "Body 1 | Click the bodies to use as tools", "Box 1 the target");
+        const sheetOpen = () => page.evaluate(() => [document.getElementById("properties-toggle")?.getAttribute("aria-expanded") === "true", (document.getElementById("combine-operation")?.getBoundingClientRect().height ?? 0) > 0]);
+        // At phone width the view stays clear while the bodies are picked: the sheet is still shut with only the target.
+        if (tap) assert.deepEqual(await sheetOpen(), [false, false], "the sheet waits for a tool");
         assert.equal(await page.$eval("#combine-tools", (b) => b.getAttribute("aria-pressed")), "true", "the tools field picks next");
         await at(page, TOP2, tap);
         await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+        // Then it opens by itself on the operation and OK (35f1d: the monkey found them out of reach in the shut sheet).
+        if (tap) {
+          await page.waitForTimeout(300);
+          assert.deepEqual(await sheetOpen(), [true, true], "the sheet opens once a tool is picked");
+        }
         assert.equal(await page.$eval("#combine-hint", (h) => h.hidden), true, "the hint goes once both are picked");
         // A third body clicked in and out again: in the tools, then gone.
         await at(page, TOP3, tap);

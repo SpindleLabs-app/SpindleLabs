@@ -1102,7 +1102,7 @@ for (const slot of ["browser", "properties"] as const) {
   toggle.addEventListener("sheet-close", () => set(false));
 }
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
-// (Edit feature, Move's boxes once a body is picked: without the sheet open they are out of reach; not the plane prompt or
+// (Edit feature, Move's boxes once a body is picked, Combine's once its bodies are: without the sheet open they are out of reach; not the plane prompt or
 // Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
 // that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
 {
@@ -1113,7 +1113,9 @@ for (const slot of ["browser", "properties"] as const) {
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
-    const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
+    const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null ||
+      // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
+      (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null);
     if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
