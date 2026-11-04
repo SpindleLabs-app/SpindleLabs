@@ -1838,6 +1838,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (holdUnfinished("Extrude")) return;
     leaveEdit();
     leaveMove();
+    extrudeOpenings++;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const editing = mode.kind === "edit" ? mode.tool.sketch : null;
     if (mode.kind !== "none") leaveSketch();
@@ -1858,7 +1859,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (chosen) void checkExtrude(chosen);
   }
 
+  /** Each opening and closing of the Extrude panel counted: an OK whose build lands after it changed is out of date (bug hunt 11-04, E2). */
+  let extrudeOpenings = 0;
   function leaveExtrude() {
+    extrudeOpenings++;
     extruding = null;
     extrudeBox.hide();
     viewport.showExtrude(null);
@@ -2068,6 +2072,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   async function finishExtrude(typed: string) {
     const id = extruding?.sketch;
     if (!id) return;
+    const opened = extrudeOpenings;
     const distance = Number(typed);
     if (typed.trim() === "" || !Number.isFinite(distance)) return extrudeBox.showError("Type the distance in mm.");
     if (distance === 0) return extrudeBox.showError(ZERO_OK);
@@ -2084,11 +2089,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
     } catch (e) {
-      if (extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));
+      if (extrudeOpenings === opened && extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));
       return;
     }
-    // Something else changed the design while the kernel worked: this extrude is out of date.
-    if (extruding?.sketch !== id || designDoc() !== before) return;
+    // Closed or opened again, another sketch chosen, or something else changed the design, while the kernel worked: this extrude is out of date.
+    if (extrudeOpenings !== opened || extruding?.sketch !== id || designDoc() !== before) return;
     leaveExtrude();
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
@@ -2221,6 +2226,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     if (mode.kind !== "none") leaveSketch();
+    moveOpenings++;
     const doc = designDoc();
     if (id !== null) {
       const f = doc.timeline.features.find((x) => x.id === id)!;
@@ -2393,9 +2399,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     previewMove();
   }
 
+  /** Each opening and closing of the Move panel counted: an OK whose check lands after it changed is out of date (bug hunt 11-04, E2). */
+  let moveOpenings = 0;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
   function leaveMove() {
     if (!moveBox.shown) return;
+    moveOpenings++;
     const edited = moveBox.editing !== null;
     moveBox.hide();
     moveBodies = [];
@@ -2436,6 +2445,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return moveBox.showError(e instanceof Error ? e.message : String(e));
     }
     if (next === before) return leaveMove();
+    const opened = moveOpenings;
     moveBox.busy(true);
     let refused: string | null;
     try {
@@ -2443,8 +2453,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
-    // Closed, or opened on another Move, while the kernel looked: this OK is out of date.
-    if (!moveBox.shown || moveBox.editing !== id) return;
+    // Closed, or opened again (on this Move or another), while the kernel looked: this OK is out of date.
+    if (moveOpenings !== opened) return;
     moveBox.busy(false);
     if (designDoc() !== before) return moveBox.showError(MOVE_CHANGED);
     if (refused !== null) return moveBox.showError(refused);
@@ -2884,7 +2894,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // Enter is the Move panel's OK the same way (35e2b).
         if (moveBox.shown && !extrudeBox.shown) {
           if (active && active !== active.ownerDocument.body && !viewport.element.contains(active)) return false;
-          return void finishMove(moveBox.typed), true;
+          if (moveBox.ready) void finishMove(moveBox.typed); // busy while the kernel checks: a second Enter records nothing twice
+          return true;
         }
         if (!extrudeBox.shown || (active && active !== active.ownerDocument.body && !viewport.element.contains(active))) return false;
         if (extrudeBox.ready) void finishExtrude(extrudeBox.typed);
