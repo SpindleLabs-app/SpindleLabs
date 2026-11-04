@@ -197,6 +197,43 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
   });
 }
 
+// The supports hint after a slice (overhang.ts): the box hangs nowhere, so with supports on it says they are not
+// needed and one press turns them off. Its row and the buttons are on screen after the slice, at a laptop's 470 px too.
+for (const [width, height, tap] of [[1280, 800, false], [1280, 470, false], [375, 667, true]]) {
+  await check(`${width} × ${height}${tap ? ", taps" : ""}: after a slice the supports hint says whether they are needed, and one press switches them`, async () => {
+    const page = await fresh(width, tap, height);
+    const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+    try {
+      await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      assert.equal(await page.isVisible("#slice-print-supports-hint"), false, "nothing before a slice");
+      await page.selectOption("#slice-print-supports", "normal");
+      await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      await page.waitForSelector("#slice-print-supports-hint", { state: "visible" });
+      assert.equal(await page.textContent("#slice-print-supports-hint-words"), "Supports not needed: nothing hangs out more than 45°.");
+      assert.equal(await page.textContent("#slice-print-supports-flip"), "Turn supports off");
+      const onScreen = (id) =>
+        page.$eval(`#${id}`, (e) => {
+          const r = e.getBoundingClientRect();
+          const d = e.closest("dialog").getBoundingClientRect();
+          return r.height > 0 && r.top >= Math.max(0, d.top) - 0.5 && r.bottom <= Math.min(innerHeight, d.bottom) + 0.5 && r.left >= 0 && r.right <= innerWidth;
+        });
+      await page.$eval("#slice-print-supports-hint", (e) => e.scrollIntoView({ block: "nearest" }));
+      for (const id of ["slice-print-supports-hint", "slice-print-supports-flip", "slice-print-go", "slice-print-close"]) assert.ok(await onScreen(id), `${id} on screen`);
+      // A plain button, not the filled blue one: Slice and download stays the only one.
+      assert.notEqual(await page.$eval("#slice-print-supports-flip", (b) => getComputedStyle(b).backgroundColor), await page.$eval("#slice-print-go", (b) => getComputedStyle(b).backgroundColor));
+      if (tap) assert.ok((await page.$eval("#slice-print-supports-flip", (b) => b.getBoundingClientRect().height)) >= 44, "44 px to tap");
+      if (shots) await page.screenshot({ path: `${shots}/supports-hint-${width}x${height}.png` });
+      await press("#slice-print-supports-flip");
+      assert.equal(await page.$eval("#slice-print-supports", (s) => s.value), "off");
+      assert.equal(await page.isVisible("#slice-print-supports-hint"), false, "the old result's hint goes");
+      assert.equal(await page.textContent("#slice-print-status"), "Supports turned off. Slice again to make the file without them.");
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+
 // The dialog fits (Ben 10-31: on a laptop Supports was cut off and could not be reached; 470 px high, where the
 // old one-column dialog cut it, is the regression case). On a laptop-height
 // window every choice and button is on screen without scrolling; on a phone the buttons stay in view and
