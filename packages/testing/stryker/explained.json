@@ -1170,13 +1170,6 @@
   },
   {
     "file": "packages/storage/src/autosave.ts",
-    "mutator": "ConditionalExpression",
-    "original": "written === null",
-    "replacement": "false",
-    "why": "With no time to compare, `written.getTime()` throws on null and the surrounding catch leaves the entry in place, which is what the early return does."
-  },
-  {
-    "file": "packages/storage/src/autosave.ts",
     "mutator": "OptionalChaining",
     "original": "journal?.removeItem",
     "replacement": "journal.removeItem",
@@ -2651,5 +2644,173 @@
     "original": "found.length > 1",
     "replacement": "found.length >= 1",
     "why": "Reached only when found.length is not 1, where > 1 and >= 1 agree."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "rebase runs only while journalVersion is not null, which is set only after a journal write succeeded, so journal is never null there: the optional chain is never needed."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry == null",
+    "replacement": "false",
+    "why": "With no entry (another tab or recovery took it), readJournalEntry(null) throws inside rebase's try and the catch leaves the journal as it is, which is what the early return does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "read === null || read.written === null",
+    "replacement": "false",
+    "why": "Inside stored()'s try: an entry that is missing or has no time makes the next test read read.written.getTime() or read.base of null, which throws, and the catch leaves the entry in place, exactly as the early return does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "read === null || read.written === null",
+    "replacement": "read === null && read.written === null",
+    "why": "Inside stored()'s try: an entry that is missing or has no time makes the next test read read.written.getTime() or read.base of null, which throws, and the catch leaves the entry in place, exactly as the early return does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "read === null",
+    "replacement": "false",
+    "why": "Inside stored()'s try: an entry that is missing or has no time makes the next test read read.written.getTime() or read.base of null, which throws, and the catch leaves the entry in place, exactly as the early return does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "read.written === null",
+    "replacement": "false",
+    "why": "Inside stored()'s try: an entry that is missing or has no time makes the next test read read.written.getTime() or read.base of null, which throws, and the catch leaves the entry in place, exactly as the early return does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "read.written !== null",
+    "replacement": "true",
+    "why": "An entry with no time (written null) makes journalEntry(text, null, …) throw on written.getTime() inside rebase's try; the catch leaves the entry as it was, as skipping it does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.setItem",
+    "replacement": "journal.setItem",
+    "why": "rebase runs only while journalVersion is not null, which is set only after a journal write succeeded, so journal is never null there: the optional chain is never needed."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "s.writer !== undefined",
+    "replacement": "true",
+    "why": "A writer is only compared when the entry names one (entry.writer !== undefined): a store save listed with writer undefined then never equals it, as an id left out of the map doesn't."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "holds !== undefined",
+    "replacement": "true",
+    "why": "writers is filled only for projects the store lists, together with modified (holds): an id with no holds has no writer either, so writers.get(id) === entry.writer (a string) is false whatever holds says."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry.written !== null",
+    "replacement": "true",
+    "why": "This line is reached only for an entry with a base (over defined), and an entry has a base only when it has the head that also gives it a time (readJournalEntry), so written is never null here."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "holdsExactly's catch returning undefined instead of false: its only caller tests it with if, where undefined and false are alike."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "LogicalOperator",
+    "original": "typeof value === \"object\" && value !== null && !Array.isArray(value)",
+    "replacement": "typeof value === \"object\" && value !== null || !Array.isArray(value)",
+    "why": "Object.hasOwn reads only own properties: a number, string or boolean from JSON has no own formatVersion, an array from JSON can't have one, and null makes it throw, caught below as false. Each weakened check gives the same answer."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof value === \"object\" && value !== null && !Array.isArray(value)",
+    "replacement": "true",
+    "why": "Object.hasOwn reads only own properties: a number, string or boolean from JSON has no own formatVersion, an array from JSON can't have one, and null makes it throw, caught below as false. Each weakened check gives the same answer."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof value === \"object\" && value !== null",
+    "replacement": "true",
+    "why": "Object.hasOwn reads only own properties: a number, string or boolean from JSON has no own formatVersion, an array from JSON can't have one, and null makes it throw, caught below as false. Each weakened check gives the same answer."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "LogicalOperator",
+    "original": "typeof value === \"object\" && value !== null",
+    "replacement": "typeof value === \"object\" || value !== null",
+    "why": "Object.hasOwn reads only own properties: a number, string or boolean from JSON has no own formatVersion, an array from JSON can't have one, and null makes it throw, caught below as false. Each weakened check gives the same answer."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof value === \"object\"",
+    "replacement": "true",
+    "why": "Object.hasOwn reads only own properties: a number, string or boolean from JSON has no own formatVersion, an array from JSON can't have one, and null makes it throw, caught below as false. Each weakened check gives the same answer."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "ConditionalExpression",
+    "original": "value !== null",
+    "replacement": "true",
+    "why": "Object.hasOwn reads only own properties: a number, string or boolean from JSON has no own formatVersion, an array from JSON can't have one, and null makes it throw, caught below as false. Each weakened check gives the same answer."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "parsesAsProject's catch returning undefined instead of false: its only caller (identifyFile) tests it in an &&, where undefined and false are alike."
+  },
+  {
+    "file": "packages/ai/src/context.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The fallback list for a timeline with no features array is filtered by isFeature at once, and a string is no feature: [\"Stryker was here\"] filters to [] as [] does."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "id == null",
+    "replacement": "false",
+    "why": "byId is keyed by feature ids, which are strings: byId.get(null) and byId.get(undefined) give undefined, as the null check does."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!isSketchItem(f) || !isFacePlane(plane)",
+    "replacement": "false",
+    "why": "Only a sketch item has a plane parameter; for any other item plane is undefined, so faceFeature(undefined) gives null, renamed(undefined, null) gives undefined back, and the item is returned unchanged as the early return does. A sketch on an origin plane likewise renames nothing."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "LogicalOperator",
+    "original": "!isSketchItem(f) || !isFacePlane(plane)",
+    "replacement": "!isSketchItem(f) && !isFacePlane(plane)",
+    "why": "Only a sketch item has a plane parameter; for any other item plane is undefined, so faceFeature(undefined) gives null, renamed(undefined, null) gives undefined back, and the item is returned unchanged as the early return does. A sketch on an origin plane likewise renames nothing."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "d.version! > 7",
+    "replacement": "d.version! >= 7",
+    "why": "Reached only when d.version !== 7, so > 7 and >= 7 never differ."
   }
 ]
