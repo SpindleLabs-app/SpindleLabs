@@ -2227,6 +2227,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveEdit();
     if (mode.kind !== "none") leaveSketch();
     moveOpenings++;
+    dragCalledOff = false;
     const doc = designDoc();
     if (id !== null) {
       const f = doc.timeline.features.find((x) => x.id === id)!;
@@ -2339,18 +2340,37 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * (`draggedValues`), so the typed values follow the drag and the preview
    * and handles follow the box; a box typed after the drag is the user's.
    */
+  /** Escape called the held drag off (bug hunt 11-04, E6): the viewer still holds it, so its moves are let go until its release. */
+  let dragCalledOff = false;
+  /** The handle held while `dragFrom` is set. */
+  let dragHandle: MoveParam | null = null;
   const onMovePointer: SharedViewport["onMovePointer"] = (pointer) => {
+    if (dragCalledOff) {
+      if (pointer.done) dragCalledOff = false;
+      return;
+    }
     if (!moveBox.shown) return;
     if (dragFrom === null) {
       const read = readMoveBoxes(moveBox.typed);
       if ("bad" in read) return moveBox.showError(`Type the ${MOVE_BOX_WORDS[read.bad]}.`);
       dragFrom = read.values;
     }
+    dragHandle = pointer.handle;
     moveBox.setValue(pointer.handle, draggedValues(dragFrom, pointer.handle, pointer.amount)[pointer.handle]);
     moveBox.dragging(pointer.done ? null : pointer.handle); // the box being changed glows while the drag lasts
     if (pointer.done) dragFrom = null;
     previewMove();
   };
+
+  /** The held handle's drag called off: its box back to its number at the press, the rest of the drag let go. */
+  function callOffMoveDrag() {
+    if (dragFrom === null) return;
+    if (dragHandle !== null) moveBox.setValue(dragHandle, dragFrom[dragHandle]);
+    dragFrom = null;
+    dragCalledOff = true;
+    moveBox.dragging(null);
+    previewMove();
+  }
 
   function startSnap() {
     if (!moveBox.shown || moveBodies.length === 0) return;
@@ -2906,6 +2926,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "clear-selection" && editBox.editing !== null) return leaveEdit(), true;
       // Escape while Snap picks stops the snap, and only that (35e2d).
       if (id === "clear-selection" && moveBox.shown && snapping) return stopSnap(), true;
+      // Escape while a Move handle is held calls off the drag, and only that: its box back to its number at the press (E6).
+      if (id === "clear-selection" && moveBox.shown && dragFrom !== null) return callOffMoveDrag(), true;
       if (id === "clear-selection" && moveBox.shown) return leaveMove(), true;
       // M opens Move outside a sketch (Fusion's key); in a sketch the key does what it would.
       if (id === "move-tool") return mode.kind === "none" ? (startMove(), true) : false;

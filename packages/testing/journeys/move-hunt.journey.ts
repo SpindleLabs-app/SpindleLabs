@@ -90,3 +90,29 @@ test("a Move cancelled with Escape while OK was checked is not recorded into a n
   assert.equal(a.$("#move-panel")!.hidden, false, "the new Move panel was shut by the old OK");
   await a.close();
 });
+
+// Bug hunt 2026-11-04 (E6): Escape while a Move arrow is held calls off only the drag (the box back to its number at
+// the press), keeping the Move, its typed numbers and its bodies, as Escape on a timeline drag does.
+test("Escape while a Move arrow is held calls off the drag, keeping the Move and its typed numbers", async () => {
+  const a = await app(partDocument("box", 40, 30, 20));
+  a.selection.set([bodyReference("body:feature-1")]);
+  await a.key("move-tool");
+  const y = a.$("#move-y") as HTMLInputElement;
+  y.value = "7";
+  y.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  await a.settle();
+  await a.movePointer({ handle: "x", amount: 12.4, done: false }); // the X arrow held, 12 mm out
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "12");
+  await a.key("clear-selection"); // Escape with the arrow still held
+  assert.equal(a.$("#move-panel")!.hidden, false, "Escape mid-drag shut the whole Move panel");
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "0", "X back to its number at the press");
+  assert.equal((a.$("#move-y") as HTMLInputElement).value, "7", "the typed Y kept");
+  // The viewer still holds the arrow until it is let go: its later moves and its release change nothing.
+  await a.movePointer({ handle: "x", amount: 20.2, done: false });
+  await a.movePointer({ handle: "x", amount: 20.2, done: true });
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "0", "the called-off drag's later moves are let go");
+  // A new drag after it works as before: 5 mm out from the X of 0.
+  await a.movePointer({ handle: "x", amount: 5.1, done: true });
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "5", "a new drag moves the box again");
+  await a.close();
+});
