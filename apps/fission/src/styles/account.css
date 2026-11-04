@@ -17,3 +17,9 @@
 .account .account-note { padding: var(--look-space-2) var(--look-space-3); background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
 .account .account-small { color: #a9b0b8; font-size: 13px; }
 .account a.account-small { color: #4aa8ff; justify-self: start; }
+.account .account-emails { display: flex; align-items: flex-start; gap: var(--look-space-2); cursor: pointer; }
+.account .account-emails input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
+.account .account-emails-text { display: grid; gap: 2px; }
+.account .account-yours { display: flex; flex-wrap: wrap; gap: var(--look-space-2); }
+.account .account-danger { border-color: #8a3a3a; color: #f0b4b4; }
+.account .account-danger:hover { border-color: #d05a5a; color: #ffd0d0; }

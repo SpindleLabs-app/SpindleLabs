@@ -53,14 +53,14 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [] };
-  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type", "access-control-allow-methods": "POST, GET, OPTIONS" };
+  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], profile: { email_opt_in: false }, tokens: new Set() };
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    svc.calls.push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") ? url.search : ""}`);
+    svc.calls.push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") || url.pathname.startsWith("/rest/") ? url.search : ""}`);
     if (url.pathname === "/auth/v1/authorize") {
       const back = new URL(url.searchParams.get("redirect_to"));
       assert.equal(url.searchParams.get("provider"), "google");
@@ -76,9 +76,28 @@ function fakeService() {
     if (svc.mode === "down") return route.abort("internetdisconnected");
     if (req.headers().apikey !== KEY) return json(route, 401, { error: "no key" });
     const body = req.postDataJSON() ?? {};
+    if (url.pathname.startsWith("/rest/v1/")) {
+      // The data API, as the database's rules allow it for the one signed-in person.
+      if (!svc.profile || !svc.tokens.has((req.headers().authorization ?? "").replace("Bearer ", ""))) return json(route, 401, { message: "JWT invalid" });
+      const what = url.pathname.slice("/rest/v1/".length);
+      if (req.method() === "GET" && what === "profiles") return json(route, 200, [{ email_opt_in: svc.profile.email_opt_in }]);
+      if (req.method() === "PATCH" && what === "profiles" && url.searchParams.get("id") === "eq.7f3c2a10-0000-4000-8000-000000000001") {
+        svc.profile.email_opt_in = body.email_opt_in;
+        return route.fulfill({ status: 204, headers: cors });
+      }
+      if (req.method() === "POST" && what === "rpc/my_data") return json(route, 200, { account: { email: "ada@example.com" }, profile: svc.profile, plan: { plan: "free" } });
+      if (req.method() === "POST" && what === "rpc/delete_my_account") {
+        svc.profile = undefined;
+        svc.live.clear();
+        svc.tokens.clear();
+        return route.fulfill({ status: 204, headers: cors });
+      }
+      return json(route, 404, {});
+    }
     const issue = () => {
       const refresh = `refresh-${++svc.n}`;
       svc.live.add(refresh);
+      svc.tokens.add(`access-${svc.n}`);
       return json(route, 200, { access_token: `access-${svc.n}`, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: refresh, user: { id: "7f3c2a10-0000-4000-8000-000000000001", email: "ada@example.com", user_metadata: { full_name: "Ada Maker", avatar_url: "https://lh3.example/a.png" } } });
     };
     if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "pkce") {
@@ -155,18 +174,15 @@ try {
     await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
     assert.equal(new URL(page.url()).search, "", "the code is gone from the address");
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
-    assert.deepEqual(svc.calls, ["GET /auth/v1/authorize", "POST /auth/v1/token?grant_type=pkce"]);
+    assert.deepEqual(svc.calls, ["GET /auth/v1/authorize", "POST /auth/v1/token?grant_type=pkce"], "an unticked email box sends no email choice");
     const stored = await page.evaluate(() => localStorage.getItem("spindle.account.session"));
     assert.equal(stored.includes("a.png"), false, "the picture address is not kept");
-    if (shots) {
-      await page.click("#account-open");
-      await page.screenshot({ path: `${shots}/account-signed-in-1280.png` });
-      await page.keyboard.press("Escape");
-    }
     await page.reload();
     await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
     assert.equal(svc.calls.length, 2, "a reload with a fresh session sends nothing");
     await page.click("#account-open");
+    await page.waitForFunction(() => document.getElementById("account-emails")?.disabled === false);
+    assert.equal(await page.isChecked("#account-emails"), false, "the email choice is no until ticked");
     assert.equal(await page.locator("#account-title").textContent(), "Your account");
     assert.match(await page.locator("#account .account-who").textContent(), /Ada Maker.*ada@example\.com/);
     await page.click("#account .account-action");
@@ -209,6 +225,71 @@ try {
     assert.ok(go.x >= 0 && go.x + go.width <= 375);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
     if (shots) await page.screenshot({ path: `${shots}/account-signed-out-375.png` });
+    await context.close();
+  });
+
+  await check("switch on: the email box starts unticked; ticked before signing in, the yes is saved; it can be changed later", async () => {
+    const { page, svc, context } = await fresh(ON_URL);
+    await page.locator("#account-open").waitFor();
+    await page.click("#account-open");
+    assert.equal(await page.isChecked("#account-emails"), false, "never ticked for the person");
+    await page.check("#account-emails");
+    await page.click("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    await page.waitForFunction(() => !localStorage.getItem("spindle.account.email-choice"));
+    for (let i = 0; i < 50 && !svc.profile.email_opt_in; i++) await new Promise((r) => setTimeout(r, 100)); // the yes is sent after the return
+    assert.deepEqual(svc.profile, { email_opt_in: true });
+    assert.ok(svc.calls.includes("PATCH /rest/v1/profiles?id=eq.7f3c2a10-0000-4000-8000-000000000001"));
+    await page.click("#account-open");
+    await page.waitForFunction(() => document.getElementById("account-emails")?.checked === true && !document.getElementById("account-emails").disabled);
+    await page.uncheck("#account-emails");
+    await page.waitForFunction(() => /no emails/.test(document.querySelector("#account .account-emails .account-small")?.textContent ?? ""));
+    assert.deepEqual(svc.profile, { email_opt_in: false });
+    if (shots) await page.screenshot({ path: `${shots}/account-signed-in-1280.png` });
+    await context.close();
+  });
+
+  await check("switch on: Download my data saves the account's JSON; Delete asks once more, then deletes and signs out, keeping the design", async () => {
+    const { page, svc, context } = await fresh(ON_URL);
+    await page.locator("#account-open").waitFor();
+    await page.click("#account-open");
+    await page.click("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    await startWithBox(page);
+    await page.click("#account-open");
+    const [download] = await Promise.all([page.waitForEvent("download"), page.click("text=Download my data")]);
+    assert.equal(download.suggestedFilename(), "spindlelabs-account.json");
+    const saved = JSON.parse(readFileSync(await download.path(), "utf8"));
+    assert.equal(saved.account.email, "ada@example.com");
+    await page.click("#account .account-danger");
+    assert.equal(await page.locator("#account-title").textContent(), "Delete your account?");
+    if (shots) await page.screenshot({ path: `${shots}/account-delete-1280.png` });
+    await page.click("text=Keep my account");
+    assert.equal(await page.locator("#account-title").textContent(), "Your account");
+    assert.notEqual(svc.profile, undefined, "keeping it deletes nothing");
+    await page.click("#account .account-danger");
+    await page.click("#account .account-yours .account-danger");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Sign in");
+    assert.equal(svc.profile, undefined);
+    assert.match(await page.locator("#account .account-note").textContent(), /^Your account was deleted\. Designs on this device are still here\.$/);
+    assert.equal(await page.evaluate(() => localStorage.getItem("spindle.account.session")), null);
+    assert.equal(await page.locator("#volume").textContent(), "24,000 mm³");
+    await context.close();
+  });
+
+  await check("switch on: a delete the service can't reach keeps the account and says so", async () => {
+    const { page, svc, context } = await fresh(ON_URL);
+    await page.locator("#account-open").waitFor();
+    await page.click("#account-open");
+    await page.click("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    await page.click("#account-open");
+    svc.mode = "down";
+    await page.click("#account .account-danger");
+    await page.click("#account .account-yours .account-danger");
+    await page.waitForSelector("#account .account-note");
+    assert.match(await page.locator("#account .account-note").textContent(), /^Your account was not deleted\. Couldn't reach the sign-in service/);
+    assert.equal(await accountText(page), "Ada");
     await context.close();
   });
 

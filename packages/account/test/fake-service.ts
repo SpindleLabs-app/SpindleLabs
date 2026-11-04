@@ -23,6 +23,10 @@ export interface FakeService {
   /** The service's clock, in seconds. */
   nowS: () => number;
   readonly loggedOut: string[];
+  /** The data API's rows for the one test user, or undefined once the account is deleted. */
+  profile?: { email_opt_in: boolean };
+  /** When set, the next data request's reply body is this instead. */
+  nextData?: unknown;
 }
 
 export const USER = { id: "7f3c2a10-0000-4000-8000-000000000001", email: "maker@example.com", user_metadata: { full_name: "Ada Maker", avatar_url: "https://lh3.example/a.png" } };
@@ -35,6 +39,7 @@ export function fakeService(nowS: () => number): FakeService {
     mode: "up",
     liveRefresh: new Set(),
     loggedOut: [],
+    profile: { email_opt_in: false },
     nowS,
     approve(challenge) {
       const code = `code-${++n}`;
@@ -47,6 +52,7 @@ export function fakeService(nowS: () => number): FakeService {
       if (svc.mode === "down") throw new TypeError("Failed to fetch");
       if (typeof svc.mode === "number") return new Response("{}", { status: svc.mode });
       const headers = (init?.headers ?? {}) as Record<string, string>;
+      if (url.startsWith(`${SERVICE}/rest/v1/`)) return data(url.slice(`${SERVICE}/rest/v1/`.length), init ?? {}, headers);
       if (init?.method !== "POST") return new Response("{}", { status: 405 });
       if (headers["content-type"] !== "application/json") return new Response("{}", { status: 415 });
       if (headers.apikey !== KEY) return new Response('{"error":"no api key"}', { status: 401 });
@@ -79,6 +85,44 @@ export function fakeService(nowS: () => number): FakeService {
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
   };
+  const live = new Set<string>();
+  const realIssueTokens = svc.fetch;
+  // Every access token the service gave out still works for the data API until the account is deleted.
+  svc.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const res = await realIssueTokens(input, init);
+    if (res.status === 200 && String(input).includes("/auth/v1/token")) {
+      const copy = await res.clone().json();
+      if (typeof copy.access_token === "string") live.add(copy.access_token);
+    }
+    return res;
+  }) as typeof fetch;
+  // The data API, as the database's rules allow it for the one test user.
+  function data(path: string, init: RequestInit, headers: Record<string, string>): Response {
+    if (svc.mode === "down") throw new TypeError("Failed to fetch");
+    if (typeof svc.mode === "number") return new Response("{}", { status: svc.mode });
+    const token = headers.authorization?.replace(/^Bearer /, "") ?? "";
+    if (headers.apikey !== KEY || !live.has(token) || !svc.profile) return new Response('{"message":"JWT invalid"}', { status: 401 });
+    const reply = (body: unknown, status = 200) => {
+      const b = svc.nextData !== undefined ? svc.nextData : body;
+      svc.nextData = undefined;
+      return new Response(b === null ? null : JSON.stringify(b), { status });
+    };
+    if (init.method === "GET" && path === "profiles?select=email_opt_in") return reply([{ email_opt_in: svc.profile.email_opt_in }]);
+    if (init.method === "PATCH" && path.startsWith("profiles?id=eq.")) {
+      if (decodeURIComponent(path.slice("profiles?id=eq.".length)) === USER.id && headers.prefer === "return=minimal") {
+        svc.profile.email_opt_in = JSON.parse(String(init.body)).email_opt_in;
+      }
+      return reply(null, 204);
+    }
+    if (init.method === "POST" && path === "rpc/my_data") return reply({ account: { id: USER.id, email: USER.email }, profile: svc.profile, plan: { plan: "free" } });
+    if (init.method === "POST" && path === "rpc/delete_my_account") {
+      svc.profile = undefined;
+      svc.liveRefresh.clear();
+      live.clear();
+      return reply(null, 204);
+    }
+    return new Response("{}", { status: 404 });
+  }
   return svc;
 }
 
