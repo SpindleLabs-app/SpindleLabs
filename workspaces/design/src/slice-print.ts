@@ -832,6 +832,16 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   dialog.addEventListener("close", () => {
     generation++;
     if (busy) stopSlices();
+    // The keyboard goes back to File ▾, where the dialog was opened from, as the print preview's does (slicer hunt 2026-11-04, ui 7).
+    document.getElementById("file-menu")?.focus();
+  });
+  // A choice focused by Tab (or a phone keyboard's Next) under the buttons stuck to the dialog's bottom is scrolled up
+  // clear of them (slicer hunt 2026-11-04, ui 6: Infill and Supports were hidden under them at 375 × 667).
+  dialog.addEventListener("focusin", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target || actions.contains(target)) return;
+    const covered = target.getBoundingClientRect().bottom + 8 - actions.getBoundingClientRect().top;
+    if (covered > 0 && actions.getBoundingClientRect().height > 0) dialog.scrollTop += covered;
   });
   const working = (on: boolean) => {
     busy = on;
@@ -843,23 +853,28 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     const mine = generation;
     return () => mine === generation && dialog.open;
   };
-  // A result stays displayed next to choices it no longer matches: any change clears it.
+  // A result stays displayed next to choices it no longer matches: any change clears it, and one made while a slice
+  // runs is said with its result (slicer hunt 2026-11-04, ui 5).
+  let changedWhileBusy = false;
   for (const c of [quality, walls, infill, supports, format, plate, nozzle, { select: warmUp }, { select: grip }])
     c.select.addEventListener("change", () => {
-      if (!busy) say("", false);
+      if (busy) changedWhileBusy = true;
+      else say("", false);
       presets.changed();
       keep();
     });
   go.addEventListener("click", async () => {
     if (busy) return;
     working(true);
+    changedWhileBusy = false;
     const mine = alive();
     say("Slicing…", false);
     const end = showProgress();
     try {
       const { print, saved, name } = await events.slice(choices(), file(), mine);
       end();
-      const warnings = [unprintedWords(print), print.levelNote || null].filter((w): w is string => w !== null);
+      const earlier = changedWhileBusy ? "A choice was changed while it sliced, so this is the slice of the earlier choices: slice again for the new ones." : null;
+      const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
       end();

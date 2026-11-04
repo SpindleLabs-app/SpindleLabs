@@ -1060,3 +1060,58 @@ test("while the engine writes the file, which tells no progress, the bar keeps c
   assert.equal($("slice-print-progress").hidden, true);
   await window.happyDOM.close();
 });
+
+test("a choice changed while a slice runs: the result says it is the earlier choices' slice (slicer hunt 11-04, ui 5)", async () => {
+  let finish!: () => void;
+  const t = dialog(() => new Promise((r) => (finish = () => r({ print: print(), saved: true }))));
+  t.d.ask();
+  t.$("slice-print-go").click();
+  t.$<HTMLSelectElement>("slice-print-infill").value = "100";
+  t.$("slice-print-infill").dispatchEvent(new t.window.Event("change") as unknown as Event);
+  finish();
+  await t.settle();
+  assert.match(t.$("slice-print-status").textContent ?? "", /^Saved .*\. A choice was changed while it sliced, so this is the slice of the earlier choices: slice again for the new ones\.$/);
+  assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), true);
+  // Sliced again with nothing changed meanwhile: the plain result.
+  t.$("slice-print-go").click();
+  finish();
+  await t.settle();
+  assert.doesNotMatch(t.$("slice-print-status").textContent ?? "", /earlier choices/);
+  await t.window.happyDOM.close();
+});
+
+test("a choice focused under the sticky button row is scrolled up above it (slicer hunt 11-04, ui 6)", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.d.ask();
+  const box = (top: number, bottom: number) => () => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+  const dialogEl = t.$("slice-print-dialog");
+  // The button row from y 600 to 667; Supports from 590 to 634, 34 px under its top: scrolled up 34 + 8 = 42 px.
+  t.$("slice-print-actions").getBoundingClientRect = box(600, 667);
+  t.$("slice-print-supports").getBoundingClientRect = box(590, 634);
+  dialogEl.scrollTop = 100;
+  t.$("slice-print-supports").focus();
+  assert.equal(dialogEl.scrollTop, 142);
+  // One clear of the row (ending at 592, 8 above it) is left alone.
+  t.$("slice-print-walls").getBoundingClientRect = box(548, 592);
+  t.$("slice-print-walls").focus();
+  assert.equal(dialogEl.scrollTop, 142);
+  // The buttons themselves are never scrolled for.
+  t.$("slice-print-go").focus();
+  assert.equal(dialogEl.scrollTop, 142);
+  await t.window.happyDOM.close();
+});
+
+test("closing the Slice dialog gives the keyboard back to File ▾ (slicer hunt 11-04, ui 7)", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  const file = t.doc.createElement("button");
+  file.id = "file-menu";
+  t.doc.body.append(file);
+  t.d.ask();
+  t.$("slice-print-close").click();
+  assert.ok(t.doc.activeElement === file, `focus on ${t.doc.activeElement?.id}`);
+  // Escape (the dialog's own close) too.
+  t.d.ask();
+  (t.$("slice-print-dialog") as HTMLDialogElement).close();
+  assert.ok(t.doc.activeElement === file, `focus on ${t.doc.activeElement?.id}`);
+  await t.window.happyDOM.close();
+});
