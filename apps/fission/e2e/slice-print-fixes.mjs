@@ -154,7 +154,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     }
   });
 
-  await check(`${at}: closing the dialog mid-slice drops the file; reopened it says Slicing… with its buttons off; a changed choice clears a result`, async () => {
+  await check(`${at}: Stop (Close while slicing) stops the slice and drops the file; reopened it is ready at once; a changed choice clears a result`, async () => {
     const page = await fresh(width, tap);
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
     try {
@@ -164,11 +164,13 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.evaluate(() => (window.kernelDelay = 2500));
       await press("#slice-print-go");
       assert.equal(await page.$eval("#slice-print-preview", (b) => b.disabled), true, "Preview is off while Slice and download runs");
+      // While it slices, Close reads Stop, and pressing it stops the slice rather than leaving the engine working behind
+      // the closed dialog (slicer hunt 11-04, ui 3): reopened, it is ready at once, nothing slicing and nothing saved.
+      assert.equal(await page.textContent("#slice-print-close"), "Stop");
       await press("#slice-print-close");
       await open(page, tap);
-      assert.equal(await page.textContent("#slice-print-status"), "Slicing…");
-      assert.equal(await page.$eval("#slice-print-go", (b) => b.disabled), true);
-      await page.waitForFunction(() => !document.getElementById("slice-print-go").disabled, null, { timeout: 30000 });
+      await page.waitForFunction(() => !document.getElementById("slice-print-go").disabled, null, { timeout: 2000 });
+      assert.equal(await page.textContent("#slice-print-close"), "Close");
       await page.waitForTimeout(500);
       assert.equal(await page.$(".save-name"), null, "no name box for a dropped slice");
       assert.deepEqual(downloads, [], "nothing downloaded");

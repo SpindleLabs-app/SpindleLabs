@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CUBE_COLOURS } from "./view-theme.ts";
 import { clientToNdc, isClick } from "./picking.ts";
 import { CUBE_CORNER, cubeView, viewDirection, type ViewName } from "./views.ts";
 
@@ -33,6 +34,7 @@ export class ViewCube {
   readonly element = document.createElement("div");
   private scene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(-CUBE_VIEW_HALF, CUBE_VIEW_HALF, CUBE_VIEW_HALF, -CUBE_VIEW_HALF, 0.1, 10);
+  private outline!: THREE.LineSegments;
   private faces: { mesh: THREE.Mesh; ctx: CanvasRenderingContext2D; texture: THREE.CanvasTexture; face: (typeof FACES)[number] }[] = [];
   private raycaster = new THREE.Raycaster();
   private hover: ViewName | null = null;
@@ -53,7 +55,7 @@ export class ViewCube {
       this.faces.push({ mesh, ctx: canvas.getContext("2d")!, texture, face });
       this.scene.add(mesh);
     }
-    const outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 2)), new THREE.LineBasicMaterial({ color: 0x8c9bb0 }));
+    const outline = (this.outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 2)), new THREE.LineBasicMaterial({ color: CUBE_COLOURS.outline })));
     this.scene.add(outline);
     this.paint();
 
@@ -104,15 +106,21 @@ export class ViewCube {
   }
 
   /** Draws each face's texture: its label, its corner squares, and the hovered face or corner. */
+  /** Draw the faces and the outline again in the current theme's colours. */
+  repaint() {
+    (this.outline.material as THREE.LineBasicMaterial).color.setHex(CUBE_COLOURS.outline);
+    this.paint();
+  }
+
   private paint() {
     const s = TEXTURE_PX;
     const c = ((1 - CUBE_CORNER) / 2) * s; // a corner square's side in pixels
     const d = this.hover ? viewDirection(this.hover) : null;
     const isCorner = d !== null && d.every((x) => x !== 0);
     for (const { ctx, texture, face } of this.faces) {
-      ctx.fillStyle = "#28313d";
+      ctx.fillStyle = CUBE_COLOURS.face;
       ctx.fillRect(0, 0, s, s);
-      ctx.fillStyle = "#323d4c";
+      ctx.fillStyle = CUBE_COLOURS.corner;
       for (const [x, y] of [[0, 0], [s - c, 0], [0, s - c], [s - c, s - c]]) ctx.fillRect(x, y, c, c);
       ctx.fillStyle = "rgba(74, 168, 255, 0.6)";
       if (d && !isCorner && dot(d, face.n) === 1) {
@@ -123,7 +131,7 @@ export class ViewCube {
         // The hovered corner's square on this face: right/left and top/bottom from the face's own axes.
         ctx.fillRect(dot(d, face.right) > 0 ? s - c : 0, dot(d, face.up) > 0 ? 0 : s - c, c, c);
       }
-      ctx.fillStyle = "#dfe5ee";
+      ctx.fillStyle = CUBE_COLOURS.label;
       ctx.font = `600 ${face.label.length > 4 ? 20 : 24}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";

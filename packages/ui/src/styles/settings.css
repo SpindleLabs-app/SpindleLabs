@@ -16,3 +16,9 @@
   .settings { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; border-width: 0; }
   .settings .close, .settings .settings-action { min-height: var(--look-target-touch); }
 }
+/* U2a: the Theme row's three choices, one joined group; the chosen one has the accent glow. */
+.settings .settings-choices { display: inline-flex; border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); overflow: hidden; }
+.settings .settings-choice { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-3); color: inherit; background: var(--look-field); border: 0; border-right: 1px solid var(--look-edge); cursor: pointer; }
+.settings .settings-choice:last-child { border-right: 0; }
+.settings .settings-choice[aria-checked="true"] { background: var(--look-active-fill); color: var(--look-accent-text); box-shadow: inset 0 0 0 1px var(--look-accent); }
+@media (max-width: 640px) { .settings .settings-choice { min-height: var(--look-target-touch); padding: 0 var(--look-space-2); } }

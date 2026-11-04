@@ -110,3 +110,20 @@ test("a tab that didn't open the kept entry still won't save over it, and says a
   assert.equal(statuses.at(-1), "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload the page to see them.");
   assert.equal(a.leaving(), false);
 });
+
+test("that tab finished (a file opened) keeps its change as a separate project beside the kept entry (round 2 hunt A5)", async () => {
+  const { real, store, journal, room } = await fullAfterReload();
+  room();
+  let project = await real.open("p");
+  const top = (await real.list())[0];
+  const a = startAutosave(store, "p", () => project, () => {}, { journal, timers, quietMs: 0, stored: true, storedAt: top.modified, newId: () => "copy-1" });
+  project = { ...project, name: "Renamed" };
+  a.changed();
+  await settle();
+  // Its rename can't go over the kept 50, and before the fix Open dropped it; now it is stored apart, and named.
+  assert.equal(a.finish(), "Renamed (from another tab)");
+  await settle();
+  assert.equal((await real.open("copy-1")).name, "Renamed (from another tab)");
+  assert.equal(widthOf(await real.open("p")), 40, "nothing saved over the kept 50's stored state");
+  assert.equal(widthOf(JSON.parse(keptEntry(journal, "p")!)), 50, "the kept entry as it was");
+});

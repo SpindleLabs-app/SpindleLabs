@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 // for text), the corners grow small to large, and a tap target is 44 px.
 
 const css = readFileSync(fileURLToPath(new URL("../src/theme.css", import.meta.url)), "utf8");
-const root = [...css.matchAll(/:root\s*\{([^}]*)\}/g)].map((m) => m[1]).join("\n");
+const root = [...css.matchAll(/:root[^{]*\{([^}]*)\}/g)].map((m) => m[1]).join("\n");
 /** A token's value with every var(--other) inside it followed down to the colours (U1a: the look values now name the colour tokens). */
 const token = (name: string): string => {
   const m = root.match(new RegExp(`--${name}:\\s*([^;]+);`));

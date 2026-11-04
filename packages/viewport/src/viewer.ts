@@ -18,6 +18,7 @@ import { ExtrudeLayer } from "./extrude-layer.ts";
 import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, placeHandles, ringAngle, turnBetween, type Placed } from "./move-handles.ts";
 import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
+import { BUILD_AREA_COLOURS, GROUND_GRID, SKETCH_COLOURS, onViewTheme } from "./view-theme.ts";
 import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
 
 // The kernel is Z-up (like most CAD); Three.js defaults to Y-up.
@@ -969,6 +970,11 @@ export class ViewportView {
   }
 
   /** Stops drawing and takes this view's canvas, cube and legend out of its element. */
+  /** The view cube's faces drawn again (the theme changed). */
+  repaintCube() {
+    this.cube.repaint();
+  }
+
   dispose() {
     this.clearImage();
     this.renderer.setAnimationLoop(null);
@@ -987,8 +993,6 @@ export class ViewportView {
   }
 }
 
-/** The sketch colours (sRGB): the edited sketch's lines bright, finished ones quieter, the grid faint, the axes red (x) and green (y). */
-const SKETCH_COLOURS = { picked: 0xffe14d, hover: 0xb8e4ff, line: 0x6cc4ff, finished: 0x8b95a3, projected: 0xc77dff, projectedFinished: 0x9d6fc4, lost: 0xff6b6b, preview: 0xffb454, snap: 0x4dff88, point: 0xffffff, grid: 0xaab4c3, axisX: 0xe5534b, axisY: 0x57ab5a, plane: 0x6cc4ff, planeOff: 0x8b95a3 };
 /**
  * How opaque the sketch grid's major lines are (minor ones fade in up to
  * this as they spread apart, sketch-view's minorStrength): light and see-
@@ -1015,8 +1019,6 @@ export const BODY_FADE = { faces: 0.3, edges: 0.35 };
 const GROUND_ORDER = -2;
 /** The origin planes offered for a sketch: over the ground grid, under everything else (showPlanes). */
 const PLANE_ORDER = -1.5;
-/** The build area's colours: a quiet blue when the bodies fit, red when they go outside, grey for the floor kept clear. */
-const BUILD_AREA_COLOURS = { fits: 0x6fa8ff, outside: 0xff4d4d, keptClear: 0x9aa3b2 };
 const FINISHED_SKETCH_ORDER = -1;
 /** A finished sketch whose plane is lost (26e): after the body, so its red shows on the edges it lies on. */
 const LOST_SKETCH_ORDER = 0.5;
@@ -1059,7 +1061,11 @@ export class Viewer implements SharedViewport {
   private overlays = new Map<string, AnalysisOverlay>();
   private host: ViewHost;
   /** The ground grid and the model's axes, hidden while a sketch with its own grid and axes is edited. */
-  private grid: THREE.GridHelper;
+  private grid!: THREE.GridHelper;
+  /** What was last shown, so a theme change draws it again in the new colours. */
+  private lastSketches: readonly SketchDrawing[] | null = null;
+  private lastPlanes: { planes: readonly OriginPlane[]; faces: readonly number[] } | null = null;
+  private lastOrigin: OriginShown | null = null;
   private axes = new THREE.Group();
   /** The origin's planes the browser's eyes show (showOrigin): faint squares, none at first. */
   private originPlanes = new THREE.Group();
@@ -1103,8 +1109,7 @@ export class Viewer implements SharedViewport {
   constructor(container: HTMLElement) {
     this.element = container;
     // Blue-grey lines on the blue backdrop (UX2): the middle pair stronger.
-    const grid = (this.grid = new THREE.GridHelper(200, 20, 0x46536a, 0x2a3242));
-    grid.rotation.x = Math.PI / 2; // lay the grid on the XY plane
+    const grid = (this.grid = this.makeGrid());
     // The model's axes, three.js's own, one helper per axis (each drawing only its own two points) so an eye can hide one.
     for (let k = 0; k < 3; k++) {
       const axis = new THREE.AxesHelper(20);
@@ -1116,6 +1121,7 @@ export class Viewer implements SharedViewport {
       ground.renderOrder = GROUND_ORDER;
       (ground.material as THREE.Material).depthWrite = false;
     }
+    onViewTheme(() => this.refreshTheme()); // lives as long as the viewer
     this.element.dataset.origin = "x y z"; // read by the e2e test
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(1, -2, 3);
@@ -1164,6 +1170,32 @@ export class Viewer implements SharedViewport {
     };
     this.views.push(new ViewportView(this.host, container));
     this.paint();
+  }
+
+  /** The ground grid in the theme's colours: three.js's helper laid on the XY plane, drawn first and writing no depth like the axes. */
+  private makeGrid(): THREE.GridHelper {
+    // Blue-grey lines on the blue backdrop (UX2): the middle pair stronger.
+    const grid = new THREE.GridHelper(200, 20, GROUND_GRID.centre, GROUND_GRID.lines);
+    grid.rotation.x = Math.PI / 2; // lay the grid on the XY plane
+    grid.renderOrder = GROUND_ORDER;
+    (grid.material as THREE.Material).depthWrite = false;
+    grid.visible = this.grid ? this.grid.visible : true;
+    return grid;
+  }
+
+  /** The theme changed (U1b): the backdrop follows by itself (painted every frame); the ground grid, the body's colours and everything drawn with a theme colour are drawn again. */
+  private refreshTheme() {
+    const old = this.grid;
+    this.grid = this.makeGrid();
+    this.scene.remove(old);
+    old.geometry.dispose();
+    (old.material as THREE.Material).dispose();
+    this.scene.add(this.grid);
+    this.paint();
+    if (this.lastSketches) this.showSketches(this.lastSketches);
+    if (this.lastPlanes) this.showPlanes(this.lastPlanes.planes, this.lastPlanes.faces);
+    if (this.lastOrigin) this.showOrigin(this.lastOrigin);
+    for (const view of this.views) view.repaintCube();
   }
 
   /** The view filling the viewer's own element. */
@@ -1332,6 +1364,7 @@ export class Viewer implements SharedViewport {
    * Replaces what was drawn.
    */
   showSketches(drawings: readonly SketchDrawing[]) {
+    this.lastSketches = drawings;
     clearGroup(this.sketches);
     this.editedPlane = null;
     this.editedSide = 1;
@@ -1516,6 +1549,7 @@ export class Viewer implements SharedViewport {
    * under the pointer is what a click picks (picking.ts planeOrFace).
    */
   showPlanes(planes: readonly OriginPlane[], faces: readonly number[] = []) {
+    this.lastPlanes = { planes, faces };
     clearGroup(this.planes);
     this.planeHits = [];
     this.planeHover = null;
@@ -1554,6 +1588,7 @@ export class Viewer implements SharedViewport {
    * a sketch is edited, which has its own axes.
    */
   showOrigin(shown: OriginShown) {
+    this.lastOrigin = shown;
     for (const a of this.axes.children) a.visible = shown.axes[a.userData.axis as number];
     clearGroup(this.originPlanes);
     const half = Math.max(10, 0.8 * this.bodyFraming().radius);

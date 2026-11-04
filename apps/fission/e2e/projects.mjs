@@ -1,7 +1,8 @@
 // Browser check of File > Projects in this browser… (U6a; round 2 hunt A2, A3), in a real Chromium:
 //   A2  after File > Open, the project you had (never saved as a file) is listed and opens again, and a reload then
 //       opens it (it was the one listed first);
-//   A3  a stale tab's change kept "(from another tab)" is listed and opens;
+//   A3  a stale tab's change kept "(from another tab)" is listed and opens; A5's too (a refused tab's edits, kept apart
+//       when another project opens from the list);
 //   Delete asks first, Keep it keeps it, Delete takes it out of the list for good (a reload doesn't bring it back), and
 //       the open project offers no Delete;
 //   a stored project that can't be read is refused in the dialog with why, and the open project stays as it was;
@@ -192,6 +193,33 @@ try {
     assert.equal(await page.$eval("#projects", (d) => d.open), true, "the dialog stays to say why");
     await volume(page, "36,000 mm³");
     assert.equal(await page.$eval("#save-status", (s) => s.dataset.state), "saved");
+    await context.close();
+  });
+
+  await check("A5 with the list: a tab whose saves are refused keeps its edits as '(from another tab)' when another project is opened from the list, and lists it", async () => {
+    const { context, page } = await openedOver(); // Sixty open (36,000 mm³), the 50-wide Untitled kept
+    await showList(page);
+    await rowButton(page, "Untitled", "project-open").click();
+    await volume(page, "30,000 mm³");
+    await saved(page);
+    const other = await context.newPage(); // a second tab: it opens Untitled, the last project
+    await other.goto(url + "#design");
+    await volume(other, "30,000 mm³");
+    await pinProperties(other);
+    await typeWidth(page, "55"); // the first tab saves first: 55 · 30 · 20 = 33,000 mm³
+    await volume(page, "33,000 mm³");
+    await saved(page);
+    await typeWidth(other, "70"); // refused in the second: 70 · 30 · 20 = 42,000 mm³
+    await volume(other, "42,000 mm³");
+    await until(other, () => /changed in another tab/.test(document.querySelector("#save-status").textContent), null, "the refusal");
+    await showList(other);
+    await rowButton(other, "Sixty", "project-open").click();
+    await volume(other, "36,000 mm³");
+    await until(other, () => /kept in this browser as a separate project, “Untitled \(from another tab\)”/.test(document.querySelector("#file-status").textContent), null, "what was kept apart, said");
+    await showList(other);
+    assert.deepEqual((await listed(other)).map(([n]) => n).sort(), ["Sixty", "Untitled", "Untitled (from another tab)"]);
+    await rowButton(other, "Untitled (from another tab)", "project-open").click();
+    await volume(other, "42,000 mm³"); // the refused edit, kept
     await context.close();
   });
 

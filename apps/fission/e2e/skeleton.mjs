@@ -45,6 +45,20 @@ async function fresh({ width = 1280, height = 800, touch = false, hold = false, 
       requestAnimationFrame(look);
     };
     requestAnimationFrame(look);
+    // When each skeleton starts to leave (its fade, as styled then) and when it is gone: timed by the page's own
+    // clock, so a busy machine that draws few frames during the 160 ms fade still shows whether it faded.
+    window.skeletonEvents = [];
+    const shapeOf = (el) => el.classList[1];
+    new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === "attributes" && r.target.classList.contains("skeleton") && r.target.classList.contains("skeleton-leaving")
+          && !window.skeletonEvents.some((e) => e.el === r.target && e.kind === "leaving")) {
+          const style = getComputedStyle(r.target);
+          window.skeletonEvents.push({ el: r.target, kind: "leaving", t: performance.now(), shape: shapeOf(r.target), animation: style.animationName, duration: style.animationDuration });
+        }
+        for (const n of r.removedNodes) if (n.classList?.contains("skeleton")) window.skeletonEvents.push({ el: n, kind: "removed", t: performance.now(), shape: shapeOf(n) });
+      }
+    }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
     const send = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (message, ...rest) {
       const wait = window.kernelDelay ?? 0;
@@ -67,12 +81,23 @@ async function fresh({ width = 1280, height = 800, touch = false, hold = false, 
   return { page, context, release };
 }
 
+/** How the `shape` skeleton left: its fade's animation and duration, and how long it stayed after starting to leave. */
+const leaving = (page, shape) => page.evaluate((s) => {
+  const ev = window.skeletonEvents.filter((e) => e.shape === s);
+  const start = ev.find((e) => e.kind === "leaving"), end = ev.find((e) => e.kind === "removed");
+  return start && end ? { animation: start.animation, duration: start.duration, stayed: end.t - start.t } : null;
+}, shape);
 const frames = (page, shape) => page.evaluate((s) => window.skeletonFrames.filter((f) => f.shape === s), shape);
-/** The early-frames rule: no skeleton is seen (opacity above 0) in the first 180 ms (0.9 × 200 ms) after it went up. */
-function unseenEarly(list, from = 0) {
-  const early = list.filter((f) => f.t - from < 180);
+/**
+ * The early-frames rule: no skeleton is seen (opacity above 0) in the first 180 ms (0.9 × 200 ms) after it went
+ * up, timed from the first frame it was sampled in. Not from the page's start or the click that opened a file: on a
+ * slow machine the page or the file can take longer than 180 ms to get there, which left no early frames to judge
+ * (2026-11-04). The first sampled frame is at or after it went up, so this is never more lenient.
+ */
+function unseenEarly(list) {
+  assert.ok(list.length > 0, "it went up and was sampled");
+  const early = list.filter((f) => f.t - list[0].t < 180);
   const seen = early.filter((f) => f.opacity > 0);
-  assert.ok(early.length > 0 || list.length === 0, "frames were sampled in the first 180 ms");
   assert.deepEqual(seen, [], `seen within 180 ms: ${JSON.stringify(seen.slice(0, 3))}`);
 }
 
@@ -103,7 +128,12 @@ for (const [width, height, touch] of [[1280, 800, false], [393, 852, true]]) {
       await page.waitForSelector("#app-skeleton", { state: "detached", timeout: 15000 });
       assert.equal(await page.getAttribute("#workspace", "aria-busy"), null, "no longer busy");
       await page.waitForSelector("#start-hint:not([hidden])");
-      assert.ok((await frames(page, "skeleton-app")).some((f) => f.opacity > 0 && f.opacity < 1), "it faded out, not cut off");
+      // It faded out, not cut off: the 160 ms fade, and it stayed at least 0.9 × 160 ms after it began (timed by the
+      // page's clock: sampling the opacity each frame missed the fade on a busy machine, 2026-11-04).
+      const left = await leaving(page, "skeleton-app");
+      assert.ok(left, "it left, and was seen leaving");
+      assert.deepEqual([left.animation, left.duration], ["skeleton-out", "0.16s"], "it faded out, not cut off");
+      assert.ok(left.stayed >= 144, `it stayed ${Math.round(left.stayed)} ms while fading, at least 144 wanted`);
     } finally {
       await context.close();
     }
@@ -148,11 +178,10 @@ await check("a project opened while the kernel is slow shows a skeleton over the
   try {
     await page.goto(url + "#design");
     await page.waitForSelector("#app-skeleton", { state: "detached" });
-    await page.evaluate(() => (window.kernelDelay = 400));
-    const opened = await page.evaluate(() => performance.now());
+    await page.evaluate(() => { window.kernelDelay = 400; window.skeletonFrames = []; });
     await page.setInputFiles("#open-file", { name: "box.spindle", mimeType: "application/json", buffer: file });
     await page.waitForFunction(() => { const e = document.querySelector("#viewport > .skeleton-view"); return e !== null && getComputedStyle(e).opacity === "1"; }, null, { timeout: 5000 });
-    unseenEarly(await frames(page, "skeleton-view"), opened);
+    unseenEarly(await frames(page, "skeleton-view"));
     assert.equal(await page.getAttribute("#viewport > .skeleton-view", "aria-label"), "Opening the project…");
     assert.equal(await page.getAttribute("#viewport", "aria-busy"), "true");
     if (shots) await page.screenshot({ path: `${shots}/skeleton-open-1280.png` });

@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
+import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -671,6 +671,8 @@ const file = fileMenu(document, {
   },
 });
 $("file-bar").prepend(file.element);
+/** What Open says when the last project's changes, refused because another tab saved, were kept as project `name`. */
+const keptApartWords = (name: string) => `Changes made in this tab couldn't be stored, because the project was changed in another tab, so they're kept in this browser as a separate project, “${name}”.`;
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
@@ -695,11 +697,12 @@ function openProject(text: string, fileName = "") {
   // copy no one can reach (real-use hunt B3). Looked up while it opens; a store that can't answer means a new copy.
   const copy = canKeep ? storedCopy(store, project).catch(() => undefined) : Promise.resolve(undefined);
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
-  // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet.
-  autosave?.finish();
+  // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
+  // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
+  const apart = autosave?.finish() ?? null;
   autosave = null;
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
-  fileStatus("");
+  fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
   openedName = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
   // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
@@ -730,10 +733,11 @@ async function openStored(id: string, modified: Date | null) {
   // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
   const kept = keptEntry(local, id);
   const project = kept === null ? await store.open(id) : projectFromJson(kept, workspaces);
-  autosave?.finish();
+  // Changes this tab couldn't store (another tab saved since) are kept as a separate project, and said, as Open does (round 2 hunt A5).
+  const apart = autosave?.finish() ?? null;
   autosave = null;
   guard.finished();
-  fileStatus("");
+  fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
   statusBeforeOpening ??= shownStatus;
   saveStatus({ state: "saving" });
@@ -870,9 +874,9 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
     if (e instanceof Unreadable) return fileStatus(e.message);
     return fileStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
   }
-  fileStatus("");
   const into = route.importer.workspace;
-  if (!into) return; // the shell itself (a project) has already shown it
+  if (!into) return; // the shell itself (a project) has already shown it, and said what it says (openProject)
+  fileStatus("");
   pool.forget(into); // mounted afresh, to show what it opened
   if (split?.id === into) mountSplit(into); // where it already is
   else show(into);
@@ -974,9 +978,11 @@ settingsDialog.setAttribute("aria-labelledby", "settings-title");
 document.body.append(settingsDialog);
 let browserSettings: SettingsStore | null = null;
 const settings = () => (browserSettings ??= new SettingsStore(local));
+// The theme (U1b, U2a): the page already wears it (public/theme-init.js ran before the first paint); this keeps it in step with the Settings choice and the device.
+const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts, theme: readThemeChoice(settings()), onTheme: chooseTheme });
   settingsDialog.showModal();
 });
 settingsDialog.addEventListener("click", (e) => {

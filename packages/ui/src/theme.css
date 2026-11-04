@@ -18,7 +18,7 @@
      (Create sketch, OK) is filled bright blue with dark words.
    - Spacing on a 4 px grid; targets at least 36 px with a mouse, 44 px to
      tap (Apple's 44 pt, Material's 48 dp). */
-:root {
+:root, [data-scene="dark"] {
   --look-radius-s: 8px;
   --look-radius-m: 12px;
   --look-radius-l: 16px;
@@ -45,7 +45,8 @@
   --look-primary-glow: 0 1px 0 var(--shade-white-025) inset, 0 4px 14px var(--shade-74-168-255-035);
 }
 /* The colour tokens (U1a, 2026-11-04): every colour the app paints with is named here and nowhere else (a source test refuses a raw colour in any other CSS file). These are the DARK values, unchanged; the light theme (U1b) overrides them. Names say the role: text, fill (backgrounds), line (borders and outlines), shade (shadows and veils), accent/danger/warn/ok; a name ending in a hex number is a one-off shade of that role (misc: used in a gradient or a shorthand). */
-:root {
+:root, [data-scene="dark"] {
+  color-scheme: dark;
   --accent: #4aa8ff;
   --accent-bright: #62b6ff;
   --accent-deep: #3d98f2;
@@ -192,6 +193,143 @@
   --line-d05a5a: #d05a5a;
   --text-ffd0d0: #ffd0d0;
 }
+/* The light theme (U1b): the same names with light values (picked by data-theme="light" on the root, which the page sets before it first paints: Settings, Theme). Text on a text-coloured fill stays at least 4.5 : 1 and icons and lines 3 : 1 (packages/ui/test/light.test.ts works the pairs out). The bright blue fill and its dark words, and white words on a coloured fill, are the same in both themes. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --accent: #0063bf;
+  --accent-text: #056cca;
+  --danger: #db0606;
+  --fill-0b1024: #dee2f1;
+  --fill-101216: #eaebee;
+  --fill-120-165-230-01: rgba(33, 93, 179, 0.1);
+  --fill-121824: #dde2eb;
+  --fill-14171c: #e4e6ea;
+  --fill-15-20-28-085: rgba(229, 232, 238, 0.85);
+  --fill-162030: #d2dae6;
+  --fill-1b2331: #d1d7e1;
+  --fill-1b2332: #d0d6e1;
+  --fill-1e3350: #b5c5db;
+  --fill-1f5f3f: #a8d8c0;
+  --fill-21-27-38-09: rgba(219, 224, 232, 0.9);
+  --fill-21-27-38-092: rgba(219, 224, 232, 0.92);
+  --fill-22-25-30-092: rgba(226, 228, 232, 0.92);
+  --fill-23384f: #b5c5d7;
+  --fill-240-163-94-008: rgba(180, 94, 17, 0.08);
+  --fill-240-163-94-01: rgba(180, 94, 17, 0.1);
+  --fill-240-163-94-018: rgba(180, 94, 17, 0.18);
+  --fill-253-230-138-025: rgba(243, 196, 10, 0.25);
+  --fill-263142: #c0c9d6;
+  --fill-2747ff: #00179c;
+  --fill-28-31-36-092: rgba(220, 222, 226, 0.92);
+  --fill-29-37-51-09: rgba(207, 213, 223, 0.9);
+  --fill-2a4560: #a4bad0;
+  --fill-2f81d6: #194c80;
+  --fill-3a2226: #dac8cb;
+  --fill-4-6-24-055: rgba(233, 235, 249, 0.55);
+  --fill-40-14-18-088: rgba(238, 218, 221, 0.88);
+  --fill-4a5568: #9aa3b2;
+  --fill-5-8-14-06: rgba(242, 244, 249, 0.6);
+  --fill-6-8-30-045: rgba(228, 230, 246, 0.45);
+  --fill-8-10-14-045: rgba(242, 243, 246, 0.45);
+  --fill-8-10-14-055: rgba(242, 243, 246, 0.55);
+  --fill-black-028: rgba(0, 0, 0, 0.126);
+  --fill-black-06: rgba(0, 0, 0, 0.27);
+  --fill-white-007: rgba(0, 0, 0, 0.042);
+  --fill-white-01: rgba(0, 0, 0, 0.06);
+  --fill-white-013: rgba(0, 0, 0, 0.078);
+  --fill-white-014: rgba(0, 0, 0, 0.084);
+  --fill-white-015: rgba(0, 0, 0, 0.09);
+  --fill-white-016: rgba(0, 0, 0, 0.096);
+  --fill-white-022: rgba(0, 0, 0, 0.132);
+  --line: #d3dae5;
+  --line-120-165-230-016: rgba(33, 93, 179, 0.16);
+  --line-240-163-94-022: rgba(180, 94, 17, 0.22);
+  --line-240-163-94-045: rgba(180, 94, 17, 0.45);
+  --line-255-77-77-06: rgba(194, 0, 0, 0.6);
+  --line-34435a: #a9b5c7;
+  --line-353a43: #bec2c8;
+  --line-3a3f47: #b9bdc4;
+  --line-3a404a: #b7bbc3;
+  --line-3d434d: #b4b8c0;
+  --line-4a515c: #a5aab3;
+  --line-4b84d6: #1c447d;
+  --line-6cc4ff: #0686dc;
+  --line-c4554a: #732d26;
+  --line-e0656d: #9c1f27;
+  --line-e0a84a: #895f17;
+  --line-e0b04a: #896517;
+  --line-fde68a: #f3c40a;
+  --line-strong: #c3ccd9;
+  --line-white-018: rgba(0, 0, 0, 0.108);
+  --line-white-05: rgba(0, 0, 0, 0.3);
+  --line-white-07: rgba(0, 0, 0, 0.42);
+  --misc-5ec8ff: #008bd3;
+  --misc-7fa7c9: #3d5d79;
+  --misc-9b6bd6: #562890;
+  --misc-a9b2c0: #414954;
+  --misc-b0b0b0: #4f4f4f;
+  --misc-d94f70: #821c35;
+  --misc-eef1f6: #0a0c10;
+  --misc-ff8a3d: #b24700;
+  --misc-ffc857: #cc8900;
+  --ok: #15794e;
+  --page: #e6eaf1;
+  --shade-120-165-230-0075: rgba(33, 93, 179, 0.075);
+  --shade-150-195-255-017: rgba(18, 117, 249, 0.17);
+  --shade-18-23-32-072: rgba(225, 228, 235, 0.72);
+  --shade-21-27-38-096: rgba(255, 255, 255, 0.96);
+  --shade-224-168-74-035: rgba(137, 95, 23, 0.35);
+  --shade-29-37-51-098: rgba(244, 247, 251, 0.98);
+  --shade-74-168-255-016: rgba(0, 99, 191, 0.16);
+  --shade-74-168-255-035: rgba(0, 99, 191, 0.35);
+  --shade-black-032: rgba(0, 0, 0, 0.144);
+  --shade-black-035: rgba(0, 0, 0, 0.158);
+  --shade-black-04: rgba(0, 0, 0, 0.18);
+  --shade-black-045: rgba(0, 0, 0, 0.203);
+  --shade-black-05: rgba(0, 0, 0, 0.225);
+  --shade-black-055: rgba(0, 0, 0, 0.248);
+  --shade-white-003: rgba(0, 0, 0, 0.018);
+  --shade-white-006: rgba(0, 0, 0, 0.036);
+  --shade-white-009: rgba(0, 0, 0, 0.054);
+  --shade-white-025: rgba(0, 0, 0, 0.15);
+  --surface: #f5f7fa;
+  --surface-raised: #ffffff;
+  --text: #121418;
+  --text-6f7680: #7e838c;
+  --text-8b95a3: #5e6672;
+  --text-8fc3ff: #0569dc;
+  --text-aab0b8: #484d54;
+  --text-b5bbc4: #3c4148;
+  --text-b9c3d1: #303844;
+  --text-body: #151618;
+  --text-c4cbd5: #2c3139;
+  --text-c9ced6: #2a2e35;
+  --text-c9d1d9: #282e34;
+  --text-d4d9e0: #20242a;
+  --text-d7dde5: #1b2027;
+  --text-dim: #656a73;
+  --text-f0a35e: #a65710;
+  --text-f0c06a: #93640f;
+  --text-f3b77a: #a35b13;
+  --text-f4f6ff: #375bf9;
+  --text-ff8a80: #d61605;
+  --text-ff8a8a: #dc0505;
+  --text-ff9a9a: #db0606;
+  --text-ff9b9b: #dc0606;
+  --text-ffd6d6: #dc0505;
+  --text-ffd7d9: #dd050f;
+  --text-ffd9dc: #da0516;
+  --text-fff7d6: #826903;
+  --text-soft: #353c46;
+  --text-white-08: rgba(0, 0, 0, 0.48);
+  --warn: #9b6009;
+  --text-a9b0b8: #494e54;
+  --line-8a3a3a: #bd7d7d;
+  --text-f0b4b4: #cd2e2e;
+  --line-d05a5a: #7d2424;
+  --text-ffd0d0: #d90606;
+}
+/* end of the colour tokens */
 html, body { margin: 0; height: 100%; background: var(--page); color: var(--text-body); font: 14px system-ui, sans-serif; }
 body { display: flex; flex-direction: column; }
 

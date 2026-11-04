@@ -527,7 +527,7 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
     // design the last pass made, until nothing changes: a sketch held, or a point followed, moves what is built on it, so
     // a sketch on that (and its points) is placed right only on the next pass (hunt 26g: one pass placed them on the
     // body built at the held sketch's first-drawn frame). Each pass settles one more sketch of a chain, so at most one
-    // per face sketch, and a last to see nothing change.
+    // per face sketch, and a last to see nothing change. The kept shapes are decided again on each pass's design.
     for (let pass = 0; pass <= faces; pass++) {
       const now = await placed(doc);
       let changed = false;
