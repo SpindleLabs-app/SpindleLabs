@@ -13,6 +13,7 @@ import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, Slice
 import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
+import { presetBar, type PresetSettings } from "./slice-presets.ts";
 
 /**
  * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
@@ -115,6 +116,22 @@ export function rememberedBetterGrip(storage: Pick<Storage, "getItem"> | null): 
   } catch {
     return PRINT_DEFAULTS.betterGrip;
   }
+}
+
+/**
+ * Stored settings (a preset's, slice-presets.ts) checked choice by choice against the dialog's own lists, or null when
+ * any is missing or one the dialog doesn't offer: a preset never puts a value in that the dialog couldn't show.
+ */
+export function presetSettingsOf(raw: unknown): PresetSettings | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const listed = <T>(options: readonly { value: T }[], v: unknown): v is T => options.some((o) => o.value === v);
+  const among = <T>(values: readonly T[], v: unknown): v is T => values.includes(v as T);
+  const { layerHeight, walls, infill, supports, warmUp, betterGrip, format, plate, nozzle } = r;
+  if (!listed(QUALITY_OPTIONS, layerHeight) || !among(WALL_OPTIONS, walls) || !among(INFILL_OPTIONS, infill) || !listed(SUPPORT_OPTIONS, supports)) return null;
+  if (typeof warmUp !== "boolean" || typeof betterGrip !== "boolean") return null;
+  if (!listed(FORMAT_OPTIONS, format) || !listed(PLATE_OPTIONS, plate) || !listed(NOZZLE_OPTIONS, nozzle)) return null;
+  return { layerHeight, walls, infill, supports, warmUp, betterGrip, format, plate, nozzle };
 }
 
 /** The P1S's print file, as the save box names it. */
@@ -487,8 +504,6 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const choices6 = document.createElement("div");
   choices6.className = "slice-print-choices";
   choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap, warmUpWrap, gripWrap);
-  dialog.append(heading, printer, untested, choices6, bar, status, actions);
-  slot.append(dialog);
 
   const say = (text: string, bad: boolean) => {
     status.textContent = text;
@@ -498,6 +513,30 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   };
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value), warmUp: warmUp.checked, betterGrip: grip.checked });
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
+  // Presets (Ben, 2026-11-04): the settings saved under a name, picked in the heading line (slice-presets.ts). Putting
+  // one in goes through each choice's own change, so the nozzle, warm-up loop and Better grip are remembered as if picked.
+  const inputs = { layerHeight: quality.select, walls: walls.select, infill: infill.select, supports: supports.select, format: format.select, plate: plate.select, nozzle: nozzle.select };
+  const presets = presetBar(document, storage, {
+    current: () => ({ ...choices(), ...file() }),
+    apply(s) {
+      for (const [k, select] of Object.entries(inputs)) {
+        select.value = String(s[k as keyof typeof inputs]);
+        select.dispatchEvent(new (document.defaultView?.Event ?? Event)("change"));
+      }
+      for (const [box, on] of [[warmUp, s.warmUp], [grip, s.betterGrip]] as const) {
+        box.checked = on;
+        box.dispatchEvent(new (document.defaultView?.Event ?? Event)("change"));
+      }
+    },
+    say,
+    settingsOf: presetSettingsOf,
+  });
+  // The heading and the presets share one line where there is room, so the dialog grows no taller.
+  const top = document.createElement("div");
+  top.className = "slice-print-top";
+  top.append(heading, presets.element);
+  dialog.append(top, printer, untested, choices6, bar, status, actions);
+  slot.append(dialog);
   let busy = false;
   /** Shows the bar from now until `end` is called, following the engine's reports. */
   const showProgress = () => {
@@ -525,7 +564,11 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     return () => mine === generation && dialog.open;
   };
   // A result stays displayed next to choices it no longer matches: any change clears it.
-  for (const c of [quality, walls, infill, supports, format, plate, nozzle, { select: warmUp }, { select: grip }]) c.select.addEventListener("change", () => !busy && say("", false));
+  for (const c of [quality, walls, infill, supports, format, plate, nozzle, { select: warmUp }, { select: grip }])
+    c.select.addEventListener("change", () => {
+      if (!busy) say("", false);
+      presets.changed();
+    });
   go.addEventListener("click", async () => {
     if (busy) return;
     busy = true;
@@ -573,6 +616,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     ask() {
       if (dialog.open) return;
       if (!busy) say("", false); // a slice still running keeps saying so
+      presets.refresh(); // another tab may have changed them
       dialog.showModal();
       go.focus();
     },
