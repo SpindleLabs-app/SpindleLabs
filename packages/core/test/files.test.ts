@@ -82,9 +82,18 @@ test("binary STL by its size alone, worked out by hand, and only when named .stl
   assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 134))), is("stl"));
   assert.deepEqual(identifyFile(file("part.stl", binaryStl(2, 184))), is("stl"));
   assert.deepEqual(identifyFile(file("empty.stl", binaryStl(0, 84))), is("stl"));
-  // One byte short or over: the count and the size disagree.
+  // One byte short: the count says more triangles than the file holds.
   assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 133))), renamed("stl"));
-  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 135))), renamed("stl"));
+  // Round 2 hunt B1: a few bytes after the last triangle (padding some exporters add; common readers take it) is still
+  // an STL, up to 49 of them (134 + 49 = 183 holds one whole triangle and 49 bytes); at 50 more (184) the size holds two
+  // whole triangles, so a count of 1 disagrees with it. (Before, 135 was refused as damaged or renamed.)
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 135))), is("stl"));
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 183))), is("stl"));
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(1, 184))), renamed("stl"));
+  // A count of 0 with triangles after it (writers that stream and never go back to fill it in): the triangles are the
+  // size's, 84 + 50 · 3 = 234 bytes, so an STL; with bytes past a whole triangle (235), nothing says what it holds.
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(0, 234))), is("stl"));
+  assert.deepEqual(identifyFile(file("part.stl", binaryStl(0, 235))), renamed("stl"));
   // Shorter than the header and count.
   assert.deepEqual(identifyFile(file("part.stl", new Uint8Array(83))), renamed("stl"));
   // The same bytes with another name are just bytes.
@@ -102,6 +111,10 @@ test("ASCII STL and DXF need their extension: their signatures are too weak alon
   assert.deepEqual(identifyFile(file("cube.txt", stl)), unknown);
   assert.deepEqual(identifyFile(file("cube.stl", "solid")), is("stl")); // the word alone, then the end
   assert.deepEqual(identifyFile(file("notes.stl", "solidarity")), renamed("stl")); // a longer word is not the keyword
+  // Round 2 hunt B1: some old exporters write the keyword in capitals; readers match it whatever its case.
+  assert.deepEqual(identifyFile(file("CUBE.STL", "SOLID CUBE\n  FACET NORMAL 0 0 1\n")), is("stl"));
+  assert.deepEqual(identifyFile(file("cube.stl", "Solid")), is("stl"));
+  assert.deepEqual(identifyFile(file("notes.stl", "SOLIDARITY")), renamed("stl"));
   // A text DXF opens with group code 0 and the value SECTION, one per line, padded or not, LF or CRLF.
   const dxf = "  0\r\nSECTION\r\n  2\r\nHEADER\r\n";
   assert.deepEqual(identifyFile(file("plate.dxf", dxf)), is("dxf"));
@@ -140,6 +153,9 @@ test("routing: a registered importer takes its formats; the rest are refused wit
   assert.ok(old?.kind === "open" && old.importer === shell && old.format === "project");
   // The messages, written out in full.
   assert.equal(refusal(registry, file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
+  // Round 2 hunt B1: the valid but quirky ones get the same words, not "damaged, or renamed from another type".
+  for (const quirky of [binaryStl(3, 84 + 50 * 3 + 2), binaryStl(0, 84 + 50 * 3), bytes("SOLID PART\nFACET NORMAL 0 0 1\n")])
+    assert.equal(refusal(registry, file("part.stl", quirky)), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
   assert.equal(refusal(registry, file("logo.svg", "<svg/>")), "Couldn't open “logo.svg”: SpindleLabs can't open SVG drawings yet. Vector and Laser will take them as outlines.");
   assert.equal(refusal(registry, file("plate.dxf", "0\nSECTION\n")), "Couldn't open “plate.dxf”: SpindleLabs can't open DXF drawings yet. Laser will take them as outlines.");
   assert.equal(refusal(registry, file("bracket.step", "ISO-10303-21;")), "Couldn't open “bracket.step”: SpindleLabs can't open STEP models yet. Design will take them as exact solids.");
