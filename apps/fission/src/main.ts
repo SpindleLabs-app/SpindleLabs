@@ -96,6 +96,11 @@ const ctx: WorkspaceContext = {
   openWorkspace: (id) => openFrom("main", id),
   workspaceTitle,
   openFile: () => $("open-file").click(),
+  // A new design in place of the saved or opened one: its file and name go, so Save asks where (app hunt 2026-11-04).
+  startedFresh: () => {
+    savedTo = null;
+    openedName = null;
+  },
 };
 
 // The one undo history (step 20): whole-project snapshots, put back the way
@@ -359,6 +364,7 @@ function paneCtx(pane: PaneId, slots: Slots): WorkspaceContext {
     openWorkspace: (id) => openFrom(pane, id),
     workspaceTitle,
     openFile: ctx.openFile,
+    startedFresh: ctx.startedFresh,
   };
 }
 /**
@@ -689,7 +695,7 @@ function openProject(text: string, fileName = "") {
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus("");
   replaceProject(project);
-  openedName = fileName.replace(/(\.spindlelabs)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
+  openedName = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
   // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
   // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
   statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
