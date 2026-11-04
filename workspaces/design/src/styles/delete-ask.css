@@ -7,22 +7,22 @@
    "#workspace button" while every selector still starts with .delete-ask. */
 .delete-ask.delete-ask-row { display: flex; align-items: center; gap: 4px; }
 .delete-ask.delete-ask-row > .tree-row { flex: 1; min-width: 0; }
-.delete-ask.delete-ask-row > .delete-ask-more:not(#none) { padding: 0 6px; min-width: 28px; background: none; border: 1px solid transparent; border-radius: var(--look-radius-s); color: #b5bbc4; cursor: pointer; line-height: 1.4; }
-.delete-ask.delete-ask-row > .delete-ask-more:not(#none):hover, .delete-ask.delete-ask-row > .delete-ask-more:not(#none):focus-visible { border-color: #2c3749; color: #e6e9ee; }
-.delete-ask .delete-ask-menu { position: fixed; inset: auto; margin: 0; padding: 4px; min-width: 140px; background: #161d2a; color: #e6e9ee; border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.delete-ask.delete-ask-row > .delete-ask-more:not(#none) { padding: 0 6px; min-width: 28px; background: none; border: 1px solid transparent; border-radius: var(--look-radius-s); color: var(--text-b5bbc4); cursor: pointer; line-height: 1.4; }
+.delete-ask.delete-ask-row > .delete-ask-more:not(#none):hover, .delete-ask.delete-ask-row > .delete-ask-more:not(#none):focus-visible { border-color: var(--line-strong); color: var(--text); }
+.delete-ask .delete-ask-menu { position: fixed; inset: auto; margin: 0; padding: 4px; min-width: 140px; background: var(--surface); color: var(--text); border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .delete-ask .delete-ask-menu::backdrop { background: transparent; }
-.delete-ask .delete-ask-menu button:not(#none) { display: block; width: 100%; text-align: left; padding: 6px 10px; background: none; border: none; border-radius: var(--look-radius-s); color: #e6e9ee; font: inherit; cursor: pointer; }
-.delete-ask .delete-ask-menu #row-menu-delete:not(#none):enabled { color: #ff8a8a; }
-.delete-ask .delete-ask-menu button:not(#none):hover:enabled, .delete-ask .delete-ask-menu button:not(#none):focus-visible { background: #232c3b; }
-.delete-ask .delete-ask-menu button:not(#none):disabled { color: #6f7680; cursor: default; }
-.delete-ask .delete-ask-menu .delete-ask-off { display: block; max-width: 240px; font-size: 0.8em; line-height: 1.3; color: #8a919c; white-space: normal; }
-.delete-ask .delete-ask-box { max-width: min(420px, calc(100vw - 32px)); padding: 16px 18px; background: #161d2a; color: #e6e9ee; border: 1px solid #2c3749; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); }
-.delete-ask .delete-ask-box::backdrop { background: rgba(0, 0, 0, 0.5); }
+.delete-ask .delete-ask-menu button:not(#none) { display: block; width: 100%; text-align: left; padding: 6px 10px; background: none; border: none; border-radius: var(--look-radius-s); color: var(--text); font: inherit; cursor: pointer; }
+.delete-ask .delete-ask-menu #row-menu-delete:not(#none):enabled { color: var(--text-ff8a8a); }
+.delete-ask .delete-ask-menu button:not(#none):hover:enabled, .delete-ask .delete-ask-menu button:not(#none):focus-visible { background: var(--line); }
+.delete-ask .delete-ask-menu button:not(#none):disabled { color: var(--text-6f7680); cursor: default; }
+.delete-ask .delete-ask-menu .delete-ask-off { display: block; max-width: 240px; font-size: 0.8em; line-height: 1.3; color: var(--text-dim); white-space: normal; }
+.delete-ask .delete-ask-box { max-width: min(420px, calc(100vw - 32px)); padding: 16px 18px; background: var(--surface); color: var(--text); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 10px 30px var(--shade-black-055); }
+.delete-ask .delete-ask-box::backdrop { background: var(--shade-black-05); }
 .delete-ask .delete-ask-box h2 { margin: 0 0 8px; font-size: 1.1em; }
-.delete-ask .delete-ask-box p { margin: 0 0 14px; line-height: 1.45; color: #c4cbd5; }
+.delete-ask .delete-ask-box p { margin: 0 0 14px; line-height: 1.45; color: var(--text-c4cbd5); }
 .delete-ask .delete-ask-box .delete-ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.delete-ask .delete-ask-box #delete-ask-confirm:not(#none) { background: #6b2328; border-color: #e0656d; font-weight: 600; }
-.delete-ask .delete-ask-box #delete-ask-confirm:not(#none):hover { background: #82292f; }
+.delete-ask .delete-ask-box #delete-ask-confirm:not(#none) { background: var(--fill-6b2328); border-color: var(--line-e0656d); font-weight: 600; }
+.delete-ask .delete-ask-box #delete-ask-confirm:not(#none):hover { background: var(--fill-82292f); }
 @media (max-width: 640px) {
   .delete-ask.delete-ask-row > .delete-ask-more:not(#none), .delete-ask .delete-ask-menu button:not(#none), .delete-ask .delete-ask-box button:not(#none) { min-height: 44px; min-width: 44px; }
 }
