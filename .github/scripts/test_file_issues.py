@@ -444,6 +444,34 @@ class Checks(unittest.TestCase):
             reports, _ = file_issues.read_checks(d)
         self.assertEqual(reports, {"fuzz-kernel-sketch/job-status.txt": "success\n"})
 
+    def test_a_failures_bodies_and_picture_are_linked(self):
+        # Ben (2026-11-04): a nightly issue shows the failing bodies, to open in a CAD program, and a picture,
+        # without replaying the seed. The links point at the folder collect puts on the test-results branch.
+        import file_issues
+        with tempfile.TemporaryDirectory() as d:
+            dump = os.path.join(d, "fuzz-kernel-boolean", "seed-42", "failure-dumps", "input-1-crash-ab")
+            os.makedirs(dump)
+            for f in ["index.html", "target.step", "target.obj", "target.stl", "Union_0.step", "Union_0.obj", "picture.png"]:
+                open(os.path.join(dump, f), "w").close()
+            # A second dump of the same round, later by name: only the first is shown.
+            os.makedirs(os.path.join(d, "fuzz-kernel-boolean", "seed-42", "failure-dumps", "input-2-crash-cd"))
+            base = "https://github.com/o/r/blob/test-results/fuzz/failures/seed-42/failure-dumps/input-1-crash-ab/"
+            got = file_issues.attachments(d, "42", "fuzz/failures", "o/r")
+            self.assertEqual(got.splitlines(), [
+                f"![a picture of input-1-crash-ab]({base}picture.png?raw=true)",
+                "",
+                f"Its bodies, to open in a CAD program (STEP) or a mesh viewer (OBJ): "
+                f"[target.step]({base}target.step) · [target.obj]({base}target.obj) · "
+                f"[Union_0.step]({base}Union_0.step) · [Union_0.obj]({base}Union_0.obj) · "
+                f"[the 3D page]({base}index.html) (download it and open it in a browser)",
+            ])
+            # No picture (the browser failed): the bodies alone.
+            os.remove(os.path.join(dump, "picture.png"))
+            self.assertTrue(file_issues.attachments(d, "42", "fuzz/failures", "o/r").startswith("Its bodies"))
+            # No dump, no repo or no such seed: nothing.
+            self.assertEqual(file_issues.attachments(d, "7", "failures", "o/r"), "")
+            self.assertEqual(file_issues.attachments(d, "42", "fuzz/failures", ""), "")
+
     def test_check_texts_and_the_whole_run(self):
         kind = "check the golden job failed with nothing more specific reported"
         title, body = texts("create", kind, [("run", "job golden: failure")], "u", "c", "main")

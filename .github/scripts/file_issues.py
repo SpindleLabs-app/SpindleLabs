@@ -41,12 +41,14 @@ Usage: file_issues.py <incoming dir> [--dry-run]; needs RUN_URL, COMMIT,
 BRANCH, and GH_TOKEN for `gh` (without it, it prints what it would do).
 """
 
+import glob
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+from urllib.parse import quote
 
 LABEL = "random-testing"
 MARK = "<!-- random-testing-kind: {} -->"
@@ -421,6 +423,33 @@ def fenced(text):
     return f"{fence}\n{text}\n{fence}"
 
 
+def attachments(incoming, seed, where, repo):
+    """Markdown showing a failure's bodies, for its issue: a picture of its
+    first 3D dump (dump_pictures.sh) and links to that dump's STEP and OBJ
+    files, where collect puts them on the test-results branch
+    (<where>/seed-<seed>/failure-dumps/<dump>/). "" when the seed's
+    incoming folder has no dump, or with no repo to link to."""
+    if not repo:
+        return ""
+    dumps = sorted(glob.glob(os.path.join(glob.escape(incoming), "*", f"seed-{glob.escape(seed)}", "failure-dumps", "*", "")))
+    if not dumps:
+        return ""
+    dump = dumps[0].rstrip(os.sep)
+    name = os.path.basename(dump)
+    base = f"https://github.com/{repo}/blob/test-results/{where}/seed-{quote(seed)}/failure-dumps/{quote(name)}/"
+    files = set(os.listdir(dump))
+    stems = sorted({os.path.splitext(f)[0] for f in files if f.endswith((".step", ".obj"))}, key=str.lower)
+    links = [f"[{f}]({base}{quote(f)})" for stem in stems for f in (f"{stem}.step", f"{stem}.obj") if f in files]
+    if "index.html" in files:
+        links.append(f"[the 3D page]({base}index.html) (download it and open it in a browser)")
+    lines = []
+    if "picture.png" in files:
+        lines += [f"![a picture of {name}]({base}picture.png?raw=true)", ""]
+    if links:
+        lines.append("Its bodies, to open in a CAD program (STEP) or a mesh viewer (OBJ): " + " · ".join(links))
+    return "\n".join(lines)
+
+
 def texts(action, kind, hits, run_url, commit, branch):
     """(title, body) for a create; body for a comment or reopen."""
     seeds = [s for s, _ in hits]
@@ -637,6 +666,11 @@ def run(incoming, dry_run=False, log=print):
     failed = []
     for action, kind, number in actions:
         title, body = texts(action, kind, found[kind], run_url, commit, branch)
+        # The first example's bodies and picture, when its folder has a 3D dump.
+        seed = found[kind][0][0]
+        shown = attachments(incoming, seed, "fuzz/failures" if kind.startswith("fuzzing the ") else "failures", os.environ.get("GH_REPO", ""))
+        if shown:
+            body += "\n\n" + shown
         log(f"{action} {number or ''} {kind}")
         if not live:
             continue
