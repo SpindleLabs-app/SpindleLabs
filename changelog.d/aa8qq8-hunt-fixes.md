@@ -1,6 +1,5 @@
 fix
 
-- An extrude whose sketch is snapped to a body, or uses a projected edge, now keeps its last shape with a warning when an edit upstream breaks its outline, instead of vanishing.
 - A Move or Extrude cancelled while OK was still being checked is no longer recorded.
 - Snap in an edited Move onto a body taken out of that Move lands on the body where it is drawn.
 - Enter presses OK after a body is picked by its row in the browser.

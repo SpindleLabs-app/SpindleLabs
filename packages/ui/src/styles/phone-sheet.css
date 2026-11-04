@@ -10,7 +10,7 @@
   .phone-sheet { height: 100vh; height: 100dvh; overflow: hidden; }
   .phone-sheet #workspace { position: relative; overflow: hidden; }
   .phone-sheet #viewport { height: auto; flex: 1 1 0; min-height: 0; }
-  .phone-sheet #browser:not(#none), .phone-sheet #properties:not(#none), .phone-sheet #assistant:not(#none) { position: absolute; left: 0; right: 0; bottom: 0; z-index: 15; width: auto; max-height: 60%; overflow-y: auto; overscroll-behavior: contain; border-radius: 20px 20px 0 0; border: 1px solid var(--look-edge); border-bottom: none; background: #161d2a; box-shadow: var(--look-top-light), 0 -8px 28px rgba(0, 0, 0, 0.55); padding-top: 22px; }
+  .phone-sheet #browser:not(#none), .phone-sheet #properties:not(#none), .phone-sheet #assistant:not(#none) { position: absolute; left: 0; right: 0; bottom: 0; z-index: 15; width: auto; max-height: 60%; overflow-y: auto; overscroll-behavior: contain; border-radius: 20px 20px 0 0; border: 1px solid var(--look-edge); border-bottom: none; background: var(--surface); box-shadow: var(--look-top-light), 0 -8px 28px var(--shade-black-055); padding-top: 22px; }
   .phone-sheet #assistant[hidden] { display: none !important; }
   /* The Properties boxes 44 px to tap, their text 16 px: smaller text makes iOS Safari zoom the page in on a tap (weak-spot hunt A21). */
   .phone-sheet #properties label input:not(#none), .phone-sheet #properties label select:not(#none) { min-height: 44px; font-size: 16px; }
@@ -21,12 +21,12 @@
      covers most of the view (Ben's phone rule); the AI panel, a chat, keeps 60%. */
   .phone-sheet :is(#browser, #properties, #assistant):not(#none) { overscroll-behavior-y: none; }
   .phone-sheet :is(#browser, #properties):not(#none) { max-height: 45%; }
-  .phone-sheet .menu-button > .menu-button-menu:not(#none) { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: auto; min-width: 0; max-width: none; max-height: 70dvh; border-radius: 20px 20px 0 0; border-bottom: none; padding: 22px 8px calc(8px + env(safe-area-inset-bottom)); box-shadow: var(--look-top-light), 0 -8px 28px rgba(0, 0, 0, 0.55); z-index: 40; }
+  .phone-sheet .menu-button > .menu-button-menu:not(#none) { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: auto; min-width: 0; max-width: none; max-height: 70dvh; border-radius: 20px 20px 0 0; border-bottom: none; padding: 22px 8px calc(8px + env(safe-area-inset-bottom)); box-shadow: var(--look-top-light), 0 -8px 28px var(--shade-black-055); z-index: 40; }
   /* The clean look (UX2b, after Life360): every sheet has a grab handle at
      the top middle, and Browser and Properties are pill buttons floating
      over the view's top left (their row goes back to the view; the toggles'
      box takes no clicks, its buttons do). */
-  .phone-sheet :is(#browser, #properties, #assistant, .menu-button > .menu-button-menu):not(#none)::before { content: ""; position: absolute; top: 8px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: #4a5568; }
+  .phone-sheet :is(#browser, #properties, #assistant, .menu-button > .menu-button-menu):not(#none)::before { content: ""; position: absolute; top: 8px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--fill-4a5568); }
   .phone-sheet #panel-toggles:not(#none) { position: relative; z-index: 5; margin-bottom: -56px; padding: 6px 12px; background: none; border: none; pointer-events: none; }
   .phone-sheet #panel-toggles:not(#none) button { pointer-events: auto; min-height: var(--look-target-touch); padding: 0 16px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
   .phone-sheet #panel-toggles:not(#none) button[aria-expanded="true"] { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }

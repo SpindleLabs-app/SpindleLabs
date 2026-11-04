@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launch } from "./browser.mjs";
-import { chooseFile, startWithBox } from "./start.mjs";
+import { chooseFile, insertPreset, startWithBox } from "./start.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4241, strictPort: true }, logLevel: "error" });
@@ -203,11 +203,12 @@ await check("without a picker, Export STL asks for the name too, and a project s
 
 // Real-use hunt B5 (2026-11-01): a file opened as "bracket.spindle" offered "Untitled.spindle" on Save (the project's
 // own name inside), so a quick Save made a second file beside the one opened. Save offers the opened file's name.
-await check("after Open, Save offers the opened file's own name (bracket.spindle, and an old part.json as part.spindle)", async () => {
+// App hunt 2026-11-04: a file opened under an older ending (.fission.json, .panosolid.json) was offered as "Bracket.fission.spindle".
+await check("after Open, Save offers the opened file's own name (bracket.spindle, and an old part.json as part.spindle, Bracket.fission.json and Bracket.panosolid.json as Bracket.spindle)", async () => {
   const { context, page } = await fresh(1280, FAKE_PICKER);
   try {
     const saved = readFileSync(new URL("./saved.spindle", import.meta.url));
-    for (const [name, want] of [["bracket.spindle", "bracket.spindle"], ["Old part.json", "Old part.spindle"]]) {
+    for (const [name, want] of [["bracket.spindle", "bracket.spindle"], ["Old part.json", "Old part.spindle"], ["Bracket.fission.json", "Bracket.spindle"], ["Bracket.panosolid.json", "Bracket.spindle"], ["Bracket.spindlelabs.json", "Bracket.spindle"]]) {
       await page.evaluate(() => (window.__picked = []));
       await page.setInputFiles("#open-file", { name, mimeType: "application/json", buffer: saved });
       await page.waitForFunction(() => document.querySelector("#volume")?.textContent?.includes("mm³") && document.querySelector("#file-status")?.textContent === "");
@@ -215,6 +216,30 @@ await check("after Open, Save offers the opened file's own name (bracket.spindle
       await page.waitForFunction(() => window.__picked.length === 1);
       assert.equal((await picked(page))[0][0], want, `opened ${name}`);
     }
+  } finally {
+    await context.close();
+  }
+});
+
+// App hunt 2026-11-04: Save, then File > New (Start fresh) and a new part, then Save wrote the new design over the file
+// the old one was saved to, without asking. Start fresh lets that file go: Save asks again.
+await check("with a save picker: after File > New, Save asks where to save the new design instead of writing over the last file", async () => {
+  const { context, page } = await fresh(1280, FAKE_PICKER);
+  try {
+    await page.evaluate(() => (window.__chosen = "Bracket.spindle"));
+    await chooseFile(page, "file-save", false);
+    await page.waitForFunction(() => (window.__files["Bracket.spindle"] ?? []).length === 1);
+    await chooseFile(page, "start-fresh", false);
+    await page.waitForFunction(() => document.getElementById("start-fresh-dialog").open);
+    await page.click("#start-fresh-confirm");
+    await page.waitForFunction(() => document.getElementById("start-hint")?.hidden === false);
+    await insertPreset(page, "cylinder");
+    await page.evaluate(() => (window.__closeNext = true)); // the user closes the picker: nothing is written anywhere
+    await chooseFile(page, "file-save", false);
+    await page.waitForFunction(() => window.__picked.length === 2, null, { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    assert.equal((await picked(page)).length, 2, "Save after File > New asked where to save");
+    assert.equal((await files(page))["Bracket.spindle"].length, 1, "Bracket.spindle was not written over");
   } finally {
     await context.close();
   }

@@ -1,8 +1,17 @@
 /* Optional accounts: the top bar's Sign in button and the Account dialog (src/account.ts). */
-.account-open.account-signed-in { max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: #e6e8eb; border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+/* 761 to 999 px (a phone sideways, a narrow window): with Sign in added the
+   bar's words no longer fit ("Saving…" ran under DESIGN ▾, e2e/phone-short.mjs),
+   so AI, Guide, Community and Sign in show their icons only, as they already
+   do at 641 to 760 (phone-short.css). Their words stay their names for screen
+   readers, and each title says it. .account-on is on <body> while accounts are on. */
+@media (min-width: 761px) and (max-width: 999px) {
+  .account-on #topbar .app-bar-end button.with-icon:not(#none) { padding-left: 6px; padding-right: 6px; }
+  .account-on #topbar .app-bar-end .tool-word, .account-on #topbar .app-bar-end #ai-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+.account-open.account-signed-in .tool-word { display: inline-block; vertical-align: bottom; max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .account[open] { display: flex; }
-.account::backdrop { background: rgba(5, 8, 14, 0.6); }
+.account::backdrop { background: var(--fill-5-8-14-06); }
 .account .account-head { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-3) var(--look-space-4); border-bottom: 1px solid var(--look-edge); }
 .account .account-head h2 { margin: 0; font-size: 16px; }
 .account .account-body { overflow-y: auto; padding: var(--look-space-4); display: grid; gap: var(--look-space-3); font-size: 14px; line-height: 1.45; }
@@ -10,16 +19,16 @@
 .account .account-gives { margin: 0; padding-left: 20px; display: grid; gap: var(--look-space-2); }
 .account .account-close, .account .account-action { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 .account .account-close:hover, .account .account-action:hover { border-color: var(--look-accent); color: var(--look-accent-text); }
-.account .account-google { min-height: 44px; background: #2f63ad; border-color: #4b84d6; color: #fff; font-weight: 600; }
+.account .account-google { min-height: 44px; background: var(--fill-2f63ad); border-color: var(--line-4b84d6); color: var(--white); font-weight: 600; }
 .account .account-action:disabled { opacity: 0.6; cursor: default; }
 .account .account-who { display: grid; gap: 2px; }
-.account .account-who span { color: #a9b0b8; overflow-wrap: anywhere; }
+.account .account-who span { color: var(--text-a9b0b8); overflow-wrap: anywhere; }
 .account .account-note { padding: var(--look-space-2) var(--look-space-3); background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
-.account .account-small { color: #a9b0b8; font-size: 13px; }
-.account a.account-small { color: #4aa8ff; justify-self: start; }
+.account .account-small { color: var(--text-a9b0b8); font-size: 13px; }
+.account a.account-small { color: var(--accent); justify-self: start; }
 .account .account-emails { display: flex; align-items: flex-start; gap: var(--look-space-2); cursor: pointer; }
 .account .account-emails input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
 .account .account-emails-text { display: grid; gap: 2px; }
 .account .account-yours { display: flex; flex-wrap: wrap; gap: var(--look-space-2); }
-.account .account-danger { border-color: #8a3a3a; color: #f0b4b4; }
-.account .account-danger:hover { border-color: #d05a5a; color: #ffd0d0; }
+.account .account-danger { border-color: var(--line-8a3a3a); color: var(--text-f0b4b4); }
+.account .account-danger:hover { border-color: var(--line-d05a5a); color: var(--text-ffd0d0); }

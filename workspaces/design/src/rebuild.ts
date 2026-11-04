@@ -492,38 +492,35 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
   };
   // Its own cache is closed after: a body the kernel failed to free is tried once more then (T6b).
   const own = cache === undefined;
-  const beforeItems = indexOf(before).items;
-  /**
-   * `doc` with its kept shapes decided: an extrude whose sketch makes no
-   * outline in `doc` keeps the shape it had, or the sketch as it was in
-   * `before`; one whose sketch makes an outline keeps nothing. Decided again
-   * after every pass that follows points or holds placements, and on the
-   * design the last pass made: a snapped point or a projection that follows
-   * its edge can lose the sketch's outline (hunt2 C2: a corner snapped to a
-   * box made wider crossed the outline), or find it again.
-   */
-  const withKept = async (doc: DesignDocument): Promise<DesignDocument> => {
-    const next: Record<string, KeptShape> = {};
-    for (const f of doc.timeline.features) {
-      if (!isSketchExtrude(f)) continue;
-      const sketch = f.intent.parameters.sketch as string;
-      if (await makesOutline(kernel, doc, sketch)) continue;
-      const had = keptOf(doc, f);
-      const was = contentOf(before, sketch);
-      if (had !== undefined) next[f.id] = had;
-      else if (was !== undefined && (await makesOutline(kernel, before, sketch))) {
-        const item = beforeItems.get(sketch)!;
-        const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
-        const shape = keptCurves(was);
-        next[f.id] = placement ? { ...shape, placement } : shape;
-      }
-    }
-    const { kept: old, ...rest } = doc;
-    if (JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
-    return Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
-  };
   const settling = bodies.using(async () => {
-    let doc = await withKept(after);
+    const beforeItems = indexOf(before).items;
+    /**
+     * `doc` (`after`, its pinned points and projected edges followed so far)
+     * with its kept shapes settled: judged on the points as they now lie, so a
+     * sketch a followed point makes cross itself is lost too (hunt A, 2026-11-04:
+     * judged before the points followed, it kept nothing and its extrude failed).
+     */
+    const keepLost = async (doc: DesignDocument): Promise<DesignDocument> => {
+      const next: Record<string, KeptShape> = {};
+      for (const f of doc.timeline.features) {
+        if (!isSketchExtrude(f)) continue;
+        const sketch = f.intent.parameters.sketch as string;
+        if (await makesOutline(kernel, doc, sketch)) continue;
+        const had = keptOf(after, f);
+        const was = contentOf(before, sketch);
+        if (had !== undefined) next[f.id] = had;
+        else if (was !== undefined && (await makesOutline(kernel, before, sketch))) {
+          const item = beforeItems.get(sketch)!;
+          const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
+          const shape = keptCurves(was);
+          next[f.id] = placement ? { ...shape, placement } : shape;
+        }
+      }
+      const { kept: old, ...rest } = doc;
+      if (JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
+      return Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
+    };
+    let doc = await keepLost(after);
     const faces = doc.timeline.features.filter((f) => placedOnBodies(doc, f)).length;
     if (faces === 0) return doc;
     // Held placements and followed points, decided on the document with its kept shapes settled, pass after pass on the
@@ -556,7 +553,8 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         sketches.push(followed);
       }
       if (!changed) return doc;
-      doc = await withKept({ ...doc, sketches });
+      // Kept shapes again, on the points as they now lie: a followed point can lose a sketch, or find its outline again.
+      doc = await keepLost({ ...doc, sketches });
     }
     return doc;
   });

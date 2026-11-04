@@ -349,3 +349,101 @@ test("full storage: the preset isn't saved and the dialog says so; at the cap of
   assert.deepEqual(t.visible(), ["naming"]);
   await window.happyDOM.close();
 });
+
+test("a dialog left open while another tab changes the presets: each edit here changes only its own preset (app hunt 2026-11-04)", async () => {
+  const window = new Window();
+  window.localStorage.clear();
+  const storage = window.localStorage as unknown as Storage;
+  const stored = () => JSON.parse(storage.getItem(PRESETS_KEY)!) as { version: number; presets: PrintPreset[] };
+  const names = () => stored().presets.map((p) => p.name).sort();
+  const t = dialog(window);
+  t.d.ask(); // the list is read now, and stays open
+  // Another tab saves "work P2S"; this dialog then saves "home P1S". Both are kept: the list here never knew of
+  // "work P2S", so writing it back as it was read would have wiped it.
+  const other: PrintPreset = { id: "other", name: "work P2S", printer: "bambu-p1s", settings: WORK, updatedAt: 5 };
+  storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [other] }));
+  t.$("slice-presets-save-as").click();
+  t.$<HTMLInputElement>("slice-presets-name").value = "home P1S";
+  t.$("slice-presets-name-ok").click();
+  assert.equal(t.status(), "Saved the preset home P1S.");
+  assert.deepEqual(names(), ["home P1S", "work P2S"]);
+  assert.deepEqual(t.list(), ["No preset", "home P1S", "work P2S"], "the list shows what is kept");
+  const home = stored().presets.find((p) => p.name === "home P1S")!;
+  // A name the other tab took meanwhile is refused here too, whatever its case.
+  const garage: PrintPreset = { id: "garage", name: "garage", printer: "bambu-p1s", settings: WORK, updatedAt: 6 };
+  storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [...stored().presets, garage] }));
+  t.$("slice-presets-save-as").click();
+  t.$<HTMLInputElement>("slice-presets-name").value = "Garage";
+  t.$("slice-presets-name-ok").click();
+  assert.match(t.status()!, /^There is already a preset called garage/);
+  assert.deepEqual(names(), ["garage", "home P1S", "work P2S"]);
+  t.$("slice-presets-name-cancel").click();
+  // The other tab deletes "work P2S" and "garage"; this dialog renames "home P1S": the deleted ones stay deleted.
+  storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [home] }));
+  t.$("slice-presets-edit").click();
+  t.$("slice-presets-rename").click();
+  t.$<HTMLInputElement>("slice-presets-name").value = "home";
+  t.$("slice-presets-name-ok").click();
+  assert.equal(t.status(), "Renamed the preset to home.");
+  assert.deepEqual(names(), ["home"]);
+  // The other tab adds "work P2S" again; Update here keeps it, changing only "home"'s settings.
+  storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [...stored().presets, other] }));
+  t.set("slice-print-infill", "40");
+  t.$("slice-presets-edit").click();
+  t.$("slice-presets-update").click();
+  assert.equal(t.status(), "Updated the preset home with these settings.");
+  assert.deepEqual(names(), ["home", "work P2S"]);
+  assert.equal(stored().presets.find((p) => p.id === home.id)!.settings.infill, 40);
+  assert.deepEqual(stored().presets.find((p) => p.id === "other"), other, "the other tab's preset, untouched");
+  // The other tab deletes "home"; Update here then neither brings it back nor touches "work P2S", and says why.
+  storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [other] }));
+  t.set("slice-print-infill", "60");
+  t.$("slice-presets-edit").click();
+  t.$("slice-presets-update").click();
+  assert.equal(t.status(), "That preset was deleted in another tab, so it can't be changed here.");
+  assert.deepEqual(stored().presets, [other]);
+  assert.deepEqual(t.list(), ["No preset", "work P2S"]);
+  assert.deepEqual(t.visible(), ["pick"]);
+  // Deleting a preset this dialog shows but another tab changed keeps the other tab's other presets.
+  t.set("slice-presets-list", "other");
+  const third: PrintPreset = { id: "third", name: "third", printer: "bambu-p1s", settings: WORK, updatedAt: 7 };
+  storage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [other, third] }));
+  t.$("slice-presets-edit").click();
+  t.$("slice-presets-delete").click();
+  t.$("slice-presets-delete-yes").click();
+  assert.deepEqual(stored().presets, [third]);
+  await window.happyDOM.close();
+});
+
+test("a store a newer app wrote while this dialog is open is never overwritten, by any edit (app hunt 2026-11-04)", async () => {
+  const window = new Window();
+  window.localStorage.clear();
+  const storage = window.localStorage as unknown as Storage;
+  const t = dialog(window);
+  t.d.ask();
+  t.$("slice-presets-save-as").click();
+  t.$<HTMLInputElement>("slice-presets-name").value = "home P1S";
+  t.$("slice-presets-name-ok").click();
+  // A newer SpindleLabs in another tab writes a version 2 store.
+  const newer = JSON.stringify({ version: 2, presets: [{ id: "n", name: "from a newer app", printer: "bambu-p1s", settings: {}, updatedAt: 9 }] });
+  storage.setItem(PRESETS_KEY, newer);
+  const refused = "Presets were saved by a newer version of SpindleLabs, so this one leaves them alone: reload the page.";
+  // Save as…
+  t.$("slice-presets-save-as").click();
+  t.$<HTMLInputElement>("slice-presets-name").value = "work P2S";
+  t.$("slice-presets-name-ok").click();
+  assert.equal(t.status(), refused);
+  assert.equal(storage.getItem(PRESETS_KEY), newer);
+  t.$("slice-presets-name-cancel").click();
+  // Update, Rename and Delete of the preset this dialog still has picked: each refused in the same words.
+  for (const step of [
+    () => (t.set("slice-print-infill", "40"), t.$("slice-presets-edit").click(), t.$("slice-presets-update").click()),
+    () => (t.$("slice-presets-edit").click(), t.$("slice-presets-rename").click(), (t.$<HTMLInputElement>("slice-presets-name").value = "x"), t.$("slice-presets-name-ok").click()),
+    () => (t.$("slice-presets-edit").click(), t.$("slice-presets-delete").click(), t.$("slice-presets-delete-yes").click()),
+  ]) {
+    step();
+    assert.equal(t.status(), refused);
+    assert.equal(storage.getItem(PRESETS_KEY), newer);
+  }
+  await window.happyDOM.close();
+});
