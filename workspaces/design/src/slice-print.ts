@@ -168,39 +168,221 @@ export function stlLowestZ(stl: Uint8Array): number {
 }
 
 /**
- * What the engine does when bodies sit at different heights (slicer hunt 2026-10-31, finding 3): it puts the lowest point
- * of all of them on the plate, so a body above the lowest one hangs in the air (it needs supports) and a body sunk
- * below the floor lifts the others off it. One sentence naming the first such body, or "" when they all start at the
- * same height (within 0.01 mm) or fewer than two.
+ * The gap under a body that is CAD rounding, not a body in the air: the engine cuts its first layer at 0.1 mm, so a
+ * body this close to the plate or to another body prints as if it touched (slicer hunt 2026-11-04, inputs 3).
  */
-export function levelNote(lowest: readonly number[]): string {
+export const LEVEL_GAP = 0.1;
+
+/**
+ * What the engine does when bodies sit at different heights (slicer hunt 2026-10-31, finding 3): it puts the lowest point
+ * of all of them on the plate, so a body above the lowest one with nothing under it hangs in the air (it needs supports)
+ * and a body sunk below the floor lifts the others off it. One sentence naming the first such body, or "" when they all
+ * start at the same height (within LEVEL_GAP), fewer than two, or every one above the floor stands on another body
+ * (`rests(i)`: slicer hunt 2026-11-04, inputs 2, a post on a block was said to hang in the air).
+ */
+export function levelNote(lowest: readonly number[], rests: (body: number) => boolean = () => false): string {
   const known = lowest.filter(Number.isFinite);
   if (known.length < 2) return "";
   const floor = Math.min(...known);
-  const at = lowest.findIndex((z) => Number.isFinite(z) && z - floor > 0.01);
+  const at = lowest.findIndex((z, i) => Number.isFinite(z) && z - floor > LEVEL_GAP && !rests(i));
   if (at < 0) return "";
   const gap = Math.round((lowest[at] - floor) * 10) / 10;
   return `Body ${at + 1} starts ${gap} mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.`;
 }
 
-/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, and the note on their heights. */
-async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string }> {
+/** A binary STL's triangles as corner coordinates, nine numbers each (x, y, z three times), reading only those it holds. */
+function stlCorners(stl: Uint8Array): Float64Array {
+  const view = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+  const count = stl.length >= 84 ? Math.min(view.getUint32(80, true), Math.floor((stl.length - 84) / 50)) : 0;
+  const out = new Float64Array(9 * count);
+  for (let t = 0; t < count; t++) for (let k = 0; k < 9; k++) out[9 * t + k] = view.getFloat32(84 + t * 50 + 12 + 4 * k, true);
+  return out;
+}
+
+type Point = readonly [number, number];
+type Segment = readonly [number, number, number, number];
+
+/** Where the triangles cross the plane z = `h`: one segment per triangle that has corners on both sides. */
+function sectionAt(corners: Float64Array, h: number): Segment[] {
+  const out: Segment[] = [];
+  for (let t = 0; t < corners.length; t += 9) {
+    const pts: number[] = [];
+    for (let a = 0; a < 3; a++) {
+      const b = (a + 1) % 3;
+      const za = corners[t + 3 * a + 2];
+      const zb = corners[t + 3 * b + 2];
+      if ((za < h) === (zb < h)) continue;
+      const f = (h - za) / (zb - za);
+      pts.push(corners[t + 3 * a] + f * (corners[t + 3 * b] - corners[t + 3 * a]), corners[t + 3 * a + 1] + f * (corners[t + 3 * b + 1] - corners[t + 3 * a + 1]));
+    }
+    if (pts.length === 4) out.push([pts[0], pts[1], pts[2], pts[3]]);
+  }
+  return out;
+}
+
+/** Whether `p` is inside the closed outline the segments make (a ray to +x crosses it an odd number of times). */
+function insideSection(p: Point, section: readonly Segment[]): boolean {
+  let inside = false;
+  for (const [x1, y1, x2, y2] of section) {
+    if ((y1 > p[1]) === (y2 > p[1])) continue;
+    if (x1 + ((p[1] - y1) / (y2 - y1)) * (x2 - x1) > p[0]) inside = !inside;
+  }
+  return inside;
+}
+
+const cross = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+
+/** Whether `p` is inside (or on) the triangle a, b, c seen from above. */
+function inTriangle(p: Point, a: Point, b: Point, c: Point): boolean {
+  const d1 = cross(a[0], a[1], b[0], b[1], p[0], p[1]);
+  const d2 = cross(b[0], b[1], c[0], c[1], p[0], p[1]);
+  const d3 = cross(c[0], c[1], a[0], a[1], p[0], p[1]);
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+}
+
+/** Whether segments p1-p2 and q1-q2 cross, seen from above. */
+function segmentsCross(p1: Point, p2: Point, q1: Point, q2: Point): boolean {
+  const d1 = cross(q1[0], q1[1], q2[0], q2[1], p1[0], p1[1]);
+  const d2 = cross(q1[0], q1[1], q2[0], q2[1], p2[0], p2[1]);
+  const d3 = cross(p1[0], p1[1], p2[0], p2[1], q1[0], q1[1]);
+  const d4 = cross(p1[0], p1[1], p2[0], p2[1], q2[0], q2[1]);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+/**
+ * Whether the body `below` holds up a body whose underside is `base` (its triangles with a corner within LEVEL_GAP of
+ * its lowest point `z`, seen from above): `below` has material LEVEL_GAP under that point, and there it overlaps the
+ * underside (a corner of either inside the other, or their edges crossing).
+ */
+function holdsUp(below: Float64Array, base: readonly (readonly [Point, Point, Point])[], z: number): boolean {
+  const section = sectionAt(below, z - LEVEL_GAP);
+  if (section.length === 0) return false;
+  for (const tri of base) {
+    const centroid: Point = [(tri[0][0] + tri[1][0] + tri[2][0]) / 3, (tri[0][1] + tri[1][1] + tri[2][1]) / 3];
+    if ([...tri, centroid].some((p) => insideSection(p, section))) return true;
+    for (const [x1, y1, x2, y2] of section) {
+      if (inTriangle([x1, y1], ...tri)) return true;
+      for (let e = 0; e < 3; e++) if (segmentsCross([x1, y1], [x2, y2], tri[e], tri[(e + 1) % 3])) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * levelNote for the bodies' STL files (one per body, as the engine gets them): a body above the lowest one is named
+ * only when no other body is under it, within LEVEL_GAP, so a design of stacked bodies (a post on a base, a lid on a
+ * box) gets no note.
+ */
+export function levelNoteOf(files: readonly Uint8Array[]): string {
+  const corners = files.map(stlCorners);
+  const lowest = files.map(stlLowestZ);
+  const rests = (i: number) => {
+    const z = lowest[i];
+    const c = corners[i];
+    const base: [Point, Point, Point][] = [];
+    for (let t = 0; t < c.length; t += 9) {
+      if (Math.min(c[t + 2], c[t + 5], c[t + 8]) > z + LEVEL_GAP) continue;
+      // A side wall seen from above is a line, not an underside: it covers nothing.
+      if (Math.abs(cross(c[t], c[t + 1], c[t + 3], c[t + 4], c[t + 6], c[t + 7])) < 1e-9) continue;
+      base.push([[c[t], c[t + 1]], [c[t + 3], c[t + 4]], [c[t + 6], c[t + 7]]]);
+    }
+    return corners.some((other, j) => j !== i && lowest[j] < z - LEVEL_GAP && holdsUp(other, base, z));
+  };
+  return levelNote(lowest, rests);
+}
+
+/** The highest z in a binary STL, as stlLowestZ reads it; NaN when it holds no triangle. */
+export function stlHighestZ(stl: Uint8Array): number {
+  const view = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+  const count = stl.length >= 84 ? Math.min(view.getUint32(80, true), Math.floor((stl.length - 84) / 50)) : 0;
+  let high = -Infinity;
+  for (let t = 0; t < count; t++) {
+    for (let c = 0; c < 3; c++) high = Math.max(high, view.getFloat32(84 + t * 50 + 12 + c * 12 + 8, true));
+  }
+  return count > 0 ? high : NaN;
+}
+
+/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, the note on their heights, and how tall they are together. */
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = [];
   for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
-  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNote(files.map((f) => stlLowestZ(f.bytes))) };
+  const height = Math.max(...files.map((f) => stlHighestZ(f.bytes))) - Math.min(...files.map((f) => stlLowestZ(f.bytes)));
+  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNoteOf(files.map((f) => f.bytes)), height };
+}
+
+/** The height of the bodies a refusal was for (slicer hunt 2026-11-04, ui 2), so its words can say how tall the part really is. */
+const refusedHeights = new WeakMap<object, number>();
+
+/** Calls the engine; a refusal remembers the bodies' height for refusalOf. */
+async function engine<T>(height: number, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (e) {
+    if (typeof e === "object" && e !== null && Number.isFinite(height)) refusedHeights.set(e, height);
+    throw e;
+  }
+}
+
+/** A failed slice in words for the dialog: refusalWords of its message, with the part's own height when the engine said it is too tall. */
+export function refusalOf(e: unknown): string {
+  const height = typeof e === "object" && e !== null ? refusedHeights.get(e) : undefined;
+  return refusalWords(e instanceof Error ? e.message : String(e), height);
+}
+
+/** A slice under way (sliceBodies, printFileOf): its kernel, and whether it was stopped before it reached the engine. */
+interface SliceRun {
+  kernel: KernelCalls;
+  stopped: boolean;
+}
+
+/** The slices under way now, so the dialog's Stop and Close can stop them (stopSlices). */
+const runs = new Set<SliceRun>();
+
+/**
+ * Stops every slice under way (slicer hunt 2026-11-04, ui 3: Close left the engine working for up to 75 s, every edit
+ * waiting behind it): one still making the bodies' files never asks the engine, and the engine is let go from one
+ * already asked (KernelCalls.stopSlicing), so the design is built again at once. Each such slice fails.
+ */
+export function stopSlices(): void {
+  for (const run of runs) {
+    run.stopped = true;
+    run.kernel.stopSlicing?.();
+  }
+}
+
+/** `slice` (the bodies' files, then the engine) as a run stopSlices can stop. */
+async function asRun<T>(kernel: KernelCalls, slice: (run: SliceRun) => Promise<T>): Promise<T> {
+  const run: SliceRun = { kernel, stopped: false };
+  runs.add(run);
+  try {
+    return await slice(run);
+  } finally {
+    runs.delete(run);
+  }
+}
+
+/** The bodies' files for `run`, or SliceDropped if it was stopped while they were made. */
+async function runStl(run: SliceRun, doc: DesignDocument, features: readonly Feature[]) {
+  const stl = await bodiesStl(run.kernel, doc, features);
+  if (run.stopped) throw new SliceDropped();
+  return stl;
 }
 
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
-  const { stl, note } = await bodiesStl(kernel, doc, features);
-  return { ...(await kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip)), levelNote: note };
+export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
+  return asRun(kernel, async (run) => {
+    const { stl, note, height } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note };
+  });
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
-export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
-  const { stl, note } = await bodiesStl(kernel, doc, features);
-  return { ...(await kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip)), levelNote: note };
+export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
+  return asRun(kernel, async (run) => {
+    const { stl, note, height } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note };
+  });
 }
 
 /**
@@ -284,12 +466,12 @@ function turnOffWords(e: FirstLayerExtras, w: number | null, d: number): string 
 /**
  * The engine's refusal in words for a beginner: "the part ... runs from (-22, 118) to (278, 138), off the 256 × 256 mm bed"
  * becomes how wide the part is and what the plate takes; "layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"
- * becomes how tall; "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do.
+ * becomes how tall (the part's `height` when known, else about the layer's); "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do.
  * A part refused only with its warm-up loop or Better grip's brim round it says its own size and that size with them,
  * and to turn them off when without them it fits; so do the front strip's and the front-left corner's refusals. Any other
  * message is kept, starting with a capital.
  */
-export function refusalWords(message: string): string {
+export function refusalWords(message: string, height?: number): string {
   const across = new RegExp(`${PART}, placed at [^)]*\\), runs from \\((-?[\\d.]+), (-?[\\d.]+)\\) to \\((-?[\\d.]+), (-?[\\d.]+)\\), off the (\\d+) × (\\d+) mm bed`).exec(message);
   if (across) {
     const [w, d] = [Number(across[4]) - Number(across[2]), Number(across[5]) - Number(across[3])];
@@ -321,6 +503,8 @@ export function refusalWords(message: string): string {
     return `The part is ${round1(w - r2)} × ${round1(d - r2)} mm, ${round1(w)} × ${round1(d)} mm with ${what}, and ${reaches} ${turnOffWords(e, w, d) ?? `Make it smaller or turn it so it clears the corner (with ${what}, up to ${round1(upW - r2)} mm wide or ${round1(upD - r2)} mm deep fits).`}`;
   }
   const tall = /reaches z = ([\d.]+) mm, above the printer's ([\d.]+) mm/.exec(message);
+  // The engine names the first layer over the limit, not the part's top: given the part's height, say that (slicer hunt 2026-11-04, ui 2).
+  if (tall && height !== undefined && Number.isFinite(height) && height > 0) return `The part is ${Math.round(height * 10) / 10} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
   if (tall) return `The part is about ${tall[1]} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
   const air = /starts in mid-air at z = (-?[\d.]+) mm, around \((-?[\d.]+), (-?[\d.]+)\), with nothing under it/.exec(message);
   if (air) return `Part of the model hangs in the air ${air[1]} mm above the plate, around (${air[2]}, ${air[3]}) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.`;
@@ -329,7 +513,7 @@ export function refusalWords(message: string): string {
 
 /** The plain file's name: the layer height, the walls and infill, its supports, "no-warm-up" without the loop and "grip" with Better grip, so two slices of one part never share a name. */
 export function gcodeName(choices: PrintChoices, project?: string): string {
-  return `${baseName(choices, project)}.gcode`;
+  return fitName(nameLead(project), settingsPart(choices), ".gcode");
 }
 
 /**
@@ -337,7 +521,7 @@ export function gcodeName(choices: PrintChoices, project?: string): string {
  * plate or nozzle is never taken for another's.
  */
 export function printFileName(choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle, project?: string): string {
-  return `${baseName(choices, project)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}${P1S_KIND.extension}`;
+  return fitName(nameLead(project), `${settingsPart(choices)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}`, P1S_KIND.extension);
 }
 
 /**
@@ -349,7 +533,31 @@ export const nameLead = (project?: string): string => {
   return name === "" || /^untitled$/i.test(name) ? "spindlelabs" : name;
 };
 
-const baseName = (choices: PrintChoices, project?: string) => `${nameLead(project)}-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}`;
+const settingsPart = (choices: PrintChoices) => `-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}`;
+
+/** The most a file's name may hold, as the save box cuts it (packages/ui save-file.ts): characters and bytes of UTF-8. */
+const NAME_CHARS = 120;
+const NAME_BYTES = 200;
+
+/**
+ * `lead`, `settings` and `extension` as one name, the lead cut (at whole characters, and never ending in a space) so the
+ * whole fits the save box's limits: the settings part always stays whole, so two slices of one long-named project never
+ * share a name (slicer hunt 2026-11-04, package 4a: the save box cut the settings off the end).
+ */
+function fitName(lead: string, settings: string, extension: string): string {
+  const bytes = (t: string) => new TextEncoder().encode(t).length;
+  let charsLeft = NAME_CHARS - [...settings].length - [...extension].length;
+  let bytesLeft = NAME_BYTES - bytes(settings) - bytes(extension);
+  let kept = "";
+  for (const c of lead) {
+    const size = bytes(c);
+    if (charsLeft < 1 || bytesLeft < size) break;
+    kept += c;
+    charsLeft--;
+    bytesLeft -= size;
+  }
+  return `${kept.length < lead.length ? kept.trimEnd() : kept}${settings}${extension}`;
+}
 
 /** Normal supports keep the name they had when supports were on or off. */
 const SUPPORT_SUFFIX: Record<SupportStyle, string> = { off: "", normal: "-supports", tree: "-tree-supports" };
@@ -387,13 +595,15 @@ export function printWords(print: PrintFacts): string {
 }
 
 /**
- * The warning for plastic the slice leaves out, or null: a part thinner
- * than one line (0.4 mm) has no wall to print. Under a hundredth of a
- * mm³ rounds to nothing in the words, so it is not worth a warning.
+ * The warning for plastic the slice leaves out, or null: walls under about
+ * 0.65 mm aren't printed yet (not only those thinner than one 0.4 mm line:
+ * slicer hunt 2026-11-04, SH2), so the words say what thickness prints.
+ * Under a hundredth of a mm³ rounds to nothing in the words, so it is not
+ * worth a warning.
  */
 export function unprintedWords(print: Pick<PrintFacts, "unprintedVolume">): string | null {
   if (!(print.unprintedVolume >= 0.005)) return null;
-  return `Some of the part is thinner than one printed line, so about ${print.unprintedVolume.toFixed(2)} mm³ of it won't print.`;
+  return `Some walls are thinner than about 0.65 mm, which can't be printed yet, so about ${print.unprintedVolume.toFixed(2)} mm³ of the part won't print: make them at least 0.65 mm thick.`;
 }
 
 /**
@@ -422,6 +632,25 @@ export function progressWords(p: SliceProgress | null): string {
   }
 }
 
+/** The least time constant of the bar's creep while the file is written: even after a quick slice, it creeps slowly. */
+export const FILE_CRAWL_MIN_MS = 5_000;
+
+/** The furthest the creep goes: the end is the engine's to say. */
+const FILE_CRAWL_TOP = 0.99;
+
+/**
+ * Where the bar stands `inFileMs` into writing the file, from `fraction` where the engine left it, after `beforeMs` of
+ * slicing before the file (slicer hunt 2026-11-04, ui 4: the engine tells nothing while it writes the file, which can
+ * be most of a long slice, so the bar sat at 95 % as if hung). It creeps toward 0.99, never past it, with a time
+ * constant of twice the time before the file (the file took 1.4 to 4 times that in the hunt's long slices), at least
+ * FILE_CRAWL_MIN_MS: honest that it is still working, without claiming to know how far.
+ */
+export function fileCrawl(fraction: number, beforeMs: number, inFileMs: number): number {
+  if (!(fraction < FILE_CRAWL_TOP) || !(inFileMs > 0)) return fraction;
+  const tau = Math.max(FILE_CRAWL_MIN_MS, Number.isFinite(beforeMs) ? 2 * beforeMs : 0);
+  return fraction + (FILE_CRAWL_TOP - fraction) * (1 - Math.exp(-inFileMs / tau));
+}
+
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
   slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
@@ -439,6 +668,14 @@ export interface SlicePrint {
   /** Whether the dialog is open. */
   readonly open: boolean;
 }
+
+/**
+ * The choices each toolbar slot's dialog had last, by the page and the slot's id (slicer hunt 2026-11-04, ui 1): Undo
+ * and Redo put Design away and mount it again, which builds a new toolbar (#toolbar, or #split-toolbar in the split
+ * view) with a new dialog in it, so the new dialog starts from these instead of the defaults. A page loaded again
+ * starts fresh, and a slot with no id keeps nothing.
+ */
+const keptChoices = new WeakMap<Document, Map<string, PresetSettings>>();
 
 export const SLICE_PRINT_TITLE = "Slice for printing: turn the bodies shown into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA).";
 
@@ -598,6 +835,19 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     say,
     settingsOf: presetSettingsOf,
   });
+  // Mounted again (Undo, Redo): the choices the last dialog in this slot had, the preset picked marked as changed if they differ.
+  if (slot.id && !keptChoices.has(document)) keptChoices.set(document, new Map());
+  const keptHere = slot.id ? keptChoices.get(document) : undefined;
+  const kept = keptHere?.get(slot.id);
+  if (kept) {
+    for (const [k, select] of Object.entries(inputs)) select.value = String(kept[k as keyof typeof inputs]);
+    warmUp.checked = kept.warmUp;
+    grip.checked = kept.betterGrip;
+    plateFor();
+    presets.changed();
+  }
+  const keep = () => keptHere?.set(slot.id, { ...choices(), ...file() });
+  keep();
   // The heading and the presets share one line where there is room, so the dialog grows no taller.
   const top = document.createElement("div");
   top.className = "slice-print-top";
@@ -611,69 +861,119 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     stage.textContent = progressWords(null);
     bar.hidden = false;
     let best = 0;
+    const win = document.defaultView;
+    const now = () => win?.performance?.now() ?? Date.now();
+    const started = now();
+    // While the engine writes the file it tells nothing: the bar creeps on by itself (fileCrawl), saying how long.
+    let creep: ReturnType<typeof setInterval> | null = null;
+    const stopCreep = () => {
+      if (creep !== null) win?.clearInterval(creep);
+      creep = null;
+    };
+    const startCreep = () => {
+      const fileAt = now();
+      const from = best;
+      creep =
+        win?.setInterval(() => {
+          const inFile = now() - fileAt;
+          meter.value = Math.max(meter.value, fileCrawl(from, fileAt - started, inFile));
+          if (inFile >= 1000) stage.textContent = `Still writing the file… ${Math.floor(inFile / 1000)} s so far`;
+        }, 250) ?? null;
+    };
     const stop = events.onProgress?.((p) => {
       // Forward only: two calls (the plain slice after the file) each start from 0.
       if (!(p.fraction >= best)) return;
       best = p.fraction;
-      meter.value = Math.min(1, Math.max(0, p.fraction));
-      stage.textContent = progressWords(p);
+      meter.value = Math.max(creep === null ? 0 : meter.value, Math.min(1, Math.max(0, p.fraction)));
+      if (creep === null || p.stage !== "file" || p.fraction >= 1) stage.textContent = progressWords(p);
+      if (p.fraction >= 1) stopCreep();
+      else if (p.stage === "file" && creep === null) startCreep();
     });
     return () => {
+      stopCreep();
       stop?.();
       bar.hidden = true;
     };
   };
-  // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt 2026-10-31).
+  // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt
+  // 2026-10-31), and the engine is stopped, so the design's edits don't wait behind it (slicer hunt 2026-11-04, ui 3).
+  // While a slice runs, Close says Stop ("Cancel" is wider, and wraps the buttons onto two lines at 375 px): it stops
+  // the slice and closes the dialog, whose choices stay for next time.
   let generation = 0;
-  dialog.addEventListener("close", () => generation++);
+  dialog.addEventListener("close", () => {
+    generation++;
+    if (busy) stopSlices();
+    // The keyboard goes back to File ▾, where the dialog was opened from, as the print preview's does (slicer hunt 2026-11-04, ui 7).
+    document.getElementById("file-menu")?.focus();
+  });
+  // A choice focused by Tab (or a phone keyboard's Next) under the buttons stuck to the dialog's bottom is scrolled up
+  // clear of them (slicer hunt 2026-11-04, ui 6: Infill and Supports were hidden under them at 375 × 667).
+  dialog.addEventListener("focusin", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target || actions.contains(target)) return;
+    const covered = target.getBoundingClientRect().bottom + 8 - actions.getBoundingClientRect().top;
+    if (covered > 0 && actions.getBoundingClientRect().height > 0) dialog.scrollTop += covered;
+  });
+  const working = (on: boolean) => {
+    busy = on;
+    go.disabled = preview.disabled = on;
+    close.textContent = on ? "Stop" : "Close";
+    close.title = on ? "Stops the slice; nothing is saved." : "";
+  };
   const alive = () => {
     const mine = generation;
     return () => mine === generation && dialog.open;
   };
-  // A result stays displayed next to choices it no longer matches: any change clears it.
+  // A result stays displayed next to choices it no longer matches: any change clears it, and one made while a slice
+  // runs is said with its result (slicer hunt 2026-11-04, ui 5).
+  let changedWhileBusy = false;
   for (const c of [quality, walls, infill, supports, format, plate, nozzle, { select: warmUp }, { select: grip }])
     c.select.addEventListener("change", () => {
-      if (!busy) say("", false);
+      if (busy) changedWhileBusy = true;
+      else say("", false);
       presets.changed();
+      keep();
     });
   go.addEventListener("click", async () => {
     if (busy) return;
-    busy = true;
-    go.disabled = preview.disabled = true;
+    working(true);
+    changedWhileBusy = false;
+    const mine = alive();
     say("Slicing…", false);
     const end = showProgress();
     try {
-      const { print, saved, name } = await events.slice(choices(), file(), alive());
+      const { print, saved, name } = await events.slice(choices(), file(), mine);
       end();
-      const warnings = [unprintedWords(print), print.levelNote || null].filter((w): w is string => w !== null);
+      const earlier = changedWhileBusy ? "A choice was changed while it sliced, so this is the slice of the earlier choices: slice again for the new ones." : null;
+      const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
       end();
-      if (e instanceof SliceDropped) say("", false);
-      else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
+      // Dropped (closed, or stopped by Stop): nothing to say, the engine's "stopped" included.
+      if (e instanceof SliceDropped || !mine()) say("", false);
+      else say(refusalOf(e), true);
     } finally {
-      busy = false;
-      go.disabled = preview.disabled = false;
+      working(false);
     }
   });
   preview.addEventListener("click", async () => {
     if (busy) return;
-    busy = true;
-    go.disabled = preview.disabled = true;
+    working(true);
+    const mine = alive();
     say("Slicing…", false);
     const end = showProgress();
     try {
-      await events.preview(choices(), file(), alive());
+      await events.preview(choices(), file(), mine);
       end();
       say("", false);
       dialog.close();
     } catch (e) {
       end();
-      if (e instanceof SliceDropped) say("", false);
-      else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
+      // Dropped (closed, or stopped by Stop): nothing to say, the engine's "stopped" included.
+      if (e instanceof SliceDropped || !mine()) say("", false);
+      else say(refusalOf(e), true);
     } finally {
-      busy = false;
-      go.disabled = preview.disabled = false;
+      working(false);
     }
   });
   close.addEventListener("click", () => dialog.close());
