@@ -376,25 +376,29 @@ test("Better grip on the shipped build: the 20 mm cube's ten brim loops after th
   assert.deepEqual(roles.slice(0, 12), ["skirt", "skirt", ...Array(10).fill("brim")]);
   assert.notEqual(roles[12], "brim");
   assert.ok(on.preview.slice(1).every((l) => l.paths.every((x) => x.role !== "brim")));
-  // The cube is centred, 118–138 mm; brim loop k's centre is 0.1 mm + 0.25 + k × 0.457 out, the outer one (k = 9) first:
-  // its least x 118 − 4.4637 = 113.5363; the warm-up loop goes round the brim's edge (4.7137 out, + 1 µm), 3 mm + 0.25
-  // further: 118 − 7.9647 = 110.0353 for its inner loop.
+  // The cube is centred, 118–138 mm, and its first layer is pulled in 0.15 mm by the bulge fix (the app's elephant-foot
+  // 0.15), 118.15–137.85; the brim and the warm-up loop go round the first layer as printed (kernel 0.33.27, slicer hunt
+  // 11-04 F1: before, round the sliced outline, the brim stood 0.25 mm off the part instead of its 0.1). Brim loop k's
+  // centre is 0.1 mm + 0.25 + k × 0.457 out, the outer one (k = 9) first: its least x 118.15 − 4.4637 = 113.6863; the
+  // warm-up loop goes round the brim's edge (4.7137 out, + 1 µm), 3 mm + 0.25 further: 118.15 − 7.9647 = 110.1853 for
+  // its inner loop.
   const least = (k: number) => Math.min(...on.preview[0].paths[k].points.filter((_, i) => i % 2 === 0));
-  assert.ok(Math.abs(least(2) - 113.5362833) < 1e-5, `${least(2)}`);
-  assert.ok(Math.abs(least(1) - 110.0352833) < 1e-5, `${least(1)}`);
+  assert.ok(Math.abs(least(2) - 113.6862833) < 1e-5, `${least(2)}`);
+  assert.ok(Math.abs(least(1) - 110.1852833) < 1e-5, `${least(1)}`);
   assert.match(on.gcode, /^;TYPE:Brim$/m);
   // The first layer is 5 °C hotter (225 for PLA's 220), back to 220 on the second, and no faster than 30 mm/s (F1800).
   assert.match(on.gcode, /^M109 S225$/m);
   assert.match(on.gcode, /^M104 S220$/m);
-  // Off: no brim; Σ (80 + 2π·d_k) = 951.23 mm of a 0.0914 mm² bead less (36.153 mm of filament), and the warm-up
-  // loop's two loops each 4.7147 mm nearer the part, 2 × 2π × 4.7147 = 59.25 mm shorter (2.252 mm): 38.405 mm less
-  // filament, and up to 12 × 2π × 0.001 mm more where the round corners' polygons lie outside their circles (0.003 mm).
+  // Off: no brim; round the 19.7 mm first layer, Σ (78.8 + 2π·d_k) = 939.23 mm of a 0.0914159 mm² bead less (35.697 mm
+  // of 1.75 mm filament, 2.405282 mm²), and the warm-up loop's two loops each 4.7147 mm nearer the part, 2 × 2π × 4.7147
+  // = 59.25 mm shorter (2.252 mm): 37.948 mm less filament, and up to 12 × 2π × 0.001 mm more where the round corners'
+  // polygons lie outside their circles (0.003 mm).
   const off = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
   assert.ok(off.preview[0].paths.every((x) => x.role !== "brim"));
   assert.doesNotMatch(off.gcode, /;TYPE:Brim/);
   assert.doesNotMatch(off.gcode, /^M109 S225$/m);
   const less = on.filamentMm - off.filamentMm;
-  assert.ok(less > 38.404 && less < 38.409, `${less}`);
+  assert.ok(less > 37.947 && less < 37.952, `${less}`);
   // The P1S's file too.
   const file = await printFileOf(kernel, doc, bodyFeatures(doc), choices, "textured");
   const g = gcodeOfPackage(file.package)!;
@@ -432,18 +436,21 @@ test("the warm-up loop on the shipped build: the 20 mm cube's first layer starts
   assert.deepEqual(roles.slice(0, 2), ["skirt", "skirt"]);
   assert.notEqual(roles[2], "skirt");
   assert.ok(on.preview.slice(1).every((l) => l.paths.every((x) => x.role !== "skirt")));
-  // The cube is centred, 118–138 mm; loop k's centre is 3 mm + 0.25 (half the 0.5 mm line) + k × 0.457 (the beads'
-  // spacing, 0.5 − 0.2 × (1 − π/4)) out: the outer one first, its least x 118 − 3.707 = 114.293, then 118 − 3.25 = 114.75.
+  // The cube is centred, 118–138 mm, its first layer pulled in 0.15 mm by the bulge fix (118.15–137.85), and the loops
+  // go round the first layer as printed (kernel 0.33.27, slicer hunt 11-04 F1). Loop k's centre is 3 mm + 0.25 (half
+  // the 0.5 mm line) + k × 0.457 (the beads' spacing, 0.5 − 0.2 × (1 − π/4)) out: the outer one first, its least x
+  // 118.15 − 3.707 = 114.443, then 118.15 − 3.25 = 114.9.
   const least = (k: number) => Math.min(...on.preview[0].paths[k].points.filter((_, i) => i % 2 === 0));
-  assert.ok(Math.abs(least(0) - 114.2929204) < 1e-5, `${least(0)}`);
-  assert.ok(Math.abs(least(1) - 114.75) < 1e-5, `${least(1)}`);
+  assert.ok(Math.abs(least(0) - 114.4429204) < 1e-5, `${least(0)}`);
+  assert.ok(Math.abs(least(1) - 114.9) < 1e-5, `${least(1)}`);
   assert.match(on.gcode, /^;TYPE:Skirt$/m);
-  // Off: none, and 80 + 2π·3.25 + 80 + 2π·3.707 = 203.71 mm less of a 0.0914 mm² bead, 7.74 mm less filament.
+  // Off: none, and round the 19.7 mm first layer 78.8 + 2π·3.25 + 78.8 + 2π·3.707 = 201.31 mm less of a 0.0914159 mm²
+  // bead, 201.31 × 0.0914159 / 2.405282 = 7.651 mm less filament.
   const off = await sliceBodies(kernel, doc, bodyFeatures(doc), { ...PRINT_DEFAULTS, warmUp: false });
   assert.ok(off.preview[0].paths.every((x) => x.role !== "skirt"));
   assert.doesNotMatch(off.gcode, /;TYPE:Skirt/);
   const less = on.filamentMm - off.filamentMm;
-  assert.ok(less > 7.741 && less < 7.744, `${less}`);
+  assert.ok(less > 7.650 && less < 7.653, `${less}`);
   // The P1S's file too.
   const file = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured");
   assert.match(gcodeOfPackage(file.package)!, /^;TYPE:Skirt$/m);
