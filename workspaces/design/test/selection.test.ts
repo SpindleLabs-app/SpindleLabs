@@ -107,3 +107,18 @@ test("a rebuild keeps the profile while the part has it; a change to a box drops
     "Taken out of the selection: Top face, the profile. The edit took them off the body, so they could not be followed. The part has no profile now.",
   );
 });
+
+test("issue #279: a hidden body, and a face or edge of it, leave the selection after a rebuild, with no note", () => {
+  // Body 1 hidden (an Undo of "Show Body 1" hides it again, with no eye pressed): the scene draws no body, so nothing of it may stay picked.
+  const hiddenOne = (b: string) => b === "body:feature-1";
+  const unseen = { ...boxScene, bodies: [], faceStart: [], edgeStart: [] };
+  assert.deepEqual(survivors([body, face(1), edge(4)], unseen, [], () => true, hiddenOne), { kept: [], dropped: [], shared: [] });
+  // A piece of it hidden by its own id goes too; another body's reference, not hidden, stays.
+  const piece = bodyReference("body:feature-1/piece:2");
+  const other = bodyReference("body:feature-2");
+  assert.deepEqual(survivors([piece, other], unseen, [], () => true, (b) => b.startsWith("body:feature-1")), { kept: [other], dropped: [], shared: [] });
+  // Shown again (nothing hidden): the same items are kept, as before this check (a body not drawn yet, its build failed, holds its selection).
+  assert.deepEqual(survivors([body, face(1), edge(4)], unseen, [], () => true, () => false), { kept: [body, face(1), edge(4)], dropped: [], shared: [] });
+  // Shown and drawn, the hidden list says nothing of it: kept by name as ever.
+  assert.deepEqual(survivors([body, face(1), edge(4)], boxScene, [], () => true, () => false).kept, [body, face(1), edge(4)]);
+});

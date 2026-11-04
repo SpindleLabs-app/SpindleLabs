@@ -51,9 +51,12 @@ const workspaces: WorkspacePlugin[] = [
   layoutWorkspace,
 ];
 
+// Whether the ?test-hooks debug surface is built in (vite.config.ts): true in dev and the
+// test build, false in the live Pages build, where the whole surface below is dropped (audit S12).
+declare const __TEST_HOOKS__: boolean;
 // The browser test of a kernel lost mid-call (e2e/kernel-lost.mjs) shortens its deadline with ?test-hooks&kernel-deadline=<ms>.
 const hooks = new URLSearchParams(location.search);
-const kernel = new KernelClient({ floorMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
+const kernel = new KernelClient({ floorMs: (__TEST_HOOKS__ && hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
 // The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
 watchKernel(kernel);
 // Opened on a build a deploy has replaced (kept by the browser): open the new one before the user starts (kernel-lost.ts).
@@ -195,7 +198,8 @@ useGraph(ctx.graph, ctx.changeNotes);
 // many bodies the kernel holds (the monkey tester's leak check); the
 // kernel's WebAssembly memory and the viewport's counts (the soak test's);
 // any kernel call, to run the kernel out of memory (e2e/kernel-restart.mjs).
-if (new URLSearchParams(location.search).has("test-hooks"))
+// __TEST_HOOKS__ is false in the live build, so this whole block is dropped there (audit S12).
+if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
   Object.assign(window, {
     fissionTest: {
       get graph() {
@@ -925,6 +929,9 @@ $("settings-open").addEventListener("click", () => {
 settingsDialog.addEventListener("click", (e) => {
   if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
 });
+// Optional accounts (accounts.config.mjs): with the switch off, the build has no account code and contacts no service.
+declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
+if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCOUNTS__!));
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
