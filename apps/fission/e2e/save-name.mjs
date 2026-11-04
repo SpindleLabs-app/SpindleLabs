@@ -220,6 +220,55 @@ await check("after Open, Save offers the opened file's own name (bracket.spindle
   }
 });
 
+await check("keys (missing-basics audit): Ctrl+S saves with no browser Save page box, again to the same file; Ctrl+Shift+S asks again; Ctrl+S in a text box saves too; Ctrl+O opens the file chooser", async () => {
+  const { context, page } = await fresh(1280, FAKE_PICKER);
+  try {
+    // Playwright takes over the browser's file chooser only once something listens for it; listening from the start
+    // (not just before the key) makes sure the take-over is on when Ctrl+O comes.
+    let choosers = 0;
+    page.on("filechooser", () => choosers++);
+    await page.evaluate(() => (window.__chosen = "Keys.spindle"));
+    await page.click("#viewport", { position: { x: 5, y: 5 } }).catch(() => {}); // the focus on the page, off any box
+    // A key press the app handled has its default (the browser's Save page box) prevented: the event says so.
+    await page.evaluate(() => {
+      window.__prevented = [];
+      document.addEventListener("keydown", (e) => window.__prevented.push([e.key, e.defaultPrevented]));
+    });
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForFunction(() => window.__picked.length === 1);
+    await page.waitForFunction(() => window.__files["Keys.spindle"]?.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.__prevented.at(-1)), ["s", true]);
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForFunction(() => window.__files["Keys.spindle"].length === 2);
+    assert.equal((await picked(page)).length, 1, "a second Ctrl+S didn't ask");
+    await page.evaluate(() => (window.__chosen = "Other.spindle"));
+    await page.keyboard.press("ControlOrMeta+Shift+S");
+    await page.waitForFunction(() => window.__files["Other.spindle"]?.length === 1);
+    assert.equal((await picked(page)).length, 2, "Ctrl+Shift+S asked again");
+    // In a text box (the shortcut table leaves most keys to the box): Save still runs, as in a desktop app.
+    await page.evaluate(() => {
+      const box = Object.assign(document.createElement("input"), { id: "probe-box", type: "text" });
+      document.body.append(box);
+    });
+    await page.focus("#probe-box");
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForFunction(() => window.__files["Other.spindle"].length === 2);
+    await page.evaluate(() => document.getElementById("probe-box").remove());
+    // Ctrl+O: the app's own file chooser (the browser's Open file box is never reached).
+    await page.keyboard.press("ControlOrMeta+o");
+    await page.waitForFunction(() => true); // a round trip, then the chooser has been reported
+    for (let i = 0; i < 50 && choosers === 0; i++) await page.waitForTimeout(100);
+    assert.equal(choosers, 1, "Ctrl+O opened the app's file chooser once");
+    assert.deepEqual(await page.evaluate(() => window.__prevented.at(-1)), ["o", true]);
+    // File ▾ shows the keys at the right of Open…, Save and Save As….
+    await page.click("#file-menu");
+    const keys = await page.$$eval("[role=menuitem] .menu-button-key", (ks) => ks.map((k) => [k.closest("[role=menuitem]").id, k.textContent]));
+    assert.deepEqual(keys, [["open", "Ctrl+O"], ["file-save", "Ctrl+S"], ["file-save-as", "Ctrl+Shift+S"]]); // CI and this check run on Linux
+  } finally {
+    await context.close();
+  }
+});
+
 await check("no page errors", () => assert.deepEqual(errors, []));
 await browser.close();
 await server.close();
