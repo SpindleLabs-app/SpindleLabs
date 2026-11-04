@@ -652,7 +652,10 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "projections-in-outline": {
     what: "every projected curve is part of the sketch's outline, so a projected edge snapped to (not closed by the sketch's own lines) breaks the outline",
-    edits: [{ file: PROJECTION, find: "  return curves.filter((_, k) => joined.has(k));", replace: "  return [...curves];" }],
+    edits: [
+      { file: PROJECTION, find: "  if (own) return curves.filter((c, k) => !projected.has(c.id) || taken.has(k));", replace: "  if (own) return [...curves];" },
+      { file: PROJECTION, find: "  return curves.filter((_, k) => joined.has(k));", replace: "  return [...curves];" },
+    ],
     run: ["naming"],
     caught: "Fusion answers",
   },

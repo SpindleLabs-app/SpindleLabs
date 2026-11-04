@@ -134,16 +134,23 @@ function strongFormat(head: Uint8Array): FileFormat | null {
   return null;
 }
 
-/** A binary STL: an 80-byte header, a little-endian triangle count, then exactly 50 bytes per triangle. */
+/**
+ * A binary STL: an 80-byte header, a little-endian triangle count, then 50
+ * bytes per triangle. Taken as common readers take it (round 2 hunt B1):
+ * the count the whole triangles the size holds, with up to 49 bytes after
+ * the last (padding some exporters add); or a count of 0 with exactly whole
+ * triangles after it (a writer that streams and never fills the count in).
+ */
 function isBinaryStl(file: FileHead): boolean {
   if (file.size < 84 || file.head.length < 84) return false;
   const count = new DataView(file.head.buffer, file.head.byteOffset + 80, 4).getUint32(0, true);
-  return file.size === 84 + 50 * count;
+  const whole = Math.floor((file.size - 84) / 50);
+  return count === whole || (count === 0 && (file.size - 84) % 50 === 0);
 }
 
 /** Checks a weak signature, for a file whose name already says .stl or .dxf. */
 function weakMatches(format: FileFormat, file: FileHead): boolean {
-  if (format === "stl") return /^\s*solid(\s|$)/.test(text(file.head)) || isBinaryStl(file);
+  if (format === "stl") return /^\s*solid(\s|$)/i.test(text(file.head)) || isBinaryStl(file); // any case: some old exporters write SOLID
   if (format === "dxf") {
     // Group code 0, then SECTION: the first two lines of every text DXF.
     const lines = text(file.head).split(/\r?\n/).map((l) => l.trim());
