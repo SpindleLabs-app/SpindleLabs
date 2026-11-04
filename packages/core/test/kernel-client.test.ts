@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -727,6 +727,43 @@ test("a slice's progress reaches the listeners while its call waits, and stops w
     worker.answer(2, {});
     await again;
     assert.deepEqual(heard, [0.25, 0.5]);
+  }));
+
+test("stopping the slices lets the kernel go only while one waits: the slice fails as stopped, the calls behind it as restarted, the design hears once (slicer hunt 11-04, ui 3)", () =>
+  withFakeWorker(async (client, old) => {
+    old.ready(1);
+    let heard = 0;
+    client.onRestart(() => heard++);
+    // Nothing slicing: nothing is stopped, the kernel is kept.
+    const count = client.call("body_count");
+    assert.equal(client.stopSlicing(), false);
+    assert.equal(old.terminated, false);
+    old.answer(1, 0);
+    assert.equal(await count, 0);
+    // A slice running, an edit's call waiting behind it.
+    const made = FakeWorker.made;
+    const sliced = client.call("print_file_stl", new Uint8Array(84), 0.2, 2, 15, "tree", "textured", "standard", true, false);
+    const edit = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
+    assert.equal(client.stopSlicing(), true);
+    await assert.rejects(sliced, (e: KernelError) => e instanceof KernelError && e.message === KERNEL_SLICE_STOPPED);
+    await assert.rejects(edit, (e: KernelError) => e.message === KERNEL_RESTARTED);
+    assert.equal(old.terminated, true);
+    assert.equal(FakeWorker.made, made + 1);
+    assert.equal(heard, 1);
+    // The fresh kernel answers at once: nothing waits behind the stopped slice.
+    const fresh = FakeWorker.last;
+    fresh.ready(1);
+    const next = client.call("body_count");
+    assert.deepEqual(fresh.posted, [{ id: 4, op: "body_count", args: [] }]);
+    fresh.answer(4, 0);
+    assert.equal(await next, 0);
+    // A slice waiting behind another call is stopped too (the plain slice after the file's).
+    const first = client.call("body_count");
+    const queued = client.call("slice_stl", new Uint8Array(84), 0.2, 2, 15, "off");
+    assert.equal(client.stopSlicing(), true);
+    await assert.rejects(first, (e: KernelError) => e.message === KERNEL_RESTARTED);
+    await assert.rejects(queued, (e: KernelError) => e.message === KERNEL_SLICE_STOPPED);
+    assert.equal(heard, 2);
   }));
 
 test("the worker's progress poster sends a stage's reports at most every PROGRESS_EVERY_MS, but every new stage and the end at once", () => {

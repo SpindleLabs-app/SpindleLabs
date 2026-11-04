@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -207,4 +207,63 @@ test("a big flat-sided part costs by its area too: a box is 12 triangles however
   assert.equal(callUnits("print_file_stl", [big as Uint8Array<ArrayBuffer>, 0.2, 3, 0, "off", "textured"], () => undefined), sliceUnits(big, 0.2, 0));
   // Infill nonsense is the default's: never NaN units.
   assert.ok(Number.isFinite(sliceUnits(box, 0.2, NaN)));
+});
+
+/** A binary STL of a w × d × h box from (x, y, z), its triangles wound counter-clockwise seen from outside (as the kernel writes them), so the bottom faces down. */
+function outwardBox(w: number, d: number, h: number, [x, y, z]: [number, number, number] = [0, 0, 0]): Uint8Array {
+  const v = (i: number, j: number, k: number) => [x + i * w, y + j * d, z + k * h];
+  // Each face's corners counter-clockwise seen from outside it.
+  const quads = [
+    [v(0, 0, 0), v(0, 1, 0), v(1, 1, 0), v(1, 0, 0)], // bottom, facing down
+    [v(0, 0, 1), v(1, 0, 1), v(1, 1, 1), v(0, 1, 1)], // top
+    [v(0, 0, 0), v(1, 0, 0), v(1, 0, 1), v(0, 0, 1)], // front (y 0)
+    [v(0, 1, 0), v(0, 1, 1), v(1, 1, 1), v(1, 1, 0)], // back
+    [v(0, 0, 0), v(0, 0, 1), v(0, 1, 1), v(0, 1, 0)], // left (x 0)
+    [v(1, 0, 0), v(1, 1, 0), v(1, 1, 1), v(1, 0, 1)], // right
+  ];
+  const tris = quads.flatMap(([a, b, c, e]) => [[a, b, c], [a, c, e]]);
+  const out = new Uint8Array(84 + 50 * tris.length);
+  const data = new DataView(out.buffer);
+  data.setUint32(80, tris.length, true);
+  tris.forEach((tri, t) => tri.forEach((p, c) => p.forEach((n, k) => data.setFloat32(84 + 50 * t + 12 + 12 * c + 4 * k, n, true))));
+  return out;
+}
+
+/** A plate on a column, as the slicer hunt's: a 10 × 10 × 20 mm column and a `plate` × `plate` × 3 mm plate on its top, centred on it. */
+const plateOnColumn = (plate: number, column = 20) => new Uint8Array([...outwardBox(10, 10, column), ...outwardBox(plate, plate, 3, [5 - plate / 2, 5 - plate / 2, column])]);
+
+test("supports cost by the overhangs they hold up, tree supports far more (slicer hunt 2026-11-04, inputs 1), worked by hand", () => {
+  // The 80 mm plate on the 20 mm column at 0.2 mm: the only face down above the plate is the plate's underside, 80 × 80 =
+  // 6,400 mm² at z 20, 20 / 0.2 = 100 layers up (the column's bottom is on the plate, so it needs none).
+  // Tree: 4 × 6,400 + 0.015 × 6,400 × 100 + 40 × 100 = 25,600 + 9,600 + 4,000 = 39,200 units.
+  // Normal: 0.1 × 6,400 + 0.002 × 6,400 × 100 + 50 × 100 = 640 + 1,280 + 5,000 = 6,920 units.
+  const p80 = plateOnColumn(80);
+  assert.ok(Math.abs(supportUnits(p80, 0.2, "tree") - 39_200) < 1e-6, `${supportUnits(p80, 0.2, "tree")}`);
+  assert.ok(Math.abs(supportUnits(p80, 0.2, "normal") - 6_920) < 1e-6, `${supportUnits(p80, 0.2, "normal")}`);
+  assert.equal(supportUnits(p80, 0.2, "off"), 0);
+  // A box on the plate needs none: its only face down is on the plate.
+  assert.equal(supportUnits(outwardBox(20, 20, 20), 0.2, "tree"), 0);
+  // The slice's units add them to the rest: the plate on the column without supports, plus these.
+  assert.ok(Math.abs(sliceUnits(p80, 0.2, 15, "tree") - (sliceUnits(p80, 0.2, 15) + 39_200)) < 1e-6);
+  assert.equal(sliceUnits(p80, 0.2, 15, "off"), sliceUnits(p80, 0.2, 15));
+  // The calls carry the style: their fifth argument.
+  assert.equal(callUnits("slice_stl", [p80 as Uint8Array<ArrayBuffer>, 0.2, 2, 15, "tree", true, false], () => undefined), sliceUnits(p80, 0.2, 15, "tree"));
+  assert.equal(callUnits("print_file_stl", [p80 as Uint8Array<ArrayBuffer>, 0.2, 2, 15, "normal", "textured", "standard", true, false], () => undefined), sliceUnits(p80, 0.2, 15, "normal"));
+  // A style the calls don't know (an old app's true) is costed as the dearer tree, never as none.
+  assert.equal(sliceUnits(p80, 0.2, 15, true as never), sliceUnits(p80, 0.2, 15, "tree"));
+  // Measured on the shipped build (2026-11-04, print_file_stl, 2 walls, 15 %, warm-up on; units each needed, its time over
+  // the calibration's): plates on columns, tree and normal. The units promised are at least twice each, so the limit
+  // (HEADROOM × them) is at least eight times what each took. Before supports counted, the 80 mm plate had 331 units
+  // and the tree's 15,632 ran past the 10 s floor.
+  const measured: [number, number, number, "normal" | "tree", number][] = [
+    // plate (mm), column (mm), layer (mm), style, units needed
+    [20, 20, 0.2, "tree", 2_183], [40, 20, 0.2, "tree", 4_550], [80, 20, 0.2, "tree", 15_632], [120, 20, 0.2, "tree", 36_568],
+    [80, 80, 0.2, "tree", 17_500], [40, 80, 0.2, "tree", 8_722], [40, 20, 0.12, "tree", 7_317], [80, 20, 0.12, "tree", 19_002], [80, 40, 0.12, "tree", 30_806],
+    [20, 20, 0.2, "normal", 2_317], [40, 20, 0.2, "normal", 2_847], [80, 20, 0.2, "normal", 1_754], [120, 20, 0.2, "normal", 2_225], [160, 20, 0.2, "normal", 2_127],
+    [80, 80, 0.2, "normal", 3_660], [40, 80, 0.2, "normal", 9_860], [80, 40, 0.12, "normal", 4_575],
+  ];
+  for (const [plate, column, layer, style, needed] of measured) {
+    const promised = sliceUnits(plateOnColumn(plate, column), layer, 15, style);
+    assert.ok(promised >= 2 * needed, `${plate} mm plate on a ${column} mm column at ${layer} mm, ${style}: ${promised.toFixed(0)} units for ${needed} needed`);
+  }
 });
