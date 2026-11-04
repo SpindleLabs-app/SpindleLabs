@@ -1857,7 +1857,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     distance: (typed) => extrudeDistance(signedDistance(typed)),
     flip: (typed) => extrudeDistance(signedDistance(typed)),
     clear: () => chooseProfile(null),
-    ok: (typed) => void finishExtrude(typed),
+    ok: (typed) => void ctx.history.hold(finishExtrude(typed)),
     cancel: () => leaveExtrude(),
   });
   const sketchLabel = (id: string) => sketchItem(designDoc(), id).provenance.self.label;
@@ -2134,19 +2134,20 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
     boxesPart = made.id;
-    await update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, usedSketchHidden(made.doc, source.sketch));
+    // Recorded as update starts (before its first wait), so the Undo held for this OK (`hold`) can go while it shows.
+    void update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, usedSketchHidden(made.doc, source.sketch));
   }
 
   // Edit feature (step 25a2): an earlier feature's sizes from its timeline item or browser row.
   const editBox = featureEditPanel(ctx.properties, {
-    ok: (typed, flip) => void finishEdit(typed, flip),
+    ok: (typed, flip) => void ctx.history.hold(finishEdit(typed, flip)),
     cancel: () => leaveEdit(),
   });
 
   // Move (step 35e2b): a new Move of the bodies picked, or a Move's numbers edited from its timeline item.
   const moveBox = movePanel(ctx.properties, {
     typed: () => previewMove(),
-    ok: (typed) => void finishMove(typed),
+    ok: (typed) => void ctx.history.hold(finishMove(typed)),
     cancel: () => leaveMove(),
     snap: () => (snapping ? stopSnap() : startSnap()),
     centre: () => void centreOfBodies(),
@@ -2931,10 +2932,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // Enter is the Move panel's OK the same way (35e2b).
         if (moveBox.shown && !extrudeBox.shown) {
           if (active && active !== active.ownerDocument.body && !viewport.element.contains(active)) return false;
-          return void finishMove(moveBox.typed), true;
+          return void ctx.history.hold(finishMove(moveBox.typed)), true;
         }
         if (!extrudeBox.shown || (active && active !== active.ownerDocument.body && !viewport.element.contains(active))) return false;
-        if (extrudeBox.ready) void finishExtrude(extrudeBox.typed);
+        if (extrudeBox.ready) void ctx.history.hold(finishExtrude(extrudeBox.typed));
         return true;
       }
       if (id === "clear-selection" && editBox.editing !== null) return leaveEdit(), true;
