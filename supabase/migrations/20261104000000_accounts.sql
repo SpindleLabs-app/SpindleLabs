@@ -86,7 +86,7 @@ $$;
 create function public.my_data() returns jsonb
 language sql stable security definer set search_path = '' as $$
   select jsonb_build_object(
-    'account', (select jsonb_build_object('id', u.id, 'email', u.email, 'created_at', u.created_at) from auth.users u where u.id = auth.uid()),
+    'account', (select jsonb_build_object('id', u.id, 'email', u.email, 'created_at', u.created_at, 'last_sign_in_at', u.last_sign_in_at, 'from_google', u.raw_user_meta_data) from auth.users u where u.id = auth.uid()),
     'profile', (select to_jsonb(p) from public.profiles p where p.id = auth.uid()),
     'plan', (select to_jsonb(l) from public.plans l where l.user_id = auth.uid()),
     'ai_allowance_used_percent', public.my_allowance())

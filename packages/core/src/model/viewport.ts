@@ -268,6 +268,16 @@ export interface SharedViewport {
    * pointer is drawn hovered.
    */
   onPick: ((pick: ViewportPick) => void) | null;
+  /**
+   * Called on a right-click, or a finger held still (HOLD_MS), on the view
+   * while onPick is set and nothing else hears the pointer (no Extrude,
+   * sketch or offered planes): what is under it as a click would pick it
+   * (`shift` false), and where on the screen (client pixels). Returns
+   * whether it opened a menu: then the browser's own stays shut and the
+   * held finger's release picks nothing. The shown workspace sets it and
+   * puts back null on hide; absent, a right-click does nothing of the app's.
+   */
+  onMenu?: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null;
   /** Draws these sketches (replacing the ones drawn before); an empty list draws none. While one is being edited the ground grid gives way to its own. */
   showSketches(drawings: readonly SketchDrawing[]): void;
   /**

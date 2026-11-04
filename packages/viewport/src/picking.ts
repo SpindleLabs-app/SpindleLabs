@@ -9,6 +9,13 @@ export function isClick(down: { x: number; y: number }, up: { x: number; y: numb
   return Math.hypot(up.x - down.x, up.y - down.y) < CLICK_SLOP_PX;
 }
 
+/**
+ * A finger pressed this long (ms) without moving `CLICK_SLOP_PX` opens the
+ * view's menu, as a right-click does (Chrome on Android's own long press is
+ * about as long; Safari on iOS fires no contextmenu, so the viewer times it).
+ */
+export const HOLD_MS = 500;
+
 /** A rectangle on screen in client (CSS) pixels, as getBoundingClientRect gives. */
 export interface ClientRect {
   left: number;

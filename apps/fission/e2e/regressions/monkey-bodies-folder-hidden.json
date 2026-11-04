@@ -1,0 +1,10 @@
+{
+  "seed": 0,
+  "what": "Issues #42 and #248: the Bodies folder's eye pressed, which hides every body (each row then selects nothing); the monkey only read each body's own eye and expected the rows to select (monkey.mjs select-bodies now reads the folder's eye too)",
+  "actions": [
+    { "do": "open", "edit": "add-solid", "at": 0 },
+    { "do": "open", "edit": "add-solid", "at": 1 },
+    { "do": "click", "sel": "button[data-eye=\"bodies\"]" },
+    { "do": "select-bodies" }
+  ]
+}

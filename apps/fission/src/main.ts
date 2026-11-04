@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
+import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -99,6 +99,11 @@ const ctx: WorkspaceContext = {
   openWorkspace: (id) => openFrom("main", id),
   workspaceTitle,
   openFile: () => $("open-file").click(),
+  // A new design in place of the saved or opened one: its file and name go, so Save asks where (app hunt 2026-11-04).
+  startedFresh: () => {
+    savedTo = null;
+    openedName = null;
+  },
 };
 
 // The one undo history (step 20): whole-project snapshots, put back the way
@@ -363,6 +368,7 @@ function paneCtx(pane: PaneId, slots: Slots): WorkspaceContext {
     openWorkspace: (id) => openFrom(pane, id),
     workspaceTitle,
     openFile: ctx.openFile,
+    startedFresh: ctx.startedFresh,
   };
 }
 /**
@@ -693,7 +699,7 @@ function openProject(text: string, fileName = "") {
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus("");
   replaceProject(project);
-  openedName = fileName.replace(/(\.spindlelabs)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
+  openedName = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
   // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
   // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
   statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
@@ -921,9 +927,11 @@ settingsDialog.setAttribute("aria-labelledby", "settings-title");
 document.body.append(settingsDialog);
 let browserSettings: SettingsStore | null = null;
 const settings = () => (browserSettings ??= new SettingsStore(local));
+// The theme (U1b, U2a): the page already wears it (public/theme-init.js ran before the first paint); this keeps it in step with the Settings choice and the device.
+const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts, theme: readThemeChoice(settings()), onTheme: chooseTheme });
   settingsDialog.showModal();
 });
 settingsDialog.addEventListener("click", (e) => {

@@ -4,6 +4,8 @@
 // the browser alone, so Settings works offline with no account; storage that
 // is off or full never throws, the settings just don't stick.
 
+import { THEME_CHOICES, type ThemeChoice } from "./theme-choice.ts";
+
 export interface SettingsSection {
   id: string;
   title: string;
@@ -12,7 +14,7 @@ export interface SettingsSection {
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  { id: "general", title: "General", coming: "Units and theme will be set here." },
+  { id: "general", title: "General", coming: "Units will be set here." },
   { id: "design", title: "Design", coming: "Snapping and the grid will be set here." },
   { id: "phone", title: "Phone", coming: "Touch and sheet choices will be set here." },
   { id: "printing", title: "Printing", coming: "Your printer and the slicer will be set here." },
@@ -63,6 +65,9 @@ export interface SettingsParts {
   /** "kernel v0.1.2" or "" while the kernel loads. */
   version: string;
   onShortcuts: () => void;
+  /** The stored theme choice and the way to change it (U2a); the Theme row shows only when both are given. */
+  theme?: ThemeChoice;
+  onTheme?: (choice: ThemeChoice) => void;
 }
 
 /** Fill the dialog: a header with Close, then one card per section. */
@@ -88,6 +93,29 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
     card.append(el("h3", undefined, s.title));
     if (s.coming) card.append(el("p", "settings-empty", s.coming));
     if (s.id === "general") {
+      if (parts.theme !== undefined && parts.onTheme) {
+        const themeRow = el("div", "settings-row settings-theme");
+        const group = el("div", "settings-choices");
+        group.setAttribute("role", "radiogroup");
+        group.setAttribute("aria-label", "Theme");
+        for (const c of THEME_CHOICES) {
+          const b = el("button", "settings-choice", c.label);
+          b.type = "button";
+          b.dataset.choice = c.id;
+          b.setAttribute("role", "radio");
+          const pick = (chosen: string) => {
+            for (const other of group.children) other.setAttribute("aria-checked", String((other as HTMLElement).dataset.choice === chosen));
+          };
+          b.addEventListener("click", () => {
+            parts.onTheme?.(c.id);
+            pick(c.id);
+          });
+          group.append(b);
+          b.setAttribute("aria-checked", String(parts.theme === c.id));
+        }
+        themeRow.append(el("span", undefined, "Theme"), group);
+        card.append(themeRow);
+      }
       const row = el("div", "settings-row");
       const label = el("span", undefined, "Keyboard shortcuts");
       const open = el("button", "settings-action", "Show");
@@ -99,7 +127,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
       row.append(label, open);
       card.append(row);
     } else if (s.id === "privacy") {
-      card.append(el("p", undefined, "There is no account. Your projects are kept in this browser and nothing is sent anywhere by SpindleLabs itself. The optional AI assistant sends only what you ask it, and only once you turn it on."));
+      card.append(el("p", undefined, "Your projects are kept in this browser and are never sent to us. An account is optional and never needed to design, slice or save; signing in sends only what the privacy page lists. The optional AI assistant sends only what you ask it, and only once you turn it on."));
     } else if (s.id === "about") {
       card.append(el("p", undefined, parts.version ? `SpindleLabs, ${parts.version}` : "SpindleLabs"));
     }

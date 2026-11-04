@@ -258,16 +258,35 @@ export function presetBar(document: Document, storage: Storage | null, events: P
     update.disabled = !differs;
     update.title = differs ? "Saves the settings below into this preset, replacing what it held." : "The settings below already match this preset.";
   };
-  /** Writes the list; says so when it can't, and reads it back so what shows is what is kept. */
-  const commit = (next: PrintPreset[]): boolean => {
-    const ok = writePresets(storage, { ...store, presets: next });
-    if (!ok) {
-      events.say(store.writable ? "The preset couldn't be saved: this browser's storage is blocked or full." : "Presets were saved by a newer version of SpindleLabs, so this one leaves them alone: reload the page.", true);
+  /**
+   * Makes one change to the presets and writes them. The list is read again first, so a change another tab made
+   * since this dialog read it is kept; `change` gets that list and returns it changed, or null when the preset it
+   * changes is no longer there. Says so when it can't write, and reads the list back so what shows is what is kept.
+   */
+  const commit = (change: (presets: PrintPreset[]) => PrintPreset[] | null): boolean => {
+    const fresh = readPresets(storage, events.settingsOf);
+    if (!fresh.writable) {
+      events.say("Presets were saved by a newer version of SpindleLabs, so this one leaves them alone: reload the page.", true);
+      return false;
+    }
+    const next = change(fresh.presets);
+    if (next === null) {
+      store = fresh;
+      events.say("That preset was deleted in another tab, so it can't be changed here.", true);
+      fill();
+      show("pick");
+      select.focus();
+      return false;
+    }
+    if (!writePresets(storage, { ...fresh, presets: next })) {
+      events.say("The preset couldn't be saved: this browser's storage is blocked or full.", true);
       return false;
     }
     store = readPresets(storage, events.settingsOf);
     return true;
   };
+  /** `presets` with the one whose id is `id` changed by `edit`, or null when it is gone. */
+  const changeOne = (id: string, edit: (p: PrintPreset) => PrintPreset) => (presets: PrintPreset[]) => (presets.some((p) => p.id === id) ? presets.map((p) => (p.id === id ? edit(p) : p)) : null);
 
   select.addEventListener("change", () => {
     picked = select.value === "" ? null : select.value;
@@ -304,7 +323,8 @@ export function presetBar(document: Document, storage: Storage | null, events: P
   rename.addEventListener("click", () => startNaming(picked));
   const finishNaming = () => {
     const name = nameBox.value.trim();
-    const problem = nameProblem(store.presets, name, renaming ?? undefined);
+    const latest = readPresets(storage, events.settingsOf); // another tab may have taken the name since
+    const problem = nameProblem(latest.writable ? latest.presets : store.presets, name, renaming ?? undefined);
     nameBox.setAttribute("aria-invalid", String(problem !== null));
     if (problem) {
       events.say(problem, true);
@@ -313,13 +333,13 @@ export function presetBar(document: Document, storage: Storage | null, events: P
     }
     if (renaming === null) {
       const p: PrintPreset = { id: newId(), name, printer: P1S_PRINTER, settings: events.current(), updatedAt: now() };
-      if (!commit([...store.presets, p])) return;
+      if (!commit((presets) => [...presets, p])) return;
       picked = p.id;
       remember();
       events.say(`Saved the preset ${name}.`, false);
     } else {
       const id = renaming;
-      if (!commit(store.presets.map((p) => (p.id === id ? { ...p, name, updatedAt: now() } : p)))) return;
+      if (!commit(changeOne(id, (p) => ({ ...p, name, updatedAt: now() })))) return;
       events.say(`Renamed the preset to ${name}.`, false);
     }
     fill();
@@ -345,7 +365,7 @@ export function presetBar(document: Document, storage: Storage | null, events: P
   update.addEventListener("click", () => {
     const p = pickedPreset();
     if (p === null) return;
-    if (!commit(store.presets.map((q) => (q.id === p.id ? { ...q, settings: events.current(), updatedAt: now() } : q)))) return;
+    if (!commit(changeOne(p.id, (q) => ({ ...q, settings: events.current(), updatedAt: now() })))) return;
     events.say(`Updated the preset ${p.name} with these settings.`, false);
     fill();
     show("pick");
@@ -360,7 +380,7 @@ export function presetBar(document: Document, storage: Storage | null, events: P
   });
   yes.addEventListener("click", () => {
     const p = pickedPreset();
-    if (p === null || !commit(store.presets.filter((q) => q.id !== p.id))) return;
+    if (p === null || !commit((presets) => presets.filter((q) => q.id !== p.id))) return;
     picked = null;
     remember();
     events.say(`Deleted the preset ${p.name}. The settings below stay as they were.`, false);

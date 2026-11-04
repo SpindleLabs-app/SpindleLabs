@@ -1133,3 +1133,89 @@ test("closing the Slice dialog gives the keyboard back to File ▾ (slicer hunt 
   assert.ok(t.doc.activeElement === file, `focus on ${t.doc.activeElement?.id}`);
   await t.window.happyDOM.close();
 });
+
+// ---- App hunt 2026-11-04: refused only for the warm-up loop or Better grip's brim ----
+
+test("a part refused only with its warm-up loop or brim round it: the words give its own size and say turning that off makes it fit", async () => {
+  const kernel = nodeKernel();
+  /** The engine's refusal of a w × d × 1 mm box with these extras. */
+  const refusal = async (w: number, d: number, warmUp: boolean, betterGrip: boolean) => {
+    const f = await kernel.call("export_stl", { box: { width: w, depth: d, height: 1 } }, "body");
+    try {
+      await kernel.call("print_file_stl", f.bytes, 0.2, 2, 15, "off", "textured", "standard", warmUp, betterGrip);
+    } catch (e) {
+      return (e as Error).message;
+    }
+    assert.fail(`${w} × ${d} sliced`);
+  };
+  // The hunt's part, 230 × 251 with the loop (on by default): the engine says it runs from y = −1.457 to 257.457, so
+  // 258.914 deep, 258.9; the loop reaches 3.957 each side, so the part is 258.914 − 7.914 = 251 deep. Without the loop
+  // 230 × 251 fits (256 wide, 251 deep, and 230 ≤ 238 moves right clear of the corner).
+  assert.equal(
+    refusalWords(await refusal(230, 251, true, false)),
+    "The part is 251 mm deep, 258.9 mm with its warm-up loop, and the P1S's plate takes 256 × 256 mm. Without its warm-up loop it fits: turn Warm-up loop off and slice again.",
+  );
+  // 255 × 200: 255 + 7.914 = 262.9 wide with the loop; 255 alone fits (200 ≤ 228 moves back clear of the corner).
+  assert.equal(
+    refusalWords(await refusal(255, 200, true, false)),
+    "The part is 255 mm wide, 262.9 mm with its warm-up loop, and the P1S's plate takes 256 × 256 mm. Without its warm-up loop it fits: turn Warm-up loop off and slice again.",
+  );
+  // The front-left corner, both on: 222 + 2 × 8.672 = 239.3 each way. With the brim alone 222 + 2 × 4.714 = 231.4 ≤ 238
+  // moves right clear, so turning the loop off is enough.
+  assert.equal(
+    refusalWords(await refusal(222, 222, true, true)),
+    "The part is 222 × 222 mm, 239.3 × 239.3 mm with Better grip's brim and its warm-up loop, and reaches into the P1S plate's front-left corner, which must stay clear, with no room on the plate to move it clear. Without its warm-up loop it fits: turn Warm-up loop off and slice again.",
+  );
+  // 240 × 240 with the loop doesn't fit without it either (over 238 wide and 228 deep): what fits with the loop,
+  // 238 − 7.914 = 230.1 wide or 228 − 7.914 = 220.1 deep.
+  assert.equal(
+    refusalWords(await refusal(240, 240, true, false)),
+    "The part is 240 × 240 mm, 247.9 × 247.9 mm with its warm-up loop, and reaches into the P1S plate's front-left corner, which must stay clear, with no room on the plate to move it clear. Make it smaller or turn it so it clears the corner (with its warm-up loop, up to 230.1 mm wide or 220.1 mm deep fits).",
+  );
+  // The front strip, 100 × 248 with the loop: 255.914 deep, 248 itself. The refusal doesn't give the width, and 248 is
+  // over 228 (too deep to move back clear of the corner), so it fits without the loop only if at most 238 wide.
+  assert.equal(
+    refusalWords(await refusal(100, 248, true, false)),
+    "The part is 248 mm deep, 255.9 mm with its warm-up loop, and the P1S takes up to 251 mm: the front 5 mm of the plate is kept for the nozzle's prime line. Without its warm-up loop it fits if it is at most 238 mm wide: turn Warm-up loop off and slice again.",
+  );
+  // The brim alone, 100 × 248: y from −0.714 to 256.714, 257.4 deep; 248 itself fits without it.
+  assert.equal(
+    refusalWords(await refusal(100, 248, false, true)),
+    "The part is 248 mm deep, 257.4 mm with Better grip's brim, and the P1S's plate takes 256 × 256 mm. Without Better grip's brim it fits: turn Better grip off and slice again.",
+  );
+  // Too big either way: no "turn off". 300 + 7.914 = 307.9.
+  assert.equal(
+    refusalWords("the part with its warm-up loop, placed at (128, 128), runs from (-25.957, 118.043) to (281.957, 137.957), off the 256 × 256 mm bed"),
+    "The part is 300 mm wide, 307.9 mm with its warm-up loop, and the P1S's plate takes 256 × 256 mm. Make it smaller or split it into pieces.",
+  );
+  // Without the extras, the corner's and the strip's refusals are put in plain words too.
+  assert.equal(
+    refusalWords(await refusal(240, 240, false, false)),
+    "The part is 240 × 240 mm and reaches into the P1S plate's front-left corner, which must stay clear, with no room on the plate to move it clear. Make it smaller or turn it so it clears the corner (up to 238 mm wide or 228 mm deep fits).",
+  );
+  assert.equal(
+    refusalWords(await refusal(20, 252, false, false)),
+    "The part is 252 mm deep, and the P1S takes up to 251 mm: the front 5 mm of the plate is kept for the nozzle's prime line. Make it smaller or split it into pieces.",
+  );
+});
+
+test("the dialog tells the build area when the warm-up loop or Better grip is ticked", async () => {
+  const { Window } = await import("happy-dom");
+  const window = new Window();
+  window.localStorage.clear();
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  const told: { warmUp: boolean; betterGrip: boolean }[] = [];
+  const d = slicePrint(slot, { slice: async () => ({ print: { layers: 1, filamentMm: 1, filamentG: 1, printTimeS: 1, unprintedVolume: 0 }, saved: true, name: "x" }), preview: async () => {}, extrasChanged: (e) => told.push(e) });
+  d.ask();
+  const tick = (id: string, on: boolean) => {
+    const box = doc.getElementById(id) as HTMLInputElement;
+    box.checked = on;
+    box.dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  tick("slice-print-warm-up", false);
+  tick("slice-print-grip", true);
+  assert.deepEqual(told, [{ warmUp: false, betterGrip: false }, { warmUp: false, betterGrip: true }]);
+  await window.happyDOM.close();
+});

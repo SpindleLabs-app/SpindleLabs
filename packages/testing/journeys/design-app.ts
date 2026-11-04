@@ -102,6 +102,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     clearOverlay() {},
     showSelection: (h) => void (highlight = h),
     onPick: null,
+    onMenu: null,
     onSketchPointer: null,
     showImage() {},
     clearImage() {},
@@ -240,6 +241,29 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     /** A Move handle dragged, as the viewport hands it over: `amount` mm along an arrow or degrees round a ring since the press. */
     async movePointer(pointer: MovePointer) {
       viewport.onMovePointer?.(pointer);
+      await settle();
+    },
+    /**
+     * A right-click (or a held finger) on the view over a face or edge, as the viewport hands it over (at 300, 400 on
+     * the screen): whether a menu opened. Its entries are then `menuEntries()`, chosen by `chooseEntry`.
+     */
+    async viewMenu(p: Partial<ViewportPick>) {
+      const opened = viewport.onMenu?.({ face: null, shift: false, ...p }, { x: 300, y: 400 }) ?? false;
+      await settle();
+      return opened;
+    },
+    /** The open menu's name and its entries, each its action or "action (off)"; null when no menu is open. */
+    menuShown() {
+      const menu = $("#row-menu") as HTMLDialogElement | null;
+      if (!menu?.open) return null;
+      const entries = [...menu.querySelectorAll<HTMLButtonElement>("button")].map((b) => b.id.slice("row-menu-".length) + (b.disabled ? " (off)" : ""));
+      return { name: menu.getAttribute("aria-label"), entries };
+    },
+    /** A click on the open menu's entry `action` (null: Escape, nothing chosen), then waited for. */
+    async chooseEntry(action: string | null) {
+      const menu = $("#row-menu")!;
+      if (action === null) menu.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
+      else $(`#row-menu-${action}`)!.click();
       await settle();
     },
     /** A click on the view while nothing is sketched on: a face, an edge or a plane, as the viewport hands it over. */

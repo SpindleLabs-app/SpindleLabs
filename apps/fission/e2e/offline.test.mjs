@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
-import { buildInfo, filesIn, offlinePlugin, onDemandChunks, ON_DEMAND, writeServiceWorker } from "../offline.mjs";
+import { AT_START, buildInfo, filesIn, offlinePlugin, onDemandChunks, ON_DEMAND, writeServiceWorker } from "../offline.mjs";
 
 // sw.js is a classic script (a service worker), not a module: run it as one, with a `module` to hand its rules out.
 const sandbox = { self: {}, module: { exports: {} }, crypto, Response, TextEncoder, URL };
@@ -71,6 +71,20 @@ test("on-demand chunks: imported only by import()", () => {
     "k.wasm": { type: "asset", fileName: "k.wasm" },
   };
   assert.deepEqual(onDemandChunks(bundle), ["lib.js"]);
+});
+
+test("regression: the account code, loaded by import() on every start while accounts are on, is kept at install, not on demand", () => {
+  // Found when accounts were switched on: the account chunk was listed as on
+  // demand, so the first visit cached it on top of the install list.
+  const bundle = {
+    "index.js": { type: "chunk", fileName: "index.js", isEntry: true, isDynamicEntry: false, imports: [] },
+    "account-x.js": { type: "chunk", fileName: "account-x.js", isEntry: false, isDynamicEntry: true, imports: [], facadeModuleId: AT_START[0] },
+    "lib.js": { type: "chunk", fileName: "lib.js", isEntry: false, isDynamicEntry: true, imports: [], facadeModuleId: "/repo/node_modules/big/lib.js" },
+  };
+  assert.deepEqual(onDemandChunks(bundle), ["lib.js"]);
+  // Only that exact file: another module merely named like it stays on demand.
+  bundle["account-x.js"].facadeModuleId = AT_START[0].replace(/account\.ts$/, "my-account.ts");
+  assert.deepEqual(onDemandChunks(bundle), ["account-x.js", "lib.js"]);
 });
 
 test("caches deleted on taking over: all of ours but this version and the one that was in use when it took over", () => {
