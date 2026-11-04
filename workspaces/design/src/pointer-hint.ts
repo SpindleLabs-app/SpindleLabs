@@ -24,6 +24,8 @@ export function hintOf(tool: SketchTool): string {
       return tool.from === null ? "Click the free end of a line or arc" : "Specify next point";
     case "project":
       return "Click an edge or a face to project";
+    case "select":
+      return tool.picked.length === 0 ? "Click a line, circle or arc" : "Delete removes the selection";
   }
 }
 

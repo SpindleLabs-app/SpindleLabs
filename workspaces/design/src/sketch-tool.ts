@@ -121,8 +121,21 @@ export interface ProjectTool {
   sketch: string;
 }
 
+/**
+ * The Select tool on one sketch (missing basics, 2026-11-04; sketch-select.ts):
+ * it places no points; a click picks the line, circle or arc under it
+ * (`picked`, Shift for more), the pointer lights the one it is over
+ * (`hover`), and Delete takes the picks out.
+ */
+export interface SelectTool {
+  kind: "select";
+  sketch: string;
+  picked: readonly string[];
+  hover: string | null;
+}
+
 export type { CentreArcTool };
-export type SketchTool = LineTool | RectangleTool | CircleTool | ArcTool | TangentTool | CentreArcTool | ProjectTool;
+export type SketchTool = LineTool | RectangleTool | CircleTool | ArcTool | TangentTool | CentreArcTool | ProjectTool | SelectTool;
 export type ToolKind = SketchTool["kind"];
 
 /**
@@ -147,6 +160,7 @@ export function startTool(kind: ToolKind, sketch: string): SketchTool {
   if (kind === "arc") return { kind, sketch, start: null, end: null };
   if (kind === "centre") return { kind, sketch, centre: null, start: null, swept: 0 };
   if (kind === "project") return { kind, sketch };
+  if (kind === "select") return { kind, sketch, picked: [], hover: null };
   return kind === "rectangle" ? { kind, sketch, corner: null } : { kind, sketch, centre: null };
 }
 
@@ -158,7 +172,7 @@ function pendingClicks(tool: SketchTool): SketchXY[] {
   if (tool.kind === "line") return tool.from !== null && typeof tool.from !== "string" ? [tool.from] : [];
   if (tool.kind === "arc") return [tool.start, tool.end].filter((p) => p !== null);
   if (tool.kind === "centre") return [tool.centre, tool.start].filter((p) => p !== null);
-  if (tool.kind === "tangent" || tool.kind === "project") return [];
+  if (tool.kind === "tangent" || tool.kind === "project" || tool.kind === "select") return [];
   const at = tool.kind === "rectangle" ? tool.corner : tool.centre;
   return at ? [at] : [];
 }
@@ -239,6 +253,8 @@ export function clickAt<T extends SketchTool>(doc: DesignDocument, tool: T, at: 
   if (tool.kind === "centre") return centreClick(doc, sketchOf(doc, tool.sketch), tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   // The Project tool places nothing where it is clicked: the workspace projects what is under the pointer (27d).
   if (tool.kind === "project") return { doc, tool, drew: false };
+  // Nor does Select: the workspace picks the curve under the pointer (sketch-select.ts).
+  if (tool.kind === "select") return { doc, tool, drew: false };
   return lineClick(doc, tool as LineTool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
 }
 
@@ -535,7 +551,7 @@ export function hoverTool<T extends SketchTool>(tool: T, at: SketchXY | null): T
 }
 
 /** The undo step a tool's drawing click is recorded as. */
-export const drawStep = (tool: SketchTool): string => SKETCH_STEPS[tool.kind === "line" ? "draw" : tool.kind];
+export const drawStep = (tool: SketchTool): string => SKETCH_STEPS[tool.kind === "line" ? "draw" : tool.kind === "select" ? "delete" : tool.kind];
 
 /**
  * How many straight segments the viewport draws a circle with. Drawing
@@ -603,7 +619,7 @@ export function previewLine(doc: DesignDocument, tool: LineTool | null, pointer:
  * draws nothing).
  */
 export function previewSegments(doc: DesignDocument, tool: SketchTool | null, pointer: SketchXY | null): (readonly [SketchXY, SketchXY])[] {
-  if (!tool || !pointer || tool.kind === "project") return [];
+  if (!tool || !pointer || tool.kind === "project" || tool.kind === "select") return [];
   if (tool.kind === "line") {
     const line = previewLine(doc, tool, pointer);
     return line ? [line] : [];
@@ -674,7 +690,10 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     const points: SketchXY[] = s.points.map((p) => [p.x, p.y]);
     const tool = editing.tool;
     for (const at of pendingClicks(tool)) if (!s.points.some((p) => p.x === at[0] && p.y === at[1])) points.push([at[0], at[1]]);
-    return { plane, ...side, lines, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}) } };
+    // The Select tool's picks lit, and the curve under the pointer (sketch-select.ts); a pick an undo took out is passed over.
+    const lit = (ids: readonly string[]) => segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id))));
+    const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}) };
+    return { plane, ...side, lines, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select } };
   });
 }
 

@@ -215,6 +215,8 @@ if (new URLSearchParams(location.search).has("test-hooks"))
 
 type Page = WorkspaceId | "community";
 let current: Page = "design";
+/** The workspace shown last, where Community goes back to when pressed again. */
+let lastWorkspace: WorkspaceId = "design";
 
 // Warm workspaces (X7). Each pane has four slots, found by id
 // (#toolbar or #split-toolbar…; the timeline row along the bottom from
@@ -302,6 +304,7 @@ function showPage(page: Page) {
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
+  if (workspace) lastWorkspace = workspace.id;
   if (swap) {
     if (swap === "community") closeSplit();
     else mountSplit(swap);
@@ -312,7 +315,8 @@ function showPage(page: Page) {
   if (location.hash !== `#${page}`) history.replaceState(null, "", `#${page}`);
 }
 
-$("community").addEventListener("click", () => show("community"));
+// Community pressed again closes it, back to the workspace it was opened from (like AI and Guide).
+$("community").addEventListener("click", () => show(current === "community" ? lastWorkspace : "community"));
 
 // Split view (X3): Split (over the viewport, wide screens only) puts a
 // second workspace beside the first; the choice in its pane changes which;
