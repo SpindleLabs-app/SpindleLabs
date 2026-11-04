@@ -15,9 +15,12 @@
 // last and is the one blamed when it makes a conflict; the points held
 // (the first pick: Fusion keeps it still); one free radius per circle.
 //
-// Constraints never name a point that follows a body (refused): a body's
-// edit moves such points without a solve (rebuild.ts), which would leave a
-// constraint on them unmet.
+// Constraints never name a point that follows a body (refused): the body,
+// not the sketch, says where it is. A body's edit that moves such a point
+// solves the sketch again with it fixed where the body put it (rebuild.ts
+// `follow`, 47d4), so an arc through it stays on its circle; when the
+// constraints can't hold there, only the followed points move, with a
+// warning.
 
 import type { KernelCalls } from "@fission/core";
 import { constraintPoints, counted, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
