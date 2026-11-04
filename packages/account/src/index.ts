@@ -14,3 +14,4 @@ export {
   SESSION_KEY,
 } from "./auth.ts";
 export { type AccountUser, type Session } from "./session.ts";
+export { FAILURE_WORDS, type FinishFailure } from "./words.ts";
