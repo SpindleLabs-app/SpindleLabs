@@ -305,6 +305,9 @@ try {
           ["sketch-tool-centre", "centre-arc"],
           ["sketch-tool-tangent", "tangent-arc"],
           ["sketch-tool-project", "project"],
+          // Select and Delete end the row (missing basics, 2026-11-04).
+          ["sketch-tool-select", "select"],
+          ["sketch-delete", "delete"],
         ]);
         assert.deepEqual(await groupNames(page), ["Create ▾", "Solid"], "the modelling Create ▾ steps aside; Extrude stays, named Solid");
         assert.equal(await page.$eval("#finish-sketch", (b) => b.querySelector("svg.icon")?.dataset.icon), "finish");

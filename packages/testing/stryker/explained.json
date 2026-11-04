@@ -2812,5 +2812,40 @@
     "original": "d.version! > 7",
     "replacement": "d.version! >= 7",
     "why": "Reached only when d.version !== 7, so > 7 and >= 7 never differ."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return null; }",
+    "replacement": "{}",
+    "why": "read() on a store that throws: undefined instead of null. Both callers treat them alike: sessionFromText and parseJson read neither as JSON, so no session and no started sign-in either way."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "write() on a store that throws: undefined instead of false. Every caller only tests !write(...), and both are falsy."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return undefined; }",
+    "replacement": "{}",
+    "why": "beginSignIn's catch: an async function that falls off its end also resolves to undefined."
+  },
+  {
+    "file": "packages/account/src/pkce.ts",
+    "mutator": "Regex",
+    "original": "/=+$/",
+    "replacement": "/=+/",
+    "why": "btoa puts '=' only at the end as padding, so the first run of '=' is always the last one."
+  },
+  {
+    "file": "packages/account/src/session.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return undefined; }",
+    "replacement": "{}",
+    "why": "parseJson's catch: a function that falls off its end also returns undefined."
   }
 ]

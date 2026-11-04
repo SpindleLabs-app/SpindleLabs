@@ -1,0 +1,12 @@
+{
+  "$comment": "Mutation testing of optional sign-in. Run through run.sh, from packages/account.",
+  "testRunner": "command",
+  "commandRunner": { "command": "node --experimental-strip-types --no-warnings --test test/*.test.ts" },
+  "mutate": ["src/auth.ts", "src/config.ts", "src/pkce.ts", "src/session.ts"],
+  "reporters": ["clear-text", "json"],
+  "jsonReporter": { "fileName": "../../node_modules/.cache/stryker/account.json" },
+  "clearTextReporter": { "allowColor": false, "logTests": false, "reportMutants": false },
+  "tempDirName": ".stryker-tmp",
+  "ignorePatterns": ["node_modules"],
+  "timeoutMS": 30000
+}
