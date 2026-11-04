@@ -11,7 +11,7 @@ import { bodyFeatures } from "../src/browser.ts";
 import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
-import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, refusalOf, levelNote, levelNoteOf, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -753,9 +753,11 @@ test("bodies at different heights get one sentence naming the first one above th
   assert.equal(levelNote([0, 20, -3]), "Body 1 starts 3 mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.");
   // 0 and 20: the floor is 0, body 2 is 20 mm above.
   assert.match(levelNote([0, 20]), /^Body 2 starts 20 mm above the lowest body\./);
-  // 0.9× and 1.1× of the 0.01 mm tolerance: 0.009 is level, 0.011 is not.
-  assert.equal(levelNote([0, 0.009]), "");
-  assert.match(levelNote([0, 0.011]), /^Body 2 starts 0 mm above/);
+  // 0.9× and 1.1× of the 0.1 mm a CAD rounding gap may be (slicer hunt 2026-11-04, inputs 3: 0.011 mm was called
+  // "0 mm above", and the engine prints such a gap, its first layer being cut at 0.1 mm): 0.09 is level, 0.11 is not,
+  // and rounds to 0.1, never to 0.
+  assert.equal(levelNote([0, 0.09]), "");
+  assert.match(levelNote([0, 0.11]), /^Body 2 starts 0\.1 mm above/);
   assert.equal(levelNote([5]), "");
   assert.equal(levelNote([]), "");
   assert.equal(levelNote([0, Number.NaN]), "");
@@ -770,6 +772,36 @@ test("on the real kernel: a cube beside one 20 mm up is noted, two on the floor 
   assert.equal(up, 20);
   assert.match(levelNote([low, up]), /^Body 2 starts 20 mm above/);
   assert.equal(levelNote([low, low]), "");
+});
+
+test("a body standing on another one is never said to hang in the air; one with nothing under it is (slicer hunt 11-04, inputs 2)", async () => {
+  const kernel = nodeKernel();
+  // Boxes are centred on x and y at the origin (then moved), their bottoms at z 0 before the move.
+  const box = async (w: number, d: number, h: number, at: [number, number, number]) => (await kernel.call("export_stl", { moved: { body: { box: { width: w, depth: d, height: h } }, moves: [{ move: at }] } }, "body")).bytes;
+  const block = await box(20, 20, 20, [0, 0, 0]); // x and y -10 to 10, z 0 to 20
+  // A post on the block's top (z 20): it stands on the block, and the engine prints it with supports off.
+  assert.equal(levelNoteOf([block, await box(10, 10, 10, [0, 0, 20])]), "");
+  // A lid wider than the block, on its top: it overhangs, but stands on the block.
+  assert.equal(levelNoteOf([block, await box(40, 40, 3, [0, 0, 20])]), "");
+  // A wide plate on a thin column (no corner of the plate's underside is over the column: the column is under it).
+  assert.equal(levelNoteOf([await box(10, 10, 20, [0, 0, 0]), await box(80, 80, 3, [0, 0, 20])]), "");
+  // A post sunk 5 mm into the block (z 15 to 25): the engine joins them.
+  assert.equal(levelNoteOf([block, await box(10, 10, 10, [0, 0, 15])]), "");
+  // A stack of three: a lid on the post on the block.
+  assert.equal(levelNoteOf([block, await box(10, 10, 10, [0, 0, 20]), await box(12, 12, 2, [0, 0, 30])]), "");
+  // Beside the block at z 5, with nothing under it (x 25 to 35, the block ends at 10): it really floats.
+  assert.match(levelNoteOf([block, await box(10, 10, 10, [30, 0, 5])]), /^Body 2 starts 5 mm above the lowest body\./);
+  // Over the block with a gap: 0.9× and 1.1× of the 0.1 mm a CAD rounding gap may be. At z 20.09 (0.09 above the top) it
+  // stands on it; at z 20.11 (0.11 above) it floats, 20.11 mm above the lowest body, which rounds to 20.1.
+  assert.equal(levelNoteOf([block, await box(10, 10, 10, [0, 0, 20.09])]), "");
+  assert.match(levelNoteOf([block, await box(10, 10, 10, [0, 0, 20.11])]), /^Body 2 starts 20\.1 mm above the lowest body\./);
+  // Beside the block, 0.05 mm up (CAD rounding): no note; the engine prints it.
+  assert.equal(levelNoteOf([block, await box(10, 10, 10, [30, 0, 0.05])]), "");
+  // A body resting on one that floats: the floating one is named, not the one on it.
+  assert.match(levelNoteOf([block, await box(10, 10, 10, [30, 0, 5]), await box(6, 6, 6, [30, 0, 15])]), /^Body 2 starts/);
+  // Nothing readable, or one body: no note.
+  assert.equal(levelNoteOf([block]), "");
+  assert.equal(levelNoteOf([new Uint8Array(10), block]), "");
 });
 
 test("the dialog adds the heights note after the result and marks it as a warning; without it the result is plain", async () => {

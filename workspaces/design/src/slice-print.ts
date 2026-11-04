@@ -167,19 +167,127 @@ export function stlLowestZ(stl: Uint8Array): number {
 }
 
 /**
- * What the engine does when bodies sit at different heights (slicer hunt 2026-10-31, finding 3): it puts the lowest point
- * of all of them on the plate, so a body above the lowest one hangs in the air (it needs supports) and a body sunk
- * below the floor lifts the others off it. One sentence naming the first such body, or "" when they all start at the
- * same height (within 0.01 mm) or fewer than two.
+ * The gap under a body that is CAD rounding, not a body in the air: the engine cuts its first layer at 0.1 mm, so a
+ * body this close to the plate or to another body prints as if it touched (slicer hunt 2026-11-04, inputs 3).
  */
-export function levelNote(lowest: readonly number[]): string {
+export const LEVEL_GAP = 0.1;
+
+/**
+ * What the engine does when bodies sit at different heights (slicer hunt 2026-10-31, finding 3): it puts the lowest point
+ * of all of them on the plate, so a body above the lowest one with nothing under it hangs in the air (it needs supports)
+ * and a body sunk below the floor lifts the others off it. One sentence naming the first such body, or "" when they all
+ * start at the same height (within LEVEL_GAP), fewer than two, or every one above the floor stands on another body
+ * (`rests(i)`: slicer hunt 2026-11-04, inputs 2, a post on a block was said to hang in the air).
+ */
+export function levelNote(lowest: readonly number[], rests: (body: number) => boolean = () => false): string {
   const known = lowest.filter(Number.isFinite);
   if (known.length < 2) return "";
   const floor = Math.min(...known);
-  const at = lowest.findIndex((z) => Number.isFinite(z) && z - floor > 0.01);
+  const at = lowest.findIndex((z, i) => Number.isFinite(z) && z - floor > LEVEL_GAP && !rests(i));
   if (at < 0) return "";
   const gap = Math.round((lowest[at] - floor) * 10) / 10;
   return `Body ${at + 1} starts ${gap} mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.`;
+}
+
+/** A binary STL's triangles as corner coordinates, nine numbers each (x, y, z three times), reading only those it holds. */
+function stlCorners(stl: Uint8Array): Float64Array {
+  const view = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+  const count = stl.length >= 84 ? Math.min(view.getUint32(80, true), Math.floor((stl.length - 84) / 50)) : 0;
+  const out = new Float64Array(9 * count);
+  for (let t = 0; t < count; t++) for (let k = 0; k < 9; k++) out[9 * t + k] = view.getFloat32(84 + t * 50 + 12 + 4 * k, true);
+  return out;
+}
+
+type Point = readonly [number, number];
+type Segment = readonly [number, number, number, number];
+
+/** Where the triangles cross the plane z = `h`: one segment per triangle that has corners on both sides. */
+function sectionAt(corners: Float64Array, h: number): Segment[] {
+  const out: Segment[] = [];
+  for (let t = 0; t < corners.length; t += 9) {
+    const pts: number[] = [];
+    for (let a = 0; a < 3; a++) {
+      const b = (a + 1) % 3;
+      const za = corners[t + 3 * a + 2];
+      const zb = corners[t + 3 * b + 2];
+      if ((za < h) === (zb < h)) continue;
+      const f = (h - za) / (zb - za);
+      pts.push(corners[t + 3 * a] + f * (corners[t + 3 * b] - corners[t + 3 * a]), corners[t + 3 * a + 1] + f * (corners[t + 3 * b + 1] - corners[t + 3 * a + 1]));
+    }
+    if (pts.length === 4) out.push([pts[0], pts[1], pts[2], pts[3]]);
+  }
+  return out;
+}
+
+/** Whether `p` is inside the closed outline the segments make (a ray to +x crosses it an odd number of times). */
+function insideSection(p: Point, section: readonly Segment[]): boolean {
+  let inside = false;
+  for (const [x1, y1, x2, y2] of section) {
+    if ((y1 > p[1]) === (y2 > p[1])) continue;
+    if (x1 + ((p[1] - y1) / (y2 - y1)) * (x2 - x1) > p[0]) inside = !inside;
+  }
+  return inside;
+}
+
+const cross = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+
+/** Whether `p` is inside (or on) the triangle a, b, c seen from above. */
+function inTriangle(p: Point, a: Point, b: Point, c: Point): boolean {
+  const d1 = cross(a[0], a[1], b[0], b[1], p[0], p[1]);
+  const d2 = cross(b[0], b[1], c[0], c[1], p[0], p[1]);
+  const d3 = cross(c[0], c[1], a[0], a[1], p[0], p[1]);
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+}
+
+/** Whether segments p1-p2 and q1-q2 cross, seen from above. */
+function segmentsCross(p1: Point, p2: Point, q1: Point, q2: Point): boolean {
+  const d1 = cross(q1[0], q1[1], q2[0], q2[1], p1[0], p1[1]);
+  const d2 = cross(q1[0], q1[1], q2[0], q2[1], p2[0], p2[1]);
+  const d3 = cross(p1[0], p1[1], p2[0], p2[1], q1[0], q1[1]);
+  const d4 = cross(p1[0], p1[1], p2[0], p2[1], q2[0], q2[1]);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+/**
+ * Whether the body `below` holds up a body whose underside is `base` (its triangles with a corner within LEVEL_GAP of
+ * its lowest point `z`, seen from above): `below` has material LEVEL_GAP under that point, and there it overlaps the
+ * underside (a corner of either inside the other, or their edges crossing).
+ */
+function holdsUp(below: Float64Array, base: readonly (readonly [Point, Point, Point])[], z: number): boolean {
+  const section = sectionAt(below, z - LEVEL_GAP);
+  if (section.length === 0) return false;
+  for (const tri of base) {
+    const centroid: Point = [(tri[0][0] + tri[1][0] + tri[2][0]) / 3, (tri[0][1] + tri[1][1] + tri[2][1]) / 3];
+    if ([...tri, centroid].some((p) => insideSection(p, section))) return true;
+    for (const [x1, y1, x2, y2] of section) {
+      if (inTriangle([x1, y1], ...tri)) return true;
+      for (let e = 0; e < 3; e++) if (segmentsCross([x1, y1], [x2, y2], tri[e], tri[(e + 1) % 3])) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * levelNote for the bodies' STL files (one per body, as the engine gets them): a body above the lowest one is named
+ * only when no other body is under it, within LEVEL_GAP, so a design of stacked bodies (a post on a base, a lid on a
+ * box) gets no note.
+ */
+export function levelNoteOf(files: readonly Uint8Array[]): string {
+  const corners = files.map(stlCorners);
+  const lowest = files.map(stlLowestZ);
+  const rests = (i: number) => {
+    const z = lowest[i];
+    const c = corners[i];
+    const base: [Point, Point, Point][] = [];
+    for (let t = 0; t < c.length; t += 9) {
+      if (Math.min(c[t + 2], c[t + 5], c[t + 8]) > z + LEVEL_GAP) continue;
+      // A side wall seen from above is a line, not an underside: it covers nothing.
+      if (Math.abs(cross(c[t], c[t + 1], c[t + 3], c[t + 4], c[t + 6], c[t + 7])) < 1e-9) continue;
+      base.push([[c[t], c[t + 1]], [c[t + 3], c[t + 4]], [c[t + 6], c[t + 7]]]);
+    }
+    return corners.some((other, j) => j !== i && lowest[j] < z - LEVEL_GAP && holdsUp(other, base, z));
+  };
+  return levelNote(lowest, rests);
 }
 
 /** The highest z in a binary STL, as stlLowestZ reads it; NaN when it holds no triangle. */
@@ -199,7 +307,7 @@ async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: rea
   const files: StlFile[] = [];
   for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
   const height = Math.max(...files.map((f) => stlHighestZ(f.bytes))) - Math.min(...files.map((f) => stlLowestZ(f.bytes)));
-  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNote(files.map((f) => stlLowestZ(f.bytes))), height };
+  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNoteOf(files.map((f) => f.bytes)), height };
 }
 
 /** The height of the bodies a refusal was for (slicer hunt 2026-11-04, ui 2), so its words can say how tall the part really is. */
