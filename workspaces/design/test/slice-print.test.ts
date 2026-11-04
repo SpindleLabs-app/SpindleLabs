@@ -725,17 +725,23 @@ test("while a slice runs Close reads Cancel, and it or Escape stops the engine, 
   await t.window.happyDOM.close();
 });
 
-test("the dialog's choices outlive Design being mounted again (Undo, Redo), in the same slot; a new slot starts fresh (slicer hunt 11-04, ui 1)", async () => {
+test("the dialog's choices outlive Design being mounted again (Undo, Redo), in a new toolbar of the same id; a new page starts fresh (slicer hunt 11-04, ui 1)", async () => {
   const window = new Window();
   const doc = window.document as unknown as Document;
   // A preset picked last time, then two of its choices changed: the dialog shows it as changed.
   const home: PrintPreset = { id: "home", name: "home P1S", printer: "bambu-p1s", settings: { ...PRINT_DEFAULTS, ...FILE_DEFAULTS, infill: 20 }, updatedAt: 1 };
   writePresets(window.localStorage as unknown as Storage, { presets: [home], kept: [], writable: true });
   window.localStorage.setItem(PRESET_PICKED_KEY, "home");
-  const slot = doc.createElement("div");
-  doc.body.append(slot);
+  // Design's toolbar slot: mounted again, it is a new element with the same id.
+  const toolbar = () => {
+    doc.getElementById("toolbar")?.remove();
+    const slot = doc.createElement("div");
+    slot.id = "toolbar";
+    doc.body.append(slot);
+    return slot;
+  };
   const events = { slice: async () => ({ print: print(), saved: true, name: "x" }), preview: async () => {} };
-  slicePrint(slot, events);
+  slicePrint(toolbar(), events);
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
   const set = (id: string, v: string) => {
     $<HTMLSelectElement>(id).value = v;
@@ -748,23 +754,35 @@ test("the dialog's choices outlive Design being mounted again (Undo, Redo), in t
   set("slice-print-infill", "60");
   const listed = () => $<HTMLSelectElement>("slice-presets-list").selectedOptions[0]?.textContent;
   assert.equal(listed(), "home P1S (changed)");
-  // Undo: Design is put away (its slot emptied) and mounted again, making a new dialog in the same slot.
-  slot.replaceChildren();
-  slicePrint(slot, events);
+  // Undo: Design is put away and mounted again, making a new dialog in a new toolbar.
+  slicePrint(toolbar(), events);
   assert.deepEqual(["quality", "walls", "infill", "supports", "plate"].map((k) => $<HTMLSelectElement>(`slice-print-${k}`).value), ["0.2", "4", "60", "tree", "smooth"]);
   assert.equal(listed(), "home P1S (changed)", "still the preset picked, still changed");
   // The file kind too, and the plate's list goes off with it as before.
   set("slice-print-format", "gcode");
-  slot.replaceChildren();
-  slicePrint(slot, events);
+  slicePrint(toolbar(), events);
   assert.equal($<HTMLSelectElement>("slice-print-format").value, "gcode");
   assert.equal($<HTMLSelectElement>("slice-print-plate").disabled, true);
-  // A slot never used (a page loaded again) starts from the preset picked, as before.
-  const other = doc.createElement("div");
-  slot.remove();
-  doc.body.append(other);
-  slicePrint(other, events);
-  assert.deepEqual(["walls", "infill", "supports"].map((k) => $<HTMLSelectElement>(`slice-print-${k}`).value), ["2", "20", "off"]);
+  // The split view's toolbar keeps its own; a slot with no id (as in the other tests) keeps nothing: both start from the preset picked.
+  doc.getElementById("toolbar")?.remove();
+  for (const id of ["split-toolbar", ""]) {
+    doc.body.replaceChildren();
+    const slot = doc.createElement("div");
+    slot.id = id;
+    doc.body.append(slot);
+    slicePrint(slot, events);
+    assert.deepEqual(["walls", "infill", "supports"].map((k) => $<HTMLSelectElement>(`slice-print-${k}`).value), ["2", "20", "off"], id);
+  }
+  // A page loaded again (a new document, the same storage) starts from the preset picked, as before.
+  const page = new Window();
+  writePresets(page.localStorage as unknown as Storage, { presets: [home], kept: [], writable: true });
+  page.localStorage.setItem(PRESET_PICKED_KEY, "home");
+  const again = page.document.createElement("div");
+  again.id = "toolbar";
+  page.document.body.append(again);
+  slicePrint(again as unknown as HTMLElement, events);
+  assert.equal((page.document.getElementById("slice-print-infill") as unknown as HTMLSelectElement).value, "20");
+  await page.happyDOM.close();
   await window.happyDOM.close();
 });
 

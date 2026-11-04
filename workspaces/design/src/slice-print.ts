@@ -605,11 +605,12 @@ export interface SlicePrint {
 }
 
 /**
- * The choices each slot's dialog had last (slicer hunt 2026-11-04, ui 1): Undo and Redo put Design away and mount it
- * again, which makes a new dialog in the same toolbar slot, so it starts from these instead of the defaults. A page
- * loaded again starts fresh, as its slots are new.
+ * The choices each toolbar slot's dialog had last, by the page and the slot's id (slicer hunt 2026-11-04, ui 1): Undo
+ * and Redo put Design away and mount it again, which builds a new toolbar (#toolbar, or #split-toolbar in the split
+ * view) with a new dialog in it, so the new dialog starts from these instead of the defaults. A page loaded again
+ * starts fresh, and a slot with no id keeps nothing.
  */
-const keptChoices = new WeakMap<HTMLElement, PresetSettings>();
+const keptChoices = new WeakMap<Document, Map<string, PresetSettings>>();
 
 export const SLICE_PRINT_TITLE = "Slice for printing: turn the bodies shown into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA).";
 
@@ -768,7 +769,9 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     settingsOf: presetSettingsOf,
   });
   // Mounted again (Undo, Redo): the choices the last dialog in this slot had, the preset picked marked as changed if they differ.
-  const kept = keptChoices.get(slot);
+  if (slot.id && !keptChoices.has(document)) keptChoices.set(document, new Map());
+  const keptHere = slot.id ? keptChoices.get(document) : undefined;
+  const kept = keptHere?.get(slot.id);
   if (kept) {
     for (const [k, select] of Object.entries(inputs)) select.value = String(kept[k as keyof typeof inputs]);
     warmUp.checked = kept.warmUp;
@@ -776,7 +779,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     plateFor();
     presets.changed();
   }
-  const keep = () => keptChoices.set(slot, { ...choices(), ...file() });
+  const keep = () => keptHere?.set(slot.id, { ...choices(), ...file() });
   keep();
   // The heading and the presets share one line where there is room, so the dialog grows no taller.
   const top = document.createElement("div");
