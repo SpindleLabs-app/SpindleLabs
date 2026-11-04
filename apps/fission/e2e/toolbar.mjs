@@ -26,7 +26,7 @@ const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 const rect = (page, sel) => page.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
 
-async function fresh(width, touch) {
+async function fresh(width, touch, query = "") {
   const context = await browser.newContext({ viewport: { width, height: width > 640 ? 800 : 667 }, hasTouch: touch, isMobile: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -35,7 +35,7 @@ async function fresh(width, touch) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  await page.goto(url + "#design");
+  await page.goto(`${url}${query}#design`);
   await page.waitForSelector("#start-hint", { state: "visible" });
   return page;
 }
@@ -165,6 +165,29 @@ try {
         assert.ok((await toolbarProblems(page)).some((p) => /^tool-export_stl: its words (show|leak)/.test(p)), "the words shown are caught");
         await page.evaluate(() => document.querySelector("#inspect-facts svg.icon path:last-child").setAttribute("d", "M1 12H20"));
         assert.ok((await toolbarProblems(page)).some((p) => p.startsWith("inspect-facts: icon marks at 1,")), "a mark off the grid is caught");
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    await check(`${at}: with ?combine, Combine is its own button in Modify after Move and Rotate (Ben, 2026-11-04), and it opens the Combine panel; without it, no button`, async () => {
+      const modifyRow = (page) => page.$$eval('#toolbar .toolbar-group[aria-label="Modify"] .toolbar-group-row button', (bs) => bs.map((b) => b.id));
+      const plain = await fresh(width, tap);
+      try {
+        assert.deepEqual(await modifyRow(plain), ["move", "rotate"], "hidden until Combine goes public");
+        assert.equal(await plain.$("#combine"), null);
+      } finally {
+        await plain.context().close();
+      }
+      const page = await fresh(width, tap, "?combine");
+      try {
+        assert.deepEqual(await modifyRow(page), ["move", "rotate", "combine"]);
+        assert.deepEqual(await toolbarProblems(page), [], "its icon drawn, its words its name and tooltip");
+        assert.match(await page.getAttribute("#combine", "title"), /^Combine: join bodies into one/);
+        if (tap) assert.ok((await page.evaluate(() => document.scrollingElement.scrollWidth)) <= width, "no sideways page scroll");
+        if (shots) await page.screenshot({ path: `${shots}/toolbar-combine-${width}.png`, clip: { x: 0, y: 0, width, height: 140 } });
+        await press(page, "#combine", tap);
+        await until(page, () => document.getElementById("combine-panel")?.hidden === false, null, "the button opens the Combine panel");
       } finally {
         await page.context().close();
       }

@@ -53,6 +53,14 @@ async function stlCorners(page, tap) {
 const bounds = (pts) => [0, 1, 2].map((i) => [Math.min(...pts.map((p) => p[i])), Math.max(...pts.map((p) => p[i]))]);
 const near = (got, want, what) => got.flat().forEach((x, i) => assert.ok(Math.abs(x - want.flat()[i]) <= 1e-4, `${what}: ${JSON.stringify(got)}, want ${JSON.stringify(want)}`));
 
+/** An inserted preset starts in Move (Ben, 2026-11-04): Cancel leaves it, as a person does before changing its sizes (a phone's sheet shows Move alone). */
+async function cancelMove(page, tap) {
+  await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "Move open on the new body");
+  await openPanel(page, "properties", tap);
+  await press(page, "#move-cancel", tap);
+  await until(page, () => document.getElementById("move-panel")?.hidden === true, null, "Move cancelled");
+}
+
 let failed = 0;
 async function check(name, fn) {
   try {
@@ -128,6 +136,7 @@ try {
         assert.equal(await page.isVisible("#insert-menu"), false, "a choice closes the menu");
         assert.equal(await page.isVisible("#start-hint"), false, "no hint once there is a body");
         assert.equal(await undoTitle(page), "Undo Insert Box (Ctrl+Z)");
+        await cancelMove(page, tap);
         // The panel shows the new body's sizes (opened for them on a wide screen; on a phone its sheet opens with its toggle, U5).
         await openPanel(page, "properties", tap);
         assert.equal(await page.isVisible("#width"), true);
@@ -142,6 +151,7 @@ try {
         assert.deepEqual(await named("feature-1"), ["Box 1", "Box 1\nBox: 40 × 30 × 20 mm"], "the box is as it was");
         assert.deepEqual(await named("feature-2"), ["Cylinder 1", "Cylinder 1\nCylinder: ⌀40 × 20 mm"]);
         assert.equal(await undoTitle(page), "Undo Insert Cylinder (Ctrl+Z)");
+        await cancelMove(page, tap);
         assert.equal(await page.inputValue("#shape"), "cylinder", "the panel edits the new body");
         // One Undo takes only the cylinder away (a phone's Properties sheet is closed first: it would cover Undo, docked in the view).
         await closePanels(page, tap);
@@ -171,6 +181,7 @@ try {
         floor(bounds(await stlCorners(page, tap)), [0, 40], "the sphere on the floor");
         if (shots) await page.screenshot({ path: `${shots}/sphere-on-floor-${width}.png` });
         // ⌀60 typed: the centre stays 20 up, radius 30, so z −10..50, never snapped back up.
+        await cancelMove(page, tap);
         await openPanel(page, "properties", tap);
         await page.fill("#width", "60");
         await until(page, () => document.querySelector("#undo").title.startsWith("Undo Change"), null, "the size changed");
@@ -181,11 +192,55 @@ try {
       }
     });
 
+    await check(`${at}: a preset inserted starts in Move with only it picked (Ben, 2026-11-04): typed 100 in X and OK, only it moves; Cancel leaves it where it was`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        const moveOpen = (what) => until(page, () => document.getElementById("move-panel")?.hidden === false, null, what);
+        const moveShut = (what) => until(page, () => document.getElementById("move-panel")?.hidden === true, null, what);
+        await insertPreset(page, "box", tap);
+        await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box");
+        await moveOpen("Move opens on the box");
+        assert.equal(await page.textContent("#move-bodies"), "Body: Box 1");
+        assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-1", "only the box picked");
+        if (shots) await page.screenshot({ path: `${shots}/insert-starts-move-${width}.png` });
+        // Cancel: nothing recorded, the box where Insert put it.
+        await page.evaluate(() => document.activeElement?.blur());
+        await openPanel(page, "properties", tap);
+        await press(page, "#move-cancel", tap);
+        await moveShut("Cancel closes Move");
+        assert.deepEqual(await items(page), ["feature-1"]);
+        assert.equal(await undoTitle(page), "Undo Insert Box (Ctrl+Z)");
+        await closePanels(page, tap);
+        const box = bounds(await stlCorners(page, tap));
+        // A cylinder: Move opens again on it alone, never the box.
+        await insertPreset(page, "cylinder", tap);
+        await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 2, null, "the cylinder");
+        await moveOpen("Move opens on the cylinder");
+        assert.equal(await page.textContent("#move-bodies"), "Body: Cylinder 1");
+        assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-2", "only the cylinder picked");
+        await openPanel(page, "properties", tap);
+        await page.fill("#move-x", "100");
+        await press(page, "#move-ok", tap);
+        await moveShut("OK closes Move");
+        await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 3, null, "Move 1 recorded");
+        assert.equal(await page.getAttribute('#timeline [data-item="feature-3"]', "title"), "3. Move 1\nMove Cylinder 1 by (100, 0, 0) mm");
+        await closePanels(page, tap);
+        // Worked by hand: the box sits at x 0..40 (Insert puts its corner on the origin); the cylinder, ⌀40 centred on the
+        // origin, spans x −20..20, so moved 100 in x it spans 80..120. The box untouched, the part runs x 0..120; with the
+        // cylinder still where Insert put it the part would run −20..40, and with the box moved too 100..140.
+        near([box[0]], [[0, 40]], "the box where Insert put it");
+        near([bounds(await stlCorners(page, tap))[0]], [[0, 120]], "only the cylinder moved 100 in x");
+      } finally {
+        await page.context().close();
+      }
+    });
+
     await check(`${at}: the Shape choice changes the part in place (the toolbar's shape buttons until U0d)`, async () => {
       const page = await fresh(width, tap);
       try {
         await insertPreset(page, "box", tap);
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box");
+        await cancelMove(page, tap);
         await pinProperties(page);
         await openPanel(page, "properties", tap); // phone: the sheet opens with its toggle (U5)
         await page.selectOption("#shape", "sphere");
@@ -218,7 +273,8 @@ try {
       assert.equal(await page.isVisible("#insert-menu"), true);
       await page.mouse.click(640, 400);
       assert.equal(await page.isVisible("#insert-menu"), false, "a press outside closes it");
-      // Escape in the menu never also clears the selection (its keys are its own).
+      // Escape in the menu never also clears the selection (its keys are its own): Move on the new star left first.
+      await cancelMove(page, false);
       await page.click('#browser .tree-row[data-node^="body-"]');
       await until(page, () => document.querySelector("#selection-list li") !== null, null, "the body selected");
       await page.focus("#insert");

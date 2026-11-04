@@ -180,9 +180,11 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const move = button("move", "Move", moveTitle, onMove);
   const rotateTitle = "Rotate: turn bodies about X, Y and Z by angles you drag or type. Pick the bodies, then OK. A Rotate in the timeline, at the marker.";
   const rotate = button("rotate", "Rotate", rotateTitle, onRotate);
-  // Combine (35f1c): in Modify ▾ only with ?combine (combine-flag.ts) until it goes public (35f5); else greyed as coming soon.
+  // Combine (35f1c): in Modify ▾, and (Ben, 2026-11-04) its own button beside Move and Rotate, only with ?combine
+  // (combine-flag.ts) until it goes public (35f5); else greyed as coming soon in the menu, with no button.
   const combineTitle = "Combine: join bodies into one, cut tools from a body, or keep only where they overlap. Pick the target body, then the tools, then OK. A Combine in the timeline, at the marker.";
   const combining = combineShown();
+  const combine = button("combine", "Combine", combineTitle, onCombine);
   const modifySections = (): MenuSection[] => [
     {
       items: [
@@ -194,7 +196,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
     { items: comingItems("Modify").filter((i) => !combining || i.id !== "coming-combine") },
   ];
   const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
-  modifying.add([move, "move"], [rotate, "rotate"]);
+  modifying.add([move, "move"], [rotate, "rotate"], ...(combining ? [[combine, "combine"] as [HTMLButtonElement, IconName]] : []));
   modifying.element.dataset.modelling = "";
   const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
   // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
@@ -446,9 +448,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Opens the folded panel until the user moves on (U0b), at the numbers.
     facts() {
       if (inspecting.none()) return;
-      fold?.reveal();
-      ctx.properties?.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a phone opens its Properties sheet (main.ts)
-      ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
+      // A new Move with nothing moved yet (as an inserted preset starts, Ben 2026-11-04) is put away first: a phone's
+      // sheet shows the Move alone (move-panel.css), so the numbers would stay out of sight behind it, and nothing is lost.
+      // A phone's sheet that opened for the Move shuts as it goes (main.ts watches for that in a microtask), so the
+      // numbers are shown in the microtask after it, opening the sheet again for them.
+      const reveal = () => {
+        fold?.reveal();
+        ctx.properties?.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a phone opens its Properties sheet (main.ts)
+        ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
+      };
+      if (!moveUntouched()) return reveal();
+      leaveMove();
+      queueMicrotask(reveal);
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
   };
@@ -967,9 +978,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * default sizes, as one undo step, never changing a body already there.
    * The panel then edits it (the boxes take its sizes) and opens to show
    * them; the first body of an empty design is framed, a later one keeps
-   * the camera.
+   * the camera. Once built, the new body starts picked in a Move (Ben,
+   * 2026-11-04), so it can go where it is wanted straight away; not if it
+   * failed, or anything else changed or opened while it was built.
    */
-  function insertBody(kind: ShapeKind) {
+  async function insertBody(kind: ShapeKind) {
     leaveExtrude();
     leaveEdit();
     leaveMove();
@@ -984,7 +997,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     boxesPart = added.id;
     const made = update(insertStep(kind), undefined, added.doc);
     fold?.reveal();
-    return made;
+    await made;
+    const body = bodyIdOf(added.id);
+    const built = (lastScene?.bodies ?? []).some((b) => b.body === body);
+    if (!built || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
+    ctx.selection.set([bodyReference(body)]);
+    startMove();
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -2658,6 +2676,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Each opening and closing of the Move panel counted: an OK whose check lands after it changed is out of date (bug hunt 11-04, E2). */
   let moveOpenings = 0;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
+  /** A new Move open whose boxes move and turn nothing yet: Cancel would lose nothing. */
+  function moveUntouched(): boolean {
+    if (!moveBox.shown || moveBox.editing !== null) return false;
+    const read = readMoveBoxes(moveBox.typed);
+    return "values" in read && (["x", "y", "z", "turnX", "turnY", "turnZ"] as const).every((k) => read.values[k] === 0);
+  }
+
   function leaveMove() {
     if (!moveBox.shown) return;
     moveOpenings++;
