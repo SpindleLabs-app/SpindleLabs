@@ -1119,10 +1119,13 @@ withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
 withIcon($("settings-open"), "settings", 16);
+/** The panel opened last of Files, Properties and the AI panel: the one sheet kept when the window narrows to a phone's. */
+let lastSheet: "browser" | "properties" | "assistant" | null = null;
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
   if (!!panel.hidden !== open) return;
+  if (open) lastSheet = "assistant";
   panel.hidden = !open;
   $("assistant-toggle").setAttribute("aria-pressed", String(open));
   document.body.classList.toggle("assistant-narrow", open); // styles/assistant-narrow.css
@@ -1140,6 +1143,7 @@ $("assistant-toggle").addEventListener("click", () => {
 for (const slot of ["browser", "properties"] as const) {
   const toggle = $(`${slot}-toggle`);
   const set = (open: boolean) => {
+    if (open && toggle.getAttribute("aria-expanded") !== "true") lastSheet = slot;
     toggle.setAttribute("aria-expanded", String(open));
     $("workspace").dataset[slot] = open ? "open" : "closed";
   };
@@ -1153,6 +1157,14 @@ for (const slot of ["browser", "properties"] as const) {
   });
   toggle.addEventListener("sheet-close", () => set(false));
 }
+// Narrowed to a phone's width, the panels open beside the view become sheets over it, and only one may be open (clumsy-user
+// hunt 2026-11-04: Properties opened on a phone, the window widened, the AI panel opened, narrowed again: both sheets open,
+// one over the other). The one opened last stays.
+phone.addEventListener("change", () => {
+  if (!phone.matches) return;
+  for (const slot of ["browser", "properties"] as const) if (slot !== lastSheet) $(`${slot}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+  if (lastSheet !== "assistant") setAssistant(false);
+});
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
 // (Edit feature, Move's boxes once a body is picked: without the sheet open they are out of reach; not the plane prompt or
 // Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
