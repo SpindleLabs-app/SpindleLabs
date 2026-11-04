@@ -6,3 +6,4 @@ fix
 - Two tabs open on the same project, each closed or left straight after a change, no longer lose the first tab's change: both are kept, one as a separate "(from another tab)" project, with a message saying so.
 - Pressing Undo straight after OK on an Extrude, Move or Edit feature, while it is still being worked out, now undoes that operation once it finishes, instead of silently dropping it and undoing the step before.
 - Double-clicking a timeline item right after clicking another one now opens Edit for it, instead of its options menu.
+- Downloading an STL of many moved bodies, or slicing them, is much faster: 14 moved bodies went from about 23 seconds to about 3.

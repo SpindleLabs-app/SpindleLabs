@@ -612,12 +612,17 @@ try {
     await setSize("width", 0.0001);
     await page.waitForFunction(() => document.querySelector("#error").textContent === "The width must be at least 0.001 mm, the smallest piece the modeller keeps.");
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
-    // A part the kernel refuses gets the kernel's own reason: a 0.0015 mm width is a thin box, but as a cylinder it is a
-    // diameter, radius 0.00075 mm, under the kernel's 0.001.
+    // A 0.0015 mm width is a thin box, but as a cylinder it is a diameter, radius 0.00075 mm, under the modeller's
+    // 0.001: refused by the panel too (clumsy hunt 2026-11-04), and nothing is built.
     await setSize("width", 0.0015);
     await page.waitForFunction(() => document.querySelector("#error").textContent === "");
     await page.selectOption("#shape", "cylinder");
-    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("radius must be between"));
+    await page.waitForFunction(() => document.querySelector("#error").textContent.startsWith("The diameter must be at least 0.002 mm"));
+    assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
+    // A part the kernel refuses gets the kernel's own reason: as a plate, its holes' radius is 0.15 of the smaller of
+    // width and depth (profiles.ts), 0.15 · 0.0015 = 0.000225 mm, which the panel doesn't judge.
+    await page.selectOption("#shape", "plate");
+    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("circle radius 0.000225 must be within"));
     // The old numbers stay on screen, but marked out of date, never shown as current.
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "true");
     assert.equal(await page.isVisible("#stale-note"), true);
