@@ -27,8 +27,9 @@ const RAW = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/g;
 function tokenBlock(theme: string): string {
   const at = theme.indexOf("The colour tokens (U1a");
   if (at < 0) return "";
-  const open = theme.indexOf(":root {", at);
-  return theme.slice(open, theme.indexOf("\n}", open) + 2);
+  const open = theme.indexOf(':root, [data-scene="dark"] {', at);
+  const end = theme.indexOf("/* end of the colour tokens", open);
+  return theme.slice(open, end < 0 ? theme.indexOf("\n}", open) + 2 : end);
 }
 
 /** Raw colours found outside the token block, as "file: colour" lines. */
