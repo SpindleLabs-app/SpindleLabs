@@ -326,6 +326,12 @@ test("hand-worked: refitScale keeps the narrower half-angle when the view change
   // A shape that is no number leaves the camera alone.
   for (const bad of [0, -1, NaN, Infinity]) assert.equal(refitScale(45, bad, 0.5), 1);
   assert.equal(refitScale(0, 2, 0.5), 1);
+  // A field of 180° or more is no camera (issue #278): left alone. Worked: at 180° the half-angle is 90°, whose tan is
+  // about 1.6e16 in doubles, so a view 1e-17 as wide as tall would have a horizontal half-angle of atan(0.16), about
+  // 9°, and a scale near 1 / sin 9° ≈ 6, not 1; at 200° the half-angle is 100°, past the right angle, and the sum
+  // would come out negative.
+  assert.equal(refitScale(180, 2, 1e-17), 1);
+  assert.equal(refitScale(200, 2, 0.5), 1);
 });
 
 test("refitScale: a round trip of shapes comes back to 1 (self-consistency)", () => {

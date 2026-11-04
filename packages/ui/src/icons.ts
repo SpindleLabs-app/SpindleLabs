@@ -50,6 +50,9 @@ export const ICONS = {
   "centre-arc": [tone("M10.5 15A1.5 1.5 0 1 0 13.5 15A1.5 1.5 0 1 0 10.5 15Z"), line("M4 15A8 8 0 0 1 20 15M12 15 6.5 9.5")],
   "tangent-arc": [tone("M2.5 18A1.5 1.5 0 1 0 5.5 18A1.5 1.5 0 1 0 2.5 18Z"), line("M4 18H11M11 18A6 6 0 0 0 17 12V4")],
   project: [tone("M4 14 12 18 20 14 12 10Z"), line("M4 14 12 18 20 14 12 10ZM12 3V9M9.5 6.5 12 9 14.5 6.5")],
+  // Select (an arrow pointer) and Delete (a bin), for single sketch curves (missing basics, 2026-11-04).
+  select: [tone("M6 3V18L10 14.5 13 21 15.5 20 12.5 13.5H18Z"), line("M6 3V18L10 14.5 13 21 15.5 20 12.5 13.5H18Z")],
+  delete: [tone("M7 7H17L16 21H8Z"), line("M7 7H17L16 21H8ZM4.5 7H19.5M9.5 7V4H14.5V7M10.5 10.5V17.5M13.5 10.5V17.5")],
   finish: [tone("M4 12A8 8 0 1 1 20 12A8 8 0 1 1 4 12Z"), line("M8 12.5 11 15.5 16.5 9")],
   snap: [tone("M5 4H10V12A2 2 0 0 0 14 12V4H19V12A7 7 0 0 1 5 12Z"), line("M5 4H10V12A2 2 0 0 0 14 12V4H19V12A7 7 0 0 1 5 12ZM5 8H10M14 8H19")],
   // Files and the app.
@@ -62,6 +65,8 @@ export const ICONS = {
   settings: [tone("M9 12A3 3 0 1 0 15 12A3 3 0 1 0 9 12Z"), line("M12 3V5.5M12 18.5V21M3 12H5.5M18.5 12H21M5.6 5.6 7.4 7.4M16.6 16.6 18.4 18.4M5.6 18.4 7.4 16.6M16.6 7.4 18.4 5.6M6.5 12A5.5 5.5 0 1 0 17.5 12A5.5 5.5 0 1 0 6.5 12Z")],
   guide: [tone("M4 5H11V19H4Z"), line("M4 5H11V19H4ZM13 5H20V19H13ZM11 19H13")],
   ai: [tone("M10 4 11.75 9.25 17 11 11.75 12.75 10 18 8.25 12.75 3 11 8.25 9.25Z"), line("M10 4 11.75 9.25 17 11 11.75 12.75 10 18 8.25 12.75 3 11 8.25 9.25ZM18 3V7M16 5H20")],
+  // One person: the account button (optional sign-in).
+  account: [tone("M6 20A6 6 0 0 1 18 20Z"), line("M9 8A3 3 0 1 0 15 8A3 3 0 1 0 9 8ZM6 20A6 6 0 0 1 18 20")],
   community: [tone("M3 20A6 6 0 0 1 15 20Z"), line("M6 9A3 3 0 1 0 12 9A3 3 0 1 0 6 9ZM3 20A6 6 0 0 1 15 20M15 6.5A2.5 2.5 0 1 1 15 11.5M17 14.5A5 5 0 0 1 21 19.5")],
   // The browser's rows.
   body: [tone("M12 3.5 20 7.5V16.5L12 20.5 4 16.5V7.5Z"), line("M12 3.5 20 7.5V16.5L12 20.5 4 16.5V7.5ZM4 7.5 12 11.5 20 7.5M12 11.5V20.5")],

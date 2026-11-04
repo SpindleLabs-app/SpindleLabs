@@ -14,6 +14,7 @@ import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
+import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
 
 /**
  * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
@@ -245,17 +246,79 @@ export class SliceDropped extends Error {
   }
 }
 
+/** The loop and brim an engine refusal names in its words for the part ("the part with its brim and warm-up loop"). */
+const PART = "the part(?: with its (brim and warm-up loop|warm-up loop|brim))?";
+const extrasNamed = (named: string | undefined): FirstLayerExtras => ({ warmUp: named?.includes("warm-up") ?? false, betterGrip: named?.includes("brim") ?? false });
+const extrasWords = (e: FirstLayerExtras) => (e.warmUp && e.betterGrip ? "Better grip's brim and its warm-up loop" : e.warmUp ? "its warm-up loop" : "Better grip's brim");
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+/** Whether a part w × d mm seen from above (any shape) fits the P1S's plate, its front strip and front-left corner. */
+function fitsP1S(w: number, d: number): boolean {
+  const { width, depth, primeStrip, keepOut } = P1S_AREA;
+  return w <= width && d <= depth - primeStrip && (w <= width - keepOut.x || d <= depth - keepOut.y);
+}
+
+/**
+ * What to do about a part w × d mm with its extras `e` round it that doesn't fit: turn the loop, the brim or both off
+ * when without them it fits (the least first), else null. A width not known (null) is taken as the widest the plate
+ * takes, and a part that would then fit only if narrower is told how narrow.
+ */
+function turnOffWords(e: FirstLayerExtras, w: number | null, d: number): string | null {
+  const reach = firstLayerReach(e);
+  const tries: [FirstLayerExtras, string, string][] = [
+    [{ ...e, warmUp: false }, "its warm-up loop", "Warm-up loop"],
+    [{ ...e, betterGrip: false }, "Better grip's brim", "Better grip"],
+    [NO_EXTRAS, "Better grip's brim and its warm-up loop", "Better grip and Warm-up loop"],
+  ];
+  let narrower: string | null = null;
+  for (const [less, what, turn] of tries) {
+    if (less.warmUp === e.warmUp && less.betterGrip === e.betterGrip) continue;
+    const shrink = 2 * (reach - firstLayerReach(less));
+    if (fitsP1S(w === null ? P1S_AREA.width : w - shrink, d - shrink)) return `Without ${what} it fits: turn ${turn} off and slice again.`;
+    const upTo = P1S_AREA.width - P1S_AREA.keepOut.x;
+    if (w === null && narrower === null && fitsP1S(upTo, d - shrink)) narrower = `Without ${what} it fits if it is at most ${upTo} mm wide: turn ${turn} off and slice again.`;
+  }
+  return narrower;
+}
+
 /**
  * The engine's refusal in words for a beginner: "the part ... runs from (-22, 118) to (278, 138), off the 256 × 256 mm bed"
  * becomes how wide the part is and what the plate takes; "layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"
- * becomes how tall; "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do. Any other message is kept, starting with a capital.
+ * becomes how tall; "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do.
+ * A part refused only with its warm-up loop or Better grip's brim round it says its own size and that size with them,
+ * and to turn them off when without them it fits; so do the front strip's and the front-left corner's refusals. Any other
+ * message is kept, starting with a capital.
  */
 export function refusalWords(message: string): string {
-  const across = /runs from \((-?[\d.]+), (-?[\d.]+)\) to \((-?[\d.]+), (-?[\d.]+)\), off the (\d+) × (\d+) mm bed/.exec(message);
+  const across = new RegExp(`${PART}, placed at [^)]*\\), runs from \\((-?[\\d.]+), (-?[\\d.]+)\\) to \\((-?[\\d.]+), (-?[\\d.]+)\\), off the (\\d+) × (\\d+) mm bed`).exec(message);
   if (across) {
-    const [w, d] = [Number(across[3]) - Number(across[1]), Number(across[4]) - Number(across[2])];
+    const [w, d] = [Number(across[4]) - Number(across[2]), Number(across[5]) - Number(across[3])];
     const wide = Math.max(w, d);
-    return `The part is ${Math.round(wide * 10) / 10} mm ${w >= d ? "wide" : "deep"}, and the P1S's plate takes ${across[5]} × ${across[6]} mm. Make it smaller or split it into pieces.`;
+    const plate = `the P1S's plate takes ${across[6]} × ${across[7]} mm.`;
+    const way = w >= d ? "wide" : "deep";
+    if (across[1] === undefined) return `The part is ${round1(wide)} mm ${way}, and ${plate} Make it smaller or split it into pieces.`;
+    const e = extrasNamed(across[1]);
+    const own = wide - 2 * firstLayerReach(e);
+    return `The part is ${round1(own)} mm ${way}, ${round1(wide)} mm with ${extrasWords(e)}, and ${plate} ${turnOffWords(e, w, d) ?? "Make it smaller or split it into pieces."}`;
+  }
+  const strip = new RegExp(`${PART} reaches y = -?[\\d.]+ mm, over the prime line's strip at the front of the bed \\(it must stay at y ≥ ([\\d.]+) mm\\); it is ([\\d.]+) mm deep, and fits when at most ([\\d.]+) mm deep`).exec(message);
+  if (strip) {
+    const d = Number(strip[3]);
+    const front = `the P1S takes up to ${strip[4]} mm: the front ${strip[2]} mm of the plate is kept for the nozzle's prime line.`;
+    if (strip[1] === undefined) return `The part is ${round1(d)} mm deep, and ${front} Make it smaller or split it into pieces.`;
+    const e = extrasNamed(strip[1]);
+    // Its width isn't said, so "it fits" is never said of one that might be too wide.
+    return `The part is ${round1(d - 2 * firstLayerReach(e))} mm deep, ${round1(d)} mm with ${extrasWords(e)}, and ${front} ${turnOffWords(e, null, d) ?? "Make it smaller or split it into pieces."}`;
+  }
+  const corner = new RegExp(`${PART} is ([\\d.]+) × ([\\d.]+) mm and reaches into the P1S plate's front-left corner, which must stay clear \\([^)]*\\); moving it right or back would take it off the plate\\. Make it smaller or turn it so it clears the corner \\(a part up to ([\\d.]+) mm wide or ([\\d.]+) mm deep fits\\)`).exec(message);
+  if (corner) {
+    const [w, d, upW, upD] = [corner[2], corner[3], corner[4], corner[5]].map(Number);
+    const reaches = "reaches into the P1S plate's front-left corner, which must stay clear, with no room on the plate to move it clear.";
+    if (corner[1] === undefined) return `The part is ${round1(w)} × ${round1(d)} mm and ${reaches} Make it smaller or turn it so it clears the corner (up to ${upW} mm wide or ${upD} mm deep fits).`;
+    const e = extrasNamed(corner[1]);
+    const r2 = 2 * firstLayerReach(e);
+    const what = extrasWords(e);
+    return `The part is ${round1(w - r2)} × ${round1(d - r2)} mm, ${round1(w)} × ${round1(d)} mm with ${what}, and ${reaches} ${turnOffWords(e, w, d) ?? `Make it smaller or turn it so it clears the corner (with ${what}, up to ${round1(upW - r2)} mm wide or ${round1(upD - r2)} mm deep fits).`}`;
   }
   const tall = /reaches z = ([\d.]+) mm, above the printer's ([\d.]+) mm/.exec(message);
   if (tall) return `The part is about ${tall[1]} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
@@ -366,6 +429,8 @@ export interface SlicePrintEvents {
   preview(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<void>;
   /** Calls `listener` as a slice reports how far it has got (KernelCalls.onProgress); returns the way to stop. Left out: the bar just says it is slicing. */
   onProgress?(listener: (progress: SliceProgress) => void): () => void;
+  /** Called when the warm-up loop or Better grip is ticked or unticked (the build area counts them). */
+  extrasChanged?(extras: FirstLayerExtras): void;
 }
 
 export interface SlicePrint {
@@ -448,6 +513,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     } catch {
       // Storage blocked: the choice still holds for this dialog.
     }
+    events.extrasChanged?.({ warmUp: warmUp.checked, betterGrip: grip.checked });
   });
   nozzle.select.addEventListener("change", () => {
     try {
@@ -498,6 +564,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     } catch {
       // Storage blocked: the choice still holds for this dialog.
     }
+    events.extrasChanged?.({ warmUp: warmUp.checked, betterGrip: grip.checked });
   });
   actions.append(close, preview, go);
   // The choices in one block: two columns where there is room, so the dialog fits a laptop's height (Ben 10-31: Supports was cut off).

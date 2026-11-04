@@ -14,7 +14,11 @@
 //   the part (its triangles seen from above, not its box) is moved right
 //   or back, whichever is shorter and stays on the plate, else refused;
 // - the lowest point goes on the plate, and nothing may print above
-//   250 mm (the P1S's printable height under its 256 mm frame).
+//   250 mm (the P1S's printable height under its 256 mm frame);
+// - with Slice for printing's warm-up loop (on by default) or Better grip's
+//   brim, the footprint is the bodies' grown by how far those reach past
+//   them (`firstLayerReach`) on every side, and the corner kept clear grows
+//   by as much right and back, so the loop and brim stay on the plate too.
 //
 // Placement is in design millimetres, z up; the plate's corner (0, 0) is the
 // design point -by.
@@ -29,6 +33,32 @@ export interface PrinterArea {
   height: number;
   primeStrip: number;
   keepOut: { x: number; y: number };
+}
+
+/** Slice for printing's choices that print round the part's first layer: the warm-up loop and Better grip's brim. */
+export interface FirstLayerExtras {
+  warmUp: boolean;
+  betterGrip: boolean;
+}
+/** Neither the loop nor the brim. */
+export const NO_EXTRAS: FirstLayerExtras = { warmUp: false, betterGrip: false };
+
+/** How far past the part the warm-up loop, the brim, and both reach on the P1S's plate (mm), as the engine has them. */
+export const WARM_UP_REACH = 3.957079632679490;
+export const GRIP_REACH = 4.713716694115407;
+export const BOTH_REACH = 8.671796326794897;
+
+/** How far the first layer's extras reach past the part on every side (mm): 0 with neither. */
+export function firstLayerReach(extras: FirstLayerExtras): number {
+  return extras.warmUp ? (extras.betterGrip ? BOTH_REACH : WARM_UP_REACH) : extras.betterGrip ? GRIP_REACH : 0;
+}
+
+/** The extras' name in the words; "" with neither. */
+function extrasName(extras: FirstLayerExtras): string {
+  if (extras.warmUp && extras.betterGrip) return "Better grip's brim and the warm-up loop";
+  if (extras.warmUp) return "the warm-up loop";
+  if (extras.betterGrip) return "Better grip's brim";
+  return "";
 }
 
 /** A mesh seen as the build area reads it: flat xyz positions and triangles (three indices each). */
@@ -79,8 +109,8 @@ function leastBelow(c: readonly (readonly [number, number])[], at: number, swap:
  * `keep_out_moves`: by their triangles, so a disc whose box overlaps the
  * corner but which does not stays put).
  */
-export function keepOutMoves(meshes: readonly AreaMesh[], by: readonly [number, number], printer: PrinterArea = P1S_AREA): [number, number] | null {
-  const { x: kx, y: ky } = printer.keepOut;
+export function keepOutMoves(meshes: readonly AreaMesh[], by: readonly [number, number], printer: PrinterArea = P1S_AREA, reach = 0): [number, number] | null {
+  const [kx, ky] = [printer.keepOut.x + reach, printer.keepOut.y + reach];
   let leastX = Infinity;
   let leastY = Infinity;
   for (const m of meshes) {
@@ -99,10 +129,28 @@ export function keepOutMoves(meshes: readonly AreaMesh[], by: readonly [number, 
 /**
  * The P1S's build area under `meshes` (the bodies shown), as the slicer
  * would place them for its print file; null with no body. When they don't
- * fit, `outside` says why and the box stays centred under them. `printer`
+ * fit, `outside` says why and the box stays centred under them. `extras`
+ * are Slice for printing's warm-up loop and brim, which must fit too (said
+ * so, and that turning them off makes room, when only they don't). `printer`
  * is the P1S's; another only for tests (a planted break).
  */
-export function buildArea(meshes: readonly AreaMesh[], printer: PrinterArea = P1S_AREA): BuildArea | null {
+export function buildArea(meshes: readonly AreaMesh[], printer: PrinterArea = P1S_AREA, extras: FirstLayerExtras = NO_EXTRAS): BuildArea | null {
+  const placed = placeOn(meshes, printer, extras);
+  if (placed === null || placed.outside === null || firstLayerReach(extras) === 0) return placed;
+  // Only the loop or brim doesn't fit: say which, and that turning it off makes room.
+  for (const [less, turn] of [
+    [{ ...extras, warmUp: false }, "Warm-up loop"],
+    [{ ...extras, betterGrip: false }, "Better grip"],
+    [NO_EXTRAS, "Better grip and Warm-up loop"],
+  ] as const) {
+    if (less.warmUp === extras.warmUp && less.betterGrip === extras.betterGrip) continue;
+    if (placeOn(meshes, printer, less)!.outside === null) return { ...placed, outside: `${placed.outside} Turn ${turn} off in Slice for printing and they fit.` };
+  }
+  return placed;
+}
+
+/** `buildArea` for one set of extras. */
+function placeOn(meshes: readonly AreaMesh[], printer: PrinterArea, extras: FirstLayerExtras): BuildArea | null {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
   for (const m of meshes) {
@@ -115,7 +163,13 @@ export function buildArea(meshes: readonly AreaMesh[], printer: PrinterArea = P1
   }
   if (!(lo[0] <= hi[0])) return null;
   const { width, depth, height, primeStrip, keepOut } = printer;
+  // The footprint grown by the loop's or brim's reach; the area is still drawn centred under it.
+  const reach = firstLayerReach(extras);
+  for (let a = 0; a < 2; a++) [lo[a], hi[a]] = [lo[a] - reach, hi[a] + reach];
+  const extra = extrasName(extras);
   const size = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+  /** A size in words: the bodies' own, then with the extras round them ("300 mm wide, 307.9 mm with the warm-up loop"). */
+  const sized = (a: number, word: string) => `${mm(size[a] - 2 * reach)} mm ${word}${reach > 0 ? `, ${mm(size[a])} mm with ${extra}` : ""}`;
   let by: [number, number] = [width / 2 - (lo[0] + hi[0]) / 2, depth / 2 - (lo[1] + hi[1]) / 2];
   const off = (b: readonly [number, number]) => !(lo[0] + b[0] >= 0 && hi[0] + b[0] <= width && lo[1] + b[1] >= 0 && hi[1] + b[1] <= depth);
   const area = (outside: string | null): BuildArea => ({
@@ -127,22 +181,25 @@ export function buildArea(meshes: readonly AreaMesh[], printer: PrinterArea = P1
   });
   const tall = size[2] > height ? ` and ${mm(size[2])} mm tall (${height} mm fits)` : "";
   if (off(by)) {
-    const parts = [size[0] > width ? `${mm(size[0])} mm wide` : "", size[1] > depth ? `${mm(size[1])} mm deep` : ""].filter(Boolean).join(" and ");
+    const parts = [size[0] > width ? sized(0, "wide") : "", size[1] > depth ? sized(1, "deep") : ""].filter(Boolean).join(" and ");
     return area(`Too big for the P1S's plate: the bodies shown are ${parts} (${width} × ${depth} mm fits)${tall}.`);
   }
   if (lo[1] + by[1] < primeStrip) {
     const back: [number, number] = [by[0], by[1] + primeStrip - (lo[1] + by[1])];
-    if (off(back)) return area(`Too deep for the P1S: the bodies shown are ${mm(size[1])} mm deep, and the front ${primeStrip} mm of the plate is kept for the nozzle's prime line (${depth - primeStrip} mm fits)${tall}.`);
+    if (off(back)) return area(`Too deep for the P1S: the bodies shown are ${sized(1, "deep")}, and the front ${primeStrip} mm of the plate is kept for the nozzle's prime line (${depth - primeStrip} mm fits)${tall}.`);
     by = back;
   }
-  const moves = keepOutMoves(meshes, by, printer);
+  const moves = keepOutMoves(meshes, by, printer, reach);
   if (moves !== null) {
     const right: [number, number] = [by[0] + moves[0], by[1]];
     const backward: [number, number] = [by[0], by[1] + moves[1]];
     const [r, b] = [off(right), off(backward)];
     if (!r && (b || moves[0] <= moves[1])) by = right;
     else if (!b) by = backward;
-    else return area(`The bodies shown reach into the P1S plate's front-left corner, which must stay clear, and moving them right or back would take them off the plate: make them smaller or turn them (up to ${width - keepOut.x} mm wide or ${depth - keepOut.y} mm deep fits)${tall}.`);
+    else {
+      const fits = `up to ${mm(width - keepOut.x - 2 * reach)} mm wide or ${mm(depth - keepOut.y - 2 * reach)} mm deep fits`;
+      return area(`The bodies shown${reach > 0 ? ` with ${extra}` : ""} reach into the P1S plate's front-left corner, which must stay clear, and moving them right or back would take them off the plate: make them smaller or turn them (${reach > 0 ? `with ${extra}, ` : ""}${fits})${tall}.`);
+    }
   }
   if (size[2] > height) return area(`Too tall for the P1S: the bodies shown are ${mm(size[2])} mm tall (${height} mm fits).`);
   return area(null);

@@ -2,6 +2,6 @@
    properties' warning, and the timeline rows of the extrude and its sketch
    in red with a warning mark, as the error line is. */
 /* :not(#none) so a row's button keeps it over the base layout's `#workspace button` colour. */
-.kept:not(#none) { color: #ff6b6b; }
+.kept:not(#none) { color: var(--danger); }
 .kept.kept-warning { border-left: 3px solid currentColor; padding-left: 8px; margin: 6px 0; }
 .kept[data-node]::after { content: " ⚠"; }

@@ -66,6 +66,7 @@ export function openGuide(opener?: HTMLElement | null): GuideDialog {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const dialog = document.createElement("dialog");
   dialog.className = "guide";
+  dialog.dataset.scene = "dark"; // a scene of its own: dark in both themes (theme.css)
   dialog.setAttribute("aria-labelledby", "guide-title");
   dialog.innerHTML = `
     <div class="guide-sky"></div>

@@ -5,7 +5,7 @@
 import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -28,17 +28,17 @@ import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.t
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
-import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, type BuildArea } from "./build-area.ts";
-import { gcodeName, gcodeOfPackage, P1S_KIND, printFileName, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
+import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
+import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, printFileName, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
+import { viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
-import { BodyCache, followedDoc, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
-import { isFaceSketch } from "./face-sketch.ts";
+import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
@@ -54,6 +54,7 @@ import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
+import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
@@ -439,7 +440,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), (kind) => void insertBody(kind), inspecting);
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
-  const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
+  const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
+  /** Slice for printing's warm-up loop and Better grip as last ticked (null: as remembered); the build area counts them. */
+  let printExtras: FirstLayerExtras | null = null;
+  /** Draws the build area again (set once the build area's own state exists below; the dialog may tick before then). */
+  let refreshArea = () => {};
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
   const printing = slicePrint(ctx.toolbar, {
     async slice(choices, file, alive) {
@@ -471,6 +476,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     // The bar follows the engine's own reports (Ben, 2026-11-01).
     onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),
+    // The build area counts the warm-up loop and Better grip's brim as Slice for printing will print them.
+    extrasChanged(extras) {
+      printExtras = extras;
+      refreshArea();
+    },
   });
   const deleting = deleteAsk(ctx.toolbar);
   const renaming = renameBox(ctx.toolbar);
@@ -507,7 +517,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** The origin's axes and planes as their eyes say (Ben, 2026-10-29): every axis and no plane until an eye is pressed. */
   function showOrigin(doc: DesignDocument) {
-    area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh]) : null;
+    area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh], P1S_AREA, printExtras ?? { warmUp: rememberedWarmUp(storage), betterGrip: rememberedBetterGrip(storage) }) : null;
     viewport.showOrigin({
       axes: [originDrawn(doc, ORIGIN_AXES[0]), originDrawn(doc, ORIGIN_AXES[1]), originDrawn(doc, ORIGIN_AXES[2])],
       planes: EYE_PLANES.filter((id) => originDrawn(doc, id)).map((id) => ({ id, plane: planeOf(id.slice("origin-".length).toUpperCase() as SketchPlane) })),
@@ -529,6 +539,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
   })();
   let buildAreaOn = buildAreaShownIn(storage);
+  refreshArea = () => {
+    const doc = designDoc();
+    if (buildAreaOn && doc) showOrigin(doc);
+  };
   let area: BuildArea | null = null;
   const areaNote = ctx.viewport.element.ownerDocument.createElement("div");
   areaNote.className = "build-area";
@@ -1084,6 +1098,30 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /**
+   * The menu on a body in the view (missing basics, Ben 2026-11-04): a right-click or a held finger on a body's face
+   * or edge selects it, as a click does (unless it is selected already, so a Shift-picked set stays), and opens its
+   * Body row's menu with Hide first. Nothing opens on empty space, while a sketch is being placed or edited, in
+   * Extrude or in a Move (their clicks pick other things), or with a box or menu already open.
+   */
+  function openViewMenu(pick: Parameters<NonNullable<SharedViewport["onMenu"]>>[0], at: { x: number; y: number }): boolean {
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    if (!doc || mode.kind !== "none" || extruding || moveBox.shown || deleting.open !== null) return false;
+    const target = viewMenuTarget(doc, lastScene, pick, failedNow);
+    const item = doc.timeline.features.find((f) => f.id === target?.feature);
+    if (!target || !item) return false;
+    if (!ctx.selection.items.some((r) => r.kind === target.item.kind && r.id === target.item.id)) ctx.selection.set([target.item]);
+    const editing = editingId();
+    const fail = (err: unknown) => panel.showError(err instanceof Error ? err.message : String(err));
+    const entries = viewMenuEntries(doc, target.feature, editing).map((e) => ({
+      ...e,
+      run: e.action === "hide" ? () => toggleHidden(target.row) : () => void chooseEntry(menuHost, target.feature, e.action, editing).catch(fail),
+    }));
+    menuAt = at;
+    deleting.menu(itemName(item), at, entries);
+    return true;
+  }
+
+  /**
    * How a menu choice reaches the project: the document recorded as one
    * undo step (out of any sketch or Extrude panel first, the panel showing
    * the part the edit leaves), the delete box asking first (24e4), and a
@@ -1126,13 +1164,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */
   /** The design last shown and built: a sketch left after edits to it differs, and is rebuilt (25a3). */
   let shownDoc: DesignDocument | null = null;
+  /** Counts show() calls: one overtaken while its settle waited on the kernel draws nothing (app hunt 2026-11-04). */
+  let showing = 0;
+  /** Set once unmounted: a show() still waiting on the kernel then draws nothing. */
+  let putAway = false;
   async function show(doc: DesignDocument, kind: PartKind) {
     shownDoc = doc;
+    const n = ++showing;
     const view = viewport.element;
     rebuildsOn.set(view, (rebuildsOn.get(view) ?? 0) + 1);
     view.dataset.rebuilding = "true";
     try {
-      await showBuilt(await settled(doc), kind);
+      const next = await settled(doc);
+      // A newer show() started while the kernel settled this one: it draws the newer design (an older ask answered
+      // later must not show over it). Put away meanwhile (an Undo that unmounted this Design), the bar and browser
+      // belong to the Design mounted in its place: this one draws nothing more.
+      if (n !== showing || putAway) return;
+      await showBuilt(next, kind);
     } finally {
       const left = rebuildsOn.get(view)! - 1;
       rebuildsOn.set(view, left);
@@ -1153,7 +1201,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /**
    * `doc`, the design just recorded, settled against `unsettled` and taken
    * into the edit's own undo step (the typing in a box still one step), or
-   * `doc` itself: when nothing is unsettled, when it has no sketch on a face
+   * `doc` itself: when nothing is unsettled, when it has no sketch on a face or following a body
    * (nothing else a non-sketch edit changes is settled), or when the design
    * changed again while the kernel looked (the next edit settles from the
    * same `unsettled`).
@@ -1161,7 +1209,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   async function settled(doc: DesignDocument): Promise<DesignDocument> {
     const from = unsettled;
     if (from === null || ctx.history.restoring()) return doc;
-    if (!doc.timeline.features.some(isFaceSketch)) {
+    // A sketch on a face, or one with points pinned to edges or edges projected (hunt A, 2026-11-04: a followed point
+    // can lose an origin sketch, whose extrude then keeps its last shape).
+    if (!doc.timeline.features.some((f) => placedOnBodies(doc, f))) {
       unsettled = null;
       return doc;
     }
@@ -1246,7 +1296,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // note (17e); so do ones whose name now names two (25a4: never a guess);
       // the rest follow their names, however the kernel numbers them now.
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
-      const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id));
+      const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
       lastScene = scene;
       if (buildAreaOn) showOrigin(doc);
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
@@ -1334,7 +1384,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start("") });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked() });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -1372,6 +1422,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A typed arc angle goes the pointer's way round however little it went (typed-entry.ts withLocks): the preview from the tool the click will use.
     viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
+    sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
     const width = viewport.element.clientWidth;
     sketchBar.showType(typedFields(editing.tool).length > 0);
@@ -1636,6 +1687,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sketchBox.showTool(kind);
     sketchBar.showTool(kind);
     sketchBox.showError("");
+    showSketchStatus(); // a tool chosen drops the Select tool's picks, and their words (app hunt 2026-11-04)
     drawSketches();
   }
 
@@ -1729,10 +1781,55 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const n = curveCount(sketch);
     try {
       const { current, value } = await outlineOf(sketch);
-      if (current) sketchBox.showStatus(value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : `${n}, not closed: ${value.open}.`);
+      if (current) outlineWords = value === null ? `${n}.` : typeof value === "string" ? `${n}, not closed: ${value}.` : "closed" in value ? `${n}, a closed outline.` : `${n}, not closed: ${value.open}.`;
     } catch (e) {
-      sketchBox.showStatus(`${n}: ${e instanceof Error ? e.message : String(e)}`);
+      outlineWords = `${n}: ${e instanceof Error ? e.message : String(e)}`;
     }
+    showSketchStatus();
+  }
+  /** The outline's words as last asked (`showOutline`), shown with what the Select tool has picked. */
+  let outlineWords = "";
+  function showSketchStatus() {
+    if (mode.kind !== "edit") return;
+    const tool = mode.tool;
+    const picks = tool.kind === "select" ? selectStatus(designDoc().sketches.find((s) => s.id === tool.sketch), tool.picked) : "";
+    sketchBox.showStatus(picks ? `${outlineWords} ${picks}` : outlineWords);
+  }
+
+  /**
+   * Delete (the key, Backspace or the sketch toolbar's button) with the Select
+   * tool's picks: they go from the sketch as one undo step ("Delete line",
+   * "Delete 3 curves"), in turn behind the clicks before it, settled as a
+   * click is, so an extrude whose outline this breaks keeps its last shape
+   * (the owner's rule, rebuild.ts). False when nothing is picked, so the key
+   * does what it would.
+   */
+  function deletePicked(): boolean {
+    if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
+    const sketchId = mode.tool.sketch;
+    if (stillPicked(designDoc().sketches.find((s) => s.id === sketchId), mode.tool.picked).length === 0) return false;
+    const changes = toolChanges;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes) return;
+      const before = designDoc();
+      const sketch = before.sketches.find((s) => s.id === sketchId);
+      const ids = stillPicked(sketch, mode.tool.picked);
+      if (ids.length === 0) return;
+      let next: DesignDocument;
+      try {
+        next = await settleKept(kernel, before, deleteCurves(before, sketchId, ids), bodies);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      // Undo, Escape or a tool change while the kernel looked: the delete was for a sketch no longer there.
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes || designDoc() !== before) return;
+      mode.tool = { ...mode.tool, picked: [], hover: null };
+      sketchBox.showError("");
+      applySketchEdit(next, deleteStep(sketch, ids), sketchId);
+      drawSketches();
+      await showOutline();
+    });
+    return true;
   }
 
   // Extrude (step 21d; UX1b, Fusion's feel): click a closed sketch in the view (or its row in the
@@ -1818,6 +1915,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** What the view shows while Extrude is open: the outlines offered, the chosen one, the preview and its arrow at the distance now. */
   function showExtrudeView() {
+    // Asleep or put away (an Undo before a preview build answered), the view is not this Design's to draw on (app hunt 2026-11-04).
+    if (!shown) return;
     const e = extruding;
     if (!e) return viewport.showExtrude(null);
     const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
@@ -2480,6 +2579,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (pointer.kind === "click") projectAt(pointer);
       return drawSketches();
     }
+    // The Select tool snaps nothing and places nothing: the curve within a snap's reach of the pointer lights, and a click picks it (Shift adds).
+    if (mode.tool.kind === "select") {
+      ++moves;
+      hovered = lastMove = null;
+      mode.snap = null;
+      mode.pointer = at;
+      const tool = mode.tool;
+      const sketch = designDoc().sketches.find((s) => s.id === tool.sketch);
+      const hit = at && sketch ? curveAt(sketch, at, PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0)) : null;
+      if (pointer.kind !== "click") mode.tool = { ...tool, hover: hit };
+      else {
+        mode.tool = { ...tool, picked: pickCurve(stillPicked(sketch, tool.picked), hit, pointer.shift === true), hover: hit };
+        sketchBox.showError("");
+        showSketchStatus();
+      }
+      return drawSketches();
+    }
     if (pointer.kind === "move") {
       lastHover = at ? pointer : null;
       enteredStill = false;
@@ -2698,6 +2814,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Listens to picks and the selection: from mount, and again on each wake. Keys come from the shell (X7b), only while shown. */
   function listen() {
     viewport.onPick = onPick;
+    viewport.onMenu = openViewMenu;
     viewport.onSketchPointer = onSketchPointer;
     viewport.onExtrudePointer = onExtrudePointer;
     viewport.onMovePointer = onMovePointer;
@@ -2728,6 +2845,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shown = false;
     showBuildAreaWords();
     viewport.onPick = null;
+    viewport.onMenu = null;
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;
     viewport.showExtrude(null);
@@ -2755,14 +2873,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   // The Shape choice (U0d) does what the toolbar's shape buttons did: set_part with this shape and the boxes' sizes.
+  // Asleep or put away, the panel is out of the page and edits nothing (issue #267, monkey seed 202611010): Chromium
+  // fired a Shape change as Open took the panel out of the page (main.ts replaceProject: the new project first, then
+  // each view's sleep), and the opened file's box became a cylinder. Its size boxes are held the same way.
   panel.shapeChoice.addEventListener("change", () => {
+    if (!shown) return;
     const kind = panel.shapeChoice.value as ShapeKind;
     if (kind) void setPart({ op: "set_part", shape: kind });
   });
   // Typing in one box is one undo step (the merge key), named for the box; typing for another body is another step
   // (the key names the body: Undo after typing for Body 1 put back Body 2's width typed before it, bug hunt 2026-11-01).
   inputs.forEach((input, i) => {
-    input.addEventListener("input", () => update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
+    input.addEventListener("input", () => shown && update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
     // Left (or Enter): a refused size gives way to the last one. Blur too: Firefox gives no change for a number box
     // left empty after 0 and -5 (hunt 26h, CI's browsers job).
     input.addEventListener("change", () => restoreRefused(i));
@@ -2845,6 +2967,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         drawSketches();
         return true;
       }
+      // Escape with nothing half drawn (missing basics, 2026-11-04, as in Fusion): the picks go, else the Select tool is chosen.
+      if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind === "select" && mode.tool.picked.length > 0) {
+        mode.tool = { ...mode.tool, picked: [] };
+        showSketchStatus();
+        drawSketches();
+        return true;
+      }
+      if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind !== "select") return chooseTool("select"), true;
+      // Delete or Backspace in a sketch with curves picked takes them out; otherwise the key does what it would.
+      if ((id === "delete-selection" || id === "delete-selection-back") && mode.kind === "edit") return deletePicked();
       // L, R, C and A choose the line, rectangle, circle and arc tools while a sketch is edited; otherwise the key does what it would.
       // A digit, point or minus while a line or rectangle is part drawn starts typing its size in the first box (SF4).
       const typedKey = typedSizeKey(id);
@@ -2872,6 +3004,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       markStale();
     },
     unmount() {
+      putAway = true;
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;
       if (putAwayByRestore === null) editingSketch = null;
       // A click, Enter or hover still waiting on the kernel was for the sketch shown until now; an undo that puts the

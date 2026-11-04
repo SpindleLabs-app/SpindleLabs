@@ -8,7 +8,7 @@
 // length locked lands at that length; a bad size shows why and locks
 // nothing, and Enter on it places nothing; Escape in a box empties it without ending the line, and a
 // second Escape ends it; letters typed in a box never reach the tool keys.
-// The rectangle's Width and Height the same way. At 375 px with taps: the
+// The rectangle's Width and Height the same way, and a circle's Diameter. At 375 px with taps: the
 // boxes whole on screen, a line typed by length and angle after Type
 // on the bar over the view (the boxes take no taps there, so a tap on
 // them draws the next point instead of opening the keyboard). Screenshots
@@ -241,6 +241,33 @@ await check("1280 px: a rectangle typed 20 × 5 down and to the right", async ()
   await points(page, "30,30 50,30 50,25 30,25");
   assert.match(await undoLabel(page), /^Undo Draw rectangle/);
   assert.equal(await boxesShown(page), false);
+  await page.close();
+});
+
+await check("1280 px: a circle typed 25 mm across round (30, 30), extruded 10 mm is 1562.5π mm³", async () => {
+  const page = await fresh();
+  await sketch(page);
+  await page.keyboard.press("c");
+  await clickPlane(page, [30, 30]);
+  await hover(page, [40, 30]);
+  // Once the centre is down: one Diameter box, showing twice the pointer's distance, 2 × 10 = 20.
+  await until(page, () => [...document.querySelectorAll(".typed-entry-name")].map((x) => x.textContent).join() === "Diameter", null, "the Diameter box");
+  await placeholderIs(page, "#typed-diameter", "20");
+  await page.keyboard.type("25");
+  assert.equal(await locked(page, "diameter"), true);
+  // The preview's rim follows the typed size: its first point is the centre + 12.5 the pointer's way, (42.5, 30).
+  await until(page, () => (document.querySelector("#viewport").dataset.sketchPreview ?? "").startsWith("42.5,30 "), null, "the preview at radius 12.5");
+  await page.keyboard.press("Enter");
+  await until(page, () => document.querySelector("#viewport").dataset.sketchLines === "64", null, "the circle drawn");
+  assert.match(await undoLabel(page), /^Undo Draw circle/);
+  assert.equal(await boxesShown(page), false, "no boxes until the next centre");
+  // Extruded 10 mm: π · 12.5² · 10 = 1562.5π = 4,908.738521… mm³.
+  await page.click("#sketch-extrude");
+  await until(page, () => document.querySelector("#extrude-ok")?.disabled === false, null, "Extrude's OK on");
+  await page.fill("#extrude-distance", "10");
+  await page.click("#extrude-ok");
+  await until(page, () => document.querySelector("#volume")?.textContent === "4,908.738521 mm³", null, "1562.5π mm³").catch(async (e) => assert.fail(`${e.message} (shown: ${await page.textContent("#volume")})`));
+  if (shots) await page.screenshot({ path: `${shots}/typed-circle-1280.png` });
   await page.close();
 });
 

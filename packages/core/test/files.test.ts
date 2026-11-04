@@ -348,6 +348,23 @@ test("an image over MAX_IMAGE_BYTES is refused by its size, before the shell rea
   assert.equal(refusal(registry, png(Math.round(1.1 * MAX_IMAGE_BYTES))), "Couldn't open “big.png”: it is 563.2 MB, and an image may be at most 512 MB.");
   const jpeg = { name: "big.jpg", size: MAX_IMAGE_BYTES + 1, head: new Uint8Array([0xff, 0xd8, 0xff]) };
   assert.match(refusal(registry, jpeg), /an image may be at most 512 MB/);
+  // The image limit is the images' alone (issue #273): an STL mesh past it, with a workspace taking STL, still opens.
+  const mesh = importer(["stl"], "design");
+  registry.registerImporter(mesh);
+  const stl = routeFiles(registry, [{ name: "scan.stl", size: MAX_IMAGE_BYTES + 1, head: new TextEncoder().encode("solid scan\n") }]);
+  assert.ok(stl?.kind === "open" && stl.importer === mesh && stl.format === "stl");
+});
+
+test("issue #273: a project's JSON is a project only named as one, and only when the head is the whole file", () => {
+  // The key spelled with an escape (\u0056 is "V") reads as formatVersion only once parsed, so the quick look at the
+  // head doesn't know it: the name and the parse decide.
+  const json = '{"format\\u0056ersion": 1}';
+  assert.deepEqual(identifyFile(file("plate.spindle", json)), { ok: true, format: "project" });
+  // Named like an STL mesh, it is not taken as a project: an STL that isn't one.
+  assert.deepEqual(identifyFile(file("part.stl", json)), { ok: false, reason: "renamed", claimed: "stl" });
+  // The head read is only the start of a file one byte longer: the rest is unread, so it can't be told to parse.
+  const head = new TextEncoder().encode(json);
+  assert.deepEqual(identifyFile({ name: "plate.spindle", size: head.length + 1, head }), { ok: false, reason: "renamed", claimed: "project" });
 });
 
 test("a dropped folder is refused as a folder, not as a file that can't be read", () => {

@@ -494,24 +494,33 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
   const own = cache === undefined;
   const settling = bodies.using(async () => {
     const beforeItems = indexOf(before).items;
-    const next: Record<string, KeptShape> = {};
-    for (const f of after.timeline.features) {
-      if (!isSketchExtrude(f)) continue;
-      const sketch = f.intent.parameters.sketch as string;
-      if (await makesOutline(kernel, after, sketch)) continue;
-      const had = keptOf(after, f);
-      const was = contentOf(before, sketch);
-      if (had !== undefined) next[f.id] = had;
-      else if (was !== undefined && (await makesOutline(kernel, before, sketch))) {
-        const item = beforeItems.get(sketch)!;
-        const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
-        const shape = keptCurves(was);
-        next[f.id] = placement ? { ...shape, placement } : shape;
+    /**
+     * `doc` (`after`, its pinned points and projected edges followed so far)
+     * with its kept shapes settled: judged on the points as they now lie, so a
+     * sketch a followed point makes cross itself is lost too (hunt A, 2026-11-04:
+     * judged before the points followed, it kept nothing and its extrude failed).
+     */
+    const keepLost = async (doc: DesignDocument): Promise<DesignDocument> => {
+      const next: Record<string, KeptShape> = {};
+      for (const f of doc.timeline.features) {
+        if (!isSketchExtrude(f)) continue;
+        const sketch = f.intent.parameters.sketch as string;
+        if (await makesOutline(kernel, doc, sketch)) continue;
+        const had = keptOf(after, f);
+        const was = contentOf(before, sketch);
+        if (had !== undefined) next[f.id] = had;
+        else if (was !== undefined && (await makesOutline(kernel, before, sketch))) {
+          const item = beforeItems.get(sketch)!;
+          const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
+          const shape = keptCurves(was);
+          next[f.id] = placement ? { ...shape, placement } : shape;
+        }
       }
-    }
-    const { kept: old, ...rest } = after;
-    let doc = after;
-    if (JSON.stringify(old ?? {}) !== JSON.stringify(next)) doc = Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
+      const { kept: old, ...rest } = doc;
+      if (JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
+      return Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
+    };
+    let doc = await keepLost(after);
     const faces = doc.timeline.features.filter((f) => placedOnBodies(doc, f)).length;
     if (faces === 0) return doc;
     // Held placements and followed points, decided on the document with its kept shapes settled, pass after pass on the
@@ -544,7 +553,8 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         sketches.push(followed);
       }
       if (!changed) return doc;
-      doc = { ...doc, sketches };
+      // Kept shapes again, on the points as they now lie: a followed point can lose a sketch, or find its outline again.
+      doc = await keepLost({ ...doc, sketches });
     }
     return doc;
   });
@@ -568,7 +578,7 @@ function keptCurves(was: Sketch): KeptShape {
 const follows = (content: Sketch | undefined): boolean => content?.pins !== undefined || content?.projected !== undefined;
 
 /** Whether sketch item `f` lies on or follows a body: on a face (26c), or with points pinned to edges (27c) or edges projected (27d). */
-const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && follows(doc.sketches.find((s) => s.id === f.id)));
+export const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && follows(doc.sketches.find((s) => s.id === f.id)));
 
 /**
  * Every item of `doc` up to its last sketch on a face or with pins,

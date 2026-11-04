@@ -2,19 +2,19 @@
    properties while you set up an extrude, with the same accent edge as the
    sketch panel so it reads as the mode you are in; controls are 44 px tall
    at phone width, so they can be tapped. */
-.extrude { border-left: 3px solid #6cc4ff; padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.extrude { border-left: 3px solid var(--line-6cc4ff); padding: 4px 0 8px 10px; margin-bottom: 12px; }
 .extrude h2 { margin-top: 0; }
 .extrude p { margin: 6px 0; }
 .extrude .extrude-row { display: block; margin: 6px 0; }
 .extrude .extrude-row input { width: 6em; }
 /* UX1b: the label before each control, and the profile picked in the view with its ✕ (Fusion's "1 selected ×"). */
-.extrude .extrude-label { display: inline-block; min-width: 5.5em; color: #b7c0cc; }
+.extrude .extrude-label { display: inline-block; min-width: 5.5em; color: var(--text-soft); }
 .extrude .extrude-profile-row { display: flex; align-items: center; gap: 6px; }
 .extrude .extrude-profile { font-weight: 600; }
-.extrude .extrude-profile.extrude-unpicked { font-weight: normal; font-style: italic; color: #6cc4ff; }
+.extrude .extrude-profile.extrude-unpicked { font-weight: normal; font-style: italic; color: var(--line-6cc4ff); }
 .extrude .extrude-clear { padding: 0 8px; }
-.extrude .extrude-status { color: #b7c0cc; }
-.extrude .extrude-note { color: #8b95a3; font-size: 0.9em; }
+.extrude .extrude-status { color: var(--text-soft); }
+.extrude .extrude-note { color: var(--text-8b95a3); font-size: 0.9em; }
 .extrude .extrude-buttons { display: flex; gap: 6px; margin-top: 4px; }
 /* OK is the box's main action (UX2): bright blue, the one filled button. */
 .extrude #extrude-ok { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
@@ -27,4 +27,4 @@
 }
 /* The distance box glows softly while the view's arrow is dragged, and fades as it ends (Ben, 2026-10-28), as Move's do. */
 .extrude .extrude-row input { transition: box-shadow 0.3s, border-color 0.3s, background-color 0.3s; }
-.extrude .extrude-row input.extrude-dragged { border-color: var(--look-accent, #4aa8ff); background-color: color-mix(in srgb, var(--look-accent, #4aa8ff) 12%, var(--look-field, #0f141c)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, #4aa8ff) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, #4aa8ff) 45%, transparent); }
+.extrude .extrude-row input.extrude-dragged { border-color: var(--look-accent, var(--accent)); background-color: color-mix(in srgb, var(--look-accent, var(--accent)) 12%, var(--look-field, var(--page))); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, var(--accent)) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, var(--accent)) 45%, transparent); }

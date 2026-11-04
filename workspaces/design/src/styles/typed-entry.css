@@ -17,17 +17,17 @@
 .typed-entry { touch-action: pan-x pan-y; }
 @media (hover: none) and (min-width: 641px) { .typed-entry { pointer-events: auto; } }
 .typed-entry[hidden] { display: none; }
-.typed-entry .typed-entry-row { display: grid; grid-template-columns: 52px 76px 18px 14px; align-items: center; gap: 4px; padding: 2px 6px; background: rgba(22, 25, 30, 0.92); border: 1px solid #3a404a; border-radius: var(--look-radius-s); font-size: 12px; color: #b7c0cc; }
+.typed-entry .typed-entry-row { display: grid; grid-template-columns: 52px 76px 18px 14px; align-items: center; gap: 4px; padding: 2px 6px; background: var(--fill-22-25-30-092); border: 1px solid var(--line-3a404a); border-radius: var(--look-radius-s); font-size: 12px; color: var(--text-soft); }
 .typed-entry .typed-entry-name { font-size: 11px; }
-.typed-entry input:not(#none) { width: 76px; min-width: 0; padding: 2px 4px; font: 12px ui-monospace, monospace; color: #fff; background: #101216; border: 1px solid #2c3749; border-radius: 3px; }
-.typed-entry input:not(#none)::placeholder { color: #8a919c; }
-.typed-entry input:not(#none):focus { outline: none; border-color: #4aa8ff; }
-.typed-entry .typed-entry-unit { color: #8a919c; }
-.typed-entry .typed-entry-lock { color: #3ddc97; display: inline-flex; }
+.typed-entry input:not(#none) { width: 76px; min-width: 0; padding: 2px 4px; font: 12px ui-monospace, monospace; color: var(--white); background: var(--fill-101216); border: 1px solid var(--line-strong); border-radius: 3px; }
+.typed-entry input:not(#none)::placeholder { color: var(--text-dim); }
+.typed-entry input:not(#none):focus { outline: none; border-color: var(--accent); }
+.typed-entry .typed-entry-unit { color: var(--text-dim); }
+.typed-entry .typed-entry-lock { color: var(--ok); display: inline-flex; }
 .typed-entry .typed-entry-lock[hidden] { display: none; }
-.typed-entry .typed-entry-locked { border-color: #3ddc97; }
-.typed-entry .typed-entry-invalid { border-color: #ff6b6b; }
-.typed-entry .typed-entry-error { grid-column: 1 / -1; max-width: 180px; font-size: 11px; color: #ff9b9b; white-space: normal; }
+.typed-entry .typed-entry-locked { border-color: var(--ok); }
+.typed-entry .typed-entry-invalid { border-color: var(--danger); }
+.typed-entry .typed-entry-error { grid-column: 1 / -1; max-width: 180px; font-size: 11px; color: var(--text-ff9b9b); white-space: normal; }
 .typed-entry .typed-entry-error[hidden] { display: none; }
 /* Phone width: boxes tall enough to tap, below the pointer's finger. */
 @media (max-width: 640px) {

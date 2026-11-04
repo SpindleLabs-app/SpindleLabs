@@ -5,26 +5,26 @@
    row's three boxes sit side by side, so the whole panel stays short: at
    phone width it is the only thing in the Properties sheet while it is
    open, so one tap on Move never covers most of the view. */
-.move-panel { border-left: 3px solid var(--look-accent, #4aa8ff); padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.move-panel { border-left: 3px solid var(--look-accent, var(--accent)); padding: 4px 0 8px 10px; margin-bottom: 12px; }
 .move-panel h2 { margin: 0 0 4px; overflow-wrap: anywhere; }
 .move-panel p { margin: 4px 0; }
-.move-panel .move-panel-bodies { overflow-wrap: anywhere; color: var(--look-accent-text, #8cc8ff); }
-.move-panel .move-panel-note { color: #8b95a3; font-size: 0.9em; }
+.move-panel .move-panel-bodies { overflow-wrap: anywhere; color: var(--look-accent-text, var(--accent-text)); }
+.move-panel .move-panel-note { color: var(--text-8b95a3); font-size: 0.9em; }
 .move-panel .move-panel-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 6px; margin: 6px 0; min-width: 0; }
-.move-panel .move-panel-legend { grid-column: 1 / -1; font-size: 0.9em; color: #b9c3d1; }
+.move-panel .move-panel-legend { grid-column: 1 / -1; font-size: 0.9em; color: var(--text-b9c3d1); }
 .move-panel .move-panel-box { display: flex; align-items: center; gap: 4px; min-width: 0; margin: 0; }
-.move-panel .move-panel-axis { flex: none; width: 1.1em; color: #8b95a3; font-size: 0.85em; }
-.move-panel .move-panel-box input { flex: 1; width: 100%; min-width: 0; padding: 4px 6px; background: var(--look-field, #0f141c); border: 1px solid #232c3b; color: inherit; border-radius: var(--look-radius-s, 6px); }
-.move-panel .move-panel-box input:focus { outline: none; border-color: var(--look-accent, #4aa8ff); box-shadow: var(--look-glow, 0 0 0 1px rgba(74, 168, 255, 0.35)); }
+.move-panel .move-panel-axis { flex: none; width: 1.1em; color: var(--text-8b95a3); font-size: 0.85em; }
+.move-panel .move-panel-box input { flex: 1; width: 100%; min-width: 0; padding: 4px 6px; background: var(--look-field, var(--page)); border: 1px solid var(--line); color: inherit; border-radius: var(--look-radius-s, 6px); }
+.move-panel .move-panel-box input:focus { outline: none; border-color: var(--look-accent, var(--accent)); box-shadow: var(--look-glow, 0 0 0 1px var(--shade-74-168-255-035)); }
 .move-panel .move-panel-pivot { margin: 6px 0; }
-.move-panel .move-panel-pivot summary { cursor: pointer; color: #b9c3d1; font-size: 0.9em; }
+.move-panel .move-panel-pivot summary { cursor: pointer; color: var(--text-b9c3d1); font-size: 0.9em; }
 .move-panel .move-panel-pivot .move-panel-row { margin-top: 4px; }
 .move-panel .move-panel-pivot .move-panel-legend { display: none; }
 .move-panel .move-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
-.move-panel #move-ok { background: var(--look-primary-fill, #3d98f2); border-color: transparent; color: var(--look-on-accent, #07111c); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
+.move-panel #move-ok { background: var(--look-primary-fill, var(--accent-deep)); border-color: transparent; color: var(--look-on-accent, var(--on-accent)); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
 .move-panel button:disabled { opacity: 0.45; cursor: default; }
 /* Snap (35e2d) lit while it picks what to snap and where it lands. */
-.move-panel #move-snap[aria-pressed="true"] { background: #23384f; border-color: var(--look-accent, #4aa8ff); color: var(--look-accent-text, #8cc8ff); }
+.move-panel #move-snap[aria-pressed="true"] { background: var(--fill-23384f); border-color: var(--look-accent, var(--accent)); color: var(--look-accent-text, var(--accent-text)); }
 @media (max-width: 700px) {
   .move-panel button, .move-panel .move-panel-box input { min-height: 44px; }
   .move-panel .move-panel-pivot summary { min-height: 44px; display: flex; align-items: center; }
@@ -47,4 +47,4 @@
 /* The box a handle's drag is changing glows softly while the drag lasts, and fades as it ends (Ben, 2026-10-28: "make the
    changing value in the properties glow a lil bit to avoid confusion"). */
 .move-panel .move-panel-box input { transition: box-shadow 0.3s, border-color 0.3s, background-color 0.3s; }
-.move-panel .move-panel-box input.move-panel-dragged { border-color: var(--look-accent, #4aa8ff); background-color: color-mix(in srgb, var(--look-accent, #4aa8ff) 12%, var(--look-field, #0f141c)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, #4aa8ff) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, #4aa8ff) 45%, transparent); }
+.move-panel .move-panel-box input.move-panel-dragged { border-color: var(--look-accent, var(--accent)); background-color: color-mix(in srgb, var(--look-accent, var(--accent)) 12%, var(--look-field, var(--page))); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, var(--accent)) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, var(--accent)) 45%, transparent); }
