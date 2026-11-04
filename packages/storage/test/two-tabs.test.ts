@@ -522,7 +522,7 @@ test("a tab whose entry was put aside takes it away once its own save lands, lea
   assert.equal(journal.items.size, 0);
 });
 
-test("only keys with a writer and an id after the aside prefix are entries; an entry with no writer is put aside by its time", async () => {
+test("only keys with a writer and an id after the aside prefix are entries; an entry with no writer stays for its owner", async () => {
   const store = projectStore(memoryKeyValue(), [], () => new Date(0));
   const journal = fakeStorage();
   const entry = journalEntry(projectToJson(part(45)), new Date(5));
@@ -530,11 +530,12 @@ test("only keys with a writer and an id after the aside prefix are entries; an e
   assert.deepEqual(await recoverUnsaved(store, journal, []), []);
   assert.equal(journal.items.size, 4, "none read, none removed");
   assert.deepEqual(await store.list(), []);
-  // An entry from before entries named their writer, under the key a tab is about to journal: aside as "t5".
-  const old = fakeStorage();
-  old.setItem(unsavedKey("p"), entry);
-  putAsideOthers(old, "p", "tab-b");
-  assert.equal(old.items.get(asideKey("p", "t5")), entry);
+  // An entry with no writer is the kept one recovery couldn't store (the full-disk browser check, leave-save.mjs: it
+  // was put aside, then put back over the newer work once there was room). Only its owner journals there: left alone.
+  const kept = fakeStorage();
+  kept.setItem(unsavedKey("p"), journalEntry(projectToJson(part(45)), new Date(5), true));
+  putAsideOthers(kept, "p", "tab-b");
+  assert.deepEqual([...kept.items.keys()], [unsavedKey("p")]);
   // Its own entry stays where it is.
   const own = fakeStorage();
   own.setItem(unsavedKey("p"), journalEntry(projectToJson(part(45)), new Date(5), false, null, "tab-b"));

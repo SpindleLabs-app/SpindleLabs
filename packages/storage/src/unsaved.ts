@@ -68,14 +68,16 @@ const asideId = (key: string): string | null => {
 /**
  * Before `writer` journals project `id`: an entry there written by another writer (another tab that went, or will
  * go, before its save lands) is copied to its own aside key, so the key can take `writer`'s without losing it. An
- * entry without a writer is named by its time. Throws as the storage does, so the caller writes nothing over it.
+ * entry with no writer is no other tab's: every tab's autosave names itself, and recovery runs before any tab
+ * saves, so it is the kept entry recovery couldn't store, which only the tab opened from it journals over (the others
+ * refuse, autosave.ts `keptFromLastVisit`). Throws as the storage does, so the caller writes nothing over it.
  */
 export function putAsideOthers(journal: JournalStorage, id: string, writer: string): void {
   const entry = journal.getItem(unsavedKey(id));
   if (entry == null) return;
   const read = readJournalEntry(entry);
-  if (read.writer === writerId(writer)) return;
-  journal.setItem(asideKey(id, read.writer ?? `t${read.written?.getTime() ?? 0}`), entry);
+  if (read.writer === undefined || read.writer === writerId(writer)) return;
+  journal.setItem(asideKey(id, read.writer), entry);
 }
 
 /** The part of localStorage the journal uses (any of it may throw: storage off, private mode, full). */
