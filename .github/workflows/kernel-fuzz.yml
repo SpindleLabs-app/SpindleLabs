@@ -143,9 +143,21 @@ jobs:
           python-version: "3.12"
       - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       - name: Fuzz until the time is up (logs in kernel-results)
+        id: fuzz
         env:
           TARGET: ${{ matrix.target }}
         run: .github/scripts/kernel_ci.sh run "fuzz-$TARGET" "$RUNNER_TEMP/logs" k/kernel/fuzz/run.sh "$TARGET" $(( MINUTES * 60 )) "$RUNNER_TEMP/out"
+      # Each failing input's bodies as STL, OBJ and STEP with a 3D page, in its
+      # failure folder (failure-dumps/<input>/), so its issue can show them
+      # (Ben, 2026-11-04). Best effort: it never changes the leg's result.
+      - name: Write the failing inputs' bodies
+        if: failure() && steps.fuzz.outcome == 'failure'
+        continue-on-error: true
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          .github/scripts/kernel_ci.sh run "dump-$TARGET" "$RUNNER_TEMP/logs" bash -c \
+            'cd k/kernel && for d in "$RUNNER_TEMP"/out/seed-*/; do FISSION_DUMP_TARGET="$TARGET" FISSION_DUMP_INPUTS="$d" cargo test --release --test fuzz_corpus dump_failing_inputs -- --ignored || exit 1; done'
       # Every body the corpus builds (the seeds, the saved crashes and
       # tonight's finds) and 20,000 random inputs (seeded by the run: replay
       # with the same FISSION_SEED and FISSION_ORACLE_RANDOM), rebuilt in
@@ -225,7 +237,7 @@ jobs:
           # Copied out first: collect-fuzz.sh switches the clone to test-results.
           export IN="$RUNNER_TEMP/incoming"
           cp -R "$r/runs/$RUN" "$IN" 2>/dev/null || mkdir -p "$IN"
-          cp .github/scripts/collect-fuzz.sh .github/scripts/file_issues.py .github/scripts/sim_numbers.py "$RUNNER_TEMP/"
+          cp .github/scripts/collect-fuzz.sh .github/scripts/file_issues.py .github/scripts/sim_numbers.py .github/scripts/dump_pictures.sh "$RUNNER_TEMP/"
           cd "$r" && GITHUB_STEP_SUMMARY='' "$GITHUB_WORKSPACE/.github/scripts/kernel_ci.sh" run collect "$RUNNER_TEMP/logs" bash "$RUNNER_TEMP/collect-fuzz.sh"
       - name: Save the collect log to kernel-results
         if: always()
