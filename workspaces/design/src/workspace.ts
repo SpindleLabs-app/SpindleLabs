@@ -2891,13 +2891,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // Enter is the Extrude panel's OK with the focus on the view (after a drag of the arrow) or nowhere; anything else focused (a button, a timeline item) takes its own Enter.
       if (id === "extrude-ok") {
         const active = ctx.properties.ownerDocument.activeElement;
+        // A browser row clicked to pick a body or sketch keeps the focus; it counts as the view, or Enter would click it again and let the pick go (bug hunt 11-04, E3).
+        const onView = !active || active === active.ownerDocument.body || viewport.element.contains(active) || (ctx.browser.contains(active) && active.matches(".tree-row"));
         // Enter is the Move panel's OK the same way (35e2b).
         if (moveBox.shown && !extrudeBox.shown) {
-          if (active && active !== active.ownerDocument.body && !viewport.element.contains(active)) return false;
+          if (!onView) return false;
           if (moveBox.ready) void finishMove(moveBox.typed); // busy while the kernel checks: a second Enter records nothing twice
           return true;
         }
-        if (!extrudeBox.shown || (active && active !== active.ownerDocument.body && !viewport.element.contains(active))) return false;
+        if (!extrudeBox.shown || !onView) return false;
         if (extrudeBox.ready) void finishExtrude(extrudeBox.typed);
         return true;
       }
