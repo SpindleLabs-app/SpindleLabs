@@ -8,11 +8,12 @@ import { fakeAccount, type FakeAccount } from "./fake-designs.ts";
 import { memoryStore } from "./fake-service.ts";
 
 /** One browser: its projects (id -> name and text), its storage, and a sync for `user`. */
-function browser(acc: FakeAccount, user: string, tag: string) {
+function browser(acc: FakeAccount, user: string, tag: string, tidy = (t: string) => t, firstTime = false) {
   const projects = new Map<string, { name: string; text: string; modified: Date }>();
   let n = 0;
   let clock = Date.UTC(2026, 10, 5);
   const store = memoryStore();
+  if (!firstTime) store.setItem(LINKS_PREFIX + user, "{}"); // the first-time question answered "keep them" (tested on its own below)
   let held = Promise.resolve();
   const sync = designSync({
     api: designsApi(acc.as(user) as AuthClient),
@@ -23,7 +24,7 @@ function browser(acc: FakeAccount, user: string, tag: string) {
       text: async (id) => projects.get(id)?.text ?? null,
       put: async (id, text, name, savedAt) => {
         const key = id ?? `${tag}-${++n}`;
-        projects.set(key, { name, text, modified: savedAt });
+        projects.set(key, { name, text: tidy(text), modified: savedAt });
         return key;
       },
     },
@@ -90,6 +91,18 @@ test("two browsers: the other's change comes across, and changes on both keep bo
   a.edit("p1", "v4 from A");
   await a.sync.syncAll();
   assert.deepEqual(bodies(acc), ["Bracket (copy)=v4 from A", "Bracket=v3 from B"]);
+});
+
+test("a design whose text is tidied when kept here isn't taken for a change and sent back", async () => {
+  const acc = fakeAccount();
+  const a = browser(acc, "ada", "a");
+  const b = browser(acc, "ada", "b", (t) => t.trim()); // opening a file may tidy its text
+  a.edit("p1", "  v1  ", "Knob");
+  await a.sync.syncAll();
+  await b.sync.bring(acc.rows[0]!.id);
+  assert.equal(b.projects.get("b-1")!.text, "v1");
+  assert.deepEqual(await b.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [] });
+  assert.equal(acc.rows[0]!.revision, 1);
 });
 
 test("bringing a design never overwrites a change made here", async () => {
@@ -184,6 +197,47 @@ test("turned off, nothing is sent; offline, nothing is lost and the next round s
   assert.deepEqual(await a.sync.syncAll(), { kind: "failed", reason: "offline" });
   acc.mode = "up";
   assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 1, copies: [], tooBig: [] });
+});
+
+test("first time in a browser: nothing is sent until the person says the projects here are theirs", async () => {
+  // A shared computer: the projects already in this browser may be someone else's.
+  for (const keep of [true, false]) {
+    const acc = fakeAccount();
+    const a = browser(acc, "ada", "a", undefined, true);
+    a.edit("old1", "sibling's work", "Their box");
+    a.edit("old2", "more of it", "Their lid");
+    assert.equal(a.sync.firstTime(), true);
+    assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [], waiting: true });
+    assert.deepEqual(acc.rows, [], "nothing sent before the answer");
+    assert.equal(await a.sync.firstChoice(keep), true);
+    assert.equal(a.sync.firstTime(), false);
+    a.edit("new1", "mine", "My part"); // made after signing in: always kept
+    await a.sync.syncAll();
+    assert.deepEqual(bodies(acc), keep ? ["My part=mine", "Their box=sibling's work", "Their lid=more of it"] : ["My part=mine"]);
+    assert.equal(a.sync.leftCount(), keep ? 0 : 2);
+    if (!keep) {
+      a.edit("old1", "changed later"); // still left out after a change
+      await a.sync.syncAll();
+      assert.deepEqual(bodies(acc), ["My part=mine"]);
+      // Chosen later after all: they go.
+      assert.equal(await a.sync.includeLeft(), true);
+      await a.sync.syncAll();
+      assert.deepEqual(bodies(acc), ["My part=mine", "Their box=changed later", "Their lid=more of it"]);
+    }
+  }
+});
+
+test("opening a design before answering leaves the projects already here out", async () => {
+  const acc = fakeAccount();
+  const a = browser(acc, "ada", "a");
+  a.edit("p1", "v1", "Mine");
+  await a.sync.syncAll();
+  const b = browser(acc, "ada", "b", undefined, true);
+  b.edit("old", "not mine", "Theirs");
+  assert.deepEqual(await b.sync.bring(acc.rows[0]!.id), { kind: "ok", value: "b-1" });
+  await b.sync.syncAll();
+  assert.deepEqual(bodies(acc), ["Mine=v1"], "the project already in browser B was not sent");
+  assert.equal(b.sync.leftCount(), 1);
 });
 
 test("two tabs syncing at once send each project once", async () => {

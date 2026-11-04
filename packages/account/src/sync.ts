@@ -29,8 +29,12 @@ export interface Link {
   readonly revision: number;
   /** SHA-256 of the file text last sent or fetched: the project changed when its text no longer has this hash. */
   readonly hash: string;
-  /** Set when the design must not be sent: deleted from the account, or too big (until the text changes). */
-  readonly skip?: "gone" | "too-big";
+  /**
+   * Set when the project must not be sent: its design was deleted from the account; too big (until the text changes);
+   * or "left": it was in this browser before this person first signed in here and they chose not to keep it in their
+   * account (on a shared computer it may be someone else's), until they choose to.
+   */
+  readonly skip?: "gone" | "too-big" | "left";
   /** Set when the design is this browser's copy kept beside another device's change: it keeps the "(copy)" name. */
   readonly copy?: true;
 }
@@ -56,7 +60,7 @@ export interface SyncDeps {
 }
 
 export type SyncReport =
-  | { readonly kind: "done"; readonly sent: number; readonly copies: readonly string[]; readonly tooBig: readonly string[] }
+  | { readonly kind: "done"; readonly sent: number; readonly copies: readonly string[]; readonly tooBig: readonly string[]; readonly waiting?: true }
   | { readonly kind: "full"; readonly sent: number }
   | { readonly kind: "off" }
   | Exclude<DataResult<never>, { kind: "ok" }>;
@@ -67,7 +71,7 @@ export const copyName = (name: string) => (name.endsWith(COPY) ? name : name + C
 function isLink(v: unknown): v is Link {
   if (typeof v !== "object" || v === null) return false;
   const l = v as Record<string, unknown>;
-  return typeof l.remote === "string" && typeof l.revision === "number" && Number.isSafeInteger(l.revision) && l.revision >= 1 && typeof l.hash === "string" && (l.skip === undefined || l.skip === "gone" || l.skip === "too-big") && (l.copy === undefined || l.copy === true);
+  return typeof l.remote === "string" && typeof l.revision === "number" && Number.isSafeInteger(l.revision) && l.revision >= 1 && typeof l.hash === "string" && (l.skip === undefined || l.skip === "gone" || l.skip === "too-big" || l.skip === "left") && (l.copy === undefined || l.copy === true);
 }
 
 /** The links of `userId` in this browser; a damaged entry is dropped (its project is then sent as a new design, never lost). */
@@ -108,6 +112,7 @@ export function designSync(deps: SyncDeps) {
   /** Sends every project in this browser that changed since it was last sent. */
   async function syncAll(): Promise<SyncReport> {
     return deps.lock(async () => {
+      if (firstTime()) return { kind: "done", sent: 0, copies: [], tooBig: [], waiting: true };
       const links = readLinks(store, userId);
       const projects = await deps.local.list();
       // Links to projects no longer in this browser go: deleting here never deletes from the account.
@@ -122,9 +127,10 @@ export function designSync(deps: SyncDeps) {
         const hash = await deps.hash(text);
         const link = links.get(p.id);
         if (link && link.hash === hash) continue; // unchanged since sent or fetched (whatever skip says)
-        if (link?.skip === "gone") continue; // deleted from the account: never sent back
+        if (link?.skip === "gone" || link?.skip === "left") continue; // deleted from the account, or left out: never sent
         const base = { name: link?.copy ? copyName(p.name) : p.name, source: deps.source(p.id, text), body: text, picture: deps.picture(p.id), savedAt: p.modified };
-        const live = link && link.skip !== "gone" && link.remote !== "" ? link : null; // a too-big one that changed goes back to its own design
+        // The design to save over: the linked one, also when it was too big before (it goes back over its own design).
+        const live = link !== undefined && (link.skip === undefined || link.skip === "too-big") && link.remote !== "" ? link : null;
         let r = await api.save({ ...base, id: live ? live.remote : null, expected: live ? live.revision : null });
         if (r.kind !== "ok") return done(r);
         let copy = live?.copy === true;
@@ -158,6 +164,8 @@ export function designSync(deps: SyncDeps) {
    */
   async function bring(remote: string): Promise<DataResult<string | null>> {
     return deps.lock(async () => {
+      // Not answered yet whether the projects already here are this person's: they are left out until they say so.
+      if (firstTime() && !(await leaveAll())) return { kind: "failed", reason: "storage" };
       const got = await api.get(remote);
       if (got.kind !== "ok") return got;
       const d = got.value;
@@ -173,9 +181,57 @@ export function designSync(deps: SyncDeps) {
         const unchangedHere = linked !== undefined && here !== null && (await deps.hash(here)) === linked[1].hash;
         if (linked && !unchangedHere) links.delete(linked[0]); // changed here too: it goes up as its own design
         id = await deps.local.put(unchangedHere ? linked![0] : null, d.body, d.name, d.savedAt);
-        links.set(id, { remote, revision: d.revision, hash, ...(unchangedHere && linked![1].copy ? { copy: true as const } : {}) });
+        // The hash of the text as kept here (opening may tidy a file's text), so it isn't taken for a change and sent back.
+        const kept = await deps.local.text(id);
+        links.set(id, { remote, revision: d.revision, hash: kept === null ? hash : await deps.hash(kept), ...(unchangedHere && linked![1].copy ? { copy: true as const } : {}) });
       }
       return writeLinks(store, userId, links) ? { kind: "ok", value: id } : { kind: "failed", reason: "storage" };
+    });
+  }
+
+  /**
+   * True before this person's first sending round in this browser: nothing is sent until they say whether the
+   * projects already here are theirs to keep in their account (`firstChoice`).
+   */
+  function firstTime(): boolean {
+    try {
+      return store.getItem(LINKS_PREFIX + userId) === null;
+    } catch {
+      return false; // storage blocked: nothing can be sent anyway (the links can't be kept)
+    }
+  }
+
+  /**
+   * The answer to the first-time question: `keep` sends every project in this browser from now on; otherwise each one
+   * here now is left out (never sent until `includeLeft`), and only projects made or opened from now on are kept.
+   */
+  async function firstChoice(keep: boolean): Promise<boolean> {
+    return deps.lock(() => (keep ? Promise.resolve(writeLinks(store, userId, readLinks(store, userId))) : leaveAll()));
+  }
+
+  /** Marks every project in this browser with no link as left out (inside the lock). */
+  async function leaveAll(): Promise<boolean> {
+    const links = readLinks(store, userId);
+    for (const p of await deps.local.list()) {
+      const text = await deps.local.text(p.id);
+      if (text !== null && !links.has(p.id)) links.set(p.id, { remote: "", revision: 1, hash: await deps.hash(text), skip: "left" });
+    }
+    return writeLinks(store, userId, links);
+  }
+
+  /** How many projects in this browser are left out of the account. */
+  function leftCount(): number {
+    let n = 0;
+    for (const l of readLinks(store, userId).values()) if (l.skip === "left") n++;
+    return n;
+  }
+
+  /** Keeps the projects left out in the account after all: the next round sends them. */
+  async function includeLeft(): Promise<boolean> {
+    return deps.lock(async () => {
+      const links = readLinks(store, userId);
+      for (const [id, l] of [...links]) if (l.skip === "left") links.delete(id);
+      return writeLinks(store, userId, links);
     });
   }
 
@@ -185,7 +241,7 @@ export function designSync(deps: SyncDeps) {
     return l && l.skip === undefined ? l.remote : null;
   }
 
-  return { syncAll, bring, remoteOf };
+  return { syncAll, bring, remoteOf, firstTime, firstChoice, leftCount, includeLeft };
 }
 
 export type DesignSync = ReturnType<typeof designSync>;

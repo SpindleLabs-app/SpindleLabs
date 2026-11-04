@@ -1,0 +1,36 @@
+/* My designs (my-designs.ts, account features 1): a card dialog like Projects in this browser, each row with a small
+   picture, the name, the workspace tag and when it was saved. At phone width it is a full-width sheet with Close
+   pinned at the top; each row's buttons go under its words. Colours are tokens only (theme.css). */
+.my-designs { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.my-designs[open] { display: flex; }
+.my-designs::backdrop { background: var(--fill-5-8-14-06); }
+.my-designs .my-designs-head { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-3) var(--look-space-4); border-bottom: 1px solid var(--look-edge); }
+.my-designs .my-designs-head h2 { margin: 0; font-size: 16px; }
+.my-designs .my-designs-body { overflow-y: auto; padding: var(--look-space-3) var(--look-space-4) var(--look-space-4); display: grid; gap: var(--look-space-3); }
+.my-designs .my-designs-note, .my-designs .my-designs-space { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-dim); }
+.my-designs .my-designs-space:empty, .my-designs .my-designs-status:empty { display: none; }
+.my-designs .my-designs-keep { display: flex; align-items: center; gap: var(--look-space-2); font-size: 14px; cursor: pointer; min-height: var(--look-target); }
+.my-designs .my-designs-keep input { width: 20px; height: 20px; margin: 0; flex: none; }
+.my-designs .my-designs-status { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.my-designs .my-designs-status.bad { color: var(--danger); }
+.my-designs .my-designs-items { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--look-space-2); }
+.my-designs .my-design { display: flex; align-items: center; gap: var(--look-space-3); padding: var(--look-space-2) var(--look-space-3); background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); }
+.my-designs .my-design[data-open="true"] { border-color: var(--look-accent); }
+.my-designs .my-design-picture { width: 96px; height: 64px; flex: none; object-fit: cover; border-radius: var(--look-radius-s); background: var(--look-field); border: 1px solid var(--look-edge); }
+.my-designs .my-design-words { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.my-designs .my-design-name { font-weight: 600; overflow-wrap: anywhere; }
+.my-designs .my-design-tag { justify-self: start; font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: var(--look-radius-s); border: 1px solid var(--look-edge); color: var(--text-dim); }
+.my-designs .my-design-when { font-size: 12px; color: var(--text-dim); }
+.my-designs .my-design-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--look-space-2); }
+.my-designs .my-design-question { flex-basis: 100%; font-size: 13px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.my-designs .my-designs-button:not(#none) { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
+.my-designs .my-designs-button:not(#none):hover { border-color: var(--look-accent); color: var(--look-accent-text); }
+.my-designs .my-design-delete-sure:not(#none) { border-color: var(--danger); color: var(--danger); }
+.my-designs[aria-busy="true"] .my-design-actions, .my-designs[aria-busy="true"] .my-designs-keep { opacity: 0.6; pointer-events: none; }
+@media (max-width: 640px) {
+  .my-designs { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; border-width: 0; }
+  .my-designs .my-design { flex-wrap: wrap; }
+  .my-designs .my-design-actions { flex-basis: 100%; justify-content: flex-start; }
+  .my-designs .my-design-question { text-align: left; }
+  .my-designs .my-designs-button:not(#none), .my-designs .my-designs-keep { min-height: var(--look-target-touch); }
+}
