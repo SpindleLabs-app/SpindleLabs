@@ -228,10 +228,14 @@ export class BodyCache {
     this.kernel = kernel;
   }
 
-  /** The body for `spec`, built once. */
-  async body(spec: BodySpec): Promise<BodyHandle> {
+  /**
+   * The body for `spec`, built once. Equal specs share one body; `copy` n > 0
+   * is its own n-th body of the same shape (35f1d: a Combine of two equal
+   * bodies in the same place hands the kernel two bodies, never one twice).
+   */
+  async body(spec: BodySpec, copy = 0): Promise<BodyHandle> {
     if (this.closed) throw new Error(CLOSED);
-    const key = JSON.stringify(spec);
+    const key = copy === 0 ? JSON.stringify(spec) : JSON.stringify(["copy", copy, spec]);
     const hit = this.bodies.get(key);
     if (hit) return hit.handle;
     const asked = this.building.get(key);
@@ -1010,7 +1014,11 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
     if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${nameOf(maker)} is not built, so ${label} can't use it` };
     const b = bodies[body];
     if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't use ${body === bodyIdOf(maker) ? nameOf(maker) : "a piece"}: an earlier Combine used it up or left no such piece` };
-    inputs.push(await namedOf(body, b, cache, places.get(b.feature) ?? places.get(maker)!));
+    // Equal bodies share one kernel body (`BodyCache.body`): a second pick of it gets a body of its own, so the
+    // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
+    const copies = inputs.filter((x) => x.handle === b.handle).length;
+    const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+    inputs.push(await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!));
   }
   const [t, ...ts] = inputs;
   const op = KERNEL_OP[operation];

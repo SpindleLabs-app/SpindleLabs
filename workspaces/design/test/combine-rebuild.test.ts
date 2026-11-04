@@ -4,6 +4,7 @@
 // rebuild's bookkeeping (bodies held, freed, numbered).
 
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { KernelError } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
@@ -169,4 +170,35 @@ test("the rebuild keeps a Combine's inputs and result, frees them when it goes, 
   assert.equal(a.bodies[bodies[0]].handle, b.bodies[bodies[0]].handle);
   await cache.close();
   assert.equal(await kernel.call("body_count"), before);
+});
+
+test("regression (35f1d monkey): two equal boxes in the same place combine, though the rebuild shares one body for equal shapes", async () => {
+  // Both 10 × 10 × 10 from the origin, not moved: the same shape, so the body cache handed the kernel one body as target
+  // and tool, refused as "a body can't be its own tool" though the person picked two bodies. Each input must be its own body.
+  // Worked by hand: the cubes lie wholly on each other, so Join is one 10 × 10 × 10 = 1,000 mm³ body and Intersect the same
+  // 1,000 mm³; Cut takes everything away, which the Combine refuses as leaving nothing. A kernel from before faces lying on
+  // each other were supported (36b, kernel 0.33.27) refuses all three in those words instead: still never "its own tool".
+  const version = (JSON.parse(readFileSync(new URL("../../../packages/core/src/kernel/wasm/kernel.json", import.meta.url), "utf8")) as { version: string }).version;
+  const [, minor, patch] = version.split(".").map(Number);
+  const flush = minor > 33 || (minor === 33 && patch >= 27);
+  const run = async (op: CombineOperation) => {
+    const { doc: two, bodies } = boxes([[10, 10, 10], [0, 0, 0]], [[10, 10, 10], [0, 0, 0]]);
+    const { doc, id } = insertCombine(two, bodies[0], [bodies[1]], op);
+    const { build, cache, volume } = await built(doc);
+    return { r: build.results[id], build, cache, volume, bodies };
+  };
+  for (const [op, want] of [["join", 1000], ["intersect", 1000], ["cut", null]] as [CombineOperation, number | null][]) {
+    const { r, build, cache, volume, bodies } = await run(op);
+    const said = r.status === "failed" ? r.message : "";
+    assert.doesNotMatch(said, /its own tool/, op);
+    if (want !== null && flush) {
+      assert.equal(r.status, "built", `${op}: ${said}`);
+      assert.deepEqual(Object.keys(build.bodies), [bodies[0]], op);
+      near(await volume(bodies[0]), want);
+    } else {
+      assert.equal(r.status, "failed", op);
+      assert.match(said, want === null && flush ? /nothing/ : /lying on each other/, op);
+    }
+    await cache.close();
+  }
 });
