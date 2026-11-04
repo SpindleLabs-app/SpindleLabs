@@ -102,7 +102,7 @@ test("the boxes and hint for each click of each arc", () => {
   assert.equal(hintOf({ kind: "rectangle", sketch: id, corner: [0, 0] }), "Place opposite corner");
   assert.equal(hintOf(startTool("circle", id)), "Place centre point");
   assert.equal(hintOf({ kind: "circle", sketch: id, centre: [0, 0] }), "Place point on circle");
-  assert.deepEqual(typedFields({ kind: "circle", sketch: id, centre: [0, 0] }), [], "the circle's radius box is still to come");
+  assert.deepEqual(typedFields({ kind: "circle", sketch: id, centre: [0, 0] }), ["diameter"], "the circle's diameter box");
 
   // Anchors: what the boxes measure from.
   const { doc } = fresh("arc");

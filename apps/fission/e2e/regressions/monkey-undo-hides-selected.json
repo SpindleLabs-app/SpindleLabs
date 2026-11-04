@@ -1,0 +1,13 @@
+{
+  "seed": 0,
+  "what": "Issue #279: Body 1 hidden, shown again and selected, then the Show undone: the Undo hid it again but left it selected, unseen, so its row (which selects nothing) left the selection on it (selection.ts survivors now drops a hidden body)",
+  "actions": [
+    { "do": "open", "edit": "add-solid", "at": 0 },
+    { "do": "open", "edit": "add-solid", "at": 1 },
+    { "do": "click", "sel": "button[data-eye=\"body-1\"]" },
+    { "do": "click", "sel": "button[data-eye=\"body-1\"]" },
+    { "do": "click", "sel": ".tree-row[data-node=\"body-1\"]" },
+    { "do": "key", "key": "Control+z" },
+    { "do": "select-bodies" }
+  ]
+}
