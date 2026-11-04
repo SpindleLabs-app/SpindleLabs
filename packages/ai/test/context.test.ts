@@ -62,10 +62,12 @@ test("a workspace's data this build doesn't read is described as far as it is re
   const project = emptyProject("P");
   project.workspaces.design = { version: 1, profiles: [], timeline: { features: [feature(1)] } };
   project.workspaces.render = { timeline: { features: [null, 7, { id: "r-1" }, { id: "r-2", intent: { summary: "Scene", parameters: {} }, suppressed: false }] } };
+  // An id or a summary that is not words is no feature either (issue #272): left out.
+  project.workspaces.image = { timeline: { features: [{ id: 3, intent: { summary: "Odd id", parameters: {} } }, { id: "i-2", intent: { summary: 4, parameters: {} } }] } };
   project.workspaces.slice = { timeline: { features: "none" } };
   project.workspaces.laser = null;
-  // Materials are a draft: one with no name, or a number for one, is left out of the names, never thrown on.
-  project.materials = [{ id: "m1", name: "PLA" }, { id: "m2" }, { id: "m3", name: 5 }] as never;
+  // Materials are a draft: one with no name, a number for one, or no material at all (null), is left out of the names, never thrown on.
+  project.materials = [{ id: "m1", name: "PLA" }, { id: "m2" }, { id: "m3", name: 5 }, null] as never;
   const c = buildContext(project, { workspace: "design", graph: new DependencyGraph() });
   assert.deepEqual(c.features.map((f) => f.id), ["feature-1", "r-2"]);
   assert.deepEqual(c.materials, ["PLA"]);
