@@ -953,9 +953,8 @@ try {
       ["Design", "", true],
       ["Slice", "", false],
     ]);
-    // Not greyed: Slice's words are as bright as Design's (a placeholder's are dimmer, e2e/workspace-list.mjs lists them with ?all-workspaces).
-    const colour = (id) => page.$eval(`#workspace-menu-menu [data-workspace=${id}]`, (b) => getComputedStyle(b).color);
-    assert.equal(await colour("slice"), await colour("design"));
+    // Not greyed: Slice is no placeholder (data-soon dims one, styles/workspace-menu.css) and is not off.
+    assert.deepEqual(await page.$eval('#workspace-menu-menu [data-workspace="slice"]', (b) => ["soon" in b.dataset, b.getAttribute("aria-disabled")]), [false, null]);
     await page.keyboard.press("Escape");
     assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false");
   });
@@ -1035,7 +1034,7 @@ try {
     await switchTo(page, "design");
   });
 
-  await check("desktop: focus moves top bar, toolbar, browser, View buttons, Split, properties; panel toggles hidden", async () => {
+  await check("desktop: focus moves top bar, toolbar, browser, View buttons, properties; panel toggles hidden", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(url + "#design");
     await partShown(page);
@@ -1053,7 +1052,7 @@ try {
       if (region !== regions.at(-1)) regions.push(region);
     }
     // The View buttons and Split sit over the viewport, between the browser and properties; the timeline bar under the view (its items are stops from 24f3, for the keyboard's menu key) comes before properties in the page.
-    assert.deepEqual(regions, ["topbar", "toolbar", "browser", "view-controls", "split-toggle", "timeline", "properties"]);
+    assert.deepEqual(regions, ["topbar", "toolbar", "browser", "view-controls", "timeline", "properties"]); // no Split in the public app (src/listed-workspaces.ts)
     await page.screenshot({ path: "e2e/design-1280.png" });
   });
 
