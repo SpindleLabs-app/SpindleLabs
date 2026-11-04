@@ -7,7 +7,10 @@
 // target's piece keeping its id.
 
 import type { Feature } from "@fission/core";
-import { bodyItem, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyItem, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
+
+/** The undo step a new Combine is recorded as. */
+export const COMBINE_STEP = "Combine bodies";
 
 /** What the panel calls each operation. */
 export const OPERATION_WORDS: Record<CombineOperation, string> = { join: "Join", cut: "Cut", intersect: "Intersect" };
@@ -28,18 +31,17 @@ const numbered = (doc: DesignDocument, body: string) => (doc.bodies ?? []).some(
  * bare item id included), a body picked twice, the target among the tools,
  * and no tools.
  */
-function itemsFor(doc: DesignDocument, target: string, tools: readonly string[]): Feature[] {
+function itemsFor(doc: DesignDocument, target: string, tools: readonly string[], end = insertAt(doc), at = "the rollback marker, so a Combine put in at the marker"): Feature[] {
   if (tools.length === 0) throw new Error("pick at least one tool body");
   if (tools.includes(target)) throw new Error(`${shown(target)} is the target, so it can't be a tool too`);
-  const end = insertAt(doc);
   const bodies = [target, ...tools];
   return bodies.map((b, i) => {
     if (bodies.indexOf(b) !== i) throw new Error(`${shown(b)} is picked twice`);
     const item = bodyItem(b);
-    const at = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
-    const f = doc.timeline.features[at];
+    const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
+    const f = doc.timeline.features[place];
     if (f === undefined || !(isPiece(b) ? isCombineItem(f) && numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
-    if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a Combine put in at the marker can't use it`);
+    if (place >= end) throw new Error(`${f.provenance.self.label} comes after ${at} can't use it`);
     return f;
   });
 }
@@ -58,13 +60,33 @@ export function insertCombine(doc: DesignDocument, target: string, tools: readon
   const items = itemsFor(doc, target, tools);
   const id = `feature-${doc.nextId}`;
   const label = freshName("Combine", doc.timeline.features.filter(isCombineItem).length, takenNames(doc));
-  const [t, ...ts] = [target, ...tools].map((b, i) => bodyWords(b, items[i]));
-  const feature: Feature = {
-    id,
-    intent: { type: "combine", parameters: { target, tools: [...tools], operation, keepTools }, summary: combineSummary(t, ts, operation, keepTools) },
-    provenance: { self: { workspace: "design", id, label }, from: [...new Map(items.map((f) => [f.id, { workspace: "design" as const, id: f.id, label: f.provenance.self.label }])).values()] },
-    dependsOn: [...new Set(items.map((f) => f.id))],
-    suppressed: false,
-  };
+  const feature: Feature = { id, ...combineFields(target, tools, operation, keepTools, items), provenance: { self: { workspace: "design", id, label }, from: fromOf(items) }, suppressed: false };
   return { id, doc: { ...doc, nextId: counted(doc.nextId + 1), timeline: insertItem(doc, feature) } };
+}
+
+/** The items a Combine's bodies come from, each once, as its provenance names them. */
+const fromOf = (items: readonly Feature[]) => [...new Map(items.map((f) => [f.id, { workspace: "design" as const, id: f.id, label: f.provenance.self.label }])).values()];
+
+/** A Combine's intent and dependencies for these bodies (their items `items`, target first). */
+function combineFields(target: string, tools: readonly string[], operation: CombineOperation, keepTools: boolean, items: readonly Feature[]): Pick<Feature, "intent" | "dependsOn"> {
+  const [t, ...ts] = [target, ...tools].map((b, i) => bodyWords(b, items[i]));
+  return { intent: { type: "combine", parameters: { target, tools: [...tools], operation, keepTools }, summary: combineSummary(t, ts, operation, keepTools) }, dependsOn: [...new Set(items.map((f) => f.id))] };
+}
+
+/**
+ * The design with Combine `id` changed to these bodies and choices, in its
+ * place (its id and name kept): refused as `insertCombine` refuses, a body
+ * made after the Combine counting as one after the marker does. Choices
+ * that change nothing give back the same design.
+ */
+export function changedCombine(doc: DesignDocument, id: string, target: string, tools: readonly string[], operation: CombineOperation, keepTools: boolean): DesignDocument {
+  const at = doc.timeline.features.findIndex((f) => f.id === id);
+  const old = doc.timeline.features[at];
+  if (old === undefined || !isCombineItem(old)) throw new Error(`there is no Combine ${shown(id)} in the design`);
+  if (!(COMBINE_OPERATIONS as readonly string[]).includes(operation)) throw new Error(`${shown(operation)} is not join, cut or intersect`);
+  const was = combineBodies(old);
+  if (was.target === target && was.tools.join() === tools.join() && was.operation === operation && was.keepTools === keepTools) return doc;
+  const items = itemsFor(doc, target, tools, at, `${old.provenance.self.label}, so it`);
+  const changed: Feature = { ...old, ...combineFields(target, tools, operation, keepTools, items), provenance: { ...old.provenance, from: fromOf(items) } };
+  return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? changed : f)) } };
 }

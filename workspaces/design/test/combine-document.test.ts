@@ -134,3 +134,38 @@ test("a file's piece must be a Combine's: a piece of a box is refused, a piece o
   later.nextBody = 5;
   assert.deepEqual(combineBodies(readDesignDocument(later).timeline.features[4]), { target: "body:feature-3/piece:1", tools: ["body:feature-5"], operation: "join", keepTools: true });
 });
+
+test("hand-worked: an edited Combine changes its operation, Keep tools and bodies in place, refusing a body made after it", async () => {
+  const { changedCombine, insertCombine } = await import("../src/combine.ts");
+  const { insertPreset, partDocument } = await import("../src/document.ts");
+  // Box 1 (feature-1), Box 2 (feature-2), Combine 1 (feature-3: Join Box 2 to Box 1), then Box 3 (feature-4).
+  let d = partDocument("box", 10, 10, 10);
+  d = insertPreset(d, "box", 10, 10, 10).doc;
+  const c = insertCombine(d, "body:feature-1", ["body:feature-2"], "join");
+  const after = insertPreset(c.doc, "box", 5, 5, 5);
+  d = after.doc;
+  assert.equal(c.id, "feature-3");
+  // The operation and Keep tools changed: the same id, name and place; the summary says the new words.
+  const cut = changedCombine(d, "feature-3", "body:feature-1", ["body:feature-2"], "cut", true);
+  const f = cut.timeline.features[2];
+  assert.equal(f.id, "feature-3");
+  assert.equal(f.provenance.self.label, "Combine 1");
+  assert.deepEqual(combineBodies(f), { target: "body:feature-1", tools: ["body:feature-2"], operation: "cut", keepTools: true });
+  assert.equal(f.intent.summary, "Cut Box 2 from Box 1, keeping the tools");
+  assert.deepEqual(f.dependsOn, ["feature-1", "feature-2"]);
+  assert.equal(cut.nextId, d.nextId);
+  // It reads back as a file.
+  assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(cut))).timeline.features[2], f);
+  // Target and tool swapped: the dependencies follow, the target's first.
+  const swapped = changedCombine(d, "feature-3", "body:feature-2", ["body:feature-1"], "join", false).timeline.features[2];
+  assert.deepEqual(swapped.dependsOn, ["feature-2", "feature-1"]);
+  assert.equal(swapped.intent.summary, "Join Box 1 to Box 2");
+  // Nothing changed: the same design back.
+  assert.equal(changedCombine(d, "feature-3", "body:feature-1", ["body:feature-2"], "join", false), d);
+  // Box 3 is made after the Combine, so the Combine can't use it.
+  assert.throws(() => changedCombine(d, "feature-3", "body:feature-1", [after.id === "feature-4" ? "body:feature-4" : "?"], "join", false), { message: "Box 3 comes after Combine 1, so it can't use it" });
+  // Not a Combine, a bad operation, the target among the tools.
+  assert.throws(() => changedCombine(d, "feature-2", "body:feature-1", ["body:feature-2"], "join", false), { message: 'there is no Combine feature-2 in the design' });
+  assert.throws(() => changedCombine(d, "feature-3", "body:feature-1", ["body:feature-2"], "union" as never, false), { message: 'union is not join, cut or intersect' });
+  assert.throws(() => changedCombine(d, "feature-3", "body:feature-1", ["body:feature-1"], "join", false), { message: "body:feature-1 is the target, so it can't be a tool too" });
+});

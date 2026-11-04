@@ -1,0 +1,43 @@
+/* The Combine panel (step 35f1c, combine-panel.ts): a card at the top of
+   the properties as the Move panel's is (the mode's bright blue edge, OK
+   filled bright blue). The two body fields are buttons, the one picking
+   now lit; an empty field's words are dimmer. At phone width it is the only
+   thing in the Properties sheet while open, so one tap never covers most of
+   the view. Colours are tokens only. */
+.combine-panel { border-left: 3px solid var(--look-accent, var(--accent)); padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.combine-panel h2 { margin: 0 0 6px; overflow-wrap: anywhere; }
+.combine-panel .combine-panel-field { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; margin: 0 0 6px; padding: 6px 8px; text-align: left; background: var(--look-field, var(--page)); border: 1px solid var(--line); border-radius: var(--look-radius-s, 6px); color: inherit; }
+.combine-panel .combine-panel-field[aria-pressed="true"] { border-color: var(--look-accent, var(--accent)); box-shadow: var(--look-glow, 0 0 0 1px var(--shade-74-168-255-035)); }
+.combine-panel .combine-panel-field:disabled { cursor: default; }
+.combine-panel .combine-panel-legend { font-size: 0.9em; color: var(--text-b9c3d1); }
+.combine-panel .combine-panel-value { overflow-wrap: anywhere; color: var(--look-accent-text, var(--accent-text)); }
+.combine-panel .combine-panel-value.combine-panel-empty { color: var(--text-8b95a3); }
+.combine-panel .combine-panel-op { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.combine-panel .combine-panel-op select { min-width: 8em; padding: 4px 6px; background: var(--look-field, var(--page)); border: 1px solid var(--line); color: inherit; border-radius: var(--look-radius-s, 6px); }
+.combine-panel .combine-panel-keep { display: flex; align-items: center; justify-content: flex-start; gap: 6px; margin: 6px 0; }
+.combine-panel .combine-panel-keep input { flex: none; margin: 0; }
+.combine-panel .combine-panel-note { margin: 4px 0; color: var(--text-8b95a3); font-size: 0.9em; }
+.combine-panel .combine-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
+.combine-panel #combine-ok { background: var(--look-primary-fill, var(--accent-deep)); border-color: transparent; color: var(--look-on-accent, var(--on-accent)); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
+.combine-panel button:disabled { opacity: 0.45; }
+.combine-panel .combine-panel-field:disabled { opacity: 0.75; }
+@media (max-width: 700px) {
+  .combine-panel button, .combine-panel select, .combine-panel .combine-panel-keep { min-height: 44px; }
+  .combine-panel .combine-panel-keep input { width: 22px; height: 22px; }
+}
+@media (max-width: 640px) {
+  /* Alone in the phone's Properties sheet, so the sheet is only as tall as it: three rows, the title with the operation
+     and Keep tools, the two fields side by side, then OK and Cancel (at 375 × 667 under 40% of the view). */
+  .combine-panel:not([hidden]) ~ * { display: none !important; }
+  .combine-panel:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-bottom: 6px; }
+  .combine-panel h2:not(#none) { order: 0; font-size: 1.05em; margin: 0; }
+  .combine-panel .combine-panel-op { order: 1; margin: 0; }
+  .combine-panel .combine-panel-op .combine-panel-legend { display: none; }
+  .combine-panel .combine-panel-op select { min-width: 0; }
+  .combine-panel .combine-panel-keep { order: 2; margin: 0; }
+  .combine-panel .combine-panel-field { order: 3; flex: 1 1 calc(50% - 4px); min-width: 0; margin: 0; padding: 4px 8px; }
+  .combine-panel .combine-panel-legend { font-size: 0.8em; }
+  .combine-panel .combine-panel-note { display: none; }
+  .combine-panel #combine-error { order: 4; flex: 1 1 100%; margin: 0; }
+  .combine-panel .combine-panel-buttons { order: 5; margin: 0; }
+}

@@ -5,7 +5,7 @@
 import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -13,6 +13,9 @@ import { featureEditPanel } from "./feature-edit-panel.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
+import { changedCombine, COMBINE_STEP, insertCombine } from "./combine.ts";
+import { combinePanel } from "./combine-panel.ts";
+import { combineShown } from "./combine-flag.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { registerDesign } from "./representations.ts";
@@ -118,7 +121,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -177,7 +180,19 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const move = button("move", "Move", moveTitle, onMove);
   const rotateTitle = "Rotate: turn bodies about X, Y and Z by angles you drag or type. Pick the bodies, then OK. A Rotate in the timeline, at the marker.";
   const rotate = button("rotate", "Rotate", rotateTitle, onRotate);
-  const modifySections = (): MenuSection[] => [{ items: [{ id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove }, { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate }] }, { items: comingItems("Modify") }];
+  // Combine (35f1c): in Modify ▾ only with ?combine (combine-flag.ts) until it goes public (35f5); else greyed as coming soon.
+  const combineTitle = "Combine: join bodies into one, cut tools from a body, or keep only where they overlap. Pick the target body, then the tools, then OK. A Combine in the timeline, at the marker.";
+  const combining = combineShown();
+  const modifySections = (): MenuSection[] => [
+    {
+      items: [
+        { id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove },
+        { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate },
+        ...(combining ? [{ id: "modify-menu-combine", label: "Combine", icon: "combine" as const, title: combineTitle, run: onCombine }] : []),
+      ],
+    },
+    { items: comingItems("Modify").filter((i) => !combining || i.id !== "coming-combine") },
+  ];
   const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
   modifying.add([move, "move"], [rotate, "rotate"]);
   modifying.element.dataset.modelling = "";
@@ -437,7 +452,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
   };
-  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -946,6 +961,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     leaveMove();
+    leaveCombine();
     if (mode.kind !== "none") leaveSketch(false); // update() below shows the fresh design
     ctx.selection.clear();
     shape = "box";
@@ -966,6 +982,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     leaveMove();
+    leaveCombine();
     if (mode.kind !== "none") leaveSketch(false);
     const doc = designDoc();
     ctx.selection.clear();
@@ -1109,7 +1126,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function openViewMenu(pick: Parameters<NonNullable<SharedViewport["onMenu"]>>[0], at: { x: number; y: number }): boolean {
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
-    if (!doc || mode.kind !== "none" || extruding || moveBox.shown || deleting.open !== null) return false;
+    if (!doc || mode.kind !== "none" || extruding || moveBox.shown || combineBox.shown || deleting.open !== null) return false;
     const target = viewMenuTarget(doc, lastScene, pick, failedNow);
     const item = doc.timeline.features.find((f) => f.id === target?.feature);
     if (!target || !item) return false;
@@ -1139,6 +1156,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       leaveExtrude();
       leaveEdit();
       leaveMove();
+      leaveCombine();
       if (mode.kind !== "none") leaveSketch(false); // update() below shows the new design
       // The part the panel shows may now be another feature (the last body that still builds), or none (24f4):
       // then the boxes stay, and a size typed adds a preset of the shape shown. After an extrude of a sketch, that is a
@@ -1251,6 +1269,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (editBox.editing !== null && !doc.timeline.features.some((f) => f.id === editBox.editing)) leaveEdit();
     // So does the Move panel's Move (35e2b).
     if (moveBox.editing !== null && !doc.timeline.features.some((f) => f.id === moveBox.editing)) leaveMove();
+    // And the Combine panel's Combine (35f1c).
+    if (combineBox.editing !== null && !doc.timeline.features.some((f) => f.id === combineBox.editing)) leaveCombine();
     drawBrowser(doc);
     showOrigin(doc);
     showStart();
@@ -1311,7 +1331,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
       if (snapping) (snapping.from = null), showMoveHint();
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
-      if (picksBodies()) pickMoveBodies();
+      if (picksBodies()) pickBodies();
       else if (moveBox.shown) previewMove();
       factsButton.disabled = inspecting.none() !== null;
       if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
@@ -1468,6 +1488,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     leaveMove();
+    leaveCombine();
     if (mode.kind === "edit") leaveSketch();
     mode = { kind: "pick" };
     showStart();
@@ -1510,6 +1531,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     leaveMove();
+    leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     startNewSketch(sketchOn(designDoc(), on));
   }
@@ -1534,6 +1556,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     leaveMove();
+    leaveCombine();
     const doc = designDoc();
     const id = extrudeTarget(doc, command, mode.kind === "edit" ? mode.tool.sketch : null);
     const d = commandDistance(command);
@@ -1562,6 +1585,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     leaveMove();
+    leaveCombine();
     return update(step, undefined, renamed.doc);
   }
 
@@ -1653,6 +1677,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     leaveMove();
+    leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     const kept = sketchGrids.get(id);
     editingSketch = { id, grid: kept?.grid ?? DEFAULT_GRID, typed: kept?.typed ?? String(DEFAULT_GRID), tool: "line" };
@@ -1896,6 +1921,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (holdUnfinished("Extrude")) return;
     leaveEdit();
     leaveMove();
+    leaveCombine();
     extrudeOpenings++;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const editing = mode.kind === "edit" ? mode.tool.sketch : null;
@@ -2178,7 +2204,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** The bodies the Move panel moves (body ids, 35eb): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
   let moveBodies: string[] = [];
   /** Whether the Move panel is picking its bodies: a new Move's, or since 35e2i an edited one's (a click adds a body or takes it out). */
-  const picksBodies = () => moveBox.shown;
+  const picksBodies = () => moveBox.shown || (combineBox.shown && combineBox.editing === null);
+  /** The picked bodies handed to the panel picking them. */
+  const pickBodies = () => (moveBox.shown ? pickMoveBodies() : pickCombineBodies());
   /** Over the view while a new Move has no body yet: on a phone the panel's own words wait in the shut sheet, so the view stays clear to tap. */
   const moveHint = viewport.element.ownerDocument.createElement("p");
   moveHint.id = "move-hint"; // read by the e2e test
@@ -2213,19 +2241,174 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     });
   };
 
+  // Combine (step 35f1c, behind ?combine until 35f5): a new Combine of a target body and tool bodies picked one click at a
+  // time, or a Combine's operation and Keep tools edited from its timeline item (its bodies stay as made).
+  const combineBox = combinePanel(ctx.properties, {
+    field: (which) => {
+      combineBox.setField(which);
+      showCombineHint();
+    },
+    changed: () => combineBox.showError(""),
+    ok: () => void finishCombine(),
+    cancel: () => leaveCombine(),
+  });
+  /** The Combine's bodies (body ids): the target (null: none yet) and the tools, in the order picked. */
+  let combineTarget: string | null = null;
+  let combineTools: string[] = [];
+  /** Each opening and closing of the Combine panel counted: an OK whose check lands after it changed is out of date. */
+  let combineOpenings = 0;
+  /** Over the view while a new Combine lacks its target or a tool: on a phone the panel's words wait in the shut sheet. */
+  const combineHint = viewport.element.ownerDocument.createElement("p");
+  combineHint.id = "combine-hint"; // read by the e2e test
+  combineHint.className = "move-panel-hint";
+  combineHint.hidden = true;
+  viewport.element.append(combineHint);
+  function showCombineHint() {
+    combineHint.textContent = combineBox.field === "target" ? "Combine: click or tap the body to change" : "Now click or tap the bodies to use as tools";
+    combineHint.hidden = !(shown && combineBox.shown && combineBox.editing === null && (combineTarget === null || combineTools.length === 0));
+  }
+  /** What the panel calls body `id`: "Body 2" as the browser numbers it, else its item's name. */
+  const combineLabel = (id: string) => {
+    const doc = designDoc();
+    const n = bodyNumbers(doc).get(id);
+    if (n !== undefined) return `Body ${n}`;
+    const item = doc.timeline.features.find((f) => f.id === bodyItem(id));
+    return item === undefined ? id : isPiece(id) ? `a piece of ${itemName(item)}` : itemName(item);
+  };
+
+  /**
+   * Combine (35f1c), from Modify ▾ with ?combine, or Edit feature on a
+   * Combine: out of any sketch or other panel first. A new one starts with
+   * the selection's bodies (a face or edge picks its body), the first the
+   * target and the rest tools, Join and Keep tools off (Fusion's); an
+   * edited one shows its bodies, operation and Keep tools.
+   */
+  function startCombine(id: string | null = null) {
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    if (mode.kind !== "none") leaveSketch();
+    leaveCombine();
+    combineOpenings++;
+    const doc = designDoc();
+    if (id !== null) {
+      const f = doc.timeline.features.find((x) => x.id === id)!;
+      const c = combineBodies(f);
+      combineTarget = c.target;
+      combineTools = [...c.tools];
+      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools });
+      ctx.selection.clear();
+      return showCombineHint();
+    }
+    const picked = pickedBodies(ctx.selection.items, lastScene);
+    combineTarget = picked[0] ?? null;
+    combineTools = picked.slice(1);
+    combineBox.show({ id: null, name: "Combine", target: combineTarget && combineLabel(combineTarget), tools: combineTools.map(combineLabel), operation: "join", keepTools: false });
+    pickCombineBodies();
+  }
+
+  /**
+   * A new Combine's bodies from the selection, as it changes (a click in
+   * the view or a browser row adds a body or takes it out): a body taken
+   * out leaves its field (the target's leaves the target field picking
+   * again); a body added fills the field picking now, the target's
+   * replacing the one there and passing the picking on to the tools. The
+   * selection becomes the bodies, target first; bodies no longer shown
+   * (deleted, hidden) are let go.
+   */
+  function pickCombineBodies() {
+    if (!combineBox.shown || combineBox.editing !== null) return;
+    const picked = pickedBodies(ctx.selection.items, lastScene);
+    const now = new Set(picked);
+    const was = new Set([combineTarget, ...combineTools]);
+    let target = combineTarget !== null && now.has(combineTarget) ? combineTarget : null;
+    const tools = combineTools.filter((b) => now.has(b));
+    if (target === null && combineTarget !== null) combineBox.setField("target");
+    for (const b of picked) {
+      if (was.has(b)) continue;
+      if (combineBox.field === "target") {
+        target = b;
+        combineBox.setField("tools");
+      } else tools.push(b);
+    }
+    combineTarget = target;
+    combineTools = tools.filter((b) => b !== target);
+    const refs = [...(target === null ? [] : [target]), ...combineTools].map(bodyReference);
+    const items = ctx.selection.items;
+    if (items.length !== refs.length || items.some((r, i) => r.kind !== "body" || r.id !== refs[i].id)) return ctx.selection.set(refs); // comes back here
+    combineBox.setBodies(target && combineLabel(target), combineTools.map(combineLabel));
+    showCombineHint();
+  }
+
+  /** The Combine panel put away; a new Combine's bodies stay selected, an edited one's are let go. */
+  function leaveCombine() {
+    if (!combineBox.shown) return;
+    combineOpenings++;
+    const edited = combineBox.editing !== null;
+    combineBox.hide();
+    combineTarget = null;
+    combineTools = [];
+    showCombineHint();
+    if (edited) ctx.selection.clear();
+  }
+
+  /** OK's words when the design changed while the kernel checked the Combine: nothing was recorded. */
+  const COMBINE_CHANGED = "The design changed while the Combine was checked: nothing was changed. Press OK again.";
+
+  /**
+   * OK: the Combine made (`insertCombine` at the marker, or
+   * `changedCombine`), checked by building the design on the kernel (a
+   * Combine the kernel can't make, such as an Intersect of bodies that
+   * don't overlap, is refused with its words) and recorded as one undo
+   * step, "Combine bodies" or "Edit Combine 1". An edit that changes
+   * nothing closes the panel and records nothing.
+   */
+  async function finishCombine() {
+    if (!combineBox.shown || !combineBox.ready || combineTarget === null) return;
+    const id = combineBox.editing;
+    const before = designDoc();
+    let next: DesignDocument;
+    let made: string;
+    try {
+      if (id === null) ({ doc: next, id: made } = insertCombine(before, combineTarget, combineTools, combineBox.operation, combineBox.keepTools));
+      else [next, made] = [changedCombine(before, id, combineTarget, combineTools, combineBox.operation, combineBox.keepTools), id];
+    } catch (e) {
+      return combineBox.showError(e instanceof Error ? e.message : String(e));
+    }
+    if (next === before) return leaveCombine();
+    const opened = combineOpenings;
+    combineBox.busy(true);
+    let refused: string | null;
+    try {
+      refused = await onceMoreAfterRestart(() => refusedMove(kernel, next, made));
+    } catch (e) {
+      refused = e instanceof Error ? e.message : String(e);
+    }
+    // Closed, or opened again, while the kernel looked: this OK is out of date.
+    if (combineOpenings !== opened) return;
+    combineBox.busy(false);
+    if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
+    if (refused !== null) return combineBox.showError(refused);
+    if (id === null) ctx.selection.clear();
+    menuHost.record(id === null ? COMBINE_STEP : editStep(before, id), next);
+  }
+
   // The panel folds away until something is selected or a tool's box is in it (U0b); the user's pin is kept across mounts.
   fold = propertiesFold(
     ctx.properties,
-    ["sketch-panel", "extrude-panel", "feature-edit", "move-panel"].map((id) => ctx.properties.querySelector<HTMLElement>(`#${id}`)!),
+    ["sketch-panel", "extrude-panel", "feature-edit", "move-panel", "combine-panel"].map((id) => ctx.properties.querySelector<HTMLElement>(`#${id}`)!),
     foldKept ?? { ...FOLDED_AT_START, pinned: readPinned() },
   );
   fold.update({ selected: ctx.selection.items.length > 0 });
 
   /** Opens item `id`'s sizes in the Edit feature panel, out of any sketch or Extrude panel first. */
   function openEdit(id: string) {
-    if (isMoveItem(designDoc().timeline.features.find((f) => f.id === id)!)) return startMove(id);
+    const item = designDoc().timeline.features.find((f) => f.id === id)!;
+    if (isMoveItem(item)) return startMove(id);
+    if (isCombineItem(item)) return startCombine(id);
     leaveExtrude();
     leaveMove();
+    leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     editBox.show(editableFeature(designDoc(), id));
   }
@@ -2285,6 +2468,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function startMove(id: string | null = null, kind: MoveKind = "move") {
     leaveExtrude();
     leaveEdit();
+    leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     moveOpenings++;
     dragCalledOff = false;
@@ -2828,8 +3012,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     // Snap (35e2d): the click picks what to snap, then where it lands, and picks no bodies.
     if (moveBox.shown && snapping) return snapPick(pick);
-    // A Move (35e2b; an edited one too since 35e2i): a click on a body adds it or takes it out; empty space keeps what is picked.
-    if (moveBox.shown) {
+    // A Move (35e2b; an edited one too since 35e2i), or a new Combine (35f1c): a click on a body adds it or takes it out; empty space keeps what is picked.
+    if (moveBox.shown || combineBox.shown) {
       const c = pickChange({ ...pick, shift: true }, lastScene);
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
       if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
@@ -2873,7 +3057,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const items = ctx.selection.items;
       const sketch = extruding && items.length === 1 ? readProfileReference(items[0]) : null;
       if (sketch !== null) chooseProfile(sketch);
-      if (picksBodies()) pickMoveBodies();
+      if (picksBodies()) pickBodies();
       // The user's next change of selection retires the note about dropped items.
       if (!settling && note) panel.showSelectionNote((note = ""));
       showSelection();
@@ -2985,6 +3169,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           if (moveBox.ready) void finishMove(moveBox.typed); // busy while the kernel checks: a second Enter records nothing twice
           return true;
         }
+        // And the Combine panel's (35f1c).
+        if (combineBox.shown && !extrudeBox.shown) {
+          if (!onView) return false;
+          if (combineBox.ready) void finishCombine();
+          return true;
+        }
         if (!extrudeBox.shown || !onView) return false;
         if (extrudeBox.ready) void finishExtrude(extrudeBox.typed);
         return true;
@@ -2995,6 +3185,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // Escape while a Move handle is held calls off the drag, and only that: its box back to its number at the press (E6).
       if (id === "clear-selection" && moveBox.shown && dragFrom !== null) return callOffMoveDrag(), true;
       if (id === "clear-selection" && moveBox.shown) return leaveMove(), true;
+      if (id === "clear-selection" && combineBox.shown) return leaveCombine(), true;
       // M opens Move outside a sketch (Fusion's key); in a sketch the key does what it would.
       if (id === "move-tool") return mode.kind === "none" ? (startMove(), true) : false;
       // E is Extrude (Fusion's key), in a sketch too (Extrude leaves it, as its toolbar button does); not while a plane is
@@ -3064,6 +3255,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       typed.element.remove();
       hint.element.remove();
       moveHint.remove();
+      combineHint.remove();
       startCard.element.remove();
       if (fold) {
         foldKept = { ...FOLDED_AT_START, pinned: fold.state.pinned };
