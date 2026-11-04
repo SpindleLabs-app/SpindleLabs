@@ -138,10 +138,30 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
   }
   addEventListener("online", () => void sendNow());
 
+  /** Projects from before this person first signed in here (see sync.ts firstTime), as the dialog shows them. */
+  let others: { state: "ask" | "left"; count: number } | null = null;
+  async function refreshOthers(): Promise<{ state: "ask" | "left"; count: number } | null> {
+    const user = userId();
+    if (!user) return (others = null);
+    const s = syncFor(user);
+    if (s.firstTime()) {
+      const count = (await host.list()).length;
+      // Nothing here yet: nothing to ask, and everything from now on is this person's.
+      if (count === 0) {
+        await s.firstChoice(true);
+        return (others = null);
+      }
+      return (others = { state: "ask", count });
+    }
+    const left = s.leftCount();
+    return (others = left > 0 ? { state: "left", count: left } : null);
+  }
+
   let dialog: MyDesigns | null = null;
   function show(): Promise<void> {
     dialog ??= myDesigns(document, {
       list: async () => {
+        await refreshOthers();
         void sendNow(); // anything not sent yet goes now, and the list shows it next time
         const r = await api.list();
         if (r.kind !== "ok") throw failure(r);
@@ -181,6 +201,15 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
         if (yes) void sendNow();
       },
       syncWords: () => reportWords(last),
+      others: () => others,
+      keepOthers: async (keep) => {
+        const user = userId();
+        if (!user) throw failure({ kind: "signed-out" });
+        const s = syncFor(user);
+        const ok = s.firstTime() ? await s.firstChoice(keep) : keep ? await s.includeLeft() : true;
+        if (!ok) throw failure({ kind: "failed", reason: "storage" });
+        await sendNow();
+      },
     });
     return dialog.show();
   }
@@ -189,6 +218,11 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
     saved,
     sendNow,
     show,
+    /** After signing in: when projects already in this browser need the person's answer, My designs opens to ask. */
+    async askIfNeeded(): Promise<void> {
+      if ((await refreshOthers())?.state === "ask") await show();
+      else void sendNow();
+    },
     /** Signing out or deleting the account: links and remembered tags go, and nothing more is sent. */
     forget(user: string) {
       if (timer) clearTimeout(timer);

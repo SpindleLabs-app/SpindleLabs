@@ -34,3 +34,6 @@
   .my-designs .my-design-question { text-align: left; }
   .my-designs .my-designs-button:not(#none), .my-designs .my-designs-keep { min-height: var(--look-target-touch); }
 }
+.my-designs .my-designs-others { display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-2); padding: var(--look-space-2) var(--look-space-3); background: var(--look-float-raised); border: 1px solid var(--look-accent); border-radius: var(--look-radius-m); }
+.my-designs .my-designs-others:empty { display: none; }
+.my-designs .my-designs-others-words { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.45; }

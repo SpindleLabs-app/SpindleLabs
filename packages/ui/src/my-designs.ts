@@ -56,6 +56,13 @@ export const MY_DESIGNS_TITLE = "My designs";
 export const MY_DESIGNS_NOTE = "Kept in your account, so you can open them on any device you sign in on. Every project you work on in this browser is kept here as you save, unless you turn it off.";
 export const NO_DESIGNS = "No designs are kept in your account yet. Projects you change in this browser appear here within a few seconds.";
 export const KEEPING_OFF_NOTE = "Keeping designs in your account is off. Nothing is sent; the designs already here stay until you delete them.";
+/** The words about projects that were in this browser before signing in. */
+export function othersWords(state: "ask" | "left", count: number): string {
+  const n = count === 1 ? "1 project was" : `${count} projects were`;
+  return state === "ask"
+    ? `${n} in this browser before you signed in. Keep ${count === 1 ? "it" : "them"} in your account too? On a shared computer ${count === 1 ? "it" : "they"} may be someone else's. Nothing is sent until you choose.`
+    : `${n} in this browser before you signed in and ${count === 1 ? "isn't" : "aren't"} kept in your account.`;
+}
 export const removeQuestion = (name: string) => `Delete “${name}” from your account? The copy in this browser, if there is one, stays. This can't be undone.`;
 
 export interface MyDesignsParts {
@@ -74,6 +81,13 @@ export interface MyDesignsParts {
   keeping(): Promise<boolean | null>;
   /** Turns keeping designs on or off for this account, on every device; a refusal is said in the dialog. */
   setKeeping(yes: boolean): Promise<void>;
+  /**
+   * Projects in this browser from before this person first signed in here: "ask" while they haven't said whether to
+   * keep them in their account (nothing is sent until then), "left" once they said not now; null when there are none.
+   */
+  others(): { state: "ask" | "left"; count: number } | null;
+  /** Keeps those projects in the account (true), or leaves them out for now (false). */
+  keepOthers(keep: boolean): Promise<void>;
   /** Words about the last sending round ("Your account's space is full…"), or "" when there is nothing to say. */
   syncWords(): string;
   now?: () => Date;
@@ -98,14 +112,18 @@ export function myDesigns(doc: Document, parts: MyDesignsParts): MyDesigns {
   head.append(el("h2", { id: "my-designs-title", textContent: MY_DESIGNS_TITLE }), close);
   const note = el("p", { className: "my-designs-note", textContent: MY_DESIGNS_NOTE });
   const keepRow = el("label", { className: "my-designs-keep" });
-  const keep = el("input", { type: "checkbox", id: "my-designs-keep", disabled: true });
-  keepRow.append(keep, el("span", { textContent: "Keep my designs in my account" }));
+  const keep: HTMLInputElement = doc.createElement("input");
+  Object.assign(keep, { type: "checkbox", id: "my-designs-keep", disabled: true });
+  const keepWords = doc.createElement("span");
+  keepWords.textContent = "Keep my designs in my account";
+  keepRow.append(keep, keepWords);
   const space = el("p", { id: "my-designs-space", className: "my-designs-space" });
+  const others = el("div", { id: "my-designs-others", className: "my-designs-others" });
   const status = el("p", { id: "my-designs-status", className: "my-designs-status" });
   status.setAttribute("role", "status");
   const items = el("ul", { id: "my-designs-items", className: "my-designs-items" });
   const body = el("div", { className: "my-designs-body" });
-  body.append(note, keepRow, space, status, items);
+  body.append(note, keepRow, space, others, status, items);
   dialog.append(head, body);
   doc.body.append(dialog);
 
@@ -123,6 +141,7 @@ export function myDesigns(doc: Document, parts: MyDesignsParts): MyDesigns {
     keep.disabled = on === null;
     keep.checked = on === true;
     space.textContent = used ? spaceWords(used, parts.limits) : "";
+    fillOthers(on !== false);
     if (!listed.ok) {
       items.replaceChildren();
       return say(`Your designs can't be listed right now. ${message(listed.e)}`, true);
@@ -131,6 +150,21 @@ export function myDesigns(doc: Document, parts: MyDesignsParts): MyDesigns {
     items.replaceChildren(...rows.map(rowFor));
     if (status.classList.contains("bad")) return;
     say(on === false ? KEEPING_OFF_NOTE : rows.length === 0 ? NO_DESIGNS : parts.syncWords(), false);
+  }
+
+  /** The question about projects from before signing in, or the offer to keep the ones left out after all. */
+  function fillOthers(keeping: boolean): void {
+    const o = keeping ? parts.others() : null;
+    if (!o || o.count === 0) return others.replaceChildren();
+    const words = el("p", { className: "my-designs-others-words", textContent: othersWords(o.state, o.count) });
+    const yes = el("button", { type: "button", className: "my-designs-button my-designs-keep-others", textContent: o.state === "ask" ? "Keep them in my account" : "Keep them too" });
+    yes.addEventListener("click", () => void act(() => parts.keepOthers(true), false));
+    others.replaceChildren(words, yes);
+    if (o.state === "ask") {
+      const no = el("button", { type: "button", className: "my-designs-button my-designs-leave-others", textContent: "Not now" });
+      no.addEventListener("click", () => void act(() => parts.keepOthers(false), false));
+      others.append(no);
+    }
   }
 
   function rowFor(row: DesignRowWords): HTMLLIElement {

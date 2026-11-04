@@ -3,7 +3,7 @@
 // refused, a list that can't be read says why. The real app in Chromium: apps/fission/e2e/my-designs.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { designRows, KEEPING_OFF_NOTE, myDesigns, NO_DESIGNS, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type MyDesignsParts } from "../src/my-designs.ts";
+import { designRows, KEEPING_OFF_NOTE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type MyDesignsParts } from "../src/my-designs.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -74,6 +74,8 @@ function page(over: Partial<MyDesignsParts> = {}) {
       keeping = yes;
     },
     syncWords: () => "",
+    others: () => null,
+    keepOthers: async (keep) => void calls.push(`others ${keep}`),
     now: () => NOW,
     ...over,
   };
@@ -184,4 +186,34 @@ test("Escape and Close shut it; keys pressed in it never reach the document", as
   await p.dialog.show();
   p.doc.getElementById("my-designs-close")!.click();
   assert.equal(p.dialog.open, false);
+});
+
+test("hand-worked: the words about projects from before signing in", () => {
+  assert.equal(othersWords("ask", 1), "1 project was in this browser before you signed in. Keep it in your account too? On a shared computer it may be someone else's. Nothing is sent until you choose.");
+  assert.equal(othersWords("ask", 3), "3 projects were in this browser before you signed in. Keep them in your account too? On a shared computer they may be someone else's. Nothing is sent until you choose.");
+  assert.equal(othersWords("left", 2), "2 projects were in this browser before you signed in and aren't kept in your account.");
+});
+
+test("projects from before signing in: asked first, then offered again once left out", async () => {
+  let state: "ask" | "left" = "ask";
+  const p = page({ others: () => ({ state, count: 2 }) });
+  await p.dialog.show();
+  const box = () => p.doc.getElementById("my-designs-others")!;
+  assert.equal(box().querySelector("p")!.textContent, othersWords("ask", 2));
+  assert.deepEqual([...box().querySelectorAll("button")].map((b) => b.textContent), ["Keep them in my account", "Not now"]);
+  box().querySelector<HTMLButtonElement>(".my-designs-leave-others")!.click();
+  state = "left";
+  await p.settle();
+  await p.settle();
+  assert.deepEqual(p.calls, ["others false"]);
+  assert.deepEqual([...box().querySelectorAll("button")].map((b) => b.textContent), ["Keep them too"]);
+  box().querySelector<HTMLButtonElement>(".my-designs-keep-others")!.click();
+  await p.settle();
+  assert.deepEqual(p.calls, ["others false", "others true"]);
+});
+
+test("with keeping off, nothing is asked about other projects", async () => {
+  const p = page({ others: () => ({ state: "ask", count: 2 }), keeping: async () => false });
+  await p.dialog.show();
+  assert.equal(p.doc.getElementById("my-designs-others")!.children.length, 0);
 });
