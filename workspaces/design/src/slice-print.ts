@@ -10,7 +10,7 @@
 // docs/progress/slice.md). Styles: src/styles/slice-print.css.
 
 import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, StlFile, SupportStyle } from "@fission/core";
-import type { SaveKind } from "@fission/ui";
+import { repeatGuard, type SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpecs } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
@@ -665,6 +665,8 @@ export interface SlicePrintEvents {
   onProgress?(listener: (progress: SliceProgress) => void): () => void;
   /** Called when the warm-up loop or Better grip is ticked or unticked (the build area counts them). */
   extrasChanged?(extras: FirstLayerExtras): void;
+  /** The clock that tells a double press from two presses, in ms (the tests' own); left out, performance.now(). */
+  now?(): number;
 }
 
 export interface SlicePrint {
@@ -939,8 +941,15 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       presets.changed();
       keep();
     });
+  // A double press, or presses while it slices and just after, are one slice and one file (clumsy-user hunt 11-04).
+  // A disabled button hears no press, so the end of a slice counts as one: a tap that came during it waits again.
+  // A changed choice (or a preset picked) asks for a new file, so its press is meant however soon.
+  const clock = events.now ? () => events.now!() : undefined;
+  const goRepeats = repeatGuard(clock);
+  const previewRepeats = repeatGuard(clock);
+  dialog.addEventListener("change", () => (goRepeats.reset(), previewRepeats.reset()));
   go.addEventListener("click", async () => {
-    if (busy) return;
+    if (goRepeats() || busy) return;
     working(true);
     changedWhileBusy = false;
     const mine = alive();
@@ -959,10 +968,11 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       else say(refusalOf(e), true);
     } finally {
       working(false);
+      goRepeats();
     }
   });
   preview.addEventListener("click", async () => {
-    if (busy) return;
+    if (previewRepeats() || busy) return;
     working(true);
     const mine = alive();
     say("Slicing…", false);
@@ -979,6 +989,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       else say(refusalOf(e), true);
     } finally {
       working(false);
+      previewRepeats();
     }
   });
   close.addEventListener("click", () => dialog.close());

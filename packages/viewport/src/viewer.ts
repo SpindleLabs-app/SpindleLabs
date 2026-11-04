@@ -11,7 +11,7 @@ import { releaseShared } from "./release.ts";
 import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
-import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
+import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
@@ -162,6 +162,9 @@ export class ViewportView {
     this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
     this.controls.mouseButtons.RIGHT = null;
     this.controls.zoomToCursor = true;
+    // Never so far out or close in that the camera's numbers break: the wheel, a drag in Zoom mode and a pinch all stop here.
+    this.controls.minDistance = NEAREST_VIEW;
+    this.controls.maxDistance = FARTHEST_VIEW;
     this.dragArrow(); // first, so a press on Extrude's arrow is a drag whatever the navigation mode
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.navigate();
@@ -905,8 +908,8 @@ export class ViewportView {
     this.cube.element.hidden = false;
     this.controls.enableRotate = true;
     this.applyButtons();
-    this.controls.minDistance = 0;
-    this.controls.maxDistance = Infinity;
+    this.controls.minDistance = NEAREST_VIEW;
+    this.controls.maxDistance = FARTHEST_VIEW;
     this.controls.target.copy(saved.target);
     this.camera.position.copy(saved.position);
     this.camera.near = saved.near;

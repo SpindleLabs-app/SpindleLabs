@@ -109,6 +109,14 @@ export function dragZoomFactor(dy: number): number {
   return wheelFactor(dy, 0, false);
 }
 
+/**
+ * The 3D view's nearest and farthest camera distances, in mm (clumsy hunt 2026-11-04: with no limit, about 1,760
+ * wheel notches out made the camera's numbers NaN and the wheel stopped working until Fit). 1e8 mm (100 km) is past
+ * the modeller's largest parts (1 km) with room to see them whole; 1e-4 mm is a tenth of the 0.001 mm it keeps.
+ */
+export const FARTHEST_VIEW = 1e8;
+export const NEAREST_VIEW = 1e-4;
+
 /** Keeps a zoom inside the view's allowed distances: the factor that lands `distance` within [min, max]. */
 export function clampZoom(distance: number, factor: number, min: number, max: number): number {
   const wanted = distance * factor;

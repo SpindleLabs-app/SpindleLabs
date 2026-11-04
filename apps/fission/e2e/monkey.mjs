@@ -186,6 +186,9 @@ async function settle(page) {
   fail("settles", "the page was still changing 6 s after the action");
 }
 
+/** More than Save's double-click time (REPEAT_MS, 500 ms), so each of the monkey's saves is a press of its own. */
+const SAVE_GAP_MS = 600;
+
 /**
  * Save: the file's text, which also becomes the file `open` reopens. Only a
  * project file counts: a Download STL clicked earlier finishes when the
@@ -196,6 +199,11 @@ async function settle(page) {
  */
 async function save(s, stray = false) {
   const project = (d) => d.suggestedFilename().endsWith(".spindle");
+  // Save takes presses closer than 500 ms to the one before as one press, a double-click (packages/ui press-guard.ts,
+  // REPEAT_MS): the monkey saves after every action, often sooner than a person could, so it waits that out first.
+  const since = Date.now() - (s.savedAt ?? -Infinity);
+  if (since < SAVE_GAP_MS) await s.page.waitForTimeout(SAVE_GAP_MS - since);
+  s.savedAt = Date.now();
   const click = (stray) => {
     if (stray) Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["SpindleLabs STL: stray"])), download: "fission-box.stl" }).click();
     document.getElementById("save").click();
