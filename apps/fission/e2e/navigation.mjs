@@ -350,11 +350,22 @@ for (const [width, touch] of [[1280, false], [375, true]]) {
       if (touch) await closePanels(page, true);
       let at = await slide(page);
       assert.ok(at.visible && on(at.h, at.orbit), `starts on Orbit: ${JSON.stringify(at)}`);
-      // Mid-slide: a frame or two after the press it is strictly between Orbit and Zoom, on neither.
-      await page.evaluate(() => document.querySelector("#view-controls [data-nav=zoom]").click());
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      // Mid-slide: read every frame from the press until it rests (slow frames, as CI's software drawing has, may show
+      // none moved yet at first); at least one frame finds it strictly between Orbit and Zoom, on neither. A jump never does.
+      const lefts = await page.evaluate(async () => {
+        const h = document.querySelector("#view-controls .nav-slider-mark");
+        const zoom = document.querySelector("#view-controls [data-nav=zoom]");
+        zoom.click();
+        const out = [];
+        for (let i = 0; i < 120; i++) {
+          await new Promise((r) => requestAnimationFrame(r));
+          out.push(h.getBoundingClientRect().left);
+          if (Math.abs(out.at(-1) - zoom.getBoundingClientRect().left) < 0.5) break;
+        }
+        return out;
+      });
       at = await slide(page);
-      assert.ok(at.h.left > at.orbit.left + 0.5 && at.h.left < at.zoom.left - 0.5, `mid-slide between Orbit and Zoom: ${JSON.stringify(at)}`);
+      assert.ok(lefts.some((x) => x > at.orbit.left + 0.5 && x < at.zoom.left - 0.5), `a frame mid-slide between Orbit and Zoom: ${JSON.stringify(lefts)} against ${JSON.stringify(at)}`);
       await page.waitForTimeout(500); // past its 220 ms
       at = await slide(page);
       assert.ok(on(at.h, at.zoom), `rests on Zoom: ${JSON.stringify(at)}`);

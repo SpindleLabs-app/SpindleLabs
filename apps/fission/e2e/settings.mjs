@@ -84,11 +84,14 @@ try {
       assert.equal(await shortcutsOpen(), true, "the shortcuts list is open");
       await press("#shortcuts .close");
       assert.equal(await shortcutsOpen(), false, "Close closes the list");
+      // A dialog's close event comes a moment after it closes: Settings opens then.
+      await page.waitForFunction(() => document.getElementById("settings")?.open, null, { timeout: 5000 }).catch(() => {});
       assert.equal(await isOpen(page), true, "and goes back to Settings");
       assert.equal(await page.evaluate(() => document.activeElement?.matches("#settings [data-section=general] .settings-action")), true, "focus back on Show");
       await press("#settings [data-section=general] .settings-action");
       await page.keyboard.press("Escape");
       assert.equal(await shortcutsOpen(), false, "Escape closes the list");
+      await page.waitForFunction(() => document.getElementById("settings")?.open, null, { timeout: 5000 }).catch(() => {});
       assert.equal(await isOpen(page), true, "and goes back to Settings too");
       // Settings' own Close then leaves for the app, and the list opened by itself (?) closes straight to the app.
       await press("#settings .close");
@@ -98,6 +101,7 @@ try {
         assert.equal(await shortcutsOpen(), true, "? opens the list");
         await page.click("#shortcuts .close");
         assert.equal(await shortcutsOpen(), false);
+        await page.waitForTimeout(300); // past the close event, which would have opened Settings by now
         assert.equal(await isOpen(page), false, "opened by ?, closing it does not open Settings");
       }
       await openSettings(page, tap);
