@@ -36,6 +36,7 @@ export const TOOL_HELP: Record<ToolKind, string> = {
   vertical: "Click a line to make it upright (its start stays, its end moves), or two points to put the second straight above or below the first. A constraint that fights the others, or already holds, is refused.",
   coincident: "Click a point to keep still, then the point to move onto it: they stay together from then on.",
   fix: "Click a point to fix it where it is: no other constraint can move it.",
+  dimension: "Click a line to set its length, an arc for its radius, a circle for its diameter, or two points for the distance between them, then type the size and press Enter. Double-click a size to change it. A size that fights the others, or already holds, is refused.",
   project: "Click an edge of a body before this sketch to bring it in, or a face to bring in all its edges. Projected edges follow the body when it changes; they can be snapped to and extruded, but not moved.",
 };
 

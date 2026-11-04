@@ -98,6 +98,12 @@ export interface SketchDrawing {
     fighting?: readonly (readonly [SketchXY, SketchXY])[];
     constraintCount?: number;
     /**
+     * The sketch's dimensions' values (step 47e): each one's words ("12.5",
+     * "R 4", "⌀ 10") at its spot, by the constraint's id, `fighting` when it
+     * fought the one just refused. Absent when none.
+     */
+    labels?: readonly { id: string; at: SketchXY; text: string; fighting?: boolean }[];
+    /**
      * The points a press drags (step 47d3, the Select tool): a press within
      * a pick's reach of one on screen grabs the nearest (SketchPointer
      * `grab`). Absent when none can be.

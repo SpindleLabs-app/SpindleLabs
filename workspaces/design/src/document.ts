@@ -72,10 +72,38 @@ export interface SketchArcCurve {
  * (constraints.ts), so a fix needs no value of its own. Kept in the order
  * they were made, oldest first (the solver blames the oldest that fights).
  */
-export type SketchConstraint = { id: string; kind: "horizontal" | "vertical" | "coincident"; a: string; b: string } | { id: string; kind: "fix"; point: string };
+export type SketchConstraint =
+  | { id: string; kind: "horizontal" | "vertical" | "coincident"; a: string; b: string }
+  | { id: string; kind: "fix"; point: string }
+  | SketchDistance
+  | SketchDiameter;
 
-/** The points a constraint names: two, or one for a fix. */
-export const constraintPoints = (c: SketchConstraint): string[] => (c.kind === "fix" ? [c.point] : [c.a, c.b]);
+/**
+ * A dimension (step 47e): two points `value` mm apart, a line's length
+ * (its start and end), the distance between two points, or an arc's
+ * radius (its centre and start). Solved by the kernel with the others.
+ */
+export interface SketchDistance {
+  id: string;
+  kind: "distance";
+  a: string;
+  b: string;
+  value: number;
+}
+
+/** A circle's diameter dimension (step 47e): the circle's radius is `value` / 2, and the solver counts one freedom fewer. */
+export interface SketchDiameter {
+  id: string;
+  kind: "diameter";
+  circle: string;
+  value: number;
+}
+
+/** The smallest and largest dimension (mm): the kernel's MIN_FEATURE and the modelling range's width, as the solver takes them. */
+export const DIMENSION_LIMITS = { min: 1e-3, max: 2e8 } as const;
+
+/** The points a constraint names: two, one for a fix, none for a diameter (it names its circle). */
+export const constraintPoints = (c: SketchConstraint): string[] => (c.kind === "fix" ? [c.point] : c.kind === "diameter" ? [] : [c.a, c.b]);
 
 /** The most constraints one sketch may hold: the solver's own limit (four a point at its 2,000 points). */
 export const MAX_SKETCH_CONSTRAINTS = 8000;
@@ -766,7 +794,8 @@ function checkSketch(s: unknown, i: number): void {
   notTooMany(s.points.length + s.curves.length, DESIGN_LIMITS.sketch, `${at} has`, "points and curves");
   notTooMany(s.constraints.length, MAX_SKETCH_CONSTRAINTS, `${at} has`, "constraints");
   checkContent(s.points, s.curves, at);
-  checkConstraints(s.constraints, new Set(s.points.map((p) => (p as SketchPoint).id)), at);
+  const circles = new Map(s.curves.filter((c) => isRecord(c) && c.kind === "circle").map((c) => [(c as SketchCircleCurve).id, c as SketchCircleCurve]));
+  checkConstraints(s.constraints, new Set(s.points.map((p) => (p as SketchPoint).id)), at, circles);
 }
 
 /**
@@ -775,17 +804,33 @@ function checkSketch(s: unknown, i: number): void {
  * different ones, or one for a fix). Whether they hold is the solver's,
  * the next time one is added.
  */
-function checkConstraints(list: unknown[], points: ReadonlySet<string>, at: string): void {
+function checkConstraints(list: unknown[], points: ReadonlySet<string>, at: string, circles: ReadonlyMap<string, SketchCircleCurve> = new Map()): void {
   const ids = new Set<string>();
+  const sized = new Set<string>();
+  const dimension = (c: Record<string, unknown>) => {
+    const v = c.value;
+    if (!isFiniteNumber(v) || v < DIMENSION_LIMITS.min || v > DIMENSION_LIMITS.max) throw new Error(`${at}: dimension ${c.id} needs a value from 0.001 to 200000000 mm, not ${shown(v)}`);
+  };
   for (const [j, c] of list.entries()) {
     if (!isRecord(c) || typeof c.id !== "string") throw new Error(`${at}: constraint ${j + 1} has no id`);
     if (ids.has(c.id)) throw new Error(`${at}: two constraints are called ${shown(c.id)}`);
     ids.add(c.id);
+    if (c.kind === "diameter") {
+      // 47e: the circle's radius is stored as the dimension says (the sketch is always stored solved).
+      dimension(c);
+      const circle = typeof c.circle === "string" ? circles.get(c.circle) : undefined;
+      if (!circle) throw new Error(`${at}: dimension ${c.id} sizes ${shown(c.circle)}, which is not one of the sketch's circles`);
+      if (sized.has(circle.id)) throw new Error(`${at}: circle ${circle.id} has two diameter dimensions`);
+      sized.add(circle.id);
+      if (circle.radius !== (c.value as number) / 2) throw new Error(`${at}: circle ${circle.id} has radius ${shown(circle.radius)}, but dimension ${c.id} says its diameter is ${shown(c.value)}`);
+      continue;
+    }
+    if (c.kind === "distance") dimension(c);
     if (c.kind === "fix") {
       if (typeof c.point !== "string" || !points.has(c.point)) throw new Error(`${at}: constraint ${c.id} fixes ${shown(c.point)}, which is not one of the sketch's points`);
       continue;
     }
-    if (c.kind !== "horizontal" && c.kind !== "vertical" && c.kind !== "coincident") throw new Error(`${at}: constraint ${c.id} is a ${shown(c.kind)}, which this SpindleLabs can't read yet`);
+    if (c.kind !== "horizontal" && c.kind !== "vertical" && c.kind !== "coincident" && c.kind !== "distance") throw new Error(`${at}: constraint ${c.id} is a ${shown(c.kind)}, which this SpindleLabs can't read yet`);
     for (const p of [c.a, c.b]) if (typeof p !== "string" || !points.has(p)) throw new Error(`${at}: constraint ${c.id} names ${shown(p)}, which is not one of the sketch's points`);
     if (c.a === c.b) throw new Error(`${at}: constraint ${c.id} joins point ${c.a} to itself`);
   }
@@ -1329,6 +1374,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
       for (const q of c === undefined ? [p.made] : c.kind === "line" ? [c.start, c.end] : c.kind === "circle" ? [c.centre] : [c.start, c.end, c.centre]) follows.add(q);
     }
     for (const c of s.constraints) for (const q of constraintPoints(c)) if (follows.has(q)) throw new Error(`Design sketch ${s.id}: constraint ${c.id} names ${q}, which follows a body's edge, so a constraint can't hold it`);
+    // A projected circle's size is the body's (47e).
+    for (const c of s.constraints) if (c.kind === "diameter" && (s.projected ?? []).some((p) => p.made === c.circle)) throw new Error(`Design sketch ${s.id}: dimension ${c.id} sizes ${c.circle}, which is projected from a body, so the body says its size`);
   }
   // Every solid feature is its own body (24d1), so each one's sizes or profile are checked, not only the part's.
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).

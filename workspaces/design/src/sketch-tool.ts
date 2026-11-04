@@ -25,7 +25,7 @@ import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type Sketc
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
-import { constraintMarks, isConstraintKind, isConstraintTool, startConstraintTool, type ConstraintTool } from "./constraint-tool.ts";
+import { constraintMarks, dimensionLabels, dimensionLine, isConstraintKind, isConstraintTool, startConstraintTool, type ConstraintTool } from "./constraint-tool.ts";
 
 export { pointAt };
 
@@ -169,7 +169,8 @@ export function startTool(kind: ToolKind, sketch: string): SketchTool {
 }
 
 /** Whether the tool is part way through (a chain going, a first corner down, an arc's ends): what Escape ends. */
-export const toolBusy = (tool: SketchTool): boolean => (tool.kind === "line" || tool.kind === "tangent" ? tool.from !== null : pendingClicks(tool).length > 0);
+export const toolBusy = (tool: SketchTool): boolean =>
+  tool.kind === "line" || tool.kind === "tangent" ? tool.from !== null : isConstraintTool(tool) && tool.kind === "dimension" ? tool.first !== null || !!tool.pending : pendingClicks(tool).length > 0;
 
 /** The tool's clicks while they are not yet points of the sketch's own (a chain's first click, a first corner, a centre, an arc's ends). */
 function pendingClicks(tool: SketchTool): SketchXY[] {
@@ -737,7 +738,10 @@ function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefine
     return p ? [p.x, p.y] : null;
   };
   const ring = (p: SketchXY | null): (readonly [SketchXY, SketchXY])[] => (p ? circleSegments(p, size / 2) : []);
-  const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[] } = {};
+  const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[]; labels?: { id: string; at: SketchXY; text: string; fighting?: boolean }[] } = {};
+  // The dimensions' values (47e), red with the marks of the ones that fought.
+  const labels = dimensionLabels(s, size).map((l) => (fighting.has(l.id) ? { ...l, fighting: true } : l));
+  if (labels.length > 0) out.labels = labels;
   // With Select (47d2), a constraint's mark is picked like a curve: lit with the picks, and lighter under the pointer.
   const select = tool.kind === "select" ? tool : null;
   const shownLit = new Set(select ? [...select.picked, ...(select.hover === null ? [] : [select.hover])] : []);
@@ -753,9 +757,12 @@ function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefine
     if (hover.length > 0) out.hover = hover;
   }
   if (isConstraintTool(tool)) {
-    const hover = tool.hover === null ? [] : "point" in tool.hover ? ring(at(tool.hover.point)) : lit([tool.hover.line]);
+    const hover = tool.hover === null ? [] : "point" in tool.hover ? ring(at(tool.hover.point)) : lit(["line" in tool.hover ? tool.hover.line : tool.hover.curve]);
     if (hover.length > 0) out.hover = hover;
     if (tool.first !== null) out.picked = ring(at(tool.first));
+    // A dimension waiting for its value (47e) is drawn lit where it will be, its value in the box.
+    const pending = tool.pending ? dimensionLine(s, tool.pending, size) : null;
+    if (pending) out.picked = [...lit(tool.pending?.kind === "diameter" ? [tool.pending.circle] : []), ...pending.segments];
   }
   return out;
 }

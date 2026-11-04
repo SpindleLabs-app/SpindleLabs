@@ -16,7 +16,7 @@ import { SKETCH_TOOLS, type ToolKind } from "./sketch-tool.ts";
 import { CONSTRAINT_TOOLS } from "./constraint-tool.ts";
 
 /** Each sketch tool's icon (U0f). */
-export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select", horizontal: "horizontal", vertical: "vertical", coincident: "coincident", fix: "fix" };
+export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select", horizontal: "horizontal", vertical: "vertical", coincident: "coincident", fix: "fix", dimension: "dimension" };
 
 export interface SketchToolbarEvents {
   /** A tool chosen, from its button or the Create menu. */

@@ -56,8 +56,8 @@ import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID, D
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
-import { clickConstraint, constraintPickAt, constraintStep, isConstraintTool, markAt } from "./constraint-tool.ts";
-import { addConstraint, type NewConstraint } from "./constraints.ts";
+import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep, dimensionLine, isConstraintTool, markAt } from "./constraint-tool.ts";
+import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
@@ -1402,7 +1402,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const typed = typedBoxes(viewport.element, {
     locks: (next) => ((locks = next), drawSketches()),
     enter: () => placeTyped(),
-    escape: () => ((locks = {}), drawSketches()),
+    escape: () => {
+      locks = {};
+      // Escape in a dimension's box (47e) leaves the dimension: nothing is added or changed.
+      if (mode.kind === "edit" && isConstraintTool(mode.tool) && mode.tool.pending) mode.tool = { ...mode.tool, pending: null, changing: undefined };
+      drawSketches();
+    },
   });
   /** What the next click places, by the pointer ("Specify next point"). */
   const hint = pointerHint(viewport.element);
@@ -1449,7 +1454,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
     const width = viewport.element.clientWidth;
     sketchBar.showType(typedFields(editing.tool).length > 0);
-    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
+    // A dimension waiting for its value (47e): its box by its label, starting at the size as drawn.
+    const tool = editing.tool;
+    const pending = isConstraintTool(tool) && tool.pending ? tool.pending : null;
+    const sketch = pending ? doc.sketches.find((s) => s.id === tool.sketch) : undefined;
+    const spot = pending && sketch ? dimensionLine(sketch, pending, 10 * (editing.pixel ?? 0.1)) : null;
+    const box = (spot && viewport.sketchScreenPoint(spot.label)) || screen;
+    const live = pending ? { [typedFields(tool)[0]]: pending.value } : anchor && aim ? liveValues(anchor, aim, tool) : {};
+    typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
     else hint.hide();
@@ -1972,6 +1984,89 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     drag.finished();
     if (!putAway) drawSketches();
   }
+
+  /**
+   * Enter in a dimension's box (47e): the dimension added with the value
+   * typed (the size as drawn when nothing is), or the double-clicked one
+   * changed to it, as one undo step ("Dimension", "Change dimension"); a
+   * size the solver can't reach, or one that fights the others, is refused
+   * with the reason, the box keeping what was typed.
+   */
+  function placeDimension() {
+    if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || !mode.tool.pending) return;
+    const tool = mode.tool;
+    const pending = tool.pending!;
+    const field = typedFields(tool)[0];
+    const texts = typed.texts();
+    // A box holding text it refused keeps the keys there: its reason shows under it.
+    if ((texts[field] ?? "").trim() !== "" && locks[field] === undefined) return;
+    const value = locks[field] ?? pending.value;
+    const changes = toolChanges;
+    mode.tool = { ...tool, pending: null, changing: undefined };
+    unlock();
+    drawSketches();
+    if (tool.changing === undefined) return constrain(tool.sketch, { ...pending, value } as NewConstraint);
+    const id = tool.changing;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || toolChanges !== changes) return;
+      const before = designDoc();
+      let got: Awaited<ReturnType<typeof changeDimension>>;
+      try {
+        got = await changeDimension(kernel, before, tool.sketch, id, value);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
+      if ("refused" in got) {
+        if (isConstraintTool(mode.tool)) mode.tool = { ...mode.tool, fighting: got.fighting };
+        sketchBox.showError(got.refused);
+        return drawSketches();
+      }
+      applySketchEdit(got.doc, SKETCH_STEPS.redimension, tool.sketch);
+      drawSketches();
+      await showOutline();
+    });
+  }
+
+  /** Gives the keys to the first typed box after the click a tap makes (47e), or after 400 ms when none comes. */
+  function keysAfterTap() {
+    const changes = toolChanges;
+    let done = false;
+    const give = () => {
+      if (done) return;
+      done = true;
+      if (mode.kind === "edit" && toolChanges === changes && typedFields(mode.tool).length > 0) typed.start("");
+    };
+    viewport.element.ownerDocument.addEventListener("click", give, { capture: true, once: true });
+    setTimeout(give, 400);
+  }
+
+  /** A dimension's label double-clicked, or tapped with the Dimension tool (47e): the Dimension tool changing it, its value in the box. */
+  function editDimension(id: string) {
+    if (mode.kind !== "edit" || pointDrag || liveDrag) return;
+    const sketchId = mode.tool.sketch;
+    const sketch = designDoc().sketches.find((s) => s.id === sketchId);
+    const next = sketch && changeDimensionTool(sketch, id);
+    if (!next) return;
+    if (editingSketch) editingSketch.tool = "dimension";
+    toolChanges++;
+    mode.tool = next;
+    mode.snap = null;
+    sketchBox.showTool("dimension");
+    sketchBar.showTool("dimension");
+    sketchBox.showError("");
+    unlock();
+    drawSketches();
+    typed.start("");
+  }
+  viewport.element.addEventListener("dblclick", (e) => {
+    const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
+    if (label?.dataset.dimension) editDimension(label.dataset.dimension);
+  });
+  viewport.element.addEventListener("click", (e) => {
+    const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
+    if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
+  });
 
   function constrain(sketchId: string, add: NewConstraint) {
     const changes = toolChanges;
@@ -2847,6 +2942,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         mode.tool = next;
         sketchBox.showError("");
         if (add) constrain(tool.sketch, add);
+        // A dimension's picks done (47e): the keys go to its value's box, which starts at the size as drawn.
+        if (next.pending && !tool.pending) {
+          unlock();
+          drawSketches();
+          if (!pointer.touch) return typed.start("");
+          // A tap: the browser's own click comes after it and would take the keys back to the page, so the box takes
+          // them in that click (a tap's gesture, so a phone shows its keyboard), or a moment later when none comes.
+          return keysAfterTap();
+        }
       }
       return drawSketches();
     }
@@ -2979,6 +3083,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function placeTyped() {
     if (mode.kind !== "edit") return;
+    if (isConstraintTool(mode.tool) && mode.tool.pending) return placeDimension();
     // Nothing typed and the pointer still since the last Enter: that Enter placed its point already (enteredStill).
     if (enteredStill && Object.keys(locks).length === 0) return;
     enteredStill = true;
