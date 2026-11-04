@@ -10,10 +10,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectToJson, type Project } from "@fission/core";
 import {
+  ASIDE_PREFIX,
+  asideKey,
   journalEntry,
   memoryKeyValue,
   readJournalEntry,
   projectStore,
+  putAsideOthers,
   recoverUnsaved,
   startAutosave,
   unsavedKey,
@@ -449,4 +452,178 @@ test("an entry made from the state the store still holds is put back over it, wi
     assert.equal((await store.list()).length, 1 + copies, `made from ${base}`);
     assert.equal(journal.items.size, 0);
   }
+});
+
+/** Every stored project's width, by id, read as the next visit lists them. */
+async function widths(store: ProjectStore): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (const s of await store.list()) out[s.id] = widthOf(await store.open(s.id));
+  return out;
+}
+
+for (const bStores of [false, true])
+  test(`two tabs each leaving straight after a change keep both changes, ${bStores ? "B's save landing" : "neither save landing"} (clumsy hunt 2026-11-04, worked by hand)`, async () => {
+    // Stored 40 at t = 0, both tabs expecting save time 0. A changes to 50 and is closed at t = 100: leaving()
+    // journals 50 (made from 0) and A's save never lands. B changes to 33 and leaves at t = 200: it journalled 33 under
+    // the same key, over A's 50, so A's change was in no entry and no project, and nothing said so. Now A's entry is
+    // put aside first. Next visit: one entry goes back over the state it was made from (the store still at 0), and the
+    // other, made from 0 too, finds the store moved on and is kept as "Box (from another tab)". When B's save lands
+    // first, "p" holds B's 33 and A's 50 is the copy. Either way 50 and 33 are both somewhere, and one message says so.
+    const clock = fakeClock();
+    const store = projectStore(memoryKeyValue(), [], clock.now);
+    const journal = fakeStorage();
+    await store.save("p", part(40));
+    let a = part(40);
+    let b = part(40);
+    const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+    const tabA = startAutosave(closing(store), "p", () => a, () => {}, { ...opts, writer: "tab-a" });
+    const tabB = startAutosave(bStores ? store : closing(store), "p", () => b, () => {}, { ...opts, writer: "tab-b" });
+    a = part(50);
+    tabA.changed();
+    await clock.advance(100);
+    assert.equal(tabA.leaving(), true);
+    b = part(33);
+    tabB.changed();
+    await clock.advance(100);
+    assert.equal(tabB.leaving(), true);
+    await clock.advance(2000);
+    assert.equal(widthOf(await store.open("p")), bStores ? 33 : 40);
+    const problems = await recoverUnsaved(store, journal, [], () => "copy-1");
+    const kept = await widths(store);
+    assert.deepEqual(Object.values(kept).sort((x, y) => x - y), [33, 50], `both changes kept: ${JSON.stringify(kept)}`);
+    if (bStores) assert.deepEqual(kept, { p: 33, "copy-1": 50 }, "B's stored work stays the project; A's is the copy");
+    assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+    assert.equal(problems.length, 1);
+    assert.match(problems[0]!, /"Box \(from another tab\)"/);
+    assert.equal(journal.items.size, 0, "nothing left in the journal");
+  });
+
+test("a tab's leaving after its own earlier entry writes over its own, putting nothing aside (clumsy hunt 2026-11-04)", async () => {
+  // One tab, two leavings (hidden, shown, changed, hidden again): the second entry replaces its own first. Nothing is
+  // put aside, so the next visit puts back 60 alone, with no copy and no message.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let a = part(50);
+  const tab = startAutosave(closing(store), "p", () => a, () => {}, { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now, writer: "tab-a" });
+  tab.changed();
+  await clock.advance(100);
+  assert.equal(tab.leaving(), true);
+  a = part(60);
+  tab.changed();
+  await clock.advance(100);
+  assert.equal(tab.leaving(), true);
+  assert.deepEqual([...journal.items.keys()], [unsavedKey("p")]);
+  assert.deepEqual(await recoverUnsaved(store, journal, [], () => "copy-1"), []);
+  assert.deepEqual(await widths(store), { p: 60 });
+});
+
+test("a tab whose entry was put aside takes it away once its own save lands, leaving the other tab's entry (clumsy hunt 2026-11-04)", async () => {
+  // A changes to 50 and is hidden at t = 100: 50 journalled, A's save held back. B changes to 33 and is hidden at
+  // t = 200: A's entry goes aside, B's takes the key. Then A's save lands: the store holds A's 50, so A's aside entry
+  // is not needed and goes; the key holds B's 33, which A must leave. B's save, made from 0, is refused (the store moved
+  // on), so the next visit keeps B's 33 as the copy and "p" stays A's 50: both kept, nothing left over.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const held: ProjectStore = { ...store, save: async (...args) => (await gate, store.save(...args)) };
+  let a = part(40);
+  let b = part(40);
+  const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+  const tabA = startAutosave(held, "p", () => a, () => {}, { ...opts, writer: "tab-a" });
+  const tabB = startAutosave(closing(store), "p", () => b, () => {}, { ...opts, writer: "tab-b" });
+  a = part(50);
+  tabA.changed();
+  await clock.advance(100);
+  assert.equal(tabA.leaving(), true);
+  b = part(33);
+  tabB.changed();
+  await clock.advance(100);
+  assert.equal(tabB.leaving(), true);
+  assert.deepEqual([...journal.items.keys()].sort(), [asideKey("p", "tab-a"), unsavedKey("p")]);
+  assert.equal(readJournalEntry(journal.items.get(asideKey("p", "tab-a"))!).writer, "tab-a", "A's entry, as it was");
+  release();
+  await clock.advance(100);
+  assert.equal(widthOf(await store.open("p")), 50, "A's save landed");
+  assert.deepEqual([...journal.items.keys()], [unsavedKey("p")], "A's aside entry went; B's stays");
+  assert.equal(readJournalEntry(journal.items.get(unsavedKey("p"))!).writer, "tab-b");
+  const problems = await recoverUnsaved(store, journal, [], () => "copy-1");
+  assert.deepEqual(await widths(store), { p: 50, "copy-1": 33 });
+  assert.equal(problems.length, 1);
+  assert.equal(journal.items.size, 0);
+});
+
+test("only keys with a writer and an id after the aside prefix are entries; an entry with no writer stays for its owner", async () => {
+  const store = projectStore(memoryKeyValue(), [], () => new Date(0));
+  const journal = fakeStorage();
+  const entry = journalEntry(projectToJson(part(45)), new Date(5));
+  for (const k of [ASIDE_PREFIX, `${ASIDE_PREFIX}w`, `${ASIDE_PREFIX}w/`, `${ASIDE_PREFIX}/p`]) journal.setItem(k, entry);
+  assert.deepEqual(await recoverUnsaved(store, journal, []), []);
+  assert.equal(journal.items.size, 4, "none read, none removed");
+  assert.deepEqual(await store.list(), []);
+  // An entry with no writer is the kept one recovery couldn't store (the full-disk browser check, leave-save.mjs: it
+  // was put aside, then put back over the newer work once there was room). Only its owner journals there: left alone.
+  const kept = fakeStorage();
+  kept.setItem(unsavedKey("p"), journalEntry(projectToJson(part(45)), new Date(5), true));
+  putAsideOthers(kept, "p", "tab-b");
+  assert.deepEqual([...kept.items.keys()], [unsavedKey("p")]);
+  // Its own entry stays where it is.
+  const own = fakeStorage();
+  own.setItem(unsavedKey("p"), journalEntry(projectToJson(part(45)), new Date(5), false, null, "tab-b"));
+  putAsideOthers(own, "p", "tab-b");
+  assert.deepEqual([...own.items.keys()], [unsavedKey("p")]);
+});
+
+test("an aside entry the store refuses stays aside, says so, and never replaces the project's own entry", async () => {
+  const kv = memoryKeyValue();
+  const store = projectStore(kv, [], () => new Date(0));
+  const full: ProjectStore = { ...store, save: async () => Promise.reject(new Error("quota exceeded")) };
+  const journal = fakeStorage();
+  const theirs = journalEntry(projectToJson(part(45)), new Date(5), false, null, "tab-a");
+  journal.setItem(asideKey("p", "tab-a"), theirs);
+  const problems = await recoverUnsaved(full, journal, []);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0]!, /^changes made to "Box" in another tab couldn't be stored \(quota exceeded\)/);
+  assert.deepEqual([...journal.items.entries()], [[asideKey("p", "tab-a"), theirs]]);
+});
+
+test("a tab's save landing while its entry is aside names that save in its own entry, never in the other tab's", async () => {
+  // A changes to 50; its save reads it at t = 1000 and is held back. A changes to 60 and is hidden at t = 1100: 60
+  // journalled, made from 0. B changes to 33 and is hidden at t = 1200: A's entry goes aside. A's save of 50 lands:
+  // A's entry (60) is newer, so it stays, now made from that save (1000); B's entry still names 0, the state B had.
+  // A's save of 60 then never lands (the page went).
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let saves = 0;
+  // The first save is held back until released; any after it (A's 60) never lands, as the page has gone.
+  const held: ProjectStore = { ...store, save: async (...args) => (++saves === 1 ? (await gate, store.save(...args)) : new Promise<void>(() => {})) };
+  let a = part(40);
+  let b = part(40);
+  const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+  const tabA = startAutosave(held, "p", () => a, () => {}, { ...opts, writer: "tab-a" });
+  const tabB = startAutosave(closing(store), "p", () => b, () => {}, { ...opts, writer: "tab-b" });
+  a = part(50);
+  tabA.changed();
+  await clock.advance(1000);
+  a = part(60);
+  tabA.changed();
+  await clock.advance(100);
+  assert.equal(tabA.leaving(), true);
+  b = part(33);
+  tabB.changed();
+  await clock.advance(100);
+  assert.equal(tabB.leaving(), true);
+  release();
+  await settle();
+  await settle();
+  assert.equal(readJournalEntry(journal.items.get(unsavedKey("p"))!).base?.getTime(), 0, "B's entry still names the state B had");
+  assert.equal(readJournalEntry(journal.items.get(asideKey("p", "tab-a"))!).base?.getTime(), 1000, "A's names A's save");
 });
