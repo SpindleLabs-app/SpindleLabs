@@ -585,7 +585,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "greys-ignore-pins": {
     what: "the timeline's own reading of what is greyed (document.ts, for the bar, the browser and which bodies are shown) leaves pins out, so it disagrees with the rebuild about a sketch pinned to a suppressed body",
     edits: [
-      { file: DOCUMENT, find: "sketchInputs(f, document.sketches.find((s) => s.id === f.id))", replace: "sketchInputs(f, { projected: document.sketches.find((s) => s.id === f.id)?.projected })" },
+      { file: DOCUMENT, find: "sketchInputs(f, a.contents.get(f.id))", replace: "sketchInputs(f, { projected: a.contents.get(f.id)?.projected })" },
       { file: DOCUMENT, find: "sketchInputs(f, contents.get(f.id))", replace: "sketchInputs(f, { projected: contents.get(f.id)?.projected })" },
     ],
     run: ["naming"],
