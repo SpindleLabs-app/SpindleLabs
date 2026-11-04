@@ -71,17 +71,40 @@ try {
     assert.equal(await isOpen(page), true);
     await page.context().close();
   });
-  await check("General's Show opens the shortcuts list, and the app stays usable after closing both", async () => {
-    const page = await fresh(1280);
-    await openSettings(page, false);
-    await page.click("#settings [data-section=general] .settings-action");
-    assert.equal(await isOpen(page), false, "Settings steps aside");
-    assert.equal(await page.evaluate(() => document.getElementById("shortcuts")?.open), true, "the shortcuts list is open");
-    await page.keyboard.press("Escape");
-    await page.click("#settings-open");
-    assert.equal(await isOpen(page), true, "Settings opens again");
-    await page.context().close();
-  });
+  // Ben, 2026-11-04: closing the shortcuts list opened from Settings went past Settings too. Close and Escape now go
+  // back to Settings, focus on its Show; the list opened on its own (the ? key) closes to the app as before.
+  for (const [width, tap] of [[1280, false], [375, true]]) {
+    await check(`${width} px${tap ? ", taps" : ""}: General's Show opens the shortcuts list; its Close and Escape go back to Settings`, async () => {
+      const page = await fresh(width, tap ? 667 : 800, tap);
+      const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+      const shortcutsOpen = () => page.evaluate(() => document.getElementById("shortcuts")?.open ?? false);
+      await openSettings(page, tap);
+      await press("#settings [data-section=general] .settings-action");
+      assert.equal(await isOpen(page), false, "Settings steps aside");
+      assert.equal(await shortcutsOpen(), true, "the shortcuts list is open");
+      await press("#shortcuts .close");
+      assert.equal(await shortcutsOpen(), false, "Close closes the list");
+      assert.equal(await isOpen(page), true, "and goes back to Settings");
+      assert.equal(await page.evaluate(() => document.activeElement?.matches("#settings [data-section=general] .settings-action")), true, "focus back on Show");
+      await press("#settings [data-section=general] .settings-action");
+      await page.keyboard.press("Escape");
+      assert.equal(await shortcutsOpen(), false, "Escape closes the list");
+      assert.equal(await isOpen(page), true, "and goes back to Settings too");
+      // Settings' own Close then leaves for the app, and the list opened by itself (?) closes straight to the app.
+      await press("#settings .close");
+      assert.equal(await isOpen(page), false);
+      if (!tap) {
+        await page.keyboard.press("?");
+        assert.equal(await shortcutsOpen(), true, "? opens the list");
+        await page.click("#shortcuts .close");
+        assert.equal(await shortcutsOpen(), false);
+        assert.equal(await isOpen(page), false, "opened by ?, closing it does not open Settings");
+      }
+      await openSettings(page, tap);
+      assert.equal(await isOpen(page), true, "Settings opens again");
+      await page.context().close();
+    });
+  }
   await check("About shows the kernel version once it is known", async () => {
     const page = await fresh(1280);
     await page.waitForFunction(() => /kernel v/.test(document.getElementById("version")?.textContent ?? ""));

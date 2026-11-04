@@ -910,7 +910,8 @@ const shortcutDialog = Object.assign(document.createElement("dialog"), { id: "sh
 shortcutDialog.setAttribute("aria-labelledby", "shortcuts-title");
 document.body.append(shortcutDialog);
 const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-function showShortcuts() {
+/** Opens the list; `back`, when given, runs once it closes (Close or Escape): opened from Settings, it goes back there. */
+function showShortcuts(back?: () => void) {
   const groups = shortcuts.help(panesInUse().map((p) => pool.showing(p)!)).map((g) => ({
     title: g.scope === "app" ? "Everywhere" : workspaceTitle(g.scope),
     onScreen: g.onScreen,
@@ -918,6 +919,7 @@ function showShortcuts() {
   }));
   shortcutDialog.innerHTML = `<header><h2 id="shortcuts-title">Keyboard shortcuts</h2><button type="button" class="close">Close</button></header>${shortcutList(groups)}`;
   shortcutDialog.querySelector(".close")!.addEventListener("click", () => shortcutDialog.close());
+  if (back) shortcutDialog.addEventListener("close", back, { once: true });
   shortcutDialog.showModal();
 }
 // Settings: a card dialog of sections (@fission/ui settings.ts), kept in this
@@ -931,7 +933,12 @@ const settings = () => (browserSettings ??= new SettingsStore(local));
 const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts, theme: readThemeChoice(settings()), onTheme: chooseTheme });
+  // The shortcuts list opened from Settings closes back to it, with focus on its Show (Ben, 2026-11-04: it closed both).
+  const backToSettings = () => {
+    settingsDialog.showModal();
+    settingsDialog.querySelector<HTMLElement>("[data-section=general] .settings-action")?.focus();
+  };
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme });
   settingsDialog.showModal();
 });
 settingsDialog.addEventListener("click", (e) => {
