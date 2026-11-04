@@ -181,7 +181,8 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   // The constraint tools (step 47d2), after a divider in the same row, so at phone width they wrap with the rest.
   const constraintDivider = divider.cloneNode() as HTMLElement;
   const constraintButtons = CONSTRAINT_TOOLS.map((t) => {
-    const b = button(t.label, `sketch-tool-${t.kind}`);
+    // Its words are its name and start its tooltip, as every toolbar button's (e2e/toolbar.mjs).
+    const b = button(`${t.label} constraint`, `sketch-tool-${t.kind}`);
     b.title = `${t.label} constraint`;
     b.setAttribute("aria-label", `${t.label} constraint`);
     b.className = "toolbar-group-tool";
