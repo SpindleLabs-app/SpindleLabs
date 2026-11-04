@@ -1,6 +1,8 @@
 // Browser check of optional accounts (src/account.ts, accounts.config.mjs).
-// - The normal build (switch off) has no account code, no Sign in button and
-//   contacts no account service.
+// - The normal build (`npm run build`, switch on since the privacy policy went
+//   live) points at SpindleLabs' own account service, from accounts.config.mjs.
+// - A build with the switch off (SPINDLE_ACCOUNTS=0, built here) has no account
+//   code, no Sign in button and contacts no account service.
 // - A build with the switch on (built here into a temporary folder, against a
 //   fake service answered by Playwright) shows Sign in before Settings, sends
 //   nothing to the service until the person signs in, signs in with Google
@@ -25,7 +27,8 @@ const SERVICE = "https://test-accounts.supabase.co";
 const KEY = "test-anon-key";
 const shots = process.env.SHOTS;
 const root = fileURLToPath(new URL("..", import.meta.url));
-const offDist = join(root, "dist");
+const shipped = join(root, "dist");
+const offDist = mkdtempSync(join(tmpdir(), "account-e2e-off-"));
 const onDist = mkdtempSync(join(tmpdir(), "account-e2e-"));
 const errors = [];
 let failed = false;
@@ -40,6 +43,9 @@ async function check(name, fn) {
   }
 }
 
+// The build with accounts off.
+process.env.SPINDLE_ACCOUNTS = "0";
+await build({ root, logLevel: "error", build: { outDir: offDist, emptyOutDir: true } });
 // The build with accounts on, pointed at the fake service.
 Object.assign(process.env, { SPINDLE_ACCOUNTS: "1", SPINDLE_ACCOUNT_URL: SERVICE, SPINDLE_ACCOUNT_KEY: KEY });
 await build({ root, logLevel: "error", build: { outDir: onDist, emptyOutDir: true } });
@@ -136,10 +142,20 @@ async function fresh(base, width = 1280, phone = false) {
 }
 const accountText = (page) => page.locator("#account-open").textContent();
 
+const scripts = (dist) => readdirSync(join(dist, "assets")).filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(dist, "assets", f), "utf8")).join("");
+
 try {
+  await check("the shipped build has accounts on, pointed at SpindleLabs' own account service", async () => {
+    const { ACCOUNT_SERVICE } = await import("../accounts.config.mjs");
+    const code = scripts(shipped);
+    assert.match(ACCOUNT_SERVICE.url, /^https:\/\/[a-z0-9]{20}\.supabase\.co$/);
+    assert.ok(code.includes(ACCOUNT_SERVICE.url), "the service address is in the shipped build");
+    assert.ok(code.includes(ACCOUNT_SERVICE.anonKey), "the public key is in the shipped build");
+  });
+
   await check("switch off: no account code in the build, no Sign in button, no request to an account service", async () => {
-    const code = readdirSync(join(offDist, "assets")).filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(offDist, "assets", f), "utf8")).join("");
-    assert.equal(code.includes("auth/v1"), false, "no sign-in requests in the normal build");
+    const code = scripts(offDist);
+    assert.equal(code.includes("auth/v1"), false, "no sign-in requests in the switched-off build");
     assert.equal(code.includes("spindle.account"), false);
     const { page, svc, context } = await fresh(OFF_URL);
     await startWithBox(page);
@@ -299,5 +315,6 @@ try {
   await off.httpServer.close();
   await on.httpServer.close();
   rmSync(onDist, { recursive: true, force: true });
+  rmSync(offDist, { recursive: true, force: true });
 }
 process.exit(failed ? 1 : 0);
