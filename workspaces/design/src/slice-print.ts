@@ -75,7 +75,9 @@ export const FORMAT_OPTIONS: readonly { label: string; value: PrintFormat }[] = 
 ];
 export const PLATE_OPTIONS: readonly { label: string; value: BuildPlate }[] = [
   { label: "Textured PEI plate", value: "textured" },
-  { label: "Smooth, cool or engineering plate", value: "smooth" },
+  { label: "Smooth PEI or High Temp plate", value: "smooth" },
+  { label: "Cool Plate", value: "cool_plate" },
+  { label: "Cool Plate SuperTack", value: "supertack_plate" },
 ];
 export const NOZZLE_OPTIONS: readonly { label: string; value: NozzleType }[] = [
   { label: "0.4 mm Standard", value: "standard" },
@@ -518,12 +520,15 @@ export function gcodeName(choices: PrintChoices, project?: string): string {
   return fitName(nameLead(project), settingsPart(choices), ".gcode");
 }
 
+/** Each plate's part of a P1S file's name. */
+const PLATE_NAMES: Readonly<Record<BuildPlate, string>> = { textured: "textured", smooth: "smooth", cool_plate: "cool", supertack_plate: "supertack" };
+
 /**
  * The P1S file's name: as the plain file's, plus the plate and, for a High Flow nozzle, "high-flow", so a file for one
  * plate or nozzle is never taken for another's.
  */
 export function printFileName(choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle, project?: string): string {
-  return fitName(nameLead(project), `${settingsPart(choices)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}`, P1S_KIND.extension);
+  return fitName(nameLead(project), `${settingsPart(choices)}-${PLATE_NAMES[plate]}${nozzle === "high-flow" ? "-high-flow" : ""}`, P1S_KIND.extension);
 }
 
 /**
@@ -727,7 +732,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const format = choice("slice-print-format", "File", FORMAT_OPTIONS, FILE_DEFAULTS.format);
   format.wrap.title = "The P1S's own print file, with its start and end routines, ready to send to the printer; or plain G-code for another printer.";
   const plate = choice("slice-print-plate", "Build plate", PLATE_OPTIONS, FILE_DEFAULTS.plate);
-  plate.wrap.title = "The plate on the printer's bed: the textured plate's first layer prints 0.04 mm lower, as its bumps stop the nozzle when the printer finds the bed.";
+  plate.wrap.title = "The plate on the printer's bed. The bed is heated for PLA on it: 55 °C on the textured and smooth plates, 35 °C on the Cool Plate, 45 °C on the SuperTack. The textured plate's first layer prints 0.04 mm lower, as its bumps stop the nozzle when the printer finds the bed.";
   const storage = (() => {
     try {
       return slot.ownerDocument.defaultView?.localStorage ?? null;
@@ -818,7 +823,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     if (text) status.scrollIntoView?.({ block: "nearest" });
   };
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value), warmUp: warmUp.checked, betterGrip: grip.checked });
-  const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
+  const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: PLATE_OPTIONS.find((o) => o.value === plate.select.value)?.value ?? "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
   // Presets (Ben, 2026-11-04): the settings saved under a name, picked in the heading line (slice-presets.ts). Putting
   // one in goes through each choice's own change, so the nozzle, warm-up loop and Better grip are remembered as if picked.
   const inputs = { layerHeight: quality.select, walls: walls.select, infill: infill.select, supports: supports.select, format: format.select, plate: plate.select, nozzle: nozzle.select };

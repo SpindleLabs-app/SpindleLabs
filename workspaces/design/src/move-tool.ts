@@ -73,8 +73,10 @@ const DEGREES = Math.PI / 180;
 function turned(q: number[], k: 0 | 1 | 2, deg: number) {
   if (deg === 0) return;
   const [i, j] = k === 0 ? [1, 2] : k === 1 ? [2, 0] : [0, 1];
-  const c = Math.cos(deg * DEGREES);
-  const s = Math.sin(deg * DEGREES);
+  // Whole turns off first, as moveMotions does (move.ts), so a huge angle previews where it builds.
+  const r = (deg % 360) * DEGREES;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
   const [a, b] = [q[i], q[j]];
   q[i] = c * a - s * b;
   q[j] = s * a + c * b;
@@ -319,18 +321,40 @@ export async function refusedMove(kernel: KernelCalls, next: DesignDocument, id:
  * moved box came out where the box was made).
  */
 export async function endSpec(kernel: KernelCalls, doc: DesignDocument, f: Feature): Promise<BodySpec> {
-  if (!doc.timeline.features.some((m) => actsOnBodies(m) && m.dependsOn.includes(f.id))) return featureSpec(kernel, doc, f);
-  const cache = new BodyCache(kernel);
-  try {
-    const build = await rebuildTimeline(doc, cache, kernel);
+  return (await endSpecs(kernel, doc, [f]))[0];
+}
+
+/**
+ * `endSpec` of each of `features`, in order, with one rebuild for all the
+ * moved ones (clumsy hunt 2026-11-04: the STL of 50 moved bodies rebuilt the
+ * whole design 50 times, minutes with nothing on screen). Throws for the
+ * first one that is not built, as `endSpec` does.
+ */
+export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<BodySpec[]> {
+  // Moved, or used by a Combine (35f1): only a rebuild says where it ends.
+  const moved = (f: Feature) => doc.timeline.features.some((m) => actsOnBodies(m) && m.dependsOn.includes(f.id));
+  let build: Awaited<ReturnType<typeof rebuildTimeline>> | null = null;
+  if (features.some(moved)) {
+    const cache = new BodyCache(kernel);
+    try {
+      build = await rebuildTimeline(doc, cache, kernel);
+    } finally {
+      await cache.close();
+    }
+  }
+  const specs: BodySpec[] = [];
+  for (const f of features) {
+    if (build === null || !moved(f)) {
+      specs.push(await featureSpec(kernel, doc, f));
+      continue;
+    }
     const r = build.results[f.id];
     const body = r?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined;
-    if (body !== undefined && body.spec !== null) return body.spec;
-    if (body !== undefined) throw new Error(`${itemName(f)}'s body is a Combine's result, which only the kernel holds: ask for its STL by body (endStls)`);
-    throw new Error(r?.status === "failed" ? r.message : `${itemName(f)} is not built`);
-  } finally {
-    await cache.close();
+    if (body === undefined) throw new Error(r?.status === "failed" ? r.message : `${itemName(f)} is not built`);
+    if (body.spec === null) throw new Error(`${itemName(f)}'s body is a Combine's result, which only the kernel holds: ask for its STL by body (endStls)`);
+    specs.push(body.spec);
   }
+  return specs;
 }
 
 /**
@@ -344,7 +368,9 @@ export async function endSpec(kernel: KernelCalls, doc: DesignDocument, f: Featu
 export async function endStls(kernel: KernelCalls, doc: DesignDocument, bodies: readonly { body: string; feature: Feature; name: string }[]): Promise<StlFile[]> {
   const files: StlFile[] = [];
   if (!doc.timeline.features.some(isCombineItem)) {
-    for (const b of bodies) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, b.feature), b.name));
+    // One rebuild for all the moved bodies, not one each (clumsy hunt 2026-11-04, endSpecs).
+    const specs = await endSpecs(kernel, doc, bodies.map((b) => b.feature));
+    for (const [i, b] of bodies.entries()) files.push(await kernel.call("export_stl", specs[i], b.name));
     return files;
   }
   const cache = new BodyCache(kernel);
