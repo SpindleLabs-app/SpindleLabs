@@ -71,7 +71,13 @@ const { Window } = await import("happy-dom");
 /** The name a stand-in saves under: the one the workspace offers. */
 const nameFor = (c: PrintChoices, f: FileChoices) => (f.format === "p1s" ? printFileName(c, f.plate, f.nozzle) : gcodeName(c));
 
-function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices, f: FileChoices, alive: () => boolean, changed: () => boolean) => Promise<void> = async () => {}) {
+/** A clock a second further on at each read: every press is a second after the last, so none is a double press. */
+function slowHand() {
+  let t = 0;
+  return () => (t += 1000);
+}
+
+function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices, f: FileChoices, alive: () => boolean, changed: () => boolean) => Promise<void> = async () => {}, now: () => number = slowHand()) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = doc.createElement("div");
@@ -88,6 +94,7 @@ function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) =
       return { ...r, name: r.name ?? nameFor(c, f) };
     },
     preview: (c, f, alive, changed) => (asked.push(c), files.push(f), preview(c, f, alive, changed)),
+    now,
   });
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
   const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -129,6 +136,42 @@ test("the dialog slices with the choices picked, then says what the slice came t
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-tree-supports\.gcode: /);
   t.$("slice-print-close").click();
   assert.equal(t.d.open, false);
+  await t.window.happyDOM.close();
+});
+
+test("a double press on Slice and download, or on Preview, is one slice; a changed choice or a pause lets the next through", async () => {
+  // The clumsy-user hunt (11-04): a double-click saved two files. The clock stands still unless the test moves it.
+  const clock = { t: 0 };
+  const t = dialog(async () => ({ print: print(), saved: true }), async () => {}, () => clock.t);
+  t.d.ask();
+  t.$("slice-print-go").click();
+  await t.settle(); // the first slice done, at 0 ms
+  clock.t = 120;
+  t.$("slice-print-go").click(); // 120 ms after: the double-click's second click
+  await t.settle();
+  assert.equal(t.asked.length, 1, "one slice for a double-click");
+  t.$<HTMLSelectElement>("slice-print-supports").value = "normal";
+  t.$<HTMLSelectElement>("slice-print-supports").dispatchEvent(new t.window.Event("change", { bubbles: true }) as unknown as Event);
+  clock.t = 200;
+  t.$("slice-print-go").click(); // 80 ms after the last press, but a choice changed: a new file is asked for
+  await t.settle();
+  assert.equal(t.asked.length, 2);
+  assert.equal(t.asked[1].supports, "normal");
+  clock.t = 200 + 0.9 * 500;
+  t.$("slice-print-go").click(); // 0.9 × 500 ms after the last press (and after the slice's end): still the same burst
+  await t.settle();
+  assert.equal(t.asked.length, 2, "0.9 × REPEAT_MS: a repeat");
+  clock.t += 1.1 * 500;
+  t.$("slice-print-go").click(); // 1.1 × 500 ms after: meant
+  await t.settle();
+  assert.equal(t.asked.length, 3, "1.1 × REPEAT_MS: a new slice");
+  // Preview has its own guard: its first press is meant, its double press isn't.
+  clock.t += 10;
+  t.$("slice-print-preview").click();
+  clock.t += 10;
+  t.$("slice-print-preview").click();
+  await t.settle();
+  assert.equal(t.asked.length, 4, "one preview for a double-click");
   await t.window.happyDOM.close();
 });
 
