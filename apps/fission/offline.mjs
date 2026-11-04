@@ -79,14 +79,22 @@ export function writeServiceWorker(dir) {
 }
 
 /**
- * The chunks only loaded on demand (by import(), never statically), so
- * not kept at install: the in-browser AI's library is 6 MB, and it fetches
- * its model from the network anyway. Kept the first time they load.
+ * Modules main.ts loads by import() on every start, so kept at install like
+ * the rest: the account code (only in a build with accounts on).
+ */
+export const AT_START = [fileURLToPath(new URL("./src/account.ts", import.meta.url))];
+
+/**
+ * The chunks only loaded on demand (by import(), never statically, and not
+ * on every start), so not kept at install: the in-browser AI's library is
+ * 6 MB, and it fetches its model from the network anyway. Kept the first
+ * time they load.
  */
 export function onDemandChunks(bundle) {
   const chunks = Object.values(bundle).filter((c) => c.type === "chunk");
   const statically = new Set(chunks.flatMap((c) => c.imports));
-  return chunks.filter((c) => c.isDynamicEntry && !c.isEntry && !statically.has(c.fileName)).map((c) => c.fileName);
+  const atStart = (c) => c.facadeModuleId !== undefined && AT_START.includes(resolve(c.facadeModuleId));
+  return chunks.filter((c) => c.isDynamicEntry && !c.isEntry && !statically.has(c.fileName) && !atStart(c)).map((c) => c.fileName);
 }
 
 /**

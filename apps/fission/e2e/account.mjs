@@ -1,6 +1,8 @@
 // Browser check of optional accounts (src/account.ts, accounts.config.mjs).
-// - The normal build (switch off) has no account code, no Sign in button and
-//   contacts no account service.
+// - The normal build (`npm run build`, switch on since the privacy policy went
+//   live) points at SpindleLabs' own account service, from accounts.config.mjs.
+// - A build with the switch off (SPINDLE_ACCOUNTS=0, built here) has no account
+//   code, no Sign in button and contacts no account service.
 // - A build with the switch on (built here into a temporary folder, against a
 //   fake service answered by Playwright) shows Sign in before Settings, sends
 //   nothing to the service until the person signs in, signs in with Google
@@ -25,7 +27,8 @@ const SERVICE = "https://test-accounts.supabase.co";
 const KEY = "test-anon-key";
 const shots = process.env.SHOTS;
 const root = fileURLToPath(new URL("..", import.meta.url));
-const offDist = join(root, "dist");
+const shipped = join(root, "dist");
+const offDist = mkdtempSync(join(tmpdir(), "account-e2e-off-"));
 const onDist = mkdtempSync(join(tmpdir(), "account-e2e-"));
 const errors = [];
 let failed = false;
@@ -40,6 +43,9 @@ async function check(name, fn) {
   }
 }
 
+// The build with accounts off.
+process.env.SPINDLE_ACCOUNTS = "0";
+await build({ root, logLevel: "error", build: { outDir: offDist, emptyOutDir: true } });
 // The build with accounts on, pointed at the fake service.
 Object.assign(process.env, { SPINDLE_ACCOUNTS: "1", SPINDLE_ACCOUNT_URL: SERVICE, SPINDLE_ACCOUNT_KEY: KEY });
 await build({ root, logLevel: "error", build: { outDir: onDist, emptyOutDir: true } });
@@ -53,7 +59,7 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], profile: { email_opt_in: false }, tokens: new Set() };
+  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set() };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
@@ -98,7 +104,7 @@ function fakeService() {
       const refresh = `refresh-${++svc.n}`;
       svc.live.add(refresh);
       svc.tokens.add(`access-${svc.n}`);
-      return json(route, 200, { access_token: `access-${svc.n}`, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: refresh, user: { id: "7f3c2a10-0000-4000-8000-000000000001", email: "ada@example.com", user_metadata: { full_name: "Ada Maker", avatar_url: "https://lh3.example/a.png" } } });
+      return json(route, 200, { access_token: `access-${svc.n}`, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: refresh, user: { id: "7f3c2a10-0000-4000-8000-000000000001", email: "ada@example.com", user_metadata: { full_name: svc.fullName, avatar_url: "https://lh3.example/a.png" } } });
     };
     if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "pkce") {
       const challenge = svc.codes.get(body.auth_code);
@@ -134,12 +140,37 @@ async function fresh(base, width = 1280, phone = false) {
   await page.waitForSelector("#settings-open", { state: "attached" });
   return { page, svc, context, elsewhere };
 }
+/** The first two top-bar items that overlap by more than 1 px (as e2e/phone-short.mjs reads them), or null. */
+const topBarOverlap = (page) =>
+  page.evaluate(() => {
+    const boxes = [...document.querySelectorAll("#topbar > *:not([hidden]), #topbar #topbar-actions > *, #topbar .app-bar > *, #topbar button")]
+      .filter((e) => e.children.length === 0 || e.tagName === "BUTTON" || e.tagName === "H1")
+      .map((e) => ({ id: e.id || e.textContent.trim().slice(0, 12), e, r: e.getBoundingClientRect() }))
+      .filter((b) => b.r.width > 2 && b.r.height > 2);
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i].r, b = boxes[j].r;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 1 && h > 1 && !boxes[i].e.contains(boxes[j].e) && !boxes[j].e.contains(boxes[i].e)) return `${boxes[i].id} overlaps ${boxes[j].id}`;
+      }
+    return null;
+  });
 const accountText = (page) => page.locator("#account-open").textContent();
 
+const scripts = (dist) => readdirSync(join(dist, "assets")).filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(dist, "assets", f), "utf8")).join("");
+
 try {
+  await check("the shipped build has accounts on, pointed at SpindleLabs' own account service", async () => {
+    const { ACCOUNT_SERVICE } = await import("../accounts.config.mjs");
+    const code = scripts(shipped);
+    assert.match(ACCOUNT_SERVICE.url, /^https:\/\/[a-z0-9]{20}\.supabase\.co$/);
+    assert.ok(code.includes(ACCOUNT_SERVICE.url), "the service address is in the shipped build");
+    assert.ok(code.includes(ACCOUNT_SERVICE.anonKey), "the public key is in the shipped build");
+  });
+
   await check("switch off: no account code in the build, no Sign in button, no request to an account service", async () => {
-    const code = readdirSync(join(offDist, "assets")).filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(offDist, "assets", f), "utf8")).join("");
-    assert.equal(code.includes("auth/v1"), false, "no sign-in requests in the normal build");
+    const code = scripts(offDist);
+    assert.equal(code.includes("auth/v1"), false, "no sign-in requests in the switched-off build");
     assert.equal(code.includes("spindle.account"), false);
     const { page, svc, context } = await fresh(OFF_URL);
     await startWithBox(page);
@@ -249,6 +280,27 @@ try {
     await context.close();
   });
 
+  // Regression: at 761 to 899 px Sign in pushed "Saving…" under DESIGN ▾ (CI's phone-short.mjs at 844 × 390).
+  for (const width of [761, 844, 900, 999, 1000, 1100]) {
+    await check(`switch on, ${width} px: signed out and signed in with a long name, the top bar is one row with nothing overlapping`, async () => {
+      const { page, svc, context } = await fresh(ON_URL, width, width < 900);
+      svc.fullName = "Maximilianus Wolfeschlegel";
+      await page.locator("#account-open").waitFor();
+      await startWithBox(page);
+      await page.evaluate(() => { const s = document.getElementById("save-status"); if (s) s.textContent = "Saving…"; }); // the widest status
+      assert.equal(await topBarOverlap(page), null, "signed out");
+      assert.equal(await page.$eval("#topbar", (e) => Math.round(e.getBoundingClientRect().height)), 44, "signed out: one row");
+      await page.click("#account-open");
+      await page.click("#account .account-google");
+      await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Maximilianus");
+      await page.evaluate(() => { const s = document.getElementById("save-status"); if (s) s.textContent = "Saving…"; });
+      assert.equal(await topBarOverlap(page), null, "signed in");
+      assert.equal(await page.$eval("#topbar", (e) => Math.round(e.getBoundingClientRect().height)), 44, "signed in: one row");
+      if (shots) await page.screenshot({ path: `${shots}/account-bar-${width}.png`, clip: { x: 0, y: 0, width, height: 60 } });
+      await context.close();
+    });
+  }
+
   await check("switch on: Download my data saves the account's JSON; Delete asks once more, then deletes and signs out, keeping the design", async () => {
     const { page, svc, context } = await fresh(ON_URL);
     await page.locator("#account-open").waitFor();
@@ -299,5 +351,6 @@ try {
   await off.httpServer.close();
   await on.httpServer.close();
   rmSync(onDist, { recursive: true, force: true });
+  rmSync(offDist, { recursive: true, force: true });
 }
 process.exit(failed ? 1 : 0);

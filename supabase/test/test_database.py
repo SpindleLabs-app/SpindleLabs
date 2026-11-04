@@ -185,6 +185,12 @@ class AccountsDatabase(unittest.TestCase):
         self.assertEqual((ok, out), (True, "ada@example.com|free|false|f"))
         self.denied(self.as_role("anon", "select my_data();"))
 
+    def test_my_data_includes_what_google_sent_at_sign_in(self):
+        # The privacy page says sign-in keeps what Google sends (name, email, Google's ID, a picture link): Download my data must show it.
+        self.owner(f"""update auth.users set last_sign_in_at = '2026-11-04 10:00+00', raw_user_meta_data = '{{"full_name": "Ada Maker", "avatar_url": "https://lh3.example/a.png", "sub": "1234"}}' where id = '{ADA}';""")
+        ok, out = self.as_user(ADA, "select my_data()->'account'->'from_google'->>'avatar_url', my_data()->'account'->>'last_sign_in_at' is not null;")
+        self.assertEqual((ok, out), (True, "https://lh3.example/a.png|t"))
+
     def test_delete_my_account_removes_every_row_of_that_person_and_no_one_elses(self):
         self.assertTrue(self.as_user(ADA, "select delete_my_account();")[0])
         for table, key in [("auth.users", "id"), ("profiles", "id"), ("plans", "user_id"), ("ai_allowance", "user_id")]:

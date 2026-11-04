@@ -5,5 +5,5 @@
    color-scheme asks the browser for its dark list; the options' own solid
    background and words make it dark where a browser ignores that.
    Checked by apps/fission/e2e/select-lists.mjs. */
-.dark-select { color-scheme: dark; }
+.dark-select { color-scheme: inherit; }
 .dark-select option, .dark-select optgroup { background-color: var(--surface); color: var(--text); }
