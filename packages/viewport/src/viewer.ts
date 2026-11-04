@@ -433,7 +433,8 @@ export class ViewportView {
       const s = this.arrowAt(e.clientX, e.clientY);
       if (s === null) return;
       e.preventDefault(); // which also keeps the focus where it was, so it is let go by hand: Enter after a drag is the panel's OK, not a toolbar button's
-      e.stopPropagation();
+      // Immediate: navigate()'s listener is on this element too, and in Pan or Zoom mode it moved the camera as well (clumsy-user hunt 11-04).
+      e.stopImmediatePropagation();
       if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
       canvas.setPointerCapture(e.pointerId);
       this.arrowDrag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance };
@@ -488,7 +489,8 @@ export class ViewportView {
       const at = handle === null ? null : this.alongHandle(handle, centre, e.clientX, e.clientY);
       if (handle === null || at === null) return;
       e.preventDefault(); // keeps the focus where it was, so Enter after a drag is the panel's OK
-      e.stopPropagation();
+      // Immediate: navigate()'s listener is on this element too, and in Pan or Zoom mode it moved the camera as well (clumsy-user hunt 11-04).
+      e.stopImmediatePropagation();
       if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
       canvas.setPointerCapture(e.pointerId);
       this.moveDrag = { id: e.pointerId, handle, centre: [...centre], start: at, last: at, turned: 0, amount: 0 };

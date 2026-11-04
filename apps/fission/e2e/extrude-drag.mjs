@@ -190,6 +190,12 @@ async function sendDrag(page, along, touch, during) {
   await touchAt("touchEnd", at(steps));
 }
 
+/** The camera unmoved: the same to 1e-6 mm (the view works its pose out again each frame, to a few ulps). */
+function stayed(now, was, what) {
+  const flat = (c) => [...c.position, ...c.target, ...c.up];
+  assert.ok(flat(now).every((v, k) => Math.abs(v - flat(was)[k]) <= 1e-6), `${what}: ${JSON.stringify(was)} to ${JSON.stringify(now)}`);
+}
+
 let failed = 0;
 async function check(name, fn) {
   try {
@@ -345,6 +351,23 @@ try {
       await page.context().close();
     });
   }
+  // Clumsy-user hunt (11-04, after the 47d4 review's sketch points): in Pan or Zoom mode a drag of the arrow also moved
+  // the camera, since the view's own Pan and Zoom listener heard the same press. The arrow alone moves now.
+  for (const mode of ["pan", "zoom"]) {
+    await check(`1280 px, ${mode === "pan" ? "Pan" : "Zoom"} mode: dragging Extrude's arrow sets the distance and the camera stays`, async () => {
+      const page = await fresh(1280, false);
+      await page.click("#extrude");
+      await until(page, () => document.querySelector("#viewport").dataset.arrow, null, "the arrow");
+      await page.click(`#view-controls [data-nav=${mode}]`);
+      const cam = await page.evaluate(() => window.fissionTest.camera());
+      await dragArrow(page, 60, false);
+      await until(page, () => document.querySelector("#extrude-distance").value !== "0", null, "dragged");
+      const now = await page.evaluate(() => window.fissionTest.camera());
+      stayed(now, cam, "the camera moved with the arrow");
+      await page.context().close();
+    });
+  }
+
   await check("no errors in the console", async () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();
