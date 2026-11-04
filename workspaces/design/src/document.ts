@@ -1302,7 +1302,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const ids = [
     ...d.profiles.map((p) => p.id),
     ...d.timeline.features.map((f) => f.id),
-    ...d.sketches.flatMap((s) => [...s.points.map((p) => p.id), ...s.curves.map((c) => c.id), ...(s.projected ?? []).map((p) => p.id)]),
+    ...d.sketches.flatMap((s) => [...s.points.map((p) => p.id), ...s.curves.map((c) => c.id), ...(s.projected ?? []).map((p) => p.id), ...s.constraints.map((c) => c.id)]),
   ];
   // A kept shape holds a sketch's old ids (some may still be in the sketch): never repeated by a new id, so the counter is above them too.
   // So does a move's deleted body, so no new body takes its id and is moved by it.
@@ -1318,6 +1318,17 @@ export function readDesignDocument(data: unknown): DesignDocument {
     seen.add(id);
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
+  }
+  // No constraint names a point that follows a body (47d4 review): a body's edit moves it without a solve, so the constraint would stop holding.
+  for (const s of d.sketches) {
+    if (s.constraints.length === 0) continue;
+    const curves = new Map(s.curves.map((c) => [c.id, c]));
+    const follows = new Set((s.pins ?? []).map((p) => p.point));
+    for (const p of s.projected ?? []) {
+      const c = curves.get(p.made);
+      for (const q of c === undefined ? [p.made] : c.kind === "line" ? [c.start, c.end] : c.kind === "circle" ? [c.centre] : [c.start, c.end, c.centre]) follows.add(q);
+    }
+    for (const c of s.constraints) for (const q of constraintPoints(c)) if (follows.has(q)) throw new Error(`Design sketch ${s.id}: constraint ${c.id} names ${q}, which follows a body's edge, so a constraint can't hold it`);
   }
   // Every solid feature is its own body (24d1), so each one's sizes or profile are checked, not only the part's.
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).
