@@ -84,6 +84,20 @@ class DumpPictures(unittest.TestCase):
         # Sorted by path: endless-a-0 comes before fuzz-kernel-boolean.
         self.assertEqual(self.pictures(), ["endless-a-0/seed-9/failure-dumps/seed9-x"])
 
+    def test_a_slow_first_start_is_tried_again(self):
+        # Regression (SpindleLabs #308's merge queue, 2026-11-04): on a busy runner Chrome's first start took
+        # longer than a page's time limit, so the first page got no picture ("pictures 1 of 2"). A page that
+        # gets no picture is tried once more. Here the browser hangs on its first start only.
+        first = os.path.join(self.tmp.name, "started")
+        fake = os.path.join(self.tmp.name, "fake-chrome")
+        with open(fake, "w") as f:
+            f.write(f'#!/bin/sh\nif [ ! -e {first} ]; then touch {first}; exec sleep 60; fi\n'
+                    'for a in "$@"; do case $a in --screenshot=*) printf "\\211PNG" >"${a#--screenshot=}";; esac; done\n')
+        os.chmod(fake, 0o755)
+        out = self.run_it(CHROME=fake, PAGE_SECONDS="2")
+        self.assertEqual((out.returncode, out.stdout), (0, "pictures 2 of 2\n"))
+        self.assertEqual(self.pictures(), ["endless-a-0/seed-9/failure-dumps/seed9-x", "fuzz-kernel-boolean/seed-1/failure-dumps/input-1-crash-a"])
+
     def test_a_broken_browser_is_given_up_on(self):
         # A browser that never writes a picture: after two pages in a row it is not tried again, so a night
         # of hundreds of failures doesn't spend the collect job's 15 minutes on a browser that can't start.
@@ -95,12 +109,14 @@ class DumpPictures(unittest.TestCase):
         tries = os.path.join(self.tmp.name, "tries")
         fake = os.path.join(self.tmp.name, "fake-chrome")
         with open(fake, "w") as f:
-            f.write(f"#!/bin/sh\necho x >>{tries}\n")
+            f.write(f'#!/bin/sh\nfor a in "$@"; do case $a in file://*) echo "$a" >>{tries};; esac; done\n')
         os.chmod(fake, 0o755)
         out = self.run_it(CHROME=fake)
         self.assertEqual(out.stdout, "pictures 0 of 5\n")
+        # Two pages, each tried twice, then no more.
         with open(tries) as f:
-            self.assertEqual(len(f.read().split()), 2)
+            urls = f.read().split()
+        self.assertEqual((len(set(urls)), len(urls)), (2, 4))
         # And no new picture once TOTAL_SECONDS are spent (0: none at all).
         os.remove(tries)
         out = self.run_it(CHROME=fake, TOTAL_SECONDS="0")
