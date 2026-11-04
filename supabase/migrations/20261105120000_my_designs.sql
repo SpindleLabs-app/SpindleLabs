@@ -159,17 +159,44 @@ language sql stable security definer set search_path = '' as $$
   from public.designs where user_id = auth.uid()
 $$;
 
--- Everything kept about the person now includes their designs, whole (Privacy Act, APP 12).
+-- Everything kept about the person (Privacy Act, APP 12), built from parts: the account's own, then every function
+-- named my_data_part_<name>() in public, each giving a JSON object of its own keys. A new feature adds its part and
+-- never replaces this function again, so no feature's data can drop out of Download my data.
 create or replace function public.my_data() returns jsonb
-language sql stable security definer set search_path = '' as $$
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  result jsonb;
+  part record;
+  piece jsonb;
+begin
+  if auth.uid() is null then
+    return null;
+  end if;
   select jsonb_build_object(
     'account', (select jsonb_build_object('id', u.id, 'email', u.email, 'created_at', u.created_at, 'last_sign_in_at', u.last_sign_in_at, 'from_google', u.raw_user_meta_data) from auth.users u where u.id = auth.uid()),
     'profile', (select to_jsonb(p) from public.profiles p where p.id = auth.uid()),
     'plan', (select to_jsonb(l) from public.plans l where l.user_id = auth.uid()),
-    'ai_allowance_used_percent', public.my_allowance(),
-    'designs', (select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'source', d.source, 'saved_at', d.saved_at, 'created_at', d.created_at, 'updated_at', d.updated_at, 'revision', d.revision, 'picture', d.picture, 'file', d.body) order by d.created_at), '[]'::jsonb) from public.designs d where d.user_id = auth.uid()))
-  where auth.uid() is not null
+    'ai_allowance_used_percent', public.my_allowance())
+  into result;
+  for part in
+    select p.proname from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname like 'my\_data\_part\_%' and p.pronargs = 0
+      -- only parts made by whoever made this function (the migrations), never one anyone else could add
+      and p.proowner = (select f.proowner from pg_catalog.pg_proc f where f.oid = 'public.my_data()'::pg_catalog.regprocedure)
+    order by p.proname
+  loop
+    execute format('select public.%I()', part.proname) into piece;
+    result := result || coalesce(piece, '{}'::jsonb);
+  end loop;
+  return result;
+end $$;
+
+-- My designs' part: every design, whole.
+create function public.my_data_part_designs() returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('designs', coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name, 'source', d.source, 'saved_at', d.saved_at, 'created_at', d.created_at, 'updated_at', d.updated_at, 'revision', d.revision, 'picture', d.picture, 'file', d.body) order by d.created_at), '[]'::jsonb))
+  from public.designs d where d.user_id = auth.uid()
 $$;
 
-revoke all on function public.design_limits(), public.save_design(uuid, integer, text, text, text, text, timestamptz), public.my_designs(), public.get_design(uuid), public.delete_design(uuid), public.delete_my_designs(), public.my_design_space(), public.my_data() from public, anon, authenticated;
+revoke all on function public.design_limits(), public.save_design(uuid, integer, text, text, text, text, timestamptz), public.my_designs(), public.get_design(uuid), public.delete_design(uuid), public.delete_my_designs(), public.my_design_space(), public.my_data(), public.my_data_part_designs() from public, anon, authenticated;
 grant execute on function public.design_limits(), public.save_design(uuid, integer, text, text, text, text, timestamptz), public.my_designs(), public.get_design(uuid), public.delete_design(uuid), public.delete_my_designs(), public.my_design_space(), public.my_data() to authenticated;

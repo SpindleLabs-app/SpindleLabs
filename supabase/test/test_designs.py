@@ -1,4 +1,4 @@
-"""My designs (supabase/migrations/20261105000000_my_designs.sql), checked on a real PostgreSQL.
+"""My designs (supabase/migrations/20261105120000_my_designs.sql), checked on a real PostgreSQL.
 
 Same throwaway cluster and roles as test_database.py. The point of most tests here is that one person can never
 read, change or delete another person's designs, that the size and space limits hold at 0.9x and refuse at 1.1x,
@@ -209,6 +209,22 @@ class DesignsDatabase(unittest.TestCase):
         self.assertTrue(data["profile"]["keep_designs"])
         empty = json.loads(self.as_user(BO, "select my_data();")[1])
         self.assertEqual(empty["designs"], [])
+
+    def test_my_data_takes_every_part_so_a_new_feature_never_drops_another(self):
+        # A later feature adds its own my_data_part_<name>(); my_data() is never replaced again.
+        self.owner("create function public.my_data_part_zz_test() returns jsonb language sql stable as $$ select jsonb_build_object('zz', auth.uid()) $$;")
+        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        self.assertEqual((data["zz"], data["designs"], data["account"]["email"]), (ADA, [], "ada@example.com"))
+        # A part made by anyone but the migrations' owner is never run.
+        self.owner("create role intruder; grant create on schema public to intruder;")
+        self.owner("set role intruder; create function public.my_data_part_evil() returns jsonb language sql as $$ select '{\"evil\": true}'::jsonb $$; reset role;")
+        self.assertNotIn("evil", self.as_user(ADA, "select my_data();")[1])
+        self.owner("drop function public.my_data_part_evil(); revoke create on schema public from intruder; drop role intruder;")
+        self.denied(self.as_role("anon", "select my_data();"))
+        self.assertEqual(self.as_role("authenticated", "select my_data() is null;"), (True, "t"), "nobody in the token: nothing")
+
+    def test_the_designs_part_is_not_callable_from_the_browser(self):
+        self.denied(self.as_user(ADA, "select my_data_part_designs();"))
 
     def test_deleting_the_account_deletes_its_designs_and_no_one_elses(self):
         self.save(ADA)

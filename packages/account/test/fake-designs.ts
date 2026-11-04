@@ -1,5 +1,5 @@
 // An in-memory account for My designs, answering the data API's requests the way
-// supabase/migrations/20261105000000_my_designs.sql does (the same statuses, revisions and limits; the SQL itself is
+// supabase/migrations/20261105120000_my_designs.sql does (the same statuses, revisions and limits; the SQL itself is
 // checked on a real PostgreSQL by supabase/test/test_designs.py). Byte sizes here are string lengths, which equal
 // PostgreSQL's octet_length for the plain ASCII text the tests use.
 

@@ -103,7 +103,7 @@ test("an id that isn't one is never sent", async () => {
 });
 
 test("the workspace tags and limits match the database's", () => {
-  const sql = readFileSync(new URL("../../../supabase/migrations/20261105000000_my_designs.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261105120000_my_designs.sql", import.meta.url), "utf8");
   const list = /source in \(([^)]*)\)/.exec(sql)![1]!.split(",").map((t) => t.trim().replace(/'/g, ""));
   assert.deepEqual([...SOURCES], list);
   assert.match(sql, new RegExp(`'max_designs', ${LIMITS.maxDesigns}, 'max_bytes', ${LIMITS.maxBytes}, 'max_design_bytes', ${LIMITS.maxDesignBytes}, 'max_picture_bytes', ${LIMITS.maxPictureBytes}\\)`));

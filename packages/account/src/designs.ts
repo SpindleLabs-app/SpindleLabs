@@ -1,5 +1,5 @@
 // My designs: the requests behind copies of a person's designs kept in their account
-// (supabase/migrations/20261105000000_my_designs.sql). The database decides what each request may touch; this only
+// (supabase/migrations/20261105120000_my_designs.sql). The database decides what each request may touch; this only
 // asks and checks that every answer has the shape the database promises. Nothing here runs unless the person is
 // signed in and keeping designs in their account is on.
 
