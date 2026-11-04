@@ -4,7 +4,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
-import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
+import { clientToNdc, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
@@ -35,6 +35,8 @@ interface ViewHost {
   highlight(): ViewportHighlight;
   picking(): boolean;
   pick(pick: ViewportPick): void;
+  /** The view's menu on what is under the pointer (SharedViewport.onMenu); whether one opened. */
+  menu(pick: ViewportPick, at: { x: number; y: number }): boolean;
   setHover(face: number | null, edge: number | null): void;
   bodyFraming(): Framing;
   /** The body and the finished sketches drawn: what Fit and the standard views frame. */
@@ -118,6 +120,11 @@ export class ViewportView {
     this.element = container;
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.autoClearColor = false; // paintBackdrop paints the colour every frame; depth and stencil still clear
+    // The canvas fills the view by its style and never sizes it: in the page's flow, its width and height in pixels
+    // (set by the renderer) held the view at its last size until the next resize ran, so while the page loaded (the
+    // toolbar and timeline filling in under a canvas sized before them) it stuck out of the window for a frame or two,
+    // and with scroll bars that take room (Windows) both bars flashed in and out until it settled (Ben 11-04).
+    Object.assign(this.renderer.domElement.style, { position: "absolute", inset: "0", width: "100%", height: "100%", display: "block" });
     container.appendChild(this.renderer.domElement);
     this.legend.className = "overlay-legend";
     this.legend.hidden = true;
@@ -162,12 +169,52 @@ export class ViewportView {
     // A click picks; a press that moves further is the camera orbiting.
     let down: { x: number; y: number; id: number } | null = null;
     const canvas = this.renderer.domElement;
+    // The menu on a body (missing basics, Ben 2026-11-04): a right-click, or a finger held still HOLD_MS, on what a
+    // click would pick; only while a click picks bodies (not in Extrude, a sketch, or while planes are offered).
+    let hold: { x: number; y: number; id: number; timer: ReturnType<typeof setTimeout> } | null = null;
+    let held = false; // this press opened the menu: its release picks nothing
+    let heldUp = false; // and its finger has just lifted: the click that lift makes is not made (touchend below)
+    const endHold = () => {
+      if (hold) clearTimeout(hold.timer);
+      hold = null;
+    };
+    const menuAt = (x: number, y: number): boolean => {
+      if (!this.host.picking() || this.host.extruding() || this.host.sketchPlane() || this.host.offeredFaces()) return false;
+      const edge = this.edgeAt(x, y);
+      return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
+    };
     canvas.addEventListener("pointerdown", (e) => {
       down = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+      endHold(); // a second finger (a pinch) is no hold
+      held = heldUp = false;
+      if (e.pointerType !== "touch" || !e.isPrimary) return;
+      const at = { x: e.clientX, y: e.clientY };
+      hold = { ...at, id: e.pointerId, timer: setTimeout(() => ((hold = null), (held = menuAt(at.x, at.y))), HOLD_MS) };
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (hold && hold.id === e.pointerId && !isClick(hold, { x: e.clientX, y: e.clientY })) endHold();
+    });
+    canvas.addEventListener("pointercancel", endHold);
+    // The held finger's lift would end in a click, which lands on the menu's backdrop (the page under a modal dialog is
+    // inert) and shuts it: a touchend's default (that click) is not made.
+    canvas.addEventListener(
+      "touchend",
+      (e) => {
+        if (heldUp) e.preventDefault();
+        heldUp = false;
+      },
+      { passive: false },
+    );
+    canvas.addEventListener("contextmenu", (e) => {
+      // A finger's long press: the hold above times it (Safari on iOS fires none), so the browser's own stays shut.
+      if ((e as PointerEvent).pointerType === "touch" || hold || held) return e.preventDefault();
+      if (menuAt(e.clientX, e.clientY)) e.preventDefault();
     });
     canvas.addEventListener("pointerup", (e) => {
       const start = down;
       down = null;
+      endHold();
+      if (held) return void ((held = false), (heldUp = true));
       if (!start || start.id !== e.pointerId || !isClick(start, { x: e.clientX, y: e.clientY })) return;
       // Extrude (UX1b): a click picks the closed outline under the pointer, or none.
       if (this.host.extruding()) {
@@ -898,7 +945,7 @@ export class ViewportView {
   private resize() {
     const { clientWidth: w, clientHeight: h } = this.element;
     if (w === 0 || h === 0) return;
-    this.renderer.setSize(w, h);
+    this.renderer.setSize(w, h, false); // the drawing size only: the style above keeps the canvas the view's size
     // A phone turned upright (or a view made narrower) kept the camera, so the part that filled the wide view ran
     // off both sides of the tall one (phone hunt 11-01): when the width changes, the camera moves along its line of
     // sight so the narrower field of view covers what it did (`refitScale`; turning back undoes it exactly). Not on the
@@ -1005,6 +1052,7 @@ export class Viewer implements SharedViewport {
   private faceMesh: THREE.Mesh | null = null;
   private edges: LineSegmentsGeometry | null = null;
   private picker: ((pick: ViewportPick) => void) | null = null;
+  private menuHandler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
   /** The face or edge under the pointer while picking is on (at most one is set). */
   private hover: { face: number | null; edge: number | null } = { face: null, edge: null };
@@ -1083,6 +1131,7 @@ export class Viewer implements SharedViewport {
       highlight: () => this.highlight,
       picking: () => this.picker !== null,
       pick: (pick) => this.picker?.(pick),
+      menu: (pick, at) => (this.picker ? (this.menuHandler?.(pick, at) ?? false) : false),
       setHover: (face, edge) => this.setHover(face, edge),
       bodyFraming: () => this.bodyFraming(),
       fitFraming: () => this.fitFraming(),
@@ -1205,6 +1254,14 @@ export class Viewer implements SharedViewport {
   set onPick(handler: ((pick: ViewportPick) => void) | null) {
     this.picker = handler;
     if (!handler) this.setHover(null, null);
+  }
+
+  get onMenu() {
+    return this.menuHandler;
+  }
+
+  set onMenu(handler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null | undefined) {
+    this.menuHandler = handler ?? null;
   }
 
   get onSketchPointer() {
