@@ -83,6 +83,8 @@ export const ICONS = {
   vertical: [tone("M7 5A2 2 0 1 0 11 5A2 2 0 1 0 7 5Z"), line("M9 5V19M16 8V16"), tone("M7 19A2 2 0 1 0 11 19A2 2 0 1 0 7 19Z")],
   coincident: [line("M3 20 12 12M12 12 20 4M4 4 12 12"), tone("M9.5 12A2.5 2.5 0 1 0 14.5 12A2.5 2.5 0 1 0 9.5 12Z")],
   fix: [tone("M7 11H17V20H7Z"), line("M7 11H17V20H7ZM9 11V8A3 3 0 0 1 15 8V11")],
+  // A construction line (step 47f): a dashed line between two end points.
+  construction: [tone("M3 19A2 2 0 1 0 7 19A2 2 0 1 0 3 19Z"), line("M7 17 9 15M11 13 13 11M15 9 17 7"), tone("M17 5A2 2 0 1 0 21 5A2 2 0 1 0 17 5Z")],
   // A size (step 47e): a dimension line between two end marks, its arrowheads in, the value's box above.
   dimension: [tone("M9 4H15V8H9Z"), line("M4 10V20M20 10V20M4 15H20M7 12.5 4 15 7 17.5M17 12.5 20 15 17 17.5")],
   // The menus' own mark.

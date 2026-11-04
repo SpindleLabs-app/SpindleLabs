@@ -134,11 +134,18 @@ async function boxFor(page, field) {
   await until(page, (f) => document.activeElement?.id === `typed-${f}`, field, `the ${field} box has the keys`).catch(async (e) =>
     assert.fail(`${e.message} (focus on ${await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName)}, error "${await page.evaluate(() => document.querySelector("#sketch-grid-error")?.textContent ?? "")}", boxes ${await page.evaluate(() => document.querySelector("#typed-entry")?.hidden)})`));
 }
-/** The label showing `text`, its centre on screen. */
+/** The label showing `text`, its centre on screen once it has stopped moving (the view may still be settling after a solve:
+ * a slow machine tapped where the label was a moment before, and hit the view). */
 async function labelAt(page, text) {
   const el = page.locator(".sketch-label", { hasText: text }).first();
   await el.waitFor();
-  const b = await el.boundingBox();
+  let b = await el.boundingBox();
+  for (let k = 0; k < 50; k++) {
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const now = await el.boundingBox();
+    if (now && b && now.x === b.x && now.y === b.y) break;
+    b = now;
+  }
   return { el, x: b.x + b.width / 2, y: b.y + b.height / 2, box: b };
 }
 

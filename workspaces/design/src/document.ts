@@ -41,6 +41,8 @@ export interface SketchLineCurve {
   kind: "line";
   start: string;
   end: string;
+  /** A construction curve (47f): drawn dashed, left out of the outline, held by constraints and dimensions like any other. Absent for an ordinary curve. */
+  construction?: true;
 }
 
 /** A sketch circle round one of its sketch's points, named by id, with its radius in mm (step 22b). */
@@ -49,6 +51,8 @@ export interface SketchCircleCurve {
   kind: "circle";
   centre: string;
   radius: number;
+  /** A construction curve (47f): drawn dashed, left out of the outline, held by constraints and dimensions like any other. Absent for an ordinary curve. */
+  construction?: true;
 }
 
 /**
@@ -62,6 +66,8 @@ export interface SketchArcCurve {
   start: string;
   end: string;
   centre: string;
+  /** A construction curve (47f): drawn dashed, left out of the outline, held by constraints and dimensions like any other. Absent for an ordinary curve. */
+  construction?: true;
 }
 
 /**
@@ -202,7 +208,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 7;
+  version: 8;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -394,7 +400,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 7, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 8, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -852,6 +858,8 @@ function checkContent(pointList: unknown[], curves: unknown[], at: string): void
   }
   for (const [j, c] of s.curves.entries()) {
     if (!isRecord(c) || typeof c.id !== "string") throw new Error(`${at}: curve ${j + 1} has no id`);
+    // 47f: true or left out, so a file never says false where an ordinary curve says nothing.
+    if (Object.hasOwn(c, "construction") && c.construction !== true) throw new Error(`${at}: curve ${c.id} has construction ${shown(c.construction)}, which must be true or left out`);
     if (c.kind === "circle") {
       if (typeof c.centre !== "string" || !points.has(c.centre)) throw new Error(`${at}: circle ${c.id} is round ${shown(c.centre)}, which is not one of the sketch's points`);
       if (!isFiniteNumber(c.radius) || c.radius <= 0) throw new Error(`${at}: circle ${c.id} needs a radius in mm above 0, not ${shown(c.radius)}`);
@@ -1214,6 +1222,15 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
   }
 }
 
+/** Whether version 7 data holds what only version 8 brought (47e, 47f): a construction curve, or a distance or diameter dimension, in a sketch or a kept shape. */
+function hasVersion8Fields(d: Record<string, unknown>): boolean {
+  const curves = (list: unknown) => Array.isArray(list) && list.some((c) => isRecord(c) && Object.hasOwn(c, "construction"));
+  const dims = (list: unknown) => Array.isArray(list) && list.some((c) => isRecord(c) && (c.kind === "distance" || c.kind === "diameter"));
+  const sketches = Array.isArray(d.sketches) ? d.sketches.filter(isRecord) : [];
+  const kept = isRecord(d.kept) ? Object.values(d.kept).filter(isRecord) : [];
+  return sketches.some((s) => curves(s.curves) || dims(s.constraints)) || kept.some((k) => curves(k.curves));
+}
+
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
   // Counted before migrating, which spreads every id of a version 1 file.
@@ -1227,16 +1244,19 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
   // Version 7 names a ready-made profile's pieces with its shape (face hunt 11-01): version 6 and older names are read so, once checked (below).
   const pieceNames = v6.version === 6;
-  const d = (pieceNames ? { ...v6, version: 7 } : v6) as Partial<DesignDocument>;
+  const v7 = pieceNames ? { ...v6, version: 7 } : v6;
+  // Version 8 (47f) adds construction curves and dimensions, which version 7 never held; its fields are read as they are.
+  if (v7.version === 7 && hasVersion8Fields(v7)) throw new Error("Design data says version 7 but has construction curves or dimensions, which version 8 brought");
+  const d = (v7.version === 7 ? { ...v7, version: 8 } : v7) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 7 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 7) throw new (Number.isSafeInteger(d.version) && d.version! > 7 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6 or 7)`);
+  // A whole number above 8 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 8) throw new (Number.isSafeInteger(d.version) && d.version! > 8 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7 or 8)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");

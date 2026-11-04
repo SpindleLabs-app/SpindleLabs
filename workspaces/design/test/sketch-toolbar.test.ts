@@ -42,9 +42,10 @@ function bar() {
   let finished = 0;
   const snaps: boolean[] = [];
   let removed = 0;
-  const t = sketchToolbar(slot, { tool: (k) => chosen.push(k), finish: () => finished++, snap: (on) => snaps.push(on), type: () => {}, remove: () => void removed++ });
+  let turned = 0;
+  const t = sketchToolbar(slot, { tool: (k) => chosen.push(k), finish: () => finished++, snap: (on) => snaps.push(on), type: () => {}, remove: () => void removed++, construction: () => void turned++ });
   const $ = (id: string) => doc.getElementById(id) as HTMLElement;
-  return { doc, slot, t, $, chosen, snaps, finished: () => finished, removed: () => removed };
+  return { doc, slot, t, $, chosen, snaps, finished: () => finished, removed: () => removed, turned: () => turned };
 }
 
 test("hidden until shown; shown, the Create group comes first, then the modelling buttons, Snap, and Finish Sketch last", () => {
@@ -54,9 +55,9 @@ test("hidden until shown; shown, the Create group comes first, then the modellin
   t.show("line");
   const groups = [...slot.children].map((g) => (g as HTMLElement).getAttribute("aria-label") ?? g.id);
   assert.deepEqual(groups, ["Create", "modelling", "Snapping", "Finish"]);
-  // Select and Delete, then the constraint tools (47d2) and Dimension (47e), end the Create group's row of tools (so at phone width they wrap with them, app hunt 2026-11-04).
+  // Select, Delete and Construction (47f), then the constraint tools (47d2) and Dimension (47e), end the Create group's row of tools (so at phone width they wrap with them, app hunt 2026-11-04).
   const row = [...$("sketch-tool-line").parentElement!.querySelectorAll("button")].map((b) => b.id);
-  assert.deepEqual(row.slice(-8), ["sketch-tool-select", "sketch-delete", "sketch-tool-horizontal", "sketch-tool-vertical", "sketch-tool-coincident", "sketch-tool-fix", "sketch-tool-dimension", "sketch-type"]);
+  assert.deepEqual(row.slice(-9), ["sketch-tool-select", "sketch-delete", "sketch-construction", "sketch-tool-horizontal", "sketch-tool-vertical", "sketch-tool-coincident", "sketch-tool-fix", "sketch-tool-dimension", "sketch-type"]);
   assert.equal($("sketch-tool-select").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-snap").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-create").closest<HTMLElement>(".tool-group")!.hidden, false);
@@ -96,6 +97,24 @@ test("Select and Delete (missing basics, 2026-11-04): Select chooses the Select 
   // Another tool chosen: Select is no longer pressed.
   t.showTool("circle");
   assert.equal(select.getAttribute("aria-pressed"), "false");
+});
+
+test("Construction (47f): off until something is picked, X its key, the words say how many, a press reported", () => {
+  const { t, $, turned } = bar();
+  t.show("select");
+  const b = $("sketch-construction") as HTMLButtonElement;
+  assert.equal(b.disabled, true);
+  assert.equal(b.getAttribute("aria-keyshortcuts"), "X");
+  assert.match(b.title, /Construction \(X\): select a line, circle or arc first/);
+  t.showPicked(1);
+  assert.equal(b.disabled, false);
+  assert.equal(b.title, "Construction (X): make the selected curve a construction line, or turn it back");
+  t.showPicked(2);
+  assert.equal(b.title, "Construction (X): make the 2 selected curves construction lines, or turn them back");
+  b.click();
+  assert.equal(turned(), 1);
+  t.showPicked(0);
+  assert.equal(b.disabled, true);
 });
 
 test("the Snap button: pressed and \"Snap on\" at the start; a click asks for off, and shown off it reads \"Snap off\" and asks for on", () => {

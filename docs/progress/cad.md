@@ -314,8 +314,8 @@ After fillets (rougher; resized when 46 is done)
 - 47b. Solver core: coincident, horizontal, vertical: 20 h
 - 47c. Thousands of seeded random sketches against the SolveSpace oracle: 18 h
 - 47d. Planted solver bugs the tests must catch, and drag tests in the browser: 16 h
-- 47e. Editable dimensions, moved up from 50 (owner's order, 2026-11-03): 16 h
-- 47f. Construction lines (new, owner's ask, 2026-11-03): 12 h
+- 47e. Editable dimensions, moved up from 50 (owner's order, 2026-11-03): 16 h. Done (pull request #327).
+- 47f. Construction lines (new, owner's ask, 2026-11-03): 12 h. Done (pull request #327).
 - 48. Profile detection: 16 h
 - 49. Parallel, perpendicular, equal, tangent: 18 h
 - 51. Constraint status colours (dimensions moved up to 47e): 10 h

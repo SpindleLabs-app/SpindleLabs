@@ -60,6 +60,12 @@ export interface SketchDrawing {
   side?: 1 | -1;
   lines: readonly (readonly [SketchXY, SketchXY])[];
   /**
+   * Its construction curves (step 47f, Design's construction.ts), already
+   * cut into dashes, drawn in a colour of their own while it is edited and
+   * as its lines are otherwise. Not in `lines`; absent when none.
+   */
+  construction?: readonly (readonly [SketchXY, SketchXY])[];
+  /**
    * A finished sketch whose plane is lost (step 26e: its face is gone, so
    * it stays where it was): drawn red, as the reference app draws a lost
    * profile. Absent means drawn as usual.

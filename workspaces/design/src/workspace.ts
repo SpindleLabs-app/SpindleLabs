@@ -58,6 +58,7 @@ import { sketchToolbar } from "./sketch-toolbar.ts";
 import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
 import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep, dimensionLine, isConstraintTool, markAt } from "./constraint-tool.ts";
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
+import { toggleConstruction } from "./construction.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
@@ -1393,7 +1394,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked() });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked(), construction: () => void constructPicked() });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -2099,6 +2100,41 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * (the owner's rule, rebuild.ts). False when nothing is picked, so the key
    * does what it would.
    */
+  /**
+   * Construction (47f: X, or the sketch toolbar's button) with the Select
+   * tool's picks: they become construction curves, or ordinary ones again
+   * when every one already is (construction.ts), as one undo step, settled
+   * as a delete is (an extrude whose outline this breaks keeps its last
+   * shape). The picks stay, so a second press turns them back. False when
+   * nothing is picked, so the key does what it would.
+   */
+  function constructPicked(): boolean {
+    if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
+    const sketchId = mode.tool.sketch;
+    if (stillPicked(designDoc().sketches.find((s) => s.id === sketchId), mode.tool.picked).length === 0) return false;
+    const changes = toolChanges;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes) return;
+      const before = designDoc();
+      const ids = stillPicked(before.sketches.find((s) => s.id === sketchId), mode.tool.picked);
+      if (ids.length === 0) return;
+      const turned = toggleConstruction(before, sketchId, ids);
+      if ("refused" in turned) return sketchBox.showError(turned.refused);
+      let next: DesignDocument;
+      try {
+        next = await settleKept(kernel, before, turned.doc, bodies);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes || designDoc() !== before) return;
+      sketchBox.showError("");
+      applySketchEdit(next, turned.step, sketchId);
+      drawSketches();
+      await showOutline();
+    });
+    return true;
+  }
+
   function deletePicked(): boolean {
     if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
     const sketchId = mode.tool.sketch;
@@ -3346,6 +3382,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind !== "select") return chooseTool("select"), true;
       // Delete or Backspace in a sketch with curves picked takes them out; otherwise the key does what it would.
       if ((id === "delete-selection" || id === "delete-selection-back") && mode.kind === "edit") return deletePicked();
+      // X in a sketch with curves picked turns them into construction curves and back (47f, Fusion's key).
+      if (id === "sketch-construction" && mode.kind === "edit") return constructPicked();
       // L, R, C and A choose the line, rectangle, circle and arc tools while a sketch is edited; otherwise the key does what it would.
       // A digit, point or minus while a line or rectangle is part drawn starts typing its size in the first box (SF4).
       const typedKey = typedSizeKey(id);

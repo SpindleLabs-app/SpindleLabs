@@ -1458,6 +1458,7 @@ export class Viewer implements SharedViewport {
     let lost = 0;
     let projected = 0;
     let labels: PlacedLabel[] = [];
+    let construction = 0;
     for (const d of drawings) {
       const at = (p: SketchXY) => toWorld(d.plane, p);
       const segments = (pairs: readonly (readonly [SketchXY, SketchXY])[], colour: number, order: number) => {
@@ -1479,17 +1480,19 @@ export class Viewer implements SharedViewport {
         this.sketches.add(dot);
       };
       lines += d.lines.length;
+      construction += d.construction?.length ?? 0;
       const shown = d.projected ?? { lines: [], points: [] };
       projected += shown.lines.length + shown.points.length;
       const projectedWorld = [...shown.lines.flatMap(([a, b]) => [at(a), at(b)]), ...shown.points.map(at)];
       if (!d.editing) {
-        this.finishedWorld.push(...d.lines.flatMap(([a, b]) => [at(a), at(b)]), ...projectedWorld);
+        this.finishedWorld.push(...[...d.lines, ...(d.construction ?? [])].flatMap(([a, b]) => [at(a), at(b)]), ...projectedWorld);
         // 27d: projected edges in their own colour (red with the rest when the sketch is lost).
         segments(shown.lines, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.projectedFinished, d.lost ? LOST_SKETCH_ORDER : FINISHED_SKETCH_ORDER);
         dots(shown.points, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.projectedFinished, FINISHED_SKETCH_ORDER);
         // 26e: a sketch whose plane is lost red, where it stays.
         if (d.lost) segments(d.lines, SKETCH_COLOURS.lost, LOST_SKETCH_ORDER);
         else segments(d.lines, SKETCH_COLOURS.finished, FINISHED_SKETCH_ORDER);
+        if (d.construction) segments(d.construction, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.finished, d.lost ? LOST_SKETCH_ORDER : FINISHED_SKETCH_ORDER);
         if (d.lost) lost += d.lines.length;
         continue;
       }
@@ -1501,6 +1504,7 @@ export class Viewer implements SharedViewport {
       this.editedWorld = [...d.lines.flatMap(([a, b]) => [at(a), at(b)]), ...d.editing.points.map(at), ...projectedWorld];
       labels = (d.editing.labels ?? []).map((l) => ({ id: l.id, world: at(l.at), text: l.text, fighting: l.fighting }));
       segments(d.lines, SKETCH_COLOURS.line, 3);
+      if (d.construction) segments(d.construction, SKETCH_COLOURS.construction, 3);
       segments(shown.lines, SKETCH_COLOURS.projected, 3);
       // The Select tool's: the curve under the pointer lighter, the selected ones lit over it.
       if (d.editing.hover && d.editing.hover.length > 0) segments(d.editing.hover, SKETCH_COLOURS.hover, 3.5);
@@ -1525,6 +1529,7 @@ export class Viewer implements SharedViewport {
     const edited = drawings.find((d) => d.editing)?.editing;
     const xy = (p: SketchXY) => `${p[0]},${p[1]}`;
     this.element.dataset.sketchLines = String(lines);
+    this.element.dataset.sketchConstruction = String(construction);
     this.element.dataset.sketchLost = String(lost);
     this.element.dataset.sketchProjected = String(projected);
     this.element.dataset.sketchPicks = String(this.editedPicks);
