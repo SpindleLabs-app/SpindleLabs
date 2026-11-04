@@ -124,6 +124,8 @@ export interface WorkspaceContext {
   workspaceTitle(id: WorkspaceId): string;
   /** Asks the user for a file to open, as the top bar's Open does (Design's empty-design hint, U0c). Left out where the app can't. */
   openFile?(): void;
+  /** The design was cleared by Start fresh (File > New): the shell lets go of the file it was saved to or opened from, so Save asks again. */
+  startedFresh?(): void;
 }
 
 /**

@@ -29,7 +29,7 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { emptyProject, projectFromJson, projectToJson } from "@fission/core";
 import type { KernelCalls } from "@fission/core";
-import { addSketch, BodyCache, changePreset, designWorkspace, drawCircle, dropState, extrudeSketch, partDocument, pinNewPoints, rebuildTimeline, reorderItem, settleKept, type DesignDocument, type EdgeTarget } from "@fission/design";
+import { addSketch, BodyCache, changePreset, designWorkspace, drawCircle, drawRectangle, dropState, extrudeSketch, partDocument, pinNewPoints, rebuildTimeline, reorderItem, settleKept, type DesignDocument, type EdgeTarget } from "@fission/design";
 import { app, close, kernel } from "./design-app.ts";
 
 type App = Awaited<ReturnType<typeof app>>;
@@ -281,7 +281,12 @@ test("regression (face-chaos seed 61, 27c): a sketch whose slanted face is lost 
   const settled = await settleKept(kernel, before, after, cache);
   const now = (await rebuildTimeline(settled, cache, kernel)).results[saved.sketch];
   assert.ok(now.status === "built" && was.status === "built");
-  assert.equal(now.plane?.cause, "plane-lost", "its face is gone");
+  // Corrected (hunt A, 2026-11-04): this once expected "plane-lost", but that captured the kept-shape bug. Sketch 61's corner
+  // pinned to Feature 50's front left top follows it from (0, 21) to (0, 42), so its outline (0, 42), (3, 38), (3, 41), (0, 41)
+  // crosses itself: the side (0, 42)–(3, 38), y = 42 − 4x/3, meets the side (3, 41)–(0, 41) at x = 0.75, inside both. A lost
+  // sketch's extrude keeps its last shape with a warning, so Extrude 70 keeps its side line-64 and Sketch 123's face is still
+  // there: found, not lost, and at the very numbers it was drawn at (the placement check below still holds exactly).
+  assert.equal(now.plane?.cause, undefined, "its face is still there: Extrude 70 kept its last shape");
   assert.deepEqual(now.placement, was.placement, "held exactly where it was drawn");
   // Settled, and settling again changes nothing; opened from the file, it is drawn at the same numbers.
   assert.deepEqual(await settleKept(kernel, settled, settled, cache), settled);
@@ -289,4 +294,55 @@ test("regression (face-chaos seed 61, 27c): a sketch whose slanted face is lost 
   assert.ok(opened.status === "built");
   assert.deepEqual(opened.placement, was.placement);
   await cache.keepOnly([]);
+});
+
+test("regression (hunt A, 2026-11-04): a pinned point that follows its box until the outline crosses itself loses the sketch, so its extrude keeps its last shape", async () => {
+  // Sketch 1 on XY: the rectangle (20, 0)–(40, 30), its corner (40, 30) pinned to the box's bottom back right corner, extruded 5.
+  const made = addSketch(partDocument("box", 40, 30, 20));
+  const drawn = drawRectangle(made.doc, made.id, [20, 0], [40, 30]).doc;
+  const pinned = pinNewPoints(made.doc, drawn, made.id, [{ at: [40, 30], kind: "endpoint", name: BOTTOM, feature: "feature-1" }]);
+  const ex = extrudeSketch(pinned, made.id, 5);
+  const before = ex.doc;
+  const settled = await settleKept(kernel, before, changePreset(before, "feature-1", "box", 10, 30, 20));
+  const s = settled.sketches.find((x) => x.id === made.id)!;
+  const corner = s.points.find((p) => p.id === s.pins![0].point)!;
+  // The corner (10, 30, 0) seen from above: (10, 30). The rectangle's points are now (20, 0), (40, 0), (10, 30), (20, 30):
+  // the side (40, 0)–(10, 30), x = 40 − y, meets the side (20, 30)–(20, 0) at x = 20, y = 20, inside both, so no outline.
+  assert.deepEqual([corner.x, corner.y], [10, 30]);
+  // Judged after the corner followed, the sketch is lost and Extrude 1 keeps the rectangle as drawn (it was judged on the
+  // points before they followed, so nothing was kept and the extrude failed "invalid-outline").
+  const kept = settled.kept?.[ex.id];
+  assert.ok(kept !== undefined, "Extrude 1 keeps a shape");
+  assert.deepEqual(kept.points.map((p) => [p.x, p.y]), before.sketches[0].points.map((p) => [p.x, p.y]));
+  assert.deepEqual(kept.points.map((p) => [p.x, p.y]).sort(), [[20, 0], [20, 30], [40, 0], [40, 30]]);
+  const cache = new BodyCache(kernel);
+  try {
+    const r = (await rebuildTimeline(settled, cache, kernel)).results[ex.id];
+    assert.ok(r.status === "built" && r.warning?.cause === "invalid-outline", JSON.stringify(r));
+  } finally {
+    await cache.clear();
+  }
+  // Settled is settled.
+  assert.equal(await settleKept(kernel, settled, settled), settled);
+});
+
+test("regression (hunt A, 2026-11-04), in the app: Edit feature makes the box 10 wide, so the pinned corner crosses the rectangle: Extrude 1 keeps its last shape with a warning, as when its sketch is edited so", async () => {
+  // Sketch 1 on XY: the rectangle (20, 0)–(40, 30), its corner (40, 30) pinned to the box's corner there; Extrude 1 by 5.
+  const made = addSketch(partDocument("box", 40, 30, 20));
+  const drawn = drawRectangle(made.doc, made.id, [20, 0], [40, 30]).doc;
+  const ex = extrudeSketch(pinNewPoints(made.doc, drawn, made.id, [{ at: [40, 30], kind: "endpoint", name: BOTTOM, feature: "feature-1" }]), made.id, 5);
+  const [doc, extrude] = [ex.doc, ex.id];
+  const a = await app(doc);
+  const before = a.volume();
+  // Box 40·30·20 = 24000 and the extrude 20·30·5 = 3000.
+  assert.ok(Math.abs(before - 27000) < 1e-6, `volume ${before}`);
+  assert.equal(await a.menu("feature-1", "edit"), null);
+  (a.$("#edit-width") as HTMLInputElement).value = "10";
+  a.$("#feature-edit-ok")!.click();
+  await a.settle();
+  const bar = a.$(`[data-item="${extrude}"]`)!;
+  // Box 10·30·20 = 6000; Extrude 1 kept 3000.
+  assert.equal(bar.dataset.failed, undefined, `Extrude 1 failed: ${bar.title}; error line ${JSON.stringify(a.error())}; kept ${JSON.stringify(a.doc().kept)}`);
+  assert.ok(Math.abs(a.volume() - 9000) < 1e-6, `volume ${a.volume()}`);
+  assert.ok(await a.close());
 });
