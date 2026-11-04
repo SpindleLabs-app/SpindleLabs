@@ -170,7 +170,10 @@ function link(doc: DesignDocument, f: Feature, on: Feature): string {
 
 /**
  * The document with item `id` moved to place `to` (0 first) of the new
- * order; the marker stays on the item it names. The same document back
+ * order; the marker stays in its gap: on the item it names, or, when that
+ * is the item moved, on the item before it (or at the start), so the item
+ * moved past it is rolled back and nothing else changes (Fusion's rule,
+ * owner's decision 2026-11-04, bug hunt 2 C3). The same document back
  * when it is already there. Refused, with the message the app shows, when
  * the item would come before an item it is built from, or after one built
  * from it; a sketch's words name the face it is drawn on (answer 7), the
@@ -186,8 +189,12 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   if (from) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(from)}: it is ${link(doc, item, from)} ${itemName(from)}` };
   const user = features.find((f, j) => j < to && f.dependsOn.includes(id));
   if (user) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(user)}: ${itemName(user)} is ${link(doc, user, item)} it` };
-  if (doc.timeline.features.indexOf(item) === to) return { doc };
-  return { doc: withTimeline(doc, features, doc.timeline.marker) };
+  const k = doc.timeline.features.indexOf(item);
+  if (k === to) return { doc };
+  // The marker stays in its gap (Fusion's rule, owner's decision 2026-11-04): the item it is on, dragged away, leaves
+  // it on the item before (or at the start), as a delete does, so no other item rolls back or starts building.
+  const { marker } = doc.timeline;
+  return { doc: withTimeline(doc, features, marker === id ? (k === 0 ? "start" : doc.timeline.features[k - 1].id) : marker) };
 }
 
 /**

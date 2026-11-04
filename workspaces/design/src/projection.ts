@@ -276,13 +276,16 @@ export function placesOf(sketch: Pick<Sketch, "points" | "curves">, p: SketchPro
 
 /**
  * The curves a sketch's outline is made of (what the kernel's
- * sketch_outline is asked about): its own curves, with every projected
- * curve joined to them end to end (through ends within SAME_PLACE, the
- * kernel's LINEAR, as the kernel joins ends); a sketch with no curves of
- * its own, its projected ones. Then, again and again, a projected line or
- * arc with an end that meets no other curve's end is left out: a
- * projected edge used to snap to, or one of a face's edges a drawn line
- * doesn't close, never breaks the outline. Before all that, a projected
+ * sketch_outline is asked about): its own curves, with the projected
+ * lines and arcs that close them: those on the shortest way, through
+ * projected curves only, between two of its own ends that meet no other
+ * of its own (ends meet within SAME_PLACE, the kernel's LINEAR, as the
+ * kernel joins ends), shortest first. A projected edge used to snap to, a
+ * face's edges a drawn line doesn't close, or a face's whole projected
+ * loop that a closed drawing starts from (D1), never breaks the outline.
+ * A sketch with no curves of its own: its projected ones, then, again and
+ * again, a projected line or arc with an end that meets no other curve's
+ * end left out. Before all that, a projected
  * curve lying on one kept already (`onCurve`; the sketch's own first) is
  * left out (27e). A projected circle joins only a
  * sketch with no curves of its own (it has no ends to join by). In the
@@ -314,28 +317,77 @@ export function profileCurves(sketch: { points: readonly SketchPoint[]; curves: 
       }
     }
   }
-  // Which curves are joined to the sketch's own (or all of them, with none of its own).
   const own = curves.some((c) => !projected.has(c.id));
-  const joined = new Set<number>();
-  const queue: number[] = [];
-  curves.forEach((c, k) => {
-    if (!own || !projected.has(c.id)) (joined.add(k), queue.push(k));
-  });
   const endsOf = new Map<number, number[]>();
   ends.forEach((x, i) => endsOf.set(x.curve, [...(endsOf.get(x.curve) ?? []), i]));
-  while (queue.length > 0) {
-    const k = queue.pop()!;
-    for (const i of endsOf.get(k) ?? [])
-      for (const j of meets[i])
-        if (!joined.has(ends[j].curve)) (joined.add(ends[j].curve), queue.push(ends[j].curve));
+  // With curves of its own: a projected line or arc joins only on the shortest way, through projected curves alone, between
+  // two of the sketch's own ends that meet no other own end (the shortest such way first, each end and each curve once;
+  // two as short both, so the kernel refuses what would be a guess).
+  // So when its own curves close by themselves none joins, and a face's whole projected loop touching a drawn corner
+  // never does (D1: four ends met there and the kernel refused a closed rectangle).
+  const isOwn = (i: number) => !projected.has(curves[ends[i].curve].id);
+  const loose = new Set(ends.map((_, i) => i).filter((i) => isOwn(i) && !meets[i].some(isOwn)));
+  const taken = new Set<number>();
+  const at = (p: string) => where.get(p)!;
+  const length = (c: SketchCurve) => {
+    if (c.kind === "line") return Math.hypot(at(c.end)[0] - at(c.start)[0], at(c.end)[1] - at(c.start)[1]);
+    if (c.kind !== "arc") return 0;
+    const [o, a, b] = [at(c.centre), at(c.start), at(c.end)];
+    const sweep = Math.atan2(b[1] - o[1], b[0] - o[0]) - Math.atan2(a[1] - o[1], a[0] - o[0]);
+    return Math.hypot(a[0] - o[0], a[1] - o[1]) * (sweep > 0 ? sweep : sweep + 2 * Math.PI);
+  };
+  const other = (i: number) => endsOf.get(ends[i].curve)!.find((j) => j !== i)!;
+  /** The shortest way from loose end `from` to another, as [its length, the other end, its projected curves], or null. */
+  const way = (from: number): [number, number, number[]] | null => {
+    const best = new Map<number, [number, number[]]>(); // an end a way goes into its curve by: its length so far, its curves
+    const open: number[] = [];
+    const enter = (j: number, cost: number, path: number[]) => {
+      if (isOwn(j) || taken.has(ends[j].curve) || path.includes(ends[j].curve) || (best.get(j)?.[0] ?? Infinity) <= cost) return;
+      best.set(j, [cost, path]);
+      open.push(j);
+    };
+    for (const j of meets[from]) enter(j, 0, []);
+    let found: [number, number, number[]] | null = null;
+    while (open.length > 0) {
+      open.sort((x, y) => best.get(y)![0] - best.get(x)![0]);
+      const j = open.pop()!;
+      const [cost, path] = best.get(j)!;
+      if (found && cost > found[0] + SAME_PLACE) break;
+      const k = ends[j].curve;
+      const o = other(j);
+      const [there, through] = [cost + length(curves[k]), [...path, k]];
+      const owned = meets[o].filter(isOwn);
+      if (owned.length > 0) {
+        const to = owned.find((t) => t !== from && loose.has(t));
+        // Two ways as short to the same end (a diagonal across a projected face) are both taken: no guess which.
+        if (to !== undefined && found && found[1] === to && Math.abs(there - found[0]) <= SAME_PLACE) found = [found[0], to, [...new Set([...found[2], ...through])]];
+        else if (to !== undefined && (!found || there < found[0])) found = [there, to, through];
+        continue;
+      }
+      for (const q of meets[o]) enter(q, there, through);
+    }
+    return found;
+  };
+  for (;;) {
+    let pick: { from: number; to: number; length: number; through: number[] } | null = null;
+    for (const from of loose) {
+      const w = way(from);
+      if (w && (!pick || w[0] < pick.length)) pick = { from, to: w[1], length: w[0], through: w[2] };
+    }
+    if (!pick) break;
+    loose.delete(pick.from);
+    loose.delete(pick.to);
+    for (const k of pick.through) taken.add(k);
   }
-  // Projected lines and arcs with a free end, left out until none is left.
+  if (own) return curves.filter((c, k) => !projected.has(c.id) || taken.has(k));
+  // With none of its own, every projected curve; then projected lines and arcs with a free end, left out until none is left.
+  const joined = new Set(curves.map((_, k) => k));
   const free = (k: number) => (endsOf.get(k) ?? []).some((i) => !meets[i].some((j) => joined.has(ends[j].curve) && ends[j].curve !== k));
   let changed = true;
   while (changed) {
     changed = false;
     for (const k of joined)
-      if (projected.has(curves[k].id) && curves[k].kind !== "circle" && free(k)) {
+      if (curves[k].kind !== "circle" && free(k)) {
         joined.delete(k);
         changed = true;
       }
