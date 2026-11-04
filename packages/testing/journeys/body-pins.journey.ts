@@ -265,7 +265,7 @@ test("hand-worked: a rebuild asks the kernel once for each body: an extrude of a
   }
 });
 
-test("regression (face-chaos seed 61, 27c): a sketch whose slanted face is lost stays exactly where it was drawn, not an ulp off", async () => {
+test("regression (face-chaos seed 61, 27c): a sketch on a slanted side an edit changes stays exactly where it was drawn, not an ulp off", async () => {
   // A point of Sketch 61 pinned to another body's corner slants Extrude 70's side; Sketch 123 is on that side. Feature 50 edited
   // to 32 × 20 × 42 loses the side, so Sketch 123 is held at its last placement: drawn at the very numbers it was drawn at.
   // It was drawn at the held frame squared once more, which moved its x axis's z by an ulp (3.3787286706361985e-18 to
@@ -281,8 +281,12 @@ test("regression (face-chaos seed 61, 27c): a sketch whose slanted face is lost 
   const settled = await settleKept(kernel, before, after, cache);
   const now = (await rebuildTimeline(settled, cache, kernel)).results[saved.sketch];
   assert.ok(now.status === "built" && was.status === "built");
-  assert.equal(now.plane?.cause, "plane-lost", "its face is gone");
-  assert.deepEqual(now.placement, was.placement, "held exactly where it was drawn");
+  // Since bug hunt 2 (C2, 2026-11-04) the edit no longer takes the side away: Sketch 61's pinned corner follows into its
+  // outline and crosses it, so Extrude 70 keeps its last shape (the owner's rule for a lost sketch, settleKept), where it
+  // used to fail. Sketch 123 is then placed on that kept side, which must still be at the very numbers it was drawn at.
+  const extrude = (await rebuildTimeline(settled, cache, kernel)).results["feature-70"];
+  assert.ok(settled.kept?.["feature-70"] !== undefined && extrude.status === "built", `Extrude 70 keeps its last shape: ${JSON.stringify(extrude)}`);
+  assert.deepEqual(now.placement, was.placement, "exactly where it was drawn");
   // Settled, and settling again changes nothing; opened from the file, it is drawn at the same numbers.
   assert.deepEqual(await settleKept(kernel, settled, settled, cache), settled);
   const opened = (await rebuildTimeline(reopened(settled), cache, kernel)).results[saved.sketch];

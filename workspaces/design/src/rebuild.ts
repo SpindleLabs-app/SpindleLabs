@@ -492,14 +492,23 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
   };
   // Its own cache is closed after: a body the kernel failed to free is tried once more then (T6b).
   const own = cache === undefined;
-  const settling = bodies.using(async () => {
-    const beforeItems = indexOf(before).items;
+  const beforeItems = indexOf(before).items;
+  /**
+   * `doc` with its kept shapes decided: an extrude whose sketch makes no
+   * outline in `doc` keeps the shape it had, or the sketch as it was in
+   * `before`; one whose sketch makes an outline keeps nothing. Decided again
+   * after every pass that follows points or holds placements, and on the
+   * design the last pass made: a snapped point or a projection that follows
+   * its edge can lose the sketch's outline (hunt2 C2: a corner snapped to a
+   * box made wider crossed the outline), or find it again.
+   */
+  const withKept = async (doc: DesignDocument): Promise<DesignDocument> => {
     const next: Record<string, KeptShape> = {};
-    for (const f of after.timeline.features) {
+    for (const f of doc.timeline.features) {
       if (!isSketchExtrude(f)) continue;
       const sketch = f.intent.parameters.sketch as string;
-      if (await makesOutline(kernel, after, sketch)) continue;
-      const had = keptOf(after, f);
+      if (await makesOutline(kernel, doc, sketch)) continue;
+      const had = keptOf(doc, f);
       const was = contentOf(before, sketch);
       if (had !== undefined) next[f.id] = had;
       else if (was !== undefined && (await makesOutline(kernel, before, sketch))) {
@@ -509,16 +518,19 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         next[f.id] = placement ? { ...shape, placement } : shape;
       }
     }
-    const { kept: old, ...rest } = after;
-    let doc = after;
-    if (JSON.stringify(old ?? {}) !== JSON.stringify(next)) doc = Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
+    const { kept: old, ...rest } = doc;
+    if (JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
+    return Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
+  };
+  const settling = bodies.using(async () => {
+    let doc = await withKept(after);
     const faces = doc.timeline.features.filter((f) => placedOnBodies(doc, f)).length;
     if (faces === 0) return doc;
     // Held placements and followed points, decided on the document with its kept shapes settled, pass after pass on the
     // design the last pass made, until nothing changes: a sketch held, or a point followed, moves what is built on it, so
     // a sketch on that (and its points) is placed right only on the next pass (hunt 26g: one pass placed them on the
     // body built at the held sketch's first-drawn frame). Each pass settles one more sketch of a chain, so at most one
-    // per face sketch, and a last to see nothing change.
+    // per face sketch, and a last to see nothing change. The kept shapes are decided again on each pass's design.
     for (let pass = 0; pass <= faces; pass++) {
       const now = await placed(doc);
       let changed = false;
@@ -544,7 +556,7 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         sketches.push(followed);
       }
       if (!changed) return doc;
-      doc = { ...doc, sketches };
+      doc = await withKept({ ...doc, sketches });
     }
     return doc;
   });
@@ -568,7 +580,7 @@ function keptCurves(was: Sketch): KeptShape {
 const follows = (content: Sketch | undefined): boolean => content?.pins !== undefined || content?.projected !== undefined;
 
 /** Whether sketch item `f` lies on or follows a body: on a face (26c), or with points pinned to edges (27c) or edges projected (27d). */
-const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && follows(doc.sketches.find((s) => s.id === f.id)));
+export const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && follows(doc.sketches.find((s) => s.id === f.id)));
 
 /**
  * Every item of `doc` up to its last sketch on a face or with pins,

@@ -37,8 +37,7 @@ import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from 
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
-import { BodyCache, followedDoc, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
-import { isFaceSketch } from "./face-sketch.ts";
+import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
@@ -1133,6 +1132,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     rebuildsOn.set(view, (rebuildsOn.get(view) ?? 0) + 1);
     view.dataset.rebuilding = "true";
     try {
+      // The bar and the browser show `doc` at once, before the kernel settles it (a slow kernel: a phone, a big design):
+      // a second drag on a bar still showing the last design would land elsewhere than its line showed (hunt2 C1).
+      // showBuilt draws them again for the settled design.
+      drawBrowser(doc);
+      showFailed(doc);
       await showBuilt(await settled(doc), kind);
     } finally {
       const left = rebuildsOn.get(view)! - 1;
@@ -1155,14 +1159,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * `doc`, the design just recorded, settled against `unsettled` and taken
    * into the edit's own undo step (the typing in a box still one step), or
    * `doc` itself: when nothing is unsettled, when it has no sketch on a face
-   * (nothing else a non-sketch edit changes is settled), or when the design
+   * or following a body (nothing else a non-sketch edit changes is settled), or when the design
    * changed again while the kernel looked (the next edit settles from the
    * same `unsettled`).
    */
   async function settled(doc: DesignDocument): Promise<DesignDocument> {
     const from = unsettled;
     if (from === null || ctx.history.restoring()) return doc;
-    if (!doc.timeline.features.some(isFaceSketch)) {
+    // Nothing to settle without a sketch on a face, with snapped points or with projected edges: one that follows a body
+    // can lose its outline when that body changes, and its extrude then keeps its last shape (hunt2 C2).
+    if (!doc.timeline.features.some((f) => placedOnBodies(doc, f))) {
       unsettled = null;
       return doc;
     }
