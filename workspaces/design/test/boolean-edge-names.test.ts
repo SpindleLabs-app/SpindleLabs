@@ -210,3 +210,28 @@ test("planted bugs in what the kernel says are caught: ends dropped, ends read o
   const shifted = bodies.map((b) => ({ ...b, view: { ...b.view, edge_vertices: b.view.edge_vertices.map((_, e, all) => all[(e + 1) % all.length]) } }));
   assert.notEqual(edgeDifference(designEdges(shifted, designNames(shifted)), model), null);
 });
+
+test("rule 5, Ben's call 2026-11-05 (35f1e2): an edge reference with ends finds the only edge left between its two faces, with a warning when its ends changed", () => {
+  // Stand-in names for one body: the edges' two faces, ends and names as designNames gives them (one edge between a
+  // and b is named by its pair alone).
+  const named = (edges: { faces: [string, string]; ends: string[]; name: string | null }[]) => ({ full: [[]], edges: [edges], tagFor: () => [] }) as unknown as DesignNames;
+  const once = named([{ faces: ["face:a", "face:b"], ends: ["face:c", "face:d"], name: "edge:face:a+face:b" }]);
+  // Made while two edges lay between a and b, with ends c, d: the one edge left has those ends, so it is that edge.
+  assert.deepEqual(resolveEdgeName(once, "edge:face:a+face:b;ends:face:c,face:d"), { body: 0, index: 0, warning: null });
+  // Its ends now c, e: still the only edge between a and b, found, but said ("ends"), never silently.
+  const moved = named([{ faces: ["face:a", "face:b"], ends: ["face:c", "face:e"], name: "edge:face:a+face:b" }]);
+  assert.deepEqual(resolveEdgeName(moved, "edge:face:a+face:b;ends:face:c,face:d"), { body: 0, index: 0, warning: "ends" });
+  // Two edges between a and b, neither with ends c, d: not guessed between, lost.
+  const two = named([
+    { faces: ["face:a", "face:b"], ends: ["face:c", "face:e"], name: "edge:face:a+face:b;ends:face:c,face:e" },
+    { faces: ["face:a", "face:b"], ends: ["face:c", "face:f"], name: "edge:face:a+face:b;ends:face:c,face:f" },
+  ]);
+  assert.deepEqual(resolveEdgeName(two, "edge:face:a+face:b;ends:face:c,face:d"), { lost: true });
+  // Two edges sharing one name (null: never guessed) with ends c, d both: ambiguous.
+  const tied = named([
+    { faces: ["face:a", "face:b"], ends: ["face:c", "face:d"], name: null },
+    { faces: ["face:a", "face:b"], ends: ["face:c", "face:d"], name: null },
+  ]);
+  assert.deepEqual(resolveEdgeName(tied, "edge:face:a+face:b;ends:face:c,face:d"), { ambiguous: 2 });
+  // Before the fix, `once` and `moved` were both lost: a reference with ends fitted the one edge "once, which is not two".
+});

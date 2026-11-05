@@ -16,6 +16,7 @@
 // API key's provider offers), with a typed name as the fallback.
 
 import {
+  AIError,
   AI_FEATURES,
   askForCommands,
   browserKeyStore,
@@ -297,6 +298,19 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
   const say = (text: string, bad = false) => {
     result.replaceChildren(Object.assign(document.createElement("p"), { textContent: text, className: bad ? "ai-error" : "ai-note" }));
   };
+  /**
+   * An answer that didn't come, in plain words, with Try again: the same
+   * words asked again (AI8a, AI8c). The provider's own words go to the
+   * browser's console only, never the panel.
+   */
+  const sayTrouble = (words: string, kind: string, detail: string) => {
+    if (detail) console.warn(`AI (${kind}): ${detail}`);
+    say(words, true);
+    if (kind === "declined") return;
+    const again = Object.assign(document.createElement("button"), { id: "ai-try-again", type: "button", textContent: "Try again" });
+    again.addEventListener("click", () => $<HTMLFormElement>("ai-ask").requestSubmit());
+    result.append(again);
+  };
 
   /** The settings as the form shows them. */
   function fromForm(): ProviderSettings | null {
@@ -558,7 +572,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     const origin = new URL(url).origin;
     if (s && askBeforeSending(s, init) && store.get(CONSENT_KEY + origin) !== "1") {
       const ok = await confirmSend(url, init);
-      if (!ok) throw new Error("you chose not to send it, so nothing was sent");
+      if (!ok) throw new AIError("declined", "you chose not to send it, so nothing was sent");
       store.set(CONSENT_KEY + origin, "1");
     }
     return fetch(url, init);
@@ -644,7 +658,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       const changedWhileAsking = () => projectToJson(host.project()) !== asked;
       const offered = view.commands ?? AI_COMMANDS;
       const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, offered, view.notes), messages: [{ role: "user", content: words }] }, offered, showProgress);
-      if (!answer.ok) return say(answer.error, true);
+      if (!answer.ok) return sayTrouble(answer.error, answer.kind, answer.detail);
       // No commands: the AI says it can't do this with the commands it has (AI5c). Shown, never stood in for.
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);

@@ -1074,18 +1074,29 @@ export function resolveFace(r: BooleanRebuild, ref: FaceReference, faults: Itera
 }
 
 /**
- * An edge by rule 5's name: found when exactly one edge has it. When two or
- * more edges fit it (its two faces now meet more than once, so they carry
- * `;ends:` the name never had, or even their ends tie and they are
- * shared), ambiguous, never guessed; else lost.
+ * An edge by rule 5's name: found when exactly one edge has it. Else, of
+ * the edges between its two faces: a name with `;ends:` finds the one whose
+ * ends are its own (two such: ambiguous); when none has them but only one
+ * edge lies between its two faces, that one, with the warning "ends" (Ben's
+ * call 2026-11-05); two or more, none with its ends: lost. A name without
+ * `;ends:` that two or more edges fit: ambiguous, never guessed; else lost.
  */
-export function resolveEdge(r: BooleanRebuild, name: string): { found: BooleanEdge; body: string } | { ambiguous: number } | { lost: true } {
-  let fits = 0;
+export function resolveEdge(r: BooleanRebuild, name: string): { found: BooleanEdge; body: string; warning?: "ends" } | { ambiguous: number } | { lost: true } {
+  const [pair, ends] = name.split(";ends:") as [string, string | undefined];
+  const fits: { found: BooleanEdge; body: string }[] = [];
+  const same: { found: BooleanEdge; body: string }[] = [];
   for (const b of r.bodies)
     for (const e of b.edges) {
       if (e.name === name) return { found: e, body: b.id };
-      const pair = `edge:${e.faces.join("+")}`;
-      if (name === pair || name === `${pair};ends:${e.ends.join(",")}`) fits++;
+      if (`edge:${e.faces.join("+")}` !== pair) continue;
+      fits.push({ found: e, body: b.id });
+      if (ends !== undefined && e.ends.join(",") === ends) same.push({ found: e, body: b.id });
     }
-  return fits > 1 ? { ambiguous: fits } : { lost: true };
+  if (ends !== undefined) {
+    if (same.length === 1) return same[0];
+    if (same.length > 1) return { ambiguous: same.length };
+    if (fits.length === 1) return { ...fits[0], warning: "ends" };
+    return { lost: true };
+  }
+  return fits.length > 1 ? { ambiguous: fits.length } : { lost: true };
 }

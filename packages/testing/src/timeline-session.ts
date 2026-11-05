@@ -735,6 +735,51 @@ export interface SessionNumbers {
 export const emptySessionNumbers = (): SessionNumbers => ({ rebuilds: 0, withFailedFeature: 0, references: 0, timing: {} });
 
 /**
+ * A face as the rebuild shows it, by its full name (35f1e2): its area, its
+ * centroid and each edge of its body that names it (by feature, role and
+ * curve, tags aside), or null when no face or two have that name.
+ */
+function faceAsShown(r: Rebuild, name: FaceName) {
+  const key = faceKey(name);
+  const plain = (n: FaceName) => `${n.feature}/${n.role}/${n.curve ?? ""}`;
+  const hits = bodiesNow(r.results).flatMap((b) => b.faces.filter((f) => faceKey(f.name) === key).map((f) => ({ b, f })));
+  if (hits.length !== 1) return null;
+  const { b, f } = hits[0];
+  return { area: f.area, centroid: f.centroid, edges: b.edges.filter((e) => e.name.faces.some((n) => plain(n) === plain(f.name))) };
+}
+
+/**
+ * The independent check of 35f1e2, on the subject's two rebuilds alone (no
+ * rule of the model's or Design's): each placed sketch (`sketches`, by its
+ * id and the full name of its face) whose face is just as it was (the same
+ * area and centroid, and each edge naming it the same length and centroid)
+ * lies just where it lay. A turn of the face onto itself would move its
+ * edges, so a face whose edges all stayed did not move. The words for the
+ * first that moved alone; else how many were compared.
+ */
+export function sketchMovedAlone(prev: Rebuild, now: Rebuild, sketches: readonly { id: string; face: FaceName }[], edgeClose: EdgeClose = exactEdges): string | number {
+  let compared = 0;
+  const near = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x, i) => close(x, b[i]));
+  for (const { id, face } of sketches) {
+    const [p, n] = [prev.results[id], now.results[id]];
+    if (p?.status !== "built" || n?.status !== "built" || p.lift === undefined || n.lift === undefined || p.plane || n.plane) continue;
+    const [was, is] = [faceAsShown(prev, face), faceAsShown(now, face)];
+    if (was === null || is === null || !close(was.area, is.area) || !near(was.centroid, is.centroid) || was.edges.length !== is.edges.length) continue;
+    const left = [...is.edges];
+    const same = was.edges.every((e) => {
+      const k = left.findIndex((g) => edgeKey(g.name) === edgeKey(e.name) && edgeClose(g, e));
+      return k >= 0 && left.splice(k, 1).length === 1;
+    });
+    if (!same) continue;
+    compared++;
+    const turned = (x: { turn?: { x: [number, number]; at: [number, number] } }) => (x.turn ? [...x.turn.x, ...x.turn.at] : [1, 0, 0, 0]);
+    if (!close(p.lift, n.lift) || p.down !== n.down || !near(turned(p), turned(n)))
+      return `${id} on ${faceKey(face)}: lift ${p.lift} turn ${JSON.stringify(p.turn ?? null)} before, lift ${n.lift} turn ${JSON.stringify(n.turn ?? null)} now, its face where it was`;
+  }
+  return compared;
+}
+
+/**
  * Runs the steps on a fresh model and the subject, checking every step;
  * throws a TimelineFailure at the first check that fails. `edgeClose`
  * compares edges with the model's (exact by default); `tally` counts the
@@ -866,6 +911,15 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
     if (numbers && expected.order.some((id) => expected.results[id].status === "failed")) numbers.withFailedFeature++;
     const d4 = rebuildDiff(now, translated, edgeClose);
     if (d4 !== null) fail("the rebuild differs from the model", d4);
+    // 35f1e2: on the subject alone, sharing no rule with the model: a sketch whose face did not move did not move either.
+    // Not after a reorder (or an undo or redo, which may undo one): a sketch is placed on the bodies built before it,
+    // so one put before a Move of its body now lies where that body was, though the body ends up where it was.
+    if (resolved.kind === "edit" && resolved.op.op !== "reorder" && resolved.op.op !== "undo" && resolved.op.op !== "redo") {
+      const sketches = model.doc.items.flatMap((x) => (x.kind === "sketch" && x.on ? [{ id: to(x.id), face: nameTo({ feature: x.on.feature, role: x.on.role, ...(x.on.tag && { tag: x.on.tag }) }, to) }] : []));
+      const still = sketchMovedAlone(prev, now, sketches, edgeClose);
+      if (typeof still === "string") fail("a sketch moved though its face did not", still);
+      else if (still > 0) count("sketch-still:checked");
+    }
 
     for (const ref of refs) {
       // The face the model's rules find (rule 3 from 35f1d2: its own, a piece of it, the face it merged into), named as

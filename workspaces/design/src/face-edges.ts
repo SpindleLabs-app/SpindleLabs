@@ -275,13 +275,18 @@ export function sketchEdgeTargets(doc: DesignDocument, sketchId: string, scene: 
  * or its face's body is in no scene and isn't hidden (deleted, failed).
  * A body hidden by its eye is still built, so a sketch on its face is only
  * held when the settled design says so (face hunt 11-01: hidden, it was
- * judged lost because the scene leaves hidden bodies out). False for a
+ * judged lost because the scene leaves hidden bodies out). From 35f1e2
+ * false for one the rebuild placed, when the scene was joined with its
+ * rebuild (Scene `placed`), whatever the scene's names say. False for a
  * sketch on an origin plane.
  */
 export function faceHeld(doc: DesignDocument, sketchId: string, scene: Scene): boolean {
   const facePlane = doc.timeline.features.find((f) => f.id === sketchId)?.intent.parameters.plane;
   if (!isFacePlane(facePlane)) return false;
   if (doc.sketches.find((s) => s.id === sketchId)?.face?.held !== undefined) return true;
+  // 35f1e2: placed by the rebuild, when the scene says so, whatever the finished design's names say (a Combine after
+  // the sketch can leave its face's name on two pieces alike, though the sketch was placed on the whole face before it).
+  if (scene.placed?.has(sketchId)) return false;
   const feature = faceFeature(facePlane);
   if (feature !== null && !scene.bodies.some((b) => b.feature === feature) && bodyHidden(doc, bodyIdOf(feature))) return false;
   return findInScene(faceReference(facePlane), scene).status !== "found";

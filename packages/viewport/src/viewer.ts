@@ -3,11 +3,12 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { NO_HIGHLIGHT, triangleColours, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
+import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
@@ -16,6 +17,7 @@ import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
 import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, placeHandles, ringAngle, turnBetween, type Placed } from "./move-handles.ts";
+import { PlacesLayer } from "./places-layer.ts";
 import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
 import { BUILD_AREA_COLOURS, GROUND_GRID, SKETCH_COLOURS, onViewTheme } from "./view-theme.ts";
@@ -114,6 +116,8 @@ export class ViewportView {
    */
   /** The kind of pointer last pressed on the view, whose reach places and grabs the Move handles (a finger's wider); a coarse pointer's at first. */
   private pointerKind: "mouse" | "touch" = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
+  /** The last click that picked on the body (not one of a double-click), to tell a double-click's second (double-pick.ts). */
+  private lastClick: ViewClick | null = null;
   private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
@@ -187,6 +191,10 @@ export class ViewportView {
       const edge = this.edgeAt(x, y);
       return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
     };
+    // A press anywhere else (a browser row, a button, the view cube) comes between two clicks: they are no double-click.
+    document.addEventListener("pointerdown", (e) => {
+      if (e.target !== canvas) this.lastClick = null;
+    }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointerdown", (e) => {
       down = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
       endHold(); // a second finger (a pinch) is no hold
@@ -231,7 +239,11 @@ export class ViewportView {
       // Picking where a sketch goes: the face under the pointer, else the nearest offered plane, never an edge (26d).
       if (this.host.offeredFaces()) return this.host.pick({ ...this.planeTarget(e.clientX, e.clientY), edge: null, shift: e.shiftKey });
       const edge = this.edgeAt(e.clientX, e.clientY);
-      this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey });
+      // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
+      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch: e.pointerType === "touch", shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
+      const double = isDoublePick(this.lastClick, click);
+      this.lastClick = double ? null : click;
+      this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
     });
     // Hover: what a click would pick, looked up at most once a frame, never while a button is held.
     let pointer: { x: number; y: number } | null = null;
@@ -327,6 +339,8 @@ export class ViewportView {
         const li = document.createElement("li");
         li.textContent = o.label;
         if (o.detail) li.title = o.detail;
+        // In the colour of its worst mark or place, as they are drawn (an error red, not the warnings' amber: 36d).
+        li.dataset.severity = worstSeverity(o);
         return li;
       }),
     );
@@ -1106,6 +1120,8 @@ export class Viewer implements SharedViewport {
   private extrudeHandler: ((pointer: ExtrudePointer) => void) | null = null;
   /** Move's arrows and rings (35e2c), and who hears their drags. */
   private moveLayer = new MoveLayer();
+  /** The overlays' places in the world (36d: where a refused Combine would touch itself or be too thin). */
+  private placesLayer = new PlacesLayer();
   private moveHandler: ((pointer: MovePointer) => void) | null = null;
   /** The main view first, then any added ones. */
   private views: ViewportView[] = [];
@@ -1132,7 +1148,7 @@ export class Viewer implements SharedViewport {
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, this.originPlanes, this.buildArea, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
+    this.scene.add(grid, this.axes, this.originPlanes, this.buildArea, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group, this.placesLayer.group);
 
     this.host = {
       scene: this.scene,
@@ -1690,6 +1706,10 @@ export class Viewer implements SharedViewport {
   private paint() {
     const overlays = [...this.overlays.values()];
     for (const view of this.views) view.label(overlays, this.highlight, this.hover);
+    this.placesLayer.show(overlays);
+    const { points, lines } = this.placesLayer.counts;
+    if (points + lines > 0) this.element.dataset.overlayPlaces = `points ${points} lines ${lines}`; // read by the e2e test
+    else delete this.element.dataset.overlayPlaces;
     if (!this.mesh || !this.faces) return;
     // Vertices belong to one face each (the kernel's display mesh), so per-vertex colour is per-face colour.
     // Vertex colours are linear; THREE.Color converts from sRGB.
