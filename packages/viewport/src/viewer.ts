@@ -235,7 +235,7 @@ export class ViewportView {
       if (this.host.offeredFaces()) return this.host.pick({ ...this.planeTarget(e.clientX, e.clientY), edge: null, shift: e.shiftKey });
       const edge = this.edgeAt(e.clientX, e.clientY);
       // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
-      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch: e.pointerType === "touch", shift: e.shiftKey };
+      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch: e.pointerType === "touch", shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
       const double = isDoublePick(this.lastClick, click);
       this.lastClick = double ? null : click;
       this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey, ...(double ? { double: true as const } : {}) });

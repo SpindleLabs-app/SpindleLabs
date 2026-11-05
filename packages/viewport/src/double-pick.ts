@@ -21,19 +21,40 @@ export interface ViewClick {
   at: number;
   touch: boolean;
   shift: boolean;
+  /**
+   * Where the camera was: its position (mm) then its turn (a quaternion).
+   * A view changed between two clicks (Top, then Front) makes them two picks.
+   */
+  view: readonly number[];
+}
+
+/**
+ * How far each camera number may differ between two clicks of one
+ * double-click, relative to its size (at least 1): rounding as the view is
+ * redrawn moves a phone's camera about 1e-14 of its 100 mm distance between
+ * two taps, far below this; the smallest real view change (a View button,
+ * an orbit by one pixel) moves it far above.
+ */
+export const VIEW_SLACK = 1e-9;
+
+/** Whether two cameras are the same, number by number, within VIEW_SLACK. */
+export function sameView(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) <= VIEW_SLACK * Math.max(1, Math.abs(x), Math.abs(b[i])));
 }
 
 /**
  * Whether `next` is the second click of a double-click whose first was
  * `last`: both with the same kind of pointer and both with Shift or both
  * without (a Shift-click then a quick plain click is a replace, not a
- * double: the smoke check's own habit), at most DOUBLE_PICK_MS apart
+ * double: the smoke check's own habit), with the camera where it was (a
+ * click, a View button, a click on the same spot is two picks of two
+ * different faces), at most DOUBLE_PICK_MS apart
  * (a clock that went backwards never counts) and within that pointer's
  * DOUBLE_PICK_PX. The viewer forgets `last` after a double, so a third
  * quick click starts afresh rather than making a second double.
  */
 export function isDoublePick(last: ViewClick | null, next: ViewClick): boolean {
-  if (last === null || last.touch !== next.touch || last.shift !== next.shift) return false;
+  if (last === null || last.touch !== next.touch || last.shift !== next.shift || !sameView(last.view, next.view)) return false;
   const gap = next.at - last.at;
   if (!(gap >= 0 && gap <= DOUBLE_PICK_MS)) return false;
   return Math.hypot(next.x - last.x, next.y - last.y) <= (next.touch ? DOUBLE_PICK_PX.touch : DOUBLE_PICK_PX.mouse);
