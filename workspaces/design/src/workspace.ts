@@ -1467,7 +1467,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         ctx.graph.markFresh(PART_VIEW);
       }
       markStale(failure !== undefined);
-      viewport.showBody(bodyMesh(scene));
+      showBodies(scene);
       // 36d: where a refused Combine would touch itself or be too thin, pointed at over everything.
       refusalsNow = refusalOverlay(doc.timeline.features, value.results);
       showRefusals();
@@ -2592,6 +2592,25 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return explodeSpread === null ? scene.mesh : explodedMesh(scene, explodeSpread);
   }
 
+  /**
+   * Draws the bodies (pulled apart while Exploded view is on) and notes the box around them as drawn, in mm to 0.001,
+   * "lo x y z hi x y z" (read by the e2e test: the view's pixels never hold still, so they can't say where the bodies are).
+   */
+  function showBodies(scene: Scene) {
+    const mesh = bodyMesh(scene);
+    viewport.showBody(mesh);
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    const p = mesh.positions;
+    for (let n = 0; n + 2 < p.length; n += 3) {
+      for (let k = 0; k < 3; k++) {
+        if (p[n + k] < lo[k]) lo[k] = p[n + k];
+        if (p[n + k] > hi[k]) hi[k] = p[n + k];
+      }
+    }
+    viewport.element.dataset.drawnBox = p.length < 3 ? "" : [...lo, ...hi].map((v) => v.toFixed(3)).join(" ");
+  }
+
   /** Exploded view on at `spread`, or off (null): the view only, nothing recorded. */
   function setExploded(spread: number | null) {
     explodeSpread = spread;
@@ -2600,7 +2619,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     explodeBar.hidden = spread === null;
     if (spread !== null && spreadInput.ownerDocument.activeElement !== spreadInput) spreadInput.value = String(Math.round(spread * 100));
     viewport.element.dataset.exploded = spread === null ? "" : String(spread); // read by the e2e test
-    if (lastScene) viewport.showBody(bodyMesh(lastScene));
+    if (lastScene) showBodies(lastScene);
     showPrintCheck();
   }
 
@@ -3100,7 +3119,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     snapping = null;
     showMoveHint();
     viewport.showMoveHandles(null);
-    if (lastScene) viewport.showBody(bodyMesh(lastScene));
+    if (lastScene) showBodies(lastScene);
     if (edited) ctx.selection.clear();
     // And the panel stays open at the new body's sizes, as Insert left it (U0d): the fold sees the Move's box go in a
     // microtask (properties-fold.ts), queued as it hid above, so it is opened again in the one after.

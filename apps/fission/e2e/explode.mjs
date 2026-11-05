@@ -38,11 +38,18 @@ async function fresh(width = 1280, touch = false) {
 const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 8000 }).catch(async () => assert.fail(`${what}: timed out`));
 const shot = async (page, name) => shots && page.screenshot({ path: `${shots}/${name}.png` });
 const exploded = (page) => page.evaluate(() => document.querySelector("#viewport").dataset.exploded ?? "");
-/** The view's pixels now, after two frames so a redraw has landed. */
-async function view(page) {
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  return page.locator("#viewport canvas").screenshot();
-}
+/**
+ * The box around the bodies as the view draws them, "lo x y z hi x y z" in mm (the workspace notes it each time it
+ * draws them). Not the view's pixels: they never hold still (two pictures of an idle view a second apart differ), so
+ * comparing them could not fail when the bodies stay put, and assert.deepEqual on two that differ builds a diff of
+ * every byte, which took over 8 GB and got CI's runner shut down (2026-11-05).
+ */
+const drawnBox = (page) => page.evaluate(() => document.querySelector("#viewport").dataset.drawnBox ?? "");
+/** The drawn box's size summed over x, y and z. */
+const spanOf = (box) => {
+  const v = box.split(" ").map(Number);
+  return v[3] - v[0] + (v[4] - v[1]) + (v[5] - v[2]);
+};
 
 /** Adds a cylinder by Insert ▾ and waits for its Body 2 row. */
 async function addCylinder(page, tap = false) {
@@ -72,27 +79,28 @@ try {
     await addCylinder(page);
     await until(page, () => !document.getElementById("inspect-explode").disabled, null, "Exploded view on with two bodies");
     const undoBefore = await page.getAttribute("#undo", "title");
-    const together = await view(page);
+    const together = await drawnBox(page);
+    assert.notEqual(together, "", "the drawn box is noted");
     await page.click("#inspect-explode");
     await until(page, () => document.querySelector("#viewport").dataset.exploded === "0.5", null, "exploded at half");
     assert.equal(await page.getAttribute("#inspect-explode", "aria-pressed"), "true");
     assert.equal(await page.isVisible("#explode-bar"), true, "the bar shows");
     assert.equal(await page.inputValue("#explode-spread"), "50");
-    const apart = await view(page);
-    assert.notDeepEqual(apart, together, "the view is drawn the same exploded");
+    const apart = await drawnBox(page);
+    assert.ok(spanOf(apart) > spanOf(together), `exploded, the bodies are drawn no further apart: ${apart} against ${together}`);
     await shot(page, "explode-1280");
     // The slider to 100: further apart still.
     await page.locator("#explode-spread").fill("100");
     await until(page, () => document.querySelector("#viewport").dataset.exploded === "1", null, "spread 1");
-    const further = await view(page);
-    assert.notDeepEqual(further, apart, "Spread 100 draws the same as 50");
+    const further = await drawnBox(page);
+    assert.ok(spanOf(further) > spanOf(apart), `Spread 100 draws them no further apart than 50: ${further} against ${apart}`);
     assert.equal(await page.getAttribute("#undo", "title"), undoBefore, "Exploded view went on Undo");
     // Done: the bodies drawn where they are again.
     await page.click("#explode-done");
     await until(page, () => document.querySelector("#viewport").dataset.exploded === "", null, "off");
     assert.equal(await page.isVisible("#explode-bar"), false);
     assert.equal(await page.getAttribute("#inspect-explode", "aria-pressed"), "false");
-    assert.deepEqual(await view(page), together, "Done did not draw the bodies where they were");
+    assert.equal(await drawnBox(page), together, "Done did not draw the bodies where they were");
     // On again, then Move: the tool works on the bodies where they are, so the view goes back.
     await page.click("#inspect-explode");
     await until(page, () => document.querySelector("#viewport").dataset.exploded === "0.5", null, "on again");
