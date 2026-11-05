@@ -19,6 +19,9 @@ export const SYNCED_SETTINGS: readonly (SettingSpec & { readonly words: string }
   { key: "spindlelabs.slice.nozzle", kind: "text", words: "the nozzle you chose" },
   { key: "spindlelabs.slice.warm-up", kind: "text", words: "the warm-up loop's setting" },
   { key: "spindlelabs.slice.better-grip", kind: "text", words: "Better grip's setting" },
+  // Printer fits (workspaces/design fits.ts fitKey): the test piece's measurements, one per nozzle.
+  { key: "spindlelabs.fits.standard", kind: "text", words: "your printer fit measurements" },
+  { key: "spindlelabs.fits.high-flow", kind: "text", words: "your printer fit measurements" },
 ];
 
 /** A round waits this long after a change here, so a run of changes goes as one. */

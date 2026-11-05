@@ -122,3 +122,14 @@ test("with settings that follow you, the privacy page lists every setting sent, 
 test("the settings check can fail: a page missing one setting's words is caught", () => {
   assert.deepEqual(unnamedSettings(page.replace(/your slicer presets/g, "some things")).map((s) => s.key), ["spindlelabs.slice.presets"]);
 });
+
+test("every setting that follows you is a key the app really keeps (a renamed key would silently stop following)", () => {
+  const all = sources().filter((f) => !f.endsWith("settings-sync.ts")).map((f) => readFileSync(f, "utf8")).join("\n");
+  const missing = syncedSettings().filter(({ key }) => {
+    if (all.includes(`"${key}"`)) return false;
+    // A key built from a template, such as `spindlelabs.fits.${nozzle}`: its fixed start, and the rest as a value the app uses.
+    const m = /^(.*\.)([^.]+)$/.exec(key);
+    return !(m && all.includes("`" + m[1] + "${") && all.includes(`"${m[2]}"`));
+  });
+  assert.deepEqual(missing.map((s) => s.key), []);
+});
