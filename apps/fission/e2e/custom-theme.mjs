@@ -127,7 +127,7 @@ try {
     await page.click("#settings [data-choice=custom]");
     await setHex(page, "highlight", "#ff8800");
     await setHex(page, "primary", "#ffffff");
-    await page.click("#settings .settings-custom .settings-action");
+    await page.click("#settings .settings-custom .settings-custom-reset");
     assert.equal(await rootVar(page, "--accent"), "#4aa8ff");
     assert.equal(await rootVar(page, "--page"), "#0f141c");
     assert.equal(await hexBox(page, "primary").inputValue(), "#0f141c");

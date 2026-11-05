@@ -189,7 +189,7 @@ function customBlock(el: El, start: CustomColours, apply: (c: CustomColours) => 
     row.append(name, picker, hex);
     block.append(row);
   }
-  const reset = el("button", "settings-action", "Reset to standard");
+  const reset = el("button", "settings-custom-reset", "Reset to standard");
   reset.type = "button";
   reset.addEventListener("click", () => {
     for (const [key, { picker, hex }] of inputs) {
