@@ -63,8 +63,9 @@ import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID, D
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
-import { clickConstraint, constraintPickAt, constraintStep, isConstraintTool, markAt } from "./constraint-tool.ts";
-import { addConstraint, type NewConstraint } from "./constraints.ts";
+import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep, dimensionLine, isConstraintTool, markAt } from "./constraint-tool.ts";
+import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
+import { toggleConstruction } from "./construction.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
@@ -1583,7 +1584,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked() });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked(), construction: () => void constructPicked() });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -1592,7 +1593,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const typed = typedBoxes(viewport.element, {
     locks: (next) => ((locks = next), drawSketches()),
     enter: () => placeTyped(),
-    escape: () => ((locks = {}), drawSketches()),
+    escape: () => {
+      locks = {};
+      // Escape in a dimension's box (47e) leaves the dimension: nothing is added or changed.
+      if (mode.kind === "edit" && isConstraintTool(mode.tool) && mode.tool.pending) mode.tool = { ...mode.tool, pending: null, changing: undefined };
+      drawSketches();
+    },
   });
   /** What the next click places, by the pointer ("Specify next point"). */
   const hint = pointerHint(viewport.element);
@@ -1620,6 +1626,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let dragsEnded = Number(viewport.element.dataset.pointDrags ?? 0);
   let dragSolves = Number(viewport.element.dataset.dragSolves ?? 0);
 
+  /** Millimetres a screen pixel on the edited sketch's plane at `at` (its origin when null), from the camera as it is now; undefined when not on screen. */
+  function pixelNow(at: SketchXY | null): number | undefined {
+    const [x, y] = at ?? [0, 0];
+    const a = viewport.sketchScreenPoint([x, y]);
+    const b = viewport.sketchScreenPoint([x + 1, y]);
+    const c = viewport.sketchScreenPoint([x, y + 1]);
+    if (!a || !b || !c) return undefined;
+    const across = Math.max(Math.hypot(b.x - a.x, b.y - a.y), Math.hypot(c.x - a.x, c.y - a.y));
+    return across > 0 && Number.isFinite(across) ? 1 / across : undefined;
+  }
+
   /** Draws every sketch, the edited one with its grid, points and preview. */
   function drawSketches() {
     // A point being dragged (47d3) shows the sketch as its last solved step left it, until it is let go and recorded.
@@ -1633,13 +1650,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const locked = Object.keys(locks).length > 0;
     const aim = editing && aimOf(doc, editing.tool, editing.pointer, locks);
     // A typed arc angle goes the pointer's way round however little it went (typed-entry.ts withLocks): the preview from the tool the click will use.
-    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
+    // Marks and dimension labels are sized in screen pixels at the camera as it is now, never at the pointer's last move: a camera
+    // that moved since left them sized for the old view, and the next click jumped a label from under the pointer (47e, Firefox).
+    const pixel = editing ? (pixelNow(editing.pointer) ?? editing.pixel) : undefined;
+    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
     sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
     const width = viewport.element.clientWidth;
     sketchBar.showType(typedFields(editing.tool).length > 0);
-    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
+    // A dimension waiting for its value (47e): its box by its label, starting at the size as drawn.
+    const tool = editing.tool;
+    const pending = isConstraintTool(tool) && tool.pending ? tool.pending : null;
+    const sketch = pending ? doc.sketches.find((s) => s.id === tool.sketch) : undefined;
+    const spot = pending && sketch ? dimensionLine(sketch, pending, 10 * (editing.pixel ?? 0.1)) : null;
+    const box = (spot && viewport.sketchScreenPoint(spot.label)) || screen;
+    const live = pending ? { [typedFields(tool)[0]]: pending.value } : anchor && aim ? liveValues(anchor, aim, tool) : {};
+    typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
     else hint.hide();
@@ -2170,6 +2197,93 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!putAway) drawSketches();
   }
 
+  /**
+   * Enter in a dimension's box (47e): the dimension added with the value
+   * typed (the size as drawn when nothing is), or the double-clicked one
+   * changed to it, as one undo step ("Dimension", "Change dimension"); a
+   * size the solver can't reach, or one that fights the others, is refused
+   * with the reason, the box keeping what was typed.
+   */
+  function placeDimension() {
+    if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || !mode.tool.pending) return;
+    const tool = mode.tool;
+    const pending = tool.pending!;
+    const field = typedFields(tool)[0];
+    const texts = typed.texts();
+    // A box holding text it refused keeps the keys there: its reason shows under it.
+    if ((texts[field] ?? "").trim() !== "" && locks[field] === undefined) return;
+    const value = locks[field] ?? pending.value;
+    const changes = toolChanges;
+    mode.tool = { ...tool, pending: null, changing: undefined };
+    unlock();
+    drawSketches();
+    if (tool.changing === undefined) return constrain(tool.sketch, { ...pending, value } as NewConstraint);
+    const id = tool.changing;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || toolChanges !== changes) return;
+      const before = designDoc();
+      let got: Awaited<ReturnType<typeof changeDimension>>;
+      try {
+        got = await changeDimension(kernel, before, tool.sketch, id, value);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
+      if ("refused" in got) {
+        if (isConstraintTool(mode.tool)) mode.tool = { ...mode.tool, fighting: got.fighting };
+        sketchBox.showError(got.refused);
+        return drawSketches();
+      }
+      applySketchEdit(got.doc, SKETCH_STEPS.redimension, tool.sketch);
+      drawSketches();
+      await showOutline();
+    });
+  }
+
+  /** Gives the keys to the first typed box after the click a tap makes (47e), or after 400 ms when none comes. */
+  function keysAfterTap() {
+    const changes = toolChanges;
+    let done = false;
+    const heard = new AbortController(); // taken off when given, so no click listener outlives the tap (or this workspace)
+    const give = () => {
+      if (done) return;
+      done = true;
+      heard.abort();
+      if (mode.kind === "edit" && toolChanges === changes && typedFields(mode.tool).length > 0) typed.start("");
+    };
+    viewport.element.ownerDocument.addEventListener("click", give, { capture: true, once: true, signal: heard.signal });
+    setTimeout(give, 400);
+  }
+
+  /** A dimension's label double-clicked, or tapped with the Dimension tool (47e): the Dimension tool changing it, its value in the box. */
+  function editDimension(id: string) {
+    if (mode.kind !== "edit" || pointDrag || liveDrag) return;
+    const sketchId = mode.tool.sketch;
+    const sketch = designDoc().sketches.find((s) => s.id === sketchId);
+    const next = sketch && changeDimensionTool(sketch, id);
+    if (!next) return;
+    if (editingSketch) editingSketch.tool = "dimension";
+    toolChanges++;
+    mode.tool = next;
+    mode.snap = null;
+    sketchBox.showTool("dimension");
+    sketchBar.showTool("dimension");
+    sketchBox.showError("");
+    unlock();
+    drawSketches();
+    typed.start("");
+  }
+  // A label's double-click, or its tap with the Dimension tool; heard from `listen` to `sleep` only, since the view's
+  // element outlives this workspace (a listener left on it kept every closed workspace's panels in memory).
+  const onLabelDblclick = (e: MouseEvent) => {
+    const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
+    if (label?.dataset.dimension) editDimension(label.dataset.dimension);
+  };
+  const onLabelClick = (e: MouseEvent) => {
+    const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
+    if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
+  };
+
   function constrain(sketchId: string, add: NewConstraint) {
     const changes = toolChanges;
     inTurn(async () => {
@@ -2201,6 +2315,41 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * (the owner's rule, rebuild.ts). False when nothing is picked, so the key
    * does what it would.
    */
+  /**
+   * Construction (47f: X, or the sketch toolbar's button) with the Select
+   * tool's picks: they become construction curves, or ordinary ones again
+   * when every one already is (construction.ts), as one undo step, settled
+   * as a delete is (an extrude whose outline this breaks keeps its last
+   * shape). The picks stay, so a second press turns them back. False when
+   * nothing is picked, so the key does what it would.
+   */
+  function constructPicked(): boolean {
+    if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
+    const sketchId = mode.tool.sketch;
+    if (stillPicked(designDoc().sketches.find((s) => s.id === sketchId), mode.tool.picked).length === 0) return false;
+    const changes = toolChanges;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes) return;
+      const before = designDoc();
+      const ids = stillPicked(before.sketches.find((s) => s.id === sketchId), mode.tool.picked);
+      if (ids.length === 0) return;
+      const turned = toggleConstruction(before, sketchId, ids);
+      if ("refused" in turned) return sketchBox.showError(turned.refused);
+      let next: DesignDocument;
+      try {
+        next = await settleKept(kernel, before, turned.doc, bodies);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes || designDoc() !== before) return;
+      sketchBox.showError("");
+      applySketchEdit(next, turned.step, sketchId);
+      drawSketches();
+      await showOutline();
+    });
+    return true;
+  }
+
   function deletePicked(): boolean {
     if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
     const sketchId = mode.tool.sketch;
@@ -3286,6 +3435,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         mode.tool = next;
         sketchBox.showError("");
         if (add) constrain(tool.sketch, add);
+        // A dimension's picks done (47e): the keys go to its value's box, which starts at the size as drawn.
+        if (next.pending && !tool.pending) {
+          unlock();
+          drawSketches();
+          if (!pointer.touch) return typed.start("");
+          // A tap: the browser's own click comes after it and would take the keys back to the page, so the box takes
+          // them in that click (a tap's gesture, so a phone shows its keyboard), or a moment later when none comes.
+          return keysAfterTap();
+        }
       }
       return drawSketches();
     }
@@ -3418,6 +3576,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function placeTyped() {
     if (mode.kind !== "edit") return;
+    if (isConstraintTool(mode.tool) && mode.tool.pending) return placeDimension();
     // Nothing typed and the pointer still since the last Enter: that Enter placed its point already (enteredStill).
     if (enteredStill && Object.keys(locks).length === 0) return;
     enteredStill = true;
@@ -3512,6 +3671,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showMoveHandles();
     viewport.element.addEventListener("pointermove", onViewportMove);
     viewport.element.addEventListener("pointerdown", onViewportMove); // a tap moves no pointer first
+    viewport.element.addEventListener("dblclick", onLabelDblclick);
+    viewport.element.addEventListener("click", onLabelClick);
     resized?.observe(viewport.element);
     globalThis.addEventListener?.("keydown", onHeldKey);
     globalThis.addEventListener?.("keyup", onHeldKey);
@@ -3546,6 +3707,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showMoveHandles(null);
     viewport.element.removeEventListener("pointermove", onViewportMove);
     viewport.element.removeEventListener("pointerdown", onViewportMove);
+    viewport.element.removeEventListener("dblclick", onLabelDblclick);
+    viewport.element.removeEventListener("click", onLabelClick);
     resized?.disconnect();
     globalThis.removeEventListener?.("keydown", onHeldKey);
     globalThis.removeEventListener?.("keyup", onHeldKey);
@@ -3690,6 +3853,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind !== "select") return chooseTool("select"), true;
       // Delete or Backspace in a sketch with curves picked takes them out; otherwise the key does what it would.
       if ((id === "delete-selection" || id === "delete-selection-back") && mode.kind === "edit") return deletePicked();
+      // X in a sketch with curves picked turns them into construction curves and back (47f, Fusion's key).
+      if (id === "sketch-construction" && mode.kind === "edit") return constructPicked();
       // L, R, C and A choose the line, rectangle, circle and arc tools while a sketch is edited; otherwise the key does what it would.
       // A digit, point or minus while a line or rectangle is part drawn starts typing its size in the first box (SF4).
       const typedKey = typedSizeKey(id);

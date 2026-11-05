@@ -20,7 +20,7 @@ import { keptConstraints } from "./constraints.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
-export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", unconstrain: "Delete constraint" } as const;
+export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", dimension: "Dimension", redimension: "Change dimension", unconstrain: "Delete constraint" } as const;
 
 /**
  * Each origin plane's frame: the sketch's x along `xAxis`, its y along
