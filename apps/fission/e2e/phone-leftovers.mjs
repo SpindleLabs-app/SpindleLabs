@@ -4,7 +4,7 @@
 //    sideways and back) left the menu where it was, mostly off the screen.
 //    It stays wholly on the screen after the turn, and its first choice
 //    can still be tapped.
-// 2. A window dragged absurdly small (200 × 150, 100 × 2000, 150 × 150,
+// 2. A window dragged absurdly small (200 × 150, 100 × 2000, 80 × 2000, 150 × 150,
 //    1280 × 150): the page scrolled 25 to 33 px sideways and the 3D view
 //    was 0 px tall. Nothing scrolls the page sideways, and the view keeps
 //    at least 120 px (the page scrolls up and down for the rest). A phone
@@ -94,7 +94,7 @@ if (browserName === "chromium") {
 }
 
 // 2. Absurdly small windows, and real phones' sizes unchanged.
-for (const [width, height, touch] of [[200, 150, true], [100, 2000, true], [150, 150, true], [1280, 150, false], [375, 667, true], [740, 360, true]]) {
+for (const [width, height, touch] of [[200, 150, true], [100, 2000, true], [80, 2000, true], [150, 150, true], [1280, 150, false], [375, 667, true], [740, 360, true]]) {
   const { page, context } = await open(width, height, touch, false);
   await page.waitForTimeout(500);
   const r = await page.evaluate(() => {

@@ -5,6 +5,7 @@
    Narrow (260 px and under): the top bar's name, File ▾ and DESIGN ▾ each
    keep their width and wrap onto the next line instead of squeezing and
    spilling 25 to 33 px past the right edge (the page scrolled sideways),
+   the app's name is cut with "…" when even it alone is too wide,
    the Browser and Properties toggles wrap the same way, and nothing can
    scroll the page sideways.
    Short (300 px tall and under): the bars above and below the 3D view took
@@ -15,6 +16,8 @@
 @media (max-width: 260px) {
   .tiny-window:not(#none) { overflow-x: clip; }
   .tiny-window #topbar > * { flex-shrink: 0; flex-basis: auto; }
+  /* The app's name alone is wider than a 100 px window in some fonts (CI's): it is cut with "…" rather than spilling. */
+  .tiny-window #topbar h1:not(#none) { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .tiny-window #panel-toggles:not(#none) { flex-wrap: wrap; }
 }
 @media (max-height: 300px) {
