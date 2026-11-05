@@ -227,7 +227,8 @@ try {
     await page.click("#account-open");
     assert.equal(await page.locator("#account-title").textContent(), "Sign in to SpindleLabs");
     const gives = await page.$$eval("#account .account-gives li", (l) => l.map((x) => x.textContent));
-    assert.equal(gives.length, 3);
+    assert.equal(gives.length, 4);
+    assert.match(gives[1], /^Your settings \(the theme, units and slicer presets\) the same on every device/);
     if (shots) await page.screenshot({ path: `${shots}/account-signed-out-1280.png` });
     assert.deepEqual(svc.calls, [], "opening the dialog contacts nothing");
     await context.close();
