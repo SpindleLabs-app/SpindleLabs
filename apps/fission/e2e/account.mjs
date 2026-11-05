@@ -59,14 +59,16 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve() };
+  const svc = { calls: [], designCalls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [] };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    svc.calls.push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") || url.pathname.startsWith("/rest/") ? url.search : ""}`);
+    // My designs' own requests (e2e/my-designs.mjs checks them) are kept apart, so these checks see only the account's.
+    const designsCall = /^\/rest\/v1\/rpc\/(my_designs|save_design|get_design|delete_design|my_design_space)$/.test(url.pathname) || url.searchParams.get("select") === "keep_designs";
+    (designsCall ? svc.designCalls : svc.calls).push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") || url.pathname.startsWith("/rest/") ? url.search : ""}`);
     if (url.pathname === "/auth/v1/authorize") {
       const back = new URL(url.searchParams.get("redirect_to"));
       assert.equal(url.searchParams.get("provider"), "google");
@@ -86,6 +88,10 @@ function fakeService() {
       // The data API, as the database's rules allow it for the one signed-in person.
       if (!svc.profile || !svc.tokens.has((req.headers().authorization ?? "").replace("Bearer ", ""))) return json(route, 401, { message: "JWT invalid" });
       const what = url.pathname.slice("/rest/v1/".length);
+      if (what === "rpc/my_designs") return json(route, 200, []);
+      if (what === "rpc/my_design_space") return json(route, 200, { designs: 0, bytes: 0 });
+      if (what === "rpc/save_design") return json(route, 200, { status: "saved", id: "00000000-0000-4000-8000-0000000000d1", revision: 1 });
+      if (req.method() === "GET" && what === "profiles" && url.searchParams.get("select") === "keep_designs") return json(route, 200, [{ keep_designs: true }]);
       if (req.method() === "GET" && what === "profiles") {
         await svc.profileHeld; // a slow service, for the check that the last choice seen shows at once
         return json(route, 200, [{ email_opt_in: svc.profile.email_opt_in }]);
@@ -94,12 +100,32 @@ function fakeService() {
         svc.profile.email_opt_in = body.email_opt_in;
         return route.fulfill({ status: 204, headers: cors });
       }
+      if (req.method() === "GET" && what === "plans") return json(route, 200, [svc.plan]);
       if (req.method() === "POST" && what === "rpc/my_data") return json(route, 200, { account: { email: "ada@example.com" }, profile: svc.profile, plan: { plan: "free" } });
       if (req.method() === "POST" && what === "rpc/delete_my_account") {
         svc.profile = undefined;
         svc.live.clear();
         svc.tokens.clear();
         return route.fulfill({ status: 204, headers: cors });
+      }
+      return json(route, 404, {});
+    }
+    if (url.pathname.startsWith("/functions/v1/billing/")) {
+      // The billing function (supabase/functions/billing), as it answers a signed-in person.
+      if (!svc.billingFn) return json(route, 404, {});
+      if (!svc.profile || !svc.tokens.has((req.headers().authorization ?? "").replace("Bearer ", ""))) return json(route, 401, { error: "signed-out" });
+      const what = url.pathname.slice("/functions/v1/billing/".length);
+      if (what === "checkout") {
+        svc.checkouts.push(body);
+        return json(route, 200, { url: `https://checkout.stripe.com/c/pay/cs_test_${svc.checkouts.length}` });
+      }
+      if (what === "portal") return json(route, 200, { url: "https://billing.stripe.com/p/session/test_1" });
+      if (what === "delete-account") {
+        svc.calls.push("billing deleted the Stripe customer");
+        svc.profile = undefined;
+        svc.live.clear();
+        svc.tokens.clear();
+        return json(route, 200, { deleted: true });
       }
       return json(route, 404, {});
     }
@@ -132,6 +158,15 @@ async function fresh(base, width = 1280, phone = false) {
   const svc = fakeService();
   const elsewhere = [];
   await context.route(`${SERVICE}/**`, svc.handle);
+  // This browser's projects count as Ada's, so My designs never stops these checks to ask (e2e/my-designs.mjs asks).
+  await context.addInitScript(() => localStorage.getItem("spindle.account.designs/7f3c2a10-0000-4000-8000-000000000001") ?? localStorage.setItem("spindle.account.designs/7f3c2a10-0000-4000-8000-000000000001", "{}"));
+  // Stripe's checkout page, faked: paying sends the person back with ?checkout=done, and Stripe's webhook makes them Pro a moment later.
+  await context.route("https://checkout.stripe.com/**", (route) => {
+    const back = new URL(svc.checkouts.at(-1).returnTo);
+    back.searchParams.set("checkout", svc.payment === "cancel" ? "cancelled" : "done");
+    if (svc.payment !== "cancel") setTimeout(() => (svc.plan = { plan: "pro", renews_at: "2026-12-05T00:00:00Z", cancels_at_period_end: false }), 1500);
+    return route.fulfill({ status: 302, headers: { location: back.href } });
+  });
   const page = await context.newPage();
   page.on("request", (r) => {
     const u = new URL(r.url());
@@ -192,7 +227,7 @@ try {
     await page.click("#account-open");
     assert.equal(await page.locator("#account-title").textContent(), "Sign in to SpindleLabs");
     const gives = await page.$$eval("#account .account-gives li", (l) => l.map((x) => x.textContent));
-    assert.equal(gives.length, 2);
+    assert.equal(gives.length, 3);
     if (shots) await page.screenshot({ path: `${shots}/account-signed-out-1280.png` });
     assert.deepEqual(svc.calls, [], "opening the dialog contacts nothing");
     await context.close();
@@ -219,7 +254,7 @@ try {
     assert.equal(await page.isChecked("#account-emails"), false, "the email choice is no until ticked");
     assert.equal(await page.locator("#account-title").textContent(), "Your account");
     assert.match(await page.locator("#account .account-who").textContent(), /Ada Maker.*ada@example\.com/);
-    await page.click("#account .account-action");
+    await page.click("#account .account-action:text('Sign out')");
     await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Sign in");
     assert.deepEqual(svc.loggedOut, ["Bearer access-2"]);
     assert.match(await page.locator("#account .account-note").textContent(), /^Signed out\.$/);
@@ -375,6 +410,75 @@ try {
     assert.match(await page.locator("#account .account-note").textContent(), /^Your account was not deleted\. Couldn't reach the sign-in service/);
     assert.equal(await accountText(page), "Ada");
     await context.close();
+  });
+
+  await check("switch on: Pro in test mode: Upgrade says test mode, pays through Stripe's page, comes back, and shows the Pro badge", async () => {
+    const { page, svc, context } = await fresh(ON_URL);
+    await page.locator("#account-open").waitFor();
+    await page.click("#account-open");
+    await page.click("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    await page.click("#account-open");
+    await page.locator("#account .account-upgrade").first().waitFor();
+    assert.match(await page.locator("#account .account-plan").textContent(), /Test mode.*US\$9 a month, or US\$54 for the first year, then US\$90 a year\..*no real money is taken/);
+    assert.deepEqual(await page.$$eval("#account .account-upgrade", (b) => b.map((x) => x.dataset.plan)), ["monthly", "yearly"]);
+    if (shots) await page.screenshot({ path: `${shots}/account-upgrade-1280.png` });
+    await page.click("#account .account-upgrade[data-plan=yearly]");
+    await page.waitForSelector("#account[open] .account-note");
+    assert.deepEqual(svc.checkouts, [{ plan: "yearly", returnTo: ON_URL }]);
+    assert.match(await page.locator("#account .account-note").textContent(), /^Thanks! Stripe took the test payment\./);
+    assert.equal(new URL(page.url()).search, "", "the checkout marker is gone from the address");
+    await page.locator("#account .account-pro-badge", { hasText: /^Pro$/ }).waitFor({ timeout: 10000 });
+    assert.match(await page.locator("#account .account-plan").textContent(), /Renews on .*2026/);
+    assert.equal(await page.locator("#account .account-plan-action", { hasText: "Manage or cancel Pro" }).count(), 1);
+    assert.equal(await page.locator("#account .account-upgrade").count(), 0, "no second Upgrade for someone on Pro");
+    if (shots) await page.screenshot({ path: `${shots}/account-pro-1280.png` });
+    await context.close();
+  });
+
+  await check("switch on: a cancelled checkout says nothing was charged; payments not set up yet says so; 375 px fits", async () => {
+    const { page, svc, context } = await fresh(ON_URL, 375, true);
+    await page.locator("#account-open").waitFor({ state: "attached" });
+    await page.tap("#menu-toggle");
+    await page.tap("#account-open");
+    await page.tap("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    svc.payment = "cancel";
+    await page.evaluate(() => document.getElementById("account-open").click());
+    await page.locator("#account .account-upgrade").first().waitFor();
+    const up = await page.locator("#account .account-upgrade").first().boundingBox();
+    assert.ok(up.height >= 44 && up.x >= 0 && up.x + up.width <= 375, JSON.stringify(up));
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
+    if (shots) await page.screenshot({ path: `${shots}/account-upgrade-375.png` });
+    await page.tap("#account .account-upgrade[data-plan=monthly]");
+    await page.waitForSelector("#account[open] .account-note");
+    assert.equal(await page.locator("#account .account-note").textContent(), "Checkout was cancelled. Nothing was charged.");
+    assert.equal(svc.plan.plan, "free");
+    svc.billingFn = false;
+    await page.locator("#account .account-upgrade").first().waitFor();
+    await page.tap("#account .account-upgrade[data-plan=monthly]");
+    await page.waitForFunction(() => document.querySelector("#account .account-note")?.textContent === "Payments aren't ready yet. Please try again later.");
+    await context.close();
+  });
+
+  await check("switch on: deleting goes through the billing function (which ends any subscription), or the database's own delete when it isn't there", async () => {
+    for (const billingFn of [true, false]) {
+      const { page, svc, context } = await fresh(ON_URL);
+      svc.billingFn = billingFn;
+      await page.locator("#account-open").waitFor();
+      await page.click("#account-open");
+      await page.click("#account .account-google");
+      await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+      await page.click("#account-open");
+      await page.click("#account .account-danger");
+      assert.match(await page.locator("#account .account-body").textContent(), /If you have Pro, it is cancelled at Stripe first/);
+      await page.click("#account .account-yours .account-danger");
+      await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Sign in");
+      assert.equal(svc.profile, undefined);
+      assert.equal(svc.calls.includes("billing deleted the Stripe customer"), billingFn);
+      assert.equal(svc.calls.includes("POST /rest/v1/rpc/delete_my_account"), !billingFn);
+      await context.close();
+    }
   });
 
   await check("no page errors", async () => assert.deepEqual(errors, []));

@@ -104,7 +104,7 @@ test("a selected sketch is named as the browser names it, kept while it has curv
     { name: "Slot with round ends profile", type: "outline", id: "outline:profile-18" },
   ]);
   const scene = { bodies: [], mesh: { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] }, faceStart: [], edgeStart: [] } as Scene;
-  assert.deepEqual(survivors([outline("sketch-2"), outline("profile-18")], scene, ["profile-18"]), { kept: [outline("profile-18")], dropped: [outline("sketch-2")], shared: [] });
+  assert.deepEqual(survivors([outline("sketch-2"), outline("profile-18")], scene, ["profile-18"]), { kept: [outline("profile-18")], dropped: [outline("sketch-2")], shared: [], followed: [] });
   assert.equal(droppedNote([outline("sketch-2")], [], new Set(["sketch-2"])), "Taken out of the selection: the sketch. The sketch is gone or has no curves now.");
   assert.equal(
     droppedNote([outline("sketch-2"), outline("profile-18")], [], new Set(["sketch-2"])),

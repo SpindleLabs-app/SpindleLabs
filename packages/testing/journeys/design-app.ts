@@ -5,7 +5,7 @@
 // kernel; the viewport is a stand-in that keeps the last mesh and the last
 // selection highlight it was asked to draw. Not a journey itself.
 import assert from "node:assert/strict";
-import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, ORIGIN_AT_FIRST, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type MoveHandlesShow, type MovePointer, type Command, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
+import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, ORIGIN_AT_FIRST, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type AnalysisOverlay, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type MoveHandlesShow, type MovePointer, type Command, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 import { designWorkspace, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
@@ -61,6 +61,8 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   };
   let mesh: DisplayMesh | null = null;
   let highlight: ViewportHighlight = { body: false, faces: [], edges: [] };
+  /** The overlays on the view now, by id (36d), as the viewer keeps them. */
+  const overlays = new Map<string, AnalysisOverlay>();
   let builds = 0;
   /** While held (`hold`), every kernel call waits here until `release` (a slow kernel, as on a busy phone). */
   let gate: Promise<void> | null = null;
@@ -98,8 +100,8 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     lookAt: (plane, side = 1) => (looks.push({ plane, side }), null),
     editedScreenPoints: () => [],
     sketchScreenPoint: () => null,
-    setOverlay() {},
-    clearOverlay() {},
+    setOverlay: (o) => void overlays.set(o.id, o),
+    clearOverlay: (id) => void overlays.delete(id),
     showSelection: (h) => void (highlight = h),
     onPick: null,
     onMenu: null,
@@ -173,6 +175,8 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     /** The last mesh drawn, and the last selection highlight on it (joined face and edge numbers). */
     mesh: () => mesh,
     highlight: () => highlight,
+    /** The overlay with this id on the view now (36d), or null. */
+    overlay: (id: string) => overlays.get(id) ?? null,
     selection: ctx.selection,
     /** The properties panel's note on what a rebuild took out of the selection ("" when hidden). */
     note: () => ($("#selection-note")!.hidden ? "" : $("#selection-note")!.textContent),

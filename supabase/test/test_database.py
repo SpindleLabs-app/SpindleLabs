@@ -207,6 +207,92 @@ class AccountsDatabase(unittest.TestCase):
     def test_the_inner_functions_cannot_be_called_from_the_browser(self):
         self.denied(self.as_user(ADA, "select new_account();"))
 
+    # Paying for Pro (20261105000000_payments.sql)
+
+    def server(self, sql):
+        """Runs `sql` as the server's billing function does (service_role); returns the output."""
+        ok, out = self.as_role("service_role", sql)
+        self.assertTrue(ok, out)
+        return out
+
+    def plan_of(self, uid):
+        return self.owner(f"select plan, renews_at is not null, cancels_at_period_end from plans where user_id = '{uid}';")
+
+    def test_stripe_says_active_so_the_person_is_pro_and_canceled_makes_them_free_again(self):
+        self.assertEqual(self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');"), "cus_Ada1")
+        self.assertEqual(self.server("select set_plan_from_stripe('cus_Ada1', 'sub_A1', 'active', '2026-12-05 00:00+00', false);"), "t")
+        self.assertEqual(self.plan_of(ADA), "pro|t|f")
+        self.assertEqual(self.plan_of(BO), "free|f|f", "Bo is untouched")
+        # Cancelled in the portal: still Pro, paid up to the end of the period, and says it ends.
+        self.server("select set_plan_from_stripe('cus_Ada1', 'sub_A1', 'active', '2026-12-05 00:00+00', true);")
+        self.assertEqual(self.plan_of(ADA), "pro|t|t")
+        # The period ran out: Stripe says canceled, so the free plan, with no renewal date.
+        self.server("select set_plan_from_stripe('cus_Ada1', 'sub_A1', 'canceled', '2026-12-05 00:00+00', true);")
+        self.assertEqual(self.plan_of(ADA), "free|f|f")
+
+    def test_every_stripe_status_maps_to_the_plan_worked_out_by_hand(self):
+        # Stripe's eight subscription statuses: active, trialing and past_due (still retrying the card) keep Pro;
+        # the other five do not.
+        self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');")
+        expected = {"active": "pro", "trialing": "pro", "past_due": "pro", "canceled": "free", "unpaid": "free", "incomplete": "free", "incomplete_expired": "free", "paused": "free"}
+        for status, plan in expected.items():
+            self.server(f"select set_plan_from_stripe('cus_Ada1', 'sub_A1', '{status}', now(), false);")
+            self.assertEqual(self.owner(f"select plan from plans where user_id = '{ADA}';"), plan, status)
+
+    def test_a_team_plan_is_never_changed_by_a_pro_subscription(self):
+        self.owner(f"update plans set plan = 'team' where user_id = '{ADA}';")
+        self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');")
+        self.server("select set_plan_from_stripe('cus_Ada1', 'sub_A1', 'canceled', now(), false);")
+        self.assertEqual(self.owner(f"select plan from plans where user_id = '{ADA}';"), "team")
+
+    def test_an_unknown_customer_changes_nobody_and_says_so(self):
+        self.assertEqual(self.server("select set_plan_from_stripe('cus_Nobody', 'sub_X', 'active', now(), false);"), "f")
+        self.assertEqual(self.owner("select count(*) from plans where plan = 'pro';"), "0")
+
+    def test_the_first_linked_customer_is_kept_when_two_checkouts_race(self):
+        self.assertEqual(self.server(f"select link_stripe_customer('{ADA}', 'cus_First');"), "cus_First")
+        self.assertEqual(self.server(f"select link_stripe_customer('{ADA}', 'cus_Second');"), "cus_First")
+        self.assertEqual(self.server(f"select billing_customer('{ADA}');"), "cus_First")
+        self.assertEqual(self.server(f"select billing_customer('{BO}') is null;"), "t")
+
+    def test_billing_ids_must_look_like_stripe_ids(self):
+        ok, out = self.as_role("service_role", f"select link_stripe_customer('{ADA}', 'not-a-customer');")
+        self.assertFalse(ok)
+        self.assertIn("check constraint", out)
+
+    def test_the_browser_can_neither_read_billing_nor_call_the_servers_functions(self):
+        self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');")
+        for role in ["anon", "authenticated"]:
+            self.denied(self.as_role(role, "select * from billing;", ADA))
+            self.denied(self.as_role(role, "select set_plan_from_stripe('cus_Ada1', 'sub_A1', 'active', now(), false);", ADA))
+            self.denied(self.as_role(role, f"select link_stripe_customer('{ADA}', 'cus_Mine');", ADA))
+            self.denied(self.as_role(role, f"select billing_customer('{ADA}');", ADA))
+            self.denied(self.as_role(role, f"select forget_billing('{ADA}');", ADA))
+            self.denied(self.as_role(role, "update plans set cancels_at_period_end = true;", ADA))
+        self.assertEqual(self.plan_of(ADA), "free|f|f")
+
+    def test_an_account_with_payments_linked_is_deleted_only_after_the_link_is_forgotten(self):
+        self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');")
+        ok, out = self.as_user(ADA, "select delete_my_account();")
+        self.assertFalse(ok)
+        self.assertIn("payments linked", out)
+        self.assertEqual(self.owner(f"select count(*) from auth.users where id = '{ADA}';"), "1")
+        self.server(f"select forget_billing('{ADA}');")
+        self.assertTrue(self.as_user(ADA, "select delete_my_account();")[0])
+        self.assertEqual(self.owner(f"select count(*) from auth.users where id = '{ADA}';"), "0")
+
+    def test_deleting_an_account_removes_its_billing_row(self):
+        self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');")
+        self.owner(f"delete from auth.users where id = '{ADA}';")
+        self.assertEqual(self.owner("select count(*) from billing;"), "0")
+
+    def test_my_data_shows_the_stripe_link(self):
+        self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');")
+        self.server("select set_plan_from_stripe('cus_Ada1', 'sub_A1', 'active', now(), false);")
+        ok, out = self.as_user(ADA, "select my_data()->'payments'->>'stripe_customer_id', my_data()->'payments'->>'status', my_data()->'plan'->>'plan';")
+        self.assertEqual((ok, out), (True, "cus_Ada1|active|pro"))
+        self.assertEqual(self.as_user(BO, "select my_data()->>'payments' is null;"), (True, "t"))
+
     # Every table is covered
 
     def test_every_public_table_has_row_level_security_and_no_grant_to_nobody(self):

@@ -1,0 +1,220 @@
+{
+ "seed": "48",
+ "check": "a broken reference resolved to another face",
+ "what": "Design on the next kernel (kernel #132 built locally, 2026-11-05), MODEL_KNOWS: a kept tool's own face held with its tag; editing the tool changed the tag; Design found the face on the tool's own body without its tag instead of losing it (rule 3). Fixed in scene.ts designFind; hand test in workspaces/design/test/combine-scene.test.ts.",
+ "steps": [
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     2,
+     -5
+    ],
+    "radius": 8
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.6206668498281839,
+   "distance": 26
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.5910589040304878,
+   "distance": 28
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      10,
+      -34
+     ],
+     [
+      4,
+      -4
+     ],
+     [
+      27,
+      32
+     ],
+     [
+      37,
+      14
+     ]
+    ]
+   }
+  },
+  {
+   "op": "reorder",
+   "pick": 0.018479330060771404,
+   "to": 0.2507437368631543
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      27,
+      -3
+     ],
+     [
+      8,
+      -20
+     ],
+     [
+      -5,
+      -13
+     ],
+     [
+      -15,
+      8
+     ],
+     [
+      12,
+      51
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.06222972755640466,
+   "distance": 8
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    28,
+    17,
+    36
+   ]
+  },
+  {
+   "op": "marker",
+   "pick": 0.5100594477742213
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      4,
+      3
+     ],
+     [
+      5,
+      -9
+     ],
+     [
+      1,
+      -28
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -2,
+     -19
+    ],
+    "radius": 19
+   }
+  },
+  {
+   "op": "delete-item",
+   "pick": 0.18115021969534828
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-preset",
+   "kind": "cylinder",
+   "sizes": [
+    60,
+    33
+   ]
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "marker",
+   "pick": 0.008699905758340565
+  },
+  {
+   "op": "add-preset",
+   "kind": "cylinder",
+   "sizes": [
+    30,
+    36
+   ]
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.07795135831030375,
+   "distance": 25
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.029013556548931896,
+   "distance": 9
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    59,
+    4,
+    6
+   ]
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     32,
+     -11
+    ],
+    "radius": 2
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.806410742264319,
+   "distance": 37
+  },
+  {
+   "op": "add-combine",
+   "target": 0.5419001979765887,
+   "tool": 0.1992873414751548,
+   "operation": "intersect",
+   "keep": true
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.08645738909412748
+  },
+  {
+   "op": "reorder",
+   "pick": 0.8020755700372915,
+   "to": 0.16479456364862066
+  },
+  {
+   "op": "set-size",
+   "pick": 0.3709295784379709,
+   "value": 5
+  }
+ ]
+}

@@ -7,8 +7,11 @@
 import { type Command, type CommandSpec } from "@fission/core";
 import { askForCommands, systemPrompt, type AIProvider } from "@fission/ai";
 
-/** "cannot": a request no offered command can do; the right answer is no commands and a plain reason (AI5c). */
-export type TaskType = "create" | "edit-parameter" | "reference-geometry" | "explain" | "cannot";
+/**
+ * "cannot": a request no offered command can do; the right answer is no commands and a plain reason (AI5c).
+ * "only-asked": one thing asked for; an answer that adds a step (an extrude, a rename, a size) fails (AI8b).
+ */
+export type TaskType = "create" | "edit-parameter" | "reference-geometry" | "explain" | "cannot" | "only-asked";
 
 export interface EvalCase {
   id: string;
@@ -148,6 +151,16 @@ export const HELD_OUT_CASES: readonly EvalCase[] = [
   { id: "held-cannot-fillet", taskType: "cannot", prompt: "Round off every edge with a 2 mm fillet.", setup: [BOX], expected: [] },
   { id: "held-cannot-arc", taskType: "cannot", prompt: "In a sketch on the XY plane, draw an arc of radius 15 mm from (0, 0) to (30, 0).", setup: [], expected: [] },
   { id: "held-cannot-text", taskType: "cannot", prompt: "Engrave the word HELLO into the top face.", setup: [BOX], expected: [] },
+  // AI8b: one thing asked, so exactly its commands; an extra extrude, rename or size fails (matches allows none extra).
+  // Ben's run (2026-11-03) planned a 4 mm extrude and a rename nobody asked for. Written after ONLY_ASKED_RULE and never used to word it.
+  // Drawn, not extruded: the left plane is YZ; 8 mm across is the diameter.
+  { id: "held-only-draw", taskType: "only-asked", prompt: "Sketch a circle 8 mm across on the left plane.", setup: [], expected: [{ op: "create_sketch", on: "YZ" }, { op: "draw_circle", diameter: 8 }] },
+  // A rectangle in the sketch that is open, nothing else: no new sketch, no extrude.
+  { id: "held-only-rectangle", taskType: "only-asked", prompt: "Add a 15 by 10 mm rectangle to the sketch.", setup: [{ op: "create_sketch", on: "XY" }], expected: [{ op: "draw_rectangle", width: 15, height: 10 }] },
+  // Extruded, not renamed: the sketch just drawn, 4 mm.
+  { id: "held-only-extrude", taskType: "only-asked", prompt: "Extrude it 4 mm.", setup: [{ op: "create_sketch", on: "XY" }, { op: "draw_rectangle", width: 30, height: 20 }], expected: [{ op: "extrude_sketch", distance: 4 }] },
+  // Renamed, nothing built: Sketch 1 is the only sketch.
+  { id: "held-only-rename", taskType: "only-asked", prompt: "Rename Sketch 1 to Base.", setup: [{ op: "create_sketch", on: "XY" }], expected: [{ op: "rename_item", item: "Sketch 1", name: "Base" }] },
 ];
 
 const same = (a: unknown, b: unknown) =>

@@ -10,8 +10,8 @@
 import type { ViewportPick } from "@fission/core";
 import { SKETCH_PLANES, type SketchPlane } from "./document.ts";
 import { drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
-import { designReference } from "./references.ts";
-import { sceneHit, type Scene } from "./scene.ts";
+import { shownFrame } from "./built-body.ts";
+import { findInScene, sceneHit, shownReference, type Scene } from "./scene.ts";
 
 /** What a click on a curved face says (Q5). */
 export const CURVED_FACE = "Sketches go on flat faces or planes, and this face is curved: pick a flat face or a plane.";
@@ -41,10 +41,14 @@ export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot 
   const body = scene.bodies[hit.body];
   const drawn = drawnOnFace(body.view, hit.index);
   if (drawn === null) return { kind: "refused", message: CURVED_FACE };
-  const ref = designReference("face", body.names, hit.index);
+  // 35f1e: once a Combine built, by its name across the design (with its tag when it is a piece of a split face), which
+  // must find this face again: a piece no tag tells apart from another could not be followed either.
+  const ref = shownReference(scene, hit.body, "face", hit.index);
   const feature = ref === null ? null : faceFeature(ref.id);
-  if (ref === null || feature !== body.feature) return { kind: "refused", message: UNNAMED_FACE };
-  return { kind: "face", face: { plane: ref.id, feature }, drawn: { ...drawn, body: body.frame ?? worldFrame() } };
+  if (ref === null || feature === null) return { kind: "refused", message: UNNAMED_FACE };
+  const again = scene.design === undefined ? null : findInScene(ref, scene);
+  if (again === null ? feature !== body.feature : again.status !== "found" || again.index !== pick.face) return { kind: "refused", message: UNNAMED_FACE };
+  return { kind: "face", face: { plane: ref.id, feature }, drawn: { ...drawn, body: shownFrame(body, hit.index) ?? worldFrame() } };
 }
 
 /** The faces of the bodies on screen a sketch can go on (joined numbering, for the viewport to light): the flat ones with a name of their own. */

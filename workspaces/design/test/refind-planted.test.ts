@@ -67,7 +67,7 @@ export const REFIND_PLANTS: Plant[] = [
   {
     name: "row-hides-shared",
     file: "selection",
-    find: "    if (type === undefined && sharedBy(item, shown?.names ?? null) > 1)",
+    find: '    if (type === undefined && found?.status === "shared")',
     replace: "    if (false)",
     caught: "the selection row differs from the model",
   },

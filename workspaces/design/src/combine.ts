@@ -86,6 +86,18 @@ export function changedCombine(doc: DesignDocument, id: string, target: string, 
   if (!(COMBINE_OPERATIONS as readonly string[]).includes(operation)) throw new Error(`${shown(operation)} is not join, cut or intersect`);
   const was = combineBodies(old);
   if (was.target === target && was.tools.join() === tools.join() && was.operation === operation && was.keepTools === keepTools) return doc;
+  if (was.target === target && was.tools.join() === tools.join() && [target, ...tools].every((b) => bodyItem(b) !== null)) {
+    // Only the operation or Keep tools changed: the bodies stay as picked, even one whose item is gone now (the Combine
+    // says so when it fails), so that choice is never refused for it; their words from the Combine's provenance.
+    const words = (b: string) => {
+      const item = bodyItem(b)!; // a body id, checked above (a broken one from a file goes on to be refused in words)
+      const label = old.provenance.from.find((x) => x.id === item)?.label ?? item;
+      return isPiece(b) ? `a piece of ${label}` : label;
+    };
+    const [t, ...ts] = [target, ...tools].map(words);
+    const intent = { ...old.intent, parameters: { ...old.intent.parameters, operation, keepTools }, summary: combineSummary(t, ts, operation, keepTools) };
+    return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? { ...old, intent } : f)) } };
+  }
   const items = itemsFor(doc, target, tools, at, `${old.provenance.self.label}, so it`);
   const changed: Feature = { ...old, ...combineFields(target, tools, operation, keepTools, items), provenance: { ...old.provenance, from: fromOf(items) } };
   return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? changed : f)) } };

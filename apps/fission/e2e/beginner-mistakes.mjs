@@ -222,6 +222,38 @@ try {
     await slot.context().close();
   });
 
+  for (const [width, tap] of [[1280, false], [375, true]]) {
+    await check(`a star, L-bracket or plate too small to build is refused in plain words, nothing recorded (${width} px${tap ? ", taps" : ""})`, async () => {
+      // Clumsy hunt 2026-11-04: a star 0.004 mm across went to the kernel and failed in its words ("profile pieces (0, 0)
+      // and (0, 2) (loop, piece) are 8.9e-4 mm apart"), recorded as a failed part with an undo step.
+      for (const [kind, typed, words] of [
+        ["star", "0.004", /^A star this small has points closer together than 0\.001 mm, the smallest piece the modeller keeps: make its width and depth at least 0\.0046 mm\./],
+        ["l-bracket", "0.003", /^An L-bracket this small has arms thinner than 0\.001 mm/],
+        ["plate", "0.008", /^A plate this small has holes, or gaps beside them, under 0\.001 mm/],
+      ]) {
+        const page = await fresh(width, tap);
+        await insertPreset(page, kind, tap);
+        await until(page, () => !["", "—"].includes(document.querySelector("#volume")?.textContent ?? ""), null, `the ${kind} built`);
+        if (tap) await openPanel(page, "properties", true);
+        else await pinProperties(page);
+        const undo = await page.getAttribute("#undo", "title");
+        await page.fill("#width", typed);
+        await until(page, () => (document.getElementById("error")?.textContent ?? "") !== "", null, `the ${kind} refused`);
+        await page.press("#width", "Tab");
+        await until(page, () => document.getElementById("width").value === "40", null, "the width back");
+        const error = await text(page, "#error");
+        assert.match(error, words);
+        assert.doesNotMatch(error, /profile|loop|piece \(|radius must be within/);
+        assert.equal(await page.getAttribute("#undo", "title"), undo, "no undo step recorded");
+        assert.doesNotMatch(await page.evaluate(() => document.querySelector("#timeline").textContent), /failed/);
+        const box = await page.$eval("#error", (e) => e.getBoundingClientRect().toJSON());
+        assert.ok(box.width > 0 && box.left >= 0 && box.right <= width + 0.5, `the words are on screen: ${JSON.stringify(box)}`);
+        if (shots && kind === "star") await page.screenshot({ path: `${shots}/tiny-star-${width}.png` });
+        await page.context().close();
+      }
+    });
+  }
+
   await check("double-clicking a timeline item after picking one to its left opens Edit, not its ⋯ menu (1280 px)", async () => {
     // Clumsy hunt 2026-11-04: the first click picks the item and the bar redraws, the earlier item's ⋯ goes, the item slides
     // about 30 px left and its own ⋯ comes under the pointer, so the second click opened the menu instead of Edit.

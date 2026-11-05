@@ -8,8 +8,7 @@
 import type { GeometryReference, ViewportPick } from "@fission/core";
 import { rowItem } from "./browser.ts";
 import type { DesignDocument } from "./document.ts";
-import { designReference } from "./references.ts";
-import { sceneHit, type Scene } from "./scene.ts";
+import { sceneHit, shownReference, type Scene } from "./scene.ts";
 import { menuEntries } from "./timeline-menu.ts";
 import type { MenuEntry } from "./timeline-bar.ts";
 
@@ -34,7 +33,7 @@ export function viewMenuTarget(doc: DesignDocument, scene: Scene | null, pick: V
   const on = sceneHit(scene, hit.kind, hit.index);
   if (on === null) return null;
   const body = scene.bodies[on.body];
-  const item = designReference(hit.kind, body.names, on.index);
+  const item = shownReference(scene, on.body, hit.kind, on.index);
   if (item === null) return null;
   const row = `body-${body.place}`;
   const feature = rowItem(row, doc, failed);

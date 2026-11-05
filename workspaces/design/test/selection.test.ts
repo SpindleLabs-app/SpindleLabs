@@ -4,7 +4,8 @@ import { XY_PLANE, type BodyView, type GeometryReference, type StableId } from "
 import { partDocument, type ReadyProfile } from "../src/document.ts";
 import { nameBody } from "../src/naming.ts";
 import { bodyReference, designReference, profileReference, readDesignReference, readProfileReference } from "../src/references.ts";
-import { droppedNote, highlightOf, NOT_IN_DESIGN, NOT_ON_BODY, selectionRows, survivors } from "../src/selection.ts";
+import { droppedNote, followedNote, highlightOf, NOT_IN_DESIGN, NOT_ON_BODY, selectionRows, survivors } from "../src/selection.ts";
+import { referenceLabel } from "../src/selection.ts";
 import { BOX_VIEW, CYLINDER_VIEW, onlyBody } from "./views.ts";
 
 const box = nameBody("feature-1", BOX_VIEW, () => null);
@@ -47,13 +48,13 @@ test("properties rows give each item's name, type and stable name", () => {
 test("a rebuild keeps every face and edge whose name is still on the body, wherever the kernel numbers it now", () => {
   const items = [face(1), edge(4), body];
   // A wider box: the same names.
-  assert.deepEqual(survivors(items, boxScene), { kept: items, dropped: [], shared: [] });
+  assert.deepEqual(survivors(items, boxScene), { kept: items, dropped: [], shared: [], followed: [] });
   // The same box with its faces listed the other way round: renumbered, every name still there.
   const reversed = nameBody("feature-1", { ...BOX_VIEW, face_roles: [...BOX_VIEW.face_roles].reverse(), edge_faces: BOX_VIEW.edge_faces.map((p) => p && ([5 - p[0], 5 - p[1]] as [number, number])) } as BodyView, () => null);
-  assert.deepEqual(survivors(items, onlyBody(BOX_VIEW, reversed)), { kept: items, dropped: [], shared: [] });
+  assert.deepEqual(survivors(items, onlyBody(BOX_VIEW, reversed)), { kept: items, dropped: [], shared: [], followed: [] });
   assert.deepEqual(highlightOf(items, onlyBody(BOX_VIEW, reversed)), { body: true, faces: [4], edges: [4] });
   // Box to cylinder (the same feature, changed): its top is still the top; the top front edge is gone. The body stays.
-  assert.deepEqual(survivors(items, cylinderScene), { kept: [face(1), body], dropped: [edge(4)], shared: [] });
+  assert.deepEqual(survivors(items, cylinderScene), { kept: [face(1), body], dropped: [edge(4)], shared: [], followed: [] });
 });
 
 test("references to another feature, and ids Design did not build, are left alone", () => {
@@ -98,9 +99,9 @@ test("a selected profile: named as the browser names it, of type outline, drawn 
 
 test("a rebuild keeps the profile while the part has it; a change to a box drops it, with a note", () => {
   // A resize or a change of profile kind keeps profile-1.
-  assert.deepEqual(survivors([profile, body], boxScene, ["profile-1"]), { kept: [profile, body], dropped: [], shared: [] });
+  assert.deepEqual(survivors([profile, body], boxScene, ["profile-1"]), { kept: [profile, body], dropped: [], shared: [], followed: [] });
   // A box has no profiles.
-  assert.deepEqual(survivors([profile, body], boxScene, []), { kept: [body], dropped: [profile], shared: [] });
+  assert.deepEqual(survivors([profile, body], boxScene, []), { kept: [body], dropped: [profile], shared: [], followed: [] });
   assert.equal(droppedNote([profile]), "Taken out of the selection: the profile. The part has no profile now.");
   assert.equal(
     droppedNote([face(1), profile]),
@@ -112,13 +113,22 @@ test("issue #279: a hidden body, and a face or edge of it, leave the selection a
   // Body 1 hidden (an Undo of "Show Body 1" hides it again, with no eye pressed): the scene draws no body, so nothing of it may stay picked.
   const hiddenOne = (b: string) => b === "body:feature-1";
   const unseen = { ...boxScene, bodies: [], faceStart: [], edgeStart: [] };
-  assert.deepEqual(survivors([body, face(1), edge(4)], unseen, [], () => true, hiddenOne), { kept: [], dropped: [], shared: [] });
+  assert.deepEqual(survivors([body, face(1), edge(4)], unseen, [], () => true, hiddenOne), { kept: [], dropped: [], shared: [], followed: [] });
   // A piece of it hidden by its own id goes too; another body's reference, not hidden, stays.
   const piece = bodyReference("body:feature-1/piece:2");
   const other = bodyReference("body:feature-2");
-  assert.deepEqual(survivors([piece, other], unseen, [], () => true, (b) => b.startsWith("body:feature-1")), { kept: [other], dropped: [], shared: [] });
+  assert.deepEqual(survivors([piece, other], unseen, [], () => true, (b) => b.startsWith("body:feature-1")), { kept: [other], dropped: [], shared: [], followed: [] });
   // Shown again (nothing hidden): the same items are kept, as before this check (a body not drawn yet, its build failed, holds its selection).
-  assert.deepEqual(survivors([body, face(1), edge(4)], unseen, [], () => true, () => false), { kept: [body, face(1), edge(4)], dropped: [], shared: [] });
+  assert.deepEqual(survivors([body, face(1), edge(4)], unseen, [], () => true, () => false), { kept: [body, face(1), edge(4)], dropped: [], shared: [], followed: [] });
   // Shown and drawn, the hidden list says nothing of it: kept by name as ever.
   assert.deepEqual(survivors([body, face(1), edge(4)], boxScene, [], () => true, () => false).kept, [body, face(1), edge(4)]);
+});
+
+test("an edge followed onto the only edge left between its faces is said, never kept silently (35f1e2, rule 5)", () => {
+  const edge = (id: string): GeometryReference => ({ kind: "edge", id: id as StableId });
+  const a = edge("edge:face:feature-1/top+face:feature-2/left;ends:face:feature-1/front,face:feature-1/back");
+  const b = edge("edge:face:feature-1/bottom+face:feature-2/left;ends:face:feature-1/front,face:feature-1/back");
+  assert.equal(followedNote([]), "");
+  assert.equal(followedNote([a]), `Kept in the selection: ${referenceLabel(a)}. The faces at its ends changed, but it is still the only edge between its two faces: check it is the edge you meant.`);
+  assert.match(followedNote([a, b]), new RegExp(`^Kept in the selection: .+ and .+\\. The faces at their ends changed, but each is still the only edge between its two faces: check they are the edges you meant\\.$`));
 });

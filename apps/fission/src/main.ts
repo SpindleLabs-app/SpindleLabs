@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
+import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -81,6 +81,37 @@ const listed = listedWorkspaces(workspaces, everyWorkspace);
 const workspaceTitle = (id: WorkspaceId) => workspaces.find((w) => w.id === id)?.title ?? id;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+// Optional accounts (accounts.config.mjs): with the switch off, the build has no account code and contacts no service.
+declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
+/** The account code's hooks once it has started (only with accounts on): My designs. */
+let accountHooks: import("./account.ts").AccountHooks | null = null;
+/**
+ * A small picture of the largest 3D view on screen for My designs (192 × 128, WebP, else PNG or JPEG under 32 KiB),
+ * or null when there is none. The views keep their last frame (preserveDrawingBuffer), so this reads what is shown.
+ */
+function pictureOfView(): string | null {
+  try {
+    const shown = [...document.querySelectorAll<HTMLCanvasElement>("canvas")].filter((c) => !c.closest("dialog") && c.width > 0 && c.height > 0 && c.getBoundingClientRect().width > 0);
+    const view = shown.sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    if (!view) return null;
+    const w = 192, h = 128;
+    const out = document.createElement("canvas");
+    Object.assign(out, { width: w, height: h });
+    const g = out.getContext("2d");
+    if (!g) return null;
+    // Cover: the middle of the view, cut to 3:2.
+    const scale = Math.max(w / view.width, h / view.height);
+    const sw = w / scale, sh = h / scale;
+    g.drawImage(view, (view.width - sw) / 2, (view.height - sh) / 2, sw, sh, 0, 0, w, h);
+    for (const [type, q] of [["image/webp", 0.75], ["image/jpeg", 0.7], ["image/png", undefined]] as const) {
+      const url = out.toDataURL(type, q);
+      if (url.startsWith(`data:${type};base64,`) && url.length <= 32 * 1024) return url;
+    }
+    return null;
+  } catch {
+    return null; // a view that can't be read (a lost WebGL context, a tainted canvas): no picture this time
+  }
+}
 // The one viewer (one scene); each workspace on screen sees it through a
 // pane of its own: its own camera, the viewer's body, selection and picks.
 const viewer = new Viewer($("viewport"));
@@ -603,6 +634,7 @@ const saveStatus = (s: AutosaveStatus) => {
   el.dataset.state = s.state; // read by the e2e test
   el.textContent = s.state === "saving" ? "Saving…" : s.state === "saved" ? "Saved" : `Not saved: ${s.message}`;
   el.title = el.textContent; // the words behind the mark at phone width
+  if (s.state === "saved") accountHooks?.saved(); // My designs: kept in the account a few seconds later, when signed in
   if (s.state === "saved") window.removeEventListener("beforeunload", askBeforeLeaving);
   else window.addEventListener("beforeunload", askBeforeLeaving);
 };
@@ -691,6 +723,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
+  ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
   saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, run: () => void save(true) },
@@ -708,7 +741,7 @@ const file = fileMenu(document, {
 });
 $("file-bar").prepend(file.element);
 /** What Open says when the last project's changes, refused because another tab saved, were kept as project `name`. */
-const keptApartWords = (name: string) => `Changes made in this tab couldn't be stored, because the project was changed in another tab, so they're kept in this browser as a separate project, “${name}”.`;
+const keptApartWords = (name: string) => `Your changes in this tab couldn't be saved, because the project was changed in another tab meanwhile. Nothing is lost: they're kept in this browser as a separate project, “${name}” (File > Projects in this browser opens it).`;
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
@@ -1042,6 +1075,8 @@ document.body.append(settingsDialog);
 let browserSettings: SettingsStore | null = null;
 const settings = () => (browserSettings ??= new SettingsStore(local));
 // The theme (U1b, U2a): the page already wears it (public/theme-init.js ran before the first paint); this keeps it in step with the Settings choice and the device.
+// The browser checks switch the tooltips off (e2e/browser.mjs) so code that reads a title under the mouse sees it; e2e/tooltip.mjs keeps them on. The live build has no such switch.
+if (!(__TEST_HOOKS__ && (window as unknown as { __noTooltips?: boolean }).__noTooltips)) startTooltips(document);
 const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
@@ -1050,15 +1085,40 @@ $("settings-open").addEventListener("click", () => {
     settingsDialog.showModal();
     settingsDialog.querySelector<HTMLElement>("[data-section=general] .settings-action")?.focus();
   };
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes });
   settingsDialog.showModal();
 });
 settingsDialog.addEventListener("click", (e) => {
   if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
 });
-// Optional accounts (accounts.config.mjs): with the switch off, the build has no account code and contacts no service.
-declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
-if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCOUNTS__!));
+// My designs' hooks, once the account code has started (pictureOfView and accountHooks are near the top).
+if (__ACCOUNTS__)
+  void import("./account.ts").then(async (m) => {
+    // My designs (account features 1) reads and keeps projects through the same store as everything else, and opens
+    // them the way File > Projects in this browser does.
+    accountHooks =
+      (await m.startAccounts(__ACCOUNTS__!, {
+        list: () => store.list(),
+        text: async (id) => {
+          try {
+            return projectToJson(await store.open(id));
+          } catch {
+            return null; // gone, or can't be read: not sent
+          }
+        },
+        put: async (id, text, name, savedAt) => {
+          const project = projectFromJson(text, workspaces);
+          project.name = name;
+          const key = id ?? newId();
+          await store.save(key, project, savedAt);
+          return key;
+        },
+        openId: () => (autosave === null ? null : (document.body.dataset.projectId ?? null)),
+        open: openStored,
+        workspace: () => current,
+        picture: pictureOfView,
+      })) ?? null;
+  });
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
@@ -1066,14 +1126,20 @@ if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCO
 // waits for it, in the order pressed, so it takes back that OK and not the step before (clumsy hunt 2026-11-04).
 let pressesWaiting = 0;
 let pressed: Promise<void> = Promise.resolve();
+/** The presses of each button still waiting (clumsy-user hunt 2026-11-04: a waiting Undo looked as if nothing had happened). */
+const waitingOn = { undo: 0, redo: 0 };
 function undoRedo(which: "undo" | "redo") {
   if (pressesWaiting === 0 && !ctx.history.busy()) return undoRedoNow(which);
   pressesWaiting++;
+  waitingOn[which]++;
+  showUndoRedo();
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
+      waitingOn[which]--;
       undoRedoNow(which);
+      showUndoRedo();
     });
 }
 function undoRedoNow(which: "undo" | "redo") {
@@ -1091,8 +1157,13 @@ function showUndoRedo() {
   ] as const;
   for (const [id, verb, label, chord] of buttons) {
     const b = $<HTMLButtonElement>(id);
-    b.disabled = label === null;
-    b.title = label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    // Pressed while an OK is still being worked out, it waits for it (History.whenIdle) and says so: lit and pulsing
+    // (styles/undo-redo.css), its title saying why, until the press has been carried out.
+    const waiting = waitingOn[id] > 0;
+    b.toggleAttribute("aria-busy", waiting);
+    if (waiting) b.setAttribute("aria-busy", "true");
+    b.disabled = label === null && !waiting;
+    b.title = waiting ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
 // At phone width the pair leaves the bar for the main viewport's
@@ -1119,10 +1190,13 @@ withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
 withIcon($("settings-open"), "settings", 16);
+/** The panel opened last of Files, Properties and the AI panel: the one sheet kept when the window narrows to a phone's. */
+let lastSheet: "browser" | "properties" | "assistant" | null = null;
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
   if (!!panel.hidden !== open) return;
+  if (open) lastSheet = "assistant";
   panel.hidden = !open;
   $("assistant-toggle").setAttribute("aria-pressed", String(open));
   document.body.classList.toggle("assistant-narrow", open); // styles/assistant-narrow.css
@@ -1140,6 +1214,7 @@ $("assistant-toggle").addEventListener("click", () => {
 for (const slot of ["browser", "properties"] as const) {
   const toggle = $(`${slot}-toggle`);
   const set = (open: boolean) => {
+    if (open && toggle.getAttribute("aria-expanded") !== "true") lastSheet = slot;
     toggle.setAttribute("aria-expanded", String(open));
     $("workspace").dataset[slot] = open ? "open" : "closed";
   };
@@ -1153,6 +1228,14 @@ for (const slot of ["browser", "properties"] as const) {
   });
   toggle.addEventListener("sheet-close", () => set(false));
 }
+// Narrowed to a phone's width, the panels open beside the view become sheets over it, and only one may be open (clumsy-user
+// hunt 2026-11-04: Properties opened on a phone, the window widened, the AI panel opened, narrowed again: both sheets open,
+// one over the other). The one opened last stays.
+phone.addEventListener("change", () => {
+  if (!phone.matches) return;
+  for (const slot of ["browser", "properties"] as const) if (slot !== lastSheet) $(`${slot}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+  if (lastSheet !== "assistant") setAssistant(false);
+});
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
 // (Edit feature, Move's boxes once a body is picked, Combine's once its bodies are: without the sheet open they are out of reach; not the plane prompt or
 // Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
