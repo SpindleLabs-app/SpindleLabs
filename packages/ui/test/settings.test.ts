@@ -55,3 +55,19 @@ test("the sections are the planned six with unique ids, and every empty one says
   // General has real controls (theme, units, shortcuts), so it no longer says Units are coming.
   assert.equal(SETTINGS_SECTIONS.find((s) => s.id === "general")!.coming, "");
 });
+
+test("reload reads what was written behind the store, so the next set never puts back an old value", () => {
+  // Settings from the account were written straight into storage (theme light, a new unit) while the store held dark.
+  const storage = memory('{"theme":"dark","unit":"mm"}');
+  const s = new SettingsStore(storage);
+  storage.data.set(SETTINGS_KEY, '{"theme":"light","unit":"in"}');
+  assert.equal(s.get("theme", ""), "dark", "not read again until told");
+  s.reload();
+  assert.equal(s.get("theme", ""), "light");
+  s.set("snap", true);
+  assert.equal(storage.data.get(SETTINGS_KEY), '{"theme":"light","unit":"in","snap":true}');
+  // An entry deleted behind it is gone after reload.
+  storage.data.set(SETTINGS_KEY, "{}");
+  s.reload();
+  assert.equal(s.get("unit", "none"), "none");
+});

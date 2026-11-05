@@ -8,11 +8,13 @@
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { type AccountVersions, withIcon } from "@fission/ui";
 import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
+import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
 import "./styles/account.css";
 
 /** What signing in gives, shown beside the button. Each line must be true in the build that ships it. */
 export const SIGN_IN_GIVES = [
   "My designs: your designs kept in your account, to open on any device you sign in on. You can turn this off.",
+  "Your settings (the theme, units and slicer presets) the same on every device you sign in on. You can turn this off.",
   "SpindleLabs Pro and its AI allowance when they open, on any device you sign in on.",
   "News of new features first, if you choose to get emails.",
 ];
@@ -55,7 +57,7 @@ export interface AccountHooks {
   versionText(localId: string, at: Date): Promise<string>;
 }
 
-export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost): Promise<AccountHooks | undefined> {
+export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost): Promise<AccountHooks | undefined> {
   const redirectTo = location.origin + location.pathname;
   const checked = checkConfig({ ...service, redirectTo });
   if (!checked.ok) return; // a build with broken settings simply has no sign-in
@@ -69,7 +71,8 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const store = browserStore();
   const data = accountData(client, store);
   const designs = host ? startDesigns(client, host, store) : null;
-  const ui = accountUi(client, data, store, designs);
+  const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
+  const ui = accountUi(client, data, store, designs, settings);
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
@@ -99,6 +102,8 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   // theirs (My designs opens to ask); signed in from before: anything changed since is sent.
   if (back.kind === "signed-in") void designs?.askIfNeeded();
   else void designs?.sendNow();
+  // Settings that follow you: the account's are brought here and this browser's sent, signed in now or from before.
+  void settings?.now();
   // Another tab signing in or out shows here too.
   addEventListener("storage", (e) => {
     if (e.key === SESSION_KEY || e.key === null) ui.render();
@@ -124,7 +129,7 @@ function dataWords(r: Exclude<DataResult<unknown>, { kind: "ok" }>): string {
   return r.kind === "signed-out" ? "You're signed out. Sign in again to do that." : FAILURE_WORDS[r.reason];
 }
 
-function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null) {
+function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null) {
   const doc = document;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
     const e = doc.createElement(tag);
@@ -215,6 +220,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       out.addEventListener("click", async () => {
         out.disabled = true;
         data.forgetEmailChoice();
+        settings?.forget(state.user.id);
         const { ended } = await client.signOut();
         note = ended ? "Signed out." : "Signed out on this device. The sign-in service couldn't be reached, so the old session stops working by itself within the hour.";
         render();
@@ -238,6 +244,8 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       del.type = "button";
       del.addEventListener("click", () => confirmDelete());
       yours.append(copy, del);
+      const kept = settings ? settingsBox(settings) : null;
+      const rows = [emails.row, ...(kept ? [kept] : []), out, yours];
       if (designs) {
         const mine = el("button", "account-action account-my-designs", "My designs");
         mine.type = "button";
@@ -245,8 +253,8 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
           dialog.close();
           void designs.show();
         });
-        body.append(who, plan, mine, emails.row, out, yours);
-      } else body.append(who, plan, emails.row, out, yours);
+        body.append(who, plan, mine, ...rows);
+      } else body.append(who, plan, ...rows);
     } else {
       const list = el("ul", "account-gives");
       for (const line of SIGN_IN_GIVES) list.append(el("li", undefined, line));
@@ -289,6 +297,43 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
     text.append(words, hint);
     row.append(input, text);
     return { row, input, hint };
+  }
+
+  /**
+   * Settings that follow you: one box, on unless turned off (on any device). It waits for the account's answer; an
+   * account service that doesn't keep settings yet shows no box at all.
+   */
+  function settingsBox(s: Settings) {
+    const row = el("label", "account-emails account-settings-keep");
+    const input = el("input");
+    input.type = "checkbox";
+    input.id = "account-settings-keep";
+    input.disabled = true;
+    const hint = el("span", "account-small", s.words());
+    hint.setAttribute("role", "status");
+    const text = el("span", "account-emails-text");
+    text.append(el("span", undefined, "Keep my settings in my account, so the theme, units and slicer presets are the same on every device."), hint);
+    row.append(input, text);
+    row.hidden = true;
+    void s.keeping().then((on) => {
+      if (on === null) return; // can't say now (offline, or not kept by this account service yet): no box to get wrong
+      row.hidden = false;
+      input.checked = on;
+      input.disabled = false;
+    });
+    input.addEventListener("change", async () => {
+      const want = input.checked;
+      input.disabled = true;
+      try {
+        await s.setKeeping(want, dataWords);
+        hint.textContent = want ? "Saved: your settings follow you to every device you sign in on." : "Saved: your settings stay on each device, and the ones kept in your account were deleted.";
+      } catch (e) {
+        input.checked = !want;
+        hint.textContent = `Not saved. ${(e as Error).message}`;
+      }
+      input.disabled = false;
+    });
+    return row;
   }
 
   /** Waiting for Stripe's confirmation after a checkout: the plan is read again a few times. */
@@ -382,7 +427,10 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       const before = client.state();
       const r = await data.deleteAccount();
       if (r.kind === "ok") {
-        if (before.kind === "signed-in") designs?.forget(before.user.id);
+        if (before.kind === "signed-in") {
+          designs?.forget(before.user.id);
+          settings?.forget(before.user.id);
+        }
         note = "Your account was deleted. Designs on this device are still here.";
         render();
         return fill();
@@ -391,7 +439,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
     });
     const row = el("div", "account-yours");
     row.append(no, yes);
-    body.append(el("p", undefined, "This deletes your sign-in, your plan, your email choice and every design kept in your account (My designs) from SpindleLabs' servers, straight away. If you have Pro, it is cancelled at Stripe first, so nothing more is charged. It can't be undone."), el("p", undefined, "Designs on this device are not touched."), row);
+    body.append(el("p", undefined, "This deletes your sign-in, your plan, your email choice, your settings kept in your account and every design kept in your account (My designs) from SpindleLabs' servers, straight away. If you have Pro, it is cancelled at Stripe first, so nothing more is charged. It can't be undone."), el("p", undefined, "Designs and settings on this device are not touched."), row);
     dialog.replaceChildren(header, body);
   }
 

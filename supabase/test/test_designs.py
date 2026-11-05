@@ -232,7 +232,7 @@ class DesignsDatabase(unittest.TestCase):
         # AI allowance; rebuilt from parts it must give each of them still, plus designs (and, from 20261105180000, their
         # versions), and nothing about Bo.
         data = json.loads(self.as_user(ADA, "select my_data();")[1])
-        self.assertEqual(sorted(data), ["account", "ai_allowance_used_percent", "design_versions", "designs", "payments", "plan", "profile"])
+        self.assertEqual(sorted(data), ["account", "ai_allowance_used_percent", "design_versions", "designs", "payments", "plan", "profile", "settings"])
         self.assertIsNone(data["payments"], "no Stripe link yet: null, as before")
         self.owner(f"insert into billing (user_id, stripe_customer_id, status) values ('{ADA}', 'cus_Ada1', 'active'), ('{BO}', 'cus_Bo22', 'active');")
         data = json.loads(self.as_user(ADA, "select my_data();")[1])
