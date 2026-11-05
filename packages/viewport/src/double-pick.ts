@@ -50,7 +50,8 @@ export function sameView(a: readonly number[], b: readonly number[]): boolean {
  * click, a View button, a click on the same spot is two picks of two
  * different faces), at most DOUBLE_PICK_MS apart
  * (a clock that went backwards never counts) and within that pointer's
- * DOUBLE_PICK_PX. The viewer forgets `last` after a double, so a third
+ * DOUBLE_PICK_PX. The viewer forgets `last` after a double, and on any
+ * press elsewhere on the page (a browser row, a button), so a third
  * quick click starts afresh rather than making a second double.
  */
 export function isDoublePick(last: ViewClick | null, next: ViewClick): boolean {

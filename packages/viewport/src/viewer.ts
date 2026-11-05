@@ -190,6 +190,10 @@ export class ViewportView {
       const edge = this.edgeAt(x, y);
       return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
     };
+    // A press anywhere else (a browser row, a button, the view cube) comes between two clicks: they are no double-click.
+    document.addEventListener("pointerdown", (e) => {
+      if (e.target !== canvas) this.lastClick = null;
+    }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointerdown", (e) => {
       down = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
       endHold(); // a second finger (a pinch) is no hold

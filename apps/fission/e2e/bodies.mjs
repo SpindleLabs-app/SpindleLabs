@@ -267,6 +267,22 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await at(page, top2, view, tap);
     await until(page, () => /^face:/.test(document.body.dataset.selection ?? ""), null, `slow clicks pick the face (got ${await selection(page)})`);
     await page.keyboard.press("Escape");
+    if (!tap) {
+      // A press elsewhere between two quick clicks on the same spot (the browser's fold, opened and shut) makes them two
+      // picks, as on any desktop: CI's smoke check clicked a face, a browser row, then the face again within half a second.
+      const box = await page.locator("#viewport canvas").boundingBox();
+      const s = screenPoint(box, top2, view);
+      const fold = await page.locator("#browser .browser-fold > summary").boundingBox();
+      const t0 = Date.now();
+      await page.mouse.click(s.x, s.y);
+      await page.mouse.click(fold.x + fold.width / 2, fold.y + fold.height / 2);
+      await page.mouse.click(fold.x + fold.width / 2, fold.y + fold.height / 2);
+      await page.mouse.click(s.x, s.y);
+      const took = Date.now() - t0;
+      await until(page, () => /^face:/.test(document.body.dataset.selection ?? ""), null, `a press between picks the face (got ${await selection(page)})`);
+      assert.ok(took < 400, `the four clicks took ${took} ms: too slow to show the press between is what parts them`);
+      await page.keyboard.press("Escape");
+    }
     if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
     await page.context().close();
   });
