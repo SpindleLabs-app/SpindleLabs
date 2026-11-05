@@ -18,6 +18,7 @@ import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./b
 import { overhangArea, supportsHint } from "./overhang.ts";
 import { fitCalibration, fitsLine } from "./fit-calibration.ts";
 import { FIT_PEG, FIT_THICK, fitPieceStl } from "./fit-piece.ts";
+import { costWords, grams, PRICE_KEY, readPrice, rememberedPrice, timeWords } from "./print-cost.ts";
 
 /**
  * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
@@ -592,21 +593,7 @@ const SUPPORT_SUFFIX: Record<SupportStyle, string> = { off: "", normal: "-suppor
 /** The supports select's value as a style: anything it does not list is off. */
 const supportStyle = (v: string): SupportStyle => SUPPORT_OPTIONS.find((o) => o.value === v)?.value ?? "off";
 
-const grams = (g: number) => (g < 10 ? g.toFixed(1) : Math.round(g).toString());
-
-/**
- * The moves' time in words, rounded to the nearest minute: "4 min",
- * "1 h 5 min"; under half a minute is "under a minute". Null for a time
- * that is not a number or below 0 (an engine fault), so no figure shows.
- */
-export function timeWords(s: number): string | null {
-  if (!(s >= 0) || !Number.isFinite(s)) return null;
-  const min = Math.round(s / 60);
-  if (min === 0) return "under a minute";
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  return min % 60 === 0 ? `${h} h` : `${h} h ${min % 60} min`;
-}
+export { timeWords };
 
 /**
  * What a slice came to, in words: "100 layers, 5.2 g of PLA (1.73 m of
@@ -826,6 +813,42 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     flip.hidden = h?.flip == null;
     flip.textContent = h?.flip?.label ?? "";
   };
+  // The weight and cost badge after a slice (Ben, 2026-11-04, print-cost.ts): plastic, money and time in one line,
+  // with the price per kg the user's to change (remembered); the words follow the box as it is typed. Hidden like the hint.
+  const cost = el("div", "slice-print-cost");
+  cost.className = "slice-print-cost";
+  cost.hidden = true;
+  const costText = el("span", "slice-print-cost-words");
+  const priceWrap = document.createElement("label");
+  priceWrap.className = "slice-print-cost-price";
+  priceWrap.title = "What a 1 kg spool of your filament costs, in Australian dollars. Your price is remembered.";
+  const price = el("input", "slice-print-price");
+  price.type = "text";
+  price.inputMode = "decimal";
+  price.autocomplete = "off";
+  let pricePerKg = rememberedPrice(storage);
+  price.value = String(pricePerKg);
+  priceWrap.append(document.createTextNode("A$ per kg"), price);
+  cost.append(costText, priceWrap);
+  let costOf: PrintFacts | null = null;
+  const showCost = (print: PrintFacts | null) => {
+    costOf = print;
+    const words = print === null ? null : costWords(print, pricePerKg);
+    cost.hidden = words === null;
+    costText.textContent = words ?? "";
+  };
+  price.addEventListener("input", () => {
+    const p = readPrice(price.value);
+    price.setAttribute("aria-invalid", String(p === null));
+    if (p === null) return; // the badge keeps the last price that read
+    pricePerKg = p;
+    try {
+      storage?.setItem(PRICE_KEY, String(p));
+    } catch {
+      // Storage blocked: the price still holds for this dialog.
+    }
+    showCost(costOf);
+  });
   // The bar while a slice runs (Ben, 2026-11-01): how far the engine has got, from its own reports; no value (the
   // browser's moving bar) until the first one, and hidden when nothing runs.
   const bar = el("div", "slice-print-progress");
@@ -931,7 +954,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const top = document.createElement("div");
   top.className = "slice-print-top";
   top.append(heading, presets.element);
-  dialog.append(top, printer, untested, choices6, fitsRow, bar, status, hint, actions);
+  dialog.append(top, printer, untested, choices6, fitsRow, bar, status, cost, hint, actions);
   slot.append(dialog);
   let busy = false;
   /** Shows the bar from now until `end` is called, following the engine's reports. */
@@ -1012,6 +1035,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       else {
         say("", false);
         showHint(undefined);
+        showCost(null);
       }
       presets.changed();
       keep();
@@ -1040,6 +1064,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     const mine = alive();
     say("Slicing…", false);
     showHint(undefined);
+    showCost(null);
     const end = showProgress();
     try {
       const { print, saved, name } = await events.slice(choices(), file(), mine);
@@ -1048,6 +1073,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
       showHint(print.overhangMm2);
+      showCost(print);
     } catch (e) {
       end();
       // Dropped (closed, or stopped by Stop): nothing to say, the engine's "stopped" included.
@@ -1065,6 +1091,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     const mine = alive();
     say("Slicing…", false);
     showHint(undefined);
+    showCost(null);
     const end = showProgress();
     try {
       await events.preview(choices(), file(), mine, () => changedWhileBusy);
@@ -1090,6 +1117,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       if (!busy) {
         say("", false); // a slice still running keeps saying so
         showHint(undefined);
+        showCost(null);
       }
       presets.refresh(); // another tab may have changed them
       dialog.showModal();
