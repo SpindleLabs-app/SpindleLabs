@@ -13,8 +13,8 @@ import { partDocument, readDesignDocument, type DesignDocument, type Sketch } fr
 import { arrowOf, extrudeSketch, featureSpec } from "../src/extrude.ts";
 import { featureNames } from "../src/naming.ts";
 import { BodyCache, builtBody, rebuildTimeline, REGION_GONE, settleKept, type CurveIds } from "../src/rebuild.ts";
-import { findRegion, regionRef, sameLoop, sketchRegions, type RegionRef } from "../src/regions.ts";
-import { addSketch, deleteCurve, drawCircle, drawLine, drawRectangle } from "../src/sketch.ts";
+import { findRegion, mirroredLoop, REDRAWN_CENTROID, regionRef, sameLoop, sketchRegions, type RegionRef } from "../src/regions.ts";
+import { addSketch, deleteCurve, drawCircle, drawLine, drawRectangle, movePoint } from "../src/sketch.ts";
 
 const kernel = nodeKernel();
 const sketchOf = (doc: DesignDocument, id: string): Sketch => doc.sketches.find((s) => s.id === id)!;
@@ -233,6 +233,14 @@ test("the file's checks on region: saved and read back exactly; version 8 holdin
   refused((r) => (r.centroid = [1, null]), `${where}'s centroid a list is not two numbers of mm`);
   refused((r) => (r.centroid = [1, 2, 3]), `${where}'s centroid a list is not two numbers of mm`);
   refused((r, d) => ((d.timeline as { features: { intent: { parameters: Record<string, unknown> } }[] }).features.find((f) => f.intent.parameters.region === r)!.intent.parameters.region = null), `${where} is not an object with outer and centroid`);
+  // Regression (48d hunt): older data is told its own version, not the one migration had raised it to by then.
+  refused((_, d) => {
+    d.version = 5;
+    delete d.bodies;
+    delete d.nextBody;
+  }, "Design data says version 5 but has an extrude naming its sketch region, which version 9 brought");
+  // Regression (48d hunt): a region on anything but an extrude of a sketch (the first item, the sketch) is refused, never kept unread.
+  refused((r, d) => ((d.timeline as { features: { intent: { parameters: Record<string, unknown> } }[] }).features[0].intent.parameters.region = r), `Design feature ${data.timeline.features[0].id} has a region, which only an extrude of a sketch has`);
   // Version 8 data without a region reads as version 9, unchanged.
   const v8 = JSON.parse(JSON.stringify(extrudeSketch(doc, sketch, 10).doc));
   assert.equal(readDesignDocument({ ...v8, version: 8 }).version, 9);
@@ -281,4 +289,80 @@ test("a region gone because the sketch has no closed region left says why, as be
   const failed = (await build(open)).build.results[e.id];
   // The bottom side from (0, 0) to (40, 0) deleted: the left side's end at (0, 0) is joined to nothing.
   assert.ok(failed.status === "failed" && /^Sketch 1 has no closed outline: .*not joined/.test(failed.message), failed.status === "failed" ? failed.message : failed.status);
+});
+
+test("regression (48d hunt): a triangle's corner dragged through its far side turns the region over, the same three curves round it, and the extrude keeps it", async () => {
+  const s = addSketch(partDocument("box", 10, 10, 10));
+  let d = drawLine(s.doc, s.id, [0, 0], [10, 0]).doc;
+  const pt = (x: number, y: number) => sketchOf(d, s.id).points.find((p) => p.x === x && p.y === y)!.id;
+  d = drawLine(d, s.id, pt(10, 0), [5, 10]).doc;
+  d = drawLine(d, s.id, pt(5, 10), pt(0, 0)).doc;
+  const found = await sketchRegions(kernel, sketchOf(d, s.id));
+  assert.equal(found.regions.length, 1);
+  const e = extrudeSketch(d, s.id, 10, false, regionRef(found.regions[0], found.ids));
+  // The apex (5, 10) dragged to (5, -10): the triangle now hangs below its base, so its curves run the other way round it.
+  const moved = await settleKept(kernel, e.doc, movePoint(e.doc, s.id, pt(5, 10), 5, -10));
+  const { build: b, volumes } = await build(moved);
+  const r = b.results[e.id];
+  assert.equal(r.status, "built");
+  assert.equal(r.status === "built" ? r.warning : "no build", undefined);
+  // Base 10, height 10: area 10 · 10 / 2 = 50 mm², by 10 mm: 500 mm³.
+  close(volumes[e.id], 500, "the turned-over triangle");
+});
+
+test("regression (48d hunt): a side of a rectangle deleted and drawn again between the same corners is the same region, so its extrude still builds", async () => {
+  const s = addSketch(partDocument("box", 10, 10, 10));
+  const r = drawRectangle(s.doc, s.id, [100, 0], [140, 30]);
+  const found = await sketchRegions(kernel, sketchOf(r.doc, s.id));
+  const e = extrudeSketch(r.doc, s.id, 10, false, regionRef(found.regions[0], found.ids));
+  const sk = sketchOf(e.doc, s.id);
+  const pt = (x: number, y: number) => sk.points.find((p) => p.x === x && p.y === y)!.id;
+  const bottom = sk.curves.find((c) => c.kind === "line" && [c.start, c.end].includes(pt(100, 0)) && [c.start, c.end].includes(pt(140, 0)))!;
+  let d = deleteCurve(e.doc, s.id, bottom.id);
+  d = drawLine(d, s.id, pt(100, 0), pt(140, 0)).doc;
+  const { build: b, volumes } = await build(d);
+  const res = b.results[e.id];
+  assert.equal(res.status, "built");
+  assert.equal(res.status === "built" ? res.warning : "no build", undefined);
+  // 40 × 30 × 10 = 12000 mm³.
+  close(volumes[e.id], 12000, "the rectangle with a side drawn again");
+  // A side drawn somewhere else instead (the corner moved first): another shape, so the region is gone, with the words.
+  const other = drawLine(deleteCurve(e.doc, s.id, bottom.id), s.id, pt(100, 0), [140, -1]).doc;
+  const gone = (await build(other)).build.results[e.id];
+  assert.ok(gone.status === "failed" || (gone.status === "built" && gone.warning !== undefined));
+});
+
+test("a region found by shape when its name is gone: the centroid within REDRAWN_CENTROID and a curve of the old name; 0.9× found, 1.1× not, two such regions or none of the old curves not", () => {
+  const piece = (index: number, reversed = false) => ({ curve: "line" as const, index, reversed });
+  const region = (cx: number, lines: number[]): SketchRegion => ({
+    outer: lines.map((k) => piece(k)),
+    holes: [],
+    area: 1,
+    centroid: [cx, 0],
+    profile: { outer: { path: { corners: [], bulges: [] } }, holes: [], pieces: [] },
+    holePieces: [],
+    extrudes: true,
+  });
+  const ids: CurveIds = { line: ["a", "b", "c", "d", "e"], arc: [], circle: [] };
+  // Saved round a, b, c at x = 1000; now the region runs a, b, d (c redrawn as d).
+  const saved: RegionRef = { outer: [{ curve: "a", reversed: false }, { curve: "b", reversed: false }, { curve: "c", reversed: false }], centroid: [1000, 0] };
+  const tol = REDRAWN_CENTROID;
+  const near = region(1000 + 0.9 * tol, [0, 1, 3]);
+  assert.equal(findRegion([near], ids, saved), near, "0.9× the tolerance away: the same region");
+  assert.equal(findRegion([region(1000 + 1.1 * tol, [0, 1, 3])], ids, saved), undefined, "1.1× away: another shape");
+  // Two regions there: can't tell which, so none.
+  assert.equal(findRegion([near, region(1000, [0, 4, 3])], ids, saved), undefined);
+  // The same centroid but none of the old curves (a, b, c deleted, a ring drawn round the same centre): not it.
+  assert.equal(findRegion([region(1000, [3, 4])], ids, saved), undefined);
+  // A region with the saved name always wins over one found by shape.
+  const named = region(-5, [0, 1, 2]);
+  assert.equal(findRegion([near, named], ids, saved), named);
+});
+
+test("a name read the other way round (reversed order, every piece flipped) is the same loop turned over; the right way wins when both are there", () => {
+  const n = (c: string, reversed = false) => ({ curve: c, reversed });
+  assert.equal(sameLoop([n("a"), n("b"), n("c")], [n("c", true), n("b", true), n("a", true)]), false, "sameLoop is the one way round only");
+  assert.equal(mirroredLoop([n("a"), n("b"), n("c")], [n("b", true), n("a", true), n("c", true)]), true);
+  assert.equal(mirroredLoop([n("a"), n("b"), n("c")], [n("b"), n("a"), n("c")]), false, "flags not flipped: another loop");
+  assert.equal(mirroredLoop([], []), false);
 });

@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView, OfferedProfile } from "@fission/core";
-import { addSketch, BodyCache, builtBody, changePreset, drawRectangle, FACE_WITH_HOLES, featureSpec, NO_SKETCH, partDocument, PICK_PROFILE_STATUS, rebuildTimeline, type DesignDocument } from "@fission/design";
+import { addSketch, BodyCache, builtBody, changePreset, drawRectangle, featureSpec, NO_SKETCH, partDocument, PICK_PROFILE_STATUS, rebuildTimeline, type DesignDocument } from "@fission/design";
 import { app, kernel } from "./design-app.ts";
 
 type App = Awaited<ReturnType<typeof app>>;
@@ -163,22 +163,34 @@ test("hand-worked: sketches come before faces; the bottom face goes down, a side
   assert.ok(await a.close());
 });
 
-test("hand-worked: a plate's faces with holes are refused in words until regions (step 48), its sides offered; a cylinder's caps are offered, its curved side refused", async () => {
-  // Plate 40 × 30 × 5 with two round holes: a sketch makes one outline until step 48, so its top and bottom aren't offered.
+test("hand-worked: a plate's faces with holes are offered as the face, holes and all (48d2), its sides too; a cylinder's caps are offered, its curved side refused", async () => {
+  // Plate 40 × 30 × 5 with two round holes of radius 0.15 · 30 = 4.5 (profiles.ts): its top is 40 · 30 − 2 · π · 4.5² = 1200 − 40.5π mm².
   const plate = partDocument("plate", 40, 30, 5);
   const pv = await presetView(plate);
   assert.deepEqual(pv.bounds, [[0, 0, 0], [40, 30, 5]]);
   const p = await app(plate);
   await openExtrude(p);
-  assert.equal(offeredFaces(p).length, 4, "the four flat sides; not the top and bottom with holes, nor the holes' curved walls");
-  const topIndex = pv.face_centroids.findIndex((c, i) => Math.abs(c[2] - 5) < 1e-9 && pv.face_roles[i].role !== "side");
-  await p.extrudePointer({ kind: "pick", profile: null, face: topIndex });
-  assert.equal(p.$("#extrude-error")!.textContent, FACE_WITH_HOLES);
-  assert.equal(shown(p).chosen, null);
+  assert.equal(offeredFaces(p).length, 6, "the four flat sides and the top and bottom with their holes; not the holes' curved walls");
   // A side, 40 × 5 at y = 0, out 3 mm: 600 mm³.
   await p.extrudePointer({ kind: "pick", profile: faceAt(p, [0, 1, 0], [0, 0, 0]).id });
   await type(p, "3");
   near(previewVolume(p), 600, "a plate's side");
+  const top = faceAt(p, [0, 0, 1], [0, 0, 5]);
+  assert.equal(top.outline.holes.length, 2, "the top is offered with its two holes");
+  // The bottom too (seen from below, its sketch's axes the other way round): 2 mm down, 2 · (1200 − 40.5π) = 2400 − 81π mm³.
+  await p.extrudePointer({ kind: "pick", profile: faceAt(p, [0, 0, -1], [0, 0, 0]).id });
+  await type(p, "2");
+  near(previewVolume(p), 2400 - 81 * Math.PI, "the bottom with its holes, 2 mm");
+  // The top, 3 mm up: 3 · (1200 − 40.5π) = 3600 − 121.5π = 3218.30 mm³; the holes go through it.
+  await p.extrudePointer({ kind: "pick", profile: top.id });
+  await type(p, "3");
+  near(previewVolume(p), 3600 - 121.5 * Math.PI, "the top with its holes, 3 mm");
+  await ok(p);
+  const extrude = p.doc().timeline.features.at(-1)!;
+  assert.ok(extrude.intent.parameters.region, "the face's region is saved, as a sketch region's is");
+  const b = (await built(p.doc()))[extrude.id];
+  near(b.volume, 3600 - 121.5 * Math.PI, "the extrude built from the file");
+  nearAll(b.bounds, [[0, 0, 5], [40, 30, 8]], "on the top, 3 mm up");
   assert.ok(await p.close());
   // Cylinder ⌀20 × 30: its caps are circles of radius 10, 100π mm² each; its side is curved.
   const cyl = partDocument("cylinder", 20, 20, 30);

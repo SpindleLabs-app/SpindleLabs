@@ -1343,6 +1343,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Counted before migrating, which spreads every id of a version 1 file.
   for (const [list, limit, what] of [[data.profiles, DESIGN_LIMITS.profiles, "profiles"], [isRecord(data.timeline) ? data.timeline.features : undefined, DESIGN_LIMITS.items, "timeline items"], [data.sketches, DESIGN_LIMITS.items, "sketches"]] as const)
     if (Array.isArray(list)) notTooMany(list.length, limit, "Design data has", what);
+  // The version the file says, for words about it: the steps below raise older data's version as they migrate it (48d hunt).
+  const given = data.version;
   const v2 = data.version === 1 ? migrateDesignV1(data) : data;
   const v3 = v2.version === 2 ? migrateDesignV2(v2) : v2;
   // Version 4 has version 3's fields; only data saved before it can hold the old preset names, renamed once checked (below).
@@ -1359,10 +1361,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const pieceNames = v6.version === 6;
   const v7 = pieceNames ? { ...v6, version: 7 } : v6;
   // Version 8 (47f) adds construction curves and dimensions, which version 7 never held; its fields are read as they are.
-  if (v7.version === 7 && hasVersion8Fields(v7)) throw new Error("Design data says version 7 but has construction curves or dimensions, which version 8 brought");
+  if (v7.version === 7 && hasVersion8Fields(v7)) throw new Error(`Design data says version ${shown(given)} but has construction curves or dimensions, which version 8 brought`);
   const v8 = v7.version === 7 ? { ...v7, version: 8 } : v7;
   // Version 9 (48) adds an extrude's region, which version 8 never held; its fields are read as they are.
-  if (v8.version === 8 && hasVersion9Fields(v8)) throw new Error("Design data says version 8 but has an extrude naming its sketch region, which version 9 brought");
+  if (v8.version === 8 && hasVersion9Fields(v8)) throw new Error(`Design data says version ${shown(given)} but has an extrude naming its sketch region, which version 9 brought`);
   const d = (v8.version === 8 ? { ...v8, version: 9 } : v8) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above 9 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
@@ -1428,6 +1430,9 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const s of d.sketches) if (!sketchItemIds.has(s.id)) throw new Error(`Design sketch ${s.id} has no place in the timeline`);
   // An extrude of a sketch comes after its sketch and depends on it, so a rebuild in order always has the outline.
   for (const [i, f] of d.timeline.features.entries()) {
+    // Only an extrude of a sketch has a region: one anywhere else is refused, never kept unread (48d hunt).
+    if (!isSketchExtrude(f) && isRecord(f.intent?.parameters) && Object.hasOwn(f.intent.parameters, "region"))
+      throw new Error(`Design feature ${f.id} has a region, which only an extrude of a sketch has`);
     if (!isSketchExtrude(f)) continue;
     const p = f.intent.parameters;
     if (Object.hasOwn(p, "profile")) throw new Error(`Design feature ${f.id} extrudes both a sketch and a profile`);
