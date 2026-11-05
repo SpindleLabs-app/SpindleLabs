@@ -45,6 +45,7 @@ import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, p
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
+import { readAnswer, shrunk, solverRequest } from "./constraints.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -85,6 +86,14 @@ export type FeatureResult =
       /** Step 27d: each projection that found its edge, where its points are now (and a circle's radius), and why the others are held. */
       projected?: { id: string; points: { point: string; at: SketchXY }[]; radius?: number }[];
       projections?: ProjectionWarning;
+      /**
+       * Step 47d4: a sketch with constraints whose followed points moved, solved
+       * again with them where they are now: the other points the solve moved,
+       * where they are now; or, when its constraints can't hold there, why
+       * (the followed points are taken, the rest left where they were).
+       */
+      solved?: { point: string; at: SketchXY }[];
+      constraints?: { message: string };
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
     }
@@ -757,7 +766,7 @@ const XY_PLACEMENT: SketchPlacement = { plane: planeOf("XY"), side: 1 };
  * pinned points and projections followed (`follow`); held, they are not judged (the plane's warning says it
  * all, as the naming model's rule 10).
  */
-async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, index: DocIndex): Promise<FeatureResult> {
+async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, index: DocIndex, kernel: KernelCalls): Promise<FeatureResult> {
   const content = index.sketches.get(f.id)!;
   const featureId = isFaceSketch(f) ? faceFeature(f.intent.parameters.plane as string)! : null;
   // Q3 and rule 13: the face's feature first, then each a pin names, then each a projection names (27d), in order.
@@ -768,7 +777,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   }
   if (featureId === null) {
     const placement = originPlacement(f) ?? XY_PLACEMENT;
-    return { status: "built", placement, ...(await follow(f, index, done, bodies, cache, placement.plane, null)) };
+    return { status: "built", placement, ...(await follow(f, index, done, bodies, cache, placement.plane, null, kernel)) };
   }
   const plane = f.intent.parameters.plane as string;
   const p = content.face!;
@@ -779,7 +788,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label) } } : {};
-    return { status: "built", placement, ...warn, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId)) };
+    return { status: "built", placement, ...warn, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
   };
   if (Object.values(bodies).some((b) => b.named !== undefined)) {
     // 35f1e, rule 3: once a Combine built, the face is found by its name on every body built so far: the one face carrying
@@ -816,7 +825,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
  */
 export function followedSketch(content: Sketch, r: FeatureResult | undefined): Sketch {
   if (r?.status !== "built" || (!r.pinned && !r.projected)) return content;
-  return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points)], (r.projected ?? []).flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
+  return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points), ...(r.solved ?? [])], (r.projected ?? []).flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
 }
 
 /** `content` with these points at these places and these projected circles at these radii; `content` itself when none changes. */
@@ -862,7 +871,7 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
  * none (deleted, failed or not built) loses the point. Nothing for a
  * sketch without pins.
  */
-async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureResult>, built: Bodies, cache: BodyCache, plane: Plane, face: string | null): Promise<Partial<Extract<FeatureResult, { status: "built" }>>> {
+async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureResult>, built: Bodies, cache: BodyCache, plane: Plane, face: string | null, kernel: KernelCalls): Promise<Partial<Extract<FeatureResult, { status: "built" }>>> {
   const content = index.sketches.get(f.id)!;
   if (!follows(content)) return {};
   const bodies = new Map<string, { view: BodyView; names: BodyNames } | null>();
@@ -905,7 +914,10 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
   }
   const label = f.provenance.self.label;
   const followed = movedTo(content, [...pinned, ...projected.flatMap((q) => q.points)], projected.flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
-  if (followed !== content) index.sketches.set(f.id, followed);
+  // Step 47d4: a sketch with constraints is solved again when a followed point moved (an arc through it is off its circle now).
+  const again = followed !== content && content.constraints.length > 0 ? await solvedAgain(kernel, followed, label) : null;
+  const settled = again !== null && "solved" in again ? movedTo(followed, again.solved, []) : followed;
+  if (settled !== content) index.sketches.set(f.id, settled);
   const n = held["point-lost"] + held["point-ambiguous"];
   const words = (["point-lost", "point-ambiguous"] as const).filter((c) => held[c] > 0).map((c) => pointWords(c, held[c], label));
   return {
@@ -913,7 +925,38 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
     ...(n > 0 ? { points: { cause: held["point-lost"] > 0 ? "point-lost" : "point-ambiguous", points: n, message: words.join(". ") } } : {}),
     ...(content.projected ? { projected } : {}),
     ...(lost.length > 0 ? { projections: projectionWords(lost, content, label) } : {}),
+    ...(again === null ? {} : "solved" in again ? (again.solved.length > 0 ? { solved: again.solved } : {}) : { constraints: { message: again.message } }),
   };
+}
+
+/** Why a sketch's constraints can't hold where its followed points are now (47d4), `label` the sketch's name. */
+export const constraintsWords = (label: string, why: string): string => `${label}'s constraints can't all hold where its points on the body are now (${why}), so only the points on the body moved`;
+
+/**
+ * Sketch `followed` (its followed points where the body put them) solved
+ * with them fixed (constraints.ts `solverRequest`): the other points the
+ * solve moved and where to, or why its constraints can't hold there (a
+ * conflict, a refusal, a line or arc shrunk below MIN_FEATURE, or the
+ * solver failing or taking too long).
+ */
+async function solvedAgain(kernel: KernelCalls, followed: Sketch, label: string): Promise<{ solved: { point: string; at: SketchXY }[] } | { message: string }> {
+  const request = solverRequest(followed);
+  let answer: ReturnType<typeof readAnswer>;
+  try {
+    answer = readAnswer(await kernel.call("solve_sketch", request.text));
+  } catch (e) {
+    // Too slow, or the kernel failed: the sketch is built with its followed points as they are, and says so.
+    return { message: constraintsWords(label, `the solver failed: ${e instanceof Error ? e.message : String(e)}`) };
+  }
+  if (answer.result === "refused") return { message: constraintsWords(label, `the solver refused it: ${answer.message}`) };
+  if (answer.result === "conflict") return { message: constraintsWords(label, "they fight there") };
+  const at = new Map(request.points.map((p, i) => [p, answer.points[i]] as const));
+  const tiny = shrunk(followed, at);
+  if (tiny !== null) return { message: constraintsWords(label, `${tiny} would shrink below the smallest size`) };
+  return { solved: followed.points.flatMap((p) => {
+    const [x, y] = at.get(p.id)!;
+    return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
+  }) };
 }
 
 async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, kernel: KernelCalls, index: DocIndex): Promise<FeatureResult> {
@@ -924,7 +967,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     return { status: "built", bodies: [id], ...rest };
   };
   try {
-    if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index);
+    if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index, kernel);
     if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (!isSketchExtrude(f)) {

@@ -49,6 +49,7 @@ import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectio
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
 import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { dragTo, grabProblem } from "./point-drag.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
@@ -843,6 +844,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.source) out.push({ item: f.id, rows: [f.id], sketch: r.source.sketch, words: `${r.source.message}.` });
       if (r.points) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.points.message}.` });
       if (r.projections) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.projections.message}.` });
+      if (r.constraints) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.constraints.message}.` });
     }
     return out;
   }
@@ -1567,12 +1569,26 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const designDoc = () => ctx.project.workspaces.design as DesignDocument;
   /** Counts tool changes (a tool chosen, Escape, the sketch entered again): a click the kernel was still snapping across one is dropped. */
   let toolChanges = 0;
+  /** The sketch point being dragged (47d3, onPointDrag), if one is. */
+  let pointDrag: PointDrag | null = null;
+  /** The edited sketch's points a press can grab, by id, in the order last drawn (editing.grab). */
+  let grabbable: string[] = [];
+  /** The drag the pointer is pressing now, until it is let go (it may still wait for its turn). */
+  let liveDrag: PointDrag | null = null;
+  /** Read by the e2e tests: how many drags have ended (recorded or not), and how many steps have been solved. */
+  // Counted on from what the view says: an undo mounts Design again, and the tests wait for the count to go up.
+  let dragsEnded = Number(viewport.element.dataset.pointDrags ?? 0);
+  let dragSolves = Number(viewport.element.dataset.dragSolves ?? 0);
 
   /** Draws every sketch, the edited one with its grid, points and preview. */
   function drawSketches() {
-    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    // A point being dragged (47d3) shows the sketch as its last solved step left it, until it is let go and recorded.
+    const doc = pointDrag && dragStillFor(pointDrag) ? pointDrag.doc : (ctx.project.workspaces.design as DesignDocument | undefined);
     if (!doc) return;
     const editing = mode.kind === "edit" ? mode : null;
+    // The points a press drags, as drawn (sketch-tool.ts editing.grab): a grab names one by its place here, which a delete landing
+    // since may have shifted in the document (47d4 review).
+    grabbable = editing?.tool.kind === "select" ? (doc.sketches.find((s) => s.id === editing.tool.sketch)?.points.map((p) => p.id) ?? []) : [];
     // With a size typed the preview goes where the locks put it, and the snap marks (which the locks overrule) are left out.
     const locked = Object.keys(locks).length > 0;
     const aim = editing && aimOf(doc, editing.tool, editing.pointer, locks);
@@ -1862,6 +1878,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * caller shows a new design straight after.
    */
   function leaveSketch(rebuild = true) {
+    // A point held or waiting its turn (47d4 review: Cancel or an AI step left the sketch mid-drag, and the drag's turn never ended).
+    for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
     const drew = mode.kind === "edit" && rebuild && designDoc() !== shownDoc;
     mode = { kind: "none" };
     unlock();
@@ -1965,6 +1983,151 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * arcs that fight drawn red. A tool change, undo or Escape while the
    * solver works drops the answer: it was for a sketch no longer there.
    */
+  /**
+   * A sketch point being dragged with the Select tool (47d3, point-drag.ts):
+   * the document before the press, the last solved step (`doc`, drawn), the
+   * newest pointer not yet solved toward (`want`), whether it was let go,
+   * and what the press's turn in line waits on.
+   */
+  interface PointDrag {
+    sketch: string;
+    point: string;
+    /** The design when its turn came (after the clicks, deletes and drags before it landed); null until then. */
+    before: DesignDocument | null;
+    doc: DesignDocument | null;
+    want: SketchXY | null;
+    pixel: number | undefined;
+    running: boolean;
+    dropped: "drop" | "cancel" | null;
+    changes: number;
+    ended: boolean;
+    finished: () => void;
+  }
+
+  /** Whether a drag is still for what is shown: its turn has come, the same sketch is open with the same tool, the design not changed under it (Undo). */
+  function dragStillFor(drag: PointDrag): drag is PointDrag & { before: DesignDocument; doc: DesignDocument } {
+    return !drag.ended && drag.before !== null && mode.kind === "edit" && toolChanges === drag.changes && designDoc() === drag.before;
+  }
+
+  /**
+   * The Select tool's press on a point that moved (`grab`), its moves
+   * (`drag`) and its release (`drop`). A point that can't be dragged says
+   * why and nothing moves. The drag takes its turn behind the clicks,
+   * deletes and drags before it (each on the document the last left, so a
+   * second quick drag starts from the first one's result); its moves are
+   * kept meanwhile, and each is solved toward from the last solved step,
+   * the newest winning (pumpDrag); the release records one undo step
+   * ("Move point"). Moves and a release go to the drag the press began
+   * (`liveDrag`), never to one already let go.
+   */
+  function onPointDrag(pointer: SketchPointer) {
+    if (mode.kind !== "edit") return;
+    if (pointer.kind === "grab") {
+      if (mode.tool.kind !== "select") return;
+      if (liveDrag) cancelDrag(liveDrag); // a press whose release never came (the view lost it): it comes to nothing
+      const sketchId = mode.tool.sketch;
+      const sketch = designDoc().sketches.find((s) => s.id === sketchId);
+      const pointId = pointer.grab === undefined ? undefined : grabbable[pointer.grab];
+      const point = pointId === undefined ? undefined : sketch?.points.find((p) => p.id === pointId);
+      // A point a delete has taken since it was drawn: nothing to drag (the delete may still be in line, and then the drag waits for it).
+      const problem = !sketch || pointId === undefined ? "" : point ? grabProblem(sketch, pointId) : null;
+      if (problem === "") return void (viewport.element.dataset.pointDrags = String(++dragsEnded));
+      sketchBox.showError(problem ?? "");
+      // Refused: nothing moves, and the drag counts as ended at once (its moves and release go nowhere).
+      if (problem !== null) return void (viewport.element.dataset.pointDrags = String(++dragsEnded));
+      let finished = () => {};
+      const done = new Promise<void>((resolve) => (finished = resolve));
+      const drag: PointDrag = { sketch: sketchId, point: pointId!, before: null, doc: null, want: null, pixel: pointer.pixel, running: false, dropped: null, changes: toolChanges, ended: false, finished };
+      liveDrag = drag;
+      inTurn(async () => {
+        // Its turn: what came before it has landed. Gone with the sketch, the tool, or the point (a delete before it took it): it comes to nothing.
+        const now = designDoc();
+        const there = now.sketches.find((s) => s.id === sketchId)?.points.some((p) => p.id === pointId);
+        if (drag.ended || mode.kind !== "edit" || toolChanges !== drag.changes || !there || drag.dropped === "cancel") return endDrag(drag);
+        drag.before = drag.doc = now;
+        pointDrag = drag;
+        void pumpDrag(drag);
+        await done;
+      });
+      return;
+    }
+    const drag = liveDrag;
+    if (!drag) return;
+    if (pointer.at) drag.want = pointer.at;
+    if (pointer.pixel !== undefined) drag.pixel = pointer.pixel;
+    if (pointer.kind === "drop") {
+      drag.dropped = pointer.cancelled ? "cancel" : "drop";
+      liveDrag = null;
+    }
+    void pumpDrag(drag);
+  }
+
+  /** A drag called off (Escape, the sketch left, a new press): nothing it did is kept. */
+  function cancelDrag(drag: PointDrag) {
+    drag.dropped = "cancel";
+    if (liveDrag === drag) liveDrag = null;
+    endDrag(drag);
+  }
+
+  /** Solves a drag toward its newest pointer, one at a time, each from the last solved step, and records it once let go. */
+  async function pumpDrag(drag: PointDrag) {
+    if (drag.running || drag.before === null || drag.ended) return;
+    drag.running = true;
+    try {
+      while (!drag.ended) {
+        if (!dragStillFor(drag)) return endDrag(drag);
+        const to = drag.want;
+        if (to === null) return drag.dropped ? await finishDrag(drag) : undefined;
+        drag.want = null;
+        const stale = () => !dragStillFor(drag);
+        try {
+          const got = await dragTo(kernel, drag.doc, drag.sketch, drag.point, to, drag.pixel, () => drag.want !== null || stale(), (doc) => {
+            if (stale()) return;
+            drag.doc = doc;
+            dragSolves++;
+            drawSketches();
+          }, drag.before);
+          if (stale()) return endDrag(drag);
+          drag.doc = got.doc;
+          sketchBox.showError(got.refused ?? "");
+        } catch (e) {
+          sketchBox.showError(e instanceof Error ? e.message : String(e));
+        }
+        drawSketches();
+      }
+    } finally {
+      drag.running = false;
+      viewport.element.dataset.dragSolves = String(dragSolves);
+    }
+  }
+
+  /** A drag let go: nothing recorded for one called off or that moved nothing; else settled as a click is (an extrude it breaks keeps its shape) and recorded as one undo step. */
+  async function finishDrag(drag: PointDrag & { before: DesignDocument; doc: DesignDocument }) {
+    if (drag.dropped === "cancel" || drag.doc === drag.before) return endDrag(drag);
+    let next: DesignDocument;
+    try {
+      next = await settleKept(kernel, drag.before, drag.doc, bodies);
+    } catch (e) {
+      sketchBox.showError(e instanceof Error ? e.message : String(e));
+      return endDrag(drag);
+    }
+    if (!dragStillFor(drag)) return endDrag(drag);
+    pointDrag = null;
+    applySketchEdit(next, SKETCH_STEPS.move, drag.sketch);
+    endDrag(drag);
+    await showOutline();
+  }
+
+  /** The drag over (once): what it showed goes unless it was recorded, and its turn in line ends. */
+  function endDrag(drag: PointDrag) {
+    if (drag.ended) return;
+    drag.ended = true;
+    if (pointDrag === drag) pointDrag = null;
+    viewport.element.dataset.pointDrags = String(++dragsEnded);
+    drag.finished();
+    if (!putAway) drawSketches();
+  }
+
   function constrain(sketchId: string, add: NewConstraint) {
     const changes = toolChanges;
     inTurn(async () => {
@@ -2968,6 +3131,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "edit") return;
     const at = pointer.at;
     if (at) pointerAt = at;
+    if (pointer.kind === "grab" || pointer.kind === "drag" || pointer.kind === "drop") return onPointDrag(pointer);
     // Step 27d: the Project tool snaps nothing and places nothing; a click projects what the viewport says is under it.
     if (mode.tool.kind === "project") {
       ++moves;
@@ -3402,6 +3566,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         drawSketches();
         return true;
       }
+      // Escape while a sketch point is held (47d3): the drag comes to nothing, the point back where it was pressed.
+      if (id === "clear-selection" && (pointDrag || liveDrag)) {
+        for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
+        return true;
+      }
       // Escape with nothing half drawn (missing basics, 2026-11-04, as in Fusion): the picks go, else the Select tool is chosen.
       if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind === "select" && mode.tool.picked.length > 0) {
         mode.tool = { ...mode.tool, picked: [] };
@@ -3444,6 +3613,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     unmount() {
       putAway = true;
+      for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;
       if (putAwayByRestore === null) editingSketch = null;
       // A click, Enter or hover still waiting on the kernel was for the sketch shown until now; an undo that puts the

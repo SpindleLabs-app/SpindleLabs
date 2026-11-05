@@ -640,7 +640,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "pin-not-settled": {
     what: "neither the settle nor the app writes a pinned point's new place into the sketch, so what is drawn and saved stays behind what is built",
-    edits: [{ file: REBUILD, find: "  return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points)], ", replace: "  return movedTo(content, [...(r.projected ?? []).flatMap((q) => q.points)], " }],
+    edits: [{ file: REBUILD, find: "  return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points), ...(r.solved ?? [])], ", replace: "  return movedTo(content, [...(r.projected ?? []).flatMap((q) => q.points), ...(r.solved ?? [])], " }],
     run: ["naming"],
     caught: "seeded",
   },
@@ -723,7 +723,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "projection-not-settled": {
     what: "neither the settle nor the app writes a projection's new place into the sketch, so what is drawn and saved stays behind what is built",
-    edits: [{ file: REBUILD, find: "  return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points)], ", replace: "  return movedTo(content, [...(r.pinned ?? [])], " }],
+    edits: [{ file: REBUILD, find: "  return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points), ...(r.solved ?? [])], ", replace: "  return movedTo(content, [...(r.pinned ?? []), ...(r.solved ?? [])], " }],
     run: ["naming"],
     caught: "Fusion answers",
   },
