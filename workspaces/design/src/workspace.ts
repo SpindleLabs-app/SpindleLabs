@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -29,7 +29,7 @@ import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from
 import { startHint } from "./start-hint.ts";
 import { bodyRows, browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
-import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
+import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
@@ -439,7 +439,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
   });
   const title = document.createElement("summary");
   title.textContent = "Browser";
-  fold.append(title, list(browserTree(doc, failed, buildAreaShown)));
+  fold.append(title, list(browserTree(doc, failed, buildAreaShown, currentUnit(document))));
   slot.replaceChildren(fold);
 }
 
@@ -598,6 +598,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden, buildAreaOn);
     showBuildAreaWords();
   }
+
+  /**
+   * The unit changed (Settings): the browser's and the timeline's words say it (U2c3). Held by `unmount`, since the page's
+   * listener holds it only weakly (followUnit); false once unmounted, and the listener goes.
+   */
+  let unitWatch: (() => boolean) | null = () => {
+    if (putAway || unitWatch === null) return false;
+    const doc = designDoc();
+    drawBrowser(doc);
+    showBar(doc);
+    return true;
+  };
+  followUnit(ctx.properties.ownerDocument, unitWatch);
 
   /** The origin's axes and planes as their eyes say (Ben, 2026-10-29): every axis and no plane until an eye is pressed. */
   function showOrigin(doc: DesignDocument) {
@@ -1141,6 +1154,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function showBar(doc: DesignDocument) {
     if (!ctx.timeline) return;
     showTimelineBar(ctx.timeline, doc, {
+      describe: (summary) => summaryInUnit(summary, currentUnit(ctx.timeline!.ownerDocument)),
       failed: failedNow,
       slow: slowNow,
       onRetry: retry,
@@ -3895,6 +3909,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     unmount() {
       putAway = true;
+      unitWatch = null;
       for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;
       if (putAwayByRestore === null) editingSketch = null;
