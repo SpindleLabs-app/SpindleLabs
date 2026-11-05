@@ -138,7 +138,7 @@ test("an older save of its own landing after the page has gone: the newer entry 
 
 test("a stale tab's entry over another tab's save is still kept as a copy, though the store's text is checked too", async () => {
   // Stored 45 at t = 1000 by tab A (writer "a"). B's entry, 25, made from save time 0 by writer "b": another tab's save
-  // is there, holding other text, so 25 is kept as "Box (from another tab)" and 45 stays. The same entry holding 45,
+  // is there, holding other text, so 25 is kept as "Box (kept copy)" and 45 stays. The same entry holding 45,
   // exactly what the store holds, just goes, with no copy: there is nothing to keep apart.
   for (const [width, copies] of [[25, 1], [45, 0]] as const) {
     let t = 1000;
