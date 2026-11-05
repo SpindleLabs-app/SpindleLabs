@@ -3006,8 +3006,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.shown && snapping) return snapPick(pick);
     // A Move (35e2b; an edited one too since 35e2i), or a new Combine (35f1c): a click on a body adds it or takes it out; empty space keeps what is picked.
     if (moveBox.shown || combineBox.shown) {
-      if (pick.double) return; // its first click already picked or dropped the body: the second keeps that, not undoes it
-      const c = pickChange({ ...pick, shift: true }, lastScene);
+      const c = pickChange({ ...pick, shift: true, double: undefined }, lastScene); // every click toggles a body here, a quick second one too
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
       if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
       return;
