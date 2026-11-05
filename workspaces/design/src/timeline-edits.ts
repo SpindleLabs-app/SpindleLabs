@@ -27,6 +27,8 @@ export const TIMELINE_STEPS = {
   rename: (name: string) => `Rename ${name}`,
   hide: (name: string) => `Hide ${name}`,
   show: (name: string) => `Show ${name}`,
+  showOnly: (name: string) => `Show only ${name}`,
+  showAll: "Show all bodies",
 } as const;
 
 /** Why a reorder is refused: the item would come before an item it is built from, or after one built from it. */
