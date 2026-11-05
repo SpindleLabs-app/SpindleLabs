@@ -16,7 +16,7 @@ import { SKETCH_TOOLS, type ToolKind } from "./sketch-tool.ts";
 import { CONSTRAINT_TOOLS } from "./constraint-tool.ts";
 
 /** Each sketch tool's icon (U0f). */
-export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select", horizontal: "horizontal", vertical: "vertical", coincident: "coincident", fix: "fix" };
+export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select", horizontal: "horizontal", vertical: "vertical", coincident: "coincident", fix: "fix", dimension: "dimension" };
 
 export interface SketchToolbarEvents {
   /** A tool chosen, from its button or the Create menu. */
@@ -29,6 +29,8 @@ export interface SketchToolbarEvents {
   type(): void;
   /** Delete pressed: the sketch curves the Select tool picked are taken out (sketch-select.ts). */
   remove(): void;
+  /** Construction pressed (47f): the picked curves become construction curves, or back. */
+  construction(): void;
 }
 
 /** One row of the Create menu: the tool's name and the key that chooses it (none for a tool without one). */
@@ -70,6 +72,8 @@ export const SNAP_TITLE = {
 
 /** Delete's tooltip while nothing is picked (it is off). */
 export const NOTHING_PICKED = "Delete: select a line, circle or arc first";
+/** Construction's tooltip while nothing is picked (47f). */
+export const NOTHING_TURNED = "Construction (X): select a line, circle or arc first";
 
 /** Finish Sketch's tooltip. */
 export const FINISH_TITLE = "Finish Sketch: back to modelling, with the camera at the home view. The sketch stays as drawn.";
@@ -177,7 +181,17 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     closeMenu();
     on.remove();
   });
-  row.append(divider, withIcon(selectButton, "select", TOOL_ICON_SIZE), withIcon(deleteButton, "delete", TOOL_ICON_SIZE));
+  const constructionButton = button("Construction", "sketch-construction");
+  constructionButton.title = NOTHING_TURNED;
+  constructionButton.setAttribute("aria-label", "Construction");
+  constructionButton.setAttribute("aria-keyshortcuts", "X");
+  constructionButton.className = "toolbar-group-tool";
+  constructionButton.disabled = true;
+  constructionButton.addEventListener("click", () => {
+    closeMenu();
+    on.construction();
+  });
+  row.append(divider, withIcon(selectButton, "select", TOOL_ICON_SIZE), withIcon(deleteButton, "delete", TOOL_ICON_SIZE), withIcon(constructionButton, "construction", TOOL_ICON_SIZE));
   // The constraint tools (step 47d2), after a divider in the same row, so at phone width they wrap with the rest.
   const constraintDivider = divider.cloneNode() as HTMLElement;
   const constraintButtons = CONSTRAINT_TOOLS.map((t) => {
@@ -411,6 +425,8 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     showPicked(count) {
       deleteButton.disabled = count === 0;
       deleteButton.title = count === 0 ? NOTHING_PICKED : `Delete the ${count === 1 ? "selected curve" : `${count} selected curves`} (Delete or Backspace)`;
+      constructionButton.disabled = count === 0;
+      constructionButton.title = count === 0 ? NOTHING_TURNED : `Construction (X): make the ${count === 1 ? "selected curve a construction line, or turn it back" : `${count} selected curves construction lines, or turn them back`}`;
     },
     hide() {
       closeMenu();
