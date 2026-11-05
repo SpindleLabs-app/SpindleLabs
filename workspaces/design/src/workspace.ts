@@ -2431,7 +2431,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       e.preview = e.distance === null || d === 0 || distanceRefused(e.distance) !== null ? null : view;
       e.arrow = arrowOf(view, d === 0 ? 1 : d) ?? e.arrow;
     } catch (err) {
-      if (extruding !== e || e.sketch !== id || e.distance !== d) return;
+      // Out of date too when another region was picked since (48d hunt): its words are not this one's.
+      if (extruding !== e || e.sketch !== id || e.region !== region || e.distance !== d) return;
       e.preview = null;
       extrudeBox.showError(err instanceof Error ? err.message : String(err));
     }
@@ -2513,18 +2514,20 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (tooFar !== null) return extrudeBox.showError(`The distance${tooFar.slice("A length".length)}`);
     const before = designDoc();
     const source = sourceOf(id);
+    const region = extruding?.region ?? null;
     // A face offered in another design is out of date (that design changed since).
     if (source.face && source.face.from !== before) return;
     let made: ReturnType<typeof extrudeSketch>;
     try {
-      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, source.face ? undefined : (extruding?.region ?? undefined));
+      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, source.face ? undefined : (region ?? undefined));
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
     } catch (e) {
-      if (extrudeOpenings === opened && extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));
+      if (extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region) extrudeBox.showError(e instanceof Error ? e.message : String(e));
       return;
     }
     // Closed or opened again, another sketch chosen, or something else changed the design, while the kernel worked: this extrude is out of date.
-    if (extrudeOpenings !== opened || extruding?.sketch !== id || designDoc() !== before) return;
+    // Another region of the sketch picked meanwhile is another sketch chosen (48d hunt): the one picked last is what OK makes.
+    if (extrudeOpenings !== opened || extruding?.sketch !== id || extruding.region !== region || designDoc() !== before) return;
     leaveExtrude();
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));

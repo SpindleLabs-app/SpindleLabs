@@ -7,7 +7,7 @@
 import type { KernelCalls, OfferedProfile, Plane, SketchRegion } from "@fission/core";
 import type { Sketch } from "./document.ts";
 import { projectedOpen } from "./projection.ts";
-import { regionOutline, regionRef, sameLoop, sketchRegions, type RegionRef } from "./regions.ts";
+import { pickRegion, regionOutline, regionRef, sketchRegions, type RegionRef } from "./regions.ts";
 
 /** A region offered in the view: which sketch, what an extrude of it saves (`ref`), and why it can't be extruded when it can't. */
 export interface RegionOffer extends OfferedProfile {
@@ -49,16 +49,9 @@ export async function regionOffers(kernel: KernelCalls, sketch: Sketch, plane: P
   return found.why === undefined ? { offers } : { offers, why: found.why };
 }
 
-/** The offer among `offers` that is region `ref` of `sketch` (findRegion's rule: the same loop of curves, the nearest centroid of several), or undefined. */
+/** The offer among `offers` that is region `ref` of `sketch` (findRegion's rule, regions.ts `pickRegion`), or undefined. */
 export function offerOf(offers: readonly RegionOffer[], sketch: string, ref: RegionRef): RegionOffer | undefined {
-  let best: RegionOffer | undefined;
-  let bestD = Infinity;
-  for (const o of offers) {
-    if (o.sketch !== sketch || !sameLoop(o.ref.outer, ref.outer)) continue;
-    const d = Math.hypot(o.ref.centroid[0] - ref.centroid[0], o.ref.centroid[1] - ref.centroid[1]);
-    if (best === undefined || d < bestD) [best, bestD] = [o, d];
-  }
-  return best;
+  return pickRegion(offers.filter((o) => o.sketch === sketch), (o) => o.ref.outer, (o) => o.ref.centroid, ref);
 }
 
 /** What the panel says while a sketch with several regions is chosen and none of them is yet. */
