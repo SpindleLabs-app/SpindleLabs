@@ -53,6 +53,43 @@ export function selectionFraming(
 export const LOOK_AT_EMPTY_RADIUS = 50;
 
 /**
+ * The mesh vertices that lie in `plane` (within `tolerance` mm of it), as points: the corners of the face or faces a
+ * sketch on that plane sits on (U7a2). `positions` is x, y, z per vertex; the plane's `normal` is unit length.
+ */
+export function pointsInPlane(positions: ArrayLike<number>, plane: { origin: readonly number[]; normal: readonly number[] }, tolerance = 1e-3): number[][] {
+  const out: number[][] = [];
+  const seen = new Set<string>();
+  const [ox, oy, oz] = plane.origin;
+  const [nx, ny, nz] = plane.normal;
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    const x = positions[i];
+    const y = positions[i + 1];
+    const z = positions[i + 2];
+    if (!(Math.abs((x - ox) * nx + (y - oy) * ny + (z - oz) * nz) <= tolerance)) continue;
+    const key = `${x},${y},${z}`; // a corner is in many triangles
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push([x, y, z]);
+  }
+  return out;
+}
+
+/** Room left round a face Look At frames, so its edges are not on the view's border under the floating cards (U7a2): 10 %. */
+export const LOOK_AT_FACE_MARGIN = 1.1;
+
+/**
+ * What a sketch on a face frames (U7a2): the face (`inPlane`, the body's corners in its plane) and the sketch's ends, with
+ * LOOK_AT_FACE_MARGIN round them, but never looser than `whole` (the whole body and the sketch): a face as big as the
+ * body frames the body, as before; a small face of a big body fills the view.
+ */
+export function faceFraming(inPlane: readonly (readonly number[])[], extra: readonly (readonly number[])[], whole: Framing, fallback: readonly number[]): Framing {
+  if (inPlane.length < 3) return whole;
+  const face = lookAtFraming([...inPlane, ...extra], fallback);
+  const radius = face.radius * LOOK_AT_FACE_MARGIN;
+  return radius < whole.radius ? { centre: face.centre, radius } : whole;
+}
+
+/**
  * What Look At frames: the box around `points` (the body's bounding-box
  * corners and the edited sketch's ends, model space), as its centre and
  * half its diagonal like a body is framed; with no points, or all of them

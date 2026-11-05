@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LOOK_AT_EMPTY_RADIUS, lookAtFraming, needsRefit, partFraming, selectionFraming } from "../src/framing.ts";
+import { LOOK_AT_EMPTY_RADIUS, lookAtFraming, needsRefit, partFraming, pointsInPlane, faceFraming, LOOK_AT_FACE_MARGIN, selectionFraming } from "../src/framing.ts";
 
 test("camera re-frames when the body stops fitting or becomes a speck", () => {
   const at = (x: number, y: number, z: number, radius: number) => ({ centre: [x, y, z] as [number, number, number], radius });
@@ -87,4 +87,47 @@ test("hand-worked: Fit frames the box round the body and every finished sketch, 
   // A box not starting at the origin, (1, 2, 3) to (4, 6, 15): sides 3, 4, 12, so the
   // diagonal is √(9 + 16 + 144) = 13 and the radius 6.5; centre (2.5, 4, 9).
   assert.deepEqual(partFraming([[1, 2, 3], [4, 6, 15]]), { centre: [2.5, 4, 9], radius: 6.5 });
+});
+
+test("hand-worked: Look At on the 40 × 30 × 20 box's top face frames that face, not the whole box", () => {
+  // The box's 8 corners as a mesh's vertices (x, y, z each).
+  const box = [0, 0, 0, 40, 0, 0, 40, 30, 0, 0, 30, 0, 0, 0, 20, 40, 0, 20, 40, 30, 20, 0, 30, 20];
+  const top = { origin: [0, 0, 20], normal: [0, 0, 1] };
+  const corners = pointsInPlane(box, top);
+  assert.deepEqual(corners, [[0, 0, 20], [40, 0, 20], [40, 30, 20], [0, 30, 20]], "the four top corners");
+  // Its box is 40 × 30 × 0, centre (20, 15, 20), half the diagonal √(40² + 30²)/2 = 50/2 = 25.
+  assert.deepEqual(lookAtFraming(corners, top.origin), { centre: [20, 15, 20], radius: 25 });
+  // The whole box would be centre (20, 15, 10), radius √(40² + 30² + 20²)/2 = √2900/2 = 26.93: looser, and off the face.
+  // A plane through the middle (z = 10) touches no vertex, so nothing is found and the caller falls back to the box.
+  assert.deepEqual(pointsInPlane(box, { origin: [0, 0, 10], normal: [0, 0, 1] }), []);
+  // A repeated corner (each is in several triangles) is one point.
+  assert.equal(pointsInPlane([...box, ...box], top).length, 4);
+});
+
+test("the plane's tolerance: a vertex 0.9 × tolerance off the plane counts, 1.1 × does not", () => {
+  const plane = { origin: [0, 0, 0], normal: [0, 0, 1] };
+  assert.equal(pointsInPlane([0, 0, 0.0009], plane, 0.001).length, 1);
+  assert.equal(pointsInPlane([0, 0, 0.0011], plane, 0.001).length, 0);
+  assert.equal(pointsInPlane([0, 0, -0.0009], plane, 0.001).length, 1, "either side");
+  assert.equal(pointsInPlane([0, 0, NaN], plane).length, 0, "a vertex that isn't a number is left out");
+});
+
+test("hand-worked: a sketch on a small face frames that face with a margin; on a face as big as the body, the body as before", () => {
+  // A 100 × 100 × 100 block (centre (50, 50, 50), half diagonal √30000/2 = 86.60) with a 30 × 40 face on it at z = 100.
+  const whole = lookAtFraming([[0, 0, 0], [100, 100, 100]], [0, 0, 100]);
+  assert.ok(Math.abs(whole.radius - 86.6025) < 1e-3);
+  const face = [[10, 10, 100], [40, 10, 100], [40, 50, 100], [10, 50, 100]];
+  // The face's half diagonal is √(30² + 40²)/2 = 25, with the 10 % margin 27.5, centre (25, 30, 100).
+  assert.equal(LOOK_AT_FACE_MARGIN, 1.1);
+  const framed = faceFraming(face, [], whole, [0, 0, 100]);
+  assert.deepEqual(framed.centre, [25, 30, 100]);
+  assert.ok(Math.abs(framed.radius - 27.5) < 1e-12);
+  // The sketch's ends count: a point drawn at (70, 50, 100) widens it to 10..70 × 10..50, half diagonal √(60² + 40²)/2 = 36.06.
+  assert.ok(Math.abs(faceFraming(face, [[70, 50, 100]], whole, [0, 0, 100]).radius - 1.1 * Math.sqrt(5200) / 2) < 1e-9);
+  // A face as big as the body (100 × 100: half diagonal 70.7, with margin 77.8 — but a whole body whose radius is 26.93 is tighter): never looser than the body.
+  const tight = lookAtFraming([[0, 0, 0], [40, 30, 20]], [0, 0, 20]); // radius √2900/2 = 26.93
+  const topFace = [[0, 0, 20], [40, 0, 20], [40, 30, 20], [0, 30, 20]]; // 25 · 1.1 = 27.5 > 26.93
+  assert.deepEqual(faceFraming(topFace, [], tight, [0, 0, 20]), tight);
+  // Fewer than three corners in the plane: the body.
+  assert.deepEqual(faceFraming([[0, 0, 0], [1, 0, 0]], [], tight, [0, 0, 0]), tight);
 });

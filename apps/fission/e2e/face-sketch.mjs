@@ -21,6 +21,7 @@ import { mkdirSync } from "node:fs";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
+import { pinProperties } from "./properties.mjs";
 import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4195, strictPort: true }, logLevel: "error" });
@@ -307,6 +308,28 @@ try {
       await page.context().close();
     });
   }
+
+  await check("1280 px: a sketch on a small face is looked at with that face filling the view, not the whole body (U7a2)", async () => {
+    const page = await fresh();
+    await pinProperties(page);
+    // A 100 × 100 × 10 mm slab (V = 100,000 mm³). Its front face (y = 0) is 100 × 10, centre (50, 0, 5); the whole slab's centre is (50, 50, 5).
+    for (const [id, v] of [["width", "100"], ["depth", "100"], ["height", "10"]]) await page.fill(`#${id}`, v);
+    await until(page, () => document.querySelector("#volume")?.textContent === "100,000 mm³", null, "the slab");
+    await settle(page);
+    await createSketch(page);
+    await at(page, [50, 0, 5]);
+    await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
+    const cam = await settle(page);
+    // Looked at the face square on from the front (its normal is −y), the target on the face's centre, not the slab's.
+    near(cam.target, [50, 0, 5], 1e-6, "target on the face's centre");
+    near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking straight at the front face");
+    // The face (half diagonal √(100² + 10²)/2 = 50.25, with the 10 % margin 55.28) is framed: its corners are in the canvas, and it spans over 40 % of the width. A picture's size goes as 1 / radius, and the framing radius was the whole slab's √(100² + 100² + 10²)/2 = 70.85 (the face then 429 px of the 1280, 0.34 of the width), now 55.28 (0.43).
+    const canvas = await canvasBox(page);
+    const [a, b] = [toScreen(cam, canvas, [0, 0, 0]), toScreen(cam, canvas, [100, 0, 10])];
+    assert.ok(a.x > canvas.x && b.x < canvas.x + canvas.width && a.y < canvas.y + canvas.height && b.y > canvas.y, "the face is inside the view");
+    assert.ok(Math.abs(b.x - a.x) > 0.4 * canvas.width, `the face spans over 40 % of the view: ${Math.abs(b.x - a.x)} of ${canvas.width}`);
+    await page.context().close();
+  });
 
   await check("1280 px: the bottom, picked from the bottom view, is looked at from below (outside the box), drawn in the world's x and y, and extruded down", async () => {
     const page = await fresh();
