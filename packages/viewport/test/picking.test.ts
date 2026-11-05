@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CLICK_SLOP_PX, EDGE_DEPTH_SLACK, EDGE_PICK_PX, clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "../src/picking.ts";
+import { CLICK_SLOP_PX, EDGE_DEPTH_SLACK, EDGE_PICK_PX, clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, nearestWithin, planeOrFace, segmentsNear, SKETCH_GRAB_PX, unhidden } from "../src/picking.ts";
 
 test("a press and release under the slop is a click, over it is a camera drag", () => {
   const at = { x: 100, y: 200 };
@@ -127,4 +127,21 @@ test("hand-worked (26d): picking a plane for a sketch takes a face under the poi
   assert.equal(planeOrFace(false, true), "face");
   assert.equal(planeOrFace(true, false), "plane");
   assert.equal(planeOrFace(false, false), null);
+});
+
+test("a press grabs the nearest sketch point within reach (47d3); at 0.9× the reach it grabs, at 1.1× it doesn't", () => {
+  const press = { x: 100, y: 100 };
+  const r = SKETCH_GRAB_PX.mouse;
+  // A 3-4-5 triangle scaled to the reach: (0.6, 0.8) × r·f is r·f away.
+  const at = (f: number) => ({ x: 100 + 0.6 * r * f, y: 100 + 0.8 * r * f });
+  assert.equal(nearestWithin([at(0.9)], press, r), 0);
+  assert.equal(nearestWithin([at(1.1)], press, r), null);
+  // Exactly at the reach still grabs; a point behind the camera (null) never does.
+  assert.equal(nearestWithin([null, { x: 100 + r, y: 100 }], press, r), 1);
+  // Of two in reach, the nearer: (106, 100) is 6 px away, (103, 103) 3·√2 ≈ 4.24 px, so the second; a tie keeps the first.
+  assert.equal(nearestWithin([{ x: 106, y: 100 }, { x: 103, y: 103 }], press, r), 1);
+  assert.equal(nearestWithin([{ x: 104, y: 100 }, { x: 96, y: 100 }], press, r), 0);
+  assert.equal(nearestWithin([], press, r), null);
+  // A finger reaches further than a mouse.
+  assert.ok(SKETCH_GRAB_PX.touch > SKETCH_GRAB_PX.mouse);
 });

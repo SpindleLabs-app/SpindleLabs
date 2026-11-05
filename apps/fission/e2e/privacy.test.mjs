@@ -101,3 +101,35 @@ test("with earlier versions in the account, the privacy page says how often, how
   assert.ok(words.includes(`at most one every ${n("versionGapMinutes")} minutes and the newest ${n("versionsKept")} of each design`), "how often and how many, as the code says");
   for (const must of ["Earlier versions:", "Nothing extra is sent for this", "with earlier versions counted in the 20 MB", "the oldest earlier versions are deleted first", "deletes a design and its earlier versions", "its earlier versions"]) assert.ok(words.includes(must), `the page says "${must}"`);
 });
+
+// Settings that follow you (account features 3): the page lists every setting the code sends, and the code's limits.
+const syncedSettings = () => [...readFileSync(join(root, "apps/fission/src/settings-sync.ts"), "utf8").matchAll(/\{ key: "([^"]+)", kind: "[a-z-]+", words: "([^"]+)" \}/g)].map((m) => ({ key: m[1], words: m[2] }));
+/** The settings sent that the page (as text) doesn't name. */
+const unnamedSettings = (text) => syncedSettings().filter((s) => !text.replace(/\s+/g, " ").includes(s.words));
+
+test("with settings that follow you, the privacy page lists every setting sent, what never is, and the limits", () => {
+  const listed = syncedSettings();
+  assert.ok(listed.length >= 6, "the list in settings-sync.ts was read");
+  assert.deepEqual(unnamedSettings(page), []);
+  for (const s of listed) assert.ok(!/ai|key|session|account/i.test(s.key.replace(/^spindlelabs/, "")), `${s.key} must never be an AI key, a sign-in or account data`);
+  const words = page.replace(/\s+/g, " ");
+  const settings = readFileSync(join(root, "packages/account/src/settings.ts"), "utf8");
+  const n = (name) => Number(new RegExp(`${name}: ([\\d* ]+)`).exec(settings)[1].split("*").reduce((a, b) => a * Number(b), 1));
+  assert.match(words, new RegExp(`up to ${n("maxSettings")} settings and ${n("maxBytes") / 1024} KB in all`));
+  for (const must of ["Settings that follow you", "the AI assistant's settings and any AI key", "Keep my settings in my account", "deletes the settings kept in your account straight away", "the settings in your account replace this browser's own", "and the settings kept in it"]) assert.ok(words.includes(must), `the page says "${must}"`);
+});
+
+test("the settings check can fail: a page missing one setting's words is caught", () => {
+  assert.deepEqual(unnamedSettings(page.replace(/your slicer presets/g, "some things")).map((s) => s.key), ["spindlelabs.slice.presets"]);
+});
+
+test("every setting that follows you is a key the app really keeps (a renamed key would silently stop following)", () => {
+  const all = sources().filter((f) => !f.endsWith("settings-sync.ts")).map((f) => readFileSync(f, "utf8")).join("\n");
+  const missing = syncedSettings().filter(({ key }) => {
+    if (all.includes(`"${key}"`)) return false;
+    // A key built from a template, such as `spindlelabs.fits.${nozzle}`: its fixed start, and the rest as a value the app uses.
+    const m = /^(.*\.)([^.]+)$/.exec(key);
+    return !(m && all.includes("`" + m[1] + "${") && all.includes(`"${m[2]}"`));
+  });
+  assert.deepEqual(missing.map((s) => s.key), []);
+});

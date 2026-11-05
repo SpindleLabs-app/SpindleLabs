@@ -701,7 +701,8 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     for (const at of pendingClicks(tool)) if (!s.points.some((p) => p.x === at[0] && p.y === at[1])) points.push([at[0], at[1]]);
     // The Select tool's picks lit, and the curve under the pointer (sketch-select.ts); a pick an undo took out is passed over.
     const lit = (ids: readonly string[]) => segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id))));
-    const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}) };
+    // With Select a press on any of its points drags it (47d3, point-drag.ts; one that can't be dragged says why).
+    const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}), ...(s.points.length > 0 ? { grab: s.points.map((p): SketchXY => [p.x, p.y]) } : {}) };
     return { plane, ...side, lines, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit) } };
   });
 }
