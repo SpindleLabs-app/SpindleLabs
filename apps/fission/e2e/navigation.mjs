@@ -240,6 +240,30 @@ await check("an orbit stops when the button is let go: no spin after a fast Shif
   }
 });
 
+await check("Escape turns Pan or Zoom off, back to Orbit, and only that: the selection stays; with Orbit lit it clears the selection as before (U7b)", async () => {
+  const page = await fresh();
+  try {
+    const lit = (mode) => page.getAttribute(`#view-controls [data-nav=${mode}]`, "aria-pressed");
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // the box under the middle: selected
+    const picked = await page.evaluate(() => document.body.dataset.selection ?? "");
+    assert.notEqual(picked, "", "a body is selected to start with");
+    for (const mode of ["pan", "zoom"]) {
+      await page.click(`#view-controls [data-nav=${mode}]`);
+      assert.equal(await lit(mode), "true");
+      await page.keyboard.press("Escape");
+      assert.equal(await lit("orbit"), "true", `Escape leaves ${mode}`);
+      assert.equal(await lit(mode), "false");
+      assert.equal(await page.getAttribute("#viewport", "data-nav"), "orbit");
+      assert.equal(await page.evaluate(() => document.body.dataset.selection ?? ""), picked, `that Escape was ${mode}'s alone`);
+    }
+    await page.keyboard.press("Escape"); // Orbit already: Design's own Escape
+    assert.equal(await page.evaluate(() => document.body.dataset.selection ?? ""), "", "Escape on Orbit clears the selection");
+  } finally {
+    await page.close();
+  }
+});
+
 await check("the bar's Pan and Zoom make the left button pan and zoom; Orbit gives it back", async () => {
   const page = await fresh();
   try {
