@@ -602,3 +602,84 @@ test("work held while waiting for idle is waited for too", async () => {
   await new Promise((r) => setImmediate(r));
   assert.equal(idle, true);
 });
+
+test("steps lists the start and every step, oldest first, with where each stands against the present", () => {
+  const { h, edit, tick } = rig();
+  assert.deepEqual(h.steps(), [{ label: "", at: 0, state: "current" }], "just the start");
+  tick(10);
+  edit(50, "Change width");
+  tick(10);
+  edit(60, "Change depth");
+  tick(10);
+  edit(70, "Extrude");
+  // Start (at 0), then three steps at 10, 20 and 30 ms; the last is the present.
+  assert.deepEqual(h.steps(), [
+    { label: "", at: 0, state: "done" },
+    { label: "Change width", at: 10, state: "done" },
+    { label: "Change depth", at: 20, state: "done" },
+    { label: "Extrude", at: 30, state: "current" },
+  ]);
+  h.undo();
+  h.undo();
+  assert.deepEqual(h.steps().map((s) => s.state), ["done", "current", "undone", "undone"], "two undone are a redo away");
+  edit(55, "Change height");
+  assert.deepEqual(h.steps().map((s) => s.label), ["", "Change width", "Change height"], "a new step drops what could be redone");
+});
+
+test("jumpTo puts the project back as it was at that step, in one restore, and can go forward again", () => {
+  const { h, doc, edit, restores, tick, changes } = rig();
+  tick(2000);
+  edit(50, "A");
+  tick(2000);
+  edit(60, "B");
+  tick(2000);
+  edit(70, "C");
+  const before = changes();
+  assert.equal(h.jumpTo(1), "A");
+  assert.equal(doc.w, 50, "the width at step A");
+  assert.deepEqual(restores, [50], "one restore, not a walk through B and C");
+  assert.equal(changes() - before, 1, "one change heard");
+  assert.deepEqual(h.steps().map((s) => s.state), ["done", "current", "undone", "undone"]);
+  assert.equal(h.undoLabel(), "A");
+  assert.equal(h.redoLabel(), "B");
+  assert.equal(h.jumpTo(3), "C", "forward to the last");
+  assert.equal(doc.w, 70);
+  assert.equal(h.jumpTo(0), "", "back to the start (its label is empty)");
+  assert.equal(doc.w, 40);
+  assert.equal(h.canUndo(), false);
+  // An edit after a jump back drops what was ahead, as after an undo.
+  h.jumpTo(1);
+  edit(99, "D");
+  assert.deepEqual(h.steps().map((s) => s.label), ["", "A", "D"]);
+});
+
+test("jumpTo to the present, or to no step, does nothing", () => {
+  const { h, edit, restores } = rig();
+  edit(50, "A");
+  edit(60, "B", "k");
+  for (const bad of [2, -1, 3, 1.5, NaN, Infinity]) assert.equal(h.jumpTo(bad), null, `${bad}`);
+  assert.deepEqual(restores, [], "nothing was put back");
+  assert.equal(h.steps().length, 3);
+});
+
+test("jumpTo is refused inside an undo step, and a failed restore moves nothing", () => {
+  const { h, edit } = rig();
+  edit(50, "A");
+  edit(60, "B");
+  assert.throws(() => h.step("Group", () => h.jumpTo(0)), /can't jump back while an undo step is running/);
+  let fail = true;
+  const doc = { w: 1 };
+  const g = createHistory({
+    capture: () => JSON.stringify(doc),
+    restore: (s) => {
+      if (fail) throw new Error("cannot open it");
+      doc.w = JSON.parse(s).w;
+    },
+  });
+  doc.w = 2;
+  g.record("X", undefined);
+  assert.throws(() => g.jumpTo(0), /cannot open it/);
+  assert.deepEqual(g.steps().map((s) => s.state), ["done", "current"], "still at X");
+  fail = false;
+  assert.equal(g.jumpTo(0), "");
+});

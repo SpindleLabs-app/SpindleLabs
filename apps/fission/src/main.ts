@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { baseNameOf, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startUnits, readUnitChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
+import { baseNameOf, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startUnits, readUnitChoice, startTooltips, historyPanel, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -1203,6 +1203,32 @@ $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
 showUndoRedo();
+// History: every step kept, to go back (or forward) to any of them at once. Waits for an OK the kernel still checks
+// like Undo and Redo do, so it goes back from the finished step.
+function jumpHistory(step: number) {
+  const now = () => {
+    try {
+      ctx.history.jumpTo(step);
+    } catch (e) {
+      return fileStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    ctx.history.amend(); // defaults the remounted workspaces filled in
+  };
+  if (pressesWaiting === 0 && !ctx.history.busy()) return now();
+  pressesWaiting++;
+  showUndoRedo();
+  pressed = pressed
+    .then(() => ctx.history.whenIdle())
+    .then(() => {
+      pressesWaiting--;
+      now();
+      showUndoRedo();
+    });
+}
+const historyUi = historyPanel(document, { steps: () => ctx.history.steps(), jump: jumpHistory, now: () => Date.now(), isPhone: () => phone.matches });
+$("redo").after(historyUi.button);
+document.body.append(historyUi.panel);
+ctx.history.onChange(historyUi.refresh);
 // AI, Guide and Community, small at the bar's right (styles/app-bar.css).
 withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
