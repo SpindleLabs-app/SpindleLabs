@@ -2570,7 +2570,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // Exploded view (explode.ts): a bar over the view with the spread and Done, while on.
   const explodeBar = viewport.element.ownerDocument.createElement("div");
   explodeBar.id = "explode-bar"; // read by the e2e test
-  explodeBar.className = "explode-bar";
+  explodeBar.className = "explode explode-bar";
   explodeBar.hidden = true;
   const spreadLabel = viewport.element.ownerDocument.createElement("label");
   spreadLabel.className = "explode-bar-label";
