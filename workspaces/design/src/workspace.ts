@@ -47,7 +47,7 @@ import { dragTo, grabProblem } from "./point-drag.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
-import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
+import { FACE_NEW_BODY, faceOpen, faceProfile, faceRegion, type FaceProfile } from "./face-extrude.ts";
 import { offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
 import type { RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
@@ -2286,12 +2286,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const made = faceProfile(doc, scene, f);
       if (made !== null && !("refused" in made)) faces.set(made.face, made);
     }
-    // A face whose edges make no one closed outline (one with holes, until step 48) is not offered; a click on it says why.
+    // A face with holes (48d2) is offered as the region of its edges that is the face, holes and all; a face whose edges make
+    // no such region is not offered, and a click on it says why.
     const faceOffers = Promise.all([...faces.values()].map(async (f): Promise<OfferedProfile | null> => {
       try {
-        const out = await askOutline(kernel, sketchCurves(f.doc.sketches.find((s) => s.id === f.sketch)!));
+        const sketch = f.doc.sketches.find((s) => s.id === f.sketch)!;
+        const out = await askOutline(kernel, sketchCurves(sketch));
         if ("closed" in out) return { id: f.face, plane: f.plane, outline: out.closed, face: true };
-        refusedFaces.set(f.face, faceOpen(out.open));
+        const region = /separate loops/.test(out.open) ? await faceRegion(kernel, f, sketch) : { refused: faceOpen(out.open) };
+        if ("outline" in region) {
+          faces.set(f.face, { ...f, region: region.ref });
+          return { id: f.face, plane: f.plane, outline: region.outline, face: true };
+        }
+        refusedFaces.set(f.face, region.refused);
       } catch (e) {
         refusedFaces.set(f.face, `This face can't be extruded: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -2345,7 +2352,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (e && offer?.refused !== undefined) return void extrudeBox.showError(regionRefusedWords(sketchLabel(offer.sketch), offer.refused));
     const sketch = offer?.sketch ?? id;
     if (!e || (e.sketch === sketch && (offer === undefined || e.offer === offer.id)) || (sketch !== null && !e.usable.has(sketch) && !e.faces.has(sketch))) return;
-    Object.assign(e, { sketch, offer: offer?.id ?? null, region: offer?.ref ?? null, closed: false, checked: null, base: null, preview: null, arrow: null });
+    // A face with holes extrudes its region (48d2), saved like a sketch region's.
+    Object.assign(e, { sketch, offer: offer?.id ?? null, region: offer?.ref ?? (sketch === null ? null : e.faces.get(sketch)?.region) ?? null, closed: false, checked: null, base: null, preview: null, arrow: null });
     id = sketch;
     extrudeBox.showProfile(id ? sourceOf(id).label : null);
     extrudeBox.showError("");
@@ -2455,6 +2463,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (projectedOnly !== null) return extrudeBox.showStatus(`${name} can't be extruded: ${projectedOnly}.`, false);
     try {
       if (!source.face) return await checkRegions(id, sketch, name);
+      // A face with holes: the region that is the face was found when it was offered (48d2).
+      if (source.face.region !== undefined) {
+        if (extruding?.sketch !== id) return;
+        Object.assign(extruding, { region: source.face.region, closed: true });
+        extrudeBox.showStatus(`${name} makes a closed outline. ${FACE_NEW_BODY}`, true);
+        return refreshPreview();
+      }
       const { current, value } = await onceMoreAfterRestart(() => extrudeOutline(sketchCurves(sketch)));
       if (!current || extruding?.sketch !== id) return;
       if ("closed" in value) {
@@ -2519,7 +2534,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (source.face && source.face.from !== before) return;
     let made: ReturnType<typeof extrudeSketch>;
     try {
-      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, source.face ? undefined : (region ?? undefined));
+      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
     } catch (e) {
       if (extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region) extrudeBox.showError(e instanceof Error ? e.message : String(e));
