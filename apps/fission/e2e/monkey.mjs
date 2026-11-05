@@ -119,7 +119,7 @@ function offered() {
     const top = document.elementFromPoint(cx, cy);
     return top !== null && (top === e || e.contains(top) || top.contains(e));
   };
-  const all = [...document.querySelectorAll("button, summary, [role=menuitem], input, select, li[data-item]")].filter(usable);
+  const all = [...document.querySelectorAll("button, summary, [role=menuitem], input, select, li[data-item]")].filter((e) => usable(e) && !e.closest(".account-google")); // never one that leaves the app (LEAVES below)
   const targets = [];
   const inputs = [];
   for (const e of all) {
@@ -308,6 +308,11 @@ async function check(s) {
   if (s.errors.length) fail("no errors", s.errors.splice(0).join(" | "));
 }
 
+/** Controls that leave the app for another site (Sign in with Google goes to Google's page): a session that left can't be checked, so the tester never presses them. */
+const LEAVES = ".account-google";
+/** Is the point (page pixels) on a control that leaves the app, as when a dialog lies over the view? */
+const leavesAt = (page, x, y) => page.evaluate(([px, py, leaves]) => document.elementFromPoint(px, py)?.closest(leaves) != null, [x, y, LEAVES]);
+
 const viewBox = (page) => page.evaluate(() => {
   const r = document.querySelector("#viewport").getBoundingClientRect();
   return { x: r.left, y: r.top, w: r.width, h: r.height };
@@ -347,12 +352,14 @@ async function act(s, a) {
     case "canvas": {
       const b = await viewBox(page);
       const [x, y] = [b.x + a.x * b.w, b.y + a.y * b.h];
+      if (await leavesAt(page, x, y)) return false;
       if (a.double) await page.mouse.dblclick(x, y);
       else await page.mouse.click(x, y);
       return true;
     }
     case "drag": {
       const b = await viewBox(page);
+      if ((await leavesAt(page, b.x + a.x * b.w, b.y + a.y * b.h)) || (await leavesAt(page, b.x + a.x2 * b.w, b.y + a.y2 * b.h))) return false;
       if (a.shift) await page.keyboard.down("Shift");
       await page.mouse.move(b.x + a.x * b.w, b.y + a.y * b.h);
       await page.mouse.down({ button: a.button });
