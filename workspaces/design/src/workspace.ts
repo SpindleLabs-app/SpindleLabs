@@ -1602,6 +1602,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let dragsEnded = Number(viewport.element.dataset.pointDrags ?? 0);
   let dragSolves = Number(viewport.element.dataset.dragSolves ?? 0);
 
+  /** Millimetres a screen pixel on the edited sketch's plane at `at` (its origin when null), from the camera as it is now; undefined when not on screen. */
+  function pixelNow(at: SketchXY | null): number | undefined {
+    const [x, y] = at ?? [0, 0];
+    const a = viewport.sketchScreenPoint([x, y]);
+    const b = viewport.sketchScreenPoint([x + 1, y]);
+    const c = viewport.sketchScreenPoint([x, y + 1]);
+    if (!a || !b || !c) return undefined;
+    const across = Math.max(Math.hypot(b.x - a.x, b.y - a.y), Math.hypot(c.x - a.x, c.y - a.y));
+    return across > 0 && Number.isFinite(across) ? 1 / across : undefined;
+  }
+
   /** Draws every sketch, the edited one with its grid, points and preview. */
   function drawSketches() {
     // A point being dragged (47d3) shows the sketch as its last solved step left it, until it is let go and recorded.
@@ -1615,7 +1626,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const locked = Object.keys(locks).length > 0;
     const aim = editing && aimOf(doc, editing.tool, editing.pointer, locks);
     // A typed arc angle goes the pointer's way round however little it went (typed-entry.ts withLocks): the preview from the tool the click will use.
-    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
+    // Marks and dimension labels are sized in screen pixels at the camera as it is now, never at the pointer's last move: a camera
+    // that moved since left them sized for the old view, and the next click jumped a label from under the pointer (47e, Firefox).
+    const pixel = editing ? (pixelNow(editing.pointer) ?? editing.pixel) : undefined;
+    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
     sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());

@@ -198,6 +198,10 @@ try {
     const l = await labelAt(page, "30");
     await page.mouse.dblclick(l.x, l.y);
     await boxFor(page, "length", "the label double-clicked");
+    // The label stays put while its box is open: it was sized for the pointer's last move, so a camera that had moved since
+    // jumped it 13 px on the first click, and Firefox's second click missed it (47e).
+    const still = await page.locator(".sketch-label", { hasText: "30" }).first().boundingBox();
+    assert.ok(still && Math.abs(still.x - l.box.x) <= 0.5 && Math.abs(still.y - l.box.y) <= 0.5, `the label moved from ${l.box.x}, ${l.box.y} to ${still?.x}, ${still?.y} when clicked`);
     await page.keyboard.type("12");
     await page.keyboard.press("Enter");
     await shown(page, "sketchLabels", "12");
