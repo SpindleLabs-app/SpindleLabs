@@ -47,7 +47,7 @@
       <h3>Your account, if you make one</h3>
       <p>You can sign in with your Google account. You never have to: designing, slicing and saving work the same without an account.</p>
       <ul>
-        <li><strong>What we keep:</strong> your Google account's name and email address, an ID for your account, when you made it, whether you said yes to emails and when, your plan (free, Pro or Team), whether keeping designs in your account is on and, on a plan that includes AI, how much of its AI allowance you have used. If you keep designs in your account, we also keep those designs, as described under My designs below.</li>
+        <li><strong>What we keep:</strong> your Google account's name and email address, an ID for your account, when you made it, whether you said yes to emails and when, your plan (free, Pro or Team) and when it renews or ends, if you pay for Pro the IDs Stripe gives your customer record and subscription and its status (see Payments), whether keeping designs in your account is on and, on a plan that includes AI, how much of its AI allowance you have used. If you keep designs in your account, we also keep those designs, as described under My designs below.</li>
         <li><strong>What sign-in keeps for security:</strong> what Google sends when you sign in (your name, email address, Google's ID for you and a link to your Google profile picture), when you last signed in, and the IP address and browser of each signed-in session, until you sign out or delete your account. The service's own records of sign-ins are deleted within 30 days.</li>
         <li><strong>What we don't keep:</strong> designs you don't keep in your account, your picture itself, your Google password, your contacts or anything else in your Google account. You see what Google will share on Google's own page before you agree.</li>
         <li><strong>Why:</strong> to sign you in, to keep your plan and your designs the same on every device you sign in on, and to email you only if you said yes.</li>
@@ -70,12 +70,19 @@
       <p>We email you about new features and SpindleLabs Pro only if you tick the box that asks, which always starts unticked. You can untick it in your account at any time, and every email we send has a link to stop them. Emails about your account itself (for example, that it was deleted) don't need the box.</p>
 
       <h3>Payments</h3>
-      <p>There are no payments yet. When SpindleLabs Pro opens, payments will be handled by a payment company, and this page will say which one and what it keeps before anything can be bought. Card numbers will never reach SpindleLabs.</p>
+      <p>SpindleLabs Pro is paid for through Stripe, a payment company. For now Pro is being tested: payments are in Stripe's test mode, which takes no real money, and Pro's features are not built yet. This page will say so before real payments start.</p>
+      <ul>
+        <li><strong>What Stripe keeps:</strong> when you choose Upgrade, you pay on Stripe's own page. Stripe keeps your card details, your email address, your billing country and the record of each payment, under <a href="https://stripe.com/privacy">Stripe's privacy policy</a>, and checks payments for fraud. Your card number never reaches SpindleLabs.</li>
+        <li><strong>What we keep:</strong> the ID of your Stripe customer record and of your subscription, and its status (for example active or cancelled), so your account shows the right plan. We are told by Stripe when you start, change or cancel Pro.</li>
+        <li><strong>What we send Stripe:</strong> your account's email address and ID, so the payment is linked to your account.</li>
+        <li><strong>Cancelling:</strong> open your account and choose Manage or cancel Pro, which opens Stripe's own page. Pro then stays until the end of the time you paid for and does not renew. Deleting your account cancels Pro at Stripe first, so nothing more is charged.</li>
+      </ul>
 
       <h3>What leaves your device</h3>
       <ul>
         <li><strong>Loading the site.</strong> SpindleLabs is hosted by GitHub Pages. Like any web host, GitHub sees your IP address and browser details when you load it, under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>.</li>
         <li><strong>Signing in</strong>, if you choose to: your browser talks to Google and to Supabase as described above, and sends the designs you keep in your account to Supabase. With no account, neither is contacted.</li>
+        <li><strong>Paying for Pro</strong>, if you choose to: your browser goes to Stripe's page to pay or to manage Pro, and our account service talks to Stripe as described under Payments. Without choosing Upgrade, Stripe is never contacted.</li>
         <li><strong>The AI assistant.</strong> Nothing is sent to an online AI service unless you choose one and give it your own key. When you open the assistant, an AI that runs on your own device may be chosen for you; that one keeps everything on your device.
           <ul>
             <li>With Anthropic, OpenAI or another address you type, your request and a short summary of your project (the names and sizes of its features and any recent errors, not the shapes themselves) go straight from your browser to that provider, using your own key. Before the first request to each address, SpindleLabs shows exactly what will be sent and waits for you. That provider's own privacy policy and terms then apply, and you pay them directly. SpindleLabs never sees your requests or your key.</li>
@@ -92,7 +99,7 @@
 
       <h3>Seeing, changing and deleting your data</h3>
       <ul>
-        <li><strong>Your account:</strong> sign in and open your account. <em>Download my data</em> gives you everything we keep about you as a file, including every design in your account. <em>Delete my account</em> deletes your account and everything kept with it straight away. Copies in our service's backups are gone within 30 days. Records of payments, once there are any, are kept for 5 years because Australian tax law requires it. You can also email us to see, correct or delete anything.</li>
+        <li><strong>Your account:</strong> sign in and open your account. <em>Download my data</em> gives you everything we keep about you as a file, including every design in your account. <em>Delete my account</em> deletes your account and everything kept with it straight away. Copies in our service's backups are gone within 30 days. Stripe keeps records of payments for 5 years, because Australian tax law requires payment records to be kept; deleting your account deletes our link to them. You can also email us to see, correct or delete anything.</li>
         <li><strong>On your device:</strong> to remove an AI key, open the assistant panel and choose Remove key. To delete everything kept in this browser (projects, settings, keys, the sign-in and any downloaded model), clear the site data for spindlelabs.app in your browser's settings. This can't be undone, so save any project you want to keep to a file first.</li>
         <li>For anything you sent to an AI provider, ask that provider.</li>
         <li>If you think we have mishandled your information, tell us first. You can also complain to the <a href="https://www.oaic.gov.au/privacy/privacy-complaints">Office of the Australian Information Commissioner</a>, or to the privacy regulator where you live.</li>
@@ -100,7 +107,7 @@
 
       <h2 id="terms">Terms of use</h2>
       <ul>
-        <li><strong>Free.</strong> SpindleLabs is free to use. An account is optional, and there are no payments yet.</li>
+        <li><strong>Free.</strong> SpindleLabs is free to use. An account is optional. SpindleLabs Pro, the paid plan, is being tested and takes no real money yet; designing, slicing and saving never need it.</li>
         <li><strong>Your designs are yours.</strong> SpindleLabs claims no rights over anything you make with it. Keeping designs in your account only lets us store and copy them to keep them for you and show them to you.</li>
         <li><strong>Check before you make.</strong> SpindleLabs is in early development and is provided as it is, without any warranty. Like any software it can have bugs, including ones that give wrong sizes or shapes. Check every measurement before you make or rely on anything, above all parts that carry weight, get hot, hold pressure, or keep people safe. As far as the law allows, the people who make SpindleLabs are not responsible for losses from using it. Nothing here takes away rights that the law (such as the Australian Consumer Law) says can't be taken away.</li>
         <li><strong>Check before you print.</strong> Look over a print file, and its preview, before you print it, and never leave a printer running unattended. A wrong setting can waste material or damage a printer. SpindleLabs is not made by, or connected with, any printer maker; printer names are used only to say which printers a setting is for.</li>

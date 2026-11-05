@@ -5,7 +5,7 @@
 // The service is contacted only when the person signs in, returns from
 // signing in, or uses their session; a visit with no account sends nothing.
 
-import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, SESSION_KEY, type SmallStore } from "@fission/account";
+import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { withIcon } from "@fission/ui";
 import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
 import "./styles/account.css";
@@ -16,6 +16,20 @@ export const SIGN_IN_GIVES = [
   "SpindleLabs Pro and its AI allowance when they open, on any device you sign in on.",
   "News of new features first, if you choose to get emails.",
 ];
+
+/**
+ * Payments are in Stripe's TEST MODE: no real money is taken, and the dialog says so.
+ * Live payments wait for the lawyer's review and the hosting move (the billing function
+ * refuses a live key too). Pro's features (the AI allowance) aren't built yet, so Pro
+ * shows only its badge.
+ */
+export const PAYMENTS_TEST_MODE = true;
+
+/** The words for each Pro price (the prices are set in Stripe; these must match them). */
+export const PRO_PRICES = {
+  monthly: "US$9 a month",
+  yearly: "US$54 for the first year, then US$90 a year",
+};
 
 function browserStore(): SmallStore {
   try {
@@ -57,6 +71,14 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
   ui.render();
   if (back.kind === "failed") ui.open(FAILURE_WORDS[back.reason]);
+  // Back from Stripe's checkout page: take the marker out of the address, then say what happened.
+  const paid = new URL(location.href).searchParams.get("checkout");
+  if (paid === "done" || paid === "cancelled") {
+    const clean = new URL(location.href);
+    clean.searchParams.delete("checkout");
+    history.replaceState(history.state, "", clean.href);
+    if (client.state().kind === "signed-in") ui.open(paid === "done" ? PAID_WORDS : "Checkout was cancelled. Nothing was charged.", paid === "done");
+  }
   // A yes to emails ticked before signing in is recorded now; a no needs nothing (it is the default).
   let pendingYes = false;
   try {
@@ -85,6 +107,8 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
     },
   };
 }
+
+const PAID_WORDS = "Thanks! Stripe took the test payment. Pro shows here as soon as Stripe confirms it, usually within a few seconds.";
 
 /** The plain words for a data request that didn't work. */
 function dataWords(r: Exclude<DataResult<unknown>, { kind: "ok" }>): string {
@@ -186,6 +210,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         note = ended ? "Signed out." : "Signed out on this device. The sign-in service couldn't be reached, so the old session stops working by itself within the hour.";
         render();
       });
+      const plan = planBox();
       const yours = el("div", "account-yours");
       const copy = el("button", "account-action", "Download my data");
       copy.type = "button";
@@ -211,8 +236,8 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
           dialog.close();
           void designs.show();
         });
-        body.append(who, mine, emails.row, out, yours);
-      } else body.append(who, emails.row, out, yours);
+        body.append(who, plan, mine, emails.row, out, yours);
+      } else body.append(who, plan, emails.row, out, yours);
     } else {
       const list = el("ul", "account-gives");
       for (const line of SIGN_IN_GIVES) list.append(el("li", undefined, line));
@@ -257,6 +282,75 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
     return { row, input, hint };
   }
 
+  /** Waiting for Stripe's confirmation after a checkout: the plan is read again a few times. */
+  let waitForPro = 0;
+  /** The plan: Pro with its badge and Manage, or the Upgrade buttons (test mode says so). */
+  function planBox() {
+    const box = el("section", "account-plan");
+    box.setAttribute("aria-label", "Your plan");
+    box.append(el("p", "account-small", "Checking your plan…"));
+    const show = (r: DataResult<Plan>) => {
+      if (!box.isConnected) return;
+      if (r.kind !== "ok") return box.replaceChildren(el("p", "account-small", `Your plan couldn't be checked. ${dataWords(r)}`));
+      const p = r.value;
+      if (p.plan === "free" && waitForPro > 0) {
+        waitForPro--;
+        setTimeout(() => void data.plan().then(show), 2000);
+      } else waitForPro = 0;
+      button.classList.toggle("account-is-pro", p.plan === "pro");
+      if (p.plan === "pro" || p.plan === "team") return box.replaceChildren(...paidLines(p));
+      box.replaceChildren(...upgradeLines());
+    };
+    void data.plan().then(show);
+    return box;
+  }
+
+  function badgeLine(word: string) {
+    const head = el("p", "account-plan-head");
+    head.append(el("strong", "account-pro-badge", word));
+    if (PAYMENTS_TEST_MODE) head.append(el("span", "account-test-tag", "Test mode"));
+    return head;
+  }
+
+  function paidLines(p: Plan) {
+    const when = p.renewsAt ? new Date(p.renewsAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }) : "";
+    const lines: HTMLElement[] = [badgeLine(p.plan === "team" ? "Team" : "Pro")];
+    if (when) lines.push(el("p", "account-small", p.cancels ? `Pro ends on ${when}. It won't renew.` : `Renews on ${when}.`));
+    lines.push(el("p", "account-small", "Pro's features (the AI allowance) are on their way. For now Pro shows this badge."));
+    if (p.plan === "pro") {
+      const manage = el("button", "account-plan-action", "Manage or cancel Pro");
+      manage.type = "button";
+      manage.addEventListener("click", () => toStripe(manage, () => data.manage(location.origin + location.pathname)));
+      lines.push(manage);
+    }
+    return lines;
+  }
+
+  function upgradeLines() {
+    const lines: HTMLElement[] = [badgeLine("SpindleLabs Pro"), el("p", undefined, `${PRO_PRICES.monthly}, or ${PRO_PRICES.yearly}.`)];
+    if (PAYMENTS_TEST_MODE)
+      lines.push(el("p", "account-small", "Test mode: no real money is taken. Pay with Stripe's test card 4242 4242 4242 4242, any future date and any CVC. Pro's features aren't built yet, so Pro shows a badge for now."));
+    const row = el("div", "account-yours");
+    for (const which of ["monthly", "yearly"] as const) {
+      const go = el("button", "account-plan-action account-upgrade", which === "monthly" ? "Upgrade: US$9 a month" : "Upgrade: US$54 first year");
+      go.type = "button";
+      go.dataset.plan = which;
+      go.addEventListener("click", () => toStripe(go, () => data.checkout(which, location.origin + location.pathname)));
+      row.append(go);
+    }
+    lines.push(row, el("p", "account-small", "Paid through Stripe, who keep the card details. SpindleLabs never sees them."));
+    return lines;
+  }
+
+  /** Off to one of Stripe's pages, or a plain sentence when that can't happen. */
+  async function toStripe(b: HTMLButtonElement, page: () => Promise<DataResult<string>>) {
+    b.disabled = true;
+    const r = await page();
+    if (r.kind === "ok") return location.assign(r.value);
+    b.disabled = false;
+    say(r.kind === "failed" && r.reason === "rejected" ? "Payments aren't ready yet. Please try again later." : dataWords(r));
+  }
+
   function say(message: string) {
     note = message;
     fill();
@@ -288,12 +382,13 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
     });
     const row = el("div", "account-yours");
     row.append(no, yes);
-    body.append(el("p", undefined, "This deletes your sign-in, your plan, your email choice and every design kept in your account (My designs) from SpindleLabs' servers, straight away. It can't be undone."), el("p", undefined, "Designs kept in this browser are not touched."), row);
+    body.append(el("p", undefined, "This deletes your sign-in, your plan, your email choice and every design kept in your account (My designs) from SpindleLabs' servers, straight away. If you have Pro, it is cancelled at Stripe first, so nothing more is charged. It can't be undone."), el("p", undefined, "Designs on this device are not touched."), row);
     dialog.replaceChildren(header, body);
   }
 
-  function open(message = "") {
+  function open(message = "", afterPayment = false) {
     note = message;
+    if (afterPayment) waitForPro = 10;
     fill();
     if (!dialog.open) dialog.showModal();
   }

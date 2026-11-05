@@ -34,29 +34,64 @@ export function designReference(kind: "face" | "edge", names: BodyNames, index: 
 }
 
 // A face's part: a role, then for a side ":" and its curve id (escaped, so
-// it holds none of ": / + >"). An edge's: two faces' parts joined by "+"
-// (a set) or ">" (in order).
-const FACE = "[a-z]+(?::[^:/+>]+)?";
+// it holds none of ": / + > # , ;"). An edge's: two faces' parts joined by
+// "+" (a set) or ">" (in order).
+const FACE = "[a-z]+(?::[^:/+>#,;]+)?";
 const PART = { face: new RegExp(`^${FACE}$`), edge: new RegExp(`^${FACE}[+>]${FACE}$`) };
+// 35f1e, rule 3 and 5 across the design (boolean-names.ts): a full face
+// name, a face's with its tag after "#" (the names of its neighbours no
+// other piece has, joined by ","), and an edge of a combined body named by
+// its two faces' full names, then ";ends:" and the faces at its ends when
+// two edges meet the same two.
+const FULL = `face:[^:/#,+;>]+/${FACE}`;
+const NAMES = `(?:${FULL}(?:,${FULL})*)?`;
+const TAG = new RegExp(`^${NAMES}$`);
+const PAIR = new RegExp(`^edge:(${FULL}(?:#${NAMES})?)\\+(${FULL}(?:#${NAMES})?)(?:;ends:${NAMES})?$`);
+
+/** What `readDesignReference` reads off a reference. */
+export interface DesignRef {
+  kind: GeometryReference["kind"];
+  /** The feature it names: a body's item, a face's feature; an edge between two faces of the design (`pair`), its first face's. */
+  featureId: string;
+  /** The name after the feature: a face's part, an old edge's two parts; a pair edge's two full face names and its ends. */
+  part?: string;
+  /** A face's tag (rule 3): the pieces' neighbours it was picked by; none when picked on a face no other carries the name of. */
+  tag?: string[];
+  /** An edge named by rule 5 (35f1e), its two faces anywhere in the design. */
+  pair?: true;
+}
 
 /**
- * What `bodyReference` or `designReference` built a reference from: its
+ * What `bodyReference` or `designReference` built a reference from (and,
+ * 35f1e, the scene's design-wide names: a tagged face, a pair edge): its
  * kind, feature id and (for a face or edge) the name after the feature;
  * null for an id they did not build.
  */
-export function readDesignReference(ref: GeometryReference): { kind: GeometryReference["kind"]; featureId: string; part?: string } | null {
+export function readDesignReference(ref: GeometryReference): DesignRef | null {
+  if (ref.kind === "edge") {
+    const pair = PAIR.exec(ref.id);
+    if (pair !== null) return { kind: "edge", featureId: /^face:([^/]+)\//.exec(pair[1])![1], part: ref.id.slice("edge:".length), pair: true };
+  }
   const m = /^(body|face|edge):([^:/]+)(?:\/(.+))?$/.exec(ref.id);
   if (!m || m[1] !== ref.kind) return null;
   // A Combine's piece (35f1): "body:<the Combine>/piece:<k>", its feature the Combine.
   if (m[1] === "body") return m[3] === undefined ? { kind: "body", featureId: m[2] } : bodyItem(ref.id) !== null ? { kind: "body", featureId: m[2], part: m[3] } : null;
-  if (m[3] === undefined || !PART[m[1] as "face" | "edge"].test(m[3])) return null;
+  if (m[3] === undefined) return null;
+  if (m[1] === "face") {
+    const hash = m[3].indexOf("#");
+    const part = hash < 0 ? m[3] : m[3].slice(0, hash);
+    const tag = hash < 0 ? undefined : m[3].slice(hash + 1);
+    if (!PART.face.test(part) || (tag !== undefined && !TAG.test(tag))) return null;
+    return { kind: "face", featureId: m[2], part, ...(tag !== undefined && { tag: tag === "" ? [] : tag.split(",") }) };
+  }
+  if (!PART.edge.test(m[3])) return null;
   return { kind: ref.kind, featureId: m[2], part: m[3] };
 }
 
 /** The kernel index of the face or edge a reference names, on the body `names` names; null when it isn't on that body. */
 export function resolveReference(ref: GeometryReference, names: BodyNames | null): number | null {
   const r = readDesignReference(ref);
-  if (names === null || r === null || r.kind === "body" || r.kind === "outline" || r.featureId !== names.feature) return null;
+  if (names === null || r === null || r.kind === "body" || r.kind === "outline" || r.pair || r.featureId !== names.feature) return null;
   const i = indexOf(names, r.kind, r.part!);
   return i < 0 ? null : i;
 }
@@ -71,7 +106,7 @@ export function resolveReference(ref: GeometryReference, names: BodyNames | null
  */
 export function sharedBy(ref: GeometryReference, names: BodyNames | null): number {
   const r = readDesignReference(ref);
-  if (names === null || r === null || r.kind === "body" || r.kind === "outline" || r.featureId !== names.feature) return 0;
+  if (names === null || r === null || r.kind === "body" || r.kind === "outline" || r.pair || r.featureId !== names.feature) return 0;
   if (r.kind === "face") return names.shared.faces.get(r.part!) ?? 0;
   const own = names.shared.edges.get(r.part!) ?? 0;
   if (own > 1) return own;
@@ -103,7 +138,7 @@ export function readProfileReference(ref: { kind: string; id: string }): string 
  */
 export function oldEdgeFaces(ref: GeometryReference): [string, string] | null {
   const r = readDesignReference(ref);
-  if (r === null || r.kind !== "edge") return null;
+  if (r === null || r.kind !== "edge" || r.pair) return null;
   const [a, b] = r.part!.split(/[+>]/);
   return [`face:${r.featureId}/${a}`, `face:${r.featureId}/${b}`];
 }
