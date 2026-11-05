@@ -127,7 +127,7 @@ test("MIN_FEATURE boundary: a drag leaving a line 0.9× MIN_FEATURE long is refu
   const l = drawLine(s0.doc, s0.id, [0, 0], [5, 0]);
   const doc = await constrain(l.doc, s0.id, [{ kind: "horizontal", a: "point-3", b: "point-4" }, { kind: "fix", point: "point-3" }]);
   const short = await dragStep(kernel, doc, s0.id, "point-4", [0.9 * MIN_FEATURE, 4]);
-  assert.ok("refused" in short && /shrink line-5/.test(short.refused), JSON.stringify(short));
+  assert.ok("refused" in short && /shrink a line below/.test(short.refused), JSON.stringify(short));
   const long = solvedDoc(await dragStep(kernel, doc, s0.id, "point-4", [1.1 * MIN_FEATURE, 4]));
   assert.deepEqual(xy(sketchOf(long, s0.id), "point-4"), [1.1 * MIN_FEATURE, 0]);
   // Through dragTo the refused step leaves the sketch where the last step put it.

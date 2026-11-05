@@ -8,7 +8,11 @@
 // Escape empties the boxes and leaves them (a second Escape,
 // outside, ends the line as before). Styles: src/styles/typed-entry.css.
 
-import { readAngle, readDiameter, readLength, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
+import { boxShown, type Unit } from "@fission/core";
+import { currentUnit } from "@fission/ui";
+import { followUnit } from "./properties.ts";
+import { readDiameterIn, readLengthIn } from "./typed-length.ts";
+import { readAngle, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
 import { keepInside } from "./pointer-hint.ts";
 
 export interface TypedBoxEvents {
@@ -22,8 +26,13 @@ export interface TypedBoxEvents {
 
 /** Each box's label (read by people and the e2e test) and how its text is read. */
 export const FIELD_LABELS: Record<TypedField, string> = { length: "Length", angle: "Angle", width: "Width", height: "Height", radius: "Radius", sweep: "Arc angle", diameter: "Diameter" };
-const UNITS: Record<TypedField, string> = { length: "mm", angle: "°", width: "mm", height: "mm", radius: "mm", sweep: "°", diameter: "mm" };
-const read = (field: TypedField, text: string): Reading => (field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : field === "diameter" ? readDiameter(text) : readLength(text));
+/** The angles are degrees; every other box holds a length, in the unit chosen in Settings (U2c3). */
+const unitOf = (field: TypedField, length: Unit): string => (field === "angle" || field === "sweep" ? "°" : length);
+/** What a box's text means, in millimetres for a length: `unit` is the Settings choice. */
+const read = (field: TypedField, text: string, unit: Unit): Reading =>
+  field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : field === "diameter" ? readDiameterIn(text, unit) : readLengthIn(text, unit);
+/** A live size (millimetres, or degrees for the angles) as a box's placeholder: millimetres to 3 decimals as before. */
+const placeholder = (field: TypedField, value: number, unit: Unit): string => (unitOf(field, unit) === "°" || unit === "mm" ? shownValue(value) : boxShown(value, unit));
 
 /** The boxes sit this far right of and below the point they are given (typed-entry.css translate). */
 const BOX_OFFSET = { x: 18, y: 14 };
@@ -44,6 +53,8 @@ export interface TypedBoxes {
   show(fields: readonly TypedField[], live: Locks, x: number, y: number, avoid?: readonly { x: number; y: number }[]): void;
   /** The accepted typed values: what is locked. */
   readonly locks: Locks;
+  /** Shows the unit now chosen (false once the boxes left the page). Held here because the page's listener holds it only weakly. */
+  onUnit: () => boolean;
   /** Whether a box has the keys. */
   readonly focused: boolean;
   /** Puts the keys in the first box, with `text` typed into it (a digit that started typing). */
@@ -70,13 +81,14 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
   root.hidden = true;
   host.append(root);
   let fields: TypedField[] = [];
-  const boxes = new Map<TypedField, { row: HTMLElement; input: HTMLInputElement; lock: HTMLElement; error: HTMLElement }>();
+  const boxes = new Map<TypedField, { row: HTMLElement; input: HTMLInputElement; unit: HTMLElement; lock: HTMLElement; error: HTMLElement }>();
+  const unitNow = (): Unit => currentUnit(document);
 
   const locks = (): Locks => {
     const out: Locks = {};
     for (const [f, b] of boxes) {
       if (!fields.includes(f) || b.input.value.trim() === "") continue;
-      const r = read(f, b.input.value);
+      const r = read(f, b.input.value, unitNow());
       if ("value" in r) out[f] = r.value;
     }
     return out;
@@ -85,7 +97,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
   const refused = (): HTMLInputElement | null => {
     for (const f of fields) {
       const input = boxes.get(f)!.input;
-      if (input.value.trim() !== "" && "error" in read(f, input.value)) return input;
+      if (input.value.trim() !== "" && "error" in read(f, input.value, unitNow())) return input;
     }
     return null;
   };
@@ -93,7 +105,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
   function mark(f: TypedField) {
     const b = boxes.get(f)!;
     const text = b.input.value.trim();
-    const r = text === "" ? null : read(f, text);
+    const r = text === "" ? null : read(f, text, unitNow());
     const locked = r !== null && "value" in r;
     b.lock.hidden = !locked;
     b.row.classList.toggle("typed-entry-locked", locked);
@@ -116,10 +128,10 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
     input.autocomplete = "off";
     input.spellcheck = false;
     input.id = `typed-${f}`; // read by the e2e test
-    input.setAttribute("aria-label", `${FIELD_LABELS[f]} (${UNITS[f]})`);
+    input.setAttribute("aria-label", `${FIELD_LABELS[f]} (${unitOf(f, unitNow())})`);
     const unit = document.createElement("span");
     unit.className = "typed-entry-unit";
-    unit.textContent = UNITS[f];
+    unit.textContent = unitOf(f, unitNow());
     // Our own padlock: a shackle over a body, drawn in the box's colour.
     const lock = document.createElement("span");
     lock.className = "typed-entry-lock";
@@ -164,11 +176,34 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
         on.escape();
       }
     });
-    boxes.set(f, { row, input, lock, error });
+    boxes.set(f, { row, input, unit, lock, error });
     return row;
   }
 
+  /** The unit changed (Settings): the labels say it, and a length already typed is shown as the same length in it. */
+  const onUnit = (): boolean => {
+    if (!root.isConnected) return false;
+    const to = unitNow();
+    for (const [f, b] of boxes) {
+      const label = unitOf(f, to);
+      b.unit.textContent = label;
+      b.input.setAttribute("aria-label", `${FIELD_LABELS[f]} (${label})`);
+      if (label === "°" || !fields.includes(f)) continue;
+      const text = b.input.value.trim();
+      const was: Unit = to === "mm" ? "in" : "mm";
+      const r = text === "" ? null : read(f, text, was);
+      if (r && "value" in r) b.input.value = boxShown(r.value, to);
+      else if (text !== "") b.input.value = ""; // a refused text has no length to convert
+      b.input.placeholder = "";
+      mark(f);
+    }
+    on.locks(locks());
+    return true;
+  };
+  followUnit(document, onUnit);
+
   const api: TypedBoxes = {
+    onUnit, // kept by the boxes, which the page's listener holds only weakly
     element: root,
     get locks() {
       return locks();
@@ -189,7 +224,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
         }
         if (had) boxes.get(fields[0])!.input.focus();
       }
-      for (const f of fields) boxes.get(f)!.input.placeholder = live[f] === undefined ? "" : shownValue(live[f]!);
+      for (const f of fields) boxes.get(f)!.input.placeholder = live[f] === undefined ? "" : placeholder(f, live[f]!, unitNow());
       root.hidden = false;
       const place = (px: number, py: number) => {
         root.style.left = `${Math.round(px)}px`;
