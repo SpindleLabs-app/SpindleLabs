@@ -1,0 +1,23 @@
+/* Absurdly small windows (clumsy-human hunt 11-04): a window dragged down
+   to 200 × 150 or 100 × 2000 px. The class sits on <body> and every rule is
+   inside a media query, so a real phone, upright or sideways (360 px tall
+   and up), never meets them.
+   Narrow (260 px and under): the top bar's name, File ▾ and DESIGN ▾ each
+   keep their width and wrap onto the next line instead of squeezing and
+   spilling 25 to 33 px past the right edge (the page scrolled sideways),
+   the Browser and Properties toggles wrap the same way, and nothing can
+   scroll the page sideways.
+   Short (300 px tall and under): the bars above and below the 3D view took
+   all the height and left it 0 px tall. The workspace keeps 300 px, so the
+   view keeps at least 120 px, and the page scrolls up and down to reach the
+   rest. ":not(#none)" lifts a rule over the base layout and phone-sheet.css
+   while every selector still starts with .tiny-window. */
+@media (max-width: 260px) {
+  .tiny-window:not(#none) { overflow-x: clip; }
+  .tiny-window #topbar > * { flex-shrink: 0; flex-basis: auto; }
+  .tiny-window #panel-toggles:not(#none) { flex-wrap: wrap; }
+}
+@media (max-height: 300px) {
+  .tiny-window:not(#none) { height: auto; min-height: 100%; overflow-x: clip; overflow-y: auto; }
+  .tiny-window #workspace:not(#none) { flex: 0 0 auto; min-height: 300px; }
+}
