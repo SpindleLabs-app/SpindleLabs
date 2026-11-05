@@ -65,18 +65,36 @@ function underTestCSP(browser) {
   const newContext = browser.newContext.bind(browser);
   const newPage = browser.newPage.bind(browser);
   browser.newContext = async (options = {}) => {
+    const { tooltips, ...rest } = options;
+    options = rest;
     const context = await newContext({ bypassCSP: true, serviceWorkers: "block", colorScheme: "dark", ...options });
+    if (context && !tooltips) await noTooltips(context);
     if (context && options.bypassCSP !== false && STRIP_META_CSP) await stripMetaCSP(context);
     if (context) await slowKernel(context);
     return context;
   };
   browser.newPage = async (options = {}) => {
+    const { tooltips, ...rest } = options;
+    options = rest;
     const page = await newPage({ bypassCSP: true, serviceWorkers: "block", colorScheme: "dark", ...options });
+    if (!tooltips) await noTooltips(page.context());
     if (options.bypassCSP !== false && STRIP_META_CSP) await stripMetaCSP(page.context());
     await slowKernel(page.context());
     return page;
   };
   return browser;
+}
+
+/**
+ * The app's instant tooltips (packages/ui tooltip.ts) keep an element's title from the browser while the pointer is on it, which is exactly where
+ * many checks read it (the Undo button after a click). So every context starts with them off (the app's test build honours `window.__noTooltips`);
+ * e2e/tooltip.mjs asks for them with `tooltips: true`.
+ */
+const quiet = new WeakSet();
+async function noTooltips(context) {
+  if (quiet.has(context)) return;
+  quiet.add(context);
+  await context.addInitScript(() => (window.__noTooltips = true));
 }
 
 const STRIP_META_CSP = browserName === "webkit";
