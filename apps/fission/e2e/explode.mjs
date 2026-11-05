@@ -103,6 +103,23 @@ try {
     await page.context().close();
   });
 
+  await check("print check: its marks are drawn where the bodies really are, so while exploded they go away and come back after Done", async () => {
+    const page = await fresh();
+    await addCylinder(page);
+    await until(page, () => !document.getElementById("inspect-explode").disabled, null, "Exploded view on with two bodies");
+    await page.click("#inspect-print-check");
+    await until(page, () => !!document.querySelector("#viewport").dataset.printCheck, null, "the print check's summary");
+    const before = await page.evaluate(() => document.querySelector("#viewport").dataset.printCheck);
+    await page.click("#inspect-explode");
+    await until(page, () => document.querySelector("#viewport").dataset.exploded === "0.5", null, "exploded");
+    await until(page, () => document.querySelector("#viewport").dataset.printCheck === undefined, null, "the print check's marks gone while exploded");
+    assert.equal(await page.getAttribute("#inspect-print-check", "aria-pressed"), "true", "exploding turned the print check off");
+    await page.click("#explode-done");
+    await until(page, () => document.querySelector("#viewport").dataset.printCheck !== undefined, null, "the print check back after Done");
+    assert.equal(await page.evaluate(() => document.querySelector("#viewport").dataset.printCheck), before);
+    await page.context().close();
+  });
+
   await check("375 px with taps: from Inspect ▾, its bar fits the screen and takes little of the view, Done finger-sized", async () => {
     const page = await fresh(375, true);
     await addCylinder(page, true);

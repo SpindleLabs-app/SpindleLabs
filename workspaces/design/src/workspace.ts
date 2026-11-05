@@ -633,14 +633,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const run = ++printCheckRuns;
     printCheckButton.setAttribute("aria-pressed", String(printCheckOn));
     const scene = lastScene;
-    if (!printCheckOn || !shown || scene === null) {
+    // Its marks are placed on the bodies where they really are, so none while they are drawn exploded.
+    if (!printCheckOn || !shown || scene === null || explodeSpread !== null) {
       for (const id of ALL_PRINT_CHECK_IDS) viewport.clearOverlay(id);
       delete viewport.element.dataset.printCheck;
       return;
     }
     // After the frame that draws the build, so checking a big part never holds the new body back.
     setTimeout(() => {
-      if (run !== printCheckRuns || !printCheckOn || !shown || lastScene !== scene) return;
+      if (run !== printCheckRuns || !printCheckOn || !shown || lastScene !== scene || explodeSpread !== null) return;
       const { found, overlays } = checkShown(scene.bodies.map((b) => b.view.mesh), printRulesIn(storage));
       for (const id of ALL_PRINT_CHECK_IDS) if (!overlays.some((o) => o.id === id)) viewport.clearOverlay(id);
       for (const o of overlays) viewport.setOverlay(o);
@@ -2600,6 +2601,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (spread !== null && spreadInput.ownerDocument.activeElement !== spreadInput) spreadInput.value = String(Math.round(spread * 100));
     viewport.element.dataset.exploded = spread === null ? "" : String(spread); // read by the e2e test
     if (lastScene) viewport.showBody(bodyMesh(lastScene));
+    showPrintCheck();
   }
 
   /** Out of Exploded view, if on: a tool opening works on the bodies where they are. */
