@@ -19,6 +19,10 @@
   /* The app's name alone is wider than a 100 px window in some fonts (CI's): it is cut with "…" rather than spilling. */
   .tiny-window #topbar h1:not(#none) { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .tiny-window #panel-toggles:not(#none) { flex-wrap: wrap; }
+  /* The same for DESIGN ▾, File ▾ and Menu: in CI's fonts DESIGN ▾ alone is wider than an 80 px window. Each is cut
+     with "…" inside the bar's width (its menu is fixed, so it is not clipped). */
+  .tiny-window #topbar > *:not(#none), .tiny-window #topbar .menu-button:not(#none) { max-width: 100%; min-width: 0; }
+  .tiny-window #topbar :is(.menu-button-toggle, #menu-toggle):not(#none) { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 @media (max-height: 300px) {
   .tiny-window:not(#none) { height: auto; min-height: 100%; overflow-x: clip; overflow-y: auto; }

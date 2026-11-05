@@ -111,6 +111,13 @@ for (const [width, height, touch] of [[200, 150, true], [100, 2000, true], [80, 
   check(r.view >= 120, `${at}: the 3D view is ${r.view} px tall (at least 120)`);
   // A real phone's page never scrolls (phone-sheet.css); only an absurdly short window does.
   if (height > 300) check(r.tall <= r.inner, `${at}: the page is ${r.tall} px tall in a ${r.inner} px window`);
+  // Wider fonts than this machine's (CI's made DESIGN ▾ 86 px in an 80 px window): every letter 2 px apart stands in for them.
+  if (width <= 100) {
+    await page.addStyleTag({ content: "#topbar * { letter-spacing: 2px !important; }" });
+    await page.waitForTimeout(200);
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth);
+    check(wide <= width, `${at} with wider letters: the page is ${wide} px wide`);
+  }
   await context.close();
 }
 console.log("checked - tiny windows: no sideways scroll, the 3D view at least 120 px; phones unchanged");
