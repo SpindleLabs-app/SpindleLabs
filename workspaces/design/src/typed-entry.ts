@@ -194,6 +194,8 @@ export function typedFields(tool: SketchTool): TypedField[] {
   if (tool.kind === "arc" && tool.start !== null && tool.end === null) return ["length", "angle"];
   if (tool.kind === "centre" && tool.centre !== null) return tool.start === null ? ["radius", "angle"] : ["sweep"];
   if (tool.kind === "circle" && tool.centre !== null) return ["diameter"];
+  // A dimension waiting for its value (47e): one box, a diameter's or a length's (a radius's for an arc).
+  if (isConstraintTool(tool) && tool.pending) return [tool.pending.kind === "diameter" ? "diameter" : (tool.pendingField ?? "length")];
   return [];
 }
 

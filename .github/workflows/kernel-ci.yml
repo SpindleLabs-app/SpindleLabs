@@ -58,8 +58,9 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     environment: kernel
-    # The checks normally take 45-58 minutes; 90 leaves room for a slow runner.
-    timeout-minutes: 90
+    # The checks now take about 80 minutes (2026-11-05), and one run on a
+    # slow runner was cancelled at 90; 150, as for a mutants shard.
+    timeout-minutes: 150
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
