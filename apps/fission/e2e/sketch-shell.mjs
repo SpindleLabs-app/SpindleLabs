@@ -217,6 +217,9 @@ try {
     const page = await fresh(375, true);
     try {
       const before = await chain(page, true);
+      // The refused file's words below take height from the view, and the viewport keeps its camera when only the height
+      // changes, so the last tap is placed by the canvas the view was fitted at (sketch-screen.mjs `screenPoint`).
+      const fitted = await page.locator("#viewport canvas").boundingBox();
       await page.tap("#menu-toggle");
       await page.setInputFiles("#open-file", { name: "grey.png", mimeType: "image/png", buffer: png });
       await answer(page, true, true);
@@ -228,7 +231,7 @@ try {
       await until(page, () => /^Couldn't open “part\.stl”: /.test(document.querySelector("#file-status").textContent), null, "refused");
       assert.deepEqual(await state(page), before);
       await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
-      await clickPlane(page, [0, 30], TOP, true);
+      await clickPlane(page, [0, 30], TOP, true, fitted);
       await points(page, "0,0 40,0 40,30 0,30");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");
       await page.screenshot({ path: "e2e/sketch-shell-375.png" });

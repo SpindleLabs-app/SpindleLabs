@@ -119,6 +119,24 @@ export function sketchUnits(curves: number): number {
 }
 
 /**
+ * Units of a sketch solve (step 47) per arc cubed: its Newton steps cost
+ * about (arcs)² × (unknowns) each and a failure solves several prefixes.
+ * The costliest sketch the kernel's tests know (a chain whose newest arc
+ * fails) took 5.3e-4 at 25 arcs (14.5 ms), 3.6e-4 at 50 and 3.0e-4 at 100
+ * (535 ms, the most a sketch may have) on the 47d1 build (unit 1.76 ms);
+ * below 25 arcs every solve is a few ms, far under the floor. Lines alone
+ * (no Newton) are well under a second at the 2,000-point limit, under the
+ * floor too.
+ */
+export const UNITS_PER_ARC_CUBED = 6e-4;
+
+/** The units of solving the sketch `text` (the solver's JSON): its arcs counted where the text names one. */
+export function solveUnits(text: string): number {
+  const arcs = text.split('"arc"').length - 1;
+  return UNITS_PER_ARC_CUBED * arcs ** 3;
+}
+
+/**
  * Units of slicing per triangle per layer. Measured with 3 walls and 15 %
  * infill: the 2 mm grating of 111 slots (2,232 triangles) 0.088 at 0.2 mm
  * layers (1,967 ms), 0.081 at 0.08 mm and 0.097 with tree supports (the
@@ -374,6 +392,8 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
     }
     case "sketch_outline":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
+    case "solve_sketch":
+      return typeof a[0] === "string" ? solveUnits(a[0]) : 0;
     case "slice_stl":
     case "print_file_stl":
       return sliceUnits(a[0] as Uint8Array, a[1] as number, a[3] as number, (a[4] ?? "off") as SupportStyle);
