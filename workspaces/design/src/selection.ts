@@ -4,8 +4,8 @@
 
 import type { Feature, GeometryReference, ViewportHighlight } from "@fission/core";
 import { bodyIdOf, bodyItem, builds, makesBody, partFeature, type DesignDocument } from "./document.ts";
-import { readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
-import { bodyOf, findInScene, resolveInScene, type Scene, type ShownBody } from "./scene.ts";
+import { readDesignReference, readProfileReference } from "./references.ts";
+import { bodyOf, findInScene, resolveInScene, sceneHit, type Scene, type ShownBody } from "./scene.ts";
 import { outlineSourceOf } from "./sketch.ts";
 
 /**
@@ -78,7 +78,9 @@ export function referenceLabel(ref: GeometryReference): string {
   const r = readDesignReference(ref);
   if (r === null || r.part === undefined) return ref.kind[0].toUpperCase() + ref.kind.slice(1);
   if (r.kind === "face") return `${faceWords(r.part)} face`;
-  const [a, b] = r.part.split(/[+>]/);
+  // 35f1e: an edge of a Combine's result names its two faces in full ("face:feature-1/top#…+face:feature-2/left;ends:…").
+  const parts = r.pair ? r.part.split(";")[0].split("+").map((n) => n.split("#")[0].replace(/^face:[^/]+\//, "")) : r.part.split(/[+>]/);
+  const [a, b] = parts;
   return `Edge of ${faceWords(a)} and ${faceWords(b)}`;
 }
 
@@ -100,11 +102,12 @@ export function selectionRows(items: readonly GeometryReference[], scene: Scene 
     if (!r) return { name: referenceLabel(item), type: NOT_ON_BODY, id: item.id };
     const b = scene === null ? -1 : bodyOf(scene, item);
     if (r.kind === "body") return b >= 0 ? { name: `Body ${scene!.bodies[b].place}`, type: "solid", id: item.id } : { name: "Body", type: scene ? NOT_ON_BODY : "…", id: item.id };
-    const shown = b >= 0 ? scene!.bodies[b] : undefined;
-    const i = shown ? resolveReference(item, shown.names) : null;
-    const types = r.kind === "face" ? shown?.view.face_types : shown?.view.edge_types;
-    const type = i !== null && types ? types[i] : undefined;
-    if (type === undefined && sharedBy(item, shown?.names ?? null) > 1) return { name: referenceLabel(item), type: NAME_SHARED, id: item.id };
+    // Where its name finds it (35f1e: across the design once a Combine built), and two or more faces carrying it.
+    const found = b >= 0 ? findInScene(item, scene!) : null;
+    const hit = found?.status === "found" ? sceneHit(scene!, r.kind as "face" | "edge", found.index) : null;
+    const types = hit === null ? undefined : r.kind === "face" ? scene!.bodies[hit.body].view.face_types : scene!.bodies[hit.body].view.edge_types;
+    const type = hit !== null && types ? types[hit.index] : undefined;
+    if (type === undefined && found?.status === "shared") return { name: referenceLabel(item), type: NAME_SHARED, id: item.id };
     return { name: referenceLabel(item), type: type ?? (scene ? NOT_ON_BODY : "…"), id: item.id };
   });
 }
@@ -174,8 +177,9 @@ export function survivors(
   outlineIds: readonly string[] = [],
   inTimeline: (featureId: string) => boolean = () => true,
   hidden: (bodyId: string) => boolean = () => false,
-): { kept: GeometryReference[]; dropped: GeometryReference[]; shared: GeometryReference[] } {
+): { kept: GeometryReference[]; dropped: GeometryReference[]; shared: GeometryReference[]; followed: GeometryReference[] } {
   const kept: GeometryReference[] = [];
+  const followed: GeometryReference[] = [];
   const dropped: GeometryReference[] = [];
   const shared: GeometryReference[] = [];
   for (const item of items) {
@@ -192,10 +196,24 @@ export function survivors(
       const found = findInScene(item, scene);
       keep = found.status === "found";
       if (found.status === "shared") shared.push(item);
+      if (found.status === "found" && found.followed) followed.push(item);
     }
     (keep ? kept : dropped).push(item);
   }
-  return { kept, dropped, shared };
+  return { kept, dropped, shared, followed };
+}
+
+/**
+ * The visible note for edges a rebuild kept on the only edge left between
+ * their two faces though the faces at their ends changed (35f1e2, rule 5,
+ * Ben's call: followed, never silently); "" when none were.
+ */
+export function followedNote(followed: readonly GeometryReference[]): string {
+  if (followed.length === 0) return "";
+  const many = followed.length > 1;
+  return many
+    ? `Kept in the selection: ${listed(followed.map(referenceLabel))}. The faces at their ends changed, but each is still the only edge between its two faces: check they are the edges you meant.`
+    : `Kept in the selection: ${referenceLabel(followed[0])}. The faces at its ends changed, but it is still the only edge between its two faces: check it is the edge you meant.`;
 }
 
 /** "A", "A and B", "A, B and C". */

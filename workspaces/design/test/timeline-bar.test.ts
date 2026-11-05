@@ -6,7 +6,7 @@ import { extrudeSketch } from "../src/extrude.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as bar from "../src/timeline-bar.ts";
-import { barEdit, DOUBLE_CLICK_MS, dropIndex, DRAG_PIXELS, isDoubleClick, isDrag, itemMenu, PHONE_TAP_PAD, stepTarget, TAP_REACH, tapPlace, timelineBarItems } from "../src/timeline-bar.ts";
+import { barEdit, DOUBLE_CLICK_MS, DOUBLE_CLICK_PX, dropIndex, isDoubleClickHere, DRAG_PIXELS, isDoubleClick, isDrag, itemMenu, PHONE_TAP_PAD, stepTarget, TAP_REACH, tapPlace, timelineBarItems } from "../src/timeline-bar.ts";
 import { deleteWords } from "../src/delete-ask.ts";
 import { OPS, randomSteps, runBarSession, shrink } from "./timeline-bar-session.ts";
 
@@ -399,6 +399,25 @@ test("hand-worked (25a3): a double-click is two clicks on one item at most DOUBL
   assert.equal(isDoubleClick(undefined, "sketch-2", 1100), false);
   assert.equal(isDoubleClick(first, "sketch-2", 999), false);
   assert.equal(isDoubleClick(first, "sketch-2", 1000), true, "two clicks in the same instant");
+});
+
+test("hand-worked: a double-click's second click that lands on the item's own ⋯ counts only at the first click's place (clumsy hunt 2026-11-04)", () => {
+  // Pick Box 1, then double-click Cylinder 1: the first click picks it, the bar redraws, Box 1's ⋯ goes and Cylinder 1's
+  // comes, Cylinder 1 slides about 30 px left, and the second click, at the same screen point, lands on its new ⋯. That
+  // click is the double-click (Edit Cylinder 1), not a press of ⋯ (its menu). A real press of ⋯ after picking the item
+  // is somewhere else on the screen than the click that picked it.
+  assert.equal(DOUBLE_CLICK_PX, 4);
+  const first = { id: "feature-2", at: 1000, x: 182, y: 770 };
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182, 770), true, "the same point");
+  // At 0.9× the reach in each direction, still the same place; at 1.1×, another place.
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182 + 0.9 * DOUBLE_CLICK_PX, 770 - 0.9 * DOUBLE_CLICK_PX), true);
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182 + 1.1 * DOUBLE_CLICK_PX, 770), false);
+  assert.equal(isDoubleClickHere(first, "feature-2", 1200, 182, 770 - 1.1 * DOUBLE_CLICK_PX), false);
+  // The time and the item rules are isDoubleClick's: too late, or another item's ⋯, is no double-click.
+  assert.equal(isDoubleClickHere(first, "feature-2", 1000 + 1.1 * DOUBLE_CLICK_MS, 182, 770), false);
+  assert.equal(isDoubleClickHere(first, "feature-3", 1200, 182, 770), false);
+  // A click kept without its place (a keyboard's Enter has none) never makes one here.
+  assert.equal(isDoubleClickHere({ id: "feature-2", at: 1000 }, "feature-2", 1200, 182, 770), false);
 });
 
 test("seeded: the sessions reach every outcome: nothing, Edit feature opening, each edit, a delete that asks and one that doesn't, and each refusal", () => {

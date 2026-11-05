@@ -18,6 +18,13 @@
 //   - every body is freed when Design is put away.
 // The start: a 40 × 30 × 20 box with Sketch 1 on its top, a circle of
 // radius 5 at (20, 15) extruded 10 (face-sketch.test.ts, `onTop`).
+// Combine (35f, added 2026-11-05) starts from a box with a block cut into
+// its top instead (`blockStart`): a new Combine's OK, one edited to Cut and
+// to Intersect, one deleted, one undone. Their edit with the kernel well
+// again is the Combine itself off and on (`combineAgain`), so the boolean
+// is asked of the very same bodies: with the extrude toggled, as the
+// others do, a failed boolean remembered for its inputs was not caught
+// (planted 2026-11-05: caught by three of the five only once this was so).
 // Checked by undoing each fix it led to, one at a time (T6b, 2026-10-26):
 // a failed view remembered, a failed free thrown, a failed sketch read as
 // lying nowhere, a settle's own cache or placementOf's left open, the
@@ -28,10 +35,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, KernelError, projectFromJson, projectToJson, type KernelCalls, type SketchDrawing } from "@fission/core";
-import { addFaceSketch, deleteItem, designWorkspace, drawCircle, drawnFrame, extrudeSketch, partDocument, readDesignDocument, settleKept, type DesignDocument } from "@fission/design";
+import { addFaceSketch, deleteItem, designWorkspace, drawCircle, drawnFrame, drawRectangle, extrudeSketch, insertCombine, partDocument, readDesignDocument, setCombineShown, settleKept, type DesignDocument } from "@fission/design";
 import { app, chooseShape, close, kernel } from "./design-app.ts";
 
 type App = Awaited<ReturnType<typeof app>>;
+
+// Combine is behind ?combine until it goes public (35f5): on for these runs, as a tester's tab has it.
+setCombineShown(true);
 
 const DESIGN = [{ id: "design" as const, readData: readDesignDocument }];
 const reopened = (d: DesignDocument) => projectFromJson(projectToJson({ ...emptyProject("Faults"), workspaces: { design: d } }), DESIGN).workspaces.design as DesignDocument;
@@ -42,6 +52,45 @@ const canonical = (v: unknown): string => JSON.stringify(v, (_, x) => (x && type
 function start(): DesignDocument {
   const s = addFaceSketch(partDocument("box", 40, 30, 20), { plane: "face:feature-1/top", feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
   return extrudeSketch(drawCircle(s.doc, s.id, [20, 15], 5).doc, s.id, 10).doc;
+}
+
+/**
+ * For Combine (35f, added 2026-11-05): the box with a 10 × 10 block cut 10 down into its top from Sketch 1
+ * (a rectangle (15, 10)–(25, 20), extruded 10 flipped: feature-11), two flat bodies overlapping. By hand: the
+ * box 40 · 30 · 20 = 24,000 mm³ and the block 1,000 mm³ inside it, so shown apart 25,000, joined 24,000, the
+ * block cut out 23,000.
+ */
+function blockStart(): DesignDocument {
+  const s = addFaceSketch(partDocument("box", 40, 30, 20), { plane: "face:feature-1/top", feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
+  return extrudeSketch(drawRectangle(s.doc, s.id, [15, 10], [25, 20]).doc, s.id, 10, true).doc;
+}
+
+/** blockStart with the block joined to the box (feature-12). */
+const joinedStart = () => insertCombine(blockStart(), "body:feature-1", ["body:feature-11"], "join").doc;
+
+/** Modify ▾ Combine, the box picked as the target (its first face) and the block as the tool (a face of its). */
+async function combinePicked(a: App) {
+  a.$("#modify-menu")!.click();
+  await a.settle();
+  a.$("#modify-menu-combine")!.click();
+  await a.settle();
+  await a.pick({ face: 0 });
+  await a.pick({ face: 7 });
+  assert.equal(`${a.$("#combine-target-names")!.textContent} | ${a.$("#combine-tools-names")!.textContent}`, "Body 1 | Body 2");
+}
+
+async function combineOk(a: App) {
+  (a.$("#combine-ok") as HTMLButtonElement).click();
+  await a.settle();
+}
+
+/** Edit feature on the Combine, its operation made `op`, OK. */
+async function combineEdited(a: App, op: string) {
+  await a.menu("feature-12", "edit");
+  const select = a.$("#combine-operation") as HTMLSelectElement;
+  select.value = op;
+  select.dispatchEvent(new a.window.Event("change") as never);
+  await combineOk(a);
 }
 
 /** Edit feature on `id`: each size box given typed. */
@@ -58,6 +107,10 @@ async function editFeature(a: App, id: string, sizes: Record<string, number>) {
 
 /** An action: what it does with the kernel failing, after `setup` done with it well (none: from the start). */
 interface Action {
+  /** The file it starts from (none: `start`). */
+  from?: () => DesignDocument;
+  /** The edit made with the kernel well again (none: `again`). */
+  again?: (a: App) => Promise<void>;
   setup?: (a: App) => Promise<void>;
   /** A step that changes nothing in the file (a rectangle's first corner): checked to change nothing cleanly too. */
   same?: true;
@@ -110,6 +163,22 @@ const ACTIONS: Record<string, Action["act"] | Action> = {
   },
   // The extrude's distance edited (Edit feature on an extrude of a face sketch).
   "the extrude's distance edited": (a) => editFeature(a, "feature-5", { height: 4 }),
+  // Combine (35f): a new one's OK, the block joined to the box (25,000 mm³ shown apart, 24,000 joined).
+  "Combine's OK joining the block to the box": { from: blockStart, again: combineAgain, setup: combinePicked, act: combineOk },
+  // A Combine edited from Join to Cut (24,000 to 23,000 mm³), and to Intersect (the block alone, 1,000).
+  "a Combine edited to Cut": { from: joinedStart, again: combineAgain, act: (a) => combineEdited(a, "cut") },
+  "a Combine edited to Intersect": { from: joinedStart, again: combineAgain, act: (a) => combineEdited(a, "intersect") },
+  // The Combine deleted (the two bodies apart again), and a new Combine undone.
+  "a Combine deleted": { from: joinedStart, again: combineAgain, act: async (a) => void (await a.menu("feature-12", "delete")) },
+  "Undo of a Combine": {
+    from: blockStart,
+    again: combineAgain,
+    setup: async (a) => {
+      await combinePicked(a);
+      await combineOk(a);
+    },
+    act: async (a) => void (await a.undo()),
+  },
 };
 
 async function createSketch(a: App) {
@@ -141,11 +210,23 @@ async function extrudeOk(a: App) {
 
 const actionOf = (x: Action["act"] | Action): Action => (typeof x === "function" ? { act: x } : x);
 
-/** The edit made with the kernel well again: the last item suppressed and on again, or the other way when it is off (two rebuilds on the same bodies). */
+/** The edit made with the kernel well again: the first extrude suppressed and on again, or the other way when it is off (two rebuilds on the same bodies). */
 async function again(a: App) {
-  const off = a.doc().timeline.features.find((f) => f.id === "feature-5")?.suppressed === true;
-  await a.menu("feature-5", off ? "unsuppress" : "suppress");
-  await a.menu("feature-5", off ? "suppress" : "unsuppress");
+  const id = a.doc().timeline.features.find((f) => f.intent.type === "extrude")!.id;
+  const off = a.doc().timeline.features.find((f) => f.id === id)?.suppressed === true;
+  await a.menu(id, off ? "unsuppress" : "suppress");
+  await a.menu(id, off ? "suppress" : "unsuppress");
+}
+
+/**
+ * For a Combine: the Combine itself suppressed and on again when there is one (its bodies the same kept ones, so
+ * the boolean is asked of the same inputs: a failure remembered for them would stick), else `again`.
+ */
+async function combineAgain(a: App) {
+  const c = a.doc().timeline.features.find((f) => f.intent.type === "combine");
+  if (c === undefined) return again(a);
+  await a.menu(c.id, c.suppressed ? "unsuppress" : "suppress");
+  await a.menu(c.id, c.suppressed ? "suppress" : "unsuppress");
 }
 
 /** What the view shows, for comparing with a fresh app's. */
@@ -161,7 +242,8 @@ function sameView(got: ReturnType<typeof viewOf>, want: ReturnType<typeof viewOf
 
 /** The clean path of an action: its kernel calls, the file after it, and the files after `again` from it and from the start. */
 async function cleanPath(action: Action) {
-  const a = await app(start());
+  const first = action.from ?? start;
+  const a = await app(first());
   await action.setup?.(a);
   const before = a.doc();
   a.failCall(0);
@@ -170,12 +252,12 @@ async function cleanPath(action: Action) {
   else assert.notEqual(canonical(a.doc()), canonical(before), "the action changes the file");
   const calls = a.calls().made;
   const after = a.doc();
-  await again(a);
+  await (action.again ?? again)(a);
   const afterAgain = a.doc();
   assert.ok(await a.close(), "the clean path frees every body");
-  const b = await app(start());
+  const b = await app(first());
   await action.setup?.(b);
-  await again(b);
+  await (action.again ?? again)(b);
   const untouchedAgain = b.doc();
   assert.ok(await b.close());
   return { calls, after, afterAgain, untouchedAgain };
@@ -188,7 +270,7 @@ async function faulted(name: string, action: Action, clean: Clean, n: number, pl
   const errors: string[] = [];
   const onRejection = (e: unknown) => errors.push(`unhandled: ${(e as Error)?.stack ?? e}`);
   process.on("unhandledRejection", onRejection);
-  const a = await app(start(), plugin);
+  const a = await app((action.from ?? start)(), plugin);
   a.window.addEventListener("error", ((e: ErrorEvent) => errors.push(String(e.error?.stack ?? e.message))) as never);
   let closed = false;
   let op: string | null = null;
@@ -210,7 +292,7 @@ async function faulted(name: string, action: Action, clean: Clean, n: number, pl
       const settled = await settleKept(kernel, before, doc);
       if (canonical(settled) !== canonical(clean.after)) return fail(`the file is neither the one before nor, settled, the clean one:\n  ${canonical(settled).slice(0, 600)}\n  clean: ${canonical(clean.after).slice(0, 600)}`);
     }
-    await again(a);
+    await (action.again ?? again)(a);
     if (errors.length) return fail(`thrown after the kernel was well again: ${errors.join(" | ")}`);
     const end = a.doc();
     const want = taken ? clean.afterAgain : clean.untouchedAgain;
@@ -284,4 +366,22 @@ test("regression: a settle on a cache of its own frees every body even when a fr
   assert.ok(frees >= 2, "a free failed and another was asked");
   assert.ok(settled.kept?.["feature-5"], "the settle's own answer stands");
   assert.equal(await kernel.call("body_count"), held, "every body the settle built is freed");
+});
+
+test("hand-worked: the Combine actions' starts and clean answers", async () => {
+  // By hand (blockStart): the box 40 · 30 · 20 = 24,000 mm³, the block 10 · 10 · 10 = 1,000 inside it under the top.
+  // Shown apart 24,000 + 1,000 = 25,000; joined, the block adds nothing: 24,000; cut out: 23,000; intersect: 1,000.
+  const a = await app(blockStart());
+  assert.ok(close(a.volume(), 25000), `apart ${a.volume()}`);
+  await combinePicked(a);
+  await combineOk(a);
+  assert.ok(close(a.volume(), 24000), `joined ${a.volume()}`);
+  assert.ok(await a.close());
+  for (const [op, want] of [["cut", 23000], ["intersect", 1000]] as const) {
+    const b = await app(joinedStart());
+    assert.ok(close(b.volume(), 24000), `joined ${b.volume()}`);
+    await combineEdited(b, op);
+    assert.ok(close(b.volume(), want), `${op} ${b.volume()}`);
+    assert.ok(await b.close());
+  }
 });

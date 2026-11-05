@@ -279,9 +279,26 @@ test("rule 5: an edge name with ends fits every edge between its faces whose end
     { faces: ["a", "b"], ends: ["c", "d"] },
   ]);
   assert.deepEqual(resolveEdge(tied, "edge:a+b;ends:c,d"), { ambiguous: 2 });
-  // One edge between a and b, named by its pair alone: a reference with
-  // ends fits it once, which is not two: the name is not on any edge, lost
-  // ("found when exactly one edge has it").
+  // Ben's call 2026-11-05 (35f1e2), the rule's gap filled: one edge left between a and b, named by its pair alone. A
+  // reference with ends c, d (made while two edges lay between a and b) finds it when its ends are c, d (the same
+  // edge, no warning); when its ends are now c, e, it is still the only edge between a and b, so it is found with the
+  // warning "ends", never silently. Before, both were lost.
   const once = made([], [{ faces: ["a", "b"], ends: ["c", "d"] }]);
-  assert.deepEqual(resolveEdge(once, "edge:a+b;ends:c,d"), { lost: true });
+  assert.deepEqual(resolveEdge(once, "edge:a+b;ends:c,d"), { found: once.bodies[0].edges[0], body: once.bodies[0].id });
+  const moved = made([], [{ faces: ["a", "b"], ends: ["c", "e"] }]);
+  assert.deepEqual(resolveEdge(moved, "edge:a+b;ends:c,d"), { found: moved.bodies[0].edges[0], body: moved.bodies[0].id, warning: "ends" });
+  // Two edges between a and b, neither with ends c, d: which one it meant can't be told, so lost (never guessed); one of
+  // them with ends c, d is found, the other not looked at.
+  const two = made([], [
+    { faces: ["a", "b"], ends: ["c", "e"] },
+    { faces: ["a", "b"], ends: ["c", "f"] },
+  ]);
+  assert.deepEqual(resolveEdge(two, "edge:a+b;ends:c,d"), { lost: true });
+  const oneOfTwo = made([], [
+    { faces: ["a", "b"], ends: ["c", "e"] },
+    { faces: ["a", "b"], ends: ["c", "d"] },
+  ]);
+  assert.deepEqual(resolveEdge(oneOfTwo, "edge:a+b;ends:c,d"), { found: oneOfTwo.bodies[0].edges[1], body: oneOfTwo.bodies[0].id });
+  // Another pair altogether is never found by its ends.
+  assert.deepEqual(resolveEdge(once, "edge:a+x;ends:c,d"), { lost: true });
 });

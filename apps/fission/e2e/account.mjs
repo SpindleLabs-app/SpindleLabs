@@ -59,7 +59,7 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve() };
+  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [] };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
@@ -94,12 +94,32 @@ function fakeService() {
         svc.profile.email_opt_in = body.email_opt_in;
         return route.fulfill({ status: 204, headers: cors });
       }
+      if (req.method() === "GET" && what === "plans") return json(route, 200, [svc.plan]);
       if (req.method() === "POST" && what === "rpc/my_data") return json(route, 200, { account: { email: "ada@example.com" }, profile: svc.profile, plan: { plan: "free" } });
       if (req.method() === "POST" && what === "rpc/delete_my_account") {
         svc.profile = undefined;
         svc.live.clear();
         svc.tokens.clear();
         return route.fulfill({ status: 204, headers: cors });
+      }
+      return json(route, 404, {});
+    }
+    if (url.pathname.startsWith("/functions/v1/billing/")) {
+      // The billing function (supabase/functions/billing), as it answers a signed-in person.
+      if (!svc.billingFn) return json(route, 404, {});
+      if (!svc.profile || !svc.tokens.has((req.headers().authorization ?? "").replace("Bearer ", ""))) return json(route, 401, { error: "signed-out" });
+      const what = url.pathname.slice("/functions/v1/billing/".length);
+      if (what === "checkout") {
+        svc.checkouts.push(body);
+        return json(route, 200, { url: `https://checkout.stripe.com/c/pay/cs_test_${svc.checkouts.length}` });
+      }
+      if (what === "portal") return json(route, 200, { url: "https://billing.stripe.com/p/session/test_1" });
+      if (what === "delete-account") {
+        svc.calls.push("billing deleted the Stripe customer");
+        svc.profile = undefined;
+        svc.live.clear();
+        svc.tokens.clear();
+        return json(route, 200, { deleted: true });
       }
       return json(route, 404, {});
     }
@@ -132,6 +152,13 @@ async function fresh(base, width = 1280, phone = false) {
   const svc = fakeService();
   const elsewhere = [];
   await context.route(`${SERVICE}/**`, svc.handle);
+  // Stripe's checkout page, faked: paying sends the person back with ?checkout=done, and Stripe's webhook makes them Pro a moment later.
+  await context.route("https://checkout.stripe.com/**", (route) => {
+    const back = new URL(svc.checkouts.at(-1).returnTo);
+    back.searchParams.set("checkout", svc.payment === "cancel" ? "cancelled" : "done");
+    if (svc.payment !== "cancel") setTimeout(() => (svc.plan = { plan: "pro", renews_at: "2026-12-05T00:00:00Z", cancels_at_period_end: false }), 1500);
+    return route.fulfill({ status: 302, headers: { location: back.href } });
+  });
   const page = await context.newPage();
   page.on("request", (r) => {
     const u = new URL(r.url());
@@ -375,6 +402,75 @@ try {
     assert.match(await page.locator("#account .account-note").textContent(), /^Your account was not deleted\. Couldn't reach the sign-in service/);
     assert.equal(await accountText(page), "Ada");
     await context.close();
+  });
+
+  await check("switch on: Pro in test mode: Upgrade says test mode, pays through Stripe's page, comes back, and shows the Pro badge", async () => {
+    const { page, svc, context } = await fresh(ON_URL);
+    await page.locator("#account-open").waitFor();
+    await page.click("#account-open");
+    await page.click("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    await page.click("#account-open");
+    await page.locator("#account .account-upgrade").first().waitFor();
+    assert.match(await page.locator("#account .account-plan").textContent(), /Test mode.*US\$9 a month, or US\$54 for the first year, then US\$90 a year\..*no real money is taken/);
+    assert.deepEqual(await page.$$eval("#account .account-upgrade", (b) => b.map((x) => x.dataset.plan)), ["monthly", "yearly"]);
+    if (shots) await page.screenshot({ path: `${shots}/account-upgrade-1280.png` });
+    await page.click("#account .account-upgrade[data-plan=yearly]");
+    await page.waitForSelector("#account[open] .account-note");
+    assert.deepEqual(svc.checkouts, [{ plan: "yearly", returnTo: ON_URL }]);
+    assert.match(await page.locator("#account .account-note").textContent(), /^Thanks! Stripe took the test payment\./);
+    assert.equal(new URL(page.url()).search, "", "the checkout marker is gone from the address");
+    await page.locator("#account .account-pro-badge", { hasText: /^Pro$/ }).waitFor({ timeout: 10000 });
+    assert.match(await page.locator("#account .account-plan").textContent(), /Renews on .*2026/);
+    assert.equal(await page.locator("#account .account-plan-action", { hasText: "Manage or cancel Pro" }).count(), 1);
+    assert.equal(await page.locator("#account .account-upgrade").count(), 0, "no second Upgrade for someone on Pro");
+    if (shots) await page.screenshot({ path: `${shots}/account-pro-1280.png` });
+    await context.close();
+  });
+
+  await check("switch on: a cancelled checkout says nothing was charged; payments not set up yet says so; 375 px fits", async () => {
+    const { page, svc, context } = await fresh(ON_URL, 375, true);
+    await page.locator("#account-open").waitFor({ state: "attached" });
+    await page.tap("#menu-toggle");
+    await page.tap("#account-open");
+    await page.tap("#account .account-google");
+    await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+    svc.payment = "cancel";
+    await page.evaluate(() => document.getElementById("account-open").click());
+    await page.locator("#account .account-upgrade").first().waitFor();
+    const up = await page.locator("#account .account-upgrade").first().boundingBox();
+    assert.ok(up.height >= 44 && up.x >= 0 && up.x + up.width <= 375, JSON.stringify(up));
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
+    if (shots) await page.screenshot({ path: `${shots}/account-upgrade-375.png` });
+    await page.tap("#account .account-upgrade[data-plan=monthly]");
+    await page.waitForSelector("#account[open] .account-note");
+    assert.equal(await page.locator("#account .account-note").textContent(), "Checkout was cancelled. Nothing was charged.");
+    assert.equal(svc.plan.plan, "free");
+    svc.billingFn = false;
+    await page.locator("#account .account-upgrade").first().waitFor();
+    await page.tap("#account .account-upgrade[data-plan=monthly]");
+    await page.waitForFunction(() => document.querySelector("#account .account-note")?.textContent === "Payments aren't ready yet. Please try again later.");
+    await context.close();
+  });
+
+  await check("switch on: deleting goes through the billing function (which ends any subscription), or the database's own delete when it isn't there", async () => {
+    for (const billingFn of [true, false]) {
+      const { page, svc, context } = await fresh(ON_URL);
+      svc.billingFn = billingFn;
+      await page.locator("#account-open").waitFor();
+      await page.click("#account-open");
+      await page.click("#account .account-google");
+      await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Ada");
+      await page.click("#account-open");
+      await page.click("#account .account-danger");
+      assert.match(await page.locator("#account .account-body").textContent(), /If you have Pro, it is cancelled at Stripe first/);
+      await page.click("#account .account-yours .account-danger");
+      await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Sign in");
+      assert.equal(svc.profile, undefined);
+      assert.equal(svc.calls.includes("billing deleted the Stripe customer"), billingFn);
+      assert.equal(svc.calls.includes("POST /rest/v1/rpc/delete_my_account"), !billingFn);
+      await context.close();
+    }
   });
 
   await check("no page errors", async () => assert.deepEqual(errors, []));

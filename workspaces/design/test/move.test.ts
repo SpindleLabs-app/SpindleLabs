@@ -35,6 +35,17 @@ test("what a Move asks the kernel for, by hand", () => {
   );
 });
 
+test("hand-worked: a huge angle turns as its leftover part of a turn does (clumsy hunt 2026-11-04)", () => {
+  // 1e20 = 2^20 · 5^20 is a whole number a double holds exactly. 360 = 40 · 9: 1e20 is a multiple of 40 (it has 2^3 and 5
+  // in it), and its digits sum to 1, so it is 1 more than a multiple of 9. The number under 360 that is a multiple of 40
+  // and 1 more than a multiple of 9 is 280 (280 = 7 · 40 and 280 = 31 · 9 + 1): 1e20° is 280° and whole turns.
+  const huge = moveMotions(v({ turnZ: 1e20 }));
+  assert.deepEqual(huge, moveMotions(v({ turnZ: 280 })));
+  // Below a whole turn nothing changes; −45° stays −45°, and 405° is 45°.
+  assert.deepEqual(moveMotions(v({ turnX: 405 })), moveMotions(v({ turnX: 45 })));
+  assert.deepEqual(moveMotions(v({ turnY: -45 })).map((m) => ("turn" in m ? m.turn.angle : null)), [-Math.PI / 4]);
+});
+
 test("a moved spec wraps a shape once and grows its list after that", () => {
   const box = { box: { width: 40, depth: 30, height: 20 } };
   assert.equal(movedSpec(box, []), box, "nothing to do: the same spec");

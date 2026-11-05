@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AIProvider } from "@fission/ai";
-import { parseCommand } from "@fission/core";
+import { parseCommand, type Command } from "@fission/core";
 import { DESIGN_COMMANDS } from "@fission/design";
 import { EVAL_CASES, HELD_OUT_CASES, matches, runEval, successRates } from "../src/ai-eval.ts";
 
@@ -105,6 +105,29 @@ test("a right command followed by a wrong one fails: the part ends up wrong", ()
   assert.equal(matches(setup, [setup[0], right], [right]), true, "the last word counts");
 });
 
+test("hand-worked: a one-step case passes with exactly its step and fails with any step added, as Ben's run added an extrude and a rename (AI8b)", () => {
+  const byId = (id: string) => HELD_OUT_CASES.find((c) => c.id === id)!;
+  const only = HELD_OUT_CASES.filter((c) => c.taskType === "only-asked");
+  assert.deepEqual(only.map((c) => c.id), ["held-only-draw", "held-only-rectangle", "held-only-extrude", "held-only-rename"]);
+  const extrude: Command = { op: "extrude_sketch", distance: 4 };
+  const rename: Command = { op: "rename_item", name: "Part" };
+  const wider: Command = { op: "set_part", shape: "box", width: 50, depth: 30, height: 20 };
+  for (const c of only) {
+    const exact = c.expected as Command[];
+    assert.equal(matches(c.setup, exact, c.expected), true, `${c.id}: its own step passes`);
+    for (const extra of [extrude, rename, wider]) {
+      if (exact.some((e) => e.op === extra.op)) continue;
+      assert.equal(matches(c.setup, [...exact, extra], c.expected), false, `${c.id}: plus ${extra.op} fails`);
+      assert.equal(matches(c.setup, [extra, ...exact], c.expected), false, `${c.id}: ${extra.op} first fails too`);
+    }
+  }
+  // The extrude case: a rename after it (Ben's) fails; the same distance without the rename passes; 4 mm is the 4 asked.
+  assert.equal(matches(byId("held-only-extrude").setup, [extrude, { op: "rename_item", name: "Base" }], byId("held-only-extrude").expected), false);
+  assert.equal(matches(byId("held-only-extrude").setup, [{ op: "extrude_sketch", distance: 40 }], byId("held-only-extrude").expected), false);
+  // The draw case: a second extrude of the circle (Ben's 4 mm) fails; the circle alone passes.
+  assert.equal(matches([], [{ op: "create_sketch", on: "YZ" }, { op: "draw_circle", diameter: 8 }, extrude], byId("held-only-draw").expected), false);
+});
+
 test("a size left out keeps the current one, as Design's run does", () => {
   // "Make it 10 mm wider" on 40 × 30 × 20, answered with only shape and width: depth 30 and height 20 stay.
   const setup = [{ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 }];
@@ -165,9 +188,10 @@ test("the suite scores a provider on the held-out cases", async () => {
   };
   const results = await runEval(provider, HELD_OUT_CASES, DESIGN_COMMANDS);
   // Worked by hand: only "held-cylinder-radius" expects a cylinder 18 wide and 40 tall, so create 1 of 15
-  // (8 parts, AI7a's 2 sketches, AI7b's circle and rectangle, AI7c's 2 extrudes, AI7d's named sketch) and edit 0 of 7 (AI7d's 2 renames among them); it never refuses, so cannot 0 of 4.
-  assert.equal(results.length, 26);
-  assert.deepEqual(successRates(results), { create: 1 / 15, "edit-parameter": 0, cannot: 0 });
+  // (8 parts, AI7a's 2 sketches, AI7b's circle and rectangle, AI7c's 2 extrudes, AI7d's named sketch) and edit 0 of 7 (AI7d's 2 renames among them); it never refuses, so cannot 0 of 4;
+  // and AI8b's 4 single steps want no set_part at all, so only-asked 0 of 4.
+  assert.equal(results.length, 30);
+  assert.deepEqual(successRates(results), { create: 1 / 15, "edit-parameter": 0, cannot: 0, "only-asked": 0 });
   assert.deepEqual(results.filter((r) => r.passed).map((r) => r.id), ["held-cylinder-radius"]);
 });
 
@@ -179,8 +203,8 @@ test("a provider that always says it can't passes only the cannot cases", async 
     complete: async () => JSON.stringify({ explanation: "No command can do that yet.", commands: [] }),
   };
   const results = await runEval(provider, HELD_OUT_CASES, DESIGN_COMMANDS);
-  // Worked by hand: the 4 cannot cases expect no commands; the 22 others expect a part or a sketch, and no answer is neither.
-  assert.deepEqual(successRates(results), { create: 0, "edit-parameter": 0, cannot: 1 });
+  // Worked by hand: the 4 cannot cases expect no commands; the 26 others expect a part, a sketch or a step, and no answer is neither.
+  assert.deepEqual(successRates(results), { create: 0, "edit-parameter": 0, cannot: 1, "only-asked": 0 });
   assert.deepEqual(results.filter((r) => r.passed).map((r) => r.id), ["held-cannot-hole", "held-cannot-fillet", "held-cannot-arc", "held-cannot-text"]);
 });
 

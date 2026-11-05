@@ -69,6 +69,16 @@ export interface History {
   restoring(): boolean;
   /** Called once after every change to what can be undone or redone; returns an unsubscribe. */
   onChange(listener: () => void): () => void;
+  /**
+   * Holds `work`, a step the person already asked for that records when the kernel answers (an OK it still checks),
+   * until it settles either way; returns it. Undo or Redo pressed meanwhile waits (`whenIdle`, main.ts), so it takes
+   * back that step, not the one before (clumsy hunt 2026-11-04: the step was lost, and the one before it undone).
+   */
+  hold<T>(work: Promise<T>): Promise<T>;
+  /** Whether held work is still running. */
+  busy(): boolean;
+  /** Settles once no held work runs, including work held while waiting; at once when none does. */
+  whenIdle(): Promise<void>;
 }
 
 export interface HistoryOptions {
@@ -115,6 +125,8 @@ export function createHistory(options: HistoryOptions): History {
   const refuseInStep = (what: string) => {
     if (grouping > 0) throw new Error(`can't ${what} while an undo step is running`);
   };
+  /** Held work still running (`hold`). */
+  const held = new Set<Promise<unknown>>();
   const listeners = new Set<() => void>();
   const changed = () => {
     for (const l of [...listeners]) l();
@@ -249,6 +261,18 @@ export function createHistory(options: HistoryOptions): History {
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    hold(work) {
+      const done = work.then(
+        () => void held.delete(done),
+        () => void held.delete(done),
+      );
+      held.add(done);
+      return work;
+    },
+    busy: () => held.size > 0,
+    async whenIdle() {
+      while (held.size > 0) await Promise.all([...held]);
     },
   };
   return api;

@@ -187,3 +187,32 @@ test("seeded: 2,000 chains of Moves on two bodies, one edited to other bodies an
   }
   assert.ok(changed > 1000, `the bodies changed in ${changed} of 2,000 chains`);
 });
+
+test("the bodies a Move moves are built once for all of them, not once each (clumsy hunt 2026-11-04)", async () => {
+  // Five boxes of different widths, all moved by one Move: the STL download and Slice for printing asked for each
+  // body's end, and each ask rebuilt the whole design. One rebuild builds each box (5) and each box moved (5): 10
+  // body_build calls; asked five times, 50. 50 bodies took minutes. `endSpecs` rebuilds once: 10.
+  const { nodeKernel } = await import("../../../packages/testing/src/node-kernel.ts");
+  const { endSpec, endSpecs } = await import("../src/move-tool.ts");
+  let d = partDocument("box", 10, 30, 20);
+  for (const w of [11, 12, 13, 14]) d = insertPreset(d, "box", w, 30, 20).doc;
+  const boxes = d.timeline.features.slice();
+  d = insertMove(d, boxes.map((f) => bodyIdOf(f.id)), v({ x: 100 })).doc;
+  const real = nodeKernel();
+  let builds = 0;
+  const counted = { ...real, call: ((op: string, ...args: unknown[]) => ((op === "body_build" && builds++), (real.call as (o: string, ...a: unknown[]) => Promise<unknown>)(op, ...args))) as typeof real.call };
+  const specs = await endSpecs(counted, d, boxes);
+  assert.equal(builds, 10, "one rebuild: the five boxes, then the five moved");
+  assert.equal(specs.length, 5);
+  // Each is its own box moved 100 mm along X, the same spec endSpec gives for it alone.
+  for (const [i, f] of boxes.entries()) {
+    assert.deepEqual(specs[i], { moved: { body: { box: { width: 10 + i, depth: 30, height: 20 } }, moves: [{ move: [100, 0, 0] }] } }, f.id);
+    assert.deepEqual(specs[i], await endSpec(real, d, f));
+  }
+  // A body no Move moves is its feature's own, and asks for no rebuild.
+  const plain = insertPreset(d, "box", 7, 7, 7);
+  builds = 0;
+  const [own] = await endSpecs(counted, plain.doc, [plain.doc.timeline.features.find((f) => f.id === plain.id)!]);
+  assert.deepEqual(own, { box: { width: 7, depth: 7, height: 7 } });
+  assert.equal(builds, 0);
+});
