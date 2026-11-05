@@ -71,9 +71,9 @@ for (const width of [641, 700, 760]) {
   assert.equal(await topBarOverlap(page), null, `${width}: top bar overlap`);
   assert.ok((await topBarHeight(page)) <= 48, `${width}: top bar wraps (${await topBarHeight(page)} px)`);
   // Room to spare (U7b, CI 2026-11-05: the History button took the last of it at 641 and a wider font ran the workspace button into AI):
-  // the gap between them is at least 12 px, so a font a few pixels wider still leaves them apart.
+  // the gap between them is at least 40 px, for CI's fonts that run up to 45 px wider across the bar's left side than this sandbox's.
   const gap = await page.evaluate(() => document.getElementById("assistant-toggle").getBoundingClientRect().left - document.getElementById("workspace-menu").getBoundingClientRect().right);
-  assert.ok(gap >= 12, `${width}: the workspace button is ${gap.toFixed(1)} px from AI, under 12`);
+  assert.ok(gap >= 40, `${width}: the workspace button is ${gap.toFixed(1)} px from AI, under 40`);
   assert.equal(await sideways(page), 0, `${width}: sideways scroll`);
   assert.equal(await page.$eval("#guide-open", (e) => e.textContent.includes("Guide")), true);
   await context.close();
