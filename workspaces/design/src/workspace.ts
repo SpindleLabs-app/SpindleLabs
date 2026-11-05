@@ -26,6 +26,7 @@ import { commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command a
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
+import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
 import { browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
@@ -518,6 +519,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let menuAt = { x: 0, y: 0 };
   // An empty design's hint (U0c): its buttons do what the toolbar's and the top bar's do.
   const startCard = startHint(ctx.viewport.element, { sketch: () => startSketch(), insert: () => insertMenu.open(true), open: ctx.openFile });
+  // The export badge (Ben 2026-11-05): what the last Download STL's solid check found, for the design it was made
+  // from; ✕ or any edit puts it and its red marks away.
+  const solidCard = solidBadge(ctx.viewport.element, () => ctx.viewport.clearOverlay(SOLID_OVERLAY));
+  let solidFor: DesignDocument | undefined;
   /**
    * Shows the hint while the design is empty and no sketch is being started, and only while Design is on screen:
    * the card sits in the shared 3D view, so asleep it would float over another workspace (owner's report, 2026-10-28).
@@ -667,6 +672,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // the shell's context stays the prototype, so its getters (the project, the graph) read live as ever.
     const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene });
     const outcome = await action.run(targets, run);
+    if (outcome.solid && shown) {
+      solidCard.show(outcome.solid);
+      solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
+    }
     if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad);
   }
 
@@ -1292,6 +1301,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     drawBrowser(doc);
     showOrigin(doc);
     showStart();
+    if (solidFor !== undefined && doc !== solidFor) {
+      solidCard.hide();
+      ctx.viewport.clearOverlay(SOLID_OVERLAY);
+      solidFor = undefined;
+    }
     showFailed(doc);
     showKept();
     drawSketches();
@@ -3297,6 +3311,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       moveHint.remove();
       combineHint.remove();
       startCard.element.remove();
+      solidCard.element.remove();
+      ctx.viewport.clearOverlay(SOLID_OVERLAY); // the card that explained the marks is gone (an Undo mounts Design again)
       if (fold) {
         foldKept = { ...FOLDED_AT_START, pinned: fold.state.pinned };
         fold.close();

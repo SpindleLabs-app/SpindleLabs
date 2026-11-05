@@ -31,6 +31,7 @@ export function nodeKernel(): KernelCalls {
     make_sphere: (r) => entry.make_sphere(r),
     make_extrude: (p, d) => entry.make_extrude(p, d),
     export_stl: (spec, name) => entry.export_stl(spec, name),
+    check_solid: (stl) => entry.check_solid(stl),
     snap_to_grid: (x, y, s) => entry.snap_to_grid(x, y, s),
     place_freely: (x, y, pixel) => entry.place_freely(x, y, pixel),
     sketch_outline: (lines, circles, arcs) => entry.sketch_outline(lines, circles, arcs),

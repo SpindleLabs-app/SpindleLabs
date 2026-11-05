@@ -4,11 +4,12 @@
 // bodies all run it. Copy as SVG, for a profile or a sketch: the verb under
 // it and Ctrl+C both run it (X6b, 25c1).
 
-import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type StlFile, type WorkspaceContext } from "@fission/core";
+import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type SolidReport, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
 import { designBodies } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, isCombineItem, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
+import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked } from "./solid-badge.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
@@ -182,7 +183,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
     id: DOWNLOAD_STL,
     workspace: "design",
     label: "Download STL",
-    title: "Download the bodies as one binary STL file, for printing or another program. Warns when one is too big for STL's single-precision numbers.",
+    title: "Download the bodies as one binary STL file, for printing or another program. Checks the file is solid (closed, nothing flipped or crossing) and warns when it is not, or when a body is too big for STL's single-precision numbers.",
     kinds: ["body"],
     uses: "mesh",
     count: "many",
@@ -212,8 +213,21 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
         const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
-        const saved = await save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), file);
+        const bytes = one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name);
+        // The export badge: the kernel checks the file's own bytes, as saved (every body, every corner rounded); a
+        // solid one says so in its header. A check that can't run never stops the export, and never says solid.
+        let solid: SolidReport | undefined;
+        let unchecked = "";
+        try {
+          solid = await ctx.kernel.call("check_solid", bytes);
+        } catch (e) {
+          unchecked = `The solid check could not run (${e instanceof Error ? e.message : String(e)}), so the file is not known to be solid.`;
+        }
+        const saved = await save(solid?.verdict === "solid" ? stampChecked(bytes, name) : bytes, file);
         if (saved === false) return { message: "Export STL cancelled: nothing was saved.", bad: false };
+        const marked = solid ? solidOverlay(solid) : null;
+        if (marked) ctx.viewport.setOverlay(marked);
+        else ctx.viewport.clearOverlay(SOLID_OVERLAY);
         // Mark the bodies that warned on screen too: every face of one moves in single precision.
         const warned = picked.filter((_, i) => files[i].warning);
         if (warned.length > 0)
@@ -223,8 +237,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const numbers = bodyNumbers(doc);
         const place = (body: string) => `Body ${numbers.get(body)}`;
         const warnings = picked.flatMap((p, i) => (files[i].warning ? [one ? files[i].warning! : `${place(p.body)}: ${files[i].warning}`] : []));
-        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
-        return { message, bad: warned.length > 0 };
+        const badge = solid ? `${badgeFor(solid).title}.` : unchecked;
+        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, badge, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
+        return { message, bad: warned.length > 0 || solid?.verdict !== "solid", ...(solid && { solid }) };
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };
       }
