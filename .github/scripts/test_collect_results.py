@@ -50,8 +50,8 @@ class CollectGolden(unittest.TestCase):
                 env["JOBS"] = jobs
             env.update(IN=incoming, RUN_URL="https://example.invalid/runs/1", COMMIT="abcdef1234567", BRANCH="main",
                        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
-            # The workflow copies both scripts out first; so does this.
-            for s in ("collect-results.sh", "file_issues.py"):
+            # The workflow copies the scripts out first; so does this.
+            for s in ("collect-results.sh", "file_issues.py", "coverage_issue.py"):
                 shutil.copy(os.path.join(HERE, s), d)
             out = subprocess.run(["bash", os.path.join(d, "collect-results.sh")], cwd=work, env=env, capture_output=True, text=True)
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
