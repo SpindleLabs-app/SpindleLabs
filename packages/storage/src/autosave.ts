@@ -32,7 +32,7 @@
 
 import { projectToJson, type Project } from "@fission/core";
 import { ProjectChangedError, writerId, type ProjectStore } from "./store.ts";
-import { asideKey, fromAnotherTab, journalEntry, putAsideOthers, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
+import { asideKey, keptCopyName, journalEntry, putAsideOthers, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
 
 export type AutosaveStatus =
   /** Changes are waiting for the quiet moment, or being written now. */
@@ -105,7 +105,7 @@ export interface Autosave {
    * `stop()` would drop (timeline hunt follow-up). When this tab's saves
    * are refused (another tab saved since, or the last visit's changes are
    * kept), the project as it is now is stored as a separate project named
-   * `fromAnotherTab`, behind the newer work, as recovery keeps a stale
+   * `keptCopyName`, behind the newer work, as recovery keeps a stale
    * tab's change (unsaved.ts), and its name returned (round 2 hunt A5:
    * Open dropped those changes); the same when finish's own save is
    * refused, found only then (returning null). Null when nothing is kept
@@ -350,12 +350,12 @@ export function startAutosave(
   }
 
   /**
-   * Stores `text` (the project read at `at`) as a separate project under a new id, named `fromAnotherTab`, behind the
+   * Stores `text` (the project read at `at`) as a separate project under a new id, named `keptCopyName`, behind the
    * newer work (it never becomes the project a visit opens): its name, and whether the store took it.
    */
   const keepApart = (text: string, at: Date): { name: string; kept: Promise<boolean> } => {
     const project = JSON.parse(text) as Project; // written by projectToJson just before
-    const name = fromAnotherTab(project.name);
+    const name = keptCopyName(project.name);
     return { name, kept: store.save(newId(), { ...project, name }, at, undefined, true).then(() => true, () => false) };
   };
 
