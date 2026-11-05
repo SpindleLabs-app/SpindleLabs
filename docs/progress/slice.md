@@ -46,6 +46,15 @@ Substeps for P0 are below; each later step is split into substeps by the thread 
 - P16. The supports hint, built with H1a.
 - The slicer innovations (true arcs, fits that know the design, printability while designing with suggested fixes, print settings that live in the design): owner's "these have got to happen"; they map onto P9 to P13 and the headline features.
 
+## Fits that know your printer (P13, then P10; Ben 2026-11-05)
+
+Print one small test piece, measure it with calipers, and from then on a hole or peg tagged with what it is for prints at the size that comes out right on that printer. The size typed in the design never changes; only the size sent to the printer does, and both are always shown. Works offline, no account.
+
+- [x] FK1. Measuring the printer (branch `claude/project-thread-kmfvvl`). `workspaces/design/src/fits.ts`: the model (an outside prints s·d + 2·e(d), a hole s·d − 2·c(d); s from the plate's length minus the 15 mm peg, e and c at 5, 10 and 15 mm with straight lines between), the checks a measured piece must pass (`LIMITS`, each refused in words), the fit tables (ISO 273 close and normal clearance, tap size D − pitch, press 0 / slide 0.15 / loose 0.30 mm gaps, halved when both parts are printed), `printedSize`, and the measures kept per nozzle in this browser (`spindlelabs.fits.<nozzle>`). `fit-piece.ts`: the test piece, a closed 120 × 20 × 2 mm plate with 5, 10, 15 mm holes and pegs, as an STL made without the kernel. `fit-calibration.ts`: Printer fits, opened from Slice for printing's fits line: download the piece's P1S file, type seven numbers, see what they mean, Save. Tests: hand-worked printer and fits, every limit at 0.9× and 1.1×, 500 seeded printers against a closed-form model, the piece watertight with its volume worked by hand and sliced by the real engine (40 layers), the dialog, `e2e/printer-fits.mjs` at 1280 and 375 px. Screenshots in the project's `printer-fits/` folder.
+- [ ] FK2. Tagging a hole or peg (Ben's design, 2026-10-28): in a circle's diameter box in a sketch, a small + under the number tags it with a `Fit` (fits.ts); the number stays the design size. Starts after the sketch dimensions (47e) and the Design data versions 9 to 11 are on main, as it adds a field to sketch circles (a new Design data version). Start: `drawCircle` in `sketch.ts`, the circle's typed box, `fitWords` for the tag's label.
+- [ ] FK3. Printed sizes: Slice for printing builds a copy of the design with every tagged circle at `fitSizes(...).printed` (the profile for the nozzle chosen), slices that, and lists each adjusted hole (typed, should come out, printed); the design is never changed. Start: `printFileOf` in `slice-print.ts`.
+- [ ] FK4. Ben's check on the P1S: print the test piece, type the numbers, then print an M3 bolt hole and a 6 mm pin's slide fit and try them.
+
 ## Headline features (H1–H3 in `docs/roadmap.md`)
 
 Which P pieces each headline substep needs, so a thread starting one of these P steps knows it is on the critical path to launch:

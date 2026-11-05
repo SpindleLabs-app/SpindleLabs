@@ -33,7 +33,7 @@ import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type Prope
 import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
-import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
+import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped, testPieceFile } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { deleteKeyTarget } from "./delete-key.ts";
@@ -529,6 +529,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extrasChanged(extras) {
       printExtras = extras;
       refreshArea();
+    },
+    // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
+    async testPiece(choices, file, alive) {
+      const print = await testPieceFile(kernel, choices, file.plate, file.nozzle);
+      if (!alive()) throw new SliceDropped();
+      const suggestedName = printFileName({ ...choices, supports: "off" }, file.plate, file.nozzle, "fit-test-piece");
+      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind: P1S_KIND, bytes: print.package });
+      if (r.status === "failed") throw new Error(r.message);
+      return { saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
     },
   });
   const deleting = deleteAsk(ctx.toolbar);
