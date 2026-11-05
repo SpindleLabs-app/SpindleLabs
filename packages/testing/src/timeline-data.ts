@@ -117,14 +117,16 @@ const modelRow = (doc: ModelDoc, i: number): Row => {
               ? `sphere ${item.diameter}`
               : item.kind === "move"
                 ? `move ${item.bodies.join(" ")}`
-                : `combine ${item.target} ${item.operation} ${item.tool}${item.keep ? " keeping it" : ""}`;
+                : item.kind === "duplicate"
+                  ? `copy of ${item.body}`
+                  : `combine ${item.target} ${item.operation} ${item.tool}${item.keep ? " keeping it" : ""}`;
   return `${item.id}: ${what}${item.suppressed ? " (suppressed)" : ""}`;
 };
 
 /** The id of the model's last solid item that builds, or null. */
 function modelPart(doc: ModelDoc): string | null {
   const r = rebuild(doc);
-  const solid = [...doc.items].reverse().find((i) => i.kind !== "sketch" && i.kind !== "move" && i.kind !== "combine" && r.results[i.id].status === "built");
+  const solid = [...doc.items].reverse().find((i) => i.kind !== "sketch" && i.kind !== "move" && i.kind !== "combine" && i.kind !== "duplicate" && r.results[i.id].status === "built");
   return solid?.id ?? null;
 }
 
@@ -249,7 +251,7 @@ export function runDataSession(steps: readonly SessionOp[], faults: Iterable<Dat
       throw new TimelineFailure(check, i, step, detail);
     };
     // Moves (35e2) came long after 24d1: the timeline sessions on Design check them.
-    if (["move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "hold-ref", "add-move", "set-move"].includes(step.op)) return void count("skipped");
+    if (["move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "hold-ref", "add-move", "set-move", "add-duplicate"].includes(step.op)) return void count("skipped");
     const resolved = resolveStep(model.doc, step);
     if (resolved === null || (resolved.kind === "edit" && resolved.op.op === "set-size" && model.doc.items.find((x) => x.id === (resolved.op as { item: string }).item)?.kind === "sketch"))
       return void count("skipped");

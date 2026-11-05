@@ -9,7 +9,7 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle, StlFile } from "@fission/core";
-import { actsOnBodies, bodyIdOf, bodyItem, isCombineItem, isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
+import { actsOnBodies, bodyIdOf, bodyItem, isCombineItem, isDuplicateItem, isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
 import { madeAfter, movedBodies, moveValues, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
@@ -332,7 +332,8 @@ export async function endSpec(kernel: KernelCalls, doc: DesignDocument, f: Featu
  */
 export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<BodySpec[]> {
   // Moved, or used by a Combine (35f1): only a rebuild says where it ends.
-  const moved = (f: Feature) => doc.timeline.features.some((m) => actsOnBodies(m) && m.dependsOn.includes(f.id));
+  // A Duplicate's copy (35e2) too: only the rebuild makes it.
+  const moved = (f: Feature) => isDuplicateItem(f) || doc.timeline.features.some((m) => actsOnBodies(m) && m.dependsOn.includes(f.id));
   let build: Awaited<ReturnType<typeof rebuildTimeline>> | null = null;
   if (features.some(moved)) {
     const cache = new BodyCache(kernel);

@@ -396,6 +396,18 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "duplicate-no-body": {
+    what: "a Duplicate builds but makes no copy (35e2)",
+    edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: b.handle, spec: b.spec, ...(b.curves ? { curves: b.curves } : {}) };\n  return { status: \"built\", bodies: [id] };", replace: "  return { status: \"built\" };" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "duplicate-source-names": {
+    what: "a copy's faces keep the names of the body it was copied from (35e2)",
+    edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: b.handle,", replace: "  bodies[id] = { feature: b.feature, handle: b.handle," }],
+    run: ["timeline"],
+    caught: "two faces share a name",
+  },
 };
 
 const FACE = "workspaces/design/src/face-sketch.ts";

@@ -407,7 +407,7 @@ export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d:
  */
 export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const old = doc.timeline.features.find((f) => f.id === id);
-  if (!old || !makesBody(old) || isSketchExtrude(old)) throw new Error(`there is no preset ${shown(id)} in the design`);
+  if (!old || !ownShape(old) || isSketchExtrude(old)) throw new Error(`there is no preset ${shown(id)} in the design`);
   let nextId = doc.nextId;
   const oldProfile = old.dependsOn.find((p) => doc.profiles.some((x) => x.id === p));
   const oldKind = presetKinds(doc)(old);
@@ -482,8 +482,28 @@ export const COMBINE_PARAMS = ["target", "tools", "operation", "keepTools"] as c
 /** Whether an item works on bodies other items made (a Move, a Combine), depending on those items, rather than making one of its own. */
 export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f);
 
-/** Whether an item makes a body of its own: anything but a sketch, a Move or a Combine. */
+/** Whether an item makes a body of its own: anything but a sketch, a Move or a Combine (a Duplicate's copy is its own body). */
 export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f);
+
+/**
+ * A Duplicate (step 35e2): a copy of one body made before it (its `body`,
+ * by body id), where that body is at the Duplicate's place in the timeline.
+ * The copy is a body of its own, `body:<the Duplicate>`, numbered like any
+ * (`makesBody`), its faces named by the Duplicate as an extrude's are by
+ * the extrude; it follows its source (an edit to the source's sizes
+ * changes the copy too) but not what is done to the source after it. It
+ * depends on the item that made its body, as a Move does.
+ */
+export const isDuplicateItem = (f: Feature) => f.intent.type === "duplicate";
+
+/** The body a Duplicate copies, by body id. */
+export const duplicatedBody = (f: Feature): string => f.intent.parameters.body as string;
+
+/** Whether an item is built from bodies other items made: a Move, a Combine or a Duplicate. */
+export const onBodies = (f: Feature) => actsOnBodies(f) || isDuplicateItem(f);
+
+/** Whether an item's body is a shape of its own (a preset, an extrude), with sizes to edit: every item that makes a body but a Duplicate, whose body is a copy. */
+export const ownShape = (f: Feature) => makesBody(f) && !isDuplicateItem(f);
 
 /** A Combine's bodies by body id: its target, then its tools in the order picked. */
 export function combineBodies(f: Feature): { target: string; tools: string[]; operation: CombineOperation; keepTools: boolean } {
@@ -617,6 +637,8 @@ export function specOf(document: DesignDocument, feature: Feature): BodySpec {
       if (!profile) throw new Error(`${feature.intent.summary}: its profile ${shown(p.profile)} is missing`);
       return { extrude: { profile: outline(profile.kind, profile.width, profile.depth), distance: num(feature, "distance") } };
     }
+    case "duplicate":
+      throw new Error(`${feature.intent.summary}: a copy is built by the rebuild, from its body as built there`);
     default:
       throw new Error(`unknown feature type ${feature.intent.type}`);
   }
@@ -1114,6 +1136,7 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
     if (isSketchItem(f)) return "Sketch";
     if (isMoveItem(f)) return "Move";
     if (isCombineItem(f)) return "Combine";
+    if (isDuplicateItem(f)) return "Copy";
     if (isSketchExtrude(f)) return "Extrude";
     const kind = kindOf(f);
     return kind === null ? "Item" : SHAPE_LABELS[kind];
@@ -1208,6 +1231,23 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
  * item's own ("body:feature-3", the item making a body), or a piece
  * ("body:feature-5/piece:1") the data's bodies list numbers (35ec).
  */
+/**
+ * A Duplicate, checked (step 35e2): its one parameter `body`, a body made
+ * before it (one deleted since is allowed, as a Move's: the rebuild fails
+ * the Duplicate naming it), and `dependsOn` the item that made it.
+ */
+function checkDuplicate(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design duplicate ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of Object.keys(p)) if (key !== "body") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a duplicate doesn't have`);
+  const id: unknown = p.body;
+  const maker = typeof id === "string" ? bodyItem(id) : null;
+  const there = maker === null ? undefined : byId.get(maker);
+  const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+  if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} copies ${shown(id)}, which is not a body made before it in the timeline`);
+  if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it copies (${maker})`);
+}
+
 function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>, id: string): boolean {
   const maker = bodyItem(id);
   if (maker === null) return false;
@@ -1414,11 +1454,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
-  for (const f of d.timeline.features) if (makesBody(f)) shapeWith(f, (id) => profiles.get(id));
+  for (const f of d.timeline.features) if (ownShape(f)) shapeWith(f, (id) => profiles.get(id));
   // A Move's numbers and bodies (step 35e2).
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
   // A Combine's bodies and operation (step 35f1).
   for (const f of d.timeline.features) if (isCombineItem(f)) checkCombine(d, f, byId);
+  // A Duplicate's body (step 35e2).
+  for (const f of d.timeline.features) if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
   // Each dependency an id (after the Move's own check, which says what a move's should be).
   for (const f of d.timeline.features)
     for (const id of f.dependsOn as unknown[]) {
@@ -1481,7 +1523,7 @@ function asking(document: DesignDocument): Asked {
 /** What an item is built on, of the items in the timeline: a sketch's (`sketchInputs`); an extrude of a sketch, the sketch; else nothing. */
 function inputsOf(a: Asked, f: Feature): Feature[] {
   if (isSketchItem(f)) return sketchInputs(f, a.contents.get(f.id)).flatMap((id) => a.byId.get(id) ?? []);
-  if (actsOnBodies(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
+  if (onBodies(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
   const sketch = isSketchExtrude(f) ? a.sketches.get(f.intent.parameters.sketch) : undefined;
   return sketch === undefined ? [] : [sketch];
 }
@@ -1512,8 +1554,8 @@ function buildsNow(a: Asked, f: Feature): boolean {
   if (at < 0 || f.suppressed) return false;
   if (a.marker !== null && at > a.marker) return false;
   if (greyedIn(a, f) !== null) return false;
-  // A Move builds when every body it moves does; a Combine when its target and tools do.
-  if (actsOnBodies(f)) return inputsOf(a, f).every((x) => buildsIn(a, x));
+  // A Move builds when every body it moves does; a Combine when its target and tools do; a Duplicate when its body does.
+  if (onBodies(f)) return inputsOf(a, f).every((x) => buildsIn(a, x));
   if (isSketchItem(f) || !isSketchExtrude(f)) return true;
   const [sketch] = inputsOf(a, f);
   // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2).
@@ -1564,15 +1606,15 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
   for (const f of open) {
     // A sketch: its face's feature, then each feature a pin (27c) or a projection (27d) names, as `inputsOf` (one lookup each, audit S2).
     const sketch = isSketchExtrude(f) ? sketches.get(f.intent.parameters.sketch) : undefined;
-    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : actsOnBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : sketch === undefined ? [] : [sketch];
+    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : sketch === undefined ? [] : [sketch];
     const input = inputs[0];
     let by: string | null = null;
     for (const x of inputs) if ((by = x.suppressed ? x.id : (greyed.get(x) ?? null)) !== null) break;
     if (by !== null) greyed.set(f, by);
     // A sketch builds, on a face followed or held (26c); an extrude when its sketch does (a sketch on an origin plane
     // whenever it is in range and on, wherever it is), or from its kept shape when it is gone.
-    // A Move when every body it moves builds (step 35e2), a Combine when its target and tools do (35f1).
-    else if (actsOnBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input)))) building.add(f);
+    // A Move when every body it moves builds (step 35e2), a Combine when its target and tools do (35f1), a Duplicate when its body does.
+    else if (onBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input)))) building.add(f);
   }
   return { building, greyed };
 }
@@ -1602,7 +1644,7 @@ export function partFeature(document: DesignDocument): Feature | null {
   const { features } = document.timeline;
   // One set of answers for the whole search, so each item is worked out once.
   const a = asking(document);
-  for (let i = features.length - 1; i >= 0; i--) if (makesBody(features[i]) && buildsIn(a, features[i])) return features[i];
+  for (let i = features.length - 1; i >= 0; i--) if (ownShape(features[i]) && buildsIn(a, features[i])) return features[i];
   return null;
 }
 

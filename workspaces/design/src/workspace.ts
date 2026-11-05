@@ -5,11 +5,12 @@
 import { wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
+import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, pastedBodies } from "./duplicate.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
@@ -120,6 +121,15 @@ interface Inspecting {
   printCheck(): void;
 }
 
+/** Duplicate in Modify ▾ (step 35e2): what it does, and why it is off. */
+interface Duplicating {
+  run(): void;
+  /** Why it can't be chosen now (nothing picked), or null. */
+  off(): string | null;
+}
+
+const DUPLICATE_TITLE = "Duplicate: copy the picked bodies where they are, then move the copies. A copy follows its body's sizes. A Duplicate in the timeline, at the marker.";
+
 /** Why Body facts is off with nothing built. */
 const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and its volume, area and faces show here.";
 
@@ -131,7 +141,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting, duplicate: Duplicating): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -212,6 +222,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       items: [
         { id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove },
         { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate },
+        { id: "modify-menu-duplicate", label: "Duplicate", icon: "duplicate", title: DUPLICATE_TITLE, off: duplicate.off() ?? undefined, run: duplicate.run },
         ...(combining ? [{ id: "modify-menu-combine", label: "Combine", icon: "combine" as const, title: combineTitle, run: onCombine }] : []),
       ],
     },
@@ -432,6 +443,9 @@ interface Warned {
   lost?: true;
 }
 
+/** The open design's token for copied bodies (duplicate.ts `copiedText`). */
+let designToken = "0";
+
 function mount(ctx: WorkspaceContext): MountedWorkspace {
   const panel = propertiesPanel(ctx.properties);
   const { inputs } = panel;
@@ -486,7 +500,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
     printCheck: () => togglePrintCheck(),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -902,7 +916,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** The body the boxes describe (`boxesPart`) in `doc` while it is a body that builds, else the last body; null with none. */
   function boxesFeature(doc: DesignDocument): Feature | null {
     const f = boxesPart === null ? undefined : doc.timeline.features.find((x) => x.id === boxesPart);
-    return f !== undefined && makesBody(f) && builds(doc, f) ? f : partFeature(doc);
+    return f !== undefined && ownShape(f) && builds(doc, f) ? f : partFeature(doc);
   }
   /** The boxes and the Shape choice show `part`'s shape and sizes, and a size typed now changes it. */
   function showPartSizes(doc: DesignDocument, part: Feature) {
@@ -1074,6 +1088,44 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.selection.set([bodyReference(body)]);
     startMove();
     moveFromInsert = true;
+  }
+
+  // A new token for copied bodies whenever Design opens other than by Undo or Redo putting it back (a project opened,
+  // another workspace left): a paste finds only bodies copied from the design on screen, through any undo.
+  if (!ctx.history.restoring()) designToken = Math.floor(Math.random() * 2 ** 48).toString(36);
+
+  /** Why Duplicate is off: no body picked (a face or edge picks its body). */
+  function duplicateOff(): string | null {
+    return pickedBodies(ctx.selection.items, lastScene).length === 0 ? "Pick one or more bodies first, then Duplicate." : null;
+  }
+
+  /**
+   * Duplicate (step 35e2), from Modify ▾: a Duplicate of each picked body
+   * at the marker (`insertDuplicates`), one undo step, then, as Insert does,
+   * the Move panel opens on the copies so they can be slid off their bodies
+   * straight away (Fusion's copy and paste); Cancel leaves them where they are.
+   */
+  async function duplicateBodies(bodies?: readonly string[]) {
+    const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+    if (picked.length === 0) return;
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    leaveCombine();
+    if (mode.kind !== "none") leaveSketch(false);
+    let added: ReturnType<typeof insertDuplicates>;
+    try {
+      added = insertDuplicates(designDoc(), picked);
+    } catch (err) {
+      return panel.showError(err instanceof Error ? err.message : String(err));
+    }
+    ctx.selection.clear();
+    await update(DUPLICATE_STEP, undefined, added.doc);
+    const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
+    const copies = copiesOf(added.ids).filter((b) => shownNow.has(b));
+    if (copies.length === 0 || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
+    ctx.selection.set(copies.map(bodyReference));
+    startMove();
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -3530,8 +3582,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label), mode.kind === "edit" ? mode.tool.sketch : null);
     },
     // Escape clears the selection; Copy with one profile selected runs Copy as SVG (shortcuts.ts).
-    shortcut(id) {
+    shortcut(id, e) {
       if (!shown) return false; // the shell only asks while shown; never act asleep
+      // Ctrl+D duplicates the picked bodies; Ctrl+C copies them (with no profile picked) and Ctrl+V pastes a Duplicate
+      // of each, outside a sketch (missing basics: Fusion's keys); the pasted copies open in Move as Duplicate's do.
+      if (id === "duplicate-bodies") return mode.kind === "none" && duplicateOff() === null ? (void duplicateBodies(), true) : false;
+      if (id === "copy-svg" && mode.kind === "none" && designShortcut(id, ctx.selection.items) === null) {
+        const picked = pickedBodies(ctx.selection.items, lastScene);
+        const data = (e as ClipboardEvent | undefined)?.clipboardData;
+        if (picked.length === 0 || !data) return false;
+        data.setData("text/plain", copiedText(designToken, picked));
+        return true;
+      }
+      if (id === "paste-bodies") {
+        const bodies = mode.kind === "none" ? pastedBodies((e as ClipboardEvent | undefined)?.clipboardData?.getData("text/plain") ?? "", designToken) : null;
+        return bodies === null ? false : (void duplicateBodies(bodies), true);
+      }
       // Escape during a drag on the timeline bar calls the drag off, and only that (timeline hunt, finding 7).
       if (id === "clear-selection" && callOffDrag()) return true;
       // Escape with Pan or Zoom lit on the view bar turns it off, back to Orbit, and only that (U7b, as in Fusion).

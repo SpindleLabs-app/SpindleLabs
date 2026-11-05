@@ -125,12 +125,12 @@ try {
       await page.keyboard.press("Control+a");
       await page.keyboard.press("Control+c");
       assert.deepEqual(await page.evaluate(() => navigator.clipboard.readText()), "40");
-      // With the body selected instead, Ctrl+C leaves the clipboard alone (no verb copies a body yet).
+      // With the body selected instead, Ctrl+C copies the body (missing basics: for Ctrl+V, duplicate.mjs), not an SVG.
       await page.click("#browser [data-node=body-1]");
       await clearClipboard(page);
       const note = await page.textContent("#action-note");
       await page.keyboard.press("Control+c");
-      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "nothing yet");
+      assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^SpindleLabs bodies [a-z0-9]+: body:feature-1$/);
       await page.waitForTimeout(100); // a verb run by mistake would answer in the note by now
       assert.equal(await page.textContent("#action-note"), note, "no verb ran");
     } finally {

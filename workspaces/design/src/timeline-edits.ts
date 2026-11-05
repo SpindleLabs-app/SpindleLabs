@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isPiece, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -163,6 +163,7 @@ export function usedSketchHidden(doc: DesignDocument, id: string): DesignDocumen
  */
 function link(doc: DesignDocument, f: Feature, on: Feature): string {
   if (isMoveItem(f)) return "a move of";
+  if (isDuplicateItem(f)) return "a copy of";
   if (!isSketchItem(f)) return "built from";
   const plane = f.intent.parameters.plane;
   if (isFacePlane(plane) && faceFeature(plane) === on.id) return "drawn on a face of";

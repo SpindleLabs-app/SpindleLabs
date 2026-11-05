@@ -668,6 +668,8 @@ const DESIGN_CAUGHT_BY: Record<Exclude<DesignFault, "leak-bodies">, string> = {
   // From 26e's sessions (face sketches drawn too) the first catch is the marker moved to the start with no marker
   // already there: Design reads "start" as none, so it changes nothing where the model changes the document.
   "marker-start-ignored": "outcome differs from the model",
+  // 35e2: a copy put in past the marker is in another place in the timeline than the model's.
+  "duplicate-at-end": "the rebuild differs from the model",
 };
 
 /**
