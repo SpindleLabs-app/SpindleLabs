@@ -30,11 +30,13 @@ import { browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./
 import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
+import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
 import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
+import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
@@ -760,10 +762,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     resultsNow = build.results;
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
-    const result = feature && build.results[feature.id];
-    let failure: string | undefined;
-    if (result?.status === "failed") failure = result.message;
-    else if (feature && result && (result.status !== "built" || build.bodies[bodyIdOf(feature.id)] === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
+    // A part whose body a later Combine used up did not fail (part-failure.ts).
+    const failure = partFailure(doc.timeline.features, feature, build);
     return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
   }
   /**
@@ -1157,6 +1157,28 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }));
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
+    return true;
+  }
+
+  /**
+   * Delete or Backspace with no sketch open (round 2 hunt E5): asks to delete
+   * the item of the timeline row or bar item that has focus, else the item
+   * whose body everything selected lies on (`deleteKeyTarget`), as the row
+   * menu's Delete does: the are-you-sure box when something is built from
+   * it, one undo step. Not while a panel or box is open, and nothing (the
+   * key does what it would) when there is no one item to ask about.
+   */
+  function deleteKey(): boolean {
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    if (!doc || extruding || moveBox.shown || combineBox.shown || deleting.open !== null) return false;
+    const on = document.activeElement;
+    const barItem = on instanceof HTMLElement ? on.closest<HTMLElement>("[data-item]") : null;
+    const row = on instanceof HTMLElement && ctx.browser.contains(on) ? on.closest<HTMLElement>("[data-node], [data-more]") : null;
+    const focus = barItem?.dataset.item !== undefined ? { item: barItem.dataset.item } : row ? { node: row.dataset.node ?? row.dataset.more! } : null;
+    const target = deleteKeyTarget(doc, lastScene, ctx.selection.items, focus, failedNow);
+    if (target === null) return false;
+    const editing = editingId();
+    void chooseEntry(menuHost, target, "delete", editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)));
     return true;
   }
 
@@ -3257,6 +3279,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (typedKey !== null) return mode.kind === "edit" && typedFields(mode.tool).length > 0 ? (typed.start(typedKey), true) : false;
       const kind = sketchToolKey(id);
       if (kind) return mode.kind === "edit" ? (chooseTool(kind), true) : false;
+      // Delete or Backspace outside a sketch (round 2 hunt E5): the focused row's or the selected body's item, the menu's way.
+      if ((id === "delete-selection" || id === "delete-selection-back") && mode.kind === "none") return deleteKey();
       const items = ctx.selection.items;
       const what = designShortcut(id, items);
       if (what === "clear") ctx.selection.clear();
