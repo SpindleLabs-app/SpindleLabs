@@ -34,7 +34,7 @@
 // only when a name is shared (a kept tool's face and the wall it cut).
 
 import { bodyName, FACINGS, rebuildBooleans, type BlockFeature, type BooleanFeature, type DescribedFace, type Facing, type Rect3 } from "./boolean-naming-model.ts";
-import type { EdgeName, FaceName, FaceRole, ModelBody, ModelFace, Vec3 } from "./timeline-model.ts";
+import type { EdgeName, FaceName, FaceRole, ModelBody, ModelFace, Motion2, Vec3 } from "./timeline-model.ts";
 
 /** A Combine's operations, as Design's panel has them. */
 export type CombineOperation = "join" | "cut" | "intersect";
@@ -170,10 +170,14 @@ export type Combined = { target: ModelBody; pieces: ModelBody[] } | { failed: st
 /**
  * The Combine `id` (at timeline place `place`) of `target` with `tool`, both
  * with forms: the forms merged (each feature once, in timeline order) and
- * the Combine run in the naming model's world. The target's body keeps
- * where its Moves had put it (`motion`); so do the pieces.
+ * the Combine run in the naming model's world. Each face of the result
+ * and the pieces keeps where the Moves had put the input body it came
+ * from (35f1e2, `ModelFace.motion`, found by `motionFrom`), so a later
+ * sketch on a tool's face is carried by the tool's Moves, never the
+ * target's. With `targetMotion` (the planted bug "combine-face-moves-with-target"),
+ * every face has the target's.
  */
-export function combineBodies(target: ModelBody, tool: ModelBody, c: { id: string; operation: CombineOperation; keep: boolean }, place: number): Combined {
+export function combineBodies(target: ModelBody, tool: ModelBody, c: { id: string; operation: CombineOperation; keep: boolean }, place: number, targetMotion = false): Combined {
   const a = formOf(target);
   const b = formOf(tool);
   if (a === undefined || b === undefined) throw new Error("harness: a Combine of a body with no form");
@@ -188,7 +192,7 @@ export function combineBodies(target: ModelBody, tool: ModelBody, c: { id: strin
   const piece = `${bodyName(c.id)}/piece:`;
   const made = (id: string): ModelBody => {
     const d = r.bodies.find((x) => x.id === id)!;
-    const body = toModel(d.volume, d.faces, d.edges, target.motion);
+    const body = toModel(d.volume, d.faces, d.edges, (f) => (targetMotion ? target.motion : motionFrom(f, [target, tool])));
     kinds.set(body, { steps, body: id });
     return body;
   };
@@ -200,10 +204,18 @@ export function combineBodies(target: ModelBody, tool: ModelBody, c: { id: strin
 }
 
 /** A body of the naming model's world in the timeline model's terms: faces by their names (the shown one first, rule 4), edges by their two faces (rule 5, named in `tagDesign`). */
-function toModel(volume: number, faces: readonly DescribedFace[], edges: readonly { length: number; centroid: readonly number[]; between: readonly [number, number] }[], motion: ModelBody["motion"]): ModelBody {
+function toModel(volume: number, faces: readonly DescribedFace[], edges: readonly { length: number; centroid: readonly number[]; between: readonly [number, number] }[], motionOf: (f: DescribedFace) => Motion2 | undefined): ModelBody {
   const out: ModelFace[] = faces.map((f) => {
     const [shown, ...rest] = f.names.map(parseName);
-    const face: ModelFace = { name: shown, ...(rest.length > 0 && { also: rest }), area: f.area, centroid: [...f.centroid] as unknown as Vec3, ...(f.facing === "-z" && { down: true as const }) };
+    const motion = motionOf(f);
+    const face: ModelFace = {
+      name: shown,
+      ...(rest.length > 0 && { also: rest }),
+      area: f.area,
+      centroid: [...f.centroid] as unknown as Vec3,
+      ...(f.facing === "-z" && { down: true as const }),
+      ...(motion && { motion: { a: motion.a, t: [motion.t[0], motion.t[1]] as [number, number] } }),
+    };
     regions.set(face, f.rects);
     return face;
   });
@@ -211,9 +223,33 @@ function toModel(volume: number, faces: readonly DescribedFace[], edges: readonl
     volume,
     faces: out,
     edges: edges.map((e) => ({ name: pairName(out[e.between[0]].name, out[e.between[1]].name), length: e.length, centroid: [...e.centroid] as unknown as Vec3, between: [e.between[0], e.between[1]] })),
-    ...(motion && { motion }),
     combined: true,
   };
+}
+
+/** Where the Moves had put the body face `f` of `b` came from (35e2h, 35f1e2): a combined body's per face, a plain body's its own. */
+export const faceMotion = (b: ModelBody, f: ModelFace): Motion2 | undefined => (b.combined ? f.motion : b.motion);
+
+/**
+ * The motion of the input face a result face lies on (35f1e2): the first
+ * face of the inputs (target first) carrying its shown name (feature,
+ * role and curve; tags are new each Combine) whose region holds the middle
+ * of the result face's first rectangle; else the first carrying the name
+ * at all (a face merged from two lies on the target's first, rule 4).
+ * Found by name and region, not by the kernel's history as Design does.
+ */
+function motionFrom(f: DescribedFace, inputs: readonly ModelBody[]): Motion2 | undefined {
+  const key = plainKey(parseName(f.names[0]));
+  const r = f.rects[0];
+  const mid = r === undefined ? undefined : r[0].map((x, i) => (x + r[1][i]) / 2);
+  let first: { motion: Motion2 | undefined } | undefined;
+  for (const b of inputs)
+    for (const g of b.faces) {
+      if (![g.name, ...(g.also ?? [])].some((n) => plainKey(n) === key)) continue;
+      if (mid !== undefined && faceHolds(g, mid)) return faceMotion(b, g);
+      first ??= { motion: faceMotion(b, g) };
+    }
+  return first?.motion;
 }
 
 /** Rule 5's edge name: its two faces' full names (with their tags), as a set. */

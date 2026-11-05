@@ -77,6 +77,8 @@ test("seeded sessions on the model pass, and reach every kind of outcome", async
     "builds:most",
     // Step 24f4: a design with nothing built saved and opened, like any other.
     "save-open:nothing-built",
+    // 35f1e2: the check needing no model compared sketches whose face did not move.
+    "sketch-still:checked",
   ];
   const missing = wanted.filter((k) => !total[k]);
   assert.deepEqual(missing, [], `never reached: ${missing.join(", ")}`);
@@ -128,6 +130,7 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   // The first carrier taken for a split face: the sessions meet one only rarely (a reference held from before a Combine
   // that splits its face into pieces alike); timeline-combine.test.ts catches it by hand too.
   "combine-first-piece": "a reference guessed between pieces",
+  "combine-face-moves-with-target": "the rebuild differs from the model",
 };
 
 /** Faults the first 24 seeds don't reach, and the seeds that do (found by searching 1 to 200; search again if the sessions change). */

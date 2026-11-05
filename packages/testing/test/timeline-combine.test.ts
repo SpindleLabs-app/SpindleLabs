@@ -3,7 +3,8 @@
 // the working next to each assertion.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyOp, createModel, faceKey, rebuild, resolveFace, UnmodelledCombine, type ConcreteOp, type ModelBody, type TimelineModel } from "../src/timeline-model.ts";
+import { applyOp, createModel, faceKey, rebuild, resolveFace, UnmodelledCombine, type ConcreteOp, type ModelBody, type ModelFault, type TimelineModel } from "../src/timeline-model.ts";
+import { sketchMovedAlone } from "../src/timeline-session.ts";
 
 const run = (m: TimelineModel, ...ops: ConcreteOp[]) => ops.map((op) => applyOp(m, op));
 const faces = (b: ModelBody | undefined) => (b?.faces ?? []).map((f) => [faceKey(f.name), (f.also ?? []).map(faceKey), f.area]);
@@ -114,4 +115,47 @@ test("a Combine of a curved body is refused by the kernel's rule (error), changi
   run(t, { op: "add-extrude", sketch: "item-2", distance: 5 });
   run(t, { op: "add-combine", target: "item-1", tool: "item-6", operation: "join", keep: false });
   assert.throws(() => rebuild(t.doc), UnmodelledCombine);
+});
+
+test("hand-worked: a sketch on a face from a Combine's tool stays put when the target's Move changes; one on the target's face slides with it (35f1e2)", () => {
+  // A 20 × 20 × 10 (item-1) moved +10 in x (item-2): x 10..30. B 20 × 10 × 30 (item-3) moved to (25, 5, −5) (item-4):
+  // x 25..45, y 5..15, z −5..25, through A at x 25..30 with no faces on each other. Join, A the target (item-5). A
+  // sketch on B's top (z = 25, item-6), drawn with B's motion (0°, (25, 5)), and one on A's top (z = 10, item-8: its
+  // circle took curve-7), drawn with A's (0°, (10, 0)). The same edits on a model with the planted bug
+  // "combine-face-moves-with-target" (the mistake Design and the model both made before 35f1e2: every face of a
+  // Combine's result carried by the target's Moves).
+  const right = createModel();
+  const planted = createModel(["combine-face-moves-with-target"]);
+  const both = (...ops: ConcreteOp[]) => [right, planted].forEach((m) => run(m, ...ops));
+  both(
+    { op: "add-preset", kind: "box", sizes: [20, 20, 10] },
+    { op: "add-move", bodies: ["item-1"], shift: [10, 0, 0], turnZ: 0, pivot: [0, 0] },
+    { op: "add-preset", kind: "box", sizes: [20, 10, 30] },
+    { op: "add-move", bodies: ["item-3"], shift: [25, 5, -5], turnZ: 0, pivot: [0, 0] },
+    { op: "add-combine", target: "item-1", tool: "item-3", operation: "join", keep: false },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [0, 0], radius: 1 }, face: { feature: "item-3", role: "top" } },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [0, 0], radius: 1 }, face: { feature: "item-1", role: "top" } },
+  );
+  const placed = (m: TimelineModel) => {
+    const r = rebuild(m.doc, m.faults);
+    return { b: r.results["item-6"], a: r.results["item-8"] };
+  };
+  const before = [rebuild(right.doc), rebuild(planted.doc, planted.faults)];
+  // As drawn: each where it was drawn, carried by nothing yet (the planted bug too: it records A's motion for B's sketch).
+  for (const m of [right, planted]) assert.deepEqual(placed(m), { b: { status: "built", lift: 25 }, a: { status: "built", lift: 10 } });
+  // A now moved +20: B's top has not moved, so its sketch stays (no turn); A's top moved 10 further, and so does its
+  // sketch: the motion since drawn turns by 0 and takes the world's origin to (20, 0) − (10, 0) = (10, 0).
+  both({ op: "set-move", item: "item-2", shift: [20, 0, 0], turnZ: 0, pivot: [0, 0] });
+  assert.deepEqual(placed(right), { b: { status: "built", lift: 25 }, a: { status: "built", lift: 10, turn: { x: [1, 0], at: [10, 0] } } });
+  // With the planted bug, B's sketch slides those 10 mm too, along a face that did not move.
+  assert.deepEqual(placed(planted).b, { status: "built", lift: 25, turn: { x: [1, 0], at: [10, 0] } });
+  // The independent check (timeline-session.ts `sketchMovedAlone`) needs no model: B's top is where it was (area
+  // 20 · 10 = 200, its four edges unmoved), so its sketch must be too. It passes the right rebuilds, comparing B's
+  // sketch only (A's top moved), and catches the planted bug's.
+  const sketches = [
+    { id: "item-6", face: { feature: "item-3", role: "top" as const } },
+    { id: "item-8", face: { feature: "item-1", role: "top" as const } },
+  ];
+  assert.equal(sketchMovedAlone(before[0], rebuild(right.doc), sketches), 1);
+  assert.match(String(sketchMovedAlone(before[1], rebuild(planted.doc, planted.faults), sketches)), /^item-6 on item-3\/top: lift 25 turn null before, lift 25 turn \{"x":\[1,0\],"at":\[10,0\]\} now/);
 });

@@ -71,7 +71,7 @@
 // `faults` plants the bugs the session tests use to prove the harness
 // catches them (timeline-session.ts); real code never passes any.
 
-import { boxForm, combinable, combineBodies, curvedBody, findFace, formOf, isCurved, movedForm, sameKind, tagDesign, UnmodelledCombine, type CombineOperation } from "./timeline-combine.ts";
+import { boxForm, combinable, combineBodies, curvedBody, faceMotion, findFace, formOf, isCurved, movedForm, sameKind, tagDesign, UnmodelledCombine, type CombineOperation } from "./timeline-combine.ts";
 
 export { UnmodelledCombine, type CombineOperation };
 
@@ -197,6 +197,8 @@ export interface ModelFace {
   centroid: Vec3;
   /** A Combine's face looking down (35f1e): a cut's cavity roof carries the tool's top (rule 2), and looks down, -z. */
   down?: true;
+  /** A combined body's face (35f1e2): where the Moves had put the input body it came from (left out: not moved); read with `faceMotion`. */
+  motion?: Motion2;
 }
 
 /**
@@ -345,7 +347,8 @@ export type ModelFault =
   | "combine-op-ignored"
   | "combine-refusal-changes"
   | "combine-tags-dropped"
-  | "combine-first-piece";
+  | "combine-first-piece"
+  | "combine-face-moves-with-target";
 
 export const MODEL_FAULTS: readonly ModelFault[] = [
   "reorder-past-dependency",
@@ -387,6 +390,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "combine-refusal-changes",
   "combine-tags-dropped",
   "combine-first-piece",
+  "combine-face-moves-with-target",
 ];
 
 /** The faults only a session with Combines (step 35, `LANDED`) can catch. */
@@ -790,7 +794,8 @@ function combineRun(item: CombineItem, done: Record<string, ItemResult>, faults:
   if (isCurved(target.body!) || isCurved(tool.body!)) return refused();
   if (!combinable(target.body!) || !combinable(tool.body!) || !formOf(target.body!) || !formOf(tool.body!))
     throw new UnmodelledCombine(`${item.id} combines a flat body the model has no exact boolean for`);
-  const made = combineBodies(target.body!, tool.body!, item, place);
+  // Planted bug ("combine-face-moves-with-target"): every face of the result carried by the target's Moves.
+  const made = combineBodies(target.body!, tool.body!, item, place, faults.has("combine-face-moves-with-target"));
   if ("failed" in made) return refused();
   // Planted bug ("combine-not-held"): the target's row keeps its body as it was.
   if (!faults.has("combine-not-held")) done[item.target] = { ...target, body: made.target };
@@ -860,7 +865,7 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
   if (found !== null && "body" in found) {
     const body = bodies[found.body];
     // 35e2h: carried along the face by what its body's Moves did since it was drawn. Planted bug ("sketch-not-carried"): only its height follows.
-    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(body.motion, item.on.motion);
+    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(faceMotion(body, body.faces[found.face]), item.on.motion);
     // 35f1e: a face a Combine turned to look down (a cut's roof carrying a tool's top) has the sketch facing down too.
     const down = body.faces[found.face].down;
     if (down) return { status: "built", lift: body.faces[found.face].centroid[2], down, ...(found.split && { plane: "plane-split" as const }) }; // its turn is not compared
@@ -1139,7 +1144,7 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
       const face = holder?.faces.find((f) => faceKey(f.name) === faceKey(op.face));
       if (face === undefined || (op.face.role !== "top" && op.face.role !== "end")) throw new Error(`no flat face ${faceKey(op.face)} to sketch on`);
       // 35e2h: with where its body's Moves had put it, as the app's pick records it.
-      const motion = holder?.motion;
+      const motion = holder && face ? faceMotion(holder, face) : undefined;
       const on: OnFace = {
         feature: op.face.feature,
         role: op.face.role,

@@ -23,6 +23,8 @@ export interface ShownBody {
   names: BodyNames;
   /** Where the Moves before it put its own frame (face-sketch.ts `bodyFrame`); none when not moved. */
   frame?: Plane;
+  /** A Combine's result (35f1e2): each face's frame, as its input body's was (rebuild.ts `BuiltBody.frames`); read with built-body.ts `shownFrame`. */
+  frames?: readonly (Plane | null)[];
   /** A Combine's result (35f1): its faces named by its Combine. */
   combined?: true;
   /** Once a Combine has built (35f1e): every body of the design named as one (`SceneDesign`), and this body's place in it. */
@@ -90,7 +92,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
       continue;
     }
     const frame = frameOfBody(b);
-    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.named !== undefined && { combined: true as const }) });
+    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.frames && { frames: b.frames }), ...(b.named !== undefined && { combined: true as const }) });
   }
   // 35f1e: once a Combine built, the design is named as one, over every body it holds, hidden ones too.
   if (!ids.some((id) => build.bodies[id].named !== undefined)) return shown;

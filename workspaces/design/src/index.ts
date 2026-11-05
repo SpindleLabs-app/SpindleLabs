@@ -29,6 +29,7 @@ export { designNames, featureBody, resolveFaceName, type DesignNames, type Named
 export { changedCombine, COMBINE_STEP, combineSummary, insertCombine } from "./combine.ts";
 export { combineBodies, isCombineItem, type CombineOperation } from "./document.ts";
 export { bodyOf, findInScene, joinBodies, resolveInScene, sceneHit, sceneReference, shownBodies, type Found, type Scene, type ShownBody } from "./scene.ts";
+export { shownFrame } from "./built-body.ts";
 export { COPY_SVG, designActions, DOWNLOAD_STL, joinStl, partBody, registerDesignActions, representationsOf, shownBodyRefs, STL_OVERLAY, targetsOf, type CopySvg, type SaveFile } from "./actions.ts";
 export { rounding, snapLabel, snapOnSketch, snapPointer, snapTargets, SNAP_PIXELS, type Rounding, type Snap } from "./snap.ts";
 export { deleteItem, itemName, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS, type ReorderCause, type Reordered } from "./timeline-edits.ts";

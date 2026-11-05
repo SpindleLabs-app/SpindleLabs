@@ -224,6 +224,19 @@ export const PLANTS: Record<ModelFault, Plant> = {
     caught: "a reference guessed between pieces",
     why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner)",
   },
+  // 35f1e2: recorded on the #132 kernel built locally with the sessions given MODEL_KNOWS, 2026-11-05.
+  "combine-face-moves-with-target": {
+    what: "every face of a Combine's result is carried by the target's Moves, so a sketch on a tool's face slides when the target moves",
+    edits: [
+      {
+        file: REBUILD,
+        find: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);",
+        replace: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], new Map([...built.keys()].map((h) => [h, built.get(t.handle)!] as const)));",
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
   "save-stamps": {
     what: "each save writes a counter into the file",
     edits: [

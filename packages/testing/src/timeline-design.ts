@@ -61,6 +61,7 @@ import {
   reorderItem,
   findInScene,
   sceneHit,
+  shownFrame,
   settleKept,
   shownBodies,
   shapeOf,
@@ -272,7 +273,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     const drawn = drawnOnFace(s.bodies[hit.body].view, hit.index);
     if (drawn === null) throw new Error(`harness: ${faceKey(name)} is curved`);
     // 35e2h: with where the Moves had put the body, as the pick records it (face-pick.ts `sketchSpot`).
-    return { ...drawn, body: s.bodies[hit.body].frame ?? worldFrame() };
+    return { ...drawn, body: shownFrame(s.bodies[hit.body], hit.index) ?? worldFrame() };
   }
 
   /** The edit on Design's side: the new state and the ids it made, or a refusal. */

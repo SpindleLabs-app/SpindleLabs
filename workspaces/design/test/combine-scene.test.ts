@@ -15,7 +15,7 @@ import { insertCombine } from "../src/combine.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { sketchSpot } from "../src/face-pick.ts";
-import { insertMove, NO_MOVE } from "../src/move.ts";
+import { changedMove, insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, rebuildTimeline, settleKept } from "../src/rebuild.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { readDesignReference } from "../src/references.ts";
@@ -269,5 +269,48 @@ test("a face on a hidden body is not found on screen, though its name still coun
   assert.deepEqual(findInScene(face("face:feature-1/top#face:feature-1/right,face:feature-2/right"), scene), { status: "gone" });
   const nearTop = faceAt(scene, "body:feature-1", [0, 0, 1]);
   assert.equal(sceneReference("face", scene, nearTop)?.id, "face:feature-1/top#face:feature-1/left,face:feature-2/left");
+  await cache.clear();
+});
+
+// 35f1e2: Box A 20 × 20 × 10 (feature-1) moved +10 in x by Move M (feature-2), so x 10..30, y 0..20, z 0..10. Box B
+// 20 × 10 × 30 (feature-3) moved to (25, 5, −5) (feature-4): x 25..45, y 5..15, z −5..25, so it overlaps A at x 25..30
+// and no face of one lies on a face of the other. Join, A the target (feature-5). B's top (z = 25) is whole on the
+// result, A's top (z = 10) keeps a notch where B goes through it.
+const JOINED = () => {
+  const { doc, bodies } = boxes([[20, 20, 10], [10, 0, 0]], [[20, 10, 30], [25, 5, -5]]);
+  return { ...insertCombine(doc, bodies[0], [bodies[1]], "join"), bodies };
+};
+
+test("hand-worked: a sketch on a face that came from a Combine's tool stays put when the target's Move changes; one on the target's face slides with it", async () => {
+  const { doc: joined, id } = JOINED();
+  assert.equal(id, "feature-5");
+  const { scene, cache } = await sceneOf(joined);
+  // Each sketch put where a click on its face puts it (the app's pick, which records where its body's Moves had put it).
+  const clicked = (doc: DesignDocument, n: [number, number, number], x: number) => {
+    const spot = sketchSpot({ face: faceAt(scene, "body:feature-1", n, x), shift: false }, scene);
+    assert.ok(spot?.kind === "face", JSON.stringify(spot));
+    return addFaceSketch(doc, spot.face, spot.drawn);
+  };
+  // B's top: centroid x (25 + 45) / 2 = 35. A's top: x 10..30 less the notch x 25..30, y 5..15; its centroid x is
+  // (400 · 20 − 50 · 27.5) / 350 = (8000 − 1375) / 350 = 18.928…
+  const onB = clicked(joined, [0, 0, 1], 35);
+  const onA = clicked(onB.doc, [0, 0, 1], 6625 / 350);
+  const placed = async (doc: DesignDocument) => {
+    const { build, cache: c } = await sceneOf(doc);
+    const at = (sid: string) => {
+      const r = build.results[sid];
+      assert.ok(r.status === "built" && r.plane === undefined, JSON.stringify(r));
+      return { origin: r.placement!.plane.origin.map((v) => Math.round(v * 1e9) / 1e9 + 0), x: r.placement!.plane.xAxis.map((v) => Math.round(v * 1e9) / 1e9 + 0) };
+    };
+    const out = { b: at(onB.id), a: at(onA.id) };
+    await c.clear();
+    return out;
+  };
+  // As drawn (26e): each frame's origin is its top's plane's nearest point to the world's origin, x along the world's X.
+  assert.deepEqual(await placed(onA.doc), { b: { origin: [0, 0, 25], x: [1, 0, 0] }, a: { origin: [0, 0, 10], x: [1, 0, 0] } });
+  // M now moves A +20: A is at x 20..40, B where it was (x 25..45, its top still whole at z = 25, above A's top). The
+  // sketch on B's top must not move at all; the one on A's top slides the 10 mm A moved further (35e2h), to (10, 0, 10).
+  const moved = changedMove(onA.doc, "feature-2", { ...NO_MOVE, x: 20 });
+  assert.deepEqual(await placed(moved), { b: { origin: [0, 0, 25], x: [1, 0, 0] }, a: { origin: [10, 0, 10], x: [1, 0, 0] } });
   await cache.clear();
 });

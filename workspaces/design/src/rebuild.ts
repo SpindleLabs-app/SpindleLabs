@@ -40,7 +40,7 @@ import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, p
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, type NamedBody } from "./boolean-names.ts";
-import { frameOfBody, namedBody, namesOfBody } from "./built-body.ts";
+import { frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
@@ -173,8 +173,14 @@ export interface BuiltBody {
    * a later Combine names its result from them.
    */
   named?: Pick<NamedBody, "faces" | "made">;
-  /** A Combine's result: where the Moves before it put the target's own frame (`bodyFrame`), none when not moved. */
-  frame?: Plane;
+  /**
+   * A Combine's result (35f1e2): where the Moves before it had put the
+   * frame of the body each face came from (`bodyFrame`), by kernel face
+   * index; null for a face whose body never moved, all left out when none
+   * did. Per face, as a target's Move carries the target's faces, never a
+   * tool's (built-body.ts `frameOfFace`).
+   */
+  frames?: readonly (Plane | null)[];
 }
 
 
@@ -767,7 +773,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   let cause: PlaneWarning["cause"] = "plane-lost";
   const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean): Promise<FeatureResult> => {
     // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
-    const carry = p.body === undefined ? null : carried(p.body, frameOfBody(on) ?? undefined);
+    const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined);
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label) } } : {};
@@ -1019,6 +1025,7 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
   const { target, tools, operation, keepTools } = combineBodies(f);
   const places = new Map(doc.timeline.features.map((x, i) => [x.id, i] as const));
   const inputs: NamedBody[] = [];
+  const built = new Map<BodyHandle, BuiltBody>();
   for (const body of [target, ...tools]) {
     const maker = bodyItem(body)!;
     const r = done[maker];
@@ -1030,6 +1037,7 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
     // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
     const copies = inputs.filter((x) => x.handle === b.handle).length;
     const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+    built.set(own.handle, own);
     inputs.push(await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!));
   }
   const [t, ...ts] = inputs;
@@ -1048,12 +1056,12 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
   const named = combineNames(f.id, op, t, ts, result, views);
   if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}` };
   const targetFeature = bodies[target].feature;
-  const targetFrame = frameOfBody(bodies[target]);
   for (const tool of keepTools ? [] : tools) delete bodies[tool];
   delete bodies[target];
   const ids: string[] = [];
   for (const nb of named.bodies) {
-    bodies[nb.id] = { feature: nb.id === target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, ...(targetFrame ? { frame: targetFrame } : {}) };
+    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
+    bodies[nb.id] = { feature: nb.id === target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, ...(frames && { frames }) };
     ids.push(nb.id);
   }
   return { status: "built", bodies: ids, holds: inputs.map((x) => x.handle) };
