@@ -33,7 +33,7 @@ import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type Prope
 import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
-import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
+import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped, testPieceFile } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { deleteKeyTarget } from "./delete-key.ts";
@@ -57,10 +57,12 @@ import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
-import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
+import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { clickConstraint, constraintPickAt, constraintStep, isConstraintTool, markAt } from "./constraint-tool.ts";
+import { addConstraint, type NewConstraint } from "./constraints.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
@@ -529,6 +531,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extrasChanged(extras) {
       printExtras = extras;
       refreshArea();
+    },
+    // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
+    async testPiece(choices, file, alive) {
+      const print = await testPieceFile(kernel, choices, file.plate, file.nozzle);
+      if (!alive()) throw new SliceDropped();
+      const suggestedName = printFileName({ ...choices, supports: "off" }, file.plate, file.nozzle, "fit-test-piece");
+      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind: P1S_KIND, bytes: print.package });
+      if (r.status === "failed") throw new Error(r.message);
+      return { saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
     },
   });
   const deleting = deleteAsk(ctx.toolbar);
@@ -1948,6 +1959,36 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /**
+   * A constraint the picks made (47d2): added on the kernel's solver as one
+   * undo step ("Horizontal", "Fix"…), in turn behind the clicks before it,
+   * or refused with the reason in the sketch panel and the constraints and
+   * arcs that fight drawn red. A tool change, undo or Escape while the
+   * solver works drops the answer: it was for a sketch no longer there.
+   */
+  function constrain(sketchId: string, add: NewConstraint) {
+    const changes = toolChanges;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || toolChanges !== changes) return;
+      const before = designDoc();
+      let got: Awaited<ReturnType<typeof addConstraint>>;
+      try {
+        got = await addConstraint(kernel, before, sketchId, add);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || toolChanges !== changes || designDoc() !== before) return;
+      if ("refused" in got) {
+        mode.tool = { ...mode.tool, fighting: got.fighting };
+        sketchBox.showError(got.refused);
+        return drawSketches();
+      }
+      applySketchEdit(got.doc, constraintStep(add.kind), sketchId);
+      drawSketches();
+      await showOutline();
+    });
+  }
+
+  /**
    * Delete (the key, Backspace or the sketch toolbar's button) with the Select
    * tool's picks: they go from the sketch as one undo step ("Delete line",
    * "Delete 3 curves"), in turn behind the clicks before it, settled as a
@@ -2944,12 +2985,35 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       mode.pointer = at;
       const tool = mode.tool;
       const sketch = designDoc().sketches.find((s) => s.id === tool.sketch);
-      const hit = at && sketch ? curveAt(sketch, at, PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0)) : null;
+      const reach = PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0);
+      // A constraint's mark (47d2) within half the reach first: marks sit beside their curves, so a curve is in reach of them too.
+      const hit = at && sketch ? (markAt(sketch, at, reach / 2, CONSTRAINT_MARK_PIXELS * (pointer.pixel ?? 0.1)) ?? curveAt(sketch, at, reach)) : null;
+      mode.pixel = pointer.pixel;
       if (pointer.kind !== "click") mode.tool = { ...tool, hover: hit };
       else {
         mode.tool = { ...tool, picked: pickCurve(stillPicked(sketch, tool.picked), hit, pointer.shift === true), hover: hit };
         sketchBox.showError("");
         showSketchStatus();
+      }
+      return drawSketches();
+    }
+    // The constraint tools (47d2) snap nothing and place nothing either: the point (or, for Horizontal and Vertical, the
+    // line) within reach lights, and a click picks it; once the picks make a constraint it is added on the solver.
+    if (isConstraintTool(mode.tool)) {
+      ++moves;
+      hovered = lastMove = null;
+      mode.snap = null;
+      mode.pointer = at;
+      const tool = mode.tool;
+      const sketch = designDoc().sketches.find((s) => s.id === tool.sketch);
+      const hit = at && sketch ? constraintPickAt(sketch, tool.kind, at, PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0)) : null;
+      mode.pixel = pointer.pixel;
+      if (pointer.kind !== "click" || !sketch) mode.tool = { ...tool, hover: hit };
+      else {
+        const { tool: next, add } = clickConstraint(tool, sketch, hit);
+        mode.tool = next;
+        sketchBox.showError("");
+        if (add) constrain(tool.sketch, add);
       }
       return drawSketches();
     }

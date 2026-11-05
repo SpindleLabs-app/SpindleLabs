@@ -16,10 +16,11 @@ import type { EdgeTarget, SketchPin } from "./face-edges.ts";
 import { counted, curvePoints, insertAt, insertItem, isSketchItem, makesBody, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
+import { keptConstraints } from "./constraints.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
-export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point" } as const;
+export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", unconstrain: "Delete constraint" } as const;
 
 /**
  * Each origin plane's frame: the sketch's x along `xAxis`, its y along
@@ -318,7 +319,8 @@ function usedPoints(curves: readonly SketchCurve[], projected: readonly SketchPr
  * deleting one asks.
  */
 function withRefs(doc: DesignDocument, sketch: Sketch, pins: SketchPin[], projected: SketchProjection[] = sketch.projected ?? []): DesignDocument {
-  const rest: Sketch = { ...sketch };
+  // A constraint goes with the points it names (47d2: a deleted curve's points).
+  const rest: Sketch = { ...sketch, constraints: keptConstraints(sketch) };
   delete rest.pins;
   delete rest.projected;
   const next = withSketch(doc, { ...rest, ...(pins.length === 0 ? {} : { pins }), ...(projected.length === 0 ? {} : { projected }) });

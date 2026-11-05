@@ -8,6 +8,7 @@
 import type { SketchXY } from "@fission/core";
 import type { DesignDocument, Sketch, SketchCurve } from "./document.ts";
 import { deleteCurve } from "./sketch.ts";
+import { deleteConstraint } from "./constraints.ts";
 
 /**
  * How far from a curve a click still picks it, in screen pixels: a snap's
@@ -95,13 +96,19 @@ export function pickCurve(picked: readonly string[], hit: string | null, shift: 
 /** The picks the sketch still holds (an undo may have taken one out), in their order. */
 export function stillPicked(sketch: Sketch | undefined, picked: readonly string[]): string[] {
   if (!sketch) return [];
-  const there = new Set(sketch.curves.map((c) => c.id));
+  // A constraint's mark can be picked too (47d2).
+  const there = new Set([...sketch.curves.map((c) => c.id), ...sketch.constraints.map((c) => c.id)]);
   return picked.filter((id) => there.has(id));
 }
 
 /** The document without these curves of the sketch (each through `deleteCurve`: points only they used go, a projected one takes its projection); ids it lacks are passed over. */
 export function deleteCurves(doc: DesignDocument, sketchId: string, ids: readonly string[]): DesignDocument {
   let next = doc;
+  // Constraints first (47d2): a curve deleted after takes its points' constraints with it.
+  for (const id of ids) {
+    const sketch = next.sketches.find((s) => s.id === sketchId);
+    if (sketch?.constraints.some((c) => c.id === id)) next = deleteConstraint(next, sketchId, id);
+  }
   for (const id of ids) {
     const sketch = next.sketches.find((s) => s.id === sketchId);
     if (sketch?.curves.some((c) => c.id === id)) next = deleteCurve(next, sketchId, id);
@@ -115,9 +122,10 @@ export function pickedWords(sketch: Sketch | undefined, picked: readonly string[
   const made = new Set((sketch.projected ?? []).map((p) => p.made));
   const kinds = picked.flatMap((id) => {
     const c = sketch.curves.find((x) => x.id === id);
-    return c ? [made.has(c.id) ? "projected edge" : c.kind] : [];
+    if (!c) return sketch.constraints.some((x) => x.id === id) ? ["constraint"] : [];
+    return [made.has(c.id) ? "projected edge" : c.kind];
   });
-  const words = ["line", "arc", "circle", "projected edge"].flatMap((kind) => {
+  const words = ["line", "arc", "circle", "projected edge", "constraint"].flatMap((kind) => {
     const n = kinds.filter((k) => k === kind).length;
     return n ? [`${n} ${kind}${n === 1 ? "" : "s"}`] : [];
   });
@@ -127,7 +135,7 @@ export function pickedWords(sketch: Sketch | undefined, picked: readonly string[
 /** The undo step deleting these picks is recorded as: "Delete line", "Delete circle", "Delete arc", "Delete projected edge" for one, "Delete 3 curves" for more. */
 export function deleteStep(sketch: Sketch | undefined, picked: readonly string[]): string {
   const ids = stillPicked(sketch, picked);
-  if (ids.length !== 1) return `Delete ${ids.length} curves`;
+  if (ids.length !== 1) return `Delete ${ids.length} ${ids.every((id) => sketch!.curves.some((c) => c.id === id)) ? "curves" : "items"}`;
   return `Delete ${pickedWords(sketch, ids).slice("1 ".length)}`;
 }
 
