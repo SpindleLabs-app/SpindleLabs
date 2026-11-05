@@ -26,8 +26,8 @@ import { currentUnit, commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, t
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
-import { browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
-import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
+import { bodyRows, browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { callOffDrag, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { partFailure } from "./part-failure.ts";
@@ -40,7 +40,8 @@ import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
-import { viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
+import { showEntries, viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
+import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
@@ -64,6 +65,7 @@ import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
+import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
 import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -111,6 +113,8 @@ let fits = 0;
 interface Inspecting {
   facts(): void;
   none(): string | null;
+  /** Turns the print check (H1) on or off. */
+  printCheck(): void;
 }
 
 /** Why Body facts is off with nothing built. */
@@ -124,7 +128,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -167,9 +171,21 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // The body facts (volume, area, faces), from the properties panel, folded since U0b.
   const facts = button("inspect-facts", "Body facts", "Body facts: the volume, area and faces of what is built, in the properties.", () => inspect.facts());
   facts.disabled = true; // until a body is built (workspace: after each build)
-  const inspectSections = (): MenuSection[] => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }];
+  // The print check (H1, Ben 2026-11-05): a switch, lit while on (print-check-view.ts).
+  const printCheckTitle = "Print check: colours what would go wrong printing it as modelled on the P1S. Red needs supports, amber is too thin, violet is a bridge that may sag, and a red ring marks the weakest spot. Updates as you model.";
+  const printCheck = button("inspect-print-check", "Print check", printCheckTitle, () => inspect.printCheck());
+  printCheck.setAttribute("aria-pressed", "false");
+  const inspectSections = (): MenuSection[] => [
+    {
+      items: [
+        { id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() },
+        { id: "inspect-menu-print-check", label: printCheck.getAttribute("aria-pressed") === "true" ? "Print check: on" : "Print check", icon: "print-check", title: printCheckTitle, run: () => inspect.printCheck() },
+      ],
+    },
+    { items: comingItems("Inspect") },
+  ];
   const inspecting = toolGroup(document, { name: "Inspect", menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: inspectSections } });
-  inspecting.add([facts, "inspect"]);
+  inspecting.add([facts, "inspect"], [printCheck, "print-check"]);
   inspecting.element.dataset.modelling = "";
   // Groups whose tools are all still to come (coming-soon.ts), greyed: their menus list what is on the way.
   const coming = (name: string, id: string, icon: IconName, title: string) => {
@@ -228,7 +244,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       ...named.map(([label, el]) => ({ id: el.id, label, off: el.disabled ? `${label} is off now` : undefined, run: () => el.click() })),
     ];
   };
-  return { made, insert: inserting.menu!, facts, commands };
+  return { made, insert: inserting.menu!, facts, printCheck, commands };
 }
 
 /** A browser row's icon (U0f3): 16 px, before its words, hidden from screen readers. */
@@ -465,8 +481,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       queueMicrotask(reveal);
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
+    printCheck: () => togglePrintCheck(),
   };
-  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -571,6 +588,37 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
   })();
   let buildAreaOn = buildAreaShownIn(storage);
+  /**
+   * The print check (H1, Ben 2026-11-05): Inspect ▾ Print check paints what would go wrong printing the bodies shown
+   * (print-check-view.ts), checked again after every build while on and while Design is on screen. A view setting of
+   * this browser: no undo step, nothing saved in the design.
+   */
+  let printCheckOn = printCheckShownIn(storage);
+  let printCheckRuns = 0;
+  function showPrintCheck() {
+    const run = ++printCheckRuns;
+    printCheckButton.setAttribute("aria-pressed", String(printCheckOn));
+    const scene = lastScene;
+    if (!printCheckOn || !shown || scene === null) {
+      for (const id of ALL_PRINT_CHECK_IDS) viewport.clearOverlay(id);
+      delete viewport.element.dataset.printCheck;
+      return;
+    }
+    // After the frame that draws the build, so checking a big part never holds the new body back.
+    setTimeout(() => {
+      if (run !== printCheckRuns || !printCheckOn || !shown || lastScene !== scene) return;
+      const { found, overlays } = checkShown(scene.bodies.map((b) => b.view.mesh), printRulesIn(storage));
+      for (const id of ALL_PRINT_CHECK_IDS) if (!overlays.some((o) => o.id === id)) viewport.clearOverlay(id);
+      for (const o of overlays) viewport.setOverlay(o);
+      viewport.element.dataset.printCheck = printCheckSummary(found); // read by the e2e test
+    }, 0);
+  }
+  function togglePrintCheck() {
+    printCheckOn = !printCheckOn;
+    keepPrintCheckShown(storage, printCheckOn);
+    showPrintCheck();
+  }
+  showPrintCheck(); // lit at once when left on; painted once the first build lands
   refreshArea = () => {
     const doc = designDoc();
     if (buildAreaOn && doc) showOrigin(doc);
@@ -1117,7 +1165,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const itemOfRow = (node: string) => rowItem(node, designDoc(), failedNow) ?? "";
   /** A row's menu (24e4 for sketches, 24f3 for every timeline item, U0a for bodies: their feature's). */
   function openRowMenu(node: string, at: { x: number; y: number }) {
-    openMenu(itemOfRow(node), at);
+    openMenu(itemOfRow(node), at, node.startsWith("body-") ? node : undefined);
+  }
+
+  /**
+   * Show only this body, or Show all bodies (quick wins, Ben 2026-11-04), from Body row `row`'s menu or the view's:
+   * only eyes change, one undo step ("Show only Body 2", "Show all bodies"); nothing is recorded when nothing changes.
+   */
+  function showFrom(action: "show-only" | "show-all", row: string) {
+    const doc = designDoc();
+    const r = bodyRows(doc, failedNow).find((x) => x.id === row);
+    if (!r) return;
+    try {
+      const next = action === "show-only" ? showOnlyBody(doc, r.body, failedNow) : showAllBodies(doc, failedNow);
+      if (next !== doc) void update(action === "show-only" ? TIMELINE_STEPS.showOnly(r.label) : TIMELINE_STEPS.showAll, undefined, next);
+    } catch (err) {
+      panel.showError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /** A double-click on item `id` (25a3): its menu's Edit Sketch or Edit feature, refused with the menu's words when that is off. */
@@ -1128,12 +1192,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /** Item `id`'s menu (timeline-menu.ts): Move the marker here, Suppress or Unsuppress, Delete; an entry that is off says why. */
-  function openMenu(id: string, at: { x: number; y: number }) {
+  function openMenu(id: string, at: { x: number; y: number }, row?: string) {
     const doc = designDoc();
     const item = doc.timeline.features.find((f) => f.id === id);
     if (!item) return;
     const editing = editingId();
-    const entries = menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }));
+    // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
+    const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
+    const entries = [...shows, ...menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
@@ -1153,9 +1219,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!ctx.selection.items.some((r) => r.kind === target.item.kind && r.id === target.item.id)) ctx.selection.set([target.item]);
     const editing = editingId();
     const fail = (err: unknown) => panel.showError(err instanceof Error ? err.message : String(err));
-    const entries = viewMenuEntries(doc, target.feature, editing).map((e) => ({
+    const entries = viewMenuEntries(doc, target.feature, editing, target.row, failedNow).map((e) => ({
       ...e,
-      run: e.action === "hide" ? () => toggleHidden(target.row) : () => void chooseEntry(menuHost, target.feature, e.action, editing).catch(fail),
+      run:
+        e.action === "hide"
+          ? () => toggleHidden(target.row)
+          : e.action === "show-only" || e.action === "show-all"
+            ? () => showFrom(e.action as "show-only" | "show-all", target.row)
+            : () => void chooseEntry(menuHost, target.feature, e.action as MenuEntry["action"], editing).catch(fail),
     }));
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
@@ -1373,6 +1444,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const { kept, dropped, shared, followed } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
       lastScene = scene;
       if (buildAreaOn) showOrigin(doc);
+      showPrintCheck();
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
       if (snapping) (snapping.from = null), showMoveHint();
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
@@ -3127,6 +3199,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shown = false;
     // Design's own overlay goes with it: another workspace's view says nothing about a Combine (36d).
     viewport.clearOverlay(REFUSAL_OVERLAY);
+    showPrintCheck(); // asleep: cleared
     showBuildAreaWords();
     viewport.onPick = null;
     viewport.onMenu = null;
@@ -3296,6 +3369,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       showStart();
       showBuildAreaWords();
       showRefusals();
+      showPrintCheck();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;

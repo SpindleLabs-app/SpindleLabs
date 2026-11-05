@@ -4,10 +4,12 @@
 // design-rule errors all arrive this way (I16, I17).
 //
 // Overlays are display only; they are never saved. Until stable ids exist
-// (step 24) a mark names a face by its index in the body on screen, or the
-// whole body.
+// (step 24) a mark names a face by its index in the body on screen, the
+// whole body, or triangles of the mesh on screen (for what covers part of a
+// curved face, such as the underside of a lying cylinder needing supports:
+// the print check, H1).
 
-export type OverlayTarget = { face: number } | { body: true };
+export type OverlayTarget = { face: number } | { body: true } | { triangles: readonly number[] };
 
 /** Severity sets the colour, so every workspace's warnings look the same. */
 export type OverlaySeverity = "info" | "warning" | "error";
@@ -73,20 +75,30 @@ export function worstSeverity(overlay: AnalysisOverlay): OverlaySeverity {
 
 /**
  * The colour of each triangle under these overlays (null where nothing is
- * marked). Where marks overlap, the most severe wins.
+ * marked). Where marks overlap, the most severe wins. A triangle a mark
+ * names that the mesh does not have is passed over.
  */
 export function triangleColours(triangleFaces: readonly number[], overlays: readonly AnalysisOverlay[]): ([number, number, number] | null)[] {
   const worst = new Map<number | "body", OverlaySeverity>();
+  const perTriangle: (OverlaySeverity | undefined)[] = [];
   for (const o of overlays)
     for (const m of o.marks) {
+      if ("triangles" in m.target) {
+        for (const t of m.target.triangles) {
+          if (!(Number.isInteger(t) && t >= 0 && t < triangleFaces.length)) continue;
+          const was = perTriangle[t];
+          if (!was || rank[m.severity] > rank[was]) perTriangle[t] = m.severity;
+        }
+        continue;
+      }
       const key = "face" in m.target ? m.target.face : "body";
       const was = worst.get(key);
       if (!was || rank[m.severity] > rank[was]) worst.set(key, m.severity);
     }
   const body = worst.get("body");
-  return triangleFaces.map((f) => {
-    const face = worst.get(f);
-    const s = face && body ? (rank[face] >= rank[body] ? face : body) : (face ?? body);
+  const most = (a: OverlaySeverity | undefined, b: OverlaySeverity | undefined) => (a && b ? (rank[a] >= rank[b] ? a : b) : (a ?? b));
+  return triangleFaces.map((f, t) => {
+    const s = most(most(worst.get(f), body), perTriangle[t]);
     return s ? SEVERITY_COLOURS[s] : null;
   });
 }

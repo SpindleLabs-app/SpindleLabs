@@ -16,7 +16,7 @@ import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, insertPreset, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4272, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4272/";
@@ -82,7 +82,7 @@ try {
     await until(page, () => document.getElementById("row-menu").open, null, "the menu");
     assert.equal(await page.getAttribute("#row-menu", "aria-label"), "Box 1");
     const entries = await page.$$eval("#row-menu button", (bs) => bs.map((b) => b.id));
-    assert.deepEqual(entries, ["row-menu-hide", "row-menu-edit", "row-menu-marker", "row-menu-suppress", "row-menu-rename", "row-menu-delete"]);
+    assert.deepEqual(entries, ["row-menu-hide", "row-menu-show-only", "row-menu-show-all", "row-menu-edit", "row-menu-marker", "row-menu-suppress", "row-menu-rename", "row-menu-delete"]);
     assert.match(await highlight(page), /^faces \d+ edges $|^faces  edges \d+$/, "one face or edge of the box selected");
     await menuOnScreen(page, 1280);
     await shot(page, "view-menu-1280");
@@ -164,6 +164,41 @@ try {
     await shot(page, "delete-key-1280");
     await page.context().close();
   });
+  for (const [width, touch] of [[1280, false], [375, true]]) {
+    await check(`${width} px: Show only this body hides the other body as one step, Show all brings it back; from the view's menu and a Body row's (quick wins)`, async () => {
+      const page = await fresh(width, touch);
+      await insertPreset(page, "cylinder", touch);
+      await until(page, () => document.querySelectorAll("#browser [data-node^=body-]").length === 2, null, "two bodies");
+      const hidden = () => page.$$eval("#browser [data-node^=body-]", (rows) => rows.filter((r) => r.closest(".browser-row-hidden")).map((r) => r.dataset.node));
+      const undoTitle = () => page.evaluate(() => document.getElementById("undo").title);
+      // Body 1's row menu (its ⋯ button, for touch too): Show only this body.
+      await openPanel(page, "browser", touch);
+      if (touch) await page.tap("[data-more=body-1]");
+      else await page.click("[data-more=body-1]");
+      await until(page, () => document.getElementById("row-menu").open, null, "the row menu");
+      assert.equal(await page.isDisabled("#row-menu-show-all"), true, "Show all is off with every body shown");
+      if (touch) await page.tap("#row-menu-show-only");
+      else await page.click("#row-menu-show-only");
+      await until(page, () => document.getElementById("undo").title === "Undo Show only Body 1 (Ctrl+Z)", null, "one step");
+      assert.deepEqual(await hidden(), ["body-2"]);
+      await shot(page, `show-only-${width}`);
+      // Show all from the same menu: both shown again, one step.
+      await openPanel(page, "browser", touch);
+      if (touch) await page.tap("[data-more=body-1]");
+      else await page.click("[data-more=body-1]");
+      await until(page, () => document.getElementById("row-menu").open, null, "the row menu again");
+      if (touch) await page.tap("#row-menu-show-all");
+      else await page.click("#row-menu-show-all");
+      await until(page, () => document.getElementById("undo").title === "Undo Show all bodies (Ctrl+Z)", null, "Show all, one step");
+      assert.deepEqual(await hidden(), []);
+      // Undo puts the one-body view back.
+      if (touch) await page.tap("#undo");
+      else await page.click("#undo");
+      await until(page, () => document.getElementById("undo").title === "Undo Show only Body 1 (Ctrl+Z)", null, "undone");
+      assert.deepEqual(await hidden(), ["body-2"]);
+      await page.context().close();
+    });
+  }
 } finally {
   await browser.close();
   server.httpServer.close();

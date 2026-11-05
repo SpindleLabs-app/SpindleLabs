@@ -24,6 +24,21 @@ test("a whole-body mark colours every triangle, but a worse face mark still show
   assert.notDeepEqual(info, warning);
 });
 
+test("triangle marks (the print check, H1) colour only their triangles, part of a face; the most severe wins", () => {
+  // Five triangles, all of face 0 (a curved face): triangles 1 and 2 need supports (error), 2 and 3 are thin
+  // (warning): 2 is red, 3 amber, 1 red, 0 and 4 untouched. A face mark under them shows where they are not worse.
+  const overlays: AnalysisOverlay[] = [
+    { id: "supports", label: "Needs supports", marks: [{ target: { triangles: [1, 2] }, severity: "error" }] },
+    { id: "thin", label: "Too thin", marks: [{ target: { triangles: [2, 3] }, severity: "warning" }] },
+  ];
+  assert.deepEqual(triangleColours([0, 0, 0, 0, 0], overlays), [null, error, error, warning, null]);
+  const withFace: AnalysisOverlay[] = [...overlays, { id: "f", label: "f", marks: [{ target: { face: 0 }, severity: "info" }] }];
+  assert.deepEqual(triangleColours([0, 0, 0, 0, 0], withFace), [info, error, error, warning, info]);
+  // Triangles the mesh has not got (after an edit the overlay has not caught up with) are passed over.
+  const stale: AnalysisOverlay[] = [{ id: "s", label: "s", marks: [{ target: { triangles: [-1, 1.5, 7, NaN, 0] }, severity: "error" }] }];
+  assert.deepEqual(triangleColours([0, 0], stale), [error, null]);
+});
+
 test("an overlay's places (36d): a corner as a dot, an edge as a line, a gap of nothing as a dot, the most severe drawn last", () => {
   const error = SEVERITY_COLOURS.error;
   const info = SEVERITY_COLOURS.info;
