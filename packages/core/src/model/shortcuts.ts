@@ -79,6 +79,11 @@ export const SHELL_SHORTCUTS: readonly ShortcutSpec[] = [
   { id: "undo", keys: "Mod+Z", label: "Undo" },
   { id: "redo", keys: "Mod+Shift+Z", label: "Redo" },
   { id: "redo-y", keys: "Mod+Y", label: "Redo" },
+  // The browser's own Save page and Open file boxes made no sense in the app (missing-basics audit, 2026-11-04):
+  // the keys run the File menu's Save, Save As… and Open…, also while typing in a box, as in a desktop app.
+  { id: "save", keys: "Mod+S", label: "Save the project", inText: true },
+  { id: "save-as", keys: "Mod+Shift+S", label: "Save the project under a new name (Save As…)", inText: true },
+  { id: "open", keys: "Mod+O", label: "Open a file", inText: true },
 ];
 
 /** Writes `keys` in the one canonical form; throws a clear error for anything that isn't a key a user can press. */

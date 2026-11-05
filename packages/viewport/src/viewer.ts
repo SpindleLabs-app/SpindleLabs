@@ -11,7 +11,7 @@ import { releaseShared } from "./release.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
-import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
+import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
@@ -1100,6 +1100,8 @@ export class ViewportView {
  * body's dark edges.
  */
 export const GRID_OPACITY = 0.16;
+/** How opaque the tint of the sketch plane is (U7a): enough to see the plane as a surface from any side, light enough to leave the body and the sketch clear. */
+export const PLANE_TINT_OPACITY = 0.07;
 /** How opaque the origin axes are while sketching. */
 export const AXIS_OPACITY = 1;
 /** How opaque an origin plane offered for a sketch is, under the pointer, and one not offered. */
@@ -1602,6 +1604,14 @@ export class Viewer implements SharedViewport {
       this.sketchGridGroup.add(l);
       return material;
     };
+    // The plane itself, tinted (U7a), under the lines: it shows from the back and edge on too.
+    const sheet = gridSheet(grid.bounds).flatMap((p) => at(p));
+    const tint = new THREE.BufferGeometry();
+    tint.setAttribute("position", new THREE.Float32BufferAttribute(sheet, 3));
+    tint.setIndex([0, 1, 2, 0, 2, 3]);
+    const fill = new THREE.Mesh(tint, new THREE.MeshBasicMaterial({ color: SKETCH_COLOURS.plane, side: THREE.DoubleSide, depthTest: false, depthWrite: false, transparent: true, opacity: PLANE_TINT_OPACITY }));
+    fill.renderOrder = 0.5;
+    this.sketchGridGroup.add(fill);
     this.minorMaterial = segments(grid.lines.filter((l) => !l.major).map((l) => [l.a, l.b]), SKETCH_COLOURS.grid, GRID_OPACITY * grid.strength, 1);
     segments(grid.lines.filter((l) => l.major).map((l) => [l.a, l.b]), SKETCH_COLOURS.grid, GRID_OPACITY, 1);
     if (grid.axes.x) segments([grid.axes.x], SKETCH_COLOURS.axisX, AXIS_OPACITY, 2);
