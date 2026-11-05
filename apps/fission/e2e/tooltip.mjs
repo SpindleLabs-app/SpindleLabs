@@ -19,7 +19,7 @@ if (shots) mkdirSync(shots, { recursive: true });
 let failed = false;
 
 async function fresh(scheme, { width = 1280, touch = false } = {}) {
-  const context = await browser.newContext({ viewport: { width, height: 800 }, colorScheme: scheme, hasTouch: touch });
+  const context = await browser.newContext({ viewport: { width, height: 800 }, colorScheme: scheme, hasTouch: touch, tooltips: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -49,7 +49,8 @@ for (const scheme of ["dark", "light"]) {
     await page.hover("#extrude");
     // Within one frame or two: far under the browser's own second.
     await page.waitForSelector("#tooltip:not([hidden])", { timeout: 300 });
-    assert.equal(await page.getAttribute("#extrude", "title"), null, "the browser's tooltip would show too");
+    assert.equal(await page.evaluate(() => document.getElementById("extrude").matches("[title]")), false, "the browser's tooltip would show too");
+    assert.equal(await page.evaluate(() => document.getElementById("extrude").title), title, "yet the element still answers for its title");
     assert.equal(await box(page).locator(".words").textContent(), "Extrude");
     // The box wears the theme: its background is the surface token, its text the text token.
     const [bg, surface, fg, text] = await page.evaluate(() => {
@@ -73,7 +74,7 @@ for (const scheme of ["dark", "light"]) {
     if (shots) await page.screenshot({ path: `${shots}/tooltip-${scheme}.png` });
     await page.mouse.move(5, 400);
     await page.waitForSelector("#tooltip", { state: "hidden", timeout: 300 });
-    assert.equal(await page.getAttribute("#extrude", "title"), title, "the title comes back");
+    assert.equal(await page.evaluate(() => document.getElementById("extrude").matches("[title]")), true, "the title comes back as a real attribute");
     await page.context().close();
   });
 

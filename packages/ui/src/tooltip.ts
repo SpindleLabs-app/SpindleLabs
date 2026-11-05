@@ -1,7 +1,7 @@
 // Instant, themed tooltips (Ben, 2026-11-04). The browser's own tooltip waits
 // about a second and is a plain white box that ignores the theme. This
 // replaces it for every element with a `title`, without any caller changing:
-// on hover the title moves into `data-tip` (so the browser stays quiet),
+// on hover the title is kept from the browser (which stays quiet; the element still answers for it),
 // a small box in the app's look shows at once, and the title goes back when
 // the pointer leaves. A right-click (a long press on a phone) on a button
 // opens the quick info: the whole title, as long as it is, plus the key if
@@ -41,7 +41,7 @@ export function quickInfoFor(target: Element | null): HTMLElement | null {
   if (target.closest("input, textarea, select, canvas, [contenteditable=true], [contenteditable='']")) return null;
   const button = target.closest<HTMLElement>("button, [role=button], [role=menuitem]");
   if (!button) return null;
-  return button.dataset.tip || button.getAttribute("title") ? button : null;
+  return button.getAttribute("title") ? button : null;
 }
 
 export interface Tooltips {
@@ -90,12 +90,53 @@ export function startTooltips(doc: Document): Tooltips {
     box.style.top = `${Math.round(top)}px`;
   };
 
+  // While the box is up the title is kept from the browser (else its own box shows too) but not from the app: the element answers `.title`,
+  // getAttribute("title") and the setters as if it were still there, so an Undo button's words still follow the last step and anything that reads
+  // them sees the real words. The title goes back as a real attribute when the pointer leaves.
+  let held: string | null = null;
+  let shownFull = false;
+  const SHADOWED = ["title", "getAttribute", "hasAttribute", "setAttribute", "removeAttribute"] as const;
+  const unshadow = (el: HTMLElement) => {
+    for (const name of SHADOWED) Reflect.deleteProperty(el, name);
+    delete el.dataset.tooltipHeld;
+  };
+  const shadow = (el: HTMLElement) => {
+    const real = { get: el.getAttribute, has: el.hasAttribute, set: el.setAttribute, remove: el.removeAttribute };
+    const isTitle = (name: string) => String(name).toLowerCase() === "title";
+    const changed = () => {
+      if (on === el && !box.hidden) words.textContent = tipWords(held ?? "")[shownFull ? "full" : "short"];
+    };
+    const define = (name: string, value: unknown) => Object.defineProperty(el, name, { configurable: true, writable: true, value });
+    Object.defineProperty(el, "title", {
+      configurable: true,
+      get: () => held ?? "",
+      set: (v: unknown) => {
+        held = String(v);
+        changed();
+      },
+    });
+    define("getAttribute", (name: string) => (isTitle(name) ? held : real.get.call(el, name)));
+    define("hasAttribute", (name: string) => (isTitle(name) ? held !== null : real.has.call(el, name)));
+    define("setAttribute", (name: string, value: string) => {
+      if (!isTitle(name)) return real.set.call(el, name, value);
+      held = String(value);
+      changed();
+    });
+    define("removeAttribute", (name: string) => {
+      if (!isTitle(name)) return real.remove.call(el, name);
+      held = null;
+      changed();
+    });
+    el.dataset.tooltipHeld = "1";
+    real.remove.call(el, "title");
+  };
   const restore = () => {
-    if (on && on.dataset.tip !== undefined && on.dataset.tipHeld === "1") {
-      on.setAttribute("title", on.dataset.tip);
-      delete on.dataset.tipHeld;
-      delete on.dataset.tip;
+    if (on && on.dataset.tooltipHeld === "1") {
+      const words = held;
+      unshadow(on);
+      if (words !== null) on.setAttribute("title", words);
     }
+    held = null;
     on?.removeAttribute("aria-describedby");
   };
 
@@ -116,33 +157,32 @@ export function startTooltips(doc: Document): Tooltips {
     hint.hidden = full || w.short === w.full;
     hint.textContent = hint.hidden ? "" : "Right-click for how to use it";
     box.classList.toggle("pinned", full);
+    shownFull = full;
     box.hidden = false;
     el.setAttribute("aria-describedby", box.id);
     place(el);
   };
 
   const hold = (el: HTMLElement): string => {
+    if (on === el && held !== null) return held;
     const t = el.getAttribute("title");
-    if (t !== null && t.trim() !== "") {
-      // The title would show as the browser's own box: keep its words, and give the
-      // element its name from them when it has none.
-      if (!el.hasAttribute("aria-label") && !el.textContent?.trim()) el.setAttribute("aria-label", t.split(": ")[0] ?? t);
-      el.dataset.tip = t;
-      el.dataset.tipHeld = "1";
-      el.removeAttribute("title");
-    }
-    return el.dataset.tip ?? "";
+    if (t === null || t.trim() === "") return "";
+    // Give the element its name from the title when it has none (an icon button).
+    if (!el.hasAttribute("aria-label") && !el.textContent?.trim()) el.setAttribute("aria-label", t.split(": ")[0] ?? t);
+    held = t;
+    on = el;
+    shadow(el);
+    return t;
   };
 
   const onOver = (e: Event) => {
     const pe = e as PointerEvent;
     if (pinned || pe.pointerType === "touch") return;
-    const target = (e.target as Element | null)?.closest?.("[title], [data-tip]") as HTMLElement | null;
+    const target = (e.target as Element | null)?.closest?.("[title], [data-tooltip-held]") as HTMLElement | null;
     if (!target || target === on) return;
     if (on) hide();
     const text = hold(target);
     if (!text) return;
-    on = target;
     show(target, text, false);
   };
   const onOut = (e: Event) => {
@@ -159,7 +199,6 @@ export function startTooltips(doc: Document): Tooltips {
     if (on && on !== button) hide();
     const text = hold(button);
     if (!text) return;
-    on = button;
     pinned = true;
     show(button, text, true);
   };

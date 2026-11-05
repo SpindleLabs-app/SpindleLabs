@@ -39,10 +39,9 @@ test("tipWords: the hover box is at most 80 characters, cut at a word with an el
 
 test("quickInfoFor: a button with words yes; a field, a canvas, plain text or a button without words no", () => {
   const { doc } = page();
-  doc.body.innerHTML = `<button id="b" title="Undo">U</button><button id="n">N</button><input id="i" title="x"><canvas id="c" title="x"></canvas><p id="p" title="x">t</p><button id="d" data-tip="Held">D</button>`;
+  doc.body.innerHTML = `<button id="b" title="Undo">U</button><button id="n">N</button><input id="i" title="x"><canvas id="c" title="x"></canvas><p id="p" title="x">t</p>`;
   const q = (id: string) => quickInfoFor(doc.getElementById(id));
   assert.equal(q("b")?.id, "b");
-  assert.equal(q("d")?.id, "d");
   assert.equal(q("n"), null);
   assert.equal(q("i"), null);
   assert.equal(q("c"), null);
@@ -58,7 +57,9 @@ test("hover: the box shows at once, the title is held back from the browser, and
   assert.equal(box.hidden, true);
   fire(window, b, "pointerover");
   assert.equal(box.hidden, false);
-  assert.equal(b.hasAttribute("title"), false); // else the browser's own box would show too
+  assert.equal(b.matches("[title]"), false); // no real title attribute, or the browser's own box would show too
+  assert.equal(b.title, "Extrude: make a solid from a sketch."); // but the element still answers for it
+  assert.equal(b.getAttribute("title"), "Extrude: make a solid from a sketch.");
   assert.equal(box.querySelector(".words")!.textContent, "Extrude");
   assert.equal(b.getAttribute("aria-describedby"), "tooltip");
   fire(window, b, "pointerout", { relatedTarget: doc.body });
@@ -108,5 +109,50 @@ test("right-click that something else already took (a menu of its own), or on a 
   const e = fire(window, doc.getElementById("i")!, "contextmenu");
   assert.equal(e.defaultPrevented, false); // the browser's own menu (paste, spelling) stays
   assert.equal(box.hidden, true);
+  t.stop();
+});
+
+test("a title the app changes while the box is up is not overwritten with the old words when the pointer leaves (Undo's words follow the last step)", () => {
+  const { window, doc } = page();
+  doc.body.innerHTML = `<button id="u" title="Undo Show Sketch 1 (Ctrl+Z)">U</button>`;
+  const t = startTooltips(doc);
+  const b = doc.getElementById("u")!;
+  fire(window, b, "pointerover");
+  assert.equal(b.matches("[title]"), false);
+  b.title = ""; // the app: nothing left to undo
+  assert.equal(b.title, "", "the app's own write is what it reads back");
+  fire(window, b, "pointerout", { relatedTarget: doc.body });
+  assert.equal(b.title, "", "the app's empty title stays, not the stale one");
+  // And a new title is kept the same way.
+  fire(window, b, "pointerover"); // an empty title shows nothing
+  assert.equal(doc.getElementById("tooltip")!.hidden, true);
+  b.title = "Undo Move (Ctrl+Z)";
+  fire(window, b, "pointerover");
+  b.title = "Undo Rotate (Ctrl+Z)";
+  assert.equal(doc.getElementById("tooltip")!.querySelector(".words")!.textContent, "Undo Rotate (Ctrl+Z)", "the box follows the new words");
+  fire(window, b, "pointerout", { relatedTarget: doc.body });
+  assert.equal(b.getAttribute("title"), "Undo Rotate (Ctrl+Z)");
+  t.stop();
+});
+
+test("while held, the title's setters and removal work as on any element, and a leave puts the real attribute back", () => {
+  const { window, doc } = page();
+  doc.body.innerHTML = `<button id="b" title="Move: slide a body">M</button>`;
+  const t = startTooltips(doc);
+  const b = doc.getElementById("b")!;
+  fire(window, b, "pointerover");
+  b.setAttribute("title", "Rotate: turn a body");
+  assert.equal(b.getAttribute("title"), "Rotate: turn a body");
+  assert.equal(b.hasAttribute("title"), true);
+  b.setAttribute("data-x", "1"); // other attributes are untouched
+  assert.equal(b.getAttribute("data-x"), "1");
+  fire(window, b, "pointerout", { relatedTarget: doc.body });
+  assert.equal(b.matches("[title]"), true, "the real attribute is back");
+  assert.equal(b.getAttribute("title"), "Rotate: turn a body");
+  fire(window, b, "pointerover");
+  b.removeAttribute("title"); // the app took it away
+  fire(window, b, "pointerout", { relatedTarget: doc.body });
+  assert.equal(b.matches("[title]"), false, "nothing is put back over a removal");
+  assert.equal(b.hasAttribute("title"), false);
   t.stop();
 });
