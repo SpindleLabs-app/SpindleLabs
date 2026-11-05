@@ -406,13 +406,12 @@ try {
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     const cam = await settle(page);
     near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking from the front");
-    // Above the box (z 0..20), on the front plane: x along X, y along Z.
-    // Taps from (40, 30) to (20, 40): the rectangle tool's corners, up and left on screen (on the 10 mm grid). Not from
-    // x 10: (10, 40) is 1.4 px under the Finish bar at the top left of the view with the 40 px phone timeline, and its
-    // tap went to Finish (`at` now refuses a tap within a finger's reach of a control).
-    await rectangle(page, [[20, 0, 40], [40, 0, 40], [40, 0, 30], [20, 0, 30]], true);
+    // The view now fits the box's front face (U7a2: a plane on a face frames the face), so the rectangle is drawn
+    // on the face itself (z 0..20), x along X, y along Z: corners (20, 20) to (40, 10) on the 10 mm grid. Taps from the
+    // middle out, clear of the Finish bar at the top left of the view (`at` refuses a tap within a finger's reach of a control).
+    await rectangle(page, [[20, 0, 20], [40, 0, 20], [40, 0, 10], [20, 0, 10]], true);
     await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "closed");
-    assert.deepEqual((await data(page, "sketchPoints")).split(" ").sort(), ["20,30", "20,40", "40,30", "40,40"]);
+    assert.deepEqual((await data(page, "sketchPoints")).split(" ").sort(), ["20,10", "20,20", "40,10", "40,20"]);
     await shot(page, "front-plane-375");
     await extrude(page, 5, true);
     // The new block: 20 · 10 · 5 = 1,000 mm³.
