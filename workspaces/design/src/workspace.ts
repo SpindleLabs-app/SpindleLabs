@@ -898,7 +898,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Why the panel's sizes for `kind` can't be taken (`panelSizeRefused`: the first shown box that isn't from 0.001 mm to 1 km, a round shape's radius, a slot's depth), or null. */
   function refusedSize(kind: PartKind): string | null {
     const why = panelSizeRefused(kind, Object.fromEntries(SIZE_KEYS.map((k, i) => [k, inputs[i].value])) as Record<SizeKey, string>);
-    return why === null ? null : wordsInUnit(why, currentUnit(document));
+    return why === null ? null : wordsInUnit(why, currentUnit(ctx.properties.ownerDocument));
   }
   /** Leaving a size box whose text was refused: the size the design last took comes back, and the words go. */
   function restoreRefused(i: number) {
@@ -907,7 +907,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const typed = inputs[i].value;
     inputs[i].value = saved.sizes[i];
     // It went back without a word (beginner play-test 2026-10-28): say so, until the next size typed.
-    if (refusedSize(shape) === null) panel.showError(wordsInUnit(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"), currentUnit(document)));
+    if (refusedSize(shape) === null) panel.showError(wordsInUnit(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"), currentUnit(ctx.properties.ownerDocument)));
   }
 
   /**
