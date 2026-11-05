@@ -7,7 +7,7 @@ export { linkBadge, type LinkBadgeState } from "./link-badge.ts";
 export { workspaceSwitcher, type SwitcherEntry } from "./switcher.ts";
 export { SPLIT_MIN_WIDTH_PX, defaultSplit, splitChoices, type SplitEntry } from "./split.ts";
 export { WarmPool, type WarmHooks } from "./warm.ts";
-export { THEME_CHOICES, THEME_COLOURS, THEME_SETTING, applyTheme, isThemeChoice, readThemeChoice, resolveTheme, startTheme, type Theme, type ThemeChoice } from "./theme-choice.ts";
+export { CUSTOM_KEYS, applyCustom, readCustom, THEME_CHOICES, THEME_COLOURS, THEME_SETTING, applyTheme, isThemeChoice, readThemeChoice, resolveTheme, startTheme, type Theme, type ThemeChoice } from "./theme-choice.ts";
 export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type SettingsParts, type SettingsSection, type SettingsStorage, type SettingValue } from "./settings.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
@@ -23,3 +23,4 @@ export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELET
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
 export { NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIONS_TITLE, versionList, versionRows, versionTime, type VersionList, type VersionListParts, type VersionRow } from "./version-list.ts";
 export { startTooltips, tipWords, quickInfoFor, TIP_SHORT_MAX, type TipWords, type Tooltips } from "./tooltip.ts";
+export { CUSTOM_NAMES, DEFAULT_CUSTOM, contrast, deriveCustom, parseHex, readTokens, toHex, type CustomColours, type CustomResult } from "./custom-theme.ts";
