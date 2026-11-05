@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import type { KernelCalls, SketchRegion } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { partDocument, readDesignDocument, type DesignDocument, type Sketch } from "../src/document.ts";
-import { extrudeSketch } from "../src/extrude.ts";
+import { arrowOf, extrudeSketch, featureSpec } from "../src/extrude.ts";
 import { featureNames } from "../src/naming.ts";
 import { BodyCache, builtBody, rebuildTimeline, REGION_GONE, settleKept, type CurveIds } from "../src/rebuild.ts";
 import { findRegion, regionRef, sameLoop, sketchRegions, type RegionRef } from "../src/regions.ts";
@@ -236,4 +236,49 @@ test("the file's checks on region: saved and read back exactly; version 8 holdin
   // Version 8 data without a region reads as version 9, unchanged.
   const v8 = JSON.parse(JSON.stringify(extrudeSketch(doc, sketch, 10).doc));
   assert.equal(readDesignDocument({ ...v8, version: 8 }).version, 9);
+});
+
+test("regression (48c2 browser check): the distance arrow of a plate with a hole stands on the plate, never over the hole, where a click picks the disc", async () => {
+  const { doc, sketch, sides } = plateWithHole();
+  const plate = await pick(doc, sketch, sides);
+  const made = extrudeSketch(doc, sketch, 10, false, plate.ref);
+  const spec = await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!);
+  const handle = await kernel.call("body_build", spec);
+  try {
+    const view = await kernel.call("body_view", handle);
+    const arrow = arrowOf(view, 10)!;
+    // The plate's centroid is the hole's centre (20, 15) by symmetry; the arrow's foot must be on the plate's start cap
+    // (z = 0, inside the 40 × 30 rectangle) and more than the hole's radius 5 from that centre.
+    const [x, y, z] = arrow.base;
+    assert.equal(z, 0);
+    assert.ok(x >= 0 && x <= 40 && y >= 0 && y <= 30, `foot (${x}, ${y}) off the plate`);
+    assert.ok(Math.hypot(x - 20, y - 15) > 5, `foot (${x}, ${y}) over the hole`);
+    assert.deepEqual(arrow.direction, [0, 0, 1]);
+    // A plain rectangle's foot is its centroid, as before: (20, 15).
+    const s = addSketch(partDocument("box", 40, 30, 20));
+    const r = drawRectangle(s.doc, s.id, [0, 0], [40, 30]);
+    const rect = await pick(r.doc, s.id, r.ids);
+    const m2 = extrudeSketch(r.doc, s.id, 10, false, rect.ref);
+    const h2 = await kernel.call("body_build", await featureSpec(kernel, m2.doc, m2.doc.timeline.features.find((f) => f.id === m2.id)!));
+    try {
+      const a2 = arrowOf(await kernel.call("body_view", h2), 10)!;
+      close(a2.base[0], 20, "rectangle foot x");
+      close(a2.base[1], 15, "rectangle foot y");
+    } finally {
+      await kernel.call("body_free", h2);
+    }
+  } finally {
+    await kernel.call("body_free", handle);
+  }
+});
+
+test("a region gone because the sketch has no closed region left says why, as before regions: a side deleted leaves a loose end", async () => {
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const r = drawRectangle(s.doc, s.id, [0, 0], [40, 30]);
+  const rect = await pick(r.doc, s.id, r.ids);
+  const e = extrudeSketch(r.doc, s.id, 10, false, rect.ref);
+  const open = deleteCurve(e.doc, s.id, r.ids[0]);
+  const failed = (await build(open)).build.results[e.id];
+  // The bottom side from (0, 0) to (40, 0) deleted: the left side's end at (0, 0) is joined to nothing.
+  assert.ok(failed.status === "failed" && /^Sketch 1 has no closed outline: .*not joined/.test(failed.message), failed.status === "failed" ? failed.message : failed.status);
 });

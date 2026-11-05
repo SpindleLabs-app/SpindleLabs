@@ -51,7 +51,7 @@ const light: Palette = {
   buildArea: { fits: 0x2f6fd0, outside: 0xd32f2f, keptClear: 0x667283 },
   ground: { centre: 0x7d9cc4, lines: 0xa9c0de },
   cube: { face: "#e9eef6", corner: "#d6deea", label: "#1d2735", outline: 0x5c6b80 },
-  extrude: { fill: 0x2f8fe0, preview: 0x1f7ad6, arrow: 0x1f7ad6, arrowHot: 0xe08a00 },
+  extrude: { fill: 0x2f8fe0, refused: 0xd32f2f, preview: 0x1f7ad6, arrow: 0x1f7ad6, arrowHot: 0xe08a00 },
 };
 
 export const PALETTES: Record<ViewTheme, Palette> = { dark, light };

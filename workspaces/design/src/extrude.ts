@@ -176,7 +176,8 @@ export function previewSpec(base: BodySpec, signed: number): BodySpec {
 
 /**
  * Where the distance arrow goes for a preview built `signed` mm (UX1b):
- * its line starts at the start cap's centroid (on the sketch's plane) and
+ * its line starts at the start cap's centroid (on the sketch's plane; a
+ * point on the cap when the centroid is off it, `onFace`) and
  * runs the way a positive distance goes, which is from that centroid to
  * the end cap's over `signed` (the end cap is |signed| along the
  * extrude's direction, so for a negative distance the direction turns
@@ -190,6 +191,47 @@ export function arrowOf(view: BodyView, signed: number): ExtrudeArrow | null {
   const way = [0, 1, 2].map((i) => (e[i] - s[i]) / signed);
   const n = Math.hypot(...way);
   if (!(n > 0) || !Number.isFinite(n)) return null;
+  const base = onFace(view, start, [s[0], s[1], s[2]]);
   // + 0: a component 0 divided by a negative distance is −0, the same direction.
-  return { base: [s[0], s[1], s[2]], direction: [way[0] / n + 0, way[1] / n + 0, way[2] / n + 0], distance: signed };
+  return { base, direction: [way[0] / n + 0, way[1] / n + 0, way[2] / n + 0], distance: signed };
+}
+
+type Vec3 = [number, number, number];
+
+/** Whether `p`, on the plane of triangle a b c, is inside it or on its sides (barycentric coordinates, a millionth of slack). */
+function inTriangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3): boolean {
+  const d = (u: Vec3, v: Vec3) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const sub = (u: Vec3, v: Vec3): Vec3 => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+  const [v0, v1, v2] = [sub(b, a), sub(c, a), sub(p, a)];
+  const [d00, d01, d11, d20, d21] = [d(v0, v0), d(v0, v1), d(v1, v1), d(v2, v0), d(v2, v1)];
+  const den = d00 * d11 - d01 * d01;
+  if (!(den > 0)) return false;
+  const v = (d11 * d20 - d01 * d21) / den;
+  const w = (d00 * d21 - d01 * d20) / den;
+  return v >= -1e-6 && w >= -1e-6 && v + w <= 1 + 1e-6;
+}
+
+/**
+ * A point on face `face` of the view for the arrow's foot (step 48 hunt):
+ * its centroid `c` when that lies on the face, as before; else the centre
+ * of the face's triangle nearest it. A plate with a hole has its centroid
+ * in the hole, where the arrow stood over the hole's own region, so a
+ * click meant to pick the region inside grabbed the arrow instead. A view
+ * without a mesh (a test's) keeps the centroid.
+ */
+function onFace(view: BodyView, face: number, c: Vec3): Vec3 {
+  const m = view.mesh;
+  if (!m || !Array.isArray(m.triangle_faces) || !Array.isArray(m.indices) || !Array.isArray(m.positions)) return c;
+  const at = (i: number): Vec3 => [m.positions[3 * i], m.positions[3 * i + 1], m.positions[3 * i + 2]];
+  let best: Vec3 | null = null;
+  let bestD = Infinity;
+  for (let t = 0; t < m.triangle_faces.length; t++) {
+    if (m.triangle_faces[t] !== face) continue;
+    const [a, b, d] = [at(m.indices[3 * t]), at(m.indices[3 * t + 1]), at(m.indices[3 * t + 2])];
+    if (inTriangle(c, a, b, d)) return c;
+    const g: Vec3 = [(a[0] + b[0] + d[0]) / 3, (a[1] + b[1] + d[1]) / 3, (a[2] + b[2] + d[2]) / 3];
+    const dist = Math.hypot(g[0] - c[0], g[1] - c[1], g[2] - c[2]);
+    if (dist < bestD) [best, bestD] = [g, dist];
+  }
+  return best ?? c;
 }

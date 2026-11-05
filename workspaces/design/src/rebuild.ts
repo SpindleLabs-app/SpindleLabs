@@ -404,7 +404,7 @@ async function outlineOf(kernel: KernelCalls, content: KeptShape & Pick<Sketch, 
     if (region !== undefined) {
       const answer = await kernel.call("sketch_regions", c.lines, c.circles, c.arcs);
       const found = findRegion(answer.regions, ids, region);
-      if (found === undefined) return { lost: "open-outline", message: REGION_GONE, curves: [] };
+      if (found === undefined) return { lost: "open-outline", message: answer.regions.length === 0 && answer.why !== undefined ? answer.why : REGION_GONE, curves: [] };
       if (found.extrudes) return { outline: regionOutline(found) };
       return { lost: "invalid-outline", message: found.refused ?? "this region can't be extruded", curves: namedCurves(found.invalid ?? [], ids) };
     }
@@ -1006,8 +1006,9 @@ export async function extrudeSpec(
   const out = await outlineOf(kernel, content, region);
   // A curve the kernel refused is named in its own words ("line 1 must be …"), as before 24d2; an outline that doesn't close says whose.
   const name = item.provenance.self.label;
-  const said = (o: { message: string; refused?: true }) =>
-    o.refused ? o.message : region === undefined ? `${name} has no closed outline: ${o.message}` : o.message === REGION_GONE ? `${name} ${REGION_GONE}` : `${name}'s region can't be extruded: ${o.message}`;
+  // A region gone from a sketch that still has others says so; from one that has none, why it has none (a line deleted: "not joined"), as before regions.
+  const said = (o: { lost: LostCause; message: string; refused?: true }) =>
+    o.refused ? o.message : o.message === REGION_GONE ? `${name} ${REGION_GONE}` : region !== undefined && o.lost === "invalid-outline" ? `${name}'s region can't be extruded: ${o.message}` : `${name} has no closed outline: ${o.message}`;
   if (!("outline" in out)) return await lost(out.lost, said(out), out.curves);
   // Where the sketch lies: given by the rebuild, an origin plane's, or (asked from outside a rebuild) its face's as the timeline builds it.
   const at = placed !== undefined ? placed : isFaceSketch(item) ? await placementOf(kernel, doc, sketchId) : originPlacement(item);
