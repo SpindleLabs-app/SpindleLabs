@@ -1666,7 +1666,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const spot = pending && sketch ? dimensionLine(sketch, pending, 10 * (editing.pixel ?? 0.1)) : null;
     const box = (spot && viewport.sketchScreenPoint(spot.label)) || screen;
     const live = pending ? { [typedFields(tool)[0]]: pending.value } : anchor && aim ? liveValues(anchor, aim, tool) : {};
-    typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, viewport.editedScreenPoints());
+    // A dimension's box stays by its label: the next thing is typing, not a tap on a point, and moving it off the points sent it
+    // to the view's far corner on almost any small sketch (the solver bug hunt, 2026-11-06).
+    typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, pending ? undefined : viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
     else hint.hide();

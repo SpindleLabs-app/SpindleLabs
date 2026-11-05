@@ -11,11 +11,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { addConstraint, solverRequest, type Added } from "../src/constraints.ts";
-import { clickConstraint, dimensionWord, startConstraintTool } from "../src/constraint-tool.ts";
+import { clickConstraint, constraintPickAt, dimensionWord, startConstraintTool } from "../src/constraint-tool.ts";
 import { partDocument, type DesignDocument, type Sketch } from "../src/document.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { editFeature } from "../src/feature-edit.ts";
-import { dragStep } from "../src/point-drag.ts";
+import { dragStep, dragTo, HELD } from "../src/point-drag.ts";
 import { BodyCache, followedDoc, rebuildTimeline } from "../src/rebuild.ts";
 import { addFaceSketch, addSketch, deleteCurve, drawArc, drawCircle, drawLine, drawRectangle, pinNewPoints } from "../src/sketch.ts";
 
@@ -180,4 +180,70 @@ test("an arc pinned at a corner stays on its circle after the box is widened, th
   assert.ok(Math.abs(r1 - r2) <= LINEAR, `radii ${r1} and ${r2}`);
   const r = build.results[id];
   assert.ok(r.status === "built" && r.solved !== undefined && r.constraints === undefined, "solved, with no warning");
+});
+
+test("a Fix on a corner that the sizes and another Fix already hold adds nothing: refused, so it can't block a later change", async () => {
+  // A 40 × 25 rectangle held whole: level bottom and top, upright sides, bottom 40, right side 25 and its first corner fixed.
+  // Its far corner (40, 25) is then set by the fixed corner, the level and upright sides and the two sizes: a Fix there adds nothing.
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const r = drawRectangle(s0.doc, s0.id, [0, 0], [40, 25]);
+  const sides = r.ids.map((id) => sketchOf(r.doc, s0.id).curves.find((c) => c.id === id)!) as { start: string; end: string }[];
+  let doc = r.doc;
+  for (const c of [
+    { kind: "horizontal", a: sides[0].start, b: sides[0].end }, { kind: "vertical", a: sides[1].start, b: sides[1].end },
+    { kind: "horizontal", a: sides[2].start, b: sides[2].end }, { kind: "vertical", a: sides[3].start, b: sides[3].end },
+    { kind: "distance", a: sides[0].start, b: sides[0].end, value: 40 }, { kind: "distance", a: sides[1].start, b: sides[1].end, value: 25 },
+    { kind: "fix", point: sides[0].start },
+  ] as const) doc = ok(await addConstraint(kernel, doc, s0.id, c)).doc;
+  const far = no(await addConstraint(kernel, doc, s0.id, { kind: "fix", point: sides[2].start }));
+  assert.match(far.refused, /That fix constraint would add nothing: the others already hold that point/);
+  // A Fix on a corner that is still free to move is taken: with the 25 off, the top can slide up and down.
+  const loose = sketchOf(doc, s0.id).constraints.filter((c) => !(c.kind === "distance" && c.value === 25));
+  const looser = { ...doc, sketches: doc.sketches.map((s) => (s.id === s0.id ? { ...s, constraints: loose } : s)) };
+  ok(await addConstraint(kernel, looser, s0.id, { kind: "fix", point: sides[2].start }));
+});
+
+test("a drag of a point its constraints hold still says so, and one that moves says nothing", async () => {
+  // Line (0, 0)–(4, 2), its start fixed, level, 4 long: its end is held at (4, 0).
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const l = drawLine(s0.doc, s0.id, [0, 0], [4, 2]);
+  let doc = l.doc;
+  for (const c of [{ kind: "fix", point: "point-3" }, { kind: "horizontal", a: "point-3", b: "point-4" }, { kind: "distance", a: "point-3", b: "point-4", value: 4 }] as const) doc = ok(await addConstraint(kernel, doc, s0.id, c)).doc;
+  const held = await dragTo(kernel, doc, s0.id, "point-4", [6, 3], 0.1);
+  assert.equal(held.refused, HELD);
+  assert.deepEqual(xy(sketchOf(held.doc, s0.id), "point-4"), [4, 0]);
+  // Without the length the end slides along the level: to (6, 0), and nothing is said.
+  const free = await dragTo(kernel, { ...doc, sketches: doc.sketches.map((s) => (s.id === s0.id ? { ...s, constraints: s.constraints.filter((c) => c.kind !== "distance") } : s)) }, s0.id, "point-4", [6, 3], 0.1);
+  assert.equal(free.refused, null);
+  const e = xy(sketchOf(free.doc, s0.id), "point-4");
+  assert.ok(Math.abs(e[0] - 6) <= LINEAR && Math.abs(e[1]) <= LINEAR, `the end at ${e}`);
+});
+
+test("a point picked first, then a line, keeps the point and waits for a second point: the line's length is not set instead", () => {
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const l = drawLine(s0.doc, s0.id, [0, 0], [4, 2]);
+  const c = drawCircle(l.doc, s0.id, [10, 10], 2);
+  const s = sketchOf(c.doc, s0.id);
+  const centre = (s.curves.find((q) => q.id === c.id) as { centre: string }).centre;
+  for (const kind of ["dimension", "horizontal", "vertical"] as const) {
+    const one = clickConstraint(startConstraintTool(kind, s0.id), s, { point: centre });
+    const two = clickConstraint(one.tool, s, kind === "dimension" ? { curve: l.id } : { line: l.id });
+    assert.equal(two.add, null, kind);
+    assert.equal(two.tool.first, centre, `${kind}: the point is kept`);
+    assert.ok(!two.tool.pending, `${kind}: no length waits`);
+  }
+});
+
+test("a tap on the middle of a side shorter than the finger's reach picks the side, a tap by its corner the corner", () => {
+  // A 6 × 4 rectangle with a reach of 5 (a finger at 375 px): the bottom side's middle (3, 0) is 3 from either corner.
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const r = drawRectangle(s0.doc, s0.id, [0, 0], [6, 4]);
+  const s = sketchOf(r.doc, s0.id);
+  const bottom = s.curves.find((c) => c.id === r.ids[0]) as { id: string; start: string };
+  assert.deepEqual(constraintPickAt(s, "horizontal", [3, 0.2], 5), { line: bottom.id });
+  assert.deepEqual(constraintPickAt(s, "dimension", [3, 0.2], 5), { curve: bottom.id });
+  // At (0.5, 0.1), an eighth of the way along: the corner (0, 0).
+  assert.deepEqual(constraintPickAt(s, "horizontal", [0.5, 0.1], 5), { point: bottom.start });
+  // Coincident and Fix take points only: the corner still.
+  assert.ok("point" in constraintPickAt(s, "coincident", [3, 0.2], 5)!);
 });

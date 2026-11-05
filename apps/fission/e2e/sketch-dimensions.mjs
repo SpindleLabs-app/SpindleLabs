@@ -184,6 +184,10 @@ try {
     await at(page, [10, 3]);
     await boxFor(page, "length", "the line picked");
     assert.equal(await page.locator("#typed-length").getAttribute("placeholder"), "20.881", "the box starts at the length as drawn, √436 = 20.881");
+    // The box opens by the line's label, not off in the view's corner (the solver bug hunt, 2026-11-06).
+    const middle = toScreen(await camera(page), await canvasBox(page), [10, 3, 0]);
+    const opened = await page.locator("#typed-entry").boundingBox();
+    assert.ok(opened && Math.hypot(opened.x - middle.x, opened.y - middle.y) < 150, `the box at ${opened?.x}, ${opened?.y}, the line's middle at ${middle.x}, ${middle.y}`);
     await shot(page, "dimensions-box-1280");
     await page.keyboard.type("30");
     await page.keyboard.press("Enter");
@@ -277,6 +281,28 @@ try {
     await page.keyboard.press("Enter");
     await shown(page, "sketchLabels", "8");
     await shot(page, "dimensions-changed-375");
+    await page.context().close();
+  });
+  await check("1280 px: on a closed shape the size box stays by the side picked, even with a reason under it, not in the view's corner", async () => {
+    // The solver bug hunt (2026-11-06): the box moved off the sketch's points, so on any small shape it jumped to the far corner.
+    const page = await fresh();
+    await sketchOnXY(page, false);
+    await press(page, "#sketch-tool-rectangle", false);
+    await at(page, [0, 0]);
+    await at(page, [30, 20]);
+    await until(page, () => document.querySelector("#viewport").dataset.sketchLines === "4", null, "the rectangle drawn");
+    await page.click("#sketch-tool-dimension");
+    await at(page, [15, 0]);
+    await boxFor(page, "length", "the bottom side picked");
+    // Text it can't read: the reason shows under the box, making it taller, which is what made it cover a corner and jump.
+    await page.keyboard.type("10+30");
+    await page.keyboard.press("Enter");
+    await until(page, () => /isn't a length/.test(document.querySelector("#typed-entry")?.textContent ?? ""), null, "the text refused");
+    await page.waitForTimeout(300);
+    const side = toScreen(await camera(page), await canvasBox(page), [15, 0, 0]);
+    const opened = await page.locator("#typed-entry").boundingBox();
+    assert.ok(opened && Math.hypot(opened.x - side.x, opened.y - side.y) < 150, `the box at ${opened?.x}, ${opened?.y}, the side's middle at ${side.x}, ${side.y}`);
+    await shot(page, "dimensions-small-box-1280");
     await page.context().close();
   });
 } finally {
