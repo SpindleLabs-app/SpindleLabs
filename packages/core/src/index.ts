@@ -35,7 +35,7 @@ export { DownstreamRegistry, summarize } from "./model/downstream.ts";
 export type { ChangeCause, ChangeNote, ChangeNoteState } from "./model/change-notes.ts";
 export { ChangeNotes, noteText } from "./model/change-notes.ts";
 export type { Command, CommandSpec, ParamSpec, Parsed } from "./model/commands.ts";
-export { commandListSchema, commandSchema, parseCommand, parseCommandList } from "./model/commands.ts";
+export { commandListSchema, commandSchema, MAX_EXPLANATION, parseCommand, parseCommandList } from "./model/commands.ts";
 export type { Feature, Intent, Origin, ParameterValue, Provenance, Timeline } from "./model/feature.ts";
 export { describeProvenance, workspaceName } from "./model/feature.ts";
 export type { FileFormat, FileFormatInfo, FileHead, FileImporter, FileRoute, Identified } from "./model/files.ts";
