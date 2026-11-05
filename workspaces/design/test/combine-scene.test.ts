@@ -15,9 +15,11 @@ import { insertCombine } from "../src/combine.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { sketchSpot } from "../src/face-pick.ts";
+import { faceHeld, sketchEdgeTargets } from "../src/face-edges.ts";
 import { changedMove, insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, rebuildTimeline, settleKept } from "../src/rebuild.ts";
 import { extrudeSketch } from "../src/extrude.ts";
+import { editFeature } from "../src/feature-edit.ts";
 import { readDesignReference } from "../src/references.ts";
 import { findInScene, joinBodies, sceneReference, shownBodies, type Scene } from "../src/scene.ts";
 import { referenceLabel } from "../src/selection.ts";
@@ -44,7 +46,7 @@ function boxes(...list: [[number, number, number], [number, number, number]][]):
 async function sceneOf(doc: DesignDocument) {
   const cache = new BodyCache(kernel);
   const build = await rebuildTimeline(doc, cache, kernel);
-  const scene = joinBodies(await shownBodies(doc, build, cache));
+  const scene = joinBodies(await shownBodies(doc, build, cache), build);
   return { build, scene, cache };
 }
 
@@ -313,4 +315,57 @@ test("hand-worked: a sketch on a face that came from a Combine's tool stays put 
   const moved = changedMove(onA.doc, "feature-2", { ...NO_MOVE, x: 20 });
   assert.deepEqual(await placed(moved), { b: { origin: [0, 0, 25], x: [1, 0, 0] }, a: { origin: [10, 0, 10], x: [1, 0, 0] } });
   await cache.clear();
+});
+
+test("hand-worked: a sketch placed on a whole face before a Cut splits it into two pieces alike still takes points from the bodies (35f1e2)", async () => {
+  // The bar 100 × 20 × 10 (feature-1); a block 10 × 10 × 10 (feature-2) moved to y 30..40 (feature-3), its top at z =
+  // 10 too; a sketch on the bar's top (feature-4) drawn before anything cuts it; then the tool 10 × 40 × 20 moved to x
+  // 45..55 and the Cut: the bar's top ends as two pieces of 45 × 20 = 900 mm² each that no untagged name tells apart.
+  // The rebuild placed the sketch on the whole top, built before the Cut, at z = 10 with no warning; the screen names
+  // the faces of the finished design, where "feature-1/top" is two pieces alike. Before 35f1e2 that read as a lost
+  // face, so the sketch took no points from any body (no snap to the block's corners) though it is placed. The
+  // rebuild's verdict (the scene's `placed`) has the last word.
+  const block = insertPreset(partDocument("box", 100, 20, 10), "box", 10, 10, 10);
+  const blockMoved = insertMove(block.doc, [`body:${block.id}`], { ...NO_MOVE, y: 30 }).doc;
+  const s = addFaceSketch(blockMoved, { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [50, 10, 10]));
+  const p = insertPreset(s.doc, "box", 10, 40, 20);
+  const moved = insertMove(p.doc, [`body:${p.id}`], { ...NO_MOVE, x: 45, y: -10, z: -5 }).doc;
+  const { doc } = insertCombine(moved, "body:feature-1", [`body:${p.id}`], "cut");
+  const { build, scene, cache } = await sceneOf(doc);
+  const r = build.results[s.id];
+  assert.ok(r.status === "built" && r.plane === undefined && r.placement?.plane.origin[2] === 10, JSON.stringify(r));
+  assert.equal(findInScene(face(facePlane("feature-1", "top")), scene).status, "shared");
+  assert.equal(faceHeld(doc, s.id, scene), false);
+  // The block's top corners lie on the sketch's plane (z = 10), whose frame is the world's lifted to z = 10: (0, 30)
+  // and (10, 40) in sketch x, y.
+  const corners = (sc: Scene) => sketchEdgeTargets(doc, s.id, sc, r.placement!.plane).filter((t) => t.kind === "endpoint").map((t) => t.at.join(","));
+  for (const c of ["0,30", "10,40"]) assert.ok(corners(scene).includes(c), `${c} in ${corners(scene).join(" ")}`);
+  // A scene without the rebuild's verdict (a caller that has none) still reads the shared name as held, as before.
+  const bare = joinBodies(scene.bodies);
+  assert.equal(faceHeld(doc, s.id, bare), true);
+  assert.deepEqual(corners(bare), []);
+  await cache.clear();
+});
+
+test("hand-worked: a reference holding a tag no piece has any more is lost, never found on its own body without the tag (35f1e2, seed 48)", async () => {
+  // The bar 100 × 20 × 10 (feature-1) cut by the tool 10 × 40 × 20 (feature-2) moved to (30, −10, −5) (feature-3),
+  // Keep tools on (feature-4). The tool's left (x = 30) is on two faces: its own, and the near piece's wall the Cut left
+  // there (rule 2). Its own borders the tool's back, bottom, front and top, none of which the wall borders (the wall
+  // borders the bar's top, bottom, front and back): that is its tag (rule 3).
+  const { doc: two, bodies } = boxes([[100, 20, 10], [0, 0, 0]], [[10, 40, 20], [30, -10, -5]]);
+  const { doc } = insertCombine(two, bodies[0], [bodies[1]], "cut", true);
+  const old = face("face:feature-2/left#face:feature-2/back,face:feature-2/bottom,face:feature-2/front,face:feature-2/top");
+  const before = await sceneOf(doc);
+  assert.equal(findInScene(old, before.scene).status, "found");
+  await before.cache.clear();
+  // The tool 12 tall instead: z −5..7, so it notches the bar from below, its top now the notch's roof at z = 7 (rule 2:
+  // the roof carries the tool's top). The wall at x = 30 now borders that roof, feature-2/top, as the tool's own left
+  // does, so the tool's own left is tagged by its back, bottom and front only. Rule 3: "a reference holding a tag finds
+  // the one piece with that tag": none has the old one, so the reference is lost (gone), as the model has it; before
+  // this fix Design fell back on the tool's own body, where the name without its tag found the face.
+  const taller = editFeature(doc, "feature-2", { height: 12 });
+  const after = await sceneOf(taller);
+  assert.equal(findInScene(old, after.scene).status, "gone");
+  assert.equal(findInScene(face("face:feature-2/left#face:feature-2/back,face:feature-2/bottom,face:feature-2/front"), after.scene).status, "found");
+  await after.cache.clear();
 });

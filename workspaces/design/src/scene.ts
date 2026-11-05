@@ -51,6 +51,15 @@ export interface Scene {
   edgeStart: readonly number[];
   /** The design's names, once a Combine built (35f1e), and each of its bodies' index among those shown (−1: hidden). */
   design?: SceneDesign & { shown: readonly number[] };
+  /**
+   * 35f1e2: the face sketches the rebuild placed on their face (built, with
+   * no "plane lost" or "plane ambiguous"), when the scene was joined with
+   * its rebuild. The screen names faces over the finished design, a sketch
+   * is placed over the bodies built before it, so a Combine after it can
+   * leave its face's name on two pieces alike though it is placed: this
+   * is the rebuild's verdict (face-edges.ts `faceHeld`).
+   */
+  placed?: ReadonlySet<string>;
 }
 
 /**
@@ -113,6 +122,10 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
   return shown.map((x) => ({ ...x, design: { of, at: bodies.findIndex((b) => b.id === x.body) } }));
 }
 
+/** The sketches a rebuild placed (Scene `placed`): built with a placement and no lost or ambiguous plane (a split face's piece counts). */
+const placedSketches = (build: Pick<TimelineBuild, "results">): ReadonlySet<string> =>
+  new Set(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement !== undefined && (r.plane === undefined || r.plane.cause === "plane-split") ? [id] : [])));
+
 /**
  * Joins the bodies' display meshes: positions and normals one after
  * another, each body's triangle corners moved past the previous bodies'
@@ -121,7 +134,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
  * face or edge its body does not have (it would be drawn as another
  * body's).
  */
-export function joinBodies(bodies: readonly ShownBody[]): Scene {
+export function joinBodies(bodies: readonly ShownBody[], build?: Pick<TimelineBuild, "results">): Scene {
   const mesh: DisplayMesh = { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] };
   const faceStart: number[] = [];
   const edgeStart: number[] = [];
@@ -149,9 +162,10 @@ export function joinBodies(bodies: readonly ShownBody[]): Scene {
     edges += view.edges;
   }
   const of = bodies.find((b) => b.design !== undefined)?.design?.of;
-  if (of === undefined) return { bodies, mesh, faceStart, edgeStart };
+  const placed = build === undefined ? {} : { placed: placedSketches(build) };
+  if (of === undefined) return { bodies, mesh, faceStart, edgeStart, ...placed };
   const shown = of.bodies.map((nb) => bodies.findIndex((b) => b.body === nb.id));
-  return { bodies, mesh, faceStart, edgeStart, design: { ...of, shown } };
+  return { bodies, mesh, faceStart, edgeStart, design: { ...of, shown }, ...placed };
 }
 
 /** Adds `from` to the end of `to`, each plus `by` (a loop: a big mesh would overflow push's argument list). */
@@ -270,7 +284,12 @@ function designFind(ref: GeometryReference, scene: Scene): Found {
     found = resolveOldEdge(d.bodies, a, b);
   }
   // A name two faces of its own plain body would share carries on neither (naming.ts): said as before a Combine, shared.
-  if ("lost" in found) return r.kind === "face" ? ownFind(ref, scene) : { status: "gone" };
+  // Only that: a name no face carries, or a tag no piece has (rule 3: a reference holding a tag finds the one piece with
+  // that tag), is gone, never found on its own body without its tag (35f1e2, seed 48 on the next kernel).
+  if ("lost" in found) {
+    const own = r.kind === "face" ? ownFind(ref, scene) : null;
+    return own?.status === "shared" ? own : { status: "gone" };
+  }
   if ("ambiguous" in found) return { status: "shared", count: found.ambiguous };
   const shown = d.shown[found.body];
   if (shown < 0) return { status: "gone" };

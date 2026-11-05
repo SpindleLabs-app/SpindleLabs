@@ -299,7 +299,7 @@ const fromKey = (bodies: readonly ModelBody[]) => {
  * other loses any; a combined body's edges are named again from their two
  * faces. In place: the bodies are this rebuild's own.
  */
-export function tagDesign(bodies: readonly ModelBody[], untagged = false): void {
+export function tagDesign(bodies: readonly ModelBody[], untagged = false, edgesUntagged = false): void {
   const { all, carrying, tagOf } = designFaces(bodies);
   const name = fromKey(bodies);
   // Only a Combine shares a name between faces: two faces of plain bodies carrying one are a naming bug, left untagged
@@ -310,7 +310,9 @@ export function tagDesign(bodies: readonly ModelBody[], untagged = false): void 
     const { tag: _, ...base } = x.f.name;
     x.f.name = split(shown) && !untagged ? { ...base, tag: tagOf(k, shown).map(name) } : base;
   });
-  for (const b of bodies) if (b.combined) b.edges = b.edges.map((e) => ({ ...e, name: pairName(b.faces[e.between![0]].name, b.faces[e.between![1]].name) }));
+  // Planted bug ("combine-edge-tags-dropped", 35f1e2): a combined body's edges named by their faces' names without tags.
+  const plain = (n: FaceName): FaceName => (edgesUntagged ? { feature: n.feature, role: n.role, ...(n.curve !== undefined && { curve: n.curve }) } : n);
+  for (const b of bodies) if (b.combined) b.edges = b.edges.map((e) => ({ ...e, name: pairName(plain(b.faces[e.between![0]].name), plain(b.faces[e.between![1]].name)) }));
 }
 
 /** What a face reference (a held name, a sketch's plane) finds on the bodies (rule 3). */

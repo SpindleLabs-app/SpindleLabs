@@ -159,3 +159,25 @@ test("hand-worked: a sketch on a face from a Combine's tool stays put when the t
   assert.equal(sketchMovedAlone(before[0], rebuild(right.doc), sketches), 1);
   assert.match(String(sketchMovedAlone(before[1], rebuild(planted.doc, planted.faults), sketches)), /^item-6 on item-3\/top: lift 25 turn null before, lift 25 turn \{"x":\[1,0\],"at":\[10,0\]\} now/);
 });
+
+test("hand-worked: a sketch drawn on a top that a Combine before it turned into a cavity's roof still faces up (rule 8; 35f1e2, seed 137)", () => {
+  // Design's part is not here: the box 40 × 30 × 20 (item-1); a sketch on its top (item-2, z = 20, circle curve-3). A
+  // box 2 × 47 × 29 (item-4: x 0..2, y 0..47, z 0..29) cut by the first box (item-5, the first box used up), the
+  // sketch then moved after the Cut: what is left of item-4 has a roof at z = 20 over x 0..2, y 0..30 (where the first box was),
+  // carrying the first box's top (rule 2) and looking down. The sketch moved after the Cut lies on that roof. Rule 8 keeps the sketch's normal on the side it was drawn
+  // (up), so it lies at z = 20 facing up, not down; nothing carried it.
+  const m = createModel();
+  run(
+    m,
+    { op: "add-preset", kind: "box", sizes: [40, 30, 20] },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [1, 10], radius: 1 }, face: { feature: "item-1", role: "top" } },
+    { op: "add-preset", kind: "box", sizes: [2, 47, 29] },
+    { op: "add-combine", target: "item-4", tool: "item-1", operation: "cut", keep: false },
+  );
+  assert.deepEqual(run(m, { op: "reorder", item: "item-2", to: 3 }), [{ kind: "done", ids: [] }]);
+  const r = rebuild(m.doc);
+  const roof = (r.results["item-4"] as { body?: ModelBody }).body?.faces.find((f) => faceKey(f.name) === "item-1/top");
+  // The roof: 2 · 30 = 60 mm², at z = 20, looking down.
+  assert.deepEqual([roof?.area, roof?.centroid[2], roof?.down], [60, 20, true]);
+  assert.deepEqual(r.results["item-2"], { status: "built", lift: 20 });
+});

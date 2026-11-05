@@ -131,6 +131,7 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   // that splits its face into pieces alike); timeline-combine.test.ts catches it by hand too.
   "combine-first-piece": "a reference guessed between pieces",
   "combine-face-moves-with-target": "the rebuild differs from the model",
+  "combine-edge-tags-dropped": "the rebuild differs from the model",
 };
 
 /** Faults the first 24 seeds don't reach, and the seeds that do (found by searching 1 to 200; search again if the sessions change). */

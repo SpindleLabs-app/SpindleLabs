@@ -237,6 +237,19 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "combine-edge-tags-dropped": {
+    what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
+    edits: [
+      {
+        file: NAMES,
+        find: "      const [fa, fb] = [full[bi][pair[0]] ?? null, full[bi][pair[1]] ?? null];",
+        replace: '      const [fa, fb] = [full[bi][pair[0]]?.split("#")[0] ?? null, full[bi][pair[1]]?.split("#")[0] ?? null];',
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+    why: "recorded on the #132 kernel built locally with MODEL_KNOWS, 2026-11-05 (seed 3); before 35f1e2 the sessions named a combined body's edges themselves from its faces' full names, so this mistake in the app was never compared: they now read the names the app writes",
+  },
   "save-stamps": {
     what: "each save writes a counter into the file",
     edits: [

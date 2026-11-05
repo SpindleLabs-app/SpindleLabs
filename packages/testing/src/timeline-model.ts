@@ -348,7 +348,8 @@ export type ModelFault =
   | "combine-refusal-changes"
   | "combine-tags-dropped"
   | "combine-first-piece"
-  | "combine-face-moves-with-target";
+  | "combine-face-moves-with-target"
+  | "combine-edge-tags-dropped";
 
 export const MODEL_FAULTS: readonly ModelFault[] = [
   "reorder-past-dependency",
@@ -391,6 +392,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "combine-tags-dropped",
   "combine-first-piece",
   "combine-face-moves-with-target",
+  "combine-edge-tags-dropped",
 ];
 
 /** The faults only a session with Combines (step 35, `LANDED`) can catch. */
@@ -678,7 +680,7 @@ export function rebuild(doc: ModelDoc, faults: ReadonlySet<ModelFault> = new Set
     if (doc.marker === item.id && !faults.has("ignore-marker")) rolled = true;
   }
   // Rules 3 and 5 on every body shown (35f1d2). Planted bug ("combine-tags-dropped"): no face is ever tagged.
-  tagDesign(bodiesNow(results), faults.has("combine-tags-dropped"));
+  tagDesign(bodiesNow(results), faults.has("combine-tags-dropped"), faults.has("combine-edge-tags-dropped"));
   return { order: doc.items.map((i) => i.id), results };
 }
 
@@ -866,9 +868,9 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
     const body = bodies[found.body];
     // 35e2h: carried along the face by what its body's Moves did since it was drawn. Planted bug ("sketch-not-carried"): only its height follows.
     const turn = faults.has("sketch-not-carried") ? undefined : turnSince(faceMotion(body, body.faces[found.face]), item.on.motion);
-    // 35f1e: a face a Combine turned to look down (a cut's roof carrying a tool's top) has the sketch facing down too.
-    const down = body.faces[found.face].down;
-    if (down) return { status: "built", lift: body.faces[found.face].centroid[2], down, ...(found.split && { plane: "plane-split" as const }) }; // its turn is not compared
+    // 35f1e2 (seed 137 on the next kernel): on a face a Combine turned to look down (a cut's roof carrying a tool's top)
+    // the sketch still faces up, the side it was drawn on (rule 8, naming-model.ts `frameNow`: the normal stays on the
+    // drawn normal's side; every face the sessions draw on looks up). 35f1e had it facing down, against rule 8.
     return { status: "built", lift: body.faces[found.face].centroid[2], ...(turn && { turn }), ...(found.split && { plane: "plane-split" as const }) };
   }
   const held = item.on.held === undefined ? undefined : item.on.heldTurn;
