@@ -566,6 +566,9 @@ try {
         await dragArrow(page, 0, 15.3, false);
         assert.equal(await boxValue(page, "x"), "15", "15.3 mm snaps to 15");
         stayed(await camera(), cam, "the camera moved with the arrow");
+        // Escape turns Pan or Zoom off first (U7b) and leaves Move open; the next one leaves Move.
+        await page.keyboard.press("Escape");
+        assert.equal(await page.getAttribute("#view-controls [data-nav=orbit]", "aria-pressed"), "true", "the first Escape leaves " + mode);
         await page.keyboard.press("Escape");
         await closed(page);
         // A click in Pan mode pans, so the box is picked for Rotate in Orbit mode, then the mode set again.
