@@ -217,7 +217,10 @@ try {
     assert.ok(Number(await data(page, "sketchFighting")) > 0, "the dimension that fights is drawn red");
     assert.equal(await page.locator(".sketch-label-fighting").count(), 1, "its label red");
     nearly((await pointList(page))[1], p[1], "nothing moved");
+    // The box stays open with the 40 typed, so it can be corrected (the solver bug hunt, 2026-11-06: it closed and lost it).
+    await until(page, () => document.querySelector("#typed-entry")?.hidden === false && document.querySelector("#typed-length")?.getAttribute("placeholder") === "40", null, "the refused box open again with 40");
     await shot(page, "dimensions-fight-1280");
+    await page.keyboard.press("Escape");
     // Escape in the box: nothing added.
     await at(page, [6, 1.8]);
     await boxFor(page, "length", "the line picked again, for Escape");

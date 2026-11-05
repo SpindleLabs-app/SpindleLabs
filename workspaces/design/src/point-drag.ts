@@ -36,7 +36,7 @@
 
 import type { KernelCalls } from "@fission/core";
 import type { DesignDocument, Sketch } from "./document.ts";
-import { followingPoints, MIN_FEATURE, readAnswer, shrunk, solverRequest } from "./constraints.ts";
+import { curveWord, followingPoints, MIN_FEATURE, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 import { movePoint, PROJECTED_POINT } from "./sketch.ts";
 import { madePoints } from "./projection.ts";
 
@@ -136,9 +136,9 @@ export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchI
   const answer = readAnswer(await kernel.call("solve_sketch", request.text));
   if (answer.result === "refused") return { refused: `The sketch can't be solved there: ${answer.message}.` };
   if (answer.result === "conflict") return { refused: "The sketch's constraints can't all hold there, so the point stays where it last was." };
-  const solved = new Map(request.points.map((p, i) => [p, answer.points[i]] as const));
+  const solved = solvedPoints(moved, request, answer.points);
   const tiny = shrunk(moved, solved);
-  if (tiny !== null) return { refused: `That would shrink ${tiny} below ${MIN_FEATURE} mm, so the point stays where it last was.` };
+  if (tiny !== null) return { refused: `That would shrink ${curveWord(moved, tiny, "a")} below ${MIN_FEATURE} mm, so the point stays where it last was.` };
   const began = origin.sketches.find((s) => s.id === sketchId);
   if (turnedOver(sketch, pointsOf(sketch), solved) !== null || (began && turnedOver(sketch, pointsOf(began), solved) !== null)) return { refused: ARC_TURNED };
   const points = sketch.points.map((p) => {

@@ -45,7 +45,7 @@ import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, p
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
-import { readAnswer, shrunk, solverRequest } from "./constraints.ts";
+import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -914,8 +914,9 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
   }
   const label = f.provenance.self.label;
   const followed = movedTo(content, [...pinned, ...projected.flatMap((q) => q.points)], projected.flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
-  // Step 47d4: a sketch with constraints is solved again when a followed point moved (an arc through it is off its circle now).
-  const again = followed !== content && content.constraints.length > 0 ? await solvedAgain(kernel, followed, label) : null;
+  // Step 47d4: a sketch with constraints or arcs is solved again when a followed point moved (an arc through it is off its
+  // circle now; the solver bug hunt, 2026-11-06: an arc with no constraint in the sketch was left off its circle, unsaid).
+  const again = followed !== content && (content.constraints.length > 0 || content.curves.some((c) => c.kind === "arc")) ? await solvedAgain(kernel, followed, label) : null;
   const settled = again !== null && "solved" in again ? movedTo(followed, again.solved, []) : followed;
   if (settled !== content) index.sketches.set(f.id, settled);
   const n = held["point-lost"] + held["point-ambiguous"];
@@ -950,9 +951,9 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, label: string)
   }
   if (answer.result === "refused") return { message: constraintsWords(label, `the solver refused it: ${answer.message}`) };
   if (answer.result === "conflict") return { message: constraintsWords(label, "they fight there") };
-  const at = new Map(request.points.map((p, i) => [p, answer.points[i]] as const));
+  const at = solvedPoints(followed, request, answer.points);
   const tiny = shrunk(followed, at);
-  if (tiny !== null) return { message: constraintsWords(label, `${tiny} would shrink below the smallest size`) };
+  if (tiny !== null) return { message: constraintsWords(label, `${curveWord(followed, tiny, "a")} would shrink below the smallest size`) };
   return { solved: followed.points.flatMap((p) => {
     const [x, y] = at.get(p.id)!;
     return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];

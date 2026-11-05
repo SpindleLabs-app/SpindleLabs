@@ -121,6 +121,14 @@ function clickDimension(tool: ConstraintTool, sketch: Sketch, pick: ConstraintPi
   let pending: NewDimension | null = null;
   if ("point" in pick) {
     if (tool.first === null || tool.first === pick.point || !xy.has(tool.first)) return { tool: { ...tool, first: pick.point, pending: null }, add: null };
+    // An arc's centre and one of its ends, in either order, is its radius: centre first, as when the arc is picked (the solver bug hunt, 2026-11-06).
+    const [p, q] = [tool.first, pick.point];
+    const ends = (c: { start: string; end: string }, x: string) => c.start === x || c.end === x;
+    const arc = sketch.curves.find((c) => c.kind === "arc" && ((c.centre === p && ends(c, q)) || (c.centre === q && ends(c, p))));
+    if (arc?.kind === "arc") {
+      const end = arc.centre === p ? q : p;
+      return { tool: { ...tool, first: null, pending: { kind: "distance", a: arc.centre, b: end, value: apart(arc.centre, end) }, pendingField: "radius" }, add: null };
+    }
     pending = { kind: "distance", a: tool.first, b: pick.point, value: apart(tool.first, pick.point) };
   } else {
     const c = sketch.curves.find((q) => q.id === ("curve" in pick ? pick.curve : pick.line));
