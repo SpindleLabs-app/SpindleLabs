@@ -708,7 +708,7 @@ const file = fileMenu(document, {
 });
 $("file-bar").prepend(file.element);
 /** What Open says when the last project's changes, refused because another tab saved, were kept as project `name`. */
-const keptApartWords = (name: string) => `Changes made in this tab couldn't be stored, because the project was changed in another tab, so they're kept in this browser as a separate project, “${name}”.`;
+const keptApartWords = (name: string) => `Your changes in this tab couldn't be saved, because the project was changed in another tab meanwhile. Nothing is lost: they're kept in this browser as a separate project, “${name}” (File > Projects in this browser opens it).`;
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
