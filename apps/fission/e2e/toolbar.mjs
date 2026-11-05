@@ -251,7 +251,7 @@ try {
           "create-menu": ["revolve", "hole", "pattern", "sweep", "loft"],
           "modify-menu": ["duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
           "construct-menu": ["plane", "axis", "point"],
-          "inspect-menu": ["measure", "section"],
+          "inspect-menu": ["section"],
         });
         await press(page, "#modify-menu", tap);
         await until(page, () => !document.getElementById("modify-menu-menu").hidden, null, "Modify ▾ opens");
