@@ -137,6 +137,17 @@ export function sketchGrid(centre: SketchXY, pixel: number, reachPx: number, ste
 }
 
 /**
+ * The corners of the tinted sheet the sketch plane is drawn as (U7a): the
+ * grid's bounds [x0, x1, y0, y1] as the four corners round it, anticlockwise
+ * from the bottom left, so the plane stays visible as a surface when it is
+ * orbited edge on or seen from behind.
+ */
+export function gridSheet(bounds: readonly [number, number, number, number]): [SketchXY, SketchXY, SketchXY, SketchXY] {
+  const [x0, x1, y0, y1] = bounds;
+  return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+}
+
+/**
  * How big a screen pixel is on the plane at the pointer (mm), for snapping
  * within a few pixels: from where the pointer meets the plane to where the
  * points one pixel right of it and one pixel below it do, the further of
