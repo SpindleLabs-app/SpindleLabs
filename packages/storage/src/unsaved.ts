@@ -53,7 +53,7 @@ export const NEWER_PREFIX = "panoshape.unsaved-newer/";
  * two tabs left straight after a change each, and the second's entry replaced the first's under the one key, so the
  * first tab's change was in no entry and no project. `asideKey` is this prefix, the writer, "/" and the project's id.
  * The next visit puts these back after the entries under UNSAVED_PREFIX, by the same rules: over the state it was
- * made from, else as a separate project "(from another tab)".
+ * made from, else as a separate project "(kept copy)".
  */
 export const ASIDE_PREFIX = "panoshape.unsaved-aside/";
 
@@ -121,8 +121,13 @@ export function readJournalEntry(entry: string): { text: string; written: Date |
   return head[4] === undefined ? read : { ...read, writer: head[4] };
 }
 
-/** What a stale tab's change is called when it is kept beside the newer work (real-use hunt S1). */
-export const fromAnotherTab = (name: string) => `${name || "Untitled"} (from another tab)`;
+/**
+ * What changes that couldn't be stored over newer work are called when they are kept beside it as a separate project
+ * (real-use hunt S1, round 2 hunt A5). "(kept copy)", not "(from another tab)": the tab that reads the name is often
+ * the very tab the changes were made in (its saves refused, its edits kept on Open), where "from another tab" said
+ * the opposite of what happened.
+ */
+export const keptCopyName = (name: string) => `${name || "Untitled"} (kept copy)`;
 
 const freshId = () => globalThis.crypto?.randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
@@ -138,7 +143,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * the store refuses is kept, so the next visit tries again. An entry that
  * names the stored state it was made from is put back only over that state;
  * over another (a stale tab's change) it is stored as a new project, under
- * an id from `newId`, named `fromAnotherTab`, and says so.
+ * an id from `newId`, named `keptCopyName`, and says so.
  */
 export async function recoverUnsaved(store: ProjectStore, journal: JournalStorage | null, readers: readonly DataReader[], newId: () => string = freshId): Promise<string[]> {
   const problems: string[] = [];
@@ -226,7 +231,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
           remove(journal, k); // the store holds this very state already: nothing to keep apart
           continue;
         }
-        const name = fromAnotherTab(project.name);
+        const name = keptCopyName(project.name);
         try {
           await store.save(newId(), { ...project, name }, entry.written ?? undefined, undefined, true); // behind: the newer work still opens
         } catch (copyFailed) {

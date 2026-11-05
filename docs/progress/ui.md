@@ -96,7 +96,7 @@ Research behind it (in the thread, plain words): Apple's 44 pt and Material's 48
 
 ### U7. Leftovers from earlier asks
 - [ ] U7a. On sketch start the camera fits the sketch plane or face exactly from above, and the plane stays clearly highlighted while orbiting. Test: hand-worked framing of the 40 × 30 top face; pixel probes of the highlight from an orbited view.
-- [ ] U7b. Escape turns off an active view-bar tool (Pan or Zoom back to Orbit), ordered against Design's Escape in the shortcut table. Test: in `e2e/navigation.mjs` and `e2e/shortcuts.mjs`.
+- [x] U7b. Escape turns off an active view-bar tool (Pan or Zoom back to Orbit), ordered against Design's Escape in the shortcut table. Test: in `e2e/navigation.mjs` and `e2e/shortcuts.mjs`.
 
 ### U8. Bug hunt
 - [ ] U8a. An aggressive hunt over the whole new UI: Firefox and WebKit at 1280 and 375 px, every dropdown and sheet by mouse, keyboard and tap, both themes, both units, the home screen with many projects and with storage refused, monkey sessions with fresh seeds, and adversarial reading of the new code. Every bug found gets a regression test before its fix.

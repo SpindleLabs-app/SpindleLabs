@@ -67,7 +67,7 @@ for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
     await startWithBox(p, tap);
     await untilBodies(p, 1);
     await p.evaluate(() => (window.sticky = true));
-    await insertPreset(p, "cylinder", tap);
+    await insertPreset(p, "cylinder", tap, true); // it fails, so no Move opens on it
     // Past the limit: Cylinder 1 (feature-2) red, Box 1 built again on the fresh kernel.
     await until(p, () => document.querySelector('#timeline li[data-item="feature-2"]')?.dataset.failed === "true", null, "Cylinder 1 red");
     await rebuilt(p);

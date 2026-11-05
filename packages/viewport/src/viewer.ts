@@ -346,6 +346,13 @@ export class ViewportView {
     );
   }
 
+  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit nothing changes and it says false. */
+  leaveNavTool(): boolean {
+    if (this.mode === "orbit") return false;
+    this.setMode("orbit");
+    return true;
+  }
+
   /** What a left-button drag does from now on: orbit, pan or zoom (the navigation bar's first three buttons). */
   setMode(mode: NavMode) {
     this.mode = mode;

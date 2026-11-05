@@ -246,8 +246,8 @@ try {
     await volume(b, "42,000 mm³"); // 70 · 30 · 20: the file opened, nothing asked
     assert.deepEqual(asked, []);
     const said = await b.textContent("#file-status");
-    assert.match(said, /changed in another tab, so they're kept in this browser as a separate project, “.+ \(from another tab\)”/, said);
-    // Every stored project, straight from the store: one is B's 60, named "… (from another tab)".
+    assert.match(said, /changed in another tab meanwhile\. Nothing is lost: they.re kept in this browser as a separate project, “.+ \(kept copy\)” \(File > Projects in this browser opens it\)/, said);
+    // Every stored project, straight from the store: one is B's 60, named "… (kept copy)".
     const kept = () =>
       b.evaluate(
         () =>
@@ -267,9 +267,9 @@ try {
             };
           }),
       );
-    for (let i = 0; i < 50 && !(await kept()).some((k) => k.endsWith("(from another tab) 60")); i++) await b.waitForTimeout(100);
-    assert.ok((await kept()).some((k) => k.endsWith("(from another tab) 60")), `B's 60-wide edit is stored: ${JSON.stringify(await kept())}`);
-    assert.ok((await kept()).some((k) => k.endsWith(" 50") && !k.includes("(from another tab)")), "A's 50 as it was");
+    for (let i = 0; i < 50 && !(await kept()).some((k) => k.endsWith("(kept copy) 60")); i++) await b.waitForTimeout(100);
+    assert.ok((await kept()).some((k) => k.endsWith("(kept copy) 60")), `B's 60-wide edit is stored: ${JSON.stringify(await kept())}`);
+    assert.ok((await kept()).some((k) => k.endsWith(" 50") && !k.includes("(kept copy)")), "A's 50 as it was");
     await context.close();
   });
 

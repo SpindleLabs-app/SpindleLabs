@@ -26,7 +26,7 @@ const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 const rect = (page, sel) => page.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
 
-async function fresh(width, touch) {
+async function fresh(width, touch, query = "") {
   const context = await browser.newContext({ viewport: { width, height: width > 640 ? 800 : 667 }, hasTouch: touch, isMobile: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -35,7 +35,7 @@ async function fresh(width, touch) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  await page.goto(url + "#design");
+  await page.goto(`${url}${query}#design`);
   await page.waitForSelector("#start-hint", { state: "visible" });
   return page;
 }
@@ -170,6 +170,29 @@ try {
       }
     });
 
+    await check(`${at}: with ?combine, Combine is its own button in Modify after Move and Rotate (Ben, 2026-11-04), and it opens the Combine panel; without it, no button`, async () => {
+      const modifyRow = (page) => page.$$eval('#toolbar .toolbar-group[aria-label="Modify"] .toolbar-group-row button', (bs) => bs.map((b) => b.id));
+      const plain = await fresh(width, tap);
+      try {
+        assert.deepEqual(await modifyRow(plain), ["move", "rotate"], "hidden until Combine goes public");
+        assert.equal(await plain.$("#combine"), null);
+      } finally {
+        await plain.context().close();
+      }
+      const page = await fresh(width, tap, "?combine");
+      try {
+        assert.deepEqual(await modifyRow(page), ["move", "rotate", "combine"]);
+        assert.deepEqual(await toolbarProblems(page), [], "its icon drawn, its words its name and tooltip");
+        assert.match(await page.getAttribute("#combine", "title"), /^Combine: join bodies into one/);
+        if (tap) assert.ok((await page.evaluate(() => document.scrollingElement.scrollWidth)) <= width, "no sideways page scroll");
+        if (shots) await page.screenshot({ path: `${shots}/toolbar-combine-${width}.png`, clip: { x: 0, y: 0, width, height: 140 } });
+        await press(page, "#combine", tap);
+        await until(page, () => document.getElementById("combine-panel")?.hidden === false, null, "the button opens the Combine panel");
+      } finally {
+        await page.context().close();
+      }
+    });
+
     await check(`${at}: Create ▾ lists Create sketch and Extrude with icons; each runs what its icon does; keys too`, async () => {
       const page = await fresh(width, tap);
       try {
@@ -262,7 +285,7 @@ try {
         const off = await page.$eval("#inspect-menu-facts", (b) => [b.getAttribute("aria-disabled"), b.title, b.querySelector("svg.icon")?.dataset.icon]);
         assert.deepEqual(off, ["true", "Nothing built yet: insert a preset or extrude a sketch, and its volume, area and faces show here.", "inspect"]);
         await page.keyboard.press("Escape");
-        await insertPreset(page, "box", tap);
+        await insertPreset(page, "box", tap, true); // kept in its Move: Body facts puts an untouched one away, so a phone shows the numbers
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box built");
         await until(page, () => !document.getElementById("inspect-facts").disabled, null, "Body facts on once a body is built");
         if (!tap) {
