@@ -63,6 +63,8 @@ export const historyNotBuilt: History = {
   canRedo: notBuilt,
   undoLabel: notBuilt,
   redoLabel: notBuilt,
+  steps: notBuilt,
+  jumpTo: notBuilt,
   record: notBuilt,
   undo: notBuilt,
   redo: notBuilt,

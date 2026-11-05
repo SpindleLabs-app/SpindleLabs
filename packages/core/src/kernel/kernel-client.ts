@@ -16,6 +16,8 @@ export interface KernelOps {
   snap_to_grid: { args: [x: number, y: number, spacing: number]; result: [number, number] };
   place_freely: { args: [x: number, y: number, pixel: number]; result: [number, number] };
   sketch_outline: { args: [lines: SketchLine[], circles: SketchCircle[], arcs: SketchArc[]]; result: SketchOutline };
+  /** The sketch solver (step 47): the sketch as the solver's JSON text in, its answer as JSON text out (constraints.ts reads both). */
+  solve_sketch: { args: [sketch: string]; result: string };
   /** The kernel's body store: build and keep a body, read it by handle, free it. */
   body_build: { args: [spec: BodySpec]; result: BodyHandle };
   body_view: { args: [body: BodyHandle]; result: BodyView };

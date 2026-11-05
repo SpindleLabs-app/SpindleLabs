@@ -1,0 +1,214 @@
+{
+  "formatVersion": 2,
+  "links": [],
+  "materials": [],
+  "name": "Untitled",
+  "units": {
+    "length": "mm"
+  },
+  "workspaces": {
+    "design": {
+      "nextId": 16,
+      "profiles": [],
+      "sketches": [
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "end": "point-4",
+              "id": "line-5",
+              "kind": "line",
+              "start": "point-3"
+            },
+            {
+              "centre": "point-7",
+              "end": "point-6",
+              "id": "arc-8",
+              "kind": "arc",
+              "start": "point-4"
+            },
+            {
+              "end": "point-9",
+              "id": "line-10",
+              "kind": "line",
+              "start": "point-6"
+            },
+            {
+              "centre": "point-11",
+              "end": "point-3",
+              "id": "arc-12",
+              "kind": "arc",
+              "start": "point-9"
+            }
+          ],
+          "id": "sketch-2",
+          "points": [
+            {
+              "id": "point-3",
+              "x": 30,
+              "y": -10
+            },
+            {
+              "id": "point-4",
+              "x": 60,
+              "y": -10
+            },
+            {
+              "id": "point-6",
+              "x": 60,
+              "y": 10
+            },
+            {
+              "id": "point-7",
+              "x": 60,
+              "y": 0
+            },
+            {
+              "id": "point-9",
+              "x": 30,
+              "y": 10
+            },
+            {
+              "id": "point-11",
+              "x": 30,
+              "y": 0
+            }
+          ]
+        }
+      ],
+      "timeline": {
+        "features": [
+          {
+            "dependsOn": [],
+            "id": "feature-1",
+            "intent": {
+              "parameters": {
+                "width": 40,
+                "depth": 30,
+                "height": 20
+              },
+              "summary": "Box: 40 × 30 × 20 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-1",
+                "label": "Box 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "sketch-2",
+            "intent": {
+              "parameters": {
+                "plane": "XY"
+              },
+              "summary": "Sketch 1 on the XY plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-2",
+                "label": "Sketch 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-2"
+            ],
+            "id": "feature-13",
+            "intent": {
+              "parameters": {
+                "distance": 8,
+                "sketch": "sketch-2"
+              },
+              "summary": "Extrude Sketch 1 by 8 mm",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-2",
+                  "label": "Sketch 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-13",
+                "label": "Extrude 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "feature-14",
+            "intent": {
+              "parameters": {
+                "diameter": 16,
+                "height": 30
+              },
+              "summary": "Cylinder: ⌀16 × 30 mm",
+              "type": "cylinder"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-14",
+                "label": "Cylinder 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-14"
+            ],
+            "id": "feature-15",
+            "intent": {
+              "parameters": {
+                "pivotX": 0,
+                "pivotY": 0,
+                "pivotZ": 0,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": -35,
+                "y": 0,
+                "z": 0
+              },
+              "summary": "Move Cylinder 1 by (-35, 0, 0) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-14",
+                  "label": "Cylinder 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-15",
+                "label": "Move 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          }
+        ]
+      },
+      "version": 4
+    }
+  }
+}

@@ -16,6 +16,8 @@ import { endStls } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
 import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
 import { overhangArea, supportsHint } from "./overhang.ts";
+import { fitCalibration, fitsLine } from "./fit-calibration.ts";
+import { FIT_PEG, FIT_THICK, fitPieceStl } from "./fit-piece.ts";
 
 /**
  * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
@@ -391,6 +393,15 @@ export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: 
   });
 }
 
+/** The fit test piece (fit-piece.ts) as the P1S's print file, sliced with `choices` but never with supports (it needs none). */
+export function testPieceFile(kernel: KernelCalls, choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile> {
+  return asRun(kernel, async (run) => {
+    const stl = fitPieceStl();
+    if (run.stopped) throw new SliceDropped();
+    return engine(FIT_THICK + FIT_PEG, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, "off", plate, nozzle, choices.warmUp, choices.betterGrip));
+  });
+}
+
 /**
  * The G-code inside a P1S print file (a ZIP the engine writes with every file stored, never compressed): the plate's
  * Metadata/plate_1.gcode, as the printer would run it. Null when the bytes are not such a ZIP or hold no plate, so
@@ -687,6 +698,8 @@ export interface SlicePrintEvents {
   extrasChanged?(extras: FirstLayerExtras): void;
   /** The clock that tells a double press from two presses, in ms (the tests' own); left out, performance.now(). */
   now?(): number;
+  /** Makes and saves the fit test piece's print file with these choices (Printer fits, fit-calibration.ts); left out, Printer fits is not offered. */
+  testPiece?(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ saved: boolean; name: string }>;
 }
 
 export interface SlicePrint {
@@ -851,6 +864,26 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   });
   actions.append(close, preview, go);
   // The choices in one block: two columns where there is room, so the dialog fits a laptop's height (Ben 10-31: Supports was cut off).
+  // Printer fits (P13): what the fits are for this nozzle, and the button that measures them (fit-calibration.ts).
+  const fitsRow = el("p", "slice-print-fits");
+  fitsRow.className = "slice-print-fits";
+  const fitsWords = el("span", "slice-print-fits-words");
+  const fitsOpen = el("button", "slice-print-fits-open", "Printer fits…");
+  fitsOpen.type = "button";
+  fitsOpen.title = "Print a small test piece, measure it, and holes and pegs come out the size you meant on your printer.";
+  fitsRow.append(fitsWords, fitsOpen);
+  const showFits = () => (fitsWords.textContent = fitsLine(storage, nozzle.select.value === "high-flow" ? "high-flow" : "standard"));
+  showFits();
+  nozzle.select.addEventListener("change", showFits);
+  const fits = events.testPiece
+    ? fitCalibration(slot, storage, {
+        nozzle: () => (nozzle.select.value === "high-flow" ? "high-flow" : "standard"),
+        testPiece: (alive) => events.testPiece!(choices(), file(), alive),
+        changed: showFits,
+      })
+    : null;
+  fitsRow.hidden = fits === null;
+  fitsOpen.addEventListener("click", () => fits?.ask());
   const choices6 = document.createElement("div");
   choices6.className = "slice-print-choices";
   choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap, warmUpWrap, gripWrap);
@@ -898,7 +931,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const top = document.createElement("div");
   top.className = "slice-print-top";
   top.append(heading, presets.element);
-  dialog.append(top, printer, untested, choices6, bar, status, hint, actions);
+  dialog.append(top, printer, untested, choices6, fitsRow, bar, status, hint, actions);
   slot.append(dialog);
   let busy = false;
   /** Shows the bar from now until `end` is called, following the engine's reports. */

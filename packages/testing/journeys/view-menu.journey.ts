@@ -30,7 +30,8 @@ function three() {
   return { doc, items: ["feature-1", e1.id, e2.id], names: ["Box 1", "Extrude 1", "Extrude 2"], volumes: [1000, 24000, 100], sketch: s1.id };
 }
 
-const ENTRIES = ["hide", "edit", "marker", "suppress", "rename", "delete"];
+// Show all is off while every body is shown (quick wins, show-only.ts).
+const ENTRIES = ["hide", "show-only", "show-all (off)", "edit", "marker", "suppress", "rename", "delete"];
 type App = Awaited<ReturnType<typeof app>>;
 /** The feature each selected face or edge is named on ("face:feature-4/top" is feature-4's). */
 const selectedOn = (a: App) => a.selection.items.map((r) => r.id.slice(r.id.indexOf(":") + 1, r.id.indexOf("/")));
@@ -60,6 +61,18 @@ async function handWorked(plugin: WorkspacePlugin): Promise<string | null> {
   await a.chooseEntry(null);
   if (a.menuShown() !== null || a.history.undoLabel() !== "Hide Body 2") return fail("Escape did not close the menu untouched");
   if ((await a.undo()) !== "Hide Body 2" || !close(a.volume(), 25100)) return fail(`Undo of Hide left ${a.volume()}`);
+  // Show only this body on Extrude 1's face: one step, "Show only Body 2"; the view holds its 40 · 30 · 20 = 24000 alone.
+  await a.viewMenu({ face: 7 });
+  await a.chooseEntry("show-only");
+  if (a.history.undoLabel() !== "Show only Body 2") return fail(`Show only was recorded as "${a.history.undoLabel()}"`);
+  if (!close(a.volume(), 24000)) return fail(`after Show only the view holds ${a.volume()}, not 24000`);
+  // Show all from the same body's menu (now on, two bodies hidden): all three back, 25100, one more step.
+  await a.viewMenu({ face: 1 });
+  if (!a.menuShown()?.entries.includes("show-all")) return fail(`with two bodies hidden the menu holds ${a.menuShown()?.entries.join(", ")}`);
+  await a.chooseEntry("show-all");
+  if (a.history.undoLabel() !== "Show all bodies" || !close(a.volume(), 25100)) return fail(`Show all left "${a.history.undoLabel()}" and ${a.volume()}`);
+  await a.undo();
+  if ((await a.undo()) !== "Show only Body 2" || !close(a.volume(), 25100)) return fail(`Undo of Show only left ${a.volume()}`);
 
   // Two faces Shift-picked: a right-click on one of them keeps both; on another body's face, only that one.
   await a.pick({ face: 1 });
@@ -205,7 +218,10 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin, 
       }
       const m = a.menuShown();
       // The marker stands after the last item at first and the view can't move it: on Extrude 2, the last, "Move the marker here" is off.
-      const entries = ENTRIES.map((e) => (e === "marker" && body === 2 ? "marker (off)" : e));
+      // Show only is off with one body left to show; Show all is off with no body hidden (suppressed and deleted bodies have no row).
+      const rows = states.filter((s) => s === "shown" || s === "hidden").length;
+      const anyHidden = states.includes("hidden");
+      const entries = ENTRIES.map((e) => (e === "marker" && body === 2 ? "marker (off)" : e === "show-only" && rows < 2 ? "show-only (off)" : e === "show-all (off)" && anyHidden ? "show-all" : e));
       if (m?.name !== names[body] || JSON.stringify(m.entries) !== JSON.stringify(entries)) failure = `${what}: the menu is ${JSON.stringify(m)}, the model ${names[body]}`;
       // A right-click on an unpicked body's face selects it alone; on a picked one, the picks stay.
       reached.add(selected.length > 1 && selected.includes(items[body]) ? "menu on one of several picked" : "menu selects");
@@ -274,7 +290,9 @@ const WORKSPACE = new URL("../../../workspaces/design/src/workspace.ts", import.
 /** The planted bugs: each a text edit of workspace.ts. */
 const PLANTS: { name: string; find: string; replace: string }[] = [
   // Hide hides the first body, whichever was right-clicked.
-  { name: "hide-first-body", find: "e.action === \"hide\" ? () => toggleHidden(target.row)", replace: "e.action === \"hide\" ? () => toggleHidden(\"body-1\")" },
+  { name: "hide-first-body", find: "? () => toggleHidden(target.row)", replace: "? () => toggleHidden(\"body-1\")" },
+  // Show only this body and Show all act on Body 1's row whatever body the menu is on (quick wins).
+  { name: "show-only-first-body", find: "showFrom(e.action as \"show-only\" | \"show-all\", target.row)", replace: "showFrom(e.action as \"show-only\" | \"show-all\", \"body-1\")" },
   // The right-click selects nothing.
   { name: "selects-nothing", find: "if (!ctx.selection.items.some((r) => r.kind === target.item.kind && r.id === target.item.id)) ctx.selection.set([target.item]);", replace: "" },
   // The right-click always selects what it is on alone, dropping a Shift-picked set.
@@ -286,7 +304,7 @@ const PLANTS: { name: string; find: string; replace: string }[] = [
   // The menu says it opened nothing (the browser's own menu would open over it).
   { name: "says-not-opened", find: "    deleting.menu(itemName(item), at, entries);\n    return true;", replace: "    deleting.menu(itemName(item), at, entries);\n    return false;" },
   // The menu's entries act on the sketch being edited, or none, rather than the body's item.
-  { name: "acts-on-first-item", find: "() => void chooseEntry(menuHost, target.feature, e.action, editing)", replace: "() => void chooseEntry(menuHost, doc.timeline.features[0].id, e.action, editing)" },
+  { name: "acts-on-first-item", find: "() => void chooseEntry(menuHost, target.feature, e.action as MenuEntry[\"action\"], editing)", replace: "() => void chooseEntry(menuHost, doc.timeline.features[0].id, e.action as MenuEntry[\"action\"], editing)" },
 ];
 
 /** Design with `plant` made: a copy of workspace.ts beside it (so its imports resolve), loaded, then deleted. */

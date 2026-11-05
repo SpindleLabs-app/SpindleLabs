@@ -6,7 +6,8 @@
 // under the pointer, selects it, and opens `viewMenuEntries`.
 
 import type { GeometryReference, ViewportPick } from "@fission/core";
-import { rowItem } from "./browser.ts";
+import { bodyRows, rowItem } from "./browser.ts";
+import { hiddenBodyCount } from "./show-only.ts";
 import type { DesignDocument } from "./document.ts";
 import { sceneHit, shownReference, type Scene } from "./scene.ts";
 import { menuEntries } from "./timeline-menu.ts";
@@ -40,10 +41,24 @@ export function viewMenuTarget(doc: DesignDocument, scene: Scene | null, pick: V
   return feature === null ? null : { row, feature, item };
 }
 
-/** An entry of the view's menu: the browser row menu's, or Hide (the row's eye; never off, as a body on screen can always be hidden). */
-export type ViewMenuEntry = MenuEntry | { action: "hide"; label: "Hide"; off: null };
+/**
+ * An entry of the view's menu: the browser row menu's, Hide (the row's eye; never off, as a body on screen can always
+ * be hidden), or Show only this body and Show all bodies (quick wins, `show-only.ts`), each off with why when it would
+ * change nothing.
+ */
+export type ViewMenuEntry = MenuEntry | { action: "hide"; label: "Hide"; off: null } | { action: "show-only" | "show-all"; label: string; off: string | null };
 
-/** The view's menu on the body of item `feature`, with sketch `editing` open or none: Hide, then the item's menu as its rows have it. */
-export function viewMenuEntries(doc: DesignDocument, feature: string, editing: string | null = null): ViewMenuEntry[] {
-  return [{ action: "hide", label: "Hide", off: null }, ...menuEntries(doc, feature, editing)];
+/** Show only this body and Show all bodies for Body row `row` ("body-2"), as the view's menu and a Body row's menu offer them. */
+export function showEntries(doc: DesignDocument, row: string, failed?: ReadonlySet<string>): ViewMenuEntry[] {
+  const rows = bodyRows(doc, failed);
+  if (!rows.some((r) => r.id === row)) return [];
+  return [
+    { action: "show-only", label: "Show only this body", off: rows.length < 2 ? "It is the only body" : null },
+    { action: "show-all", label: "Show all bodies", off: hiddenBodyCount(doc, failed) === 0 ? "Every body is shown already" : null },
+  ];
+}
+
+/** The view's menu on the body of item `feature` (on Body row `row`), with sketch `editing` open or none: Hide, Show only and Show all, then the item's menu as its rows have it. */
+export function viewMenuEntries(doc: DesignDocument, feature: string, editing: string | null = null, row?: string, failed?: ReadonlySet<string>): ViewMenuEntry[] {
+  return [{ action: "hide", label: "Hide", off: null }, ...(row === undefined ? [] : showEntries(doc, row, failed)), ...menuEntries(doc, feature, editing)];
 }
