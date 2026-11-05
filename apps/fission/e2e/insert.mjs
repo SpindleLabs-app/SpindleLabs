@@ -143,7 +143,7 @@ try {
         assert.deepEqual([await page.inputValue("#width"), await page.inputValue("#depth"), await page.inputValue("#height")], ["40", "30", "20"]);
         assert.equal(await page.inputValue("#shape"), "box");
         // A cylinder: a second body (⌀40 × 20: π · 20² · 20 ≈ 25,133 mm³), the box untouched.
-        await insertPreset(page, "cylinder", tap);
+        await insertPreset(page, "cylinder", tap, true);
         await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 2, null, "two items");
         assert.deepEqual(await items(page), ["feature-1", "feature-2"]);
         // Each named for its shape (U0e), its name over its description the row's tooltip: the box as it was.
@@ -170,7 +170,7 @@ try {
     await check(`${at}: a sphere inserted rests on the floor; made bigger, it grows about its centre and goes below (Ben, 2026-10-28)`, async () => {
       const page = await fresh(width, tap);
       try {
-        await insertPreset(page, "sphere", tap);
+        await insertPreset(page, "sphere", tap, true);
         // ⌀40: radius 20, lifted by it, so z 0..40 (its poles are mesh corners; the STL rounds to float: 1e-4 mm),
         // still centred over the origin in x and y (the mesh's sides fall a chord short of ±20, the same each way).
         await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 1, null, "the sphere");
@@ -197,7 +197,7 @@ try {
       try {
         const moveOpen = (what) => until(page, () => document.getElementById("move-panel")?.hidden === false, null, what);
         const moveShut = (what) => until(page, () => document.getElementById("move-panel")?.hidden === true, null, what);
-        await insertPreset(page, "box", tap);
+        await insertPreset(page, "box", tap, true);
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box");
         await moveOpen("Move opens on the box");
         assert.equal(await page.textContent("#move-bodies"), "Body: Box 1");
@@ -208,12 +208,13 @@ try {
         await openPanel(page, "properties", tap);
         await press(page, "#move-cancel", tap);
         await moveShut("Cancel closes Move");
+        assert.equal(await page.evaluate(() => document.body.dataset.selection ?? ""), "", "the box let go again, as Insert left it before");
         assert.deepEqual(await items(page), ["feature-1"]);
         assert.equal(await undoTitle(page), "Undo Insert Box (Ctrl+Z)");
         await closePanels(page, tap);
         const box = bounds(await stlCorners(page, tap));
         // A cylinder: Move opens again on it alone, never the box.
-        await insertPreset(page, "cylinder", tap);
+        await insertPreset(page, "cylinder", tap, true);
         await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 2, null, "the cylinder");
         await moveOpen("Move opens on the cylinder");
         assert.equal(await page.textContent("#move-bodies"), "Body: Cylinder 1");
@@ -238,7 +239,7 @@ try {
     await check(`${at}: the Shape choice changes the part in place (the toolbar's shape buttons until U0d)`, async () => {
       const page = await fresh(width, tap);
       try {
-        await insertPreset(page, "box", tap);
+        await insertPreset(page, "box", tap, true);
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box");
         await cancelMove(page, tap);
         await pinProperties(page);

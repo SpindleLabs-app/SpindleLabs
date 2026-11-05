@@ -285,7 +285,7 @@ try {
         const off = await page.$eval("#inspect-menu-facts", (b) => [b.getAttribute("aria-disabled"), b.title, b.querySelector("svg.icon")?.dataset.icon]);
         assert.deepEqual(off, ["true", "Nothing built yet: insert a preset or extrude a sketch, and its volume, area and faces show here.", "inspect"]);
         await page.keyboard.press("Escape");
-        await insertPreset(page, "box", tap);
+        await insertPreset(page, "box", tap, true); // kept in its Move: Body facts puts an untouched one away, so a phone shows the numbers
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box built");
         await until(page, () => !document.getElementById("inspect-facts").disabled, null, "Body facts on once a body is built");
         if (!tap) {

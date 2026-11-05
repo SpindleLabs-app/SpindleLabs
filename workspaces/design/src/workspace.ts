@@ -1003,6 +1003,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!built || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
     ctx.selection.set([bodyReference(body)]);
     startMove();
+    moveFromInsert = true;
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -2476,6 +2477,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * and keeps its bodies.
    */
   function startMove(id: string | null = null, kind: MoveKind = "move") {
+    moveFromInsert = false;
     leaveExtrude();
     leaveEdit();
     leaveCombine();
@@ -2675,6 +2677,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Each opening and closing of the Move panel counted: an OK whose check lands after it changed is out of date (bug hunt 11-04, E2). */
   let moveOpenings = 0;
+  /** The open Move is the one an Insert started on its new body (Ben, 2026-11-04): leaving it lets that body go again, as Insert left nothing picked before. */
+  let moveFromInsert = false;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
   /** A new Move open whose boxes move and turn nothing yet: Cancel would lose nothing. */
   function moveUntouched(): boolean {
@@ -2686,7 +2690,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function leaveMove() {
     if (!moveBox.shown) return;
     moveOpenings++;
-    const edited = moveBox.editing !== null;
+    // An edited Move's bodies, and the new body an Insert picked for its Move, were picked by the tool, not the user.
+    const edited = moveBox.editing !== null || moveFromInsert;
+    const fromInsert = moveFromInsert;
+    moveFromInsert = false;
     moveBox.hide();
     moveBodies = [];
     dragFrom = null;
@@ -2695,6 +2702,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showMoveHandles(null);
     if (lastScene) viewport.showBody(lastScene.mesh);
     if (edited) ctx.selection.clear();
+    // And the panel stays open at the new body's sizes, as Insert left it (U0d): the fold sees the Move's box go in a
+    // microtask (properties-fold.ts), queued as it hid above, so it is opened again in the one after.
+    if (fromInsert) queueMicrotask(() => fold?.reveal());
   }
 
   /** OK's words when the design changed while the kernel checked the Move: nothing was recorded. */
