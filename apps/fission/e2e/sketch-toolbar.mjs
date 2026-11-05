@@ -107,7 +107,8 @@ await check("picking a plane swaps the modelling buttons for the sketch's toolba
     for (const sel of [...TOOLS.map((t) => `#sketch-tool-${t}`), "#extrude", "#finish-sketch"]) xs.push((await rect(page, sel)).left);
     assert.deepEqual([...xs].sort((a, b) => a - b), xs, `left to right: ${xs.map(Math.round)}`);
     const first = await rect(page, `#sketch-tool-${TOOLS[0]}`);
-    const last = await rect(page, `#sketch-tool-${TOOLS.at(-1)}`);
+    // The row the name sits under ends with the constraint tools since 47d2 (after Select and Delete), Fix last.
+    const last = await rect(page, "#sketch-tool-fix");
     const name = await rect(page, "#sketch-create");
     assert.ok(name.top >= first.bottom - 1, `Create ▾ under the tools: its top ${name.top}, the tools' bottom ${first.bottom}`);
     assert.ok(name.left >= first.left && name.right <= last.right, `Create ▾ within the tools' span: ${name.left}-${name.right}, the tools ${first.left}-${last.right}`);

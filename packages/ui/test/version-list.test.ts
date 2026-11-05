@@ -4,7 +4,7 @@
 // apps/fission/e2e/versions.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NO_VERSIONS, NOT_KEPT, versionList, versionRows, versionTime, type VersionListParts } from "../src/version-list.ts";
+import { ACCOUNT_NOTE, ACCOUNT_TAG, NO_VERSIONS, NOT_KEPT, VERSIONS_NOTE, versionList, versionRows, versionTime, type VersionListParts, type VersionPlace } from "../src/version-list.ts";
 import { fileSections, type FileMenuEntry } from "../src/file-menu.ts";
 
 const { Window } = await import("happy-dom");
@@ -37,12 +37,21 @@ function page(over: Partial<VersionListParts> = {}) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const calls: number[] = [];
+  const places: VersionPlace[] = [];
   const times = [new Date(NOW.getTime() - 15 * MIN), new Date(NOW.getTime() - 40 * MIN)];
-  const parts: VersionListParts = { list: async () => ({ name: "Bracket", times }), restore: async (at) => void calls.push(at.getTime()), now: () => NOW, ...over };
+  const parts: VersionListParts = {
+    list: async () => ({ name: "Bracket", times }),
+    restore: async (at, where) => {
+      calls.push(at.getTime());
+      places.push(where);
+    },
+    now: () => NOW,
+    ...over,
+  };
   const list = versionList(doc, parts);
   const rows = () => [...doc.querySelectorAll<HTMLLIElement>("#versions-items .project-row")];
   const settle = () => new Promise((r) => setTimeout(r, 0));
-  return { window, doc, list, calls, rows, settle, times, status: () => doc.getElementById("versions-status")!.textContent };
+  return { window, doc, list, calls, places, rows, settle, times, status: () => doc.getElementById("versions-status")!.textContent };
 }
 
 test("the dialog lists the versions with Restore; Restore hands over the time and closes", async () => {
@@ -91,4 +100,41 @@ test("Escape and Close shut it; keys pressed in it never reach the document", as
   await list.show();
   doc.getElementById("versions-close")!.click();
   assert.equal(list.open, false);
+});
+
+// Account features 2: the account's versions beside this browser's.
+test("hand-worked: this browser's and the account's versions in one list, newest first, each once", () => {
+  const t = (h: number, m: number) => new Date(2026, 10, 4, h, m);
+  // This browser keeps 14:45 and 14:20; the account keeps 14:45 (the same save, sent from here), 14:30 and 13:00 (both
+  // saved on another device). Merged and newest first: 14:45 here, 14:30 account, 14:20 here, 13:00 account.
+  const rows = versionRows([t(14, 45), t(14, 20)], NOW, (d) => `${d.getHours()}:${d.getMinutes()}`, [t(13, 0), t(14, 45), t(14, 30)]);
+  assert.deepEqual(rows.map((r) => [r.time, r.where]), [["14:45", "browser"], ["14:30", "account"], ["14:20", "browser"], ["13:0", "account"]]);
+  // A time a millisecond apart is another version.
+  assert.equal(versionRows([t(14, 45)], NOW, versionTime, [new Date(t(14, 45).getTime() + 1)]).length, 2);
+});
+
+test("the account's versions are tagged, the note says so, and Restore says where the version is kept", async () => {
+  const fromAccount = new Date(NOW.getTime() - 25 * MIN);
+  let signedIn = true;
+  const p = page({ list: async () => ({ name: "Bracket", times: [new Date(NOW.getTime() - 15 * MIN)], account: signedIn ? { times: [fromAccount] } : null }) });
+  await p.list.show();
+  assert.deepEqual(p.rows().map((r) => [r.dataset.where, r.querySelector(".version-account-tag")?.textContent ?? null]), [["browser", null], ["account", ACCOUNT_TAG]]);
+  assert.equal(p.doc.querySelector("#versions .project-list-note")!.textContent, `${VERSIONS_NOTE} ${ACCOUNT_NOTE}`);
+  p.rows()[1].querySelector<HTMLButtonElement>(".version-restore")!.click();
+  await p.settle();
+  assert.deepEqual([p.calls, p.places], [[fromAccount.getTime()], ["account"]]);
+  // Shown again signed out (no account side), the note is this browser's alone.
+  signedIn = false;
+  await p.list.show();
+  assert.equal(p.doc.querySelector("#versions .project-list-note")!.textContent, VERSIONS_NOTE);
+});
+
+test("an account whose versions can't be listed says why, and this browser's are still there", async () => {
+  const p = page({ list: async () => ({ name: "Bracket", times: [new Date(NOW.getTime() - 15 * MIN)], account: { problem: "You're offline." } }) });
+  await p.list.show();
+  assert.equal(p.status(), "Your account's versions can't be listed right now. You're offline. These are the ones kept in this browser.");
+  assert.equal(p.rows().length, 1);
+  const none = page({ list: async () => ({ name: "Bracket", times: [], account: { problem: "You're offline." } }) });
+  await none.list.show();
+  assert.equal(none.status(), "Your account's versions can't be listed right now. You're offline.");
 });

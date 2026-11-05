@@ -229,9 +229,10 @@ class DesignsDatabase(unittest.TestCase):
 
     def test_rebuilt_from_parts_my_data_keeps_every_key_it_had_before(self):
         # Before this migration (20261105000000_payments.sql) my_data gave account, profile, plan, payments and the
-        # AI allowance; rebuilt from parts it must give each of them still, plus designs, and nothing about Bo.
+        # AI allowance; rebuilt from parts it must give each of them still, plus designs (and, from 20261105180000, their
+        # versions), and nothing about Bo.
         data = json.loads(self.as_user(ADA, "select my_data();")[1])
-        self.assertEqual(sorted(data), ["account", "ai_allowance_used_percent", "designs", "payments", "plan", "profile"])
+        self.assertEqual(sorted(data), ["account", "ai_allowance_used_percent", "design_versions", "designs", "payments", "plan", "profile"])
         self.assertIsNone(data["payments"], "no Stripe link yet: null, as before")
         self.owner(f"insert into billing (user_id, stripe_customer_id, status) values ('{ADA}', 'cus_Ada1', 'active'), ('{BO}', 'cus_Bo22', 'active');")
         data = json.loads(self.as_user(ADA, "select my_data();")[1])
