@@ -603,6 +603,37 @@ try {
     await page.keyboard.press("Escape");
   });
 
+  await check("open and scrolled to the bottom, the panel's Fold button stays at its top right (Ben 2026-11-05)", async () => {
+    // A shorter window, so the panel's words overflow it and it scrolls (over 500 px tall, the ordinary layout).
+    await page.setViewportSize({ width: 1280, height: 560 });
+    await page.click('#browser .tree-row[data-node="body-1"]');
+    await page.waitForFunction(() => !document.querySelector("#properties").hasAttribute("data-folded"));
+    const where = () =>
+      page.evaluate(() => {
+        const panel = document.querySelector("#properties");
+        panel.scrollTop = panel.scrollHeight; // to the bottom
+        const p = panel.getBoundingClientRect();
+        const h = document.querySelector("#properties-handle").getBoundingClientRect();
+        const top = document.elementFromPoint(h.x + h.width / 2, h.y + h.height / 2);
+        return { scrolled: panel.scrollTop, overflow: panel.scrollHeight - panel.clientHeight, fromTop: h.y - p.y, fromRight: p.right - h.right, onTop: top?.id === "properties-handle" };
+      });
+    const w = await where();
+    assert.ok(w.overflow > 40 && w.scrolled > 40, `the panel scrolls (${JSON.stringify(w)})`);
+    // At the top: inside the border (1 px) and the panel's 12 px of padding at most; at the right: its 16 px of padding.
+    assert.ok(w.fromTop >= 0 && w.fromTop <= 14, `the button at the panel's top, not scrolled away (${JSON.stringify(w)})`);
+    assert.ok(Math.abs(w.fromRight - 17) <= 1, `at the panel's right (${JSON.stringify(w)})`);
+    assert.equal(w.onTop, true, "nothing scrolled over it: it can be clicked");
+    // It must fail: the button as it was, scrolling with the words.
+    const old = await page.addStyleTag({ content: "#workspace #properties > #properties-handle.properties-fold-handle:not(#none) { position: static; }" });
+    const was = await where();
+    assert.ok(was.fromTop < -40, `the old button scrolled away (${JSON.stringify(was)})`);
+    await old.evaluate((el) => el.remove());
+    await page.click("#properties-handle"); // Fold, from the bottom of the scroll
+    await page.waitForFunction(() => document.querySelector("#properties").hasAttribute("data-folded"));
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1280, height: 800 });
+  });
+
   await check("the browser folds away and stays folded through an edit", async () => {
     const open = await measure(page);
     await page.click("#browser .browser-fold > summary");

@@ -24,6 +24,9 @@
   .properties-fold:is(#workspace:not([data-split="on"]) #properties)[data-folded] { width: auto; max-height: none; padding: 0; gap: 0; background: none; border: none; box-shadow: none; overflow: visible; }
   .properties-fold:is(#workspace:not([data-split="on"]) #properties)[data-folded] > :not(.properties-fold-handle) { display: none !important; }
   .properties-fold:is(#workspace:not([data-split="on"]) #properties) > .properties-fold-handle:not(#none) { align-self: flex-end; padding: 3px 12px; font-size: 13px; font-weight: 600; color: var(--text-c9d1d9); background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
+  /* Open, the button stays at the panel's top right however far its words are scrolled (Ben 2026-11-05: it scrolled
+     away with them): stuck 6 px under the panel's top edge (top counts from inside its 12 px of padding), over the words that pass under it. */
+  .properties-fold:is(#workspace:not([data-split="on"]) #properties):not([data-folded]) > .properties-fold-handle:not(#none) { position: sticky; top: -6px; z-index: 1; flex-shrink: 0; }
   .properties-fold:is(#workspace:not([data-split="on"]) #properties) > .properties-fold-handle:not(#none):hover { color: var(--text); border-color: var(--look-accent); }
   /* Words the folded panel holds that matter: a failed rebuild or a kept shape's warning (properties.ts sets data-problem). */
   .properties-fold:is(#workspace:not([data-split="on"]) #properties)[data-folded][data-problem] > .properties-fold-handle:not(#none) { color: var(--warn); border-color: var(--warn); }
