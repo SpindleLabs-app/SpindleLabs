@@ -4,7 +4,8 @@
 // says it was checked. A cylinder inserted over it (two bodies overlapping,
 // not combined) makes a file whose surfaces cross: the card says "Not
 // solid", the places are drawn over the model, and the file is still saved,
-// unstamped. ✕ puts the card and the marks away; so does an edit. At 1280
+// unstamped, and taps go through the card to the view. ✕ puts the card
+// and the marks away; so does an edit. At 1280
 // and 375 px (a tap on the phone). SHOTS=<dir> also saves screenshots.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -86,6 +87,13 @@ try {
       assert.match(b.title, /^Not solid: \d[\d,]* crossings$/);
       assert.match(b.items[0], /crosses or touches itself, or two pieces overlap/);
       assert.match(await places(page), /^points [1-9]/);
+      // A tap on the card's middle goes through to the view under it (only ✕ takes taps), so a card left open never
+      // stops the next pick.
+      assert.ok(await page.evaluate(() => {
+        const r = document.getElementById("solid-badge").getBoundingClientRect();
+        const under = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return under !== null && !under.closest("#solid-badge");
+      }), "the card's middle is the view's, not the card's");
       if (shots) await page.screenshot({ path: `${shots}/not-solid-${width}.png` });
     });
 
