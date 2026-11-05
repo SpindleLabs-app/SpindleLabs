@@ -294,6 +294,67 @@ await check("keys (missing-basics audit): Ctrl+S saves with no browser Save page
   }
 });
 
+for (const [width, tap] of [[1280, false], [375, true]]) {
+  await check(`${width} px: File > Save picture (PNG) saves the view as on screen, the box in the middle, without the view cube (quick wins)`, async () => {
+    const { context, page } = await fresh(width, NO_PICKER, tap);
+    try {
+      await chooseFile(page, "file-save-picture", tap);
+      await page.waitForSelector(".save-name input");
+      assert.equal(await page.inputValue(".save-name input"), "Untitled");
+      assert.equal(await page.textContent(".save-name .ext"), ".png");
+      const [download] = await Promise.all([page.waitForEvent("download"), press(".save-name .ok", page, tap)]);
+      assert.equal(download.suggestedFilename(), "Untitled.png");
+      const path = join(tmpdir(), `save-picture-${process.pid}-${width}.png`);
+      await download.saveAs(path);
+      const png = readFileSync(path);
+      // A PNG starts with its 8-byte signature, then the IHDR chunk: width and height as 4-byte big-endian numbers at 16 and 20.
+      assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "a PNG file");
+      const size = [png.readUInt32BE(16), png.readUInt32BE(20)];
+      const canvas = await page.$eval("#viewport canvas", (c) => [c.width, c.height]);
+      assert.deepEqual(size, canvas, "the size of the view's canvas");
+      // Read back in the page: the middle is the box (lit faces, not the backdrop), and the view cube's corner is
+      // backdrop only, while on screen the same corner has the cube's edges (its spread of brightness is far larger).
+      const read = await page.evaluate(async (b64) => {
+        const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+        const c = new OffscreenCanvas(img.width, img.height);
+        const g = c.getContext("2d");
+        g.drawImage(img, 0, 0);
+        const lum = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        const spread = (data) => {
+          const ls = [];
+          for (let i = 0; i < data.length; i += 4) ls.push(lum(data, i));
+          const mean = ls.reduce((a, x) => a + x, 0) / ls.length;
+          return Math.sqrt(ls.reduce((a, x) => a + (x - mean) ** 2, 0) / ls.length);
+        };
+        const view = document.querySelector("#viewport canvas");
+        const r = view.getBoundingClientRect();
+        const cube = document.querySelector("#viewport").getBoundingClientRect();
+        const k = img.width / r.width;
+        // The cube is drawn in the canvas's top right corner (about 120 CSS px square).
+        const box = [Math.round((r.width - 130) * k), Math.round(10 * k), Math.round(120 * k), Math.round(120 * k)];
+        const onScreen = document.createElement("canvas");
+        onScreen.width = view.width;
+        onScreen.height = view.height;
+        onScreen.getContext("2d").drawImage(view, 0, 0);
+        const mid = g.getImageData(Math.round(img.width / 2), Math.round(img.height / 2), 1, 1).data;
+        const corner = g.getImageData(4, img.height - 5, 1, 1).data;
+        return {
+          mid: [...mid.slice(0, 3)],
+          corner: [...corner.slice(0, 3)],
+          pictureCube: spread(g.getImageData(...box).data),
+          screenCube: spread(onScreen.getContext("2d").getImageData(...box).data),
+          cubeShown: cube.width > 0,
+        };
+      }, png.toString("base64"));
+      const diff = read.mid.reduce((a, x, i) => a + Math.abs(x - read.corner[i]), 0);
+      assert.ok(diff > 60, `the box in the middle differs from the backdrop: ${JSON.stringify(read)}`);
+      assert.ok(read.screenCube > 3 * read.pictureCube, `the cube is on screen but not in the picture: ${JSON.stringify(read)}`);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 await check("no page errors", () => assert.deepEqual(errors, []));
 await browser.close();
 await server.close();

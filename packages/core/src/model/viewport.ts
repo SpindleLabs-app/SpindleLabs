@@ -244,6 +244,8 @@ export interface SharedViewport {
   bodyFraming(): Framing;
   /** Frames the current body; returns what it framed (null if none). */
   fit(): Framing | null;
+  /** A picture of the main view as it is on screen, without the view cube, as a PNG (File > Save picture); null when the browser can't make one. */
+  picture?(): Promise<Blob | null>;
   /** Turns the camera to a standard view framing the current body; returns what it framed (null if none). */
   setView(name: ViewName): Framing | null;
   /** Frames the selection (as last shown) from the current direction; null, camera untouched, when nothing is selected. */
