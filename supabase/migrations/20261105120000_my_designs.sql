@@ -198,5 +198,11 @@ language sql stable security definer set search_path = '' as $$
   from public.designs d where d.user_id = auth.uid()
 $$;
 
-revoke all on function public.design_limits(), public.save_design(uuid, integer, text, text, text, text, timestamptz), public.my_designs(), public.get_design(uuid), public.delete_design(uuid), public.delete_my_designs(), public.my_design_space(), public.my_data(), public.my_data_part_designs() from public, anon, authenticated;
+-- Paying for Pro's part (20261105000000_payments.sql put it in my_data itself): the Stripe link, null when there is none.
+create function public.my_data_part_payments() returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('payments', (select jsonb_build_object('stripe_customer_id', b.stripe_customer_id, 'stripe_subscription_id', b.stripe_subscription_id, 'status', b.status, 'updated_at', b.updated_at) from public.billing b where b.user_id = auth.uid()))
+$$;
+
+revoke all on function public.design_limits(), public.save_design(uuid, integer, text, text, text, text, timestamptz), public.my_designs(), public.get_design(uuid), public.delete_design(uuid), public.delete_my_designs(), public.my_design_space(), public.my_data(), public.my_data_part_designs(), public.my_data_part_payments() from public, anon, authenticated;
 grant execute on function public.design_limits(), public.save_design(uuid, integer, text, text, text, text, timestamptz), public.my_designs(), public.get_design(uuid), public.delete_design(uuid), public.delete_my_designs(), public.my_design_space(), public.my_data() to authenticated;
