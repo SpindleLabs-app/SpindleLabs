@@ -302,6 +302,8 @@ export interface SharedViewport {
    * sees it, the front at the top).
    */
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
+  /** Escape on the view bar (U7b): Pan or Zoom lit goes back to Orbit, true; Orbit lit, nothing changes, false. Absent on a stand-in view. */
+  leaveNavTool?(): boolean;
   /** The edited sketch's points on screen (pixels from the view's top left), so a box can keep clear of them. */
   editedScreenPoints(): { x: number; y: number }[];
   /** A point of the edited sketch's plane on screen (pixels from the view's top left); null with no sketch edited or the point behind the camera. */

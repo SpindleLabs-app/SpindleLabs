@@ -3812,6 +3812,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (!shown) return false; // the shell only asks while shown; never act asleep
       // Escape during a drag on the timeline bar calls the drag off, and only that (timeline hunt, finding 7).
       if (id === "clear-selection" && callOffDrag()) return true;
+      // Escape with Pan or Zoom lit on the view bar turns it off, back to Orbit, and only that (U7b, as in Fusion).
+      if (id === "clear-selection" && viewport.leaveNavTool?.()) return true;
       // Escape with the Create menu open closes the menu, and only that.
       if (id === "clear-selection" && sketchBar.menuOpen) return sketchBar.closeMenu(), true;
       // Escape in the sketch tool: leaves the plane prompt, or ends the line, rectangle, circle, arc or tangent arc being drawn.
