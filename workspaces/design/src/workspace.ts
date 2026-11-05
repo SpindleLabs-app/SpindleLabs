@@ -1041,6 +1041,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       onRetry: retry,
       warnings: warnedRows(),
       picked,
+      scene: () => lastScene,
       onPick: (id) => {
         picked = picked === id ? null : id;
         showBar(designDoc());
