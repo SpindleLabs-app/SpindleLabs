@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Plane } from "@fission/core";
-import { GRID_MAJOR, GRID_MIN_PIXELS, gridSpacing, MAX_GRID_LINES, minorStrength, pixelSize, rayOnPlane, sketchGrid, toWorld, yAxisOf } from "../src/sketch-view.ts";
+import { gridSheet, GRID_MAJOR, GRID_MIN_PIXELS, gridSpacing, MAX_GRID_LINES, minorStrength, pixelSize, rayOnPlane, sketchGrid, toWorld, yAxisOf } from "../src/sketch-view.ts";
 
 const XY: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
 const XZ: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] };
@@ -216,4 +216,17 @@ test("a pixel's size from real rays: a camera 100 mm above the ground plane, 1 m
   const from = [0, 0, 100];
   const hit = (x: number, y: number) => rayOnPlane(from, [x, y, -100], XY);
   assert.equal(pixelSize(hit(0, 0), hit(1, 0), hit(0, -1)), 1);
+});
+
+test("hand-worked: the plane's sheet is the grid's bounds as four corners, anticlockwise from the bottom left", () => {
+  // Bounds x from -100 to 100 and y from -50 to 70: bottom left (-100, -50), bottom right (100, -50), top right (100, 70), top left (-100, 70).
+  assert.deepEqual(gridSheet([-100, 100, -50, 70]), [[-100, -50], [100, -50], [100, 70], [-100, 70]]);
+  // Anticlockwise: the shoelace area is positive and is the width 200 times the height 120.
+  const c = gridSheet([-100, 100, -50, 70]);
+  const area = c.reduce((s, p, i) => s + (p[0] * c[(i + 1) % 4][1] - c[(i + 1) % 4][0] * p[1]), 0) / 2;
+  assert.equal(area, 200 * 120);
+  // The real grid's sheet covers every line of the grid.
+  const g = sketchGrid([0, 0], 0.5, 100)!;
+  const [bl, , tr] = gridSheet(g.bounds);
+  assert.ok(g.lines.every((l) => [l.a, l.b].every((p) => p[0] >= bl[0] && p[0] <= tr[0] && p[1] >= bl[1] && p[1] <= tr[1])));
 });
