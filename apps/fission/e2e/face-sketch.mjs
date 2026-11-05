@@ -595,6 +595,29 @@ try {
       await page.context().close();
     });
   }
+  // Ben 11-05: Extrude pressed inside a sketch goes back to the home view, so the person sees what the extrude makes.
+  await check("1280 px: Extrude pressed in a sketch returns the camera to the home view (as Finish Sketch does), not the straight-down sketch view", async () => {
+    const page = await fresh(1280, false);
+    await createSketch(page);
+    await pickPlane(page, "XY");
+    await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
+    await settle(page);
+    await rectangle(page, [[10, 10, 0], [30, 10, 0], [30, 20, 0], [10, 20, 0]]);
+    await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "closed");
+    const flat = await settle(page);
+    // Looking straight down: the camera sits over the target (x and y equal).
+    near([flat.position[0], flat.position[1]], [flat.target[0], flat.target[1]], 1e-3, "the sketch is looked at from straight above");
+    await press(page, "#sketch-extrude", false);
+    await until(page, () => !!document.querySelector("#extrude-panel") && !document.querySelector("#extrude-panel").hidden, null, "extrude open");
+    const after = await settle(page);
+    const lean = Math.hypot(after.position[0] - after.target[0], after.position[1] - after.target[1]);
+    assert.ok(lean > 10, `the camera left the straight-down view (leans ${lean.toFixed(1)} mm)`);
+    // It is the very home view the Home button gives.
+    await page.click('[data-view="home"]');
+    const home = await settle(page);
+    near(after.position, home.position, 1e-3, "the same camera as Home");
+    await page.context().close();
+  });
 } finally {
   await browser.close();
   server.httpServer.close();
