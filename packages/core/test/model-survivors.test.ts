@@ -303,6 +303,9 @@ test("the shell's own keys, by id: the shell runs each by its id, so they must n
       ["undo", "Mod+Z", "Undo"],
       ["redo", "Mod+Shift+Z", "Redo"],
       ["redo-y", "Mod+Y", "Redo"],
+      ["save", "Mod+S", "Save the project"],
+      ["save-as", "Mod+Shift+S", "Save the project under a new name (Save As…)"],
+      ["open", "Mod+O", "Open a file"],
     ],
   );
 });
