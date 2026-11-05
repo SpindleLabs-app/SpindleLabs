@@ -193,6 +193,50 @@ try {
     });
   }
 
+  await check("1280 px: Edit feature changes the Cut to Intersect, then to New body, each one undo step, with Box 1 ticked as saved", async () => {
+    const page = await fresh(1280, 800, false, "&combine");
+    try {
+      await extrude(page, false);
+      await page.selectOption("#extrude-operation", "cut");
+      await until(page, () => document.querySelectorAll("#extrude-bodies input[type=checkbox]").length === 1, null, "Box 1 listed");
+      await press(page, "#extrude-ok", false);
+      await until(page, () => document.getElementById("extrude-panel")?.hidden === true, null, "the panel closes");
+      await rebuilt(page);
+      near(await stl(page, false), RESULTS.cut.volume, RESULTS.cut.bounds, "cut");
+      const extrudeItem = (await timeline(page)).at(-1);
+      const edit = async () => {
+        await page.click(`#timeline [data-item="${extrudeItem}"]`, { button: "right" });
+        await until(page, () => document.getElementById("row-menu").open, null, "the extrude's menu");
+        await page.click("#row-menu-edit");
+        await until(page, () => document.getElementById("feature-edit")?.hidden === false, null, "Edit feature open");
+      };
+      await edit();
+      assert.equal(await page.$eval("#edit-operation", (s) => s.value), "cut", "its operation shown");
+      await until(page, () => document.querySelectorAll("#edit-bodies input[type=checkbox]").length === 1, null, "its body listed");
+      assert.deepEqual(await page.$$eval("#edit-bodies input", (els) => els.map((e) => `${e.parentElement.textContent.trim()}:${e.checked}`)), ["Body 1:true"]);
+      if (shots) await page.screenshot({ path: `${shots}/extrude-operation-1280-edit.png` });
+      await page.selectOption("#edit-operation", "intersect");
+      await page.click("#feature-edit-ok");
+      await until(page, () => document.getElementById("feature-edit")?.hidden !== false, null, "Edit feature closes");
+      await rebuilt(page);
+      near(await stl(page, false), RESULTS.intersect.volume, RESULTS.intersect.bounds, "edited to Intersect");
+      // New body: the box whole again (1,000) beside the extrude's own 320 mm³, overlapping: 1,320 in the STL.
+      await edit();
+      await page.selectOption("#edit-operation", "new");
+      assert.equal(await page.$eval("#edit-bodies", (f) => f.hidden), true);
+      await page.click("#feature-edit-ok");
+      await until(page, () => document.getElementById("feature-edit")?.hidden !== false, null, "Edit feature closes");
+      await rebuilt(page);
+      near(await stl(page, false), 1320, [[0, 10], [0, 10], [-5, 20]], "edited to New body");
+      // Each edit one undo step: Undo goes back to the Intersect.
+      await press(page, "#undo", false);
+      await rebuilt(page);
+      near(await stl(page, false), RESULTS.intersect.volume, RESULTS.intersect.bounds, "undone to Intersect");
+    } finally {
+      await page.context().close();
+    }
+  });
+
   await check("1280 px: at 0 mm the list waits for a distance and OK is off; going down 2 mm the box is still reached", async () => {
     const page = await fresh(1280, 800, false, "&combine");
     try {

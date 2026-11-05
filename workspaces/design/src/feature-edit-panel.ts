@@ -5,15 +5,23 @@
 // or Cancel. Enter in a box
 // is OK; Escape is Cancel (workspace.ts `shortcut`). The workspace drives
 // it; the panel only shows what it is given and reports what was typed and
-// clicked. Styles: src/styles/feature-edit.css.
+// clicked. With Combine shown (`?combine`), an extrude of a sketch also has
+// Extrude's Operation row and its bodies (extrude-operation.ts), so its
+// operation can be changed, as Fusion's Extrude edited.
+// Styles: src/styles/feature-edit.css.
 
 import type { EditableFeature } from "./feature-edit.ts";
+import { EXTRUDE_OPERATION_WORDS, EXTRUDE_OPERATIONS, type BodyChoice, type ExtrudeOperation } from "./extrude-operation.ts";
 import { parameterRows, type SizeKey } from "./properties.ts";
 
 export interface FeatureEditEvents {
   /** OK (or Enter), with each shown box as typed and, for an extrude, whether Flip is ticked. */
   ok(typed: Partial<Record<SizeKey, string>>, flip?: boolean): void;
   cancel(): void;
+  /** The Operation row changed (an extrude of a sketch, with Combine shown). */
+  operation?(operation: ExtrudeOperation): void;
+  /** A body in its list ticked or unticked. */
+  tick?(body: string, on: boolean): void;
 }
 
 export interface FeatureEditPanel {
@@ -23,6 +31,12 @@ export interface FeatureEditPanel {
   showError(message: string): void;
   /** An extrude of a sketch (48d4): what the panel says about its region, shaded in the view to pick another (null: no line). */
   showRegion(words: string | null): void;
+  /** An extrude of a sketch with Combine shown: its Operation row, set to `operation` (the bodies list shown for Join, Cut, Intersect). */
+  showOperation(operation: ExtrudeOperation): void;
+  /** The bodies the extrude's operation can work on, and the words under them; `ready` says whether OK can use them. */
+  showBodies(list: readonly BodyChoice[], note: string, ready: boolean): void;
+  /** The operation chosen now; null without an Operation row. */
+  readonly operation: ExtrudeOperation | null;
   /** OK off while the kernel checks the sizes, so a second press can't record twice. */
   busy(on: boolean): void;
   hide(): void;
@@ -51,6 +65,15 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
   let inputs: [SizeKey, HTMLInputElement][] = [];
   let flip: HTMLInputElement | null = null;
   let region: HTMLElement | null = null;
+  let select: HTMLSelectElement | null = null;
+  let bodies: HTMLElement | null = null;
+  let note: HTMLElement | null = null;
+  let operationSlot: HTMLElement | null = null;
+  let checking = false;
+  let bodiesReady = true;
+  const okNow = () => {
+    if (ok) ok.disabled = checking || (select !== null && select.value !== "new" && !bodiesReady);
+  };
   const typed = () => Object.fromEntries(inputs.map(([k, i]) => [k, i.value])) as Partial<Record<SizeKey, string>>;
   return {
     show(f) {
@@ -82,6 +105,13 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       }
       region = el("p", "edit-region", "feature-edit-region");
       region.hidden = true;
+      select = null;
+      bodies = el("fieldset", "edit-bodies", "feature-edit-bodies");
+      bodies.hidden = true;
+      note = el("p", "edit-operation-note", "feature-edit-note");
+      note.hidden = true;
+      checking = false;
+      bodiesReady = true;
       error = el("p", "feature-edit-error", "bad");
       error.hidden = true;
       error.setAttribute("role", "alert");
@@ -94,8 +124,10 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       const buttons = el("div", "", "feature-edit-buttons");
       buttons.append(ok, cancel);
       const title = el("h2", "feature-edit-title", "", `Edit ${f.name}`);
-      const note = el("p", "", "feature-edit-note", "Everything after it in the timeline is built again.");
-      box.replaceChildren(title, ...labels, region, error, note, buttons);
+      const after = el("p", "", "feature-edit-note", "Everything after it in the timeline is built again.");
+      // The Operation row's place (`showOperation` fills it): after the sizes and Flip, before the region's words.
+      operationSlot = el("div", "", "feature-edit-operation");
+      box.replaceChildren(title, ...labels, operationSlot, bodies, note, region, error, after, buttons);
       box.hidden = false;
       inputs[0]?.[1].focus();
       inputs[0]?.[1].select();
@@ -110,8 +142,53 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       region.textContent = words ?? "";
       region.hidden = words === null;
     },
+    showOperation(operation) {
+      if (!operationSlot || !bodies || !note) return;
+      const list = bodies;
+      const words = note;
+      const s = el("select", "edit-operation", "feature-edit-operation-select");
+      s.setAttribute("aria-label", "Operation");
+      for (const op of EXTRUDE_OPERATIONS) {
+        const option = el("option", "", "", EXTRUDE_OPERATION_WORDS[op]);
+        option.value = op;
+        s.append(option);
+      }
+      s.value = operation;
+      s.addEventListener("change", () => {
+        list.hidden = words.hidden = s.value === "new";
+        okNow();
+        on.operation?.(s.value as ExtrudeOperation);
+      });
+      select = s;
+      list.hidden = words.hidden = operation === "new";
+      const row = el("label", "", "feature-edit-row");
+      row.append("Operation ", s);
+      operationSlot.replaceChildren(row);
+      okNow();
+    },
+    showBodies(choices, words, ready) {
+      if (!bodies || !note) return;
+      const items = choices.map((b) => {
+        const row = el("label", "", "feature-edit-body");
+        const tick = document.createElement("input");
+        tick.type = "checkbox";
+        tick.checked = b.ticked;
+        tick.dataset.body = b.body; // read by the e2e test
+        tick.addEventListener("change", () => on.tick?.(b.body, tick.checked));
+        row.append(tick, " ", b.label);
+        return row;
+      });
+      bodies.replaceChildren(el("legend", "", "", "Bodies"), ...items);
+      note.textContent = words;
+      bodiesReady = ready;
+      okNow();
+    },
+    get operation() {
+      return (select?.value as ExtrudeOperation | undefined) ?? null;
+    },
     busy(on) {
-      if (ok) ok.disabled = on;
+      checking = on;
+      okNow();
     },
     hide() {
       editing = null;
@@ -120,6 +197,8 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       box.replaceChildren();
       box.hidden = true;
       error = ok = flip = region = null;
+      select = null;
+      bodies = note = operationSlot = null;
       inputs = [];
     },
     get editing() {
