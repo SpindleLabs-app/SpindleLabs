@@ -32,3 +32,12 @@
 .account .account-yours { display: flex; flex-wrap: wrap; gap: var(--look-space-2); }
 .account .account-danger { border-color: var(--line-8a3a3a); color: var(--text-f0b4b4); }
 .account .account-danger:hover { border-color: var(--line-d05a5a); color: var(--text-ffd0d0); }
+/* The plan (Pro with its badge, or the Upgrade buttons), in the signed-in dialog. */
+.account .account-plan { display: grid; gap: var(--look-space-2); padding: var(--look-space-3); background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.account .account-plan-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--look-space-2); }
+.account .account-pro-badge { padding: 2px var(--look-space-2); border-radius: var(--look-radius-s); background: var(--fill-2f63ad); color: var(--white); font-size: 13px; letter-spacing: 0.02em; }
+.account .account-test-tag { padding: 1px var(--look-space-2); border: 1px dashed var(--look-edge); border-radius: var(--look-radius-s); color: var(--text-a9b0b8); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.account .account-plan-action { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; justify-self: start; }
+.account .account-plan-action:hover { border-color: var(--look-accent); color: var(--look-accent-text); }
+.account .account-plan-action:disabled { opacity: 0.6; cursor: default; }
+.account .account-upgrade { min-height: 44px; background: var(--fill-2f63ad); border-color: var(--line-4b84d6); color: var(--white); font-weight: 600; }

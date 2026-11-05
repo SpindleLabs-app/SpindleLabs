@@ -57,6 +57,47 @@ const light: Palette = {
 export const PALETTES: Record<ViewTheme, Palette> = { dark, light };
 
 let current: ViewTheme = "dark";
+/** The Custom theme's secondary colour (sRGB), while one is worn: the sky and ground take their colour from it. */
+let customSecondary: Rgb255 | null = null;
+type Rgb255 = [number, number, number];
+
+const linear = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const lum = ([r, g, b]: Rgb255) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+const ratio = (a: Rgb255, b: Rgb255) => {
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+const toward = (a: Rgb255, b: Rgb255, t: number): Rgb255 => [0, 1, 2].map((i) => a[i] + (b[i] - a[i]) * t) as Rgb255;
+const hexToRgb = (n: number): Rgb255 => [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+const rgbToHex = ([r, g, b]: Rgb255) => (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+
+/**
+ * The sky and ground of the Custom theme from its secondary colour: the light
+ * sky is the colour itself at the bottom and its paler self at the top, the dark
+ * sky the colour sunk toward black; both are pushed (lighter, or darker) until
+ * the sketch line has 3 : 1 on the sky's middle, as the standard skies have.
+ */
+export function customSky(secondary: Rgb255, theme: ViewTheme): { backdrop: { top: Rgb; bottom: Rgb }; ground: typeof GROUND_GRID } {
+  const WHITE: Rgb255 = [255, 255, 255];
+  const BLACK: Rgb255 = [0, 0, 0];
+  const line = hexToRgb(PALETTES[theme].sketch.line);
+  let sec = secondary;
+  const make = (c: Rgb255) => (theme === "light" ? { top: toward(c, WHITE, 0.65), bottom: c } : { top: toward(c, BLACK, 0.78), bottom: toward(c, BLACK, 0.92) });
+  for (let i = 0; i < 40; i++) {
+    const { top, bottom } = make(sec);
+    if (ratio(line, toward(top, bottom, 0.5)) >= 3) break;
+    sec = toward(sec, theme === "light" ? WHITE : BLACK, 0.05);
+  }
+  const { top, bottom } = make(sec);
+  const ground = theme === "light" ? { centre: rgbToHex(toward(bottom, BLACK, 0.29)), lines: rgbToHex(toward(bottom, BLACK, 0.08)) } : { centre: rgbToHex(toward(sec, BLACK, 0.65)), lines: rgbToHex(toward(sec, BLACK, 0.8)) };
+  const unit = (c: Rgb255): Rgb => [c[0], c[1], c[2]];
+  return { backdrop: { top: unit(top).map(Math.round) as Rgb, bottom: unit(bottom).map(Math.round) as Rgb }, ground };
+}
+
+/** Set (or, with null, drop) the Custom theme's secondary colour; the next `setViewTheme` draws with it. */
+export function setViewCustom(secondary: Rgb255 | null): void {
+  customSecondary = secondary;
+}
 const listeners = new Set<(theme: ViewTheme) => void>();
 
 export const viewTheme = (): ViewTheme => current;
@@ -65,12 +106,13 @@ export const viewTheme = (): ViewTheme => current;
 export function setViewTheme(theme: ViewTheme): void {
   const p = PALETTES[theme];
   current = theme;
-  BACKDROP_TOP.splice(0, 3, ...p.backdrop.top);
-  BACKDROP_BOTTOM.splice(0, 3, ...p.backdrop.bottom);
+  const custom = customSecondary ? customSky(customSecondary, theme) : null;
+  BACKDROP_TOP.splice(0, 3, ...(custom ?? p).backdrop.top);
+  BACKDROP_BOTTOM.splice(0, 3, ...(custom ?? p).backdrop.bottom);
   EDGE_COLOUR.splice(0, 3, ...p.edge);
   Object.assign(SKETCH_COLOURS, p.sketch);
   Object.assign(BUILD_AREA_COLOURS, p.buildArea);
-  Object.assign(GROUND_GRID, p.ground);
+  Object.assign(GROUND_GRID, custom ? custom.ground : p.ground);
   Object.assign(CUBE_COLOURS, p.cube);
   Object.assign(EXTRUDE_COLOURS, p.extrude);
   for (const l of [...listeners]) l(theme);
@@ -85,7 +127,14 @@ export function onViewTheme(listener: (theme: ViewTheme) => void): () => void {
 // The page's own theme: read it now, and follow the document's `themechange`.
 if (typeof document !== "undefined") {
   const root = document.documentElement;
-  if (root?.dataset.theme === "light") setViewTheme("light");
+  const rgbOf = (hex: unknown): Rgb255 | null => {
+    const m = typeof hex === "string" ? hex.match(/^#([0-9a-f]{6})$/i) : null;
+    return m ? hexToRgb(parseInt(m[1], 16)) : null;
+  };
+  setViewCustom(rgbOf(root?.dataset.customSecondary));
+  if (root?.dataset.theme === "light" || customSecondary) setViewTheme(root?.dataset.theme === "light" ? "light" : "dark");
+  // The Custom theme's colours come before the theme change that makes the view draw them.
+  document.addEventListener("colourchange", (e) => setViewCustom(rgbOf((e as CustomEvent<{ secondary?: unknown }>).detail?.secondary)));
   document.addEventListener("themechange", (e) => {
     const detail = (e as CustomEvent<unknown>).detail;
     setViewTheme(detail === "light" ? "light" : "dark");

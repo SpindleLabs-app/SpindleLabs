@@ -4,7 +4,7 @@ Progress file for one workstream (rules: root CLAUDE.md, "Workstreams and where 
 
 The plan was designed with the owner on 2026-10-22 and 2026-10-23, and step U0 added on 2026-10-24.
 
-Done: U0a and U0b (2026-10-24, #302), U0c and U0d (2026-10-24, one pull request), U0e (2026-10-24, one pull request stacked on it). U0f1 (2026-10-25, one pull request). U0f2 and U0f3 (2026-10-25, one pull request). U1a (2026-11-04, one pull request). U1b and U2a (2026-11-04, one pull request). Next: U7a, U7b, then U2c (units) and U2d (mouse presets); the tooltip ask (Ben 2026-11-04) is its own small pull request.
+Done: U0a and U0b (2026-10-24, #302), U0c and U0d (2026-10-24, one pull request), U0e (2026-10-24, one pull request stacked on it). U0f1 (2026-10-25, one pull request). U0f2 and U0f3 (2026-10-25, one pull request). U1a (2026-11-04, one pull request). U1b and U2a (2026-11-04, one pull request). Custom theme (Ben's ask of 2026-11-04, one pull request: Settings > Theme > Custom, three hex colours; `packages/ui/src/custom-theme.ts` derives the tokens and nudges any colour that would make words unreadable, saying so; `theme-choice.ts` applies and stores the result, `public/theme-init.js` replays it before the first paint; `view-theme.ts` `customSky` takes the secondary for the sky; `e2e/custom-theme.mjs`). Instant tooltips and right-click quick info on icons (Ben's ask of 2026-11-04, one pull request: `packages/ui/src/tooltip.ts`, `styles/tooltip.css`, `e2e/tooltip.mjs`; hover shows the title's name at once in the theme, a right-click or long press on a button shows the whole title and its `data-key`; anything that already took the right-click, a field or the 3D view is left alone). Next: U7a, U7b, then U2c (units) and U2d (mouse presets); the tooltip ask (Ben 2026-11-04) is its own small pull request.
 
 ## How to work on this workstream
 
@@ -96,7 +96,7 @@ Research behind it (in the thread, plain words): Apple's 44 pt and Material's 48
 
 ### U7. Leftovers from earlier asks
 - [ ] U7a. On sketch start the camera fits the sketch plane or face exactly from above, and the plane stays clearly highlighted while orbiting. Test: hand-worked framing of the 40 × 30 top face; pixel probes of the highlight from an orbited view.
-- [ ] U7b. Escape turns off an active view-bar tool (Pan or Zoom back to Orbit), ordered against Design's Escape in the shortcut table. Test: in `e2e/navigation.mjs` and `e2e/shortcuts.mjs`.
+- [x] U7b. Escape turns off an active view-bar tool (Pan or Zoom back to Orbit), ordered against Design's Escape in the shortcut table. Test: in `e2e/navigation.mjs` and `e2e/shortcuts.mjs`.
 
 ### U8. Bug hunt
 - [ ] U8a. An aggressive hunt over the whole new UI: Firefox and WebKit at 1280 and 375 px, every dropdown and sheet by mouse, keyboard and tap, both themes, both units, the home screen with many projects and with storage refused, monkey sessions with fresh seeds, and adversarial reading of the new code. Every bug found gets a regression test before its fix.

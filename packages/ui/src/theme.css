@@ -403,7 +403,9 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
 #viewport, #split-viewport { min-width: 0; position: relative; }
 #workspace #split-bar button { padding: 5px 8px; background: var(--fill-29-37-51-09); font-size: 13px; }
 .view-cube { position: absolute; top: 8px; right: 8px; width: 96px; height: 96px; touch-action: none; }
-.overlay-legend { position: absolute; top: 112px; right: 8px; margin: 0; padding: 6px 10px; list-style: none; background: var(--fill-15-20-28-085); color: var(--warn); border-radius: var(--look-radius-s); font-size: 13px; }
+/* Top centre: the top right holds the view cube and Design's Properties toggle, which covered it (36d). */
+.overlay-legend { position: absolute; top: 112px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 16px); box-sizing: border-box; margin: 0; padding: 6px 10px; list-style: none; background: var(--fill-15-20-28-085); color: var(--warn); border-radius: var(--look-radius-s); font-size: 13px; }
+.overlay-legend li[data-severity="error"] { color: var(--danger); }
 #workspace button { padding: 7px 10px; background: var(--surface-raised); border: 1px solid var(--line-strong); color: inherit; border-radius: var(--look-radius-s); font: inherit; cursor: pointer; }
 #workspace button:hover { background: var(--fill-263142); }
 .tool-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }

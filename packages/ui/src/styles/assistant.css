@@ -39,3 +39,8 @@
 @media (max-width: 640px), (pointer: coarse) {
   .assistant textarea, .assistant input:not([type="checkbox"], [type="radio"], [type="range"]), .assistant select { font-size: 16px; }
 }
+/* Try again after an answer that didn't come (AI8a, AI8c): a finger-sized target on a phone. */
+.assistant #ai-try-again { margin-top: 6px; min-height: var(--look-target); }
+@media (max-width: 640px) {
+  .assistant #ai-try-again { min-height: var(--look-target-touch); }
+}

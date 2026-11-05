@@ -50,8 +50,8 @@ class CollectGolden(unittest.TestCase):
                 env["JOBS"] = jobs
             env.update(IN=incoming, RUN_URL="https://example.invalid/runs/1", COMMIT="abcdef1234567", BRANCH="main",
                        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
-            # The workflow copies both scripts out first; so does this.
-            for s in ("collect-results.sh", "file_issues.py"):
+            # The workflow copies the scripts out first; so does this.
+            for s in ("collect-results.sh", "file_issues.py", "coverage_issue.py"):
                 shutil.copy(os.path.join(HERE, s), d)
             out = subprocess.run(["bash", os.path.join(d, "collect-results.sh")], cwd=work, env=env, capture_output=True, text=True)
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
@@ -125,6 +125,57 @@ class CollectChecks(unittest.TestCase):
     def test_a_clean_run_with_green_jobs_files_nothing(self):
         stdout, _ = self.collect(CLEAN, None, {"journeys/report.txt": "PASS a: 3 clicks\n"}, jobs='{"golden": {"result": "success"}}')
         self.assertNotIn("create", stdout)
+
+
+class CollectNewFailures(unittest.TestCase):
+    """35f1d: the summary's first line counts the kinds of problem no earlier run found, the line public Combine's
+    clean streak is counted from (35f5). Three runs on one test-results branch: a model failing (new), the same
+    failure again (not new), then a clean night (none)."""
+
+    def test_only_kinds_never_found_before_count_as_new(self):
+        with tempfile.TemporaryDirectory() as d:
+            origin = os.path.join(d, "origin.git")
+            git(d, "init", "-q", "--bare", origin)
+            for s in ("collect-results.sh", "file_issues.py"):
+                shutil.copy(os.path.join(HERE, s), d)
+
+            def night(n, failing):
+                work, incoming = os.path.join(d, f"work{n}"), os.path.join(d, f"in{n}")
+                git(d, "init", "-q", work)
+                git(work, "remote", "add", "origin", origin)
+                golden = os.path.join(incoming, "golden")
+                os.makedirs(golden)
+                with open(os.path.join(golden, "report.txt"), "w") as f:
+                    f.write(CLEAN if not failing else "seed 7, 20 rounds of 6 models; 1 FAILED\n")
+                if failing:
+                    os.makedirs(os.path.join(golden, "seed-golden-7"))
+                    with open(os.path.join(golden, "seed-golden-7", "golden-report.txt"), "w") as f:
+                        f.write(FAILING)
+                env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_STEP_SUMMARY", "JOBS")}
+                env.update(IN=incoming, RUN_URL=f"https://example.invalid/runs/{n}", COMMIT="abcdef1234567", BRANCH="main",
+                           GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+                out = subprocess.run(["bash", os.path.join(d, "collect-results.sh")], cwd=work, env=env, capture_output=True, text=True)
+                self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+                check = os.path.join(d, f"check{n}")
+                git(d, "clone", "-q", "-b", "test-results", origin, check)
+                read = lambda name: open(os.path.join(check, name)).read()
+                return read("summary.txt"), read("new-failures.csv"), read("kinds-seen.txt")
+
+            summary, csv, seen = night(1, True)
+            kind = "golden model l-bracket: Body # (feature#): volume # is not #"
+            self.assertTrue(summary.startswith("New failures this run (kinds of problem no earlier run found): 1\n  - " + kind + "\n"), summary[:300])
+            self.assertEqual(seen, kind + "\n")
+            summary, csv, seen = night(2, True)
+            self.assertTrue(summary.startswith("New failures this run (kinds of problem no earlier run found): 0\nnew-failures.csv"), summary[:300])
+            self.assertEqual(seen, kind + "\n")
+            summary, csv, seen = night(3, False)
+            self.assertTrue(summary.startswith("New failures this run (kinds of problem no earlier run found): 0\n"), summary[:300])
+            # One line per run, the count in the second column; the kind found once stays seen.
+            self.assertEqual([line.split(",")[1] for line in csv.splitlines()[1:]], ["1", "0", "0"])
+            self.assertEqual(csv.splitlines()[0], "finished,new,run,commit,branch")
+            self.assertEqual(seen, kind + "\n")
+            # The summary's other sections are still there under the line.
+            self.assertIn("Latest golden models run", summary)
 
 
 if __name__ == "__main__":

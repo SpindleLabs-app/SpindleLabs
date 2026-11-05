@@ -71,6 +71,10 @@
 // `faults` plants the bugs the session tests use to prove the harness
 // catches them (timeline-session.ts); real code never passes any.
 
+import { boxForm, combinable, combineBodies, curvedBody, faceMotion, findFace, formOf, isCurved, movedForm, sameKind, tagDesign, UnmodelledCombine, type CombineOperation } from "./timeline-combine.ts";
+
+export { UnmodelledCombine, type CombineOperation };
+
 /** A point on the sketch grid, in whole mm. */
 export type Point = readonly [number, number];
 
@@ -98,6 +102,8 @@ export type CapRole = "top" | "end";
 export interface OnFace {
   feature: string;
   role: CapRole;
+  /** 35f1d2: the tag of the piece it was drawn on, when its face was split then (rule 3). */
+  tag?: FaceName[];
   drawn: number;
   held?: number;
   /** 35e2h: where the Moves before it had turned and shifted the face's body when it was drawn (left out: not moved). */
@@ -133,9 +139,12 @@ export type ModelItem =
   /** `centreZ`: its centre's height, its radius when added, so it rests on the floor, and kept when its diameter changes (Ben, 2026-10-28: never snapped back). */
   | { id: string; kind: "sphere"; diameter: number; centreZ: number; suppressed: boolean }
   /** A Move (35e2): `bodies` turned `turnZ` degrees about the upright line through `pivot`, then shifted by `shift` (mm); it makes no body. */
-  | { id: string; kind: "move"; bodies: string[]; shift: Vec3; turnZ: number; pivot: Point; suppressed: boolean };
+  | { id: string; kind: "move"; bodies: string[]; shift: Vec3; turnZ: number; pivot: Point; suppressed: boolean }
+  /** A Combine (35f1d2): `target`'s body with `tool`'s (the bodies of those items), the tool used up unless `keep` (timeline-combine.ts). */
+  | { id: string; kind: "combine"; target: string; tool: string; operation: CombineOperation; keep: boolean; suppressed: boolean };
 
 type MoveItem = Extract<ModelItem, { kind: "move" }>;
+type CombineItem = Extract<ModelItem, { kind: "combine" }>;
 
 /** An extrude's last shape: its sketch's shape and curve ids just before the sketch was lost, and the height it lay at when that was a face sketch (26e). */
 export interface Kept {
@@ -169,14 +178,27 @@ export interface FaceName {
   feature: string;
   role: FaceRole;
   curve?: string;
+  /**
+   * Rule 3 (35f1d2): when another face in the design carries this name too
+   * (a face split by a Combine, or a kept tool's face and the wall it cut),
+   * the shown names of the faces bordering this one that border none of
+   * the others; left out while no other face carries it.
+   */
+  tag?: FaceName[];
 }
 
 export type Vec3 = readonly [number, number, number];
 
 export interface ModelFace {
   name: FaceName;
+  /** Rule 4 (35f1d2): the other names of a face that two inputs' faces made, after the one shown. */
+  also?: FaceName[];
   area: number;
   centroid: Vec3;
+  /** A Combine's face looking down (35f1e): a cut's cavity roof carries the tool's top (rule 2), and looks down, -z. */
+  down?: true;
+  /** A combined body's face (35f1e2): where the Moves had put the input body it came from (left out: not moved); read with `faceMotion`. */
+  motion?: Motion2;
 }
 
 /**
@@ -192,6 +214,8 @@ export interface EdgeName {
   feature: string;
   faces: readonly [FaceName, FaceName];
   ordered: boolean;
+  /** Rule 5 (35f1d2): a combined body's edge, named by its two faces' full names as a set, whatever their features. */
+  pair?: true;
 }
 
 /** An edge with its length and centroid (the mean point along it: a line's middle, a circle's centre). */
@@ -199,6 +223,8 @@ export interface ModelEdge {
   name: EdgeName;
   length: number;
   centroid: Vec3;
+  /** A combined body's edge: its two faces by their place in the body's faces. */
+  between?: [number, number];
 }
 
 export interface ModelBody {
@@ -207,9 +233,12 @@ export interface ModelBody {
   edges: ModelEdge[];
   /** 35e2h: how its Moves have turned and shifted it so far (left out: never moved). */
   motion?: Motion2;
+  /** 35f1d2: a Combine's result, named by section 8's rules (timeline-combine.ts). */
+  combined?: true;
 }
 
-export type FailCause = "deleted-input" | "failed-input" | "open-outline" | "invalid-outline";
+/** "error" (35f1d2): a Combine the kernel refuses, in its words (a curved body, a result touching itself, nothing left, a sliver). */
+export type FailCause = "deleted-input" | "failed-input" | "open-outline" | "invalid-outline" | "error";
 
 /** Why an extrude is built from its kept shape: its sketch is gone, or makes no outline. */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -226,12 +255,20 @@ export type ItemResult =
    * there, "plane-lost"; an extrude of a held sketch names it as its lost
    * `source` (26e).
    */
-  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; turn?: Turn; plane?: "plane-lost"; source?: string }
+  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; turn?: Turn; plane?: PlaneCause; source?: string; pieces?: ModelBody[]; down?: true }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others: off, with no warning (Q3, 26e). */
   | { status: "greyed"; by: string }
   | { status: "rolled-back" }
   | { status: "failed"; cause: FailCause; input?: string };
+
+/**
+ * Why a sketch on a face says something about its plane: "plane-lost" (no
+ * face has its name: held), "plane-ambiguous" (two pieces it can't choose
+ * between, 35f1d2: held), "plane-split" (35f1d2: its face was split and it
+ * went to the piece holding its origin, else the largest; placed there).
+ */
+export type PlaneCause = "plane-lost" | "plane-ambiguous" | "plane-split";
 
 /** A rebuild: the items in build order and each one's result. */
 export interface Rebuild {
@@ -259,6 +296,9 @@ export type ConcreteOp =
   /** 35e2: a Move of built bodies before where it goes in, and a Move's numbers changed. */
   | { op: "add-move"; bodies: string[]; shift: Vec3; turnZ: number; pivot: Point }
   | { op: "set-move"; item: string; shift: Vec3; turnZ: number; pivot: Point; bodies?: string[] }
+  /** 35f1d2: a Combine of two items' bodies before where it goes in, and a Combine's operation changed. */
+  | { op: "add-combine"; target: string; tool: string; operation: CombineOperation; keep: boolean }
+  | { op: "set-combine"; item: string; operation: CombineOperation }
   | { op: "undo" }
   | { op: "redo" };
 
@@ -300,7 +340,16 @@ export type ModelFault =
   | "move-shift-then-turn"
   | "move-not-held"
   | "sketch-not-carried"
-  | "move-bodies-kept";
+  | "move-bodies-kept"
+  | "combine-tool-kept"
+  | "combine-not-held"
+  | "combine-pieces-dropped"
+  | "combine-op-ignored"
+  | "combine-refusal-changes"
+  | "combine-tags-dropped"
+  | "combine-first-piece"
+  | "combine-face-moves-with-target"
+  | "combine-edge-tags-dropped";
 
 export const MODEL_FAULTS: readonly ModelFault[] = [
   "reorder-past-dependency",
@@ -335,10 +384,22 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "move-not-held",
   "sketch-not-carried",
   "move-bodies-kept",
+  "combine-tool-kept",
+  "combine-not-held",
+  "combine-pieces-dropped",
+  "combine-op-ignored",
+  "combine-refusal-changes",
+  "combine-tags-dropped",
+  "combine-first-piece",
+  "combine-face-moves-with-target",
+  "combine-edge-tags-dropped",
 ];
 
+/** The faults only a session with Combines (step 35, `LANDED`) can catch. */
+export const COMBINE_FAULTS: readonly ModelFault[] = MODEL_FAULTS.filter((f) => f.startsWith("combine-"));
+
 /** "item-3/side:curve-5": a face name as one string, for maps and messages. */
-export const faceKey = (n: FaceName): string => `${n.feature}/${n.role}${n.curve === undefined ? "" : `:${n.curve}`}`;
+export const faceKey = (n: FaceName): string => `${n.feature}/${n.role}${n.curve === undefined ? "" : `:${n.curve}`}${n.tag === undefined ? "" : `#${n.tag.map(faceKey).sort().join(",")}`}`;
 
 /** A face name without its feature: "side:curve-5", "top". */
 export const facePart = (n: FaceName): string => `${n.role}${n.curve === undefined ? "" : `:${n.curve}`}`;
@@ -350,11 +411,20 @@ export function edgeName(a: FaceName, b: FaceName, ordered: boolean): EdgeName {
 }
 
 /** "item-3/side:curve-5>side:curve-6", "item-3/side:curve-5+start": an edge name as one string. */
-export const edgeKey = (n: EdgeName): string => `${n.feature}/${facePart(n.faces[0])}${n.ordered ? ">" : "+"}${facePart(n.faces[1])}`;
+export const edgeKey = (n: EdgeName): string =>
+  n.pair ? `edge:${[faceKey(n.faces[0]), faceKey(n.faces[1])].sort().join("+")}` : `${n.feature}/${facePart(n.faces[0])}${n.ordered ? ">" : "+"}${facePart(n.faces[1])}`;
 
 /** The ids an item reads: an extrude its sketch, a sketch on a face that face's feature (26e). */
 export const dependsOn = (item: ModelItem): string[] =>
-  item.kind === "extrude" ? [item.sketch] : item.kind === "sketch" && item.on ? [item.on.feature] : item.kind === "move" ? [...item.bodies] : [];
+  item.kind === "extrude"
+    ? [item.sketch]
+    : item.kind === "sketch" && item.on
+      ? [item.on.feature]
+      : item.kind === "move"
+        ? [...item.bodies]
+        : item.kind === "combine"
+          ? [...new Set([item.target, item.tool])]
+          : [];
 
 export const emptyDoc = (): ModelDoc => ({ nextId: 1, items: [], marker: null });
 
@@ -603,22 +673,31 @@ export function rebuild(doc: ModelDoc, faults: ReadonlySet<ModelFault> = new Set
   const results: Record<string, ItemResult> = {};
   const byId = new Map(doc.items.map((i) => [i.id, i]));
   let rolled = doc.marker === "start" && !faults.has("ignore-marker");
-  for (const item of doc.items) {
+  for (const [place, item] of doc.items.entries()) {
     if (rolled) results[item.id] = { status: "rolled-back" };
     else if (item.suppressed && !faults.has("build-suppressed")) results[item.id] = { status: "suppressed" };
-    else results[item.id] = build(item, byId, results, faults);
+    else results[item.id] = build(item, byId, results, faults, place);
     if (doc.marker === item.id && !faults.has("ignore-marker")) rolled = true;
   }
+  // Rules 3 and 5 on every body shown (35f1d2). Planted bug ("combine-tags-dropped"): no face is ever tagged.
+  tagDesign(bodiesNow(results), faults.has("combine-tags-dropped"), faults.has("combine-edge-tags-dropped"));
   return { order: doc.items.map((i) => i.id), results };
+}
+
+/** Every body built so far, in build order: each item's own (as its Moves and Combines left it), then a Combine's pieces (35f1d2). */
+export function bodiesNow(done: Record<string, ItemResult>): ModelBody[] {
+  return Object.values(done).flatMap((r) => (r.status === "built" ? [...(r.body ? [r.body] : []), ...(r.pieces ?? [])] : []));
 }
 
 /** Greyed by what greys `input` (26e, Q3): `id` itself when it is suppressed, else whatever greys it; null when it is on. */
 const greyedBy = (input: ItemResult | undefined, id: string): string | null => (input?.status === "suppressed" ? id : input?.status === "greyed" ? input.by : null);
 
-function build(item: ModelItem, byId: Map<string, ModelItem>, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>): ItemResult {
+function build(item: ModelItem, byId: Map<string, ModelItem>, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
   if (item.kind === "sketch") return placeSketch(item, done, faults);
-  if (item.kind === "move") return moveBodies(item, done, faults);
-  if (item.kind !== "extrude") return { status: "built", body: presetBody(item, faults) };
+  if (item.kind === "move") return moveBodies(item, done, faults, place);
+  if (item.kind === "combine") return combineRun(item, done, faults, place);
+  if (item.kind === "box") return { status: "built", body: boxForm(presetBody(item, faults), item.id, item.width, item.depth, item.height, place) };
+  if (item.kind !== "extrude") return { status: "built", body: curvedBody(presetBody(item, faults)) };
   const sketch = byId.get(item.sketch);
   if (sketch === undefined) return lost(item, "deleted-input", faults);
   const input = done[item.sketch];
@@ -629,19 +708,27 @@ function build(item: ModelItem, byId: Map<string, ModelItem>, done: Record<strin
   if (by !== null) return faults.has("suppress-fails-dependents") && input.status === "suppressed" ? { status: "failed", cause: "failed-input", input: item.sketch } : { status: "greyed", by };
   if (input.status !== "built") return { status: "failed", cause: "failed-input", input: item.sketch };
   if (sketch.kind !== "sketch") throw new Error(`${item.id} extrudes ${sketch.id}, which is not a sketch`);
-  // Rule 7: built where its held sketch lies, saying its source is lost.
-  const source = input.plane ? { source: item.sketch } : {};
+  // The model's extrudes go up from where their sketch lies; one from a sketch on a face looking down goes down.
+  if (input.down) throw new UnmodelledCombine(`${item.id} extrudes a sketch on a face a Combine turned to look down, which goes down: not modelled`);
+  // Rule 7: built where its held sketch lies, saying its source is lost (35f1d2: not when it went to a piece of its split face).
+  const source = input.plane !== undefined && input.plane !== "plane-split" ? { source: item.sketch } : {};
   const problem = outlineProblem(sketch);
   if (problem !== null) return { ...lost(item, problem, faults), ...source };
   // Planted bug: the kept shape is used even once the sketch makes an outline again.
   if (faults.has("kept-not-forgotten") && item.kept) return { ...lost(item, "open-outline", faults), ...source };
-  return { status: "built", body: lifted(extrudeBody(item.id, sketch.shape, sketch.curves as string[], item.distance, faults), input.lift, input.turn), ...source };
+  return { status: "built", body: lifted(extruded(item.id, sketch.shape, sketch.curves as string[], item.distance, faults), input.lift, input.turn), ...source };
 }
+
+/** An extrude's body, curved when its outline has an arc (35f1d2: a Combine with it is refused); else flat. */
+const extruded = (id: string, s: ModelShape, curves: readonly string[], d: number, faults: ReadonlySet<ModelFault>): ModelBody => {
+  const body = extrudeBody(id, s, curves, d, faults);
+  return s.kind === "polygon" ? body : curvedBody(body);
+};
 
 /** An extrude whose sketch is lost: its kept shape (where it lay) with a warning, or failed with the cause when it has none. */
 function lost(item: Extract<ModelItem, { kind: "extrude" }>, cause: LostCause, faults: ReadonlySet<ModelFault>): ItemResult {
   if (item.kept === undefined) return { status: "failed", cause, input: item.sketch };
-  const body = lifted(extrudeBody(item.id, item.kept.shape, item.kept.curves, item.distance, faults), item.kept.lift, item.kept.turn);
+  const body = lifted(extruded(item.id, item.kept.shape, item.kept.curves, item.distance, faults), item.kept.lift, item.kept.turn);
   // Planted bug: the kept shape is built, but nothing says so.
   return faults.has("warning-dropped") ? { status: "built", body } : { status: "built", body, warning: { cause, input: item.sketch } };
 }
@@ -653,7 +740,7 @@ function lost(item: Extract<ModelItem, { kind: "extrude" }>, cause: LostCause, f
  * `done` by that body moved, so everything after it finds the body where
  * the Move put it. All or none.
  */
-function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>): ItemResult {
+function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
   for (const id of item.bodies) {
     const by = greyedBy(done[id], id);
     if (by !== null) return { status: "greyed", by };
@@ -663,13 +750,61 @@ function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: Re
     if (r === undefined) return { status: "failed", cause: "deleted-input", input: id };
     if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: id };
   }
+  // 35f1d2: a Combine's result can't be moved until the app has the kernel's body_move (Design fails it in words).
+  if (item.bodies.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
   // Planted bug ("move-not-held"): the Move builds but its bodies stay where they were.
   if (!faults.has("move-not-held"))
     for (const id of item.bodies) {
       const r = done[id] as Extract<ItemResult, { status: "built" }>;
-      done[id] = { ...r, body: moved(r.body!, item, faults) };
+      done[id] = { ...r, body: movedForm(r.body!, moved(r.body!, item, faults), item, place) };
     }
   return { status: "built" };
+}
+
+/**
+ * A Combine's result (35f1d2; the rules: rebuild.ts `combineRun` in
+ * Design, section 8 of docs/document-model.md): greyed while its target's
+ * or tool's item is suppressed or greyed (Q3); failed naming the first of
+ * them that is deleted, not built, or has no body (used up by an earlier
+ * Combine); failed in the kernel's words for a curved body (until 37) and
+ * for whatever the naming model refuses (a result touching itself along
+ * an edge or at a corner, nothing left, a sliver); else built, the
+ * target's body replaced by the result in `done`, the tool's used up
+ * unless kept, and the new pieces its own (`pieces`). All or none.
+ */
+function combineRun(item: CombineItem, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
+  for (const id of dependsOn(item)) {
+    const by = greyedBy(done[id], id);
+    if (by !== null) return { status: "greyed", by };
+  }
+  for (const id of [item.target, item.tool]) {
+    const r = done[id];
+    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id };
+    if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: id };
+  }
+  const target = done[item.target] as Extract<ItemResult, { status: "built" }>;
+  const tool = done[item.tool] as Extract<ItemResult, { status: "built" }>;
+  const useUp = () => {
+    const { body: _, ...rest } = tool;
+    done[item.tool] = rest;
+  };
+  // Planted bug ("combine-refusal-changes"): a refused Combine still uses its tool up.
+  const refused = (): ItemResult => {
+    if (faults.has("combine-refusal-changes") && !item.keep) useUp();
+    return { status: "failed", cause: "error" };
+  };
+  if (isCurved(target.body!) || isCurved(tool.body!)) return refused();
+  if (!combinable(target.body!) || !combinable(tool.body!) || !formOf(target.body!) || !formOf(tool.body!))
+    throw new UnmodelledCombine(`${item.id} combines a flat body the model has no exact boolean for`);
+  // Planted bug ("combine-face-moves-with-target"): every face of the result carried by the target's Moves.
+  const made = combineBodies(target.body!, tool.body!, item, place, faults.has("combine-face-moves-with-target"));
+  if ("failed" in made) return refused();
+  // Planted bug ("combine-not-held"): the target's row keeps its body as it was.
+  if (!faults.has("combine-not-held")) done[item.target] = { ...target, body: made.target };
+  // Planted bug ("combine-tool-kept"): a tool is never used up.
+  if (!item.keep && !faults.has("combine-tool-kept")) useUp();
+  // Planted bug ("combine-pieces-dropped"): pieces apart from the target are left out.
+  return { status: "built", ...(made.pieces.length > 0 && !faults.has("combine-pieces-dropped") && { pieces: made.pieces }) };
 }
 
 /**
@@ -689,7 +824,7 @@ function moved(body: ModelBody, m: MoveItem, faults: ReadonlySet<ModelFault>): M
   // 35e2h: its motion so far followed by this one: R(m)(R(a) p + t) + … turns by a + m and takes t where `at` takes the point t.
   const was = body.motion ?? { a: 0, t: [0, 0] };
   const t = at([was.t[0], was.t[1], 0]);
-  return { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: at(e.centroid) })), motion: { a: was.a + a, t: [t[0], t[1]] } };
+  return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: at(e.centroid) })), motion: { a: was.a + a, t: [t[0], t[1]] } });
 }
 
 /** What the kernel is asked to do for a Move, as Design asks it (move.ts `moveMotions`): the turn when there is one, then the shift when there is one. */
@@ -709,7 +844,7 @@ function lifted(body: ModelBody, z: number | undefined, turn?: Turn): ModelBody 
   const [c, s] = turn?.x ?? [1, 0];
   const [ox, oy] = turn?.at ?? [0, 0];
   const up = (p: Vec3): Vec3 => (turn ? [ox + c * p[0] - s * p[1], oy + s * p[0] + c * p[1], p[2] + z] : [p[0], p[1], p[2] + z]);
-  return { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: up(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: up(e.centroid) })) };
+  return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: up(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: up(e.centroid) })) });
 }
 
 /**
@@ -724,14 +859,22 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
   const by = greyedBy(on, item.on.feature);
   // Planted bug ("greyed-warns"): a sketch on a suppressed feature says its plane is lost instead of being greyed.
   if (by !== null && !faults.has("greyed-warns")) return { status: "greyed", by };
-  if (on?.status === "built" && on.body) {
-    const face = on.body.faces.find((f) => f.name.role === item.on!.role);
+  // 35f1d2: its face found by name on every body built so far (rule 3; one face before any Combine, on its feature's
+  // own body), from the origin it was drawn with: the face plane's nearest point to the world's, over the origin.
+  const bodies = bodiesNow(done);
+  const ref: FaceName = { feature: item.on.feature, role: item.on.role, ...(item.on.tag && { tag: item.on.tag }) };
+  const found = findFace(bodies, ref, [0, 0, item.on.drawn], { firstPiece: faults.has("combine-first-piece") });
+  if (found !== null && "body" in found) {
+    const body = bodies[found.body];
     // 35e2h: carried along the face by what its body's Moves did since it was drawn. Planted bug ("sketch-not-carried"): only its height follows.
-    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(on.body.motion, item.on.motion);
-    if (face) return { status: "built", lift: face.centroid[2], ...(turn && { turn }) };
+    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(faceMotion(body, body.faces[found.face]), item.on.motion);
+    // 35f1e2 (seed 137 on the next kernel): on a face a Combine turned to look down (a cut's roof carrying a tool's top)
+    // the sketch still faces up, the side it was drawn on (rule 8, naming-model.ts `frameNow`: the normal stays on the
+    // drawn normal's side; every face the sessions draw on looks up). 35f1e had it facing down, against rule 8.
+    return { status: "built", lift: body.faces[found.face].centroid[2], ...(turn && { turn }), ...(found.split && { plane: "plane-split" as const }) };
   }
   const held = item.on.held === undefined ? undefined : item.on.heldTurn;
-  return { status: "built", lift: item.on.held ?? item.on.drawn, ...(held && { turn: held }), plane: "plane-lost" };
+  return { status: "built", lift: item.on.held ?? item.on.drawn, ...(held && { turn: held }), plane: found === null ? "plane-lost" : "plane-ambiguous" };
 }
 
 /**
@@ -784,7 +927,8 @@ function settle(before: ModelDoc, doc: ModelDoc, faults: ReadonlySet<ModelFault>
   for (const item of doc.items) {
     if (item.kind !== "sketch" || item.on === undefined) continue;
     const r = now.results[item.id];
-    if (r?.status !== "built" || r.plane === undefined) {
+    // A sketch that went to a piece of its split face (35f1d2) is placed, not held.
+    if (r?.status !== "built" || r.plane === undefined || r.plane === "plane-split") {
       delete item.on.held;
       delete item.on.heldTurn;
     }
@@ -827,9 +971,25 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
     JSON.stringify(s.kind === "polygon" ? { kind: s.kind, corners: [...s.corners].map((c) => [...c]).sort((a, b) => a[0] - b[0] || a[1] - b[1]) } : s);
   // 35e2: each body as it is so far, its own key and the Moves' motions since, all in one list as Design asks the kernel.
   const chain = new Map<string, { spec: string; shape: string; motions: unknown[] }>();
+  const usedUp = new Set(doc.items.flatMap((i) => (i.kind === "combine" && !i.keep && r.results[i.id]?.status === "built" ? [i.tool] : [])));
   for (const id of r.order) {
     const res = r.results[id];
     const item = byId.get(id);
+    if (item?.kind === "combine") {
+      // 35f1d2: Design builds a body only for a tool equal to its target (rebuild.ts `combineRun`: two equal bodies in one
+      // place are the kernel's two, its own copy of the shape); the result is the kernel's boolean, never a build. Asked
+      // of the kernel (built, or refused in its words), the inputs' chains end: the target is the result, a used-up tool gone.
+      if (res.status === "built" || (res.status === "failed" && res.cause === "error")) {
+        const [t, u] = [chain.get(item.target), chain.get(item.tool)];
+        if (t !== undefined && u !== undefined && t.spec === u.spec && JSON.stringify(t.motions) === JSON.stringify(u.motions))
+          out.set(`${id}:copy`, { spec: JSON.stringify(["copy", t.spec, t.motions]), shape: JSON.stringify(["copy", t.shape, t.motions]) });
+      }
+      if (res.status === "built") {
+        chain.delete(item.target);
+        if (!item.keep) chain.delete(item.tool);
+      }
+      continue;
+    }
     if (item?.kind === "move" && res.status === "built") {
       // Each body it moves is built moved, under a key of its own; the body before is still held by the Move.
       for (const b of item.bodies) {
@@ -842,7 +1002,8 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
       }
       continue;
     }
-    if (res.status !== "built" || res.body === undefined || item === undefined) continue;
+    // A tool a Combine used up was still built (35f1d2): its row shows no body, but the kernel holds it for the Combine.
+    if (res.status !== "built" || (res.body === undefined && !usedUp.has(id)) || item === undefined) continue;
     if (item.kind === "extrude") {
       const from = res.warning ? item.kept : (byId.get(item.sketch) as SketchItem | undefined);
       if (from === undefined) throw new Error(`harness: ${id} is built from nothing`);
@@ -898,6 +1059,7 @@ export function sizeKeys(item: ModelItem): SizeKey[] {
     case "sphere":
       return ["diameter"];
     case "move":
+    case "combine":
       return [];
     case "sketch":
       return item.shape.kind === "circle" ? ["radius"] : item.shape.kind === "slot" ? ["length", "radius"] : [];
@@ -978,13 +1140,20 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
       return { kind: "done", ids: [item.id, ...(item.curves as string[])] };
     }
     case "add-face-sketch": {
-      // Drawn at the face's height now (the session only picks a face a built body has, before where it goes in).
-      const res = rebuild(doc, faults).results[op.face.feature];
-      const face = res?.status === "built" ? res.body?.faces.find((f) => faceKey(f.name) === faceKey(op.face)) : undefined;
+      // Drawn at the face's height now (the session only picks a face a built body has, before where it goes in): found
+      // by its full name, its tag too (35f1d2: a piece of a face split, on whichever body holds it).
+      const holder = bodiesNow(rebuild(doc, faults).results).find((b) => b.faces.some((f) => faceKey(f.name) === faceKey(op.face)));
+      const face = holder?.faces.find((f) => faceKey(f.name) === faceKey(op.face));
       if (face === undefined || (op.face.role !== "top" && op.face.role !== "end")) throw new Error(`no flat face ${faceKey(op.face)} to sketch on`);
       // 35e2h: with where its body's Moves had put it, as the app's pick records it.
-      const motion = res?.status === "built" ? res.body?.motion : undefined;
-      const on: OnFace = { feature: op.face.feature, role: op.face.role, drawn: face.centroid[2], ...(motion && { motion: { a: motion.a, t: [...motion.t] as [number, number] } }) };
+      const motion = holder && face ? faceMotion(holder, face) : undefined;
+      const on: OnFace = {
+        feature: op.face.feature,
+        role: op.face.role,
+        ...(op.face.tag && { tag: op.face.tag.map((n) => ({ ...n })) }),
+        drawn: face.centroid[2],
+        ...(motion && { motion: { a: motion.a, t: [...motion.t] as [number, number] } }),
+      };
       const item: SketchItem = { id: newId(doc, "item", faults), kind: "sketch", shape: JSON.parse(JSON.stringify(op.shape)), curves: [], suppressed: false, on };
       insert(doc, item);
       for (let k = 0; k < curveCount(op.shape); k++) item.curves.push(newId(doc, "curve", faults));
@@ -1081,17 +1250,32 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
       if (op.bodies && !faults.has("move-bodies-kept")) item.bodies = [...op.bodies];
       return { kind: "done", ids: [] };
     }
+    case "add-combine": {
+      const id = newId(doc, "item", faults);
+      insert(doc, { id, kind: "combine", target: op.target, tool: op.tool, operation: op.operation, keep: op.keep, suppressed: false });
+      return { kind: "done", ids: [id] };
+    }
+    case "set-combine": {
+      const item = find(doc, op.item);
+      if (item.kind !== "combine") throw new Error(`${op.item} is not a combine`);
+      // Planted bug ("combine-op-ignored"): the edit is taken but the operation stays.
+      if (!faults.has("combine-op-ignored")) item.operation = op.operation;
+      return { kind: "done", ids: [] };
+    }
   }
 }
 
-/** The face a name points at in a rebuild, or null when no built body has it. */
-export function resolveFace(r: Rebuild, name: FaceName): ModelFace | null {
-  const key = faceKey(name);
-  for (const id of r.order) {
-    const res = r.results[id];
-    if (res.status !== "built" || res.body === undefined) continue;
-    const f = res.body.faces.find((x) => faceKey(x.name) === key);
-    if (f) return f;
-  }
-  return null;
+/**
+ * The face a held name points at in a rebuild (rule 3, 35f1d2: on every
+ * body shown; a name made on a whole face and finding it split goes to the
+ * largest piece, a tagged one to the piece with its tag), null when no
+ * built body has it, or "shared" when two pieces tie and it is never
+ * guessed between.
+ */
+export function resolveFace(r: Rebuild, name: FaceName, faults: ReadonlySet<ModelFault> = new Set()): ModelFace | "shared" | null {
+  const bodies = bodiesNow(r.results);
+  const found = findFace(bodies, name, undefined, { firstPiece: faults.has("combine-first-piece") });
+  if (found === null) return null;
+  if ("ambiguous" in found) return "shared";
+  return bodies[found.body].faces[found.face];
 }

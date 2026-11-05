@@ -153,7 +153,9 @@ jobs:
   # and a failure folder per failing (or unfinished) seed, which files a
   # random-testing issue like a failing round (collect-results.sh,
   # file_issues.py). The sessions are cut off at 300 minutes so the report is
-  # always written.
+  # always written. The monkey runs with the hidden Combine tool on (35f1d,
+  # `?combine`): "combine" makes a night that never got a Combine to OK a
+  # failure, so the tool can't go quietly untested.
   monkey:
     needs: gate
     if: needs.gate.outputs.run == 'true'
@@ -183,7 +185,7 @@ jobs:
           first="$(date -u +%Y%m%d)0"
           MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + 1))" MONKEY_STEPS=2000 \
             timeout 300m node e2e/monkey.mjs 2>&1 | tee "$OUT/monkey.log" | grep -E '^(seed |monkey:)' || true
-          python3 ../../.github/scripts/monkey_night.py "$OUT/monkey.log" e2e/monkey-results "$OUT" "$first" 2 2000
+          python3 ../../.github/scripts/monkey_night.py "$OUT/monkey.log" e2e/monkey-results "$OUT" "$first" 2 2000 combine
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

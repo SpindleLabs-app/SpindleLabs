@@ -18,7 +18,7 @@ import { extrudeSketch } from "../src/extrude.ts";
 import { hideBody } from "../src/timeline-edits.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { hiddenStlNote } from "../src/actions.ts";
-import { revertedNote } from "../src/properties.ts";
+import { panelSizeRefused, revertedNote } from "../src/properties.ts";
 import { clickAt, GRID_ATE_RADIUS, NO_RADIUS, startTool, unfinishedWords, type SketchTool } from "../src/sketch-tool.ts";
 
 const sketch = () => addSketch(partDocument("box", 40, 30, 20));
@@ -143,4 +143,29 @@ test("plainOutline: only an answer naming two curves is reworded", () => {
   assert.equal(plainOutline(none), none);
   const two = { open: "pieces (0, 0) and (0, 2) (loop, piece) are 0e0 mm apart", invalid: [{ input: "line" as const, index: 0 }, { input: "line" as const, index: 2 }] };
   assert.deepEqual(plainOutline(two), { open: TOUCHING_CURVES, invalid: two.invalid });
+});
+
+test("hand-worked: the panel refuses a round shape's diameter under 0.002 mm and an upright slot, in plain words (clumsy hunt 2026-11-04)", () => {
+  const sizes = (width: string, depth: string, height = "20") => ({ width, depth, height });
+  // A cylinder's radius is half its diameter: 0.0015 mm across is a radius of 0.00075 mm, under the 0.001 mm the modeller
+  // keeps, so it is refused here and never reaches the kernel (it was recorded as a failed part, in words about a radius).
+  const tiny = panelSizeRefused("cylinder", sizes("0.0015", "30"));
+  assert.ok(tiny !== null && /diameter must be at least 0\.002 mm/.test(tiny), String(tiny));
+  assert.match(panelSizeRefused("sphere", sizes("0.0019", "30"))!, /diameter/);
+  // 0.002 mm across is a radius of exactly 0.001 mm: taken. A box 0.0015 mm wide has no radius: taken.
+  assert.equal(panelSizeRefused("cylinder", sizes("0.002", "30")), null);
+  assert.equal(panelSizeRefused("box", sizes("0.0015", "30")), null);
+  // A slot w × d has round ends d across joined by straights w − d long: 10 × 30 would need straights −20 mm long, and
+  // 40 × 40 straights 0 mm long, so both are refused; 40 × 30 has straights of 10 mm and builds.
+  const upright = panelSizeRefused("slot", sizes("10", "30"));
+  assert.ok(upright !== null && /depth must be less than its width/.test(upright), String(upright));
+  assert.match(panelSizeRefused("slot", sizes("40", "40"))!, /depth must be less than its width/);
+  assert.equal(panelSizeRefused("slot", sizes("40", "30")), null);
+  // At the 0.001 mm the modeller keeps: straights 0.0009 mm long (0.9×) are refused, 0.0011 mm (1.1×) taken.
+  assert.match(panelSizeRefused("slot", sizes("40", "39.9991"))!, /depth must be less than its width/);
+  assert.equal(panelSizeRefused("slot", sizes("40", "39.9989")), null);
+  // The rules that were already there still hold, first box first.
+  assert.equal(panelSizeRefused("box", sizes("0", "30")), "The width must be more than 0 mm.");
+  assert.equal(panelSizeRefused("cylinder", sizes("abc", "30")), "Type the diameter in mm.");
+  assert.equal(panelSizeRefused("sketch-extrude", sizes("", "", "-5")), "The distance must be more than 0 mm.");
 });

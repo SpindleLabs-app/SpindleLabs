@@ -561,3 +561,44 @@ test("hand-worked: a step amended back to the one before it ends the merge, so t
   assert.deepEqual(doc, { w: 40, h: 10 });
   assert.equal(h.canUndo(), false);
 });
+
+test("held work makes the history busy until it settles either way; whenIdle waits for the last of it (clumsy hunt 2026-11-04)", async () => {
+  // An OK the kernel still checks is held: Undo pressed meanwhile waits for it (main.ts), so it takes back that OK.
+  const h = createHistory({ capture: () => "s", restore: () => {} });
+  assert.equal(h.busy(), false);
+  let idle = false;
+  await h.whenIdle(); // nothing held: at once
+  let okDone!: (v: string) => void;
+  let editFailed!: (e: Error) => void;
+  const ok = h.hold(new Promise<string>((r) => (okDone = r)));
+  const edit = h.hold(new Promise<never>((_, j) => (editFailed = j)));
+  edit.catch(() => {});
+  assert.equal(h.busy(), true);
+  void h.whenIdle().then(() => (idle = true));
+  okDone("recorded");
+  assert.equal(await ok, "recorded", "hold gives back what the work gives");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(idle, false, "the edit is still held");
+  assert.equal(h.busy(), true);
+  editFailed(new Error("refused"));
+  await assert.rejects(edit, /refused/, "and passes its failure on");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(idle, true, "idle once the last held work settled, a failure too");
+  assert.equal(h.busy(), false);
+});
+
+test("work held while waiting for idle is waited for too", async () => {
+  const h = createHistory({ capture: () => "s", restore: () => {} });
+  let first!: () => void;
+  let second!: () => void;
+  void h.hold(new Promise<void>((r) => (first = r)));
+  let idle = false;
+  void h.whenIdle().then(() => (idle = true));
+  void h.hold(new Promise<void>((r) => (second = r)));
+  first();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(idle, false, "the second, held before the first ended, is still running");
+  second();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(idle, true);
+});

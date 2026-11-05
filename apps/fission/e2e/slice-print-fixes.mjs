@@ -8,7 +8,9 @@
 //  6. closing the preview puts keyboard focus on File ▾;
 //  7. at phone width the preview still says how long and how much plastic;
 //  8. a part floating above the plate (a 10 mm cube on the plate, another 20 mm up, sent to the real engine in place of the
-//     design's own file) is refused with advice that fits the dialog, readable at both widths; supports on slice it.
+//     design's own file) is refused with advice that fits the dialog, readable at both widths; supports on slice it;
+//  9. (slicer hunt 2026-11-04 leftovers) a choice changed while Preview slices: the preview says it shows the earlier
+//     choices; a project saved as "Garden bracket" names its print files after it, not "spindlelabs-".
 // At a desktop width with clicks and a phone's with taps. Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { preview } from "vite";
@@ -183,6 +185,45 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
       await page.selectOption("#slice-print-infill", "25");
       assert.equal(await page.textContent("#slice-print-status"), "", "the old result is gone");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  await check(`${at}: a choice changed while Preview slices is said in the preview; a saved project names its print files`, async () => {
+    const page = await fresh(width, tap);
+    const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+    try {
+      await open(page, tap);
+      await page.evaluate(() => (window.kernelDelay = 1500));
+      await press("#slice-print-preview");
+      await page.selectOption("#slice-print-walls", "4");
+      await page.waitForSelector("#print-preview[open]", { timeout: 60000 });
+      assert.equal(await page.textContent("#print-preview-warning"), "A choice was changed while it sliced, so this preview shows the earlier choices: preview again for the new ones.");
+      // Whole and on screen: not cut short (the heading's words are, with an ellipsis or after three lines on a phone).
+      const fits = await page.$eval("#print-preview-warning", (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && e.scrollHeight <= e.clientHeight + 1 && e.scrollWidth <= e.clientWidth + 1; });
+      assert.equal(fits, true, "the warning is whole and on screen");
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-preview-earlier.png` });
+      await page.click("#print-preview-close");
+      await page.waitForSelector("#print-preview", { state: "detached" });
+      // Previewed again with nothing changed: the plain words.
+      await page.evaluate(() => (window.kernelDelay = 0));
+      await open(page, tap);
+      await press("#slice-print-preview");
+      await page.waitForSelector("#print-preview[open]", { timeout: 60000 });
+      assert.equal(await page.$("#print-preview-warning"), null, "no warning");
+      await page.click("#print-preview-close");
+      await page.waitForSelector("#print-preview", { state: "detached" });
+      // Saved as "Garden bracket" (the project itself stays "Untitled" inside): the next print file is named after it.
+      await chooseFile(page, "file-save", tap);
+      await page.waitForSelector(".save-name input");
+      await page.fill(".save-name input", "Garden bracket");
+      await Promise.all([page.waitForEvent("download"), press(".save-name .ok")]);
+      await open(page, tap);
+      press("#slice-print-go");
+      await page.waitForSelector(".save-name input", { timeout: 60000 });
+      assert.equal(await page.inputValue(".save-name input"), "Garden bracket-0.2mm-4w-15pc-textured");
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-named.png` });
     } finally {
       await page.context().close();
     }

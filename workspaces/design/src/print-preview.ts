@@ -104,12 +104,13 @@ export interface PrintPreview {
 /**
  * Opens the preview of `p` over the page, in `slot`'s document: a modal
  * <dialog> filling the window, its 3D view made by `makeView` in its
- * middle. `words` is what the slice came to (layers, filament). It opens
+ * middle. `words` is what the slice came to (layers, filament); `warning`, when given, is said on a line of its own over
+ * the time-lapse. It opens
  * showing the finished print; Play starts the time-lapse from the first
  * layer (or carries on from where the scrubber is). Close or Escape close
  * it and free the view.
  */
-export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, makeView: (host: HTMLElement, p: Playback) => PreviewView): PrintPreview {
+export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, makeView: (host: HTMLElement, p: Playback) => PreviewView, warning?: string): PrintPreview {
   const document = slot.ownerDocument;
   const window = document.defaultView!;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, id: string, text = "") => {
@@ -210,6 +211,14 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   layerText.setAttribute("aria-live", "polite");
   layerLabel.append(layerSlider, layerText);
   bar.append(play, speed, scrub, layerLabel);
+  // A warning (the slice is of earlier choices) is a line of its own over the time-lapse, never cut short as the
+  // heading's words are (slicer hunt 2026-11-04 leftover).
+  if (warning) {
+    const note = el("p", "print-preview-warning", warning);
+    note.setAttribute("role", "status");
+    bar.classList.add("print-preview-noted");
+    bar.prepend(note);
+  }
   dialog.append(host, head, card, bar);
   slot.append(dialog);
   dialog.showModal();
