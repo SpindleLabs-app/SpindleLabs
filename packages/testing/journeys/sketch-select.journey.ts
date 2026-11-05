@@ -333,9 +333,9 @@ const PLANTS: { name: string; find: string; replace: string }[] = [
   // Shift is ignored: every click picks only what it is on.
   { name: "shift-ignored", find: "hit, pointer.shift === true)", replace: "hit, false)" },
   // The reach is one pixel, not a snap's ten: a click 0.5 mm off a curve misses it.
-  { name: "reach-one-pixel", find: "curveAt(sketch, at, PICK_PIXELS[pointer.touch ? \"touch\" : \"mouse\"] * (pointer.pixel ?? 0))", replace: "curveAt(sketch, at, pointer.pixel ?? 0)" },
+  { name: "reach-one-pixel", find: "const reach = PICK_PIXELS[pointer.touch ? \"touch\" : \"mouse\"] * (pointer.pixel ?? 0);", replace: "const reach = pointer.pixel ?? 0;" },
   // A finger reaches no further than a mouse.
-  { name: "touch-reach-as-mouse", find: "PICK_PIXELS[pointer.touch ? \"touch\" : \"mouse\"]", replace: "PICK_PIXELS.mouse" },
+  { name: "touch-reach-as-mouse", find: "const reach = PICK_PIXELS[pointer.touch ? \"touch\" : \"mouse\"]", replace: "const reach = PICK_PIXELS.mouse" },
   // Choosing a tool leaves the picks' words in the panel (app hunt 2026-11-04, finding 1).
   { name: "tool-keeps-words", find: "    showSketchStatus(); // a tool chosen drops the Select tool's picks, and their words (app hunt 2026-11-04)\n", replace: "" },
   // Escape leaves the picks as they are.
