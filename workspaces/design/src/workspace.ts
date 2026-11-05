@@ -26,8 +26,8 @@ import { commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command a
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
-import { browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
-import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
+import { bodyRows, browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { callOffDrag, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { partFailure } from "./part-failure.ts";
@@ -40,7 +40,8 @@ import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
-import { viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
+import { showEntries, viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
+import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
@@ -1116,7 +1117,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const itemOfRow = (node: string) => rowItem(node, designDoc(), failedNow) ?? "";
   /** A row's menu (24e4 for sketches, 24f3 for every timeline item, U0a for bodies: their feature's). */
   function openRowMenu(node: string, at: { x: number; y: number }) {
-    openMenu(itemOfRow(node), at);
+    openMenu(itemOfRow(node), at, node.startsWith("body-") ? node : undefined);
+  }
+
+  /**
+   * Show only this body, or Show all bodies (quick wins, Ben 2026-11-04), from Body row `row`'s menu or the view's:
+   * only eyes change, one undo step ("Show only Body 2", "Show all bodies"); nothing is recorded when nothing changes.
+   */
+  function showFrom(action: "show-only" | "show-all", row: string) {
+    const doc = designDoc();
+    const r = bodyRows(doc, failedNow).find((x) => x.id === row);
+    if (!r) return;
+    try {
+      const next = action === "show-only" ? showOnlyBody(doc, r.body, failedNow) : showAllBodies(doc, failedNow);
+      if (next !== doc) void update(action === "show-only" ? TIMELINE_STEPS.showOnly(r.label) : TIMELINE_STEPS.showAll, undefined, next);
+    } catch (err) {
+      panel.showError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /** A double-click on item `id` (25a3): its menu's Edit Sketch or Edit feature, refused with the menu's words when that is off. */
@@ -1127,12 +1144,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /** Item `id`'s menu (timeline-menu.ts): Move the marker here, Suppress or Unsuppress, Delete; an entry that is off says why. */
-  function openMenu(id: string, at: { x: number; y: number }) {
+  function openMenu(id: string, at: { x: number; y: number }, row?: string) {
     const doc = designDoc();
     const item = doc.timeline.features.find((f) => f.id === id);
     if (!item) return;
     const editing = editingId();
-    const entries = menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }));
+    // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
+    const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
+    const entries = [...shows, ...menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
@@ -1152,9 +1171,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!ctx.selection.items.some((r) => r.kind === target.item.kind && r.id === target.item.id)) ctx.selection.set([target.item]);
     const editing = editingId();
     const fail = (err: unknown) => panel.showError(err instanceof Error ? err.message : String(err));
-    const entries = viewMenuEntries(doc, target.feature, editing).map((e) => ({
+    const entries = viewMenuEntries(doc, target.feature, editing, target.row, failedNow).map((e) => ({
       ...e,
-      run: e.action === "hide" ? () => toggleHidden(target.row) : () => void chooseEntry(menuHost, target.feature, e.action, editing).catch(fail),
+      run:
+        e.action === "hide"
+          ? () => toggleHidden(target.row)
+          : e.action === "show-only" || e.action === "show-all"
+            ? () => showFrom(e.action as "show-only" | "show-all", target.row)
+            : () => void chooseEntry(menuHost, target.feature, e.action as MenuEntry["action"], editing).catch(fail),
     }));
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
