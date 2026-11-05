@@ -218,6 +218,18 @@ async function solvedWith(kernel: KernelCalls, trial: Sketch, made: SketchConstr
     const why = made.kind === "distance" ? "the others already set that size" : "it already holds";
     return { refused: `That ${named(made.kind)} would add nothing: ${why}.`, fighting: [] };
   }
+  if (newest && made.kind !== "diameter" && made.kind !== "distance") {
+    // Wholly redundant through a size (the solver bug hunt, 2026-11-06): a second Fix on a corner a size and a Fix already hold
+    // was taken, since the solver names the older size redundant, not the newest; it then blocked every change. A constraint
+    // that leaves as many freedoms as before adds nothing. The same points are told both times (`held` ties them), so the
+    // counts compare.
+    const before: Sketch = { ...trial, constraints: trial.constraints.filter((c) => c !== made) };
+    const was = readAnswer(await kernel.call("solve_sketch", solverRequest(before, [...held, ...constraintPoints(made)]).text));
+    if (was.result === "solved" && answer.free >= was.free) {
+      const why = made.kind === "fix" ? "the others already hold that point" : "the others already hold it";
+      return { refused: `That ${named(made.kind)} would add nothing: ${why}.`, fighting: [] };
+    }
+  }
   const solved = solvedPoints(trial, request, answer.points);
   const tiny = shrunk(trial, solved);
   if (tiny !== null) return { refused: `That ${named(made.kind)} would shrink ${curveWord(trial, tiny)} shown in red to almost nothing, so it can't be ${newest ? "added" : "changed"}.`, fighting: [tiny] };

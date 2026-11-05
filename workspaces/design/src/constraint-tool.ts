@@ -77,7 +77,13 @@ export function constraintPickAt(sketch: Sketch, kind: ConstraintKind, at: Sketc
     const d = Math.hypot(p.x - at[0], p.y - at[1]);
     if (d <= reach && d < nearest) [point, nearest] = [p.id, d];
   }
-  if (point !== null) return { point };
+  if (point !== null) {
+    // A tap on the middle half of a short line whose end is the nearest point takes the line: on a phone the reach is wider than
+    // a small rectangle's side, so its corners always won and the side could never be picked (the solver bug hunt, 2026-11-06).
+    const line = kind === "dimension" || kind === "horizontal" || kind === "vertical" ? middleOfLine(sketch, at, reach, point) : null;
+    if (line !== null) return kind === "dimension" ? { curve: line } : { line };
+    return { point };
+  }
   if (kind === "dimension") {
     const curve = curveAt(sketch, at, reach);
     return curve === null ? null : { curve };
@@ -94,6 +100,19 @@ export function constraintPickAt(sketch: Sketch, kind: ConstraintKind, at: Sketc
   return line === null ? null : { line };
 }
 
+/** The line within `reach` of `at` that has `end` as an end and `at` over its middle half, or null. */
+function middleOfLine(sketch: Sketch, at: SketchXY, reach: number, end: string): string | null {
+  const xy = new Map(sketch.points.map((p) => [p.id, [p.x, p.y] as SketchXY]));
+  for (const c of sketch.curves) {
+    if (c.kind !== "line" || (c.start !== end && c.end !== end)) continue;
+    const [a, b] = [xy.get(c.start)!, xy.get(c.end)!];
+    const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+    const t = ((at[0] - a[0]) * dx + (at[1] - a[1]) * dy) / (dx * dx + dy * dy);
+    if (t >= 0.25 && t <= 0.75 && toSegment(at, a, b) <= reach) return c.id;
+  }
+  return null;
+}
+
 /**
  * A click on `pick` (null: on nothing): the tool after it, and the
  * constraint to add once the click completes one. A click on nothing, or
@@ -102,6 +121,10 @@ export function constraintPickAt(sketch: Sketch, kind: ConstraintKind, at: Sketc
 export function clickConstraint(tool: ConstraintTool, sketch: Sketch, pick: ConstraintPick | null): { tool: ConstraintTool; add: NewConstraint | null } {
   const next = { ...tool, hover: pick, fighting: [] };
   if (pick === null) return { tool: next, add: null };
+  // A point picked first waits for a second point: a line clicked then is not taken for the line alone, which dropped the first
+  // pick without a word (the solver bug hunt, 2026-11-06; a point to a line is a later step).
+  const waiting = tool.first !== null && sketch.points.some((p) => p.id === tool.first);
+  if (!("point" in pick) && waiting) return { tool: next, add: null };
   if (tool.kind === "dimension") return clickDimension(next, sketch, pick);
   if ("line" in pick) {
     const line = sketch.curves.find((c) => c.id === pick.line);
@@ -160,12 +183,12 @@ export function dimensionWord(sketch: Sketch, d: NewDimension | SketchConstraint
 export function constraintHint(tool: ConstraintTool): string {
   if (tool.kind === "dimension") {
     if (tool.pending) return "Type the size and press Enter, or Escape to leave it";
-    return tool.first === null ? "Click a line, arc or circle to size it, or a point to measure from" : "Click the point to measure to";
+    return tool.first === null ? "Click a line, arc or circle to size it, or a point to measure from" : "Click the point to measure to (not a line: a point to a line comes later)";
   }
   if (tool.kind === "fix") return "Click a point to fix it where it is";
   if (tool.kind === "coincident") return tool.first === null ? "Click a point to keep still" : "Click the point to move onto it";
   const word = tool.kind === "horizontal" ? "level with" : "straight above or below";
-  return tool.first === null ? `Click a line, or a point to keep still` : `Click the point to make ${word} the first`;
+  return tool.first === null ? `Click a line, or a point to keep still` : `Click the point to make ${word} the first (not a line)`;
 }
 
 /** The undo step's name for a constraint added: "Horizontal", "Fix"… */

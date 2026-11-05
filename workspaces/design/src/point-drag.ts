@@ -173,5 +173,15 @@ export async function dragTo(kernel: KernelCalls, doc: DesignDocument, sketchId:
     at = got.doc;
     shown(at);
   }
+  // Every step solved but the point never moved: its constraints hold it there. Said, so a drag that does nothing is not
+  // silent (the solver bug hunt, 2026-11-06); a fixed point is refused before the drag (grabProblem).
+  const [from, now] = [pointOf(doc, sketchId, pointId), pointOf(at, sketchId, pointId)];
+  if (!newer() && Math.hypot(now[0] - from[0], now[1] - from[1]) <= HELD_STILL && Math.hypot(to[0] - from[0], to[1] - from[1]) > HELD_STILL) return { doc: at, refused: HELD };
   return { doc: at, refused: null };
 }
+
+/** How far (mm) a dragged point may move and still count as held still by its constraints: the solver's LINEAR. */
+const HELD_STILL = 1e-5;
+
+/** The words for a drag its constraints hold still. */
+export const HELD = "Its constraints and dimensions hold this point where it is: take one off to move it.";
