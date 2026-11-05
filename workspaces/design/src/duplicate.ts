@@ -62,3 +62,21 @@ export function insertDuplicates(doc: DesignDocument, bodies: readonly string[])
 
 /** The copies `insertDuplicates` made, by body id, in order: what the Move panel opens on next. */
 export const copiesOf = (ids: readonly string[]): string[] => ids.map(bodyIdOf);
+
+/**
+ * Copy and paste of bodies (Ctrl+C, Ctrl+V; missing basics): Copy puts this
+ * text on the clipboard, naming the bodies and the design they came from
+ * (`design`, a token the open design draws once), and Paste reads it back
+ * as a Duplicate of each. Text, so copying anything else after replaces it
+ * and Paste then pastes that instead, as everywhere else.
+ */
+export function copiedText(design: string, bodies: readonly string[]): string {
+  if (!/^[a-z0-9]+$/.test(design)) throw new Error(`${shown(design)} is not a design token`);
+  return `SpindleLabs bodies ${design}: ${bodies.join(" ")}`;
+}
+
+/** The bodies `copiedText` names when it was copied from design `design`; null for any other text (another design's bodies, or none). */
+export function pastedBodies(text: string, design: string): string[] | null {
+  const m = /^SpindleLabs bodies ([a-z0-9]+): (body:\S+(?: body:\S+)*)$/.exec(text);
+  return m === null || m[1] !== design ? null : m[2].split(" ");
+}

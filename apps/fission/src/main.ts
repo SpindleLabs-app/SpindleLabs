@@ -1031,7 +1031,8 @@ const shellShortcuts: Record<string, (e: Event) => boolean> = {
   open: () => ($("open-file").click(), true),
   "paste-files": (e) => {
     const files = [...((e as ClipboardEvent).clipboardData?.files ?? [])];
-    if (files.length === 0) return false; // text pastes as usual
+    // No files: the workspace in use may take the text (Design's copied bodies, Ctrl+V); else text pastes as usual.
+    if (files.length === 0) return panesInUse().some((p) => pool.awake(p)?.view.shortcut?.("paste-bodies", e) === true);
     void receive(files);
     return true;
   },

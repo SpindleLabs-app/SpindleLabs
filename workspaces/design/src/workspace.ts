@@ -10,7 +10,7 @@ import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketc
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { copiesOf, DUPLICATE_STEP, insertDuplicates } from "./duplicate.ts";
+import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, pastedBodies } from "./duplicate.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
@@ -423,6 +423,9 @@ interface Warned {
   words: string;
   lost?: true;
 }
+
+/** The open design's token for copied bodies (duplicate.ts `copiedText`). */
+let designToken = "0";
 
 function mount(ctx: WorkspaceContext): MountedWorkspace {
   const panel = propertiesPanel(ctx.properties);
@@ -1025,6 +1028,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     moveFromInsert = true;
   }
 
+  // A new token for copied bodies whenever Design opens other than by Undo or Redo putting it back (a project opened,
+  // another workspace left): a paste finds only bodies copied from the design on screen, through any undo.
+  if (!ctx.history.restoring()) designToken = Math.floor(Math.random() * 2 ** 48).toString(36);
+
   /** Why Duplicate is off: no body picked (a face or edge picks its body). */
   function duplicateOff(): string | null {
     return pickedBodies(ctx.selection.items, lastScene).length === 0 ? "Pick one or more bodies first, then Duplicate." : null;
@@ -1036,8 +1043,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * the Move panel opens on the copies so they can be slid off their bodies
    * straight away (Fusion's copy and paste); Cancel leaves them where they are.
    */
-  async function duplicateBodies() {
-    const picked = pickedBodies(ctx.selection.items, lastScene);
+  async function duplicateBodies(bodies?: readonly string[]) {
+    const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
     if (picked.length === 0) return;
     leaveExtrude();
     leaveEdit();
@@ -3254,8 +3261,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label), mode.kind === "edit" ? mode.tool.sketch : null);
     },
     // Escape clears the selection; Copy with one profile selected runs Copy as SVG (shortcuts.ts).
-    shortcut(id) {
+    shortcut(id, e) {
       if (!shown) return false; // the shell only asks while shown; never act asleep
+      // Ctrl+D duplicates the picked bodies; Ctrl+C copies them (with no profile picked) and Ctrl+V pastes a Duplicate
+      // of each, outside a sketch (missing basics: Fusion's keys); the pasted copies open in Move as Duplicate's do.
+      if (id === "duplicate-bodies") return mode.kind === "none" && duplicateOff() === null ? (void duplicateBodies(), true) : false;
+      if (id === "copy-svg" && mode.kind === "none" && designShortcut(id, ctx.selection.items) === null) {
+        const picked = pickedBodies(ctx.selection.items, lastScene);
+        const data = (e as ClipboardEvent | undefined)?.clipboardData;
+        if (picked.length === 0 || !data) return false;
+        data.setData("text/plain", copiedText(designToken, picked));
+        return true;
+      }
+      if (id === "paste-bodies") {
+        const bodies = mode.kind === "none" ? pastedBodies((e as ClipboardEvent | undefined)?.clipboardData?.getData("text/plain") ?? "", designToken) : null;
+        return bodies === null ? false : (void duplicateBodies(bodies), true);
+      }
       // Escape during a drag on the timeline bar calls the drag off, and only that (timeline hunt, finding 7).
       if (id === "clear-selection" && callOffDrag()) return true;
       // Escape with Pan or Zoom lit on the view bar turns it off, back to Orbit, and only that (U7b, as in Fusion).

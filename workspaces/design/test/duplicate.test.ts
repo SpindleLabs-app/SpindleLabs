@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { insertCombine } from "../src/combine.ts";
 import { bodyNumbers, buildingItems, greyedBy, insertPreset, partDocument, partFeature, readDesignDocument, type DesignDocument } from "../src/document.ts";
-import { DUPLICATE_STEP, copiesOf, insertDuplicates } from "../src/duplicate.ts";
+import { DUPLICATE_STEP, copiedText, copiesOf, insertDuplicates, pastedBodies } from "../src/duplicate.ts";
 import { editFeature } from "../src/feature-edit.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
@@ -165,4 +165,24 @@ test("a copy is greyed with its suppressed source, fails when the source is dele
   } finally {
     await c2.close();
   }
+});
+
+test("Copy and Paste of bodies by hand: the text names the design and the bodies, and pastes back only into that design", () => {
+  // Written out by hand: the words, the token, a colon, then the body ids with one space between.
+  const text = copiedText("k3x9", ["body:feature-2", "body:feature-1/piece:1"]);
+  assert.equal(text, "SpindleLabs bodies k3x9: body:feature-2 body:feature-1/piece:1");
+  assert.deepEqual(pastedBodies(text, "k3x9"), ["body:feature-2", "body:feature-1/piece:1"]);
+  // Another design's bodies (opened since, or another tab): not pasted here, since its ids would name other bodies.
+  assert.equal(pastedBodies(text, "k3x8"), null);
+  assert.equal(pastedBodies(text, "k3x"), null, "a token that only starts the same");
+  // Anything else on the clipboard: not bodies, so the paste goes on as usual.
+  for (const other of ["", "hello", "SpindleLabs bodies k3x9:", "SpindleLabs bodies k3x9: ", "SpindleLabs bodies k3x9: feature-1", "SpindleLabs bodies k3x9: body:feature-1  body:feature-2", " SpindleLabs bodies k3x9: body:feature-1", "SpindleLabs bodies k3x9: body:feature-1\n"]) {
+    assert.equal(pastedBodies(other, "k3x9"), null, JSON.stringify(other));
+  }
+  assert.throws(() => copiedText("K 1", ["body:feature-1"]), { message: "K 1 is not a design token" });
+  assert.throws(() => copiedText("", ["body:feature-1"]), { message: " is not a design token" });
+  // What pastes is put in as Duplicate puts it in: one copy per body named, refused the same way when it isn't one.
+  const d = twoBodies();
+  assert.deepEqual(insertDuplicates(d, pastedBodies(copiedText("a1", ["body:feature-1"]), "a1")!).ids, ["feature-3"]);
+  assert.throws(() => insertDuplicates(d, pastedBodies(copiedText("a1", ["body:feature-7"]), "a1")!), { message: "body:feature-7 is not a body in the design" });
 });

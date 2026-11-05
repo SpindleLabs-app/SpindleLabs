@@ -16,7 +16,9 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   { id: "extrude-tool", keys: "E", label: "Extrude" },
   { id: "command-search", keys: "S", label: "Search the commands by name (outside a sketch)" },
   // Copy (the keys or the browser's Edit menu) with one profile selected.
-  { id: "copy-svg", keys: "Mod+C", label: "Copy the selected profile as SVG" },
+  { id: "copy-svg", keys: "Mod+C", label: "Copy the selected profile as SVG, or the selected bodies" },
+  // Missing basics (Fusion's key): a Duplicate of each selected body, outside a sketch.
+  { id: "duplicate-bodies", keys: "Mod+D", label: "Duplicate the selected bodies" },
   // While a sketch is edited (steps 22a, 22c, 23b, 23c); outside a sketch the key does what it would.
   { id: "sketch-line", keys: "L", label: "Line tool (in a sketch)" },
   { id: "sketch-rectangle", keys: "R", label: "Rectangle tool (in a sketch)" },

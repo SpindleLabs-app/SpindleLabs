@@ -5,7 +5,9 @@
 // and OK, the exported STL holds both, worked by hand: the box x 0..40, the
 // copy x 50..90. Undo takes the Move back (the copy back on the box), then
 // the Duplicate (one body again). At 1280 px with a mouse and at 375 px with
-// taps. Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after
+// taps. With the keys (1280 px): Ctrl+C on the box puts it on the clipboard
+// and Ctrl+V pastes a copy (Move opens on it), Ctrl+D duplicates the copy,
+// and another design's copied bodies don't paste. Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after
 // `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -23,7 +25,7 @@ const shots = process.env.E2E_SHOTS;
 const until = (page, fn, arg, what, timeout = 8000) => page.waitForFunction(fn, arg, { timeout }).catch(async () => assert.fail(`${what}: timed out`));
 
 async function fresh(width, height, touch) {
-  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch, acceptDownloads: true });
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -125,6 +127,51 @@ try {
       }
     });
   }
+  await check("1280 px, keys: Ctrl+C then Ctrl+V pastes a copy of the box and opens Move on it, Ctrl+D duplicates the copy, and another design's bodies don't paste", async () => {
+    const page = await fresh(1280, 800, false);
+    try {
+      await pressAt(page, [20, 15, 20], false);
+      await until(page, () => document.body.dataset.selection === "face:feature-1/top", null, "the box's top picked");
+      await page.keyboard.press("Control+c");
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      assert.match(copied, /^SpindleLabs bodies [a-z0-9]+: body:feature-1$/);
+      await page.keyboard.press("Control+v");
+      await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "Move open on the pasted copy");
+      await rebuilt(page);
+      assert.deepEqual(await items(page), ["feature-1", "feature-2"]);
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-2"]', "title"), "2. Copy 1\nCopy of Box 1");
+      assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-2");
+      assert.match(await undoTitle(page), /Duplicate bodies/);
+      await page.click("#move-cancel");
+      await until(page, () => document.getElementById("move-panel")?.hidden === true, null, "Move cancelled");
+      // The copy still picked: Ctrl+D copies it in turn.
+      assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-2");
+      await page.keyboard.press("Control+d");
+      await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "Move open on the copy's copy");
+      await rebuilt(page);
+      assert.deepEqual(await items(page), ["feature-1", "feature-2", "feature-3"]);
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-3"]', "title"), "3. Copy 2\nCopy of Copy 1");
+      await page.click("#move-cancel");
+      await until(page, () => document.getElementById("move-panel")?.hidden === true, null, "Move cancelled");
+      // Bodies copied from another design (another token) are not pasted here, nor is other text.
+      for (const text of [copied.replace(/bodies [a-z0-9]+:/, "bodies zz9:"), "body:feature-1"]) {
+        await page.evaluate((t) => navigator.clipboard.writeText(t), text);
+        await page.keyboard.press("Control+v");
+        await page.waitForTimeout(200); // a paste taken would have opened Move by now
+        assert.equal(await page.evaluate(() => document.getElementById("move-panel")?.hidden), true, text);
+        assert.deepEqual(await items(page), ["feature-1", "feature-2", "feature-3"], text);
+      }
+      // The first copy pastes again (the clipboard put back): Copy 3, the box's.
+      await page.evaluate((t) => navigator.clipboard.writeText(t), copied);
+      await page.keyboard.press("Control+v");
+      await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "Move open on the paste");
+      await rebuilt(page);
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-4"]', "title"), "4. Copy 3\nCopy of Box 1");
+      if (shots) await page.screenshot({ path: `${shots}/duplicate-keys-1280.png` });
+    } finally {
+      await page.context().close();
+    }
+  });
   assert.deepEqual(errors, [], "no errors in the page");
 } catch (e) {
   failed++;

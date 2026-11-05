@@ -249,7 +249,7 @@ try {
         }
         assert.deepEqual(lists, {
           "create-menu": ["revolve", "hole", "pattern", "sweep", "loft"],
-          "modify-menu": ["duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
+          "modify-menu": ["mirror", "combine", "chamfer", "fillet", "shell", "draft"], // Duplicate is real now (duplicate.mjs)
           "construct-menu": ["plane", "axis", "point"],
           "inspect-menu": ["measure", "section"],
         });
