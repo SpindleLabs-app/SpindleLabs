@@ -22,7 +22,7 @@ import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
-import { versionList, versionTime } from "@fission/ui";
+import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -829,6 +829,11 @@ async function openStored(id: string, modified: Date | null) {
     );
   });
 }
+/** The account's version of kept project `id` saved `at` (only with accounts on and signed in); throws why not. */
+async function accountVersionText(id: string, at: Date): Promise<string> {
+  if (!accountHooks) throw new Error("this version is kept in your account: sign in to restore it");
+  return accountHooks.versionText(id, at);
+}
 /** The open project's id when it is kept (null while a new one waits for its first change, or a file opens). */
 const keptId = () => (autosave === null ? null : (document.body.dataset.projectId ?? null));
 /**
@@ -836,11 +841,13 @@ const keptId = () => (autosave === null ? null : (document.body.dataset.projectI
  * it is now, as ONE undo step, the way Undo puts a state back: Undo takes it back. Throws, changing nothing, when it
  * can't be read.
  */
-async function restoreVersion(at: Date) {
+async function restoreVersion(at: Date, where: VersionPlace = "browser") {
   await started;
   const id = keptId();
   if (id === null) throw new Error("this project isn't kept in this browser yet, so it has no earlier versions");
-  const text = projectToJson(await store.openVersion(id, at));
+  // A version kept only in the account (account features 2) is read from there, and opened as a file is, so one that
+  // isn't a project, or comes from a newer SpindleLabs, is refused in the same words before anything changes.
+  const text = where === "account" ? projectToJson(projectFromJson(await accountVersionText(id, at), workspaces)) : projectToJson(await store.openVersion(id, at));
   const when = versionTime(at, new Date());
   ctx.selection.clear(); // it named faces of the project as it is now
   // One step: the remount's amend inside it is taken into the step, not into the present (it would leave nothing to undo).
@@ -850,7 +857,9 @@ async function restoreVersion(at: Date) {
 const versions = versionList(document, {
   list: async () => {
     const id = keptId();
-    return id === null ? null : { name: ctx.project.name, times: await store.versions(id) };
+    if (id === null) return null;
+    const [times, account] = await Promise.all([store.versions(id), accountHooks?.versionsOf(id).catch(() => null) ?? null]);
+    return { name: ctx.project.name, times, account };
   },
   restore: restoreVersion,
 });

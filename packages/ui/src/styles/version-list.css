@@ -1,0 +1,2 @@
+/* File > Earlier versions… (version-list.ts): the tag on a version kept only in the account (account features 2). */
+.version-list .version-account-tag { display: inline-block; vertical-align: middle; font-size: 11px; font-weight: normal; line-height: 1; padding: 3px 6px; border-radius: var(--look-radius-s); border: 1px solid var(--look-edge); color: var(--text-dim); }

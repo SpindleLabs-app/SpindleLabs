@@ -50,7 +50,7 @@ const browser = await launch();
 
 /** The account service: sign-in as in e2e/account.mjs, and the designs' requests as the database answers them. */
 function fakeService() {
-  const svc = { calls: [], saves: [], codes: new Map(), live: new Set(), tokens: new Set(), n: 0, rows: [], keep: true, ids: 0 };
+  const svc = { calls: [], saves: [], codes: new Map(), live: new Set(), tokens: new Set(), n: 0, rows: [], keep: true, ids: 0, versions: new Map() };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
@@ -84,6 +84,11 @@ function fakeService() {
         const r = svc.rows.find((x) => x.id === body.p_id);
         return json(route, 200, r ? { id: r.id, name: r.name, source: r.source, body: r.body, saved_at: r.saved_at, updated_at: r.updated_at, revision: r.revision } : null);
       }
+      if (req.method() === "POST" && what === "rpc/design_versions") return json(route, 200, [...(svc.versions.get(body.p_id) ?? [])].reverse().map((v) => ({ saved_at: v.saved_at, bytes: v.body.length })));
+      if (req.method() === "POST" && what === "rpc/get_design_version") {
+        const v = (svc.versions.get(body.p_id) ?? []).find((x) => Date.parse(x.saved_at) === Date.parse(body.p_saved_at));
+        return json(route, 200, v ? { saved_at: v.saved_at, body: v.body } : null);
+      }
       if (req.method() === "POST" && what === "rpc/delete_design") {
         const before = svc.rows.length;
         svc.rows = svc.rows.filter((x) => x.id !== body.p_id);
@@ -97,6 +102,8 @@ function fakeService() {
           const r = svc.rows.find((x) => x.id === body.p_id);
           if (!r) return json(route, 200, { status: "gone" });
           if (r.revision !== body.p_expected) return json(route, 200, { status: "changed", revision: r.revision });
+          // Every copy a save replaces is kept as a version here (the 10-minute rule is the database's: test_design_versions.py).
+          if (r.body !== body.p_body) svc.versions.set(r.id, [...(svc.versions.get(r.id) ?? []), { saved_at: r.saved_at, body: r.body }]);
           Object.assign(r, { name: body.p_name, source: body.p_source, body: body.p_body, picture: body.p_picture ?? r.picture, saved_at: body.p_saved_at, updated_at: now, revision: r.revision + 1 });
           return json(route, 200, { status: "saved", id: r.id, revision: r.revision, updated_at: now });
         }
@@ -222,6 +229,38 @@ try {
     assert.equal(svc.saves.at(-1).p_expected, 2);
     assert.equal(svc.rows.length, 1);
     assert.equal(svc.rows[0].revision, 3);
+  });
+
+  await check("Earlier versions on device B lists the account's too, and restores one saved on device A; Undo takes it back", async () => {
+    // The account kept device A's first save (the box alone) when its second replaced it; device B never had it.
+    const first = svc.versions.get(svc.rows[0].id)?.[0];
+    assert.ok(first, "the account kept device A's first save");
+    const now = await b.page.textContent("#volume");
+    await chooseFile(b.page, "file-versions");
+    await until(b.page, () => document.querySelector('#versions-items .project-row[data-where="account"]'), undefined, "an account version listed");
+    const accountRows = await b.page.$$eval('#versions-items .project-row[data-where="account"]', (rs) => rs.map((r) => [Number(r.dataset.at), r.querySelector(".version-account-tag")?.textContent]));
+    assert.ok(accountRows.some(([at, tag]) => at === Date.parse(first.saved_at) && tag === "From your account"), JSON.stringify(accountRows));
+    assert.match(await b.page.textContent("#versions .project-list-note"), /Your account keeps them too/);
+    if (shots) await b.page.screenshot({ path: `${shots}/versions-account-1280.png` });
+    await b.page.click(`#versions-items .project-row[data-at="${Date.parse(first.saved_at)}"] .version-restore`);
+    await until(b.page, () => !document.getElementById("versions")?.open, undefined, "closes");
+    await until(b.page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", undefined, "device A's first save: the box alone", 30000);
+    assert.match(await b.page.textContent("#file-status"), /Restored the version from/);
+    await b.page.keyboard.press("Control+z");
+    await until(b.page, (v) => document.querySelector("#volume")?.textContent === v, now, `Undo takes it back (${now})`, 30000);
+  });
+
+  await check("a version the account no longer keeps says so, and nothing changes", async () => {
+    const now = await b.page.textContent("#volume");
+    await chooseFile(b.page, "file-versions");
+    await until(b.page, () => document.querySelector('#versions-items .project-row[data-where="account"]'), undefined, "an account version listed");
+    const at = await b.page.$eval('#versions-items .project-row[data-where="account"]', (r) => r.dataset.at);
+    svc.versions.set(svc.rows[0].id, []); // given up for room since the list was read
+    await b.page.click(`#versions-items .project-row[data-at="${at}"] .version-restore`);
+    await until(b.page, () => /no longer kept in your account/.test(document.getElementById("versions-status")?.textContent ?? ""), undefined, "said so");
+    assert.equal(await b.page.evaluate(() => document.getElementById("versions").open), true, "stays open");
+    assert.equal(await b.page.textContent("#volume"), now);
+    await b.page.click("#versions-close");
   });
 
   await check("device A, behind, keeps its own change beside device B's as a copy", async () => {

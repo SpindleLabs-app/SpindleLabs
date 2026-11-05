@@ -132,6 +132,30 @@ export function designsApi(client: AuthClient) {
       return a ? { kind: "ok", value: a } : malformed;
     },
 
+    /**
+     * When each earlier version of design `id` kept in the account was saved, newest first (account features 2:
+     * supabase/migrations/20261105180000_design_versions.sql keeps the copy each save replaces). None for an id that
+     * isn't the person's.
+     */
+    async versions(id: string): Promise<DataResult<Date[]>> {
+      if (!isId(id)) return { kind: "ok", value: [] };
+      const r = await client.asPerson("POST", "rpc/design_versions", { p_id: id });
+      if (r.kind !== "ok") return r;
+      if (!Array.isArray(r.body)) return malformed;
+      const times = r.body.map((v: unknown) => (typeof v === "object" && v !== null ? time((v as Record<string, unknown>).saved_at) : null));
+      return times.every((t): t is Date => t !== null) ? { kind: "ok", value: times } : malformed;
+    },
+
+    /** The file text of design `id`'s version saved `at`; null when the account keeps none then (given up for room, say). */
+    async version(id: string, at: Date): Promise<DataResult<string | null>> {
+      if (!isId(id) || !Number.isFinite(at.getTime())) return { kind: "ok", value: null };
+      const r = await client.asPerson("POST", "rpc/get_design_version", { p_id: id, p_saved_at: at.toISOString() });
+      if (r.kind !== "ok") return r;
+      if (r.body === null) return { kind: "ok", value: null };
+      const b = r.body as Record<string, unknown> | undefined;
+      return typeof b === "object" && b !== null && typeof b.body === "string" ? { kind: "ok", value: b.body } : malformed;
+    },
+
     /** Deletes one design from the account; false when it was already gone. */
     async remove(id: string): Promise<DataResult<boolean>> {
       if (!isId(id)) return { kind: "ok", value: false };
