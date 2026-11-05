@@ -5,7 +5,7 @@
 import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -51,7 +51,7 @@ import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./p
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, faceRegion, type FaceProfile } from "./face-extrude.ts";
-import { offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
+import { editRegionWords, offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
 import type { RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
@@ -525,6 +525,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let missed = false;
   /** Every body drawn, with its faces' and edges' names (steps 24c, 24d3b), which the selection holds. */
   let lastScene: Scene | null = null;
+  /** Edit feature's regions (48d4, `offerEditRegions`): the extrude edited, its sketch's regions offered, the one chosen and the one picked (null until a pick). */
+  let editRegions: { id: string; sketch: string; name: string; offers: RegionOffer[]; chosen: string | null; picked: RegionRef | null } | null = null;
   /** The part's body in the last scene that showed it: the panel's numbers, marked out of date, while the part fails. */
   let partShown: ShownBody | null = null;
   /** The note about items the last rebuild dropped, and whether that drop is being applied now. */
@@ -1308,7 +1310,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         ctx.graph.markFresh(PART_VIEW);
       }
       markStale(failure !== undefined);
-      viewport.showBody(scene.mesh);
+      viewport.showBody(editMesh(scene)); // Edit feature offering regions keeps the edited body out of the way (48d4)
       // 36d: where a refused Combine would touch itself or be too thin, pointed at over everything.
       refusalsNow = refusalOverlay(doc.timeline.features, value.results);
       showRefusals();
@@ -2296,7 +2298,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Asleep or put away (an Undo before a preview build answered), the view is not this Design's to draw on (app hunt 2026-11-04).
     if (!shown) return;
     const e = extruding;
-    if (!e) return viewport.showExtrude(null);
+    // Edit feature's regions (48d4) stay drawn while it is open.
+    if (!e) return editRegions !== null ? showEditRegions() : viewport.showExtrude(null);
     const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
     viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, preview: e.preview?.mesh ?? null, arrow });
     // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
@@ -2411,7 +2414,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // The pointer while Extrude is shown (UX1b): a click on an offered outline chooses it (one on
   // none keeps the choice, as Fusion does); the arrow dragged sets the distance in whole mm.
   const onExtrudePointer: SharedViewport["onExtrudePointer"] = (pointer) => {
-    if (!extruding) return;
+    if (!extruding) {
+      if (editRegions !== null && pointer.kind === "pick" && pointer.profile !== null) pickEditRegion(pointer.profile);
+      return;
+    }
     if (pointer.kind === "pick") {
       if (pointer.profile !== null) return void chooseProfile(pointer.profile);
       // On no outline but on a face that can't be extruded (a curved one, one with holes): say why, keeping the choice.
@@ -2807,10 +2813,78 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     editBox.show(editableFeature(designDoc(), id));
+    editRegions = null;
+    void offerEditRegions(id);
   }
 
   function leaveEdit() {
     editBox.hide();
+    if (editRegions === null) return;
+    editRegions = null;
+    viewport.showExtrude(null);
+    if (shown && lastScene) viewport.showBody(lastScene.mesh);
+  }
+
+  /**
+   * Edit feature on an extrude of a sketch (48d4, as Fusion's Extrude edited): its sketch's regions are shaded in the view,
+   * the one it extrudes chosen (found by its curves, `offerOf`), so a click or tap picks another, which OK saves with the
+   * sizes as one undo step. The sketch's one region is shown too, chosen. An old extrude without a region chooses none
+   * while its sketch has several (picking one gives it a region); a sketch gone, or one the kernel refuses, offers none.
+   */
+  async function offerEditRegions(id: string) {
+    const doc = designDoc();
+    const f = doc.timeline.features.find((x) => x.id === id);
+    if (!f || !isSketchExtrude(f)) return;
+    const sketchId = f.intent.parameters.sketch as string;
+    const sketch = doc.sketches.find((x) => x.id === sketchId);
+    if (!sketch || !doc.timeline.features.some((x) => x.id === sketchId)) return;
+    let offers: RegionOffer[];
+    try {
+      offers = (await regionOffers(kernel, sketch, sketchPlane(doc, sketchId, placedNow))).offers;
+    } catch {
+      return;
+    }
+    // Closed, opened on another item, or the design changed while the kernel looked: out of date.
+    if (editBox.editing !== id || designDoc() !== doc || offers.length === 0) return;
+    const saved = f.intent.parameters.region as RegionRef | undefined;
+    const chosen = saved !== undefined ? (offerOf(offers, sketchId, saved)?.id ?? null) : offers.length === 1 ? offers[0].id : null;
+    // The sketch's one region, the one it extrudes: nothing to pick, so nothing shaded and its body stays drawn.
+    if (offers.length === 1 && chosen !== null) return;
+    editRegions = { id, sketch: sketchId, name: sketchLabel(sketchId), offers, chosen, picked: null };
+    editBox.showRegion(editRegionWords(editRegions.name, offers.length, chosen !== null, false));
+    showEditRegions();
+  }
+
+  /**
+   * The bodies drawn while Edit feature offers regions: every one but the edited extrude's own, which stands on its
+   * sketch and would hide the regions (Fusion rolls the timeline back to before it while it is edited); the whole
+   * scene otherwise.
+   */
+  function editMesh(scene: Scene) {
+    const hidden = editRegions === null ? null : bodyIdOf(editRegions.id);
+    return hidden === null || !scene.bodies.some((b) => b.body === hidden) ? scene.mesh : joinBodies(scene.bodies.filter((b) => b.body !== hidden)).mesh;
+  }
+
+  /** The regions Edit feature offers, drawn in the view with the chosen one, the edited body put out of the way; read by the tests from the panel. */
+  function showEditRegions() {
+    const r = editRegions;
+    if (!shown || r === null) return;
+    if (lastScene) viewport.showBody(editMesh(lastScene));
+    viewport.showExtrude({ profiles: r.offers, chosen: r.chosen, preview: null, arrow: null });
+    const box = ctx.properties.querySelector<HTMLElement>("#feature-edit");
+    if (box) Object.assign(box.dataset, { regions: r.offers.map((o) => o.id).join(" "), regionChosen: r.chosen ?? "" });
+  }
+
+  /** A click or tap on a region while Edit feature is open: it is the one OK saves; one that can't be extruded says why. */
+  function pickEditRegion(offerId: string) {
+    const r = editRegions;
+    const offer = r?.offers.find((o) => o.id === offerId);
+    if (!r || !offer || offer.sketch !== r.sketch) return;
+    if (offer.refused !== undefined) return void editBox.showError(regionRefusedWords(r.name, offer.refused));
+    Object.assign(r, { chosen: offer.id, picked: offer.ref });
+    editBox.showError("");
+    editBox.showRegion(editRegionWords(r.name, r.offers.length, true, true));
+    showEditRegions();
   }
 
   /**
@@ -2833,7 +2907,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const label = f.shape === "sketch-extrude" ? "distance" : parameterRows(f.shape).find((r) => r.key === key)!.label.toLowerCase();
         return editBox.showError("bad" in read ? `Type the ${label} in mm.` : `The ${label}${read.why.slice("A length".length)}`);
       }
-      next = editFeature(before, id, read.sizes, flip);
+      next = editFeature(before, id, read.sizes, flip, editRegions?.id === id ? (editRegions.picked ?? undefined) : undefined);
     } catch (e) {
       return editBox.showError(e instanceof Error ? e.message : String(e));
     }
