@@ -85,6 +85,8 @@ export interface SettingsParts {
   /** The stored mouse preset and the way to change it (U2d); the Mouse row and its table show only when both are given. */
   mouse?: MousePreset;
   onMouse?: (preset: MousePreset) => void;
+  /** Opens Report a bug (bug-report.ts); the About card's row shows only when given. */
+  onReportBug?: () => void;
 }
 
 /** Fill the dialog: a header with Close, then one card per section. */
@@ -169,6 +171,18 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
       card.append(el("p", undefined, "Your projects are kept in this browser and are never sent to us. An account is optional and never needed to design, slice or save; signing in sends only what the privacy page lists. The optional AI assistant sends only what you ask it, and only once you turn it on."));
     } else if (s.id === "about") {
       card.append(el("p", undefined, parts.version ? `SpindleLabs, ${parts.version}` : "SpindleLabs"));
+      if (parts.onReportBug) {
+        const row = el("div", "settings-row");
+        const report = el("button", "settings-action", "Report a bug");
+        report.type = "button";
+        report.id = "settings-report-bug";
+        report.addEventListener("click", () => {
+          dialog.close();
+          parts.onReportBug?.();
+        });
+        row.append(el("span", undefined, "Something not working?"), report);
+        card.append(row);
+      }
     }
     body.append(card);
   }
