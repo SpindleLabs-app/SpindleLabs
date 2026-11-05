@@ -92,3 +92,12 @@ test("with My designs in the app, the privacy page says what it keeps, when it i
   for (const must of ["My designs", "its project file", "a small picture of it", "which workspace it was last saved from", "nothing is sent until you choose", "Keep my designs in my account", "Deleting your account deletes every design in it", "including every design in your account"]) assert.ok(words.includes(must), `the page says "${must}"`);
   assert.ok(!/Your designs stay in your browser on your device: the people who make SpindleLabs never receive them/.test(words), "the old promise that designs never leave the device is gone");
 });
+
+// Earlier versions in the account (account features 2): the page says how many and how often, as the code keeps them.
+test("with earlier versions in the account, the privacy page says how often, how many, the space and deleting", () => {
+  const designs = readFileSync(join(root, "packages/account/src/designs.ts"), "utf8");
+  const n = (name) => Number(new RegExp(`${name}: (\\d+)`).exec(designs)[1]);
+  const words = page.replace(/\s+/g, " ");
+  assert.ok(words.includes(`at most one every ${n("versionGapMinutes")} minutes and the newest ${n("versionsKept")} of each design`), "how often and how many, as the code says");
+  for (const must of ["Earlier versions:", "Nothing extra is sent for this", "with earlier versions counted in the 20 MB", "the oldest earlier versions are deleted first", "deletes a design and its earlier versions", "its earlier versions"]) assert.ok(words.includes(must), `the page says "${must}"`);
+});

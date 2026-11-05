@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -22,7 +22,7 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
+import { currentUnit, commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
@@ -33,7 +33,7 @@ import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type Prope
 import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
-import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
+import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped, testPieceFile } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { deleteKeyTarget } from "./delete-key.ts";
@@ -68,6 +68,7 @@ import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
+import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
 import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -115,6 +116,8 @@ let fits = 0;
 interface Inspecting {
   facts(): void;
   none(): string | null;
+  /** Turns the print check (H1) on or off. */
+  printCheck(): void;
 }
 
 /** Why Body facts is off with nothing built. */
@@ -128,7 +131,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -171,9 +174,21 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // The body facts (volume, area, faces), from the properties panel, folded since U0b.
   const facts = button("inspect-facts", "Body facts", "Body facts: the volume, area and faces of what is built, in the properties.", () => inspect.facts());
   facts.disabled = true; // until a body is built (workspace: after each build)
-  const inspectSections = (): MenuSection[] => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }];
+  // The print check (H1, Ben 2026-11-05): a switch, lit while on (print-check-view.ts).
+  const printCheckTitle = "Print check: colours what would go wrong printing it as modelled on the P1S. Red needs supports, amber is too thin, violet is a bridge that may sag, and a red ring marks the weakest spot. Updates as you model.";
+  const printCheck = button("inspect-print-check", "Print check", printCheckTitle, () => inspect.printCheck());
+  printCheck.setAttribute("aria-pressed", "false");
+  const inspectSections = (): MenuSection[] => [
+    {
+      items: [
+        { id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() },
+        { id: "inspect-menu-print-check", label: printCheck.getAttribute("aria-pressed") === "true" ? "Print check: on" : "Print check", icon: "print-check", title: printCheckTitle, run: () => inspect.printCheck() },
+      ],
+    },
+    { items: comingItems("Inspect") },
+  ];
   const inspecting = toolGroup(document, { name: "Inspect", menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: inspectSections } });
-  inspecting.add([facts, "inspect"]);
+  inspecting.add([facts, "inspect"], [printCheck, "print-check"]);
   inspecting.element.dataset.modelling = "";
   // Groups whose tools are all still to come (coming-soon.ts), greyed: their menus list what is on the way.
   const coming = (name: string, id: string, icon: IconName, title: string) => {
@@ -232,7 +247,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       ...named.map(([label, el]) => ({ id: el.id, label, off: el.disabled ? `${label} is off now` : undefined, run: () => el.click() })),
     ];
   };
-  return { made, insert: inserting.menu!, facts, commands };
+  return { made, insert: inserting.menu!, facts, printCheck, commands };
 }
 
 /** A browser row's icon (U0f3): 16 px, before its words, hidden from screen readers. */
@@ -469,8 +484,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       queueMicrotask(reveal);
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
+    printCheck: () => togglePrintCheck(),
   };
-  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -516,6 +532,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extrasChanged(extras) {
       printExtras = extras;
       refreshArea();
+    },
+    // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
+    async testPiece(choices, file, alive) {
+      const print = await testPieceFile(kernel, choices, file.plate, file.nozzle);
+      if (!alive()) throw new SliceDropped();
+      const suggestedName = printFileName({ ...choices, supports: "off" }, file.plate, file.nozzle, "fit-test-piece");
+      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind: P1S_KIND, bytes: print.package });
+      if (r.status === "failed") throw new Error(r.message);
+      return { saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
     },
   });
   const deleting = deleteAsk(ctx.toolbar);
@@ -575,6 +600,37 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
   })();
   let buildAreaOn = buildAreaShownIn(storage);
+  /**
+   * The print check (H1, Ben 2026-11-05): Inspect ▾ Print check paints what would go wrong printing the bodies shown
+   * (print-check-view.ts), checked again after every build while on and while Design is on screen. A view setting of
+   * this browser: no undo step, nothing saved in the design.
+   */
+  let printCheckOn = printCheckShownIn(storage);
+  let printCheckRuns = 0;
+  function showPrintCheck() {
+    const run = ++printCheckRuns;
+    printCheckButton.setAttribute("aria-pressed", String(printCheckOn));
+    const scene = lastScene;
+    if (!printCheckOn || !shown || scene === null) {
+      for (const id of ALL_PRINT_CHECK_IDS) viewport.clearOverlay(id);
+      delete viewport.element.dataset.printCheck;
+      return;
+    }
+    // After the frame that draws the build, so checking a big part never holds the new body back.
+    setTimeout(() => {
+      if (run !== printCheckRuns || !printCheckOn || !shown || lastScene !== scene) return;
+      const { found, overlays } = checkShown(scene.bodies.map((b) => b.view.mesh), printRulesIn(storage));
+      for (const id of ALL_PRINT_CHECK_IDS) if (!overlays.some((o) => o.id === id)) viewport.clearOverlay(id);
+      for (const o of overlays) viewport.setOverlay(o);
+      viewport.element.dataset.printCheck = printCheckSummary(found); // read by the e2e test
+    }, 0);
+  }
+  function togglePrintCheck() {
+    printCheckOn = !printCheckOn;
+    keepPrintCheckShown(storage, printCheckOn);
+    showPrintCheck();
+  }
+  showPrintCheck(); // lit at once when left on; painted once the first build lands
   refreshArea = () => {
     const doc = designDoc();
     if (buildAreaOn && doc) showOrigin(doc);
@@ -902,7 +958,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Why the panel's sizes for `kind` can't be taken (`panelSizeRefused`: the first shown box that isn't from 0.001 mm to 1 km, a round shape's radius, a slot's depth), or null. */
   function refusedSize(kind: PartKind): string | null {
-    return panelSizeRefused(kind, Object.fromEntries(SIZE_KEYS.map((k, i) => [k, inputs[i].value])) as Record<SizeKey, string>);
+    const why = panelSizeRefused(kind, Object.fromEntries(SIZE_KEYS.map((k, i) => [k, inputs[i].value])) as Record<SizeKey, string>);
+    return why === null ? null : wordsInUnit(why, currentUnit(ctx.properties.ownerDocument));
   }
   /** Leaving a size box whose text was refused: the size the design last took comes back, and the words go. */
   function restoreRefused(i: number) {
@@ -911,7 +968,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const typed = inputs[i].value;
     inputs[i].value = saved.sizes[i];
     // It went back without a word (beginner play-test 2026-10-28): say so, until the next size typed.
-    if (refusedSize(shape) === null) panel.showError(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"));
+    if (refusedSize(shape) === null) panel.showError(wordsInUnit(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"), currentUnit(ctx.properties.ownerDocument)));
   }
 
   /**
@@ -1400,6 +1457,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const { kept, dropped, shared, followed } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
       lastScene = scene;
       if (buildAreaOn) showOrigin(doc);
+      showPrintCheck();
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
       if (snapping) (snapping.from = null), showMoveHint();
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
@@ -3369,6 +3427,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shown = false;
     // Design's own overlay goes with it: another workspace's view says nothing about a Combine (36d).
     viewport.clearOverlay(REFUSAL_OVERLAY);
+    showPrintCheck(); // asleep: cleared
     showBuildAreaWords();
     viewport.onPick = null;
     viewport.onMenu = null;
@@ -3543,6 +3602,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       showStart();
       showBuildAreaWords();
       showRefusals();
+      showPrintCheck();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;
