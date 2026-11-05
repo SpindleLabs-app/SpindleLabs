@@ -26,8 +26,8 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   // Step 27d: Project (Fusion's key).
   { id: "sketch-project", keys: "P", label: "Project tool (in a sketch)" },
   // Missing basics (2026-11-04): in a sketch, the Select tool's picked lines, circles and arcs; otherwise the key does what it would.
-  { id: "delete-selection", keys: "Delete", label: "Delete the selected sketch curves (in a sketch)" },
-  { id: "delete-selection-back", keys: "Backspace", label: "Delete the selected sketch curves (in a sketch)" },
+  { id: "delete-selection", keys: "Delete", label: "Delete the selected sketch curves, body or timeline item" },
+  { id: "delete-selection-back", keys: "Backspace", label: "Delete the selected sketch curves, body or timeline item" },
   // Step 47f (Fusion's key): the Select tool's picked curves become construction lines, or back; otherwise the key does what it would.
   { id: "sketch-construction", keys: "X", label: "Turn the selected sketch curves into construction lines, or back (in a sketch)" },
   // Sketch feel SF4: while a line or rectangle is part drawn, a digit, point or minus starts typing its size; otherwise the key does what it would.

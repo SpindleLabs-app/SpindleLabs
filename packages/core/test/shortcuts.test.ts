@@ -132,7 +132,7 @@ test("undo and redo (step 20b): Ctrl or Cmd with Z undoes, with Shift+Z or Y red
 
 test("the help list puts the workspaces on screen first, then the app, then the rest; scopes with no keys left out", () => {
   const t = new ShortcutTable(SHELL_SHORTCUTS, [{ id: "design", shortcuts: design }, { id: "slice" }, { id: "image", shortcuts: image }]);
-  assert.deepEqual(t.help(["image"]).map((g) => [g.scope, g.onScreen, g.entries.length]), [["image", true, 3], ["app", false, 5], ["design", false, 2]]);
+  assert.deepEqual(t.help(["image"]).map((g) => [g.scope, g.onScreen, g.entries.length]), [["image", true, 3], ["app", false, 8], ["design", false, 2]]);
   assert.deepEqual(t.help(["slice", "design"]).map((g) => g.scope), ["design", "app", "image"]);
   assert.deepEqual(t.help([]).map((g) => g.scope), ["app", "design", "image"]);
 });

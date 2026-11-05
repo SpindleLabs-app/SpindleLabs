@@ -15,6 +15,8 @@ export interface FileMenuEntry {
   label: string;
   title: string;
   off?: string;
+  /** Its shortcut as the user reads it ("Ctrl+S", "⌘S"), shown at the item's right. */
+  key?: string;
   run(): void;
 }
 
@@ -60,6 +62,7 @@ export function fileSections(parts: FileMenuParts): MenuSection[] {
     label: e.label,
     title: e.title,
     off: e.off,
+    ...(e.key ? { key: e.key } : {}),
     icon,
     run: () => {
       const chosen = shell ? e : now(e.id);
