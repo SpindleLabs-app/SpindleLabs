@@ -35,7 +35,7 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, combineBodies, isCombineItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, buildingItems, combineBodies, duplicatedBody, isCombineItem, isDuplicateItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -725,7 +725,7 @@ function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls
   const slow = new Set<Feature>();
   const building = buildingItems(doc);
   for (const f of doc.timeline.features) {
-    if (!makesBody(f) || !building.has(f) || skipped.has(f)) continue;
+    if (!ownShape(f) || !building.has(f) || skipped.has(f)) continue;
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
     if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
@@ -927,6 +927,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index);
     if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
+    if (isDuplicateItem(f)) return copyBody(f, done, bodies);
     if (!isSketchExtrude(f)) {
       const spec = specOf(doc, f);
       return made({ handle: await cache.body(spec), spec });
@@ -994,6 +995,34 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   const holds = from.map(([, b]) => b.handle);
   for (const [id, b] of moved) bodies[id] = b;
   return { status: "built", holds };
+}
+
+/**
+ * A Duplicate's result (step 35e2): greyed while the item that made its
+ * body is suppressed or greyed (Q3); failed naming it when it was deleted
+ * or isn't built, or when an earlier Combine used the body up; else its
+ * copy, the body as it is here (moved by the Moves before, sized as its
+ * item is now), held under the Duplicate's own body id with the Duplicate
+ * as its feature, so its faces are named by the Duplicate. The kernel body
+ * is the source's own (a body is never changed, only built anew), so a copy
+ * costs nothing to build. A Combine's result has no spec to name a copy's
+ * faces from, so it can't be copied yet.
+ */
+function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies): FeatureResult {
+  const [maker] = f.dependsOn;
+  const r = done[maker];
+  if (r?.status === "suppressed") return { status: "greyed", by: maker };
+  if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  const label = f.provenance.self.label;
+  const name = f.provenance.from.find((x) => x.id === maker)?.label ?? maker;
+  if (r === undefined) return { status: "failed", cause: "deleted-input", input: maker, message: `${name} was deleted, so ${label} has nothing to copy` };
+  if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${name} is not built, so ${label} can't copy it` };
+  const b = bodies[duplicatedBody(f)];
+  if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't copy ${name}: an earlier Combine used it up or left no such piece` };
+  if (b.spec === null) return { status: "failed", cause: "error", message: `${label} can't copy a Combine's result yet: that comes with the next kernel release` };
+  const id = bodyIdOf(f.id);
+  bodies[id] = { feature: f.id, handle: b.handle, spec: b.spec, ...(b.curves ? { curves: b.curves } : {}) };
+  return { status: "built", bodies: [id] };
 }
 
 /** Combine's operations as the kernel names them. */
