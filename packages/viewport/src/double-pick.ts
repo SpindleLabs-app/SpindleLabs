@@ -14,23 +14,26 @@ export const DOUBLE_PICK_MS = 500;
  */
 export const DOUBLE_PICK_PX = { mouse: 6, touch: 24 } as const;
 
-/** A click on the view: where (client px), when (ms) and with what. */
+/** A click on the view: where (client px), when (ms), with what, and whether Shift was held. */
 export interface ViewClick {
   x: number;
   y: number;
   at: number;
   touch: boolean;
+  shift: boolean;
 }
 
 /**
  * Whether `next` is the second click of a double-click whose first was
- * `last`: both with the same kind of pointer, at most DOUBLE_PICK_MS apart
+ * `last`: both with the same kind of pointer and both with Shift or both
+ * without (a Shift-click then a quick plain click is a replace, not a
+ * double: the smoke check's own habit), at most DOUBLE_PICK_MS apart
  * (a clock that went backwards never counts) and within that pointer's
  * DOUBLE_PICK_PX. The viewer forgets `last` after a double, so a third
  * quick click starts afresh rather than making a second double.
  */
 export function isDoublePick(last: ViewClick | null, next: ViewClick): boolean {
-  if (last === null || last.touch !== next.touch) return false;
+  if (last === null || last.touch !== next.touch || last.shift !== next.shift) return false;
   const gap = next.at - last.at;
   if (!(gap >= 0 && gap <= DOUBLE_PICK_MS)) return false;
   return Math.hypot(next.x - last.x, next.y - last.y) <= (next.touch ? DOUBLE_PICK_PX.touch : DOUBLE_PICK_PX.mouse);

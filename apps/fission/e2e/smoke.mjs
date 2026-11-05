@@ -458,6 +458,8 @@ try {
     // = 25, nearer than the body's √2900/2 ≈ 26.93, so the face fills more.
     const TOP_FACE = { ...HOME, centre: [20, 15, 20], radius: 25 };
     const tc = screenPoint(box, [20, 15, 20], HOME);
+    // Past a double-click's half second since the pick just above on the same spot: two quick clicks there pick the whole body.
+    await page.waitForTimeout(600);
     await page.mouse.click(tc.x, tc.y);
     assert.equal(await selection(), "face:feature-1/top");
     await clickView("fit");
