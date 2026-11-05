@@ -18,7 +18,7 @@ export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-el
 export { commandSearch, matchCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { REPEAT_MS, repeatGuard, type RepeatGuard } from "./press-guard.ts";
 export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visible.ts";
-export { askName, GCODE_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
+export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
 export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELETON_DELAY_MS, SKELETON_FADE_MS, type HeldSkeleton, type SkeletonShape } from "./skeleton.ts";
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
 export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type DesignRowWords, type MyDesigns, type MyDesignsParts } from "./my-designs.ts";
