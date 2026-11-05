@@ -18,7 +18,9 @@
 #                   failed, seed-golden-<seed>/golden-report.txt), monkey/
 #                   (monkey_night.py: report.txt and seed-monkey-<seed>/),
 #                   journeys/
-#                   and ts-mutants-*/
+#                   and ts-mutants-*/; an endless job's markers.txt is its
+#                   state coverage counts (coverage_issue.py files never-
+#                   reached states)
 #   MUTANT_SHARDS   how many mutation shards the run started (0 or unset: none)
 #   JOBS            the workflow's `toJSON(needs)`: a job that went red with
 #                   nothing more specific to report files an issue too
@@ -127,6 +129,16 @@ add_run() {
     found=$((found + 1))
   done
 
+  # State coverage (the kernel's endless jobs' markers.txt: "name count" per state, " rare" after one not expected
+  # every night): the jobs' counts added up in markers/latest.txt; coverage_issue.py judges a night on main.
+  if compgen -G "$IN/endless-*/markers.txt" >/dev/null; then
+    mkdir -p markers
+    awk '{ n[$1] += $2; if ($3 == "rare") r[$1] = 1; if (!($1 in seen)) { seen[$1] = 1; order[++k] = $1 } }
+      END { for (i = 1; i <= k; i++) print order[i], n[order[i]] (r[order[i]] ? " rare" : "") }' \
+      "$IN"/endless-*/markers.txt >"$IN/markers-run.txt"
+    { echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"; cat "$IN/markers-run.txt"; } >markers/latest.txt
+  fi
+
   # TypeScript mutation testing: the latest run's survivor lines, one target per job.
   # A run by hand that didn't ask for them has none, and keeps the last ones.
   if compgen -G "$IN/ts-mutants-*" >/dev/null; then
@@ -184,8 +196,42 @@ add_run() {
   if [ -f ts-mutants/latest.txt ]; then
     { echo ""; echo "Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):"; sed 's/^/  /' ts-mutants/latest.txt; } >>summary.txt
   fi
+  if [ -f markers/latest.txt ]; then
+    tail -n +2 markers/latest.txt | awk -v head="$(head -1 markers/latest.txt)" '
+      { total++; if ($2 > 0) hit++; else if ($3 == "rare") rare = rare " " $1; else miss = miss " " $1 }
+      END {
+        print ""
+        print "Latest state coverage (" head "):"
+        print "  " hit + 0 " of " total " states reached"
+        print "  never reached:" (miss ? miss : " none")
+        if (rare) print "  rare, not reached:" rare
+        print "markers/latest.txt has every count; on main a never-reached state is listed in its own issue."
+      }' >>summary.txt
+  fi
   if [ -f summary.txt.fuzz ]; then cat summary.txt.fuzz >>summary.txt; rm summary.txt.fuzz; fi
+  # New failures (35f1d): the kinds of problem this run found that no earlier run did (kinds-seen.txt keeps every
+  # kind found so far, as file_issues.py names them), counted in the summary's first line and one line per run in
+  # new-failures.csv. A run with none adds to the clean streak public Combine waits on (35f5).
+  touch kinds-seen.txt
+  new_kinds=$(grep -h . "$kinds_file" | sort -u | comm -23 - <(grep -h . kinds-seen.txt | sort -u))
+  new_count=$(printf '%s' "$new_kinds" | grep -c . || true)
+  [ -f new-failures.csv ] || echo "finished,new,run,commit,branch" >new-failures.csv
+  echo "$today,$new_count,$RUN_URL,$short,$BRANCH" >>new-failures.csv
+  { grep -h . "$kinds_file" kinds-seen.txt || true; } | sort -u >kinds-seen.txt.new
+  mv kinds-seen.txt.new kinds-seen.txt
+  {
+    echo "New failures this run (kinds of problem no earlier run found): $new_count"
+    [ "$new_count" -gt 0 ] && printf '%s\n' "$new_kinds" | sed 's/^/  - /'
+    echo "new-failures.csv has one line per run; kinds-seen.txt lists every kind found so far."
+    echo
+    cat summary.txt
+  } >summary.txt.new
+  mv summary.txt.new summary.txt
 }
+
+# Every kind of problem this run found, as file_issues.py names them (for the new-failures line in add_run).
+kinds_file=$(mktemp)
+python3 "$(dirname "$0")/file_issues.py" "$IN" --kinds >"$kinds_file" 2>/dev/null || : >"$kinds_file"
 
 git config user.name "github-actions[bot]"
 git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
@@ -224,6 +270,14 @@ RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$(dirname "$0")/fil
   filing=1
   echo "Filing issues failed; the results are on test-results all the same."
 }
+# States the kernel's random testing never reached: one rolling issue, nights on main only (coverage_issue.py,
+# next to this script). Not a failure kind, so it never breaks the clean streak.
+if [ -f "$IN/markers-run.txt" ]; then
+  RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$(dirname "$0")/coverage_issue.py" "$IN/markers-run.txt" || {
+    filing=1
+    echo "Updating the state coverage issue failed; the counts are on test-results all the same."
+  }
+fi
 if [ "$new_missed" -gt 0 ]; then
   body="Run: $RUN_URL (commit $short on $BRANCH)"$'\n\n'
   body="$body$new_missed mutant(s) survived that the previous complete mutation run caught or did not have (new code, or a test that got weaker):"$'\n'"$(printf '%s\n' "$new_list" | head -50 | sed 's/^/- /')"$'\n\n'"Every survivor is in mutants/missed.txt on the test-results branch."$'\n'

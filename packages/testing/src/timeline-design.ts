@@ -46,11 +46,15 @@ import {
   insertPreset,
   insertMove,
   changedMove,
+  insertCombine,
+  changedCombine,
+  combineBodies,
   isSketchExtrude,
   moveMarker,
   movePoint,
   nameBody,
   outlineCurves,
+  type CurveOf,
   partDocument,
   readDesignDocument,
   joinBodies,
@@ -58,6 +62,7 @@ import {
   reorderItem,
   findInScene,
   sceneHit,
+  shownFrame,
   settleKept,
   shownBodies,
   shapeOf,
@@ -72,7 +77,7 @@ import {
   type TimelineBuild,
   bodyIdOf,
 } from "@fission/design";
-import { edgeName, faceKey, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type Turn, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
+import { edgeName, faceKey, type Vec3, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type Turn, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
 import type { EdgeClose, TimelineSubject } from "./timeline-session.ts";
 
 /** A model Move's numbers as Design's (35e2): the sessions turn about Z only, through a pivot on the floor. */
@@ -267,7 +272,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     const drawn = drawnOnFace(s.bodies[hit.body].view, hit.index);
     if (drawn === null) throw new Error(`harness: ${faceKey(name)} is curved`);
     // 35e2h: with where the Moves had put the body, as the pick records it (face-pick.ts `sketchSpot`).
-    return { ...drawn, body: s.bodies[hit.body].frame ?? worldFrame() };
+    return { ...drawn, body: shownFrame(s.bodies[hit.body], hit.index) ?? worldFrame() };
   }
 
   /** The edit on Design's side: the new state and the ids it made, or a refusal. */
@@ -375,6 +380,15 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       }
       case "set-move":
         return { state: { doc: changedMove(doc, op.item, moveValues(op), op.bodies?.map(bodyIdOf)), meta }, made: [] };
+      case "add-combine": {
+        // 35f1d2: Design's Combine, as its panel's OK puts it in: the model names bodies by item, Design by body id.
+        const c = insertCombine(doc, bodyIdOf(op.target), [bodyIdOf(op.tool)], op.operation, op.keep);
+        return { state: { doc: c.doc, meta }, made: [c.id] };
+      }
+      case "set-combine": {
+        const was = combineBodies(doc.timeline.features.find((f) => f.id === op.item)!);
+        return { state: { doc: changedCombine(doc, op.item, was.target, was.tools, op.operation, was.keepTools), meta }, made: [] };
+      }
     }
   }
 
@@ -387,7 +401,24 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     const results: Record<string, ItemResult> = {};
     const scene = await shownBodies(state.doc, build, from);
     if (fs.has("scene-drops-body")) scene.shift();
-    const shown = new Map(scene.map((b) => [b.feature, b.view]));
+    // By body id (35f1d2: a Combine's pieces are its own item's, several to one item).
+    const shown = new Map(scene.map((b) => [b.body, b.view]));
+    const measured = new Map<string, ModelBody>();
+    /** A body as the model has it, its names its own (a Combine's result: the names its Combine gave, rule 2 and 4). */
+    const measureBody = (bodyId: string): ModelBody => {
+      const b = build.bodies[bodyId];
+      // Planted bug ("cache-by-feature"): a body read once per feature id, so later edits never reach it.
+      const key = fs.has("cache-by-feature") ? b.feature : `${bodyId}|${b.handle}|${JSON.stringify(b.curves ?? null)}`;
+      let body = keep ? bodies.get(key) : undefined;
+      if (body === undefined) {
+        // 35e2: a moved body's sides are named by the shape inside the move.
+        const shape = b.spec === null ? null : shapeSpec(b.spec);
+        body = b.named ? measureCombined(shown.get(bodyId)!, b.named.faces) : measure(b.feature, shown.get(bodyId)!, shape && "extrude" in shape ? outlineCurves(shape.extrude.profile, b.curves) : () => null);
+        if (keep) bodies.set(key, body);
+      }
+      measured.set(bodyId, body);
+      return body;
+    };
     for (const id of build.order) {
       const r = build.results[id];
       if (r.status === "suppressed" || r.status === "rolled-back") results[id] = { status: r.status };
@@ -395,23 +426,63 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       else if (r.status === "greyed") results[id] = { status: "greyed", by: r.by };
       // 26e: a sketch on a face says how high it lies (the sessions' faces all face +Z, so it is XY lifted) and whether it is held.
       else if (isFaceSketchId(id)) results[id] = { status: "built", ...liftOf(id, r.placement), ...(r.plane && { plane: r.plane.cause as "plane-lost" }) };
-      else if (build.bodies[bodyIdOf(id)] === undefined || !shown.has(id)) results[id] = { status: "built", ...(r.source && { source: r.source.sketch }) };
       else {
+        // 35f1d2: a Combine's pieces, by their numbers (a Combine makes no body of its own).
+        const pieces = scene
+          .filter((x) => x.feature === id && x.body !== bodyIdOf(id))
+          .sort((x, y) => Number(x.body.split("/piece:")[1]) - Number(y.body.split("/piece:")[1]))
+          .map((x) => measureBody(x.body));
+        const extra = pieces.length > 0 ? { pieces } : {};
+        if (build.bodies[bodyIdOf(id)] === undefined || !shown.has(bodyIdOf(id))) results[id] = { status: "built", ...(r.source && { source: r.source.sketch }), ...extra };
         // 35eb: an item's body by its body id.
-        const b = build.bodies[bodyIdOf(id)];
-        // Planted bug ("cache-by-feature"): a body read once per feature id, so later edits never reach it.
-        const key = fs.has("cache-by-feature") ? id : `${id}|${b.handle}|${JSON.stringify(b.curves ?? null)}`;
-        let body = keep ? bodies.get(key) : undefined;
-        if (body === undefined) {
-          // 35e2: a moved body's sides are named by the shape inside the move.
-          const shape = shapeSpec(b.spec);
-          body = measure(id, shown.get(id)!, shape && "extrude" in shape ? outlineCurves(shape.extrude.profile, b.curves) : () => null);
-          if (keep) bodies.set(key, body);
-        }
-        results[id] = { status: "built", body, ...(r.warning && { warning: { cause: r.warning.cause, input: r.warning.sketch } }), ...(r.source && { source: r.source.sketch }) };
+        else results[id] = { status: "built", body: measureBody(bodyIdOf(id)), ...(r.warning && { warning: { cause: r.warning.cause, input: r.warning.sketch } }), ...(r.source && { source: r.source.sketch }), ...extra };
       }
     }
-    return { order: build.order, results };
+    return tagged({ order: build.order, results }, scene, measured);
+  }
+
+  /**
+   * Rules 3 and 5 across the design as the app writes them (35f1e2): each
+   * shown body's face full names and a combined body's edge names read off
+   * the scene's design names (scene.ts `SceneDesign`, over every body the
+   * rebuild holds, hidden ones too), never worked out again here, so a
+   * name the app writes wrong reaches the comparison with the model. An
+   * edge's `;ends:` is dropped (the model names an edge by its two faces
+   * only, and checks two edges sharing that where it has them too).
+   */
+  function tagged(r: Rebuild, scene: Awaited<ReturnType<typeof shownBodies>>, measured: Map<string, ModelBody>): Rebuild {
+    if (!scene.some((x) => measured.get(x.body)?.combined)) return r;
+    const again = new Map<ModelBody, ModelBody>();
+    for (const x of scene) {
+      const b = measured.get(x.body);
+      const d = x.design;
+      if (b === undefined || d === undefined || d.at < 0) continue;
+      const full = d.of.names.full[d.at] ?? [];
+      const faces = b.faces.map((f, fi) => ({ ...f, name: fullFaceName(full[fi] ?? null, f.name) }));
+      let edges = b.edges;
+      if (b.combined) {
+        // measureCombined's edges are the view's edges that join two faces, in order: each one's kernel index.
+        const kernel = x.view.edge_faces.flatMap((pair, e) => (pair === null ? [] : [e]));
+        edges = b.edges.map((e, k) => {
+          // The name the app writes; where it writes none because two edges would share it (never guessed), the two faces
+          // it found for the edge, as the model names both.
+          const app = d.of.names.edges[d.at]?.[kernel[k]] ?? null;
+          const said = app === null ? null : (app.name ?? `edge:${app.faces.join("+")}`);
+          if (said === null) return { ...e, name: { ...edgeName(faceName(x.feature, null, kernel[k]), faceName(x.feature, null, kernel[k]), false), pair: true as const } };
+          const [a, c] = said.slice("edge:".length).split(";")[0].split("+");
+          const face = (n: string) => fullFaceName(n, parseDesignFace(n.split("#")[0]));
+          return { ...e, name: { ...edgeName(face(a), face(c), false), pair: true as const } };
+        });
+      }
+      again.set(b, { ...b, faces, edges });
+    }
+    const swap = (b: ModelBody) => again.get(b) ?? b;
+    for (const id of r.order) {
+      const res = r.results[id];
+      if (res.status !== "built") continue;
+      r.results[id] = { ...res, ...(res.body && { body: swap(res.body) }), ...(res.pieces && { pieces: res.pieces.map(swap) }) };
+    }
+    return r;
   }
 
   const isFaceSketchId = (id: string) => {
@@ -425,11 +496,15 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
    * after checking the frame faces +Z (every face the sessions draw on is a
    * top or an end, and their Moves turn only about Z).
    */
-  function liftOf(id: string, at: SketchPlacement | undefined): { lift: number; turn?: Turn } {
+  function liftOf(id: string, at: SketchPlacement | undefined): { lift: number; turn?: Turn; down?: true } {
     if (at === undefined) throw new Error(`${id} is built but lies nowhere`);
     const { origin, xAxis, normal } = at.plane;
-    const off = Math.max(Math.abs(xAxis[2]), Math.abs(normal[0]), Math.abs(normal[1]), Math.abs(normal[2] - 1));
-    if (off > 1e-12 || at.side !== 1) throw new Error(`${id} lies in a frame that does not face +Z: ${JSON.stringify(at)}`);
+    // 35f1e: on a face a Combine turned to look down (a cut's roof) it faces −Z, its height alone compared (as the model's).
+    const down = normal[2] * at.side < 0;
+    const off = Math.max(Math.abs(xAxis[2]), Math.abs(normal[0]), Math.abs(normal[1]), Math.abs(Math.abs(normal[2]) - 1));
+    if (off > 1e-12) throw new Error(`${id} lies in a frame that does not face +Z or −Z: ${JSON.stringify(at)}`);
+    if (down) return { lift: origin[2], down: true };
+    if (at.side !== 1 || normal[2] < 0) throw new Error(`${id} lies in a frame that does not face +Z: ${JSON.stringify(at)}`);
     const moved = origin[0] !== 0 || origin[1] !== 0 || xAxis[0] !== 1 || xAxis[1] !== 0;
     return { lift: origin[2], ...(moved && { turn: { x: [xAxis[0], xAxis[1]], at: [origin[0], origin[1]] } }) };
   }
@@ -448,7 +523,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     const b = await build();
     const shown = await shownBodies(state.doc, b, cache);
     if (fs.has("scene-drops-body")) shown.shift();
-    return joinBodies(shown);
+    return joinBodies(shown, b);
   }
 
   return {
@@ -515,6 +590,14 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       const hit = sceneHit(s, "face", i);
       if (hit === null) throw new Error(`Design resolved ${faceKey(name)} to face ${i}, which no shown body has`);
       const body = s.bodies[hit.body];
+      // 35f1e: once a Combine built, the face's full name across the design (its tag when another face carries it too).
+      const at = s.design?.shown.indexOf(hit.body) ?? -1;
+      if (s.design !== undefined && at >= 0) {
+        const full = s.design.names.full[at][hit.index] ?? null;
+        if (full === null) return faceName(body.feature, null, hit.index);
+        const hash = full.indexOf("#");
+        return fullFaceName(full, parseDesignFace(hash < 0 ? full : full.slice(0, hash)));
+      }
       return faceName(body.feature, body.names.faces[hit.index], hit.index);
     },
     async dispose() {
@@ -524,7 +607,8 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
 }
 
 /** The model's face name (in Design's ids) as Design names the face: "face:feature-1/top", "face:feature-7/side:line-4". */
-const designFace = (name: FaceName): string => facePlane(encodeURIComponent(name.feature), name.curve === undefined ? name.role : `${name.role}:${encodeURIComponent(name.curve)}`);
+const designFace = (name: FaceName): string =>
+  facePlane(encodeURIComponent(name.feature), name.curve === undefined ? name.role : `${name.role}:${encodeURIComponent(name.curve)}`) + (name.tag === undefined ? "" : `#${name.tag.map(designFace).sort().join(",")}`);
 
 /** A face name part from Design ("side:line-4", "top") as the model's FaceName; an unnamed face gets a name no model face has. */
 function faceName(feature: string, part: string | null, index: number): FaceName {
@@ -533,8 +617,43 @@ function faceName(feature: string, part: string | null, index: number): FaceName
   return curve === undefined ? { feature, role: role as FaceRole } : { feature, role: role as FaceRole, curve: decodeURIComponent(curve) };
 }
 
+/** A full name with its tag from Design ("face:feature-1/top#face:feature-2/left,…") as the model's; an untagged one gives back `own`. */
+function fullFaceName(full: string | null, own: FaceName): FaceName {
+  const hash = full?.indexOf("#") ?? -1;
+  if (full === null || hash < 0) return own;
+  const tag = full.slice(hash + 1);
+  return { ...own, tag: tag === "" ? [] : tag.split(",").map(parseDesignFace) };
+}
+
+/** "face:feature-2/side:line-4" as the model's FaceName. */
+function parseDesignFace(full: string): FaceName {
+  const m = /^face:([^/]*)\/(.*)$/.exec(full);
+  if (m === null) throw new Error(`harness: ${full} is not a face name`);
+  return faceName(decodeURIComponent(m[1]), m[2], -1);
+}
+
+/**
+ * A Combine's result (35f1d2) in the model's terms: each face by the names
+ * its Combine gave it (the shown one first, rule 4), each edge by its two
+ * faces (rule 5, named in `tagged`), its length and centroid measured on
+ * the display mesh.
+ */
+function measureCombined(view: BodyView, names: readonly { names: readonly string[] }[]): ModelBody {
+  const geometry = edgeGeometry(view);
+  const faces = view.face_areas.map((area, f) => {
+    const [shown, ...rest] = (names[f]?.names ?? []).map(parseDesignFace);
+    return { name: shown ?? faceName("", null, f), ...(rest.length > 0 && { also: rest }), area, centroid: view.face_centroids[f] as unknown as Vec3 };
+  });
+  return {
+    volume: view.volume,
+    faces,
+    edges: view.edge_faces.flatMap((pair, e) => (pair === null ? [] : [{ name: { ...edgeName(faces[pair[0]].name, faces[pair[1]].name, false), pair: true as const }, length: geometry[e].length, centroid: geometry[e].centroid as unknown as Vec3, between: [pair[0], pair[1]] as [number, number] }])),
+    combined: true,
+  };
+}
+
 /** A body's volume, faces and edges in the model's terms, named as Design names them. */
-function measure(feature: string, view: BodyView, curveOf: (boundary: number, piece: number) => string | null): ModelBody {
+function measure(feature: string, view: BodyView, curveOf: CurveOf): ModelBody {
   const names = nameBody(feature, view, curveOf);
   const edges = edgeGeometry(view);
   return {

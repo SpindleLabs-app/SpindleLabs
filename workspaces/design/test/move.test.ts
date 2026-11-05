@@ -35,6 +35,17 @@ test("what a Move asks the kernel for, by hand", () => {
   );
 });
 
+test("hand-worked: a huge angle turns as its leftover part of a turn does (clumsy hunt 2026-11-04)", () => {
+  // 1e20 = 2^20 · 5^20 is a whole number a double holds exactly. 360 = 40 · 9: 1e20 is a multiple of 40 (it has 2^3 and 5
+  // in it), and its digits sum to 1, so it is 1 more than a multiple of 9. The number under 360 that is a multiple of 40
+  // and 1 more than a multiple of 9 is 280 (280 = 7 · 40 and 280 = 31 · 9 + 1): 1e20° is 280° and whole turns.
+  const huge = moveMotions(v({ turnZ: 1e20 }));
+  assert.deepEqual(huge, moveMotions(v({ turnZ: 280 })));
+  // Below a whole turn nothing changes; −45° stays −45°, and 405° is 45°.
+  assert.deepEqual(moveMotions(v({ turnX: 405 })), moveMotions(v({ turnX: 45 })));
+  assert.deepEqual(moveMotions(v({ turnY: -45 })).map((m) => ("turn" in m ? m.turn.angle : null)), [-Math.PI / 4]);
+});
+
 test("a moved spec wraps a shape once and grows its list after that", () => {
   const box = { box: { width: 40, depth: 30, height: 20 } };
   assert.equal(movedSpec(box, []), box, "nothing to do: the same spec");
@@ -157,7 +168,7 @@ test("a Move read from a file is checked: its numbers and its bodies", () => {
 test("hand-worked: version 6 lists a Move's bodies by body id, and the reader checks the list against dependsOn", () => {
   // The version 3 file above, read: its Move of feature-1 gains bodies ["body:feature-1"] (version 6, 35ec), dependsOn kept.
   const read = readDesignDocument(file({}));
-  assert.equal(read.version, 8);
+  assert.equal(read.version, 9);
   assert.deepEqual(read.timeline.features[1].intent.parameters.bodies, ["body:feature-1"]);
   assert.deepEqual(read.timeline.features[1].dependsOn, ["feature-1"]);
   // Saved and opened again: the same.
@@ -225,7 +236,7 @@ function stack(layers: number): DesignDocument {
     features.push({ id: e, intent: { type: "extrude", parameters: { sketch: s, distance: 5 }, summary: `Extrude ${k}` }, dependsOn: [s], suppressed: false, provenance: stackProv(e, `Extrude ${k + 1}`) });
     solids.push(e);
   }
-  return readDesignDocument({ version: 8, nextId: n, profiles: [], sketches, timeline: { features } });
+  return readDesignDocument({ version: 9, nextId: n, profiles: [], sketches, timeline: { features } });
 }
 
 test("a 57-item pinned stack: the part, and whether the top item builds, are answered in well under a frame's worth of work each", () => {

@@ -45,6 +45,8 @@ const REBUILD = "workspaces/design/src/rebuild.ts";
 const MOVE = "workspaces/design/src/move.ts";
 const NAMING = "workspaces/design/src/naming.ts";
 const DOCUMENT = "workspaces/design/src/document.ts";
+const COMBINE = "workspaces/design/src/combine.ts";
+const NAMES = "workspaces/design/src/boolean-names.ts";
 
 export const PLANTS: Record<ModelFault, Plant> = {
   "reorder-past-dependency": {
@@ -156,16 +158,98 @@ export const PLANTS: Record<ModelFault, Plant> = {
     why: "the drifted volume is off against both the model and a rebuild from scratch; with 26e's random steps the first session to meet it fails the from-scratch check first (recorded from planted/run.ts, 2026-10-22)",
   },
   "resolve-last-body-only": {
-    what: "bodyOf looks only at the last body shown, as while there was one body",
+    what: "a reference is looked for only on the last body shown, as while there was one body",
     edits: [
       {
         file: "workspaces/design/src/scene.ts",
-        find: '  return scene.bodies.findIndex((b) => (r.kind === "body" ? b.body === ref.id : b.names.feature === r.featureId));',
-        replace: '  const last = scene.bodies.length - 1;\n  const b = scene.bodies[last];\n  return b && (r.kind === "body" ? b.body === ref.id : b.names.feature === r.featureId) ? last : -1;',
+        find: '  const b = r === null || r.kind === "body" ? -1 : scene.bodies.findIndex((x) => x.names.feature === r.featureId && !x.combined);',
+        replace: '  const last = scene.bodies.length - 1;\n  const b = r !== null && r.kind !== "body" && scene.bodies[last]?.names.feature === r.featureId && !scene.bodies[last].combined ? last : -1;',
       },
     ],
     run: ["timeline"],
     caught: "a reference was lost",
+  },
+  // 35f1d2: Combine's. Design's sessions make Combines once "35" is in LANDED (the next kernel, with face merging):
+  // recorded on that kernel built locally with the sessions given MODEL_KNOWS, 2026-11-04.
+  "combine-tool-kept": {
+    what: "a Combine leaves its tools in the design though Keep tools is off",
+    edits: [{ file: REBUILD, find: "  for (const tool of keepTools ? [] : tools) delete bodies[tool];", replace: "  for (const tool of keepTools ? [] : tools.slice(0, 0)) delete bodies[tool];" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "combine-not-held": {
+    what: "a Combine's target keeps its body as it was",
+    edits: [
+      { file: REBUILD, find: "  delete bodies[target];\n", replace: "" },
+      { file: REBUILD, find: "    bodies[nb.id] = { feature: nb.id === target", replace: "    if (nb.id !== target) bodies[nb.id] = { feature: nb.id === target" },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "combine-pieces-dropped": {
+    what: "a Combine's pieces apart from its target are left out",
+    edits: [{ file: REBUILD, find: "    bodies[nb.id] = { feature: nb.id === target", replace: "    if (nb.id === target) bodies[nb.id] = { feature: nb.id === target" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "combine-op-ignored": {
+    what: "changing a Combine's operation keeps the old one",
+    edits: [{ file: COMBINE, find: "parameters: { ...old.intent.parameters, operation, keepTools }", replace: "parameters: { ...old.intent.parameters, keepTools }" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+    why: "Design's summary words change with the operation, so its data changes and the edit counts as done; the model's planted bug leaves its data as it was (no change)",
+  },
+  "combine-refusal-changes": {
+    what: "a Combine the kernel refuses still uses its tools up",
+    edits: [
+      {
+        file: REBUILD,
+        find: "      return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+        replace: "      for (const tool of keepTools ? [] : tools) delete bodies[tool];\n      return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "combine-tags-dropped": {
+    what: "pieces of a split face are never tagged",
+    edits: [{ file: NAMES, find: 'return (carrying.get(name)?.length ?? 1) > 1 ? `${name}#${tagOf(k, name).join(",")}` : name;', replace: "return name;" }],
+    run: ["timeline"],
+    caught: "two faces share a name",
+  },
+  "combine-first-piece": {
+    what: "a name on a split face goes to its first piece, never by tag, origin or size",
+    edits: [{ file: NAMES, find: "  if (pieces.length === 1) return { ...pieces[0], warning: null };", replace: "  if (pieces.length >= 1) return { ...pieces[0], warning: null };" }],
+    run: ["timeline"],
+    caught: "a reference guessed between pieces",
+    why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner)",
+  },
+  // 35f1e2: recorded on the #132 kernel built locally with the sessions given MODEL_KNOWS, 2026-11-05.
+  "combine-face-moves-with-target": {
+    what: "every face of a Combine's result is carried by the target's Moves, so a sketch on a tool's face slides when the target moves",
+    edits: [
+      {
+        file: REBUILD,
+        find: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);",
+        replace: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], new Map([...built.keys()].map((h) => [h, built.get(t.handle)!] as const)));",
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+    why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions; planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught); workspaces/design/test/combine-scene.test.ts catches it by hand",
+  },
+  "combine-edge-tags-dropped": {
+    what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
+    edits: [
+      {
+        file: NAMES,
+        find: "      const [fa, fb] = [full[bi][pair[0]] ?? null, full[bi][pair[1]] ?? null];",
+        replace: '      const [fa, fb] = [full[bi][pair[0]]?.split("#")[0] ?? null, full[bi][pair[1]]?.split("#")[0] ?? null];',
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+    why: "recorded on the #132 kernel built locally with MODEL_KNOWS, 2026-11-05 (seed 3); before 35f1e2 the sessions named a combined body's edges themselves from its faces' full names, so this mistake in the app was never compared: they now read the names the app writes",
   },
   "save-stamps": {
     what: "each save writes a counter into the file",
@@ -201,19 +285,19 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "lost-sketch-fails": {
     what: "settleKept never keeps a lost sketch's shape (the rule before 24d2)",
-    edits: [{ file: REBUILD, find: "    else if (was !== undefined && (await makesOutline(kernel, before, sketch)))", replace: "    else if (false && was !== undefined && (await makesOutline(kernel, before, sketch)))" }],
+    edits: [{ file: REBUILD, find: "    else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f))))", replace: "    else if (false && was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f))))" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
   "kept-not-forgotten": {
     what: "settleKept never forgets a kept shape and extrudeSpec builds from it even when the sketch is whole again",
     edits: [
-      { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch)) continue;", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch))) continue;" },
+      { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch, regionOf(f)))) continue;" },
       {
         file: REBUILD,
-        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel);",
+        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);",
         replace:
-          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
+          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
       },
     ],
     run: ["timeline"],
@@ -463,7 +547,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "held-never-forgotten": {
     what: "a held placement is kept after the face comes back, so a later loss holds an old place",
-    edits: [{ file: REBUILD, find: "      if (r.plane === undefined) keep = undefined;", replace: "      if (r.plane === undefined) keep = keep;" }],
+    edits: [{ file: REBUILD, find: '        if (r.plane === undefined || r.plane.cause === "plane-split") keep = undefined;', replace: '        if (r.plane === undefined || r.plane.cause === "plane-split") keep = keep;' }],
     run: ["naming"],
     caught: "hand-worked: a box's top sketched on",
     why: "the model's sessions never bring a lost face's name back, except by Undo, which restores the snapshot; the box made a sphere and back does",

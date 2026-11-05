@@ -8,7 +8,7 @@ export { parameterRows, propertiesPanel, SIZE_KEYS, type ParameterRow, type Verb
 export { toolbarGroups, type ToolButton, type ToolGroup } from "./toolbar.ts";
 export { buildSpec, specFor } from "./spec.ts";
 export { changedMove, insertMove, madeAfter, MOVE_STEP, moveKindOf, movedBodies, moveMotions, ROTATE_STEP, movedSpec, moveSummary, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
-export { boxCentre, boxText, draggedValues, editedBodies, editedMoveMesh, endSpec, handlesCentre, MOVE_BOX_WORDS, movedMesh, movedPoint, pickedBodies, readMoveBoxes, refusedMove, snapDegrees, snapMm, startPivot, unmovedPoint, wrapDegrees } from "./move-tool.ts";
+export { boxCentre, boxText, draggedValues, editedBodies, editedMoveMesh, endSpec, endSpecs, handlesCentre, MOVE_BOX_WORDS, movedMesh, movedPoint, pickedBodies, readMoveBoxes, refusedMove, snapDegrees, snapMm, startPivot, unmovedPoint, wrapDegrees } from "./move-tool.ts";
 export { SNAP_CURVED_FACE, mappedPart, PARALLEL, SNAP_NO_FLAT, snapEnds, snappedValues, snapPart, turnAngles, turnBetween, turnMatrix, type SnapPart } from "./move-snap.ts";
 export { bodyIdOf, bodyItem, bodyNumbers, eyeOrder, isPiece, migrateDesignV5, builds, buildingItems, changePreset, greyedBy, greyedItems, curvePoints, idNumber, keptOf, type KeptShape, insertAt, insertItem, insertPreset, isMoveItem, isSketchExtrude, isSketchItem, lastFeature, makesBody, MOVE_PARAMS, numberBodies, partFeature, migrateDesignV1, migrateDesignV2, partDocument, partOf, shapeOf, profileLabel, readDesignDocument, SKETCH_PLANES, specOf, withPart, withPartAt, withKindPieces, withRuledNames, withShortNames, type BodyRecord, type DesignDocument, type Marker, type PartKind, type PartSizes, type ReadyProfile, type Sketch, type SketchArcCurve, type SketchCircleCurve, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 export { bodyFrame, carried, worldFrame, drawnFrame, drawnOnFace, faceFeature, facePlane, frameNow, isFacePlane, isFaceSketch, squared, turned, type PlaneCause, type PlaneWarning, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
@@ -22,10 +22,16 @@ export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, f
 export { PART_VIEW, syncGraph } from "./graph.ts";
 export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
 export { bodyReference, designReference, NAME_NOTE, profileReference, readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
-export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type PieceWays } from "./naming.ts";
-export { pickChange, type SelectionChange } from "./picking.ts";
+export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type CurveOf, type PieceWays, type SideOf } from "./naming.ts";
+export { applyChange, pickChange, type SelectionChange } from "./picking.ts";
 export { droppedNote, highlightOf, NAME_SHARED, panelFocus, panelPart, referenceLabel, selectionRows, survivors, type PanelFocus } from "./selection.ts";
+export { designNames, featureBody, resolveFaceName, type DesignNames, type NamedBody } from "./boolean-names.ts";
+export { changedCombine, COMBINE_STEP, combineSummary, insertCombine } from "./combine.ts";
+export { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
+export { combineBodies, isCombineItem, type CombineOperation } from "./document.ts";
+export { setCombineShown } from "./combine-flag.ts";
 export { bodyOf, findInScene, joinBodies, resolveInScene, sceneHit, sceneReference, shownBodies, type Found, type Scene, type ShownBody } from "./scene.ts";
+export { shownFrame } from "./built-body.ts";
 export { COPY_SVG, designActions, DOWNLOAD_STL, joinStl, partBody, registerDesignActions, representationsOf, shownBodyRefs, STL_OVERLAY, targetsOf, type CopySvg, type SaveFile } from "./actions.ts";
 export { rounding, snapLabel, snapOnSketch, snapPointer, snapTargets, SNAP_PIXELS, type Rounding, type Snap } from "./snap.ts";
 export { deleteItem, itemName, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS, type ReorderCause, type Reordered } from "./timeline-edits.ts";

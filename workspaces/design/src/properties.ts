@@ -9,6 +9,7 @@ import { SHAPES } from "./commands.ts";
 import type { PartKind } from "./document.ts";
 import { SHAPE_LABELS } from "./toolbar.ts";
 import { NAME_NOTE } from "./references.ts";
+import { lengthRefused, MIN_TYPED } from "./typed-entry.ts";
 import type { SelectionRow } from "./selection.ts";
 
 export type SizeKey = "width" | "depth" | "height";
@@ -37,6 +38,64 @@ export function parameterRows(shape: PartKind): ParameterRow[] {
   ];
 }
 
+/**
+ * Why the Parameters boxes' sizes `typed` can't be taken for a `kind`, in the
+ * box's own name, or null. Each shown box: a number (hunt 26g), more than
+ * 0 mm (hunt 26h), from 0.001 mm to 1 km (`lengthRefused`, app sweep
+ * 2026-10-28). Then the shape's own rules a person can break by typing
+ * ordinary sizes (clumsy hunt 2026-11-04: both reached the kernel, failed in
+ * its words and were recorded): a round shape's radius, half its diameter,
+ * is at least 0.001 mm as the sketch's Diameter box asks (`readDiameter`);
+ * a slot w × d has round ends d across joined by straights w − d long,
+ * which must be at least the 0.001 mm the modeller keeps.
+ */
+export function panelSizeRefused(kind: PartKind, typed: Record<SizeKey, string>): string | null {
+  for (const r of parameterRows(kind)) {
+    if (!r.shown) continue;
+    const text = typed[r.key];
+    const label = kind === "sketch-extrude" ? "distance" : r.label.toLowerCase();
+    const v = Number(text);
+    if (text.trim() === "" || !Number.isFinite(v)) return `Type the ${label} in mm.`;
+    if (v <= 0) return `The ${label} must be more than 0 mm.`;
+    const refused = lengthRefused(v);
+    if (refused !== null) return `The ${label}${refused.slice("A length".length)}`;
+    if (r.label === "Diameter" && v / 2 < MIN_TYPED) return `The diameter must be at least ${2 * MIN_TYPED} mm: its radius can't be under ${MIN_TYPED} mm, the smallest piece the modeller keeps.`;
+  }
+  if (kind === "slot" && Number(typed.width) - Number(typed.depth) < MIN_TYPED)
+    return `A slot's depth must be less than its width, by at least ${MIN_TYPED} mm: its round ends are as wide as it is deep.`;
+  return presetTooSmall(kind, Number(typed.width), Number(typed.depth));
+}
+
+/**
+ * How far a star's nearest two sides are apart, for each mm of its smaller side (profiles.ts: outer radius r = m/2,
+ * inner corners at 0.4·r, ten corners 36° apart): the inner corner at 36° from the side joining the outer corner at
+ * 72° to the inner one at 108°, 0.4442·r = 0.2221·m (test/tiny-presets.test.ts works it by hand).
+ */
+const STAR_GAP = (() => {
+  const at = (deg: number, r: number) => [r * Math.cos((deg * Math.PI) / 180), r * Math.sin((deg * Math.PI) / 180)];
+  const [p, a, b] = [at(36, 0.2), at(72, 0.5), at(108, 0.2)];
+  const v = [b[0] - a[0], b[1] - a[1]];
+  const w = [p[0] - a[0], p[1] - a[1]];
+  return Math.abs(v[0] * w[1] - v[1] * w[0]) / Math.hypot(v[0], v[1]);
+})();
+
+/**
+ * Why an L-bracket, plate or star `w` × `d` mm is too small for the modeller (clumsy-user hunt 2026-11-04: it failed in
+ * the kernel's words and was kept as a broken part), or null. Each piece of its outline (profiles.ts) must be at least
+ * MIN_TYPED long, wide or apart: an L-bracket's arms are 0.3·m thick (m = the smaller side); a plate's holes 0.15·m in
+ * radius and w/4 − 0.15·m from its ends; a star's nearest sides STAR_GAP·m apart. The size suggested is the next one up
+ * that builds.
+ */
+export function presetTooSmall(kind: PartKind, w: number, d: number): string | null {
+  const m = Math.min(w, d);
+  const words = (shape: string, what: string, least: string) =>
+    `${shape} this small has ${what} ${MIN_TYPED} mm, the smallest piece the modeller keeps: make its width and depth at least ${least} mm.`;
+  if (kind === "l-bracket" && 0.3 * m < MIN_TYPED) return words("An L-bracket", "arms thinner than", "0.0034");
+  if (kind === "plate" && (0.15 * m < MIN_TYPED || w / 4 - 0.15 * m < MIN_TYPED)) return words("A plate", "holes, or gaps beside them, under", "0.01");
+  if (kind === "star" && STAR_GAP * m < MIN_TYPED) return words("A star", "points closer together than", "0.0046");
+  return null;
+}
+
 // The ids are read by the e2e test (#width, #stats[data-stale], #action-note…).
 export const DEFAULT_SIZES: Record<SizeKey, string> = { width: "40", depth: "30", height: "20" };
 /** The panel's words for a design with no body (24f4). */
@@ -60,7 +119,7 @@ export function revertedNote(why: string, typed: string, kept: string, extrude: 
 
 const HTML = `
   <h2>Selection</h2>
-  <p id="selection-empty">Nothing selected: click a face or an edge, or a body in the browser.</p>
+  <p id="selection-empty">Nothing selected: click a face or an edge (double-click or double-tap for its whole body), or a body in the browser.</p>
   <ul id="selection-list" class="selection-list"></ul>
   <p id="selection-note" class="bad" hidden></p>
   <div id="selection-actions" class="verbs" role="group" aria-label="Actions for the selection" hidden></div>

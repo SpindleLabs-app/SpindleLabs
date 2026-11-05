@@ -197,8 +197,11 @@ test("5. settling a click or an edit holds no bodies of its own: the kernel hold
   await a.settle();
   assert.equal(a.error(), "The height must be at least 0.001 mm, the smallest piece the modeller keeps.");
   assert.equal(await a.bodies(), 1, "after a size the panel refuses");
-  // A part the panel takes and the kernel refuses (its words shown): a width of 0.0015 mm is a thin box, but made a
-  // cylinder it is a diameter, radius 0.00075 mm, under the kernel's 0.001. Nothing builds, and the kernel holds nothing.
+  // A width of 0.0015 mm is a thin box, but made a cylinder it is a diameter, radius 0.00075 mm, under the 0.001 mm the
+  // modeller keeps: refused by the panel itself since the clumsy hunt of 2026-11-04 (it went to the kernel, failed in
+  // words about a radius and was recorded), and the box stays. Made a plate, its holes' radius is too small too: once a
+  // part the panel took and the kernel refused in its own words, refused by the panel in plain words since the clumsy
+  // hunt's leftovers (11-04), and the box stays.
   height.value = "25";
   height.dispatchEvent(new a.window.Event("input") as unknown as Event);
   await a.settle();
@@ -210,8 +213,14 @@ test("5. settling a click or an edit holds no bodies of its own: the kernel hold
   choice.value = "cylinder";
   choice.dispatchEvent(new a.window.Event("change", { bubbles: true }) as unknown as Event);
   await a.settle();
-  assert.equal(a.error(), "radius must be between 0.001 and 1000000 mm, got 0.00075");
-  assert.equal(await a.bodies(), 0, "after a size the kernel refuses");
+  assert.equal(a.error(), "The diameter must be at least 0.002 mm: its radius can't be under 0.001 mm, the smallest piece the modeller keeps.");
+  assert.equal(await a.bodies(), 1, "after a diameter the panel refuses");
+  choice.value = "plate";
+  choice.dispatchEvent(new a.window.Event("change", { bubbles: true }) as unknown as Event);
+  await a.settle();
+  // Each hole's radius is 0.15 of the smaller of width and depth (profiles.ts): 0.15 · 0.0015 = 0.000225 mm, under 0.001.
+  assert.equal(a.error(), "A plate this small has holes, or gaps beside them, under 0.001 mm, the smallest piece the modeller keeps: make its width and depth at least 0.01 mm.");
+  assert.equal(await a.bodies(), 1, "after a plate the panel refuses");
   assert.ok(await a.close());
 });
 

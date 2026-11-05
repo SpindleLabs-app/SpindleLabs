@@ -63,12 +63,14 @@ const DEGREES = Math.PI / 180;
  * What the kernel is asked to do to each body a Move moves: a turn about
  * each axis that is turned, X, Y then Z, about the pivot, then the shift
  * when there is one. Nothing turned or shifted is left out, so a Move of
- * nothing asks for nothing.
+ * nothing asks for nothing. Whole turns come off an angle before it becomes
+ * radians (`%` on doubles is exact): 1e20° times π/180 had lost the digits
+ * saying where in the turn it was (clumsy hunt 2026-11-04).
  */
 export function moveMotions(v: MoveValues): Motion[] {
   const pivot: [number, number, number] = [v.pivotX, v.pivotY, v.pivotZ];
   const axes = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] } as const;
-  const turns: Motion[] = (["X", "Y", "Z"] as const).flatMap((a) => (v[`turn${a}`] === 0 ? [] : [{ turn: { pivot, axis: [...axes[a]], angle: v[`turn${a}`] * DEGREES } }]));
+  const turns: Motion[] = (["X", "Y", "Z"] as const).flatMap((a) => (v[`turn${a}`] === 0 ? [] : [{ turn: { pivot, axis: [...axes[a]], angle: (v[`turn${a}`] % 360) * DEGREES } }]));
   return v.x === 0 && v.y === 0 && v.z === 0 ? turns : [...turns, { move: [v.x, v.y, v.z] }];
 }
 

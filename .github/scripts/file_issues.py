@@ -762,7 +762,20 @@ def run(incoming, dry_run=False, log=print):
     return actions
 
 
+def run_kinds(incoming):
+    """Every kind of problem this run found, sorted: collect-results.sh keeps them on test-results (kinds-seen.txt) so
+    the summary's first line can count the new ones, kinds no earlier run found (35f1d: the streak 35f5 waits on)."""
+    folders = read_folders(incoming)
+    reports, jobs = read_checks(incoming)
+    present = [d for d in os.listdir(incoming) if os.path.isdir(os.path.join(incoming, d))] if os.path.isdir(incoming) else []
+    return sorted(gather(folders, check_kinds(reports, jobs, folder_dirs(incoming, folders), present)))
+
+
 if __name__ == "__main__":
+    if "--kinds" in sys.argv:
+        for kind in run_kinds(sys.argv[1]):
+            print(kind)
+        sys.exit(0)
     try:
         run(sys.argv[1], dry_run="--dry-run" in sys.argv)
     except FilingFailed as e:

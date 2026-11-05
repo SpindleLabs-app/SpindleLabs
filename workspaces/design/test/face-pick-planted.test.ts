@@ -25,13 +25,13 @@ interface Plant {
 
 export const FACE_PICK_PLANTS: Plant[] = [
   // Q5: a curved face sketched on as if flat (with a frame made up from the ground plane).
-  { name: "curved-taken", file: "face-pick", find: '  if (drawn === null) return { kind: "refused", message: CURVED_FACE };\n', replace: '  if (drawn === null) return { kind: "face", face: { plane: designReference("face", body.names, hit.index)!.id, feature: body.feature }, drawn: { plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 } };\n', caught: "differs from the model" },
+  { name: "curved-taken", file: "face-pick", find: '  if (drawn === null) return { kind: "refused", message: CURVED_FACE };\n', replace: '  if (drawn === null) return { kind: "face", face: { plane: shownReference(scene, hit.body, "face", hit.index)!.id, feature: body.feature }, drawn: { plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 } };\n', caught: "differs from the model" },
   // A face whose name two faces share sketched on: the guess 25a4 rules out.
   {
     name: "shared-name-taken",
     file: "face-pick",
-    find: '  const ref = designReference("face", body.names, hit.index);',
-    replace: '  const ref = designReference("face", body.names, hit.index) ?? { kind: "face" as const, id: `face:${body.names.feature}/${body.view.face_roles[hit.index]?.role}` as never };',
+    find: '  const ref = shownReference(scene, hit.body, "face", hit.index);',
+    replace: '  const ref = shownReference(scene, hit.body, "face", hit.index) ?? { kind: "face" as const, id: `face:${body.names.feature}/${body.view.face_roles[hit.index]?.role}` as never };',
     caught: "differs from the model",
   },
   // The pick's joined number read as the body's own (the second body's faces land on the first's).

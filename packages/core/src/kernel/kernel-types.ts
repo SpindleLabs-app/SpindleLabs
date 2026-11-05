@@ -93,6 +93,12 @@ export interface Outline {
    * given, and whether the outline runs it backwards.
    */
   pieces?: OutlinePiece[];
+  /**
+   * From a sketch region only (step 48; make_extrude ignores it): each
+   * hole's pieces as `pieces` are the outer loop's, hole k of `holes` the
+   * k-th list. Present (even empty) only on a region's profile.
+   */
+  holePieces?: OutlinePiece[][];
 }
 
 /** A piece of an outline's source. */
@@ -139,6 +145,41 @@ export type SketchOutline =
    * by the words in `open`.
    */
   | { open: string; invalid?: KernelInput[] };
+
+/**
+ * One closed region of a sketch (step 48, sketch_regions): its name, the
+ * curves round its outside counter-clockwise (a curve running on named
+ * once, the list started at its smallest entry) and round each hole
+ * (sorted); its area (mm²) and centroid in the sketch's x and y; its
+ * profile, what make_extrude takes, with `holePieces` each hole's pieces.
+ * `extrudes` false with `refused` the plain-words reason (and `invalid` the
+ * curves to mark) for a region that can't be extruded; a doubtful one
+ * ("the curves meet too closely ...") promises only a finite area and
+ * centroid.
+ */
+export interface SketchRegion {
+  outer: OutlinePiece[];
+  holes: OutlinePiece[][];
+  area: number;
+  centroid: [number, number];
+  profile: Outline & { pieces: OutlinePiece[] };
+  holePieces: OutlinePiece[][];
+  extrudes: boolean;
+  refused?: string;
+  invalid?: KernelInput[];
+}
+
+/**
+ * Every region of a sketch (step 48), sorted by name; `loose` the ends
+ * joined to nothing; with no regions, `why` in words and `invalid` the two
+ * curves lying along each other when that is the reason.
+ */
+export interface SketchRegions {
+  regions: SketchRegion[];
+  loose: [number, number][];
+  why?: string;
+  invalid?: KernelInput[];
+}
 
 /** A shape to build, as the kernel takes it. */
 export type ShapeSpec =

@@ -104,7 +104,7 @@ test("regression (found by the view menu's journey, 2026-11-04): a face or edge 
   const top = { kind: "face" as const, id: "face:feature-4/top" };
   const after = joinBodies([shown("feature-4", CYLINDER_VIEW, 2)]);
   const inTimeline = (id: string) => id !== "feature-1";
-  assert.deepEqual(survivors([bottom, edge, top], after, [], inTimeline), { kept: [top], dropped: [], shared: [] });
+  assert.deepEqual(survivors([bottom, edge, top], after, [], inTimeline), { kept: [top], dropped: [], shared: [], followed: [] });
   // Still in the timeline (suppressed, say), they are left alone for Unsuppress, as before.
-  assert.deepEqual(survivors([bottom, edge, top], after, [], () => true), { kept: [bottom, edge, top], dropped: [], shared: [] });
+  assert.deepEqual(survivors([bottom, edge, top], after, [], () => true), { kept: [bottom, edge, top], dropped: [], shared: [], followed: [] });
 });

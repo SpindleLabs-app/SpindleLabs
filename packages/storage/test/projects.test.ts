@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectToJson, type DataReader, type Project } from "@fission/core";
-import { bringForward, forget, journalEntry, memoryKeyValue, NEWER_PREFIX, projectStore, recoverUnsaved, unsavedKey, type JournalStorage, type KeyValue } from "../src/index.ts";
+import { asideKey, bringForward, forget, journalEntry, memoryKeyValue, NEWER_PREFIX, projectStore, recoverUnsaved, unsavedKey, type JournalStorage, type KeyValue } from "../src/index.ts";
 
 const design: DataReader = { id: "design", readData: (d) => d };
 const part = (name: string, width: number): Project => ({ ...emptyProject(name), workspaces: { design: { version: 1, width } } });
@@ -89,8 +89,12 @@ test("forget deletes the project and its journal entries, so the next visit can'
   // A's last change, journalled as the page went, and one from a newer SpindleLabs: both A's.
   items.set(unsavedKey("a"), journalEntry(projectToJson(part("A", 11)), new Date(Date.UTC(2027, 0, 1))));
   items.set(NEWER_PREFIX + "a", "@1\n{}");
+  // Another tab's change to A, put aside (clumsy hunt 2026-11-04): A's too, and one to a project "x/a" is not A's.
+  items.set(asideKey("a", "tab-2"), journalEntry(projectToJson(part("A", 12)), new Date(Date.UTC(2027, 0, 1)), false, null, "tab-2"));
   items.set(unsavedKey("b"), journalEntry(projectToJson(part("B", 21)), new Date(Date.UTC(2027, 0, 1))));
+  items.set(asideKey("x/a", "tab-2"), journalEntry(projectToJson(part("X", 5)), new Date(Date.UTC(2027, 0, 1)), false, null, "tab-2"));
   await forget(store, journal, "a");
+  assert.ok(items.delete(asideKey("x/a", "tab-2")), "x/a's aside entry is left");
   assert.deepEqual([...items.keys()], [unsavedKey("b")], "only B's entry is left");
   assert.deepEqual(await recoverUnsaved(store, journal, [design]), []);
   assert.deepEqual((await store.list()).map((s) => s.id), ["b"], "A stays deleted after the next visit's recovery");

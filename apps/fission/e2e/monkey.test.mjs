@@ -52,26 +52,28 @@ test("what a file should show, worked by hand", () => {
     solids: ["feature-1", "feature-3"],
     bodies: 2,
     rows: [
-      { row: "body-1", place: 1, id: "feature-1" },
-      { row: "body-2", place: 2, id: "feature-3" },
+      { row: "body-1", place: 1, id: "feature-1", body: "body:feature-1" },
+      { row: "body-2", place: 2, id: "feature-3", body: "body:feature-3" },
     ],
     // No numbers in the file: Body 1 and Body 2 by place, as the app gives them (35e).
     numbered: { bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }], nextBody: 3 },
+    // No Combine, so the kernel holds nothing beyond the bodies listed.
+    held: 0,
   });
   // Finding 5: the box failed (the bar marks it): no row for it, and the extrude keeps its number, Body 2.
-  assert.deepEqual(expectedView(design(), new Set(["feature-1"])).rows, [{ row: "body-2", place: 2, id: "feature-3" }]);
+  assert.deepEqual(expectedView(design(), new Set(["feature-1"])).rows, [{ row: "body-2", place: 2, id: "feature-3", body: "body:feature-3" }]);
   assert.equal(expectedView(design(), new Set(["feature-1"])).bodies, 1);
   // 35e: the box suppressed, its number given by the file: the extrude keeps Body 2 (by place it would be Body 1).
   const numbered = { ...design(), bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }], nextBody: 3 };
   numbered.timeline.features[0].suppressed = true;
-  assert.deepEqual(expectedView(numbered).rows, [{ row: "body-2", place: 2, id: "feature-3" }]);
+  assert.deepEqual(expectedView(numbered).rows, [{ row: "body-2", place: 2, id: "feature-3", body: "body:feature-3" }]);
   // A body the file has no number for gets the next: the extrude's dropped, the counter at 7, so Body 7.
-  assert.deepEqual(expectedView({ ...numbered, bodies: [numbered.bodies[0]], nextBody: 7 }).rows, [{ row: "body-7", place: 7, id: "feature-3" }]);
+  assert.deepEqual(expectedView({ ...numbered, bodies: [numbered.bodies[0]], nextBody: 7 }).rows, [{ row: "body-7", place: 7, id: "feature-3", body: "body:feature-3" }]);
   // Opened, a file is shown with its bodies settled: a solid added by hand gets the next number, a gone one's goes.
-  const added = { workspaces: { design: { ...numbered, version: 8, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
+  const added = { workspaces: { design: { ...numbered, version: 9, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.nextBody, 5);
-  const fresh = { workspaces: { design: { ...design(), version: 8, bodies: [], nextBody: 1 } } };
+  const fresh = { workspaces: { design: { ...design(), version: 9, bodies: [], nextBody: 1 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(fresh))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(settledText("not json"), "not json");
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
@@ -348,4 +350,93 @@ test("every monkey plant still applies to its file", () => {
       const text = readFileSync(new URL(`../../../${e.file}`, import.meta.url), "utf8");
       assert.equal(text.split(e.find).length, 2, `${name}: its text is not in ${e.file} exactly once`);
     }
+});
+
+test("hand-worked: what a file with Combines should show (35f1d)", () => {
+  const box = (id) => ({ id, intent: { type: "box", parameters: { width: 10, depth: 10, height: 10 }, summary: "Box: 10 × 10 × 10 mm" }, provenance: { self: { workspace: "design", id, label: id }, from: [] }, dependsOn: [], suppressed: false });
+  const combine = (id, target, tools, keepTools = false) => ({ id, intent: { type: "combine", parameters: { target, tools, operation: "cut", keepTools }, summary: "Combine" }, provenance: { self: { workspace: "design", id, label: id }, from: [] }, dependsOn: [], suppressed: false });
+  // Boxes 1, 2 and 3 (feature-1, -2, -4); feature-3 cuts Box 2 from Box 1, leaving Box 1 in two (its piece numbered 4 by the app).
+  const design = {
+    version: 7,
+    nextId: 5,
+    profiles: [],
+    sketches: [],
+    timeline: { features: [box("feature-1"), box("feature-2"), combine("feature-3", "body:feature-1", ["body:feature-2"]), box("feature-4")] },
+    bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { id: "body:feature-4", number: 3 }, { id: "body:feature-3/piece:1", number: 4 }],
+    nextBody: 5,
+  };
+  const v = expectedView(design);
+  // Walking the timeline: Box 2 used up; Box 1 changed in place (still Body 1, its volume no longer a box's); the piece added
+  // as its Combine builds, so before Box 3, which comes after the Combine.
+  assert.deepEqual(v.rows, [
+    { row: "body-1", place: 1, id: "feature-1", body: "body:feature-1", combined: true },
+    { row: "body-4", place: 4, id: "feature-3", body: "body:feature-3/piece:1", piece: true, combined: true },
+    { row: "body-3", place: 3, id: "feature-4", body: "body:feature-4" },
+  ]);
+  assert.deepEqual(v.solids, ["feature-1", "feature-2", "feature-4"]);
+  // The rebuild keeps the Combine's 2 inputs.
+  assert.equal(v.held, 2);
+  // The piece's number is the file's, kept while its Combine is there.
+  assert.deepEqual(v.numbered.bodies.at(-1), { id: "body:feature-3/piece:1", number: 4 });
+  // The Combine failed (the bar marks it): nothing changes, Box 2 stays, no piece, nothing held.
+  const failed = expectedView(design, new Set(["feature-3"]));
+  assert.deepEqual(failed.rows.map((r) => r.row), ["body-1", "body-2", "body-3"]);
+  assert.equal(failed.held, 0);
+  // Box 2 suppressed: the Combine has a body missing, so it does nothing (greyed in the app).
+  const off = structuredClone(design);
+  off.timeline.features[1].suppressed = true;
+  assert.deepEqual(expectedView(off).rows.map((r) => r.row), ["body-1", "body-3"]);
+  // Keep tools: Box 2 stays, in its place.
+  const kept = structuredClone(design);
+  kept.timeline.features[2].intent.parameters.keepTools = true;
+  assert.deepEqual(expectedView(kept).rows.map((r) => r.row), ["body-1", "body-2", "body-4", "body-3"]);
+  // After the rollback marker: not built, so no change.
+  const rolled = { ...structuredClone(design), timeline: { ...structuredClone(design.timeline), marker: "feature-2" } };
+  assert.deepEqual(expectedView(rolled).rows.map((r) => r.row), ["body-1", "body-2"]);
+  // The Combine deleted: its piece's number goes (the app drops it), the counter stays.
+  const gone = structuredClone(design);
+  gone.timeline.features.splice(2, 1);
+  assert.deepEqual(expectedView(gone).numbered.bodies.map((b) => b.id), ["body:feature-1", "body:feature-2", "body:feature-4"]);
+});
+
+test("35f1d: Combine is drawn only when the page offers it, about 6 picks in the weights' total, each well formed", () => {
+  const base = { prompt: false, targets: [{ sel: "#ok" }], inputs: [], rows: [{ sel: "#r", body: true }], sketching: false, haveSave: true };
+  const draws = (page) => {
+    const random = rng(7);
+    return Array.from({ length: 4000 }, () => nextAction(random, page));
+  };
+  assert.equal(draws(base).filter((a) => a.do === "combine").length, 0);
+  const combines = draws({ ...base, combine: true }).filter((a) => a.do === "combine");
+  // The weights with these rows and a save, not sketching: click 30, canvas 12, hover 3, drag 4, wheel 2, key 12, menu 5, row 6,
+  // double 4, resize 3, open 6, reload 1, undo-redo 7, select-bodies 4, round-trip 3, unstick 4, combine 6 = 112; 6/112 of 4000 ≈ 214,
+  // spread by about sqrt(4000 × 0.054 × 0.946) ≈ 14, so 60 is over four of those.
+  assert.ok(Math.abs(combines.length - 214) < 60, `${combines.length} Combines drawn`);
+  for (const a of combines) {
+    assert.ok(a.a >= 0 && a.a < 1 && a.b >= 0 && a.b < 1);
+    assert.ok(["join", "cut", "intersect"].includes(a.op));
+    assert.equal(typeof a.keep, "boolean");
+    assert.equal(typeof a.ok, "boolean");
+  }
+});
+
+test("regression (35f1d monkey, seed 1): a built Move keeps the bodies it moved as they were, and the leak allowance counts them", () => {
+  // Found as "the kernel holds 4 bodies, the Bodies group lists 3": two spheres and a box, one sphere moved 1.5 mm. The
+  // rebuild keeps the moved sphere as it was (rebuild.ts moveBodies' holds) beside the 3 shown: 3 + 1 = 4, no leak.
+  const item = (id, type, parameters) => ({ id, intent: { type, parameters, summary: type }, provenance: { self: { workspace: "design", id, label: id }, from: [] }, dependsOn: [], suppressed: false });
+  const design = {
+    version: 7,
+    nextId: 5,
+    profiles: [],
+    sketches: [],
+    timeline: { features: [item("feature-1", "box", { width: 40, depth: 30, height: 10 }), item("feature-2", "sphere", { diameter: 15 }), item("feature-3", "sphere", { diameter: 18 }), item("feature-4", "move", { x: 0, y: 1.5, z: 0, rx: 0, ry: 0, rz: 0, bodies: ["body:feature-2"] })] },
+    bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { id: "body:feature-3", number: 3 }],
+    nextBody: 4,
+  };
+  assert.equal(expectedView(design).held, 1);
+  assert.equal(expectedView(design).bodies, 3);
+  // The Move failed or its body is gone: it keeps nothing.
+  assert.equal(expectedView(design, new Set(["feature-4"])).held, 0);
+  const off = structuredClone(design);
+  off.timeline.features[1].suppressed = true;
+  assert.equal(expectedView(off).held, 0);
 });

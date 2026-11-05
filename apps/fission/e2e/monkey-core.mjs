@@ -46,7 +46,8 @@ export const SIZES = [
 ];
 
 /** Buttons the monkey never presses: the guide and the assistant are tested on their own and the assistant would call out; full screen leaves the test's window. */
-export const SKIP_TARGETS = new Set(["#guide-open", "#assistant-toggle", 'button[data-view="full-screen"]', "#save", "#file-save", "#open"]);
+// Sign in with Google leaves the app for Google's own page (accounts, 11-04): the monkey could not come back, and must never press an outside service.
+export const SKIP_TARGETS = new Set(["#guide-open", "#assistant-toggle", 'button[data-view="full-screen"]', "#save", "#file-save", "#open", 'button:text-is("Sign in with Google")']);
 
 /**
  * The next action, from a snapshot of the page: `targets` (what can be
@@ -82,6 +83,8 @@ export function nextAction(random, page) {
     "select-bodies": 4,
     "round-trip": 3,
     unstick: 4,
+    // 35f1d: the hidden Combine tool, through its panel, when the page offers it (two bodies, `?combine`).
+    combine: page.combine ? 6 : 0,
   };
   const kind = weighted(random, weights);
   const frac = () => Math.round((0.05 + 0.9 * random()) * 1000) / 1000;
@@ -129,6 +132,8 @@ export function nextAction(random, page) {
       return { do: "resize", size: pick(random, SIZES) };
     case "open":
       return { do: "open", edit: pick(random, FILE_EDITS), at: Math.floor(random() * 1000) };
+    case "combine":
+      return { do: "combine", a: random(), b: random(), op: pick(random, ["join", "cut", "intersect"]), keep: random() < 0.25, ok: random() < 0.85 };
     default:
       return { do: kind };
   }
@@ -214,20 +219,50 @@ export function expectedView(design, failed = new Set()) {
     if (s === undefined || s.f.intent.type !== "sketch") return Object.hasOwn(kept, f.id);
     return active(s.i);
   };
-  const solids = features.filter((f, i) => f.intent.type !== "sketch" && builds(f, i));
-  const made = features.filter((f) => f.intent.type !== "sketch" && f.intent.type !== "move");
-  const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id)).map((b) => [b.id.slice(5), b.number]));
+  // A Move or a Combine (35f1c) acts on bodies and makes none of its own.
+  const acts = (f) => f.intent.type === "move" || f.intent.type === "combine";
+  const solids = features.filter((f, i) => f.intent.type !== "sketch" && !acts(f) && builds(f, i));
+  const made = features.filter((f) => f.intent.type !== "sketch" && !acts(f));
+  // A Combine's pieces ("body:<combine>/piece:k") are numbered by the app when they first appear, which only the kernel
+  // knows, so the file's numbers for them are taken as given while their Combine is in the timeline.
+  const pieceOf = (id) => /^body:(.+)\/piece:\d+$/.exec(id)?.[1];
+  const combines = new Set(features.filter((f) => f.intent.type === "combine").map((f) => f.id));
+  const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id) || combines.has(pieceOf(b.id))).map((b) => [b.id.slice(5), b.number]));
   let next = Math.max(design.nextBody ?? 1, ...[...given.values()].map((n) => n + 1));
   for (const f of [...solids, ...made.filter((f) => !solids.includes(f))]) if (!given.has(f.id)) given.set(f.id, next++);
   // The numbers as the app keeps them: the file's (gone items' dropped) in its order, then each new one as given.
   const numbered = { bodies: [...given].map(([id, number]) => ({ id: `body:${id}`, number })), nextBody: next };
-  const rows = solids.flatMap((f) => (failed.has(f.id) ? [] : [{ row: `body-${given.get(f.id)}`, place: given.get(f.id), id: f.id }]));
+  // The bodies in timeline order: each solid that built adds its body; a Combine that built (all its bodies there before
+  // it, not failed) takes its tools away unless it keeps them, changes its target in place (so the target's volume is no
+  // longer its item's: `combined`), and adds its numbered pieces after the rest, in number order. Whether a piece exists
+  // is the kernel's to say, so a piece's row is `piece: true`: the check takes it when the app shows it (monkey.mjs).
+  const live = new Map();
+  let held = 0;
+  const row = (body, id, extra = {}) => ({ row: `body-${given.get(body.slice(5))}`, place: given.get(body.slice(5)), id, body, ...extra });
+  for (const [i, f] of features.entries()) {
+    if (solids.includes(f)) {
+      if (!failed.has(f.id)) live.set(`body:${f.id}`, row(`body:${f.id}`, f.id));
+      continue;
+    }
+    // A built Move keeps each body as it was before it (rebuild.ts moveBodies' `holds`), so an edit rebuilds at once.
+    if (f.intent.type === "move" && active(i) && !failed.has(f.id) && f.intent.parameters.bodies.every((b) => live.has(b))) held += f.intent.parameters.bodies.length;
+    if (f.intent.type !== "combine" || !active(i) || failed.has(f.id)) continue;
+    const { target, tools, keepTools } = f.intent.parameters;
+    if (![target, ...tools].every((b) => live.has(b))) continue;
+    held += 1 + tools.length; // the rebuild keeps a built Combine's inputs, to build it again at once (rebuild.ts)
+    if (!keepTools) for (const t of tools) live.delete(t);
+    live.set(target, { ...live.get(target), combined: true });
+    const pieces = [...given].filter(([id]) => pieceOf(`body:${id}`) === f.id).sort((a, b) => a[1] - b[1]);
+    for (const [id] of pieces) live.set(`body:${id}`, row(`body:${id}`, f.id, { piece: true, combined: true }));
+  }
+  const rows = [...live.values()];
   return {
     items: features.map((f, i) => ({ id: f.id, suppressed: f.suppressed === true, rolledBack: i >= stop })),
     solids: solids.map((f) => f.id),
     bodies: rows.length,
     rows,
     numbered,
+    held,
   };
 }
 
@@ -241,7 +276,7 @@ export function settledText(text) {
   try {
     const file = JSON.parse(text);
     const design = file?.workspaces?.design;
-    if (!design || (design.version !== 7 && design.version !== 8) || !Array.isArray(design.timeline?.features)) return text;
+    if (!design || ![7, 8, 9].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
     Object.assign(design, expectedView(design).numbered);
     return JSON.stringify(file);
   } catch {

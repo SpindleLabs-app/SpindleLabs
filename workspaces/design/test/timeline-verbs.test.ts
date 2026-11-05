@@ -104,7 +104,7 @@ test("a selected sketch is named as the browser names it, kept while it has curv
     { name: "Slot with round ends profile", type: "outline", id: "outline:profile-18" },
   ]);
   const scene = { bodies: [], mesh: { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] }, faceStart: [], edgeStart: [] } as Scene;
-  assert.deepEqual(survivors([outline("sketch-2"), outline("profile-18")], scene, ["profile-18"]), { kept: [outline("profile-18")], dropped: [outline("sketch-2")], shared: [] });
+  assert.deepEqual(survivors([outline("sketch-2"), outline("profile-18")], scene, ["profile-18"]), { kept: [outline("profile-18")], dropped: [outline("sketch-2")], shared: [], followed: [] });
   assert.equal(droppedNote([outline("sketch-2")], [], new Set(["sketch-2"])), "Taken out of the selection: the sketch. The sketch is gone or has no curves now.");
   assert.equal(
     droppedNote([outline("sketch-2"), outline("profile-18")], [], new Set(["sketch-2"])),
@@ -194,17 +194,17 @@ test("hand-worked: two bodies picked slot first come out in build order, joined 
 });
 
 /** Two bodies on screen: the box (6 faces from 0) and Extrude 1 (6 faces from 6); the slot failed. */
-const twoShown = { bodies: [{ feature: "feature-1", view: { faces: 6 } }, { feature: "feature-11", view: { faces: 6 } }], faceStart: [0, 6] } as unknown as Scene;
+const twoShown = { bodies: [{ body: "body:feature-1", feature: "feature-1", view: { faces: 6 } }, { body: "body:feature-11", feature: "feature-11", view: { faces: 6 } }], faceStart: [0, 6] } as unknown as Scene;
 
 test("hand-worked: the precision overlay marks only the faces of the bodies that warned", () => {
   // Extrude 1 is body 2 of 2, its faces joined 6 + 0 … 6 + 5 = 6 … 11.
-  assert.deepEqual(warnedMarks(["feature-11"], twoShown), [6, 7, 8, 9, 10, 11].map((face) => ({ target: { face }, severity: "warning" })));
-  assert.deepEqual(warnedMarks(["feature-1"], twoShown), [0, 1, 2, 3, 4, 5].map((face) => ({ target: { face }, severity: "warning" })));
+  assert.deepEqual(warnedMarks(["body:feature-11"], twoShown), [6, 7, 8, 9, 10, 11].map((face) => ({ target: { face }, severity: "warning" })));
+  assert.deepEqual(warnedMarks(["body:feature-1"], twoShown), [0, 1, 2, 3, 4, 5].map((face) => ({ target: { face }, severity: "warning" })));
   // Every body shown warned: the whole view, as one mark.
-  assert.deepEqual(warnedMarks(["feature-1", "feature-11"], twoShown), [{ target: { body: true }, severity: "warning" }]);
+  assert.deepEqual(warnedMarks(["body:feature-1", "body:feature-11"], twoShown), [{ target: { body: true }, severity: "warning" }]);
   // No scene (a run from outside Design), or a body not on it: the whole view rather than a wrong face.
-  assert.deepEqual(warnedMarks(["feature-11"], null), [{ target: { body: true }, severity: "warning" }]);
-  assert.deepEqual(warnedMarks(["feature-17"], twoShown), [{ target: { body: true }, severity: "warning" }]);
+  assert.deepEqual(warnedMarks(["body:feature-11"], null), [{ target: { body: true }, severity: "warning" }]);
+  assert.deepEqual(warnedMarks(["body:feature-17"], twoShown), [{ target: { body: true }, severity: "warning" }]);
 });
 
 test("a warning on one of two bodies names it by its row, marks it alone, and the file is still saved", async () => {
@@ -215,7 +215,7 @@ test("a warning on one of two bodies names it by its row, marks it alone, and th
   assert.equal(d.saved.length, 1, "the file is still saved: the warning says how far it is off");
   assert.deepEqual(d.saved[0].bytes, [...joinStl([stl("box", 1, 1), stl("extrude", 1, 1)], "2 bodies")]);
   // Only Extrude 1's six faces, 6 to 11, are marked.
-  assert.deepEqual(d.overlays, [{ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: warning, marks: warnedMarks(["feature-11"], twoShown) }]);
+  assert.deepEqual(d.overlays, [{ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: warning, marks: warnedMarks(["body:feature-11"], twoShown) }]);
 });
 
 test("Design's own run refuses a body the scene does not show (the last rebuild failed it), before asking the kernel", async () => {
