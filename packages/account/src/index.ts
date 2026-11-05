@@ -16,4 +16,4 @@ export {
 export { type AccountUser, type Session } from "./session.ts";
 export { FAILURE_WORDS, type FinishFailure } from "./words.ts";
 export { type PersonReply } from "./auth.ts";
-export { accountData, type AccountData, type DataResult, PENDING_EMAIL_KEY, SEEN_EMAIL_KEY } from "./data.ts";
+export { accountData, type AccountData, type DataResult, PENDING_EMAIL_KEY, type Plan, SEEN_EMAIL_KEY } from "./data.ts";

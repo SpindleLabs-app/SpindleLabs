@@ -18,14 +18,15 @@ import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { chooseShape, closePanels, openPanel, sheetsClearFor, startWithBox, switchTo, pickPlane } from "./start.mjs";
 import { TOP, screenPoint } from "./sketch-screen.mjs";
+const shots = process.env.E2E_SHOTS;
 
 const server = await preview({ preview: { port: 4180, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4180/";
 const browser = await launch();
 const errors = [];
 
-async function fresh(hash = "#design", { box = true, hooks = false } = {}) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+async function fresh(hash = "#design", { box = true, hooks = false, width = 1280, touch = false } = {}) {
+  const context = await browser.newContext({ viewport: { width, height: touch ? 667 : 800 }, hasTouch: touch, isMobile: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -33,7 +34,7 @@ async function fresh(hash = "#design", { box = true, hooks = false } = {}) {
     if (m.type() === "error") errors.push(m.text());
   });
   await page.goto(url + (hooks ? "?test-hooks" : "") + hash); // hooks: window.fissionTest, the kernel's body count
-  if (hash === "#design" && box) await startWithBox(page); // a new project starts empty (U0c): the 40 · 30 · 20 box, inserted
+  if (hash === "#design" && box) await startWithBox(page, touch); // a new project starts empty (U0c): the 40 · 30 · 20 box, inserted
   await pinProperties(page); // the size boxes are in the panel, folded at the start on a wide screen (U0b)
   return page;
 }
@@ -488,6 +489,49 @@ try {
     }
     assert.deepEqual(errors.slice(before), [], "no page error");
   });
+
+  for (const [width, touch] of [[1280, false], [375, true]]) {
+    await check(`${width} px${touch ? ", taps" : ""}: Undo pressed while an OK is still with the kernel shows it is waiting, then takes back the OK (clumsy hunt 2026-11-04)`, async () => {
+      // Pressed while a Move's OK was still being worked out, Undo waited for it (as it should) but looked as if nothing
+      // had happened, so a person pressed again. Now it says it is busy (aria-busy, lit and pulsing, its title saying
+      // why) until the OK is in and taken back. Every kernel message after OK is held back 1.5 s.
+      const before = errors.length;
+      const page = await fresh("#design", { width, touch });
+      const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
+      try {
+        await press("#move");
+        if (touch) await openPanel(page, "browser", true);
+        await press('#browser .tree-row[data-node="body-1"]');
+        await page.waitForFunction(() => !!document.getElementById("viewport").dataset.moveHandles);
+        if (touch) await openPanel(page, "properties", true);
+        await page.fill("#move-x", "10");
+        await page.evaluate(() => {
+          const send = Worker.prototype.postMessage;
+          Worker.prototype.postMessage = function (message, ...rest) {
+            window.kernelHeld = (window.kernelHeld ?? 0) + 1;
+            setTimeout(() => send.call(this, message, ...rest), 1500);
+          };
+        });
+        await press("#move-ok");
+        await page.waitForFunction(() => (window.kernelHeld ?? 0) > 0); // the Move sent to the kernel, its answer held back
+        assert.equal(await page.getAttribute("#undo", "aria-busy"), null, "not busy before it is pressed");
+        if (touch) await closePanels(page, true); // the sheet opened by hand stays after OK, over the docked Undo
+        await press("#undo");
+        await page.waitForFunction(() => document.getElementById("undo").getAttribute("aria-busy") === "true", null, { timeout: 1000 });
+        assert.match(await page.getAttribute("#undo", "title"), /^Undo waits for the change still being worked out/);
+        const look = await page.$eval("#undo", (b) => ({ border: getComputedStyle(b).borderTopColor, animation: getComputedStyle(b).animationName, box: b.getBoundingClientRect().toJSON() }));
+        assert.notEqual(look.animation, "none", "it pulses while it waits");
+        assert.ok(look.box.width > 0 && look.box.right <= width + 0.5, `on screen: ${JSON.stringify(look.box)}`);
+        if (shots) await page.screenshot({ path: `${shots}/undo-waiting-${width}.png` });
+        await page.waitForFunction(() => /^Redo Move bodies/.test(document.getElementById("redo").title), null, { timeout: 15000 });
+        await page.waitForFunction(() => document.getElementById("undo").getAttribute("aria-busy") === null);
+        assert.match(await page.getAttribute("#undo", "title"), /^Undo Insert Box/, "the Move taken back, its title back to the step before");
+      } finally {
+        await page.context().close();
+      }
+      assert.deepEqual(errors.slice(before), [], "no page error");
+    });
+  }
 
   await check("two quick Undos and two quick Redos say rebuilding until the last one lands (real-use hunt C2)", async () => {
     // Every Undo and Redo remounts Design while the put-away one's rebuild may still run. Before the fix that rebuild's end

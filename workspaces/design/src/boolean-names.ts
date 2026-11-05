@@ -139,12 +139,20 @@ export function combineNames(feature: string, op: BooleanOp, target: NamedBody, 
   const made = new Map<string, readonly number[]>();
   for (const b of [target, ...tools]) for (const [n, m] of b.made) if (!made.has(n)) made.set(n, m);
 
-  // Rules 2 and 4: each result face's names, from the input faces it lies on.
+  // Rules 2 and 4: each result face's names, from the input faces it lies on: its first origin's, then (36d, a kernel
+  // that merges faces in one plane) every face merged into it, the target's names first, then each tool's in the order
+  // picked, each body's in made order; each name once.
   const named = result.history.map((h) =>
-    h.faces.map((from) => {
-      const input = inputs.get(from.body);
-      if (input === undefined) throw new Error(`the result names a body that was not an input (${from.body})`);
-      return { names: input.body.faces[from.face]?.names ?? [] };
+    h.faces.map((first, i) => {
+      const origins = [first, ...(h.also?.[i] ?? [])].map((from) => {
+        const input = inputs.get(from.body);
+        if (input === undefined) throw new Error(`the result names a body that was not an input (${from.body})`);
+        return { order: input.order, names: input.body.faces[from.face]?.names ?? [] };
+      });
+      const all = origins.flatMap((o, k) => o.names.map((n, j) => ({ n, order: o.order, made: made.get(n) ?? [Infinity], k, j })));
+      // As the naming model's faces rank them: the body's place among the inputs, the name's place in its face's list, then made order.
+      all.sort((x, y) => x.order - y.order || x.j - y.j || lex(x.made, y.made) || x.k - y.k);
+      return { names: [...new Set(all.map((x) => x.n))] };
     }),
   );
 
@@ -421,7 +429,7 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
   if (pieces.length === 0) return { lost: true };
   if (pieces.length === 1) return { ...pieces[0], warning: null };
   if (ref.tag !== undefined) {
-    const want = ref.tag.join(",");
+    const want = [...ref.tag].sort().join(","); // tags are kept sorted (tagAmong); one written in another order is the same set
     const match = pieces.filter((p) => names.tagFor(p.body, p.index, ref.name).join(",") === want);
     if (match.length === 0) return { lost: true };
     if (match.length > 1) return { ambiguous: match.length };

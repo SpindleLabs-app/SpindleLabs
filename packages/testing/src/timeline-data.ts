@@ -115,14 +115,16 @@ const modelRow = (doc: ModelDoc, i: number): Row => {
             ? `cylinder ${item.diameter} ${item.height}`
             : item.kind === "sphere"
               ? `sphere ${item.diameter}`
-              : `move ${item.bodies.join(" ")}`;
+              : item.kind === "move"
+                ? `move ${item.bodies.join(" ")}`
+                : `combine ${item.target} ${item.operation} ${item.tool}${item.keep ? " keeping it" : ""}`;
   return `${item.id}: ${what}${item.suppressed ? " (suppressed)" : ""}`;
 };
 
 /** The id of the model's last solid item that builds, or null. */
 function modelPart(doc: ModelDoc): string | null {
   const r = rebuild(doc);
-  const solid = [...doc.items].reverse().find((i) => i.kind !== "sketch" && i.kind !== "move" && r.results[i.id].status === "built");
+  const solid = [...doc.items].reverse().find((i) => i.kind !== "sketch" && i.kind !== "move" && i.kind !== "combine" && r.results[i.id].status === "built");
   return solid?.id ?? null;
 }
 

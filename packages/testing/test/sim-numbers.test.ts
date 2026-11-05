@@ -12,7 +12,7 @@ import { KernelError, type KernelCalls } from "@fission/core";
 import { addSession, emptyNumbers, percent, rates, REFERENCE_CHECKS, timeFit, validateCounter } from "../src/sim-numbers.ts";
 import { emptySessionNumbers, modelSubject, randomOp, randomSession, runSession, WAITING_MOVES, WaitingMoveError, type SessionNumbers, type SessionOp } from "../src/timeline-session.ts";
 import { seeded } from "../src/index.ts";
-import { LANDED } from "../src/landed.ts";
+import { LANDED, MODEL_KNOWS } from "../src/landed.ts";
 import { LANDED as GOLDEN_LANDED } from "../src/golden.ts";
 
 const session = (o: Partial<SessionNumbers>): SessionNumbers => ({ ...emptySessionNumbers(), ...o });
@@ -148,8 +148,9 @@ test("a landed step's moves are drawn as often as their weights say, and only th
 });
 
 test("a landed move the model doesn't know yet stops the session with words naming its step, never passing quietly", async () => {
-  // Today's landed steps' moves the model knows (35e2: timeline-session.test.ts runs them).
-  for (const m of WAITING_MOVES.filter((w) => !LANDED.has(w.from))) {
+  // Today's landed steps' moves the model knows (35e2: timeline-session.test.ts runs them), and from 35f1d2 Combine's,
+  // which wait in LANDED only for Design (the model's own sessions run them: timeline-session.test.ts).
+  for (const m of WAITING_MOVES.filter((w) => !LANDED.has(w.from) && !MODEL_KNOWS.has(w.from))) {
     const r = seeded(3n);
     const steps: SessionOp[] = [{ op: "add-preset", kind: "box", sizes: [10, 20, 30] }, m.draw(r)];
     await assert.rejects(
@@ -157,8 +158,8 @@ test("a landed move the model doesn't know yet stops the session with words nami
       (e: Error) => e instanceof WaitingMoveError && e.message.includes(`${m.op} waits for step ${m.from}`) && e.message.includes("timeline-model.ts"),
     );
   }
-  // A whole seeded session with 35 landed meets one.
-  const steps = randomSession(1n, 400, new Set(["35"]));
-  assert.ok(steps.some((s) => s.op === "add-combine" || s.op === "set-combine"));
+  // A whole seeded session with 39 landed meets one.
+  const steps = randomSession(1n, 400, new Set(["39"]));
+  assert.ok(steps.some((s) => s.op === "add-extrude-into" || s.op === "set-extrude-operation"));
   await assert.rejects(runSession(modelSubject(), steps), WaitingMoveError);
 });
