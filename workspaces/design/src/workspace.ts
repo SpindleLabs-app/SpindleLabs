@@ -10,6 +10,7 @@ import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketc
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
+import { copiesOf, DUPLICATE_STEP, insertDuplicates } from "./duplicate.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
@@ -113,6 +114,15 @@ interface Inspecting {
   none(): string | null;
 }
 
+/** Duplicate in Modify ▾ (step 35e2): what it does, and why it is off. */
+interface Duplicating {
+  run(): void;
+  /** Why it can't be chosen now (nothing picked), or null. */
+  off(): string | null;
+}
+
+const DUPLICATE_TITLE = "Duplicate: copy the picked bodies where they are, then move the copies. A copy follows its body's sizes. A Duplicate in the timeline, at the marker.";
+
 /** Why Body facts is off with nothing built. */
 const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and its volume, area and faces show here.";
 
@@ -124,7 +134,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting, duplicate: Duplicating): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -193,6 +203,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       items: [
         { id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove },
         { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate },
+        { id: "modify-menu-duplicate", label: "Duplicate", icon: "duplicate", title: DUPLICATE_TITLE, off: duplicate.off() ?? undefined, run: duplicate.run },
         ...(combining ? [{ id: "modify-menu-combine", label: "Combine", icon: "combine" as const, title: combineTitle, run: onCombine }] : []),
       ],
     },
@@ -466,7 +477,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
   };
-  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -1012,6 +1023,40 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.selection.set([bodyReference(body)]);
     startMove();
     moveFromInsert = true;
+  }
+
+  /** Why Duplicate is off: no body picked (a face or edge picks its body). */
+  function duplicateOff(): string | null {
+    return pickedBodies(ctx.selection.items, lastScene).length === 0 ? "Pick one or more bodies first, then Duplicate." : null;
+  }
+
+  /**
+   * Duplicate (step 35e2), from Modify ▾: a Duplicate of each picked body
+   * at the marker (`insertDuplicates`), one undo step, then, as Insert does,
+   * the Move panel opens on the copies so they can be slid off their bodies
+   * straight away (Fusion's copy and paste); Cancel leaves them where they are.
+   */
+  async function duplicateBodies() {
+    const picked = pickedBodies(ctx.selection.items, lastScene);
+    if (picked.length === 0) return;
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    leaveCombine();
+    if (mode.kind !== "none") leaveSketch(false);
+    let added: ReturnType<typeof insertDuplicates>;
+    try {
+      added = insertDuplicates(designDoc(), picked);
+    } catch (err) {
+      return panel.showError(err instanceof Error ? err.message : String(err));
+    }
+    ctx.selection.clear();
+    await update(DUPLICATE_STEP, undefined, added.doc);
+    const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
+    const copies = copiesOf(added.ids).filter((b) => shownNow.has(b));
+    if (copies.length === 0 || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
+    ctx.selection.set(copies.map(bodyReference));
+    startMove();
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
