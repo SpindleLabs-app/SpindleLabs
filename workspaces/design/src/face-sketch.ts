@@ -42,8 +42,13 @@ export interface SketchPlacement {
   body?: Plane;
 }
 
-/** Why a face sketch is held at its last placement: its face's name finds no face, or two. */
-export type PlaneCause = "plane-lost" | "plane-ambiguous";
+/**
+ * Why a face sketch says something about its plane: held at its last
+ * placement when its face's name finds no face, or two it can't choose
+ * between; or (35f1e, rule 3) placed on one piece of its face, which a
+ * Combine split, when it was drawn on the whole face.
+ */
+export type PlaneCause = "plane-lost" | "plane-ambiguous" | "plane-split";
 
 /** A face sketch's plane warning: the cause, the face's name (the sketch item's `plane`), and words for the app. */
 export interface PlaneWarning {
@@ -296,6 +301,7 @@ export const frameOf = (p: Plane): { origin: Vec3; x: Vec3; normal: Vec3 } => ({
 
 /** The words for a face sketch's plane warning, naming the sketch and the face it held. */
 export function planeWords(cause: PlaneCause, sketchLabel: string): string {
+  if (cause === "plane-split") return `${sketchLabel}'s face was split into pieces, so it now lies on the piece it was drawn on (or the largest): check it is the one you want`;
   return cause === "plane-lost"
     ? `${sketchLabel}'s face is gone, so its plane is lost: it stays where it was`
     : `${sketchLabel}'s face is now more than one face, so its plane is ambiguous: it stays where it was rather than guess`;
