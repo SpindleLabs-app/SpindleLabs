@@ -6,7 +6,7 @@
 // signing in, or uses their session; a visit with no account sends nothing.
 
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
-import { withIcon } from "@fission/ui";
+import { type AccountVersions, withIcon } from "@fission/ui";
 import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
 import "./styles/account.css";
 
@@ -49,6 +49,10 @@ export interface AccountHooks {
   saved(): void;
   /** File > My designs…: the list, or Sign in when signed out. */
   showDesigns(): void;
+  /** File > Earlier versions…: the account's versions of kept project `localId`, or null when it has none to list. */
+  versionsOf(localId: string): Promise<AccountVersions | null>;
+  /** The file text of the account's version of `localId` saved `at`; throws the words to say when it can't. */
+  versionText(localId: string, at: Date): Promise<string>;
 }
 
 export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost): Promise<AccountHooks | undefined> {
@@ -104,6 +108,11 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
     showDesigns: () => {
       if (client.state().kind === "signed-in" && designs) void designs.show();
       else ui.open("Sign in to keep your designs in your account and open them on any device.");
+    },
+    versionsOf: async (localId) => (designs ? designs.versionsOf(localId) : null),
+    versionText: async (localId, at) => {
+      if (!designs) throw new Error("This build keeps no versions in an account.");
+      return designs.versionText(localId, at);
     },
   };
 }

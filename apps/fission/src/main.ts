@@ -17,12 +17,12 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
+import { baseNameOf, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startUnits, readUnitChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
-import { versionList, versionTime } from "@fission/ui";
+import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -698,6 +698,8 @@ async function save(asNew = false) {
     fileStatus(e instanceof Error ? e.message : String(e));
   }
 }
+// The phone's keyboard opening never hides the box being typed in (clumsy-human hunt 11-04, keep-typing-visible.ts).
+keepTypingVisible(window);
 const SAVE_TITLE = $("save").title;
 withIcon($("save"), "save"); // its word kept as its name, out of sight (styles/app-bar.css)
 // A double-click, a held Enter or a mashed Save is one save, not a file per press (clumsy-user hunt 11-04).
@@ -831,6 +833,11 @@ async function openStored(id: string, modified: Date | null) {
     );
   });
 }
+/** The account's version of kept project `id` saved `at` (only with accounts on and signed in); throws why not. */
+async function accountVersionText(id: string, at: Date): Promise<string> {
+  if (!accountHooks) throw new Error("this version is kept in your account: sign in to restore it");
+  return accountHooks.versionText(id, at);
+}
 /** The open project's id when it is kept (null while a new one waits for its first change, or a file opens). */
 const keptId = () => (autosave === null ? null : (document.body.dataset.projectId ?? null));
 /**
@@ -838,11 +845,13 @@ const keptId = () => (autosave === null ? null : (document.body.dataset.projectI
  * it is now, as ONE undo step, the way Undo puts a state back: Undo takes it back. Throws, changing nothing, when it
  * can't be read.
  */
-async function restoreVersion(at: Date) {
+async function restoreVersion(at: Date, where: VersionPlace = "browser") {
   await started;
   const id = keptId();
   if (id === null) throw new Error("this project isn't kept in this browser yet, so it has no earlier versions");
-  const text = projectToJson(await store.openVersion(id, at));
+  // A version kept only in the account (account features 2) is read from there, and opened as a file is, so one that
+  // isn't a project, or comes from a newer SpindleLabs, is refused in the same words before anything changes.
+  const text = where === "account" ? projectToJson(projectFromJson(await accountVersionText(id, at), workspaces)) : projectToJson(await store.openVersion(id, at));
   const when = versionTime(at, new Date());
   ctx.selection.clear(); // it named faces of the project as it is now
   // One step: the remount's amend inside it is taken into the step, not into the present (it would leave nothing to undo).
@@ -852,7 +861,9 @@ async function restoreVersion(at: Date) {
 const versions = versionList(document, {
   list: async () => {
     const id = keptId();
-    return id === null ? null : { name: ctx.project.name, times: await store.versions(id) };
+    if (id === null) return null;
+    const [times, account] = await Promise.all([store.versions(id), accountHooks?.versionsOf(id).catch(() => null) ?? null]);
+    return { name: ctx.project.name, times, account };
   },
   restore: restoreVersion,
 });
@@ -1082,6 +1093,8 @@ const settings = () => (browserSettings ??= new SettingsStore(local));
 // The theme (U1b, U2a): the page already wears it (public/theme-init.js ran before the first paint); this keeps it in step with the Settings choice and the device.
 // The browser checks switch the tooltips off (e2e/browser.mjs) so code that reads a title under the mouse sees it; e2e/tooltip.mjs keeps them on. The live build has no such switch.
 if (!(__TEST_HOOKS__ && (window as unknown as { __noTooltips?: boolean }).__noTooltips)) startTooltips(document);
+// Units (U2c2): the page wears the stored unit (data-unit) and tells the screens when it changes.
+const chooseUnit = startUnits(document, settings());
 const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
@@ -1090,7 +1103,7 @@ $("settings-open").addEventListener("click", () => {
     settingsDialog.showModal();
     settingsDialog.querySelector<HTMLElement>("[data-section=general] .settings-action")?.focus();
   };
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit });
   settingsDialog.showModal();
 });
 settingsDialog.addEventListener("click", (e) => {

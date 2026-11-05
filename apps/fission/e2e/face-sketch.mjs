@@ -21,6 +21,7 @@ import { mkdirSync } from "node:fs";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
+import { pinProperties } from "./properties.mjs";
 import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4195, strictPort: true }, logLevel: "error" });
@@ -308,6 +309,28 @@ try {
     });
   }
 
+  await check("1280 px: a sketch on a small face is looked at with that face filling the view, not the whole body (U7a2)", async () => {
+    const page = await fresh();
+    await pinProperties(page);
+    // A 100 × 100 × 10 mm slab (V = 100,000 mm³). Its front face (y = 0) is 100 × 10, centre (50, 0, 5); the whole slab's centre is (50, 50, 5).
+    for (const [id, v] of [["width", "100"], ["depth", "100"], ["height", "10"]]) await page.fill(`#${id}`, v);
+    await until(page, () => document.querySelector("#volume")?.textContent === "100,000 mm³", null, "the slab");
+    await settle(page);
+    await createSketch(page);
+    await at(page, [50, 0, 5]);
+    await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
+    const cam = await settle(page);
+    // Looked at the face square on from the front (its normal is −y), the target on the face's centre, not the slab's.
+    near(cam.target, [50, 0, 5], 1e-6, "target on the face's centre");
+    near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking straight at the front face");
+    // The face (half diagonal √(100² + 10²)/2 = 50.25, with the 10 % margin 55.28) is framed: its corners are in the canvas, and it spans over 40 % of the width. A picture's size goes as 1 / radius, and the framing radius was the whole slab's √(100² + 100² + 10²)/2 = 70.85 (the face then 429 px of the 1280, 0.34 of the width), now 55.28 (0.43).
+    const canvas = await canvasBox(page);
+    const [a, b] = [toScreen(cam, canvas, [0, 0, 0]), toScreen(cam, canvas, [100, 0, 10])];
+    assert.ok(a.x > canvas.x && b.x < canvas.x + canvas.width && a.y < canvas.y + canvas.height && b.y > canvas.y, "the face is inside the view");
+    assert.ok(Math.abs(b.x - a.x) > 0.4 * canvas.width, `the face spans over 40 % of the view: ${Math.abs(b.x - a.x)} of ${canvas.width}`);
+    await page.context().close();
+  });
+
   await check("1280 px: the bottom, picked from the bottom view, is looked at from below (outside the box), drawn in the world's x and y, and extruded down", async () => {
     const page = await fresh();
     // Orbit under the box: a left-drag 150 px up turns the camera down past the ground (OrbitControls, Orbit mode).
@@ -383,13 +406,12 @@ try {
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     const cam = await settle(page);
     near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking from the front");
-    // Above the box (z 0..20), on the front plane: x along X, y along Z.
-    // Taps from (40, 30) to (20, 40): the rectangle tool's corners, up and left on screen (on the 10 mm grid). Not from
-    // x 10: (10, 40) is 1.4 px under the Finish bar at the top left of the view with the 40 px phone timeline, and its
-    // tap went to Finish (`at` now refuses a tap within a finger's reach of a control).
-    await rectangle(page, [[20, 0, 40], [40, 0, 40], [40, 0, 30], [20, 0, 30]], true);
+    // The view now fits the box's front face (U7a2: a plane on a face frames the face), so the rectangle is drawn
+    // on the face itself (z 0..20), x along X, y along Z: corners (20, 20) to (40, 10) on the 10 mm grid. Taps from the
+    // middle out, clear of the Finish bar at the top left of the view (`at` refuses a tap within a finger's reach of a control).
+    await rectangle(page, [[20, 0, 20], [40, 0, 20], [40, 0, 10], [20, 0, 10]], true);
     await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "closed");
-    assert.deepEqual((await data(page, "sketchPoints")).split(" ").sort(), ["20,30", "20,40", "40,30", "40,40"]);
+    assert.deepEqual((await data(page, "sketchPoints")).split(" ").sort(), ["20,10", "20,20", "40,10", "40,20"]);
     await shot(page, "front-plane-375");
     await extrude(page, 5, true);
     // The new block: 20 · 10 · 5 = 1,000 mm³.

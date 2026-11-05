@@ -9,7 +9,7 @@ import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, ty
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
-import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
+import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
@@ -1464,6 +1464,8 @@ export class Viewer implements SharedViewport {
       // The Select tool's: the curve under the pointer lighter, the selected ones lit over it.
       if (d.editing.hover && d.editing.hover.length > 0) segments(d.editing.hover, SKETCH_COLOURS.hover, 3.5);
       if (d.editing.picked && d.editing.picked.length > 0) segments(d.editing.picked, SKETCH_COLOURS.picked, 3.6);
+      if (d.editing.constraints && d.editing.constraints.length > 0) segments(d.editing.constraints, SKETCH_COLOURS.constraint, 3.7);
+      if (d.editing.fighting && d.editing.fighting.length > 0) segments(d.editing.fighting, SKETCH_COLOURS.lost, 3.8);
       if (d.editing.preview.length > 0) segments(d.editing.preview, SKETCH_COLOURS.preview, 4);
       if (d.editing.points.length > 0) {
         const g = new THREE.BufferGeometry();
@@ -1489,6 +1491,8 @@ export class Viewer implements SharedViewport {
     this.element.dataset.sketchPreview = edited ? edited.preview.map((s) => s.map(xy).join(" ")).join(" | ") : "";
     this.element.dataset.sketchSnap = edited?.snap?.label ?? "";
     this.element.dataset.sketchPicked = String(edited?.picked?.length ?? 0);
+    this.element.dataset.sketchConstraints = String(edited?.constraintCount ?? 0);
+    this.element.dataset.sketchFighting = String(edited?.fighting?.length ?? 0);
     this.labelSketches();
   }
 
@@ -1564,11 +1568,16 @@ export class Viewer implements SharedViewport {
     this.element.dataset.bodyFaded = String(faded);
   }
 
-  /** What Look At frames (framing.ts lookAtFraming): the body's box corners and the edited sketch's ends, else round the plane's origin. */
+  /**
+   * What Look At frames (framing.ts): the body's box corners and the edited sketch's ends, else round the plane's origin;
+   * when the plane holds a face of the body smaller than the body (a sketch on a small face) that face and the sketch (U7a2).
+   */
   private lookAtFraming(plane: Plane): Framing {
     const box = new THREE.Box3().setFromObject(this.body);
     const corners = box.isEmpty() ? [] : [box.min.toArray(), box.max.toArray()];
-    return lookAtFraming([...corners, ...this.editedWorld], plane.origin);
+    const whole = lookAtFraming([...corners, ...this.editedWorld], plane.origin);
+    const inPlane = this.mesh ? pointsInPlane(this.mesh.positions, plane) : [];
+    return faceFraming(inPlane, this.editedWorld, whole, plane.origin, this.mesh && inPlane.length >= 3 ? pieceCount(this.mesh.positions, this.mesh.indices) : 1);
   }
 
   /** Look At in the main view. */

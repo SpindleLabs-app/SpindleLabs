@@ -5,7 +5,7 @@
 // account service down, projects are kept in the browser exactly as before, and are sent once it can be done.
 
 import { type AuthClient, type DataResult, designSync, designsApi, FAILURE_WORDS, forgetLinks, isSource, LIMITS, type SmallStore, type Source, type SyncReport } from "@fission/account";
-import { myDesigns, type MyDesigns } from "@fission/ui";
+import { type AccountVersions, myDesigns, type MyDesigns } from "@fission/ui";
 
 /** What the shell lends the account code (main.ts). */
 export interface DesignsHost {
@@ -222,6 +222,31 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
     async askIfNeeded(): Promise<void> {
       if ((await refreshOthers())?.state === "ask") await show();
       else void sendNow();
+    },
+    /**
+     * The account's earlier versions of kept project `localId` (account features 2), for File > Earlier versions…:
+     * null when there is no account side (signed out, the project not in the account, or an account service that
+     * doesn't keep versions yet), or why they can't be listed now.
+     */
+    async versionsOf(localId: string): Promise<AccountVersions | null> {
+      const user = userId();
+      const remote = user ? syncFor(user).remoteOf(localId) : null;
+      if (!remote) return null;
+      const r = await api.versions(remote);
+      if (r.kind === "ok") return { times: r.value };
+      if (r.kind === "signed-out" || r.reason === "rejected") return null;
+      return { problem: FAILURE_WORDS[r.reason] };
+    },
+    /** The file text of the account's version of `localId` saved `at`; throws the words to say when it can't. */
+    async versionText(localId: string, at: Date): Promise<string> {
+      const user = userId();
+      if (!user) throw failure({ kind: "signed-out" });
+      const remote = syncFor(user).remoteOf(localId);
+      if (!remote) throw new Error("This project isn't kept in your account, so its versions there can't be read.");
+      const r = await api.version(remote, at);
+      if (r.kind !== "ok") throw failure(r);
+      if (r.value === null) throw new Error("That version is no longer kept in your account: the oldest are given up when your space is full.");
+      return r.value;
     },
     /** Signing out or deleting the account: links and remembered tags go, and nothing more is sent. */
     forget(user: string) {
