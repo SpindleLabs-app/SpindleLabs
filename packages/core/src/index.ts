@@ -1,6 +1,6 @@
 // @fission/core: the shared document model and the bridge to the kernel.
 export { isTrap, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
-export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SliceProgress, SliceStage, StlFile } from "./kernel/kernel-types.ts";
+export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegion, SketchRegions, SliceProgress, SliceStage, StlFile } from "./kernel/kernel-types.ts";
 // DRAFT model interfaces (see each file).
 export type { Material, MaterialLibrary } from "./model/material.ts";
 export { materialLibrary } from "./model/material.ts";
@@ -36,7 +36,7 @@ export type { ChangeCause, ChangeNote, ChangeNoteState } from "./model/change-no
 export { ChangeNotes, noteText } from "./model/change-notes.ts";
 export type { Command, CommandSpec, ParamSpec, Parsed } from "./model/commands.ts";
 export { commandListSchema, commandSchema, parseCommand, parseCommandList } from "./model/commands.ts";
-export type { Feature, Intent, Origin, ParameterValue, Provenance, Timeline } from "./model/feature.ts";
+export type { Feature, Intent, Origin, ParameterValue, Provenance, RegionParameter, Timeline } from "./model/feature.ts";
 export { describeProvenance, workspaceName } from "./model/feature.ts";
 export type { FileFormat, FileFormatInfo, FileHead, FileImporter, FileRoute, Identified } from "./model/files.ts";
 export { claimedFormat, FILE_FORMATS, formatInfo, HEAD_BYTES, identifyFile, routeFiles } from "./model/files.ts";

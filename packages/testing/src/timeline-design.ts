@@ -51,6 +51,7 @@ import {
   movePoint,
   nameBody,
   outlineCurves,
+  type CurveOf,
   partDocument,
   readDesignDocument,
   joinBodies,
@@ -534,7 +535,7 @@ function faceName(feature: string, part: string | null, index: number): FaceName
 }
 
 /** A body's volume, faces and edges in the model's terms, named as Design names them. */
-function measure(feature: string, view: BodyView, curveOf: (boundary: number, piece: number) => string | null): ModelBody {
+function measure(feature: string, view: BodyView, curveOf: CurveOf): ModelBody {
   const names = nameBody(feature, view, curveOf);
   const edges = edgeGeometry(view);
   return {

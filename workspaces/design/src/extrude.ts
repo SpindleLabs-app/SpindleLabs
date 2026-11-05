@@ -15,6 +15,7 @@ import { counted, freshName, insertAt, insertItem, isSketchExtrude, numberBodies
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 import { lengthRefused } from "./typed-entry.ts";
+import type { RegionRef } from "./regions.ts";
 
 /**
  * How far a new extrude goes until the user drags the arrow or types a
@@ -58,9 +59,10 @@ export const isFlipped = (f: Feature): boolean => f.intent.parameters.flip === t
  * sketches there are, skipping a name any item has (`freshName`, U0e). The kernel judges the
  * distance and the outline when the feature is built. `flip` sends it the
  * other way from the sketch's plane, its start cap still on the plane
- * (step 26c, Fusion's Flip).
+ * (step 26c, Fusion's Flip). `region` (step 48) names the region of the
+ * sketch it extrudes; without it, the sketch's one closed outline.
  */
-export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: number, flip = false): { doc: DesignDocument; id: string } {
+export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: number, flip = false, region?: RegionRef): { doc: DesignDocument; id: string } {
   const sketch = sketchItem(doc, sketchId);
   if (!Number.isFinite(distance)) throw new Error(`an extrude needs its distance in mm, not ${shown(distance)}`);
   if (doc.timeline.features.indexOf(sketch) >= insertAt(doc)) throw new Error(`${sketch.provenance.self.label} comes after the rollback marker, so an extrude put in at the marker can't use it`);
@@ -69,7 +71,7 @@ export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: n
   const name = freshName("Extrude", doc.timeline.features.filter(isSketchExtrude).length, takenNames(doc));
   const feature: Feature = {
     id,
-    intent: { type: "extrude", parameters: flip ? { sketch: sketchId, distance, flip: true } : { sketch: sketchId, distance }, summary: summary(label, distance, flip) },
+    intent: { type: "extrude", parameters: { sketch: sketchId, distance, ...(flip ? { flip: true } : {}), ...(region ? { region } : {}) }, summary: summary(label, distance, flip) },
     provenance: { self: { workspace: "design", id, label: name }, from: [{ workspace: "design", id: sketchId, label }] },
     dependsOn: [sketchId],
     suppressed: false,

@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -14,6 +14,8 @@ export interface KernelOps {
   snap_to_grid: { args: [x: number, y: number, spacing: number]; result: [number, number] };
   place_freely: { args: [x: number, y: number, pixel: number]; result: [number, number] };
   sketch_outline: { args: [lines: SketchLine[], circles: SketchCircle[], arcs: SketchArc[]]; result: SketchOutline };
+  /** Every closed region the sketch's curves make, nested ones too (step 48), each named by the curves round it. */
+  sketch_regions: { args: [lines: SketchLine[], circles: SketchCircle[], arcs: SketchArc[]]; result: SketchRegions };
   /** The sketch solver (step 47): the sketch as the solver's JSON text in, its answer as JSON text out (constraints.ts reads both). */
   solve_sketch: { args: [sketch: string]; result: string };
   /** The kernel's body store: build and keep a body, read it by handle, free it. */

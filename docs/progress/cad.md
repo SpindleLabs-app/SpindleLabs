@@ -316,7 +316,10 @@ After fillets (rougher; resized when 46 is done)
 - 47d. Planted solver bugs the tests must catch, and drag tests in the browser: 16 h
 - 47e. Editable dimensions, moved up from 50 (owner's order, 2026-11-03): 16 h. Done (pull request #327).
 - 47f. Construction lines (new, owner's ask, 2026-11-03): 12 h. Done (pull request #327).
-- 48. Profile detection: 16 h
+- 48. Profile detection: 16 h. In parts: 48a (model and cases) and 48b (the kernel's regions) done in the kernel; 48c the app, in two:
+  - [x] 48c1. An extrude of a sketch names its region (`region`: the curves round its outside by id, and its centroid for two regions of one name), found again on every rebuild (`regions.ts` `findRegion`), its holes coming with it; a region the sketch no longer makes keeps the extrude's last shape with a warning; Design data version 9; a side swept from a curve the region passes twice is named by its run (`side:circle-3#2`); an extrude without `region` builds its one outline exactly as before. Verified: `test/regions.test.ts` (hand-worked volumes and names, the file's checks, 4 deliberate breaks caught), old files, the timeline and half-disc journeys.
+  - [ ] 48c2. Extrude shades every region of the usable sketches in the view (refused ones marked, their reason on hover or tap); a click or tap picks one, saved as the extrude's `region`; the E key flow unchanged; browser checks at 1280 and 375 (pattern `apps/fission/e2e/sketch-construction.mjs`). Start from 48c1's branch; the view's offers are `OfferedProfile` (packages/core viewport.ts), made in workspace.ts `offerProfiles`.
+  - [ ] 48d. Bug hunt, fresh-eyes review, Firefox and WebKit, faces with holes offered as regions.
 - 49. Parallel, perpendicular, equal, tangent: 18 h
 - 51. Constraint status colours (dimensions moved up to 47e): 10 h
 - 52a. Trim, extend and mirror: 16 h
