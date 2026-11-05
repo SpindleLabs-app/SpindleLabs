@@ -2077,7 +2077,7 @@ try {
       await bare.goto(url);
       // A new project is empty (U0c) and asks the kernel nothing, so a box is inserted for it to build.
       await bare.waitForSelector("#start-hint", { state: "visible" });
-      await insertPreset(bare, "box");
+      await insertPreset(bare, "box", false, true); // not built, so no Move opens on it
       const words = "The geometry kernel didn't start (its worker didn't load). Reload the page to try again.";
       await bare.waitForFunction((w) => document.querySelector("#error")?.textContent === w, words);
       // The box's build was answered (with the failure), so nothing is still rebuilding.
@@ -2106,7 +2106,7 @@ try {
         await bare.route(/\.wasm$/, answer);
         await bare.goto(url);
         await bare.waitForSelector("#start-hint", { state: "visible" });
-        await insertPreset(bare, "box");
+        await insertPreset(bare, "box", false, true); // not built, so no Move opens on it
         const words = "The geometry kernel didn't start (its file didn't download). Reload the page to try again.";
         await bare.waitForFunction((w) => document.querySelector("#error")?.textContent === w, words, { timeout: 10_000 }).catch(async () => {
           throw new Error(`${how}: the error line says ${JSON.stringify(await bare.textContent("#error"))}`);
