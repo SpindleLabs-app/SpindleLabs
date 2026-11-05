@@ -119,7 +119,7 @@ export function revertedNote(why: string, typed: string, kept: string, extrude: 
 
 const HTML = `
   <h2>Selection</h2>
-  <p id="selection-empty">Nothing selected: click a face or an edge, or a body in the browser.</p>
+  <p id="selection-empty">Nothing selected: click a face or an edge (double-click or double-tap for its whole body), or a body in the browser.</p>
   <ul id="selection-list" class="selection-list"></ul>
   <p id="selection-note" class="bad" hidden></p>
   <div id="selection-actions" class="verbs" role="group" aria-label="Actions for the selection" hidden></div>
