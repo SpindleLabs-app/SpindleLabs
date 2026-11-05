@@ -179,7 +179,7 @@ export interface SizeBox {
  * is made here, apart from the panel, so its scope holds none of the panel's elements: a closed view is not kept alive
  * by it (a closure shares one scope with its siblings, so the listener must not be made beside the panel's own).
  */
-function followUnit(doc: Document, onUnit: () => boolean): void {
+export function followUnit(doc: Document, onUnit: () => boolean): void {
   const weak = new WeakRef(onUnit);
   const listener = () => {
     if (weak.deref()?.() !== true) doc.removeEventListener(UNIT_EVENT, listener);
