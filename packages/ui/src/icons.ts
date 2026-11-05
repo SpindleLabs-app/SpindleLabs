@@ -36,6 +36,8 @@ export const ICONS = {
   combine: [tone("M9 9H15V15H9Z"), line("M4 4H15V15H4ZM9 9H20V20H9Z")],
   insert: [tone("M4 4H20V20H4Z"), line("M4 4H20V20H4ZM12 8V16M8 12H16")],
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
+  // The print check (Inspect ▾, H1): a nozzle over printed layers.
+  "print-check": [tone("M4 15H20V20H4Z"), line("M9 3H15V7L13 10H11L9 7ZM12 10V12.5M4 15H20V20H4ZM4 17.5H20")],
   // The presets (Insert ▾), one per shape.
   box: CUBE,
   cylinder: [tone("M5 6.5A7 2.5 0 1 0 19 6.5A7 2.5 0 1 0 5 6.5Z"), line("M5 6.5A7 2.5 0 1 0 19 6.5A7 2.5 0 1 0 5 6.5ZM5 6.5V17.5A7 2.5 0 0 0 19 17.5V6.5")],
