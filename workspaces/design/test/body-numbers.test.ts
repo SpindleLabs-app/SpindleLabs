@@ -186,7 +186,7 @@ test("the reader refuses bodies' numbers broken in each way, with a message nami
     [(d) => (d.nextBody = 4.5), /^Error: Design data's nextBody 4.5 is not a counting number$/],
     [(d) => (d.bodies[0] = null), /^Error: Design body 1 has no id$/],
     [(d) => (d.bodies[0].id = 7), /^Error: Design body 1 has no id$/],
-    [(d) => (d.bodies[0].id = "feature-1"), /^Error: Design body feature-1 is not "body:" and the id of an item that makes a body$/],
+    [(d) => (d.bodies[0].id = "feature-1"), /^Error: Design body feature-1 is not "body:" and the id of an item that makes a body, or a piece of a Combine$/],
     [(d) => (d.bodies[0].id = "body:sketch-2"), /^Error: Design body body:sketch-2 is not "body:" and the id/],
     [(d) => (d.bodies[0].id = "body:feature-1/piece:1"), /^Error: Design body body:feature-1\/piece:1 is not "body:" and the id/],
     [(d) => (d.bodies[1].id = "body:feature-1"), /^Error: Design body body:feature-1 is listed twice$/],

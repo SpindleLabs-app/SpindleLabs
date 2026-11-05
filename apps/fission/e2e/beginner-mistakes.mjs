@@ -8,7 +8,10 @@
 // 3. a width of 0, or an extrude distance of -60, typed in the properties
 //    goes back to the last size and says so (Flip named for the -60);
 // 4. an outline touching itself is refused in plain words, never "0e0 mm";
-// 5. the whole design's STL names the hidden body it leaves out.
+// 5. the whole design's STL names the hidden body it leaves out;
+// 6. a cylinder under 0.002 mm across and a slot no wider than it is deep are
+//    refused in the properties, never recorded as failed parts (clumsy hunt 2026-11-04);
+// 7. a double-click on a timeline item that slides under the pointer still opens Edit.
 // Screenshots at 1280 and 375 px go to E2E_SHOTS when set. Run with
 // `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -187,6 +190,84 @@ try {
     assert.equal(await text(empty, "#error"), "The distance must be more than 0 mm. It is back to 10 mm. To extrude the other way, tick Flip in Edit feature.");
     if (shots) await empty.screenshot({ path: `${shots}/size-back-1280.png` });
     await empty.context().close();
+  });
+
+  await check("a cylinder under 0.002 mm across and an upright slot are refused in the properties, nothing recorded (1280 px)", async () => {
+    // Clumsy hunt 2026-11-04: both went to the kernel, failed in its words ("radius … got 0.00075", "profile loop 0
+    // doubles back on itself") and were recorded as failed parts with an undo step.
+    const page = await fresh(1280, false);
+    await insertPreset(page, "cylinder");
+    await until(page, () => !["", "—"].includes(document.querySelector("#volume")?.textContent ?? ""), null, "the cylinder built");
+    await pinProperties(page);
+    const undo = await page.getAttribute("#undo", "title");
+    await page.fill("#width", "0.0015");
+    await page.press("#width", "Tab");
+    await until(page, () => document.getElementById("width").value === "40", null, "the diameter back");
+    assert.match(await text(page, "#error"), /^The diameter must be at least 0\.002 mm: its radius can't be under 0\.001 mm/);
+    assert.equal(await page.getAttribute("#undo", "title"), undo, "no undo step recorded");
+    assert.doesNotMatch(await page.evaluate(() => document.querySelector("#timeline").textContent), /failed/);
+    await page.context().close();
+    const slot = await fresh(1280, false);
+    await insertPreset(slot, "slot");
+    await until(slot, () => !["", "—"].includes(document.querySelector("#volume")?.textContent ?? ""), null, "the slot built");
+    await pinProperties(slot);
+    const slotUndo = await slot.getAttribute("#undo", "title");
+    await slot.fill("#width", "10");
+    await until(slot, () => /depth must be less than its width/.test(document.getElementById("error")?.textContent ?? ""), null, "the slot refused");
+    await slot.press("#width", "Tab");
+    await until(slot, () => document.getElementById("width").value === "40", null, "the width back");
+    assert.doesNotMatch(await text(slot, "#error"), /profile|loop|piece/);
+    assert.equal(await slot.getAttribute("#undo", "title"), slotUndo, "no undo step recorded");
+    if (shots) await slot.screenshot({ path: `${shots}/upright-slot-1280.png` });
+    await slot.context().close();
+  });
+
+  for (const [width, tap] of [[1280, false], [375, true]]) {
+    await check(`a star, L-bracket or plate too small to build is refused in plain words, nothing recorded (${width} px${tap ? ", taps" : ""})`, async () => {
+      // Clumsy hunt 2026-11-04: a star 0.004 mm across went to the kernel and failed in its words ("profile pieces (0, 0)
+      // and (0, 2) (loop, piece) are 8.9e-4 mm apart"), recorded as a failed part with an undo step.
+      for (const [kind, typed, words] of [
+        ["star", "0.004", /^A star this small has points closer together than 0\.001 mm, the smallest piece the modeller keeps: make its width and depth at least 0\.0046 mm\./],
+        ["l-bracket", "0.003", /^An L-bracket this small has arms thinner than 0\.001 mm/],
+        ["plate", "0.008", /^A plate this small has holes, or gaps beside them, under 0\.001 mm/],
+      ]) {
+        const page = await fresh(width, tap);
+        await insertPreset(page, kind, tap);
+        await until(page, () => !["", "—"].includes(document.querySelector("#volume")?.textContent ?? ""), null, `the ${kind} built`);
+        if (tap) await openPanel(page, "properties", true);
+        else await pinProperties(page);
+        const undo = await page.getAttribute("#undo", "title");
+        await page.fill("#width", typed);
+        await until(page, () => (document.getElementById("error")?.textContent ?? "") !== "", null, `the ${kind} refused`);
+        await page.press("#width", "Tab");
+        await until(page, () => document.getElementById("width").value === "40", null, "the width back");
+        const error = await text(page, "#error");
+        assert.match(error, words);
+        assert.doesNotMatch(error, /profile|loop|piece \(|radius must be within/);
+        assert.equal(await page.getAttribute("#undo", "title"), undo, "no undo step recorded");
+        assert.doesNotMatch(await page.evaluate(() => document.querySelector("#timeline").textContent), /failed/);
+        const box = await page.$eval("#error", (e) => e.getBoundingClientRect().toJSON());
+        assert.ok(box.width > 0 && box.left >= 0 && box.right <= width + 0.5, `the words are on screen: ${JSON.stringify(box)}`);
+        if (shots && kind === "star") await page.screenshot({ path: `${shots}/tiny-star-${width}.png` });
+        await page.context().close();
+      }
+    });
+  }
+
+  await check("double-clicking a timeline item after picking one to its left opens Edit, not its ⋯ menu (1280 px)", async () => {
+    // Clumsy hunt 2026-11-04: the first click picks the item and the bar redraws, the earlier item's ⋯ goes, the item slides
+    // about 30 px left and its own ⋯ comes under the pointer, so the second click opened the menu instead of Edit.
+    const page = await fresh(1280, false);
+    for (const kind of ["box", "cylinder", "sphere"]) await insertPreset(page, kind);
+    await until(page, () => document.querySelectorAll("#timeline li[data-item]").length === 3 && document.querySelector("#viewport").dataset.rebuilding !== "true", null, "three items");
+    const li = (id) => `#timeline li[data-item="${id}"]`;
+    await page.click(li("feature-1"));
+    await page.waitForTimeout(700); // a plain click first, as a person looking at it
+    await page.dblclick(li("feature-2"));
+    await until(page, () => !document.getElementById("feature-edit")?.hidden && document.getElementById("feature-edit")?.offsetParent !== null, null, "Edit feature open");
+    assert.match(await text(page, "#feature-edit-title"), /Cylinder 1/);
+    assert.equal(await page.evaluate(() => document.getElementById("row-menu")?.open ?? false), false, "no item menu open");
+    await page.context().close();
   });
 
   await check("an outline touching itself is refused in plain words (1280 px)", async () => {

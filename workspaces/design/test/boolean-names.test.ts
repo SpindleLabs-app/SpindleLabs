@@ -221,3 +221,27 @@ test("planted bugs in what the kernel says are caught: a lost face origin, swapp
   };
   assert.equal(difference(await designSays(F1, swapped), modelSays(F1)), null);
 });
+
+test("rule 4: a face the kernel merged from faces lying on each other answers to all their names, the target's first, whichever it lists first", async () => {
+  // F2's two blocks, apart, with a kernel answer saying the join's face 0 (from the target's first face, its start
+  // cap "face:feature-1/start") also covers the tool's end cap (face 1, "face:feature-2/end"), as the next kernel's
+  // face merging (36c1) says of faces lying on each other. Rule 4: both names, the target's (input 0) first; and the
+  // same when the kernel lists the tool's face first and the target's among the others.
+  const features: BooleanFeature[] = [block("feature-1", [0, 0, 10, 10], [0, 10]), block("feature-2", [20, 1, 25, 6], [1, 6]), { kind: "combine", id: "feature-3", target: "body:feature-1", tools: ["body:feature-2"], operation: "join" }];
+  const merged =
+    (toolFirst: boolean): Run =>
+    async (t, tools, op) => {
+      const r = await onKernel(t, tools, op);
+      const h = r.result.history[0];
+      const own = h.faces[0];
+      const other = { body: tools[0].handle, face: 1 };
+      const faces = h.faces.map((f, j) => (j === 0 ? (toolFirst ? other : own) : f));
+      const also = h.faces.map((_, j) => (j === 0 ? [toolFirst ? own : other] : []));
+      return { ...r, result: { ...r.result, history: [{ ...h, faces, also }, ...r.result.history.slice(1)] } };
+    };
+  for (const toolFirst of [false, true]) {
+    const { bodies } = await designRebuild(features, merged(toolFirst));
+    const target = bodies.find((b) => b.id === "body:feature-1")!;
+    assert.deepEqual(target.faces[0].names, ["face:feature-1/start", "face:feature-2/end"], `tool listed first: ${toolFirst}`);
+  }
+});

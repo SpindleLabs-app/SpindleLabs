@@ -56,6 +56,14 @@ export interface BlockFeature {
   bodies?: readonly string[];
   /** The rectangle's four line ids, from line 1; "line-1" … "line-4" when left out. */
   lines?: readonly [string, string, string, string];
+  /**
+   * Each face's full name and made order, by the way it faces, in place of
+   * the extrude's (`blockFaceName`, the feature's place then start, end,
+   * the lines): a box preset's, or a body a Move turned a quarter turn
+   * about Z (the timeline model's Combines, 35f1d2), whose faces keep the
+   * names and order their item gave them.
+   */
+  faces?: Readonly<Record<Facing, { name: string; made: readonly number[] }>>;
 }
 
 export interface CombineFeature {
@@ -71,7 +79,7 @@ export type BooleanFeature = BlockFeature | CombineFeature;
 
 /** The way a face faces. */
 export type Facing = "-x" | "+x" | "-y" | "+y" | "-z" | "+z";
-const FACINGS: readonly Facing[] = ["-x", "+x", "-y", "+y", "-z", "+z"];
+export const FACINGS: readonly Facing[] = ["-x", "+x", "-y", "+y", "-z", "+z"];
 
 export interface BooleanFace {
   /** Every name it answers to, the one shown first (rule 4). */
@@ -175,7 +183,10 @@ export const SIZE_FAULTS: readonly BooleanFault[] = ["near-planes-apart", "thin-
 export const faceName = (feature: string, role: string): string => `face:${esc(feature)}/${role}`;
 export const bodyName = (feature: string, piece?: number): string => `body:${esc(feature)}${piece === undefined ? "" : `/piece:${piece}`}`;
 export const blockFaceName = (f: BlockFeature, role: "start" | "end" | 1 | 2 | 3 | 4): string =>
-  faceName(f.id, typeof role === "string" ? role : `side:${esc(linesOf(f)[role - 1])}`);
+  f.faces ? f.faces[FACE_OF_ROLE[role]].name : faceName(f.id, typeof role === "string" ? role : `side:${esc(linesOf(f)[role - 1])}`);
+
+/** Which way each of an extrude block's faces faces: line 1 along y = y0 faces −y, line 2 +x, line 3 +y, line 4 −x. */
+const FACE_OF_ROLE: Record<"start" | "end" | 1 | 2 | 3 | 4, Facing> = { start: "-z", end: "+z", 1: "-y", 2: "+x", 3: "+y", 4: "-x" };
 
 function linesOf(f: BlockFeature): readonly string[] {
   return f.lines ?? ["line-1", "line-2", "line-3", "line-4"];
@@ -238,7 +249,9 @@ function gridOf(features: readonly BooleanFeature[], faults: ReadonlySet<Boolean
 function blockValid(f: BlockFeature): boolean {
   const [x0, y0, x1, y1] = f.rect;
   const n = [x0, y0, x1, y1, f.z[0], f.z[1]];
-  return n.every(Number.isFinite) && x0 < x1 && y0 < y1 && f.z[0] < f.z[1] && new Set(linesOf(f)).size === 4 && [f.id, ...linesOf(f)].every(writable);
+  if (!(n.every(Number.isFinite) && x0 < x1 && y0 < y1 && f.z[0] < f.z[1] && writable(f.id))) return false;
+  if (f.faces) return new Set(FACINGS.map((d) => f.faces![d].name)).size === 6;
+  return new Set(linesOf(f)).size === 4 && linesOf(f).every(writable);
 }
 
 /** Whether an id can be written into a name: encodeURIComponent refuses text with a lone surrogate. */
@@ -654,13 +667,17 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
   if (fs.has("made-by-id-text")) [...place.keys()].sort().forEach((id, i) => place.set(id, i));
   // Made order of a face name: its feature's place, then start, end, the sides by line.
   const roleOrder = new Map<string, number>();
+  const given = new Map<string, readonly number[]>();
   for (const f of features)
-    if (f.kind === "block" && blockValid(f)) {
+    if (f.kind === "block" && blockValid(f) && f.faces) for (const d of FACINGS) given.set(f.faces[d].name, f.faces[d].made);
+    else if (f.kind === "block" && blockValid(f)) {
       roleOrder.set(blockFaceName(f, "start"), 0);
       roleOrder.set(blockFaceName(f, "end"), 1);
       for (const s of [1, 2, 3, 4] as const) roleOrder.set(blockFaceName(f, s), 1 + s);
     }
   const made: Made = (name) => {
+    const own = given.get(name);
+    if (own !== undefined) return own;
     const feature = name.slice("face:".length, name.indexOf("/"));
     return [place.get(feature) ?? Infinity, roleOrder.get(name) ?? Infinity];
   };
@@ -694,7 +711,7 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
   for (const f of features) {
     try {
       if (f.kind === "block") {
-        if (![f.id, ...linesOf(f)].every(writable)) throw new Failed("an id is not valid text");
+        if (![f.id, ...(f.faces ? [] : linesOf(f))].every(writable)) throw new Failed("an id is not valid text");
         if (!blockValid(f)) throw new Failed("the rectangle or the heights are not valid");
         const block = blockSolid(g, f);
         // A block within LINEAR of flat is one plane: nothing at all.
@@ -795,6 +812,10 @@ export interface BooleanEdge {
   /** The shown names of the other faces meeting at its two ends, sorted, without repeats. */
   ends: readonly string[];
   length: number;
+  /** Its middle (35f1d2: the timeline model compares edges by where they are). */
+  centroid: readonly [number, number, number];
+  /** Its two faces, by their place in the body's `faces`. */
+  between: readonly [number, number];
 }
 
 /**
@@ -829,6 +850,8 @@ export interface DescribedFace extends BooleanFace {
   /** Rule 3's tag among the faces carrying its shown name; null when no other face carries it. */
   tag: readonly string[] | null;
   rects: readonly Rect3[];
+  /** The middle of its area (35f1d2: the timeline model compares faces by where they are). */
+  centroid: readonly [number, number, number];
 }
 
 interface Described {
@@ -905,7 +928,7 @@ function describe(g: Grid, bodies: readonly Body[], made: Made, faults: Readonly
   // The segments were made in order of body, axis, grid line, then step;
   // two faces (planes facing two axes) cross in one line only, so the same
   // two faces at the next step are the same edge going on.
-  const runs: { body: number; faces: [number, number]; ends: string[]; length: number }[] = [];
+  const runs: { body: number; faces: [number, number]; ends: string[]; length: number; centroid: [number, number, number] }[] = [];
   const n = [g.nx, g.ny, g.nz];
   const steps = [g.xs, g.ys, g.zs];
   /** The shown names of the faces at grid point p of `body`, but `not`'s. */
@@ -944,7 +967,11 @@ function describe(g: Grid, bodies: readonly Body[], made: Made, faults: Readonly
     const first = segments[i].step;
     const last = segments[j - 1].step + 1;
     const ends = new Set([...at(s.body, point(first), s.faces), ...at(s.body, point(last), s.faces)]);
-    runs.push({ body: s.body, faces: s.faces, ends: [...ends].sort(), length: steps[s.axis][last] - steps[s.axis][first] });
+    const centroid: [number, number, number] = [0, 0, 0];
+    centroid[s.axis] = (steps[s.axis][first] + steps[s.axis][last]) / 2;
+    centroid[u] = steps[u][s.at[0]];
+    centroid[v] = steps[v][s.at[1]];
+    runs.push({ body: s.body, faces: s.faces, ends: [...ends].sort(), length: steps[s.axis][last] - steps[s.axis][first], centroid });
     i = j;
   }
   const raw = runs.map((r) => ({ faces: [full[r.faces[0]], full[r.faces[1]]].sort() as [string, string], ends: r.ends }));
@@ -958,6 +985,23 @@ function describe(g: Grid, bodies: readonly Body[], made: Made, faults: Readonly
       size[f.d >> 1] = 0;
       return [lo, [lo[0] + size[0], lo[1] + size[1], lo[2] + size[2]]] as const;
     });
+  const centroidOf = (rects: readonly Rect3[]): [number, number, number] => {
+    const sum = [0, 0, 0];
+    let total = 0;
+    for (const [lo, hi] of rects) {
+      const area = [0, 1, 2].reduce((p, i) => p * (hi[i] - lo[i] || 1), 1);
+      total += area;
+      for (let i = 0; i < 3; i++) sum[i] += (area * (lo[i] + hi[i])) / 2;
+    }
+    return [sum[0] / total, sum[1] / total, sum[2] / total];
+  };
+  // Each face's place among its own body's faces, for an edge's `between`.
+  const seenIn = new Map<number, number>();
+  const local = all.map((x) => {
+    const k = seenIn.get(x.body) ?? 0;
+    seenIn.set(x.body, k + 1);
+    return k;
+  });
   const described = bodies.map((b, bi) => ({
     id: b.id,
     volume: volumeOf(g, b.solid.cells),
@@ -975,10 +1019,11 @@ function describe(g: Grid, bodies: readonly Body[], made: Made, faults: Readonly
               full: faults.has("tag-all-neighbours") && tags[f] !== null ? `${x.face.names[0]}#${[...neighbours[f]].sort().join(",")}` : full[f],
               tag: faults.has("tag-all-neighbours") && tags[f] !== null ? [...neighbours[f]].sort() : tags[f],
               rects: rectOf(x.face),
+              centroid: centroidOf(rectOf(x.face)),
             },
           ],
     ),
-    edges: runs.flatMap((r, k) => (r.body !== bi ? [] : [{ name: names[k], faces: raw[k].faces, ends: r.ends, length: r.length }])),
+    edges: runs.flatMap((r, k) => (r.body !== bi ? [] : [{ name: names[k], faces: raw[k].faces, ends: r.ends, length: r.length, centroid: r.centroid, between: [local[r.faces[0]], local[r.faces[1]]] as const }])),
   }));
   const index = new Map<DescribedFace, number>();
   let k = 0;
@@ -1029,18 +1074,29 @@ export function resolveFace(r: BooleanRebuild, ref: FaceReference, faults: Itera
 }
 
 /**
- * An edge by rule 5's name: found when exactly one edge has it. When two or
- * more edges fit it (its two faces now meet more than once, so they carry
- * `;ends:` the name never had, or even their ends tie and they are
- * shared), ambiguous, never guessed; else lost.
+ * An edge by rule 5's name: found when exactly one edge has it. Else, of
+ * the edges between its two faces: a name with `;ends:` finds the one whose
+ * ends are its own (two such: ambiguous); when none has them but only one
+ * edge lies between its two faces, that one, with the warning "ends" (Ben's
+ * call 2026-11-05); two or more, none with its ends: lost. A name without
+ * `;ends:` that two or more edges fit: ambiguous, never guessed; else lost.
  */
-export function resolveEdge(r: BooleanRebuild, name: string): { found: BooleanEdge; body: string } | { ambiguous: number } | { lost: true } {
-  let fits = 0;
+export function resolveEdge(r: BooleanRebuild, name: string): { found: BooleanEdge; body: string; warning?: "ends" } | { ambiguous: number } | { lost: true } {
+  const [pair, ends] = name.split(";ends:") as [string, string | undefined];
+  const fits: { found: BooleanEdge; body: string }[] = [];
+  const same: { found: BooleanEdge; body: string }[] = [];
   for (const b of r.bodies)
     for (const e of b.edges) {
       if (e.name === name) return { found: e, body: b.id };
-      const pair = `edge:${e.faces.join("+")}`;
-      if (name === pair || name === `${pair};ends:${e.ends.join(",")}`) fits++;
+      if (`edge:${e.faces.join("+")}` !== pair) continue;
+      fits.push({ found: e, body: b.id });
+      if (ends !== undefined && e.ends.join(",") === ends) same.push({ found: e, body: b.id });
     }
-  return fits > 1 ? { ambiguous: fits } : { lost: true };
+  if (ends !== undefined) {
+    if (same.length === 1) return same[0];
+    if (same.length > 1) return { ambiguous: same.length };
+    if (fits.length === 1) return { ...fits[0], warning: "ends" };
+    return { lost: true };
+  }
+  return fits.length > 1 ? { ambiguous: fits.length } : { lost: true };
 }

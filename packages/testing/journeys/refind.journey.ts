@@ -413,7 +413,7 @@ const WORKSPACE = new URL("../../../workspaces/design/src/workspace.ts", import.
 /** Bugs planted in workspace.ts's wiring of the selection through a rebuild, each of which the seeded sessions must catch. */
 const PLANTS = [
   { name: "dropped-kept", find: "        ctx.selection.set(kept);", replace: "        ctx.selection.set([...kept, ...dropped]);", caught: "its body has no" },
-  { name: "note-hidden", find: "      note = droppedNote(dropped, shared, selectedSketches);", replace: '      note = "";', caught: "without the note naming it" },
+  { name: "note-hidden", find: '      note = [droppedNote(dropped, shared, selectedSketches), followedNote(followed)].filter((x) => x !== "").join(" ");', replace: '      note = "";', caught: "without the note naming it" },
   {
     name: "highlight-first-only",
     find: "    viewport.showSelection(highlightOf(items, lastScene));",

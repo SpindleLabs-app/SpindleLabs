@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { CommandSpec } from "@fission/core";
-import { CANNOT_RULE, CUBE_RULE, EXPLAIN_RULE, RADIUS_RULE, systemPrompt, UNIT_RULE } from "../src/index.ts";
+import { CANNOT_RULE, CUBE_RULE, EXPLAIN_RULE, ONLY_ASKED_RULE, RADIUS_RULE, systemPrompt, UNIT_RULE } from "../src/index.ts";
 
 // A stand-in for Design's set_part, worded the same way.
 const SET_PART: CommandSpec = {
@@ -82,6 +82,9 @@ test("the working out and the honest refusal come after the size rules, before t
   // Worked from the order the rules build on: sizes first (how to read them), then how to show the reading, then what to do when no command fits.
   const at = (line: string) => p.indexOf(line);
   assert.ok(at(CUBE_RULE) >= 0 && at(EXPLAIN_RULE) === at(CUBE_RULE) + 1 && at(CANNOT_RULE) === at(EXPLAIN_RULE) + 1, p.join("\n"));
+  // AI8b: only what was asked, right after the refusal rule, before the closing line.
+  assert.equal(at(ONLY_ASKED_RULE), at(CANNOT_RULE) + 1, p.join("\n"));
+  assert.match(p[at(ONLY_ASKED_RULE) + 1], /^Answer with the commands/);
   assert.match(p.at(-1)!, /^Answer with the commands/);
   // The working out names the key the schema asks for, comes after the commands as the schema orders
   // them, and is one sentence: small models told to reason first talked themselves out of plain

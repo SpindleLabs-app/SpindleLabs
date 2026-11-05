@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
+import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -108,8 +108,9 @@ const ctx: WorkspaceContext = {
   // A new design in place of the saved or opened one: its file and name go, so Save asks where (app hunt 2026-11-04).
   startedFresh: () => {
     savedTo = null;
-    openedName = null;
+    projectFile = null;
   },
+  fileName: () => (projectFile === null ? null : baseNameOf(projectFile, PROJECT_KIND.extension)),
 };
 
 // The one undo history (step 20): whole-project snapshots, put back the way
@@ -388,6 +389,7 @@ function paneCtx(pane: PaneId, slots: Slots): WorkspaceContext {
     workspaceTitle,
     openFile: ctx.openFile,
     startedFresh: ctx.startedFresh,
+    fileName: ctx.fileName,
   };
 }
 /**
@@ -644,16 +646,21 @@ $("file-dismiss").addEventListener("click", () => fileStatus(""));
 /** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
 let savedTo: FileHandle | null = null;
 /**
- * The name of the file the project was opened from, without its ending, which Save offers (real-use hunt B5: Save
- * offered "Untitled", the name inside the file, so a quick Save made a second file beside it); a new or other project lets it go.
+ * The name of the file the project was opened from or last saved to, which Save offers (real-use hunt B5: Save
+ * offered "Untitled", the name inside the file, so a quick Save made a second file beside it), and print files take
+ * when the project has no name of its own (slicer hunt 2026-11-04, package 4b: every print file was "spindlelabs-…");
+ * a new or other project lets it go.
  */
-let openedName: string | null = null;
+let projectFile: string | null = null;
 async function save(asNew = false) {
   try {
     await started; // the project shown, not the empty one the app starts with
-    const result = await saveFile(document, { suggestedName: openedName || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
+    const result = await saveFile(document, { suggestedName: projectFile || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
     if (result.status === "failed") return fileStatus(result.message);
-    if (result.status === "saved") savedTo = result.handle;
+    if (result.status === "saved") {
+      savedTo = result.handle;
+      projectFile = result.name;
+    }
     fileStatus("");
   } catch (e) {
     fileStatus(e instanceof Error ? e.message : String(e));
@@ -661,7 +668,11 @@ async function save(asNew = false) {
 }
 const SAVE_TITLE = $("save").title;
 withIcon($("save"), "save"); // its word kept as its name, out of sight (styles/app-bar.css)
-$("save").addEventListener("click", () => void save());
+// A double-click, a held Enter or a mashed Save is one save, not a file per press (clumsy-user hunt 11-04).
+const saveRepeats = repeatGuard();
+$("save").addEventListener("click", () => {
+  if (!saveRepeats()) void save();
+});
 const SAVE_AS_TITLE = "Save As…: save the whole project under a name and in a place you choose";
 // Open takes what a drop or paste takes (X6): every format with an importer,
 // routed by its contents, so a PNG opens in Image and a project as a project.
@@ -701,7 +712,7 @@ const keptApartWords = (name: string) => `Changes made in this tab couldn't be s
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
-  openedName = null; // and so did its name
+  projectFile = null; // and so did its name
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -729,7 +740,7 @@ function openProject(text: string, fileName = "") {
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
-  openedName = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
+  projectFile = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
   // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
   // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
   statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
@@ -1031,6 +1042,8 @@ document.body.append(settingsDialog);
 let browserSettings: SettingsStore | null = null;
 const settings = () => (browserSettings ??= new SettingsStore(local));
 // The theme (U1b, U2a): the page already wears it (public/theme-init.js ran before the first paint); this keeps it in step with the Settings choice and the device.
+// The browser checks switch the tooltips off (e2e/browser.mjs) so code that reads a title under the mouse sees it; e2e/tooltip.mjs keeps them on. The live build has no such switch.
+if (!(__TEST_HOOKS__ && (window as unknown as { __noTooltips?: boolean }).__noTooltips)) startTooltips(document);
 const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
@@ -1039,7 +1052,7 @@ $("settings-open").addEventListener("click", () => {
     settingsDialog.showModal();
     settingsDialog.querySelector<HTMLElement>("[data-section=general] .settings-action")?.focus();
   };
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes });
   settingsDialog.showModal();
 });
 settingsDialog.addEventListener("click", (e) => {
@@ -1051,7 +1064,27 @@ if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCO
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
+// An OK the kernel still checks (Extrude, Move, Edit feature) is held in the history: Undo or Redo pressed meanwhile
+// waits for it, in the order pressed, so it takes back that OK and not the step before (clumsy hunt 2026-11-04).
+let pressesWaiting = 0;
+let pressed: Promise<void> = Promise.resolve();
+/** The presses of each button still waiting (clumsy-user hunt 2026-11-04: a waiting Undo looked as if nothing had happened). */
+const waitingOn = { undo: 0, redo: 0 };
 function undoRedo(which: "undo" | "redo") {
+  if (pressesWaiting === 0 && !ctx.history.busy()) return undoRedoNow(which);
+  pressesWaiting++;
+  waitingOn[which]++;
+  showUndoRedo();
+  pressed = pressed
+    .then(() => ctx.history.whenIdle())
+    .then(() => {
+      pressesWaiting--;
+      waitingOn[which]--;
+      undoRedoNow(which);
+      showUndoRedo();
+    });
+}
+function undoRedoNow(which: "undo" | "redo") {
   try {
     ctx.history[which]();
   } catch (e) {
@@ -1066,8 +1099,13 @@ function showUndoRedo() {
   ] as const;
   for (const [id, verb, label, chord] of buttons) {
     const b = $<HTMLButtonElement>(id);
-    b.disabled = label === null;
-    b.title = label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    // Pressed while an OK is still being worked out, it waits for it (History.whenIdle) and says so: lit and pulsing
+    // (styles/undo-redo.css), its title saying why, until the press has been carried out.
+    const waiting = waitingOn[id] > 0;
+    b.toggleAttribute("aria-busy", waiting);
+    if (waiting) b.setAttribute("aria-busy", "true");
+    b.disabled = label === null && !waiting;
+    b.title = waiting ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
 // At phone width the pair leaves the bar for the main viewport's
@@ -1094,10 +1132,13 @@ withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
 withIcon($("settings-open"), "settings", 16);
+/** The panel opened last of Files, Properties and the AI panel: the one sheet kept when the window narrows to a phone's. */
+let lastSheet: "browser" | "properties" | "assistant" | null = null;
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
   if (!!panel.hidden !== open) return;
+  if (open) lastSheet = "assistant";
   panel.hidden = !open;
   $("assistant-toggle").setAttribute("aria-pressed", String(open));
   document.body.classList.toggle("assistant-narrow", open); // styles/assistant-narrow.css
@@ -1115,6 +1156,7 @@ $("assistant-toggle").addEventListener("click", () => {
 for (const slot of ["browser", "properties"] as const) {
   const toggle = $(`${slot}-toggle`);
   const set = (open: boolean) => {
+    if (open && toggle.getAttribute("aria-expanded") !== "true") lastSheet = slot;
     toggle.setAttribute("aria-expanded", String(open));
     $("workspace").dataset[slot] = open ? "open" : "closed";
   };
@@ -1128,8 +1170,16 @@ for (const slot of ["browser", "properties"] as const) {
   });
   toggle.addEventListener("sheet-close", () => set(false));
 }
+// Narrowed to a phone's width, the panels open beside the view become sheets over it, and only one may be open (clumsy-user
+// hunt 2026-11-04: Properties opened on a phone, the window widened, the AI panel opened, narrowed again: both sheets open,
+// one over the other). The one opened last stays.
+phone.addEventListener("change", () => {
+  if (!phone.matches) return;
+  for (const slot of ["browser", "properties"] as const) if (slot !== lastSheet) $(`${slot}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+  if (lastSheet !== "assistant") setAssistant(false);
+});
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
-// (Edit feature, Move's boxes once a body is picked: without the sheet open they are out of reach; not the plane prompt or
+// (Edit feature, Move's boxes once a body is picked, Combine's once its bodies are: without the sheet open they are out of reach; not the plane prompt or
 // Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
 // that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
 {
@@ -1140,7 +1190,9 @@ for (const slot of ["browser", "properties"] as const) {
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
-    const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
+    const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null ||
+      // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
+      (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null);
     if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";

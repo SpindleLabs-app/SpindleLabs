@@ -17,6 +17,7 @@ export const CONTACTED = [
 export const ACCOUNT_SERVICES = [
   { name: "Supabase", hosts: ["supabase.co"], why: "keeps the account: sign-in, plan, email choice" },
   { name: "Google", hosts: ["accounts.google.com"], why: "the sign-in page the person chooses to use" },
+  { name: "Stripe", hosts: ["stripe.com"], why: "Pro's checkout and manage pages, only after the person chooses Upgrade or Manage" },
 ];
 
 /** Addresses in the source that are never contacted, each with why. */
