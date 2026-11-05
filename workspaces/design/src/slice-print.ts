@@ -15,6 +15,7 @@ import { bodyIdOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
 import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
+import { overhangArea, supportsHint } from "./overhang.ts";
 
 /**
  * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
@@ -141,7 +142,7 @@ export function presetSettingsOf(raw: unknown): PresetSettings | null {
 export const P1S_KIND: SaveKind = { description: "Bambu Lab P1S print file", mime: "model/3mf", extension: ".gcode.3mf" };
 
 /** What the dialog says of any slice, plain or packed. */
-export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume"> & { levelNote?: string };
+export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume"> & { levelNote?: string; overhangMm2?: number };
 
 /**
  * The bodies' STL files back to back, one file per body, as the engine
@@ -305,11 +306,12 @@ export function stlHighestZ(stl: Uint8Array): number {
 }
 
 /** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, the note on their heights, and how tall they are together. */
-async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number }> {
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number; overhang: number }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = await endStls(kernel, doc, features.map((f) => ("body" in f ? { ...f, name: "body" } : { body: bodyIdOf(f.id), feature: f, name: "body" })));
   const height = Math.max(...files.map((f) => stlHighestZ(f.bytes))) - Math.min(...files.map((f) => stlLowestZ(f.bytes)));
-  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNoteOf(files.map((f) => f.bytes)), height };
+  const bytes = files.map((f) => f.bytes);
+  return { stl: stackStl(bytes), note: levelNoteOf(bytes), height, overhang: overhangArea(bytes) };
 }
 
 /** A body to slice: an item's own (by the item), or any body by its id and the item its row stands for (35f1: a Combine's piece). */
@@ -374,18 +376,18 @@ async function runStl(run: SliceRun, doc: DesignDocument, features: readonly Sli
 }
 
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
+export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string; overhangMm2: number }> {
   return asRun(kernel, async (run) => {
-    const { stl, note, height } = await runStl(run, doc, features);
-    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note };
+    const { stl, note, height, overhang } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note, overhangMm2: overhang };
   });
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
-export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
+export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string; overhangMm2: number }> {
   return asRun(kernel, async (run) => {
-    const { stl, note, height } = await runStl(run, doc, features);
-    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note };
+    const { stl, note, height, overhang } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note, overhangMm2: overhang };
   });
 }
 
@@ -792,6 +794,25 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   format.select.addEventListener("change", plateFor);
   const status = el("p", "slice-print-status");
   status.setAttribute("role", "status");
+  // The supports hint after a slice (Ben, 2026-11-04): recommended or not, by the bodies' overhangs (overhang.ts), and
+  // one button that flips the Supports choice when it disagrees. Hidden until a slice, and again on any change.
+  const hint = el("div", "slice-print-supports-hint");
+  hint.className = "slice-print-supports-hint";
+  hint.hidden = true;
+  const hintWords = el("span", "slice-print-supports-hint-words");
+  const flip = el("button", "slice-print-supports-flip");
+  flip.type = "button";
+  hint.append(hintWords, flip);
+  let flipTo: SupportStyle | null = null;
+  const showHint = (overhangMm2: number | undefined) => {
+    const h = overhangMm2 === undefined ? null : supportsHint(overhangMm2, supports.select.value !== "off");
+    hint.hidden = h === null;
+    hint.dataset.recommended = String(h?.recommended ?? false);
+    hintWords.textContent = h?.words ?? "";
+    flipTo = h?.flip?.to ?? null;
+    flip.hidden = h?.flip == null;
+    flip.textContent = h?.flip?.label ?? "";
+  };
   // The bar while a slice runs (Ben, 2026-11-01): how far the engine has got, from its own reports; no value (the
   // browser's moving bar) until the first one, and hidden when nothing runs.
   const bar = el("div", "slice-print-progress");
@@ -877,7 +898,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const top = document.createElement("div");
   top.className = "slice-print-top";
   top.append(heading, presets.element);
-  dialog.append(top, printer, untested, choices6, bar, status, actions);
+  dialog.append(top, printer, untested, choices6, bar, status, hint, actions);
   slot.append(dialog);
   let busy = false;
   /** Shows the bar from now until `end` is called, following the engine's reports. */
@@ -955,7 +976,10 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   for (const c of [quality, walls, infill, supports, format, plate, nozzle, { select: warmUp }, { select: grip }])
     c.select.addEventListener("change", () => {
       if (busy) changedWhileBusy = true;
-      else say("", false);
+      else {
+        say("", false);
+        showHint(undefined);
+      }
       presets.changed();
       keep();
     });
@@ -966,12 +990,23 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const goRepeats = repeatGuard(clock);
   const previewRepeats = repeatGuard(clock);
   dialog.addEventListener("change", () => (goRepeats.reset(), previewRepeats.reset()));
+  // One tap switches Supports to what the hint says; the next slice uses it.
+  flip.addEventListener("click", () => {
+    if (busy || flipTo === null) return;
+    const on = flipTo !== "off";
+    supports.select.value = flipTo;
+    // Bubbling, as a person's pick does: the dialog hears a changed choice, so the next press of Slice is never taken for a repeat.
+    supports.select.dispatchEvent(new (document.defaultView?.Event ?? Event)("change", { bubbles: true }));
+    say(on ? "Supports turned on (Normal). Slice again to make the file with them." : "Supports turned off. Slice again to make the file without them.", false);
+    go.focus();
+  });
   go.addEventListener("click", async () => {
     if (goRepeats() || busy) return;
     working(true);
     changedWhileBusy = false;
     const mine = alive();
     say("Slicing…", false);
+    showHint(undefined);
     const end = showProgress();
     try {
       const { print, saved, name } = await events.slice(choices(), file(), mine);
@@ -979,6 +1014,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       const earlier = changedWhileBusy ? SLICE_EARLIER : null;
       const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
+      showHint(print.overhangMm2);
     } catch (e) {
       end();
       // Dropped (closed, or stopped by Stop): nothing to say, the engine's "stopped" included.
@@ -995,6 +1031,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     changedWhileBusy = false;
     const mine = alive();
     say("Slicing…", false);
+    showHint(undefined);
     const end = showProgress();
     try {
       await events.preview(choices(), file(), mine, () => changedWhileBusy);
@@ -1017,7 +1054,10 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   return {
     ask() {
       if (dialog.open) return;
-      if (!busy) say("", false); // a slice still running keeps saying so
+      if (!busy) {
+        say("", false); // a slice still running keeps saying so
+        showHint(undefined);
+      }
       presets.refresh(); // another tab may have changed them
       dialog.showModal();
       go.focus();

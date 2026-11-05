@@ -10,6 +10,7 @@
 //   are validated and retried instead (structuredOutput false).
 
 import { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, requestJson, streamLines, type Fetch, type PostOptions } from "./http.ts";
+import { AIError, kindOf } from "./trouble.ts";
 import type { ApiKeyStore } from "./keys.ts";
 import type { AIProvider, AIRequest, ApiVendor } from "./providers.ts";
 
@@ -121,8 +122,12 @@ export function openaiBody(model: string, r: AIRequest): object {
   };
 }
 
+/** The answer was cut short by the output limit (Anthropic's stop_reason "max_tokens", OpenAI's finish_reason "length"): what is there can't be used (AI8c). */
+const cutOff = () => new AIError("cut-off", "the answer reached the provider's output limit");
+
 /** The answer text in an Anthropic reply: the tool's input as JSON when a schema was asked for, else the text. */
 export function anthropicAnswer(reply: unknown): string {
+  if ((reply as { stop_reason?: unknown }).stop_reason === "max_tokens") throw cutOff();
   const content = (reply as { content?: { type?: string; text?: unknown; input?: unknown }[] }).content;
   if (!Array.isArray(content)) throw new Error("the reply has no content");
   const tool = content.find((b) => b.type === "tool_use");
@@ -133,6 +138,7 @@ export function anthropicAnswer(reply: unknown): string {
 }
 
 export function openaiAnswer(reply: unknown): string {
+  if ((reply as { choices?: { finish_reason?: unknown }[] }).choices?.[0]?.finish_reason === "length") throw cutOff();
   const content = (reply as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]?.message?.content;
   if (typeof content !== "string") throw new Error("the reply has no answer in it");
   return content;
@@ -150,9 +156,12 @@ function eventData(line: string): Record<string, unknown> | undefined {
   }
 }
 
+/** An error event's own words, as an error of its kind: a cut-off said in words is one (kindOf). */
 const eventError = (e: Record<string, unknown>) => {
   const error = e.error as { message?: unknown } | undefined;
-  if (error) throw new Error(typeof error.message === "string" ? error.message : "the stream reported an error");
+  if (!error) return;
+  const words = typeof error.message === "string" ? error.message : "the stream reported an error";
+  throw new AIError(kindOf(new Error(words)), words);
 };
 
 /**
@@ -176,6 +185,7 @@ export async function anthropicStream(post: PostOptions, onText: (soFar: string)
     const e = eventData(line);
     if (!e) return;
     eventError(e);
+    if (e.type === "message_delta" && (e.delta as { stop_reason?: unknown } | undefined)?.stop_reason === "max_tokens") throw cutOff();
     const delta = e.type === "content_block_delta" ? (e.delta as { type?: unknown; partial_json?: unknown; text?: unknown }) : undefined;
     if (delta?.type === "input_json_delta" && typeof delta.partial_json === "string") tool += delta.partial_json;
     else if (delta?.type === "text_delta" && typeof delta.text === "string") text += delta.text;
@@ -216,7 +226,9 @@ export async function openaiStream(post: PostOptions, onText: (soFar: string) =>
     const e = eventData(line);
     if (!e) return;
     eventError(e);
-    const more = (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta?.content;
+    const choice = (e.choices as { delta?: { content?: unknown }; finish_reason?: unknown }[] | undefined)?.[0];
+    if (choice?.finish_reason === "length") throw cutOff();
+    const more = choice?.delta?.content;
     if (typeof more === "string" && more !== "") onText((text += more));
   });
   if (events === 0) {
@@ -232,6 +244,9 @@ export async function openaiStream(post: PostOptions, onText: (soFar: string) =>
   if (text === "") throw new Error("the reply has no answer in it");
   return text;
 }
+
+/** The same error with `message`, keeping its kind (AI8c). */
+const named = (e: unknown, message: string) => (e instanceof AIError ? new AIError(e.kind, message) : new Error(message));
 
 export function hostedProvider(o: { vendor?: ApiVendor; model?: string; endpoint?: string; keys: ApiKeyStore; fetch: Fetch; timeoutMs?: number }): AIProvider {
   const vendor = o.vendor ?? "anthropic";
@@ -254,20 +269,20 @@ export function hostedProvider(o: { vendor?: ApiVendor; model?: string; endpoint
       if (model === "") throw new Error("no model is chosen");
       const headers = keyHeaders(vendor, secret);
       const body = vendor === "anthropic" ? anthropicBody(model, request) : openaiBody(model, vendor === "other" ? { ...request, jsonSchema: undefined } : request);
-      const post = { fetch: o.fetch, url: target.chatUrl, headers, body, timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who, secret };
+      const post = { fetch: o.fetch, url: target.chatUrl, headers, body, timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who, secret, signal: request.signal };
       const onText = request.onText;
       try {
         if (onText) return vendor === "anthropic" ? await anthropicStream(post, onText) : await openaiStream(post, onText);
       } catch (e) {
         // Errors from the request itself already name who; ones from reading the stream don't.
         const message = (e as Error).message;
-        throw new Error(message.includes(who) ? message : `${who}: ${message}`);
+        throw named(e, message.includes(who) ? message : `${who}: ${message}`);
       }
       const reply = await requestJson(post);
       try {
         return vendor === "anthropic" ? anthropicAnswer(reply) : openaiAnswer(reply);
       } catch (e) {
-        throw new Error(`${who}: ${(e as Error).message}`);
+        throw named(e, `${who}: ${(e as Error).message}`);
       }
     },
   };

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { backdropAt } from "../src/backdrop.ts";
 import { EDGE_COLOUR } from "../src/highlight.ts";
-import { BUILD_AREA_COLOURS, GROUND_GRID, PALETTES, SKETCH_COLOURS, setViewTheme, onViewTheme, viewTheme, type ViewTheme } from "../src/view-theme.ts";
+import { BUILD_AREA_COLOURS, GROUND_GRID, PALETTES, SKETCH_COLOURS, setViewTheme, setViewCustom, customSky, onViewTheme, viewTheme, type ViewTheme } from "../src/view-theme.ts";
 
 // U1b: the 3D view's colours in each theme. The dark palette is exactly what the
 // view always used; the light one is a pale sky with the drawing colours
@@ -62,4 +62,40 @@ test("light: every sketch and grid line reads on the sky's middle at 3 : 1 or be
 test("the check fails on a dark-theme line over the light sky: the old sketch line is 1.7 : 1 there", () => {
   const middle: Rgb = [223, 229, 238.5];
   assert.ok(contrast(hex(PALETTES.dark.sketch.line), middle) < 2, `${contrast(hex(PALETTES.dark.sketch.line), middle)}`);
+});
+
+test("custom sky, light: the secondary is the bottom and its paler self the top (hand-worked)", () => {
+  // #b0d0f4 = (176, 208, 244). The top is 0.65 of the way to white: 176 + 79 × 0.65 = 227.35, 208 + 47 × 0.65 = 238.55, 244 + 11 × 0.65 = 251.15.
+  const sky = customSky([176, 208, 244], "light");
+  assert.deepEqual(sky.backdrop, { top: [227, 239, 251], bottom: [176, 208, 244] });
+});
+
+test("custom sky, dark: the secondary sunk toward black, 0.22 and 0.08 of it (hand-worked)", () => {
+  // (176, 208, 244) × 0.22 = (38.7, 45.8, 53.7); × 0.08 = (14.1, 16.6, 19.5).
+  const sky = customSky([176, 208, 244], "dark");
+  assert.deepEqual(sky.backdrop, { top: [39, 46, 54], bottom: [14, 17, 20] });
+});
+
+test("custom sky: a secondary too dark for the sketch line to read on is lifted until it has 3 : 1; one that already does is not", () => {
+  for (const theme of ["light", "dark"] as const) {
+    for (const c of [[48, 96, 176], [0, 0, 0], [255, 255, 255], [255, 0, 255], [128, 128, 128]] as [number, number, number][]) {
+      const { backdrop } = customSky(c, theme);
+      const middle: Rgb = [0, 1, 2].map((i) => (backdrop.top[i] + backdrop.bottom[i]) / 2) as unknown as Rgb;
+      assert.ok(contrast(hex(PALETTES[theme].sketch.line), middle) >= 3, `${theme} ${c}`);
+    }
+  }
+  // Dark blue on the light theme is lifted: the bottom is lighter than asked.
+  assert.ok(customSky([48, 96, 176], "light").backdrop.bottom[0] > 48);
+  // The standard light blue is not moved.
+  assert.deepEqual(customSky([176, 208, 244], "light").backdrop.bottom, [176, 208, 244]);
+});
+
+test("setViewCustom: the next theme draw takes the sky and ground from it, and null puts the standard ones back", () => {
+  setViewCustom([176, 208, 244]);
+  setViewTheme("light");
+  assert.deepEqual(backdropAt(0), [227, 239, 251]);
+  setViewCustom(null);
+  setViewTheme("light");
+  assert.deepEqual(backdropAt(0), [234, 244, 255]);
+  setViewTheme("dark");
 });
