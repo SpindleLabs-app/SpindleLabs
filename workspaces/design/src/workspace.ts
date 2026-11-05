@@ -2217,7 +2217,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     mode.tool = { ...tool, pending: null, changing: undefined };
     unlock();
     drawSketches();
-    if (tool.changing === undefined) return constrain(tool.sketch, { ...pending, value } as NewConstraint);
+    // Refused: the box opens again with the value typed, so it can be corrected (the solver bug hunt, 2026-11-06: it closed and lost it).
+    const reopen = () => {
+      if (mode.kind === "edit" && isConstraintTool(mode.tool) && !mode.tool.pending) mode.tool = { ...mode.tool, pending: { ...pending, value }, pendingField: tool.pendingField, changing: tool.changing };
+    };
+    if (tool.changing === undefined) return constrain(tool.sketch, { ...pending, value } as NewConstraint, reopen);
     const id = tool.changing;
     inTurn(async () => {
       if (mode.kind !== "edit" || toolChanges !== changes) return;
@@ -2231,8 +2235,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
       if ("refused" in got) {
         if (isConstraintTool(mode.tool)) mode.tool = { ...mode.tool, fighting: got.fighting };
-        sketchBox.showError(got.refused);
-        return drawSketches();
+        reopen();
+        drawSketches();
+        return sketchBox.showError(got.refused);
       }
       applySketchEdit(got.doc, SKETCH_STEPS.redimension, tool.sketch);
       drawSketches();
@@ -2284,7 +2289,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
   };
 
-  function constrain(sketchId: string, add: NewConstraint) {
+  function constrain(sketchId: string, add: NewConstraint, refused: () => void = () => {}) {
     const changes = toolChanges;
     inTurn(async () => {
       if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || toolChanges !== changes) return;
@@ -2298,8 +2303,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || toolChanges !== changes || designDoc() !== before) return;
       if ("refused" in got) {
         mode.tool = { ...mode.tool, fighting: got.fighting };
-        sketchBox.showError(got.refused);
-        return drawSketches();
+        refused();
+        drawSketches();
+        return sketchBox.showError(got.refused);
       }
       applySketchEdit(got.doc, constraintStep(add.kind), sketchId);
       drawSketches();
