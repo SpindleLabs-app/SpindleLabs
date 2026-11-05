@@ -4,10 +4,10 @@
    Theme tokens only, so light mode follows. */
 .slice-print-cost { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; padding: 4px 0 4px 10px; color: var(--text); font-size: 0.92em; border-left: 3px solid var(--look-accent); scroll-margin-bottom: 76px; }
 .slice-print-cost[hidden] { display: none; }
-.slice-print-cost-price { flex: none; display: flex; align-items: center; gap: 6px; color: var(--text-soft); }
-.slice-print-cost-price input { width: 4.5em; min-height: var(--look-target); box-sizing: border-box; padding: 0 6px; font: inherit; }
-.slice-print-cost-price input[aria-invalid="true"] { outline: 2px solid var(--danger); }
+.slice-print-cost .slice-print-cost-price { flex: none; display: flex; align-items: center; gap: 6px; color: var(--text-soft); }
+.slice-print-cost .slice-print-cost-price input { width: 4.5em; min-height: var(--look-target); box-sizing: border-box; padding: 0 6px; font: inherit; }
+.slice-print-cost .slice-print-cost-price input[aria-invalid="true"] { outline: 2px solid var(--danger); }
 @media (max-width: 640px) {
   .slice-print-cost { flex-wrap: wrap; scroll-margin-bottom: 128px; }
-  .slice-print-cost-price input { min-height: var(--look-target-touch); }
+  .slice-print-cost .slice-print-cost-price input { min-height: var(--look-target-touch); }
 }
