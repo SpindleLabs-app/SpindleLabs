@@ -22,7 +22,7 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { currentUnit, commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
+import { currentUnit, commandSearch, GCODE_KIND, iconSvg, PNG_KIND, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
@@ -1270,6 +1270,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /**
+   * File > Save picture (PNG) (quick wins, Ben 2026-11-04): the view as it is
+   * on screen, without the view cube, saved under the project's name (the
+   * browser's save picker, or the name box), as Export STL saves.
+   */
+  async function savePicture() {
+    try {
+      const picture = await viewport.picture?.();
+      if (!picture) throw new Error("This browser couldn't make a picture of the view.");
+      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName: ctx.project.name || "Untitled", kind: PNG_KIND, bytes: picture });
+      if (r.status === "failed") throw new Error(r.message);
+    } catch (err) {
+      panel.showError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /**
    * How a menu choice reaches the project: the document recorded as one
    * undo step (out of any sketch or Extrude panel first, the panel showing
    * the part the edit leaves), the delete box asking first (24e4), and a
@@ -2382,6 +2398,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const editing = mode.kind === "edit" ? mode.tool.sketch : null;
     if (mode.kind !== "none") leaveSketch();
+    // Extrude from inside a sketch: back to the home view, as Finish Sketch does, so the person sees what the extrude makes (Ben 11-05).
+    if (editing !== null) viewport.setView("home");
     // Only sketches an extrude put in at the marker can use: before it, and not suppressed (hunt 2026-10-21).
     const sketches = doc ? doc.timeline.features.filter(isSketchItem) : [];
     const items = doc ? sketches.filter((f) => !f.suppressed && doc.timeline.features.indexOf(f) < insertAt(doc)) : [];
@@ -3645,6 +3663,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         new: fresh.entry(doc, mode.kind !== "none"),
         exports: [
           { id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => run({ op: "export_stl" }) },
+          { id: "file-save-picture", label: "Save picture (PNG)", title: "Save picture: the view as it is on screen, as a PNG file", off: viewport.picture ? undefined : "This browser can't make a picture of the view", run: () => void savePicture() },
           { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => printing.ask() },
         ],
       };

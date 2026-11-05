@@ -512,7 +512,7 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   const file = view.fileEntries!();
   assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);
   const none = "There is no body to download: nothing in the timeline builds.";
-  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", none], ["file-slice-print", "Slice for printing", none]]);
+  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", none], ["file-save-picture", "Save picture (PNG)", "This browser can't make a picture of the view"], ["file-slice-print", "Slice for printing", none]]);
   assert.match(file.exports![0].title, /^Export STL: Download every body shown/);
   // The part's shape is the panel's Shape choice now: the box.
   assert.equal(ctx.properties.querySelector<HTMLSelectElement>("#shape")!.value, "box");
