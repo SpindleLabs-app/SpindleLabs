@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
+import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, startTooltips, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -1042,6 +1042,8 @@ document.body.append(settingsDialog);
 let browserSettings: SettingsStore | null = null;
 const settings = () => (browserSettings ??= new SettingsStore(local));
 // The theme (U1b, U2a): the page already wears it (public/theme-init.js ran before the first paint); this keeps it in step with the Settings choice and the device.
+// The browser checks switch the tooltips off (e2e/browser.mjs) so code that reads a title under the mouse sees it; e2e/tooltip.mjs keeps them on. The live build has no such switch.
+if (!(__TEST_HOOKS__ && (window as unknown as { __noTooltips?: boolean }).__noTooltips)) startTooltips(document);
 const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
@@ -1066,14 +1068,20 @@ if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCO
 // waits for it, in the order pressed, so it takes back that OK and not the step before (clumsy hunt 2026-11-04).
 let pressesWaiting = 0;
 let pressed: Promise<void> = Promise.resolve();
+/** The presses of each button still waiting (clumsy-user hunt 2026-11-04: a waiting Undo looked as if nothing had happened). */
+const waitingOn = { undo: 0, redo: 0 };
 function undoRedo(which: "undo" | "redo") {
   if (pressesWaiting === 0 && !ctx.history.busy()) return undoRedoNow(which);
   pressesWaiting++;
+  waitingOn[which]++;
+  showUndoRedo();
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
+      waitingOn[which]--;
       undoRedoNow(which);
+      showUndoRedo();
     });
 }
 function undoRedoNow(which: "undo" | "redo") {
@@ -1091,8 +1099,13 @@ function showUndoRedo() {
   ] as const;
   for (const [id, verb, label, chord] of buttons) {
     const b = $<HTMLButtonElement>(id);
-    b.disabled = label === null;
-    b.title = label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    // Pressed while an OK is still being worked out, it waits for it (History.whenIdle) and says so: lit and pulsing
+    // (styles/undo-redo.css), its title saying why, until the press has been carried out.
+    const waiting = waitingOn[id] > 0;
+    b.toggleAttribute("aria-busy", waiting);
+    if (waiting) b.setAttribute("aria-busy", "true");
+    b.disabled = label === null && !waiting;
+    b.title = waiting ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
 // At phone width the pair leaves the bar for the main viewport's
@@ -1119,10 +1132,13 @@ withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
 withIcon($("settings-open"), "settings", 16);
+/** The panel opened last of Files, Properties and the AI panel: the one sheet kept when the window narrows to a phone's. */
+let lastSheet: "browser" | "properties" | "assistant" | null = null;
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
   if (!!panel.hidden !== open) return;
+  if (open) lastSheet = "assistant";
   panel.hidden = !open;
   $("assistant-toggle").setAttribute("aria-pressed", String(open));
   document.body.classList.toggle("assistant-narrow", open); // styles/assistant-narrow.css
@@ -1140,6 +1156,7 @@ $("assistant-toggle").addEventListener("click", () => {
 for (const slot of ["browser", "properties"] as const) {
   const toggle = $(`${slot}-toggle`);
   const set = (open: boolean) => {
+    if (open && toggle.getAttribute("aria-expanded") !== "true") lastSheet = slot;
     toggle.setAttribute("aria-expanded", String(open));
     $("workspace").dataset[slot] = open ? "open" : "closed";
   };
@@ -1153,6 +1170,14 @@ for (const slot of ["browser", "properties"] as const) {
   });
   toggle.addEventListener("sheet-close", () => set(false));
 }
+// Narrowed to a phone's width, the panels open beside the view become sheets over it, and only one may be open (clumsy-user
+// hunt 2026-11-04: Properties opened on a phone, the window widened, the AI panel opened, narrowed again: both sheets open,
+// one over the other). The one opened last stays.
+phone.addEventListener("change", () => {
+  if (!phone.matches) return;
+  for (const slot of ["browser", "properties"] as const) if (slot !== lastSheet) $(`${slot}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+  if (lastSheet !== "assistant") setAssistant(false);
+});
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
 // (Edit feature, Move's boxes once a body is picked, Combine's once its bodies are: without the sheet open they are out of reach; not the plane prompt or
 // Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when

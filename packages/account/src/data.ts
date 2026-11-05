@@ -84,15 +84,53 @@ export function accountData(client: AuthClient, store?: SmallStore) {
       return { kind: "ok", value: JSON.stringify(r.body, null, 2) };
     },
 
-    /** Deletes the account and every row kept about it, then forgets it on this device. Designs on the device are untouched. */
+    /**
+     * Deletes the account and every row kept about it, then forgets it on this device. Designs on the device are untouched.
+     * The billing function goes first: it ends any Stripe subscription before deleting, so nothing is charged afterwards.
+     * If it can't be reached, the database's own deletion is tried, which refuses while payments are linked.
+     */
     async deleteAccount(): Promise<DataResult<true>> {
-      const r = await client.asPerson("POST", "rpc/delete_my_account");
-      if (r.kind !== "ok") return r;
+      const viaBilling = await client.asPersonFunction("billing/delete-account");
+      if (viaBilling.kind === "signed-out") return viaBilling;
+      if (viaBilling.kind !== "ok") {
+        const r = await client.asPerson("POST", "rpc/delete_my_account");
+        if (r.kind !== "ok") return r;
+      }
       client.forget();
       forgetSeen();
       return { kind: "ok", value: true };
     },
+
+    /** The person's plan as the server last set it (the browser can only read it). */
+    async plan(): Promise<DataResult<Plan>> {
+      const r = await client.asPerson("GET", "plans?select=plan,renews_at,cancels_at_period_end");
+      if (r.kind !== "ok") return r;
+      const row = Array.isArray(r.body) && r.body.length === 1 ? r.body[0] : undefined;
+      if (!row || !PLANS.includes(row.plan) || !(row.renews_at === null || typeof row.renews_at === "string") || typeof row.cancels_at_period_end !== "boolean") return { kind: "failed", reason: "malformed" };
+      return { kind: "ok", value: { plan: row.plan, renewsAt: row.renews_at, cancels: row.cancels_at_period_end } };
+    },
+
+    /** The address of Stripe's checkout page for Pro, monthly or yearly, returning to `returnTo` afterwards. */
+    checkout(which: "monthly" | "yearly", returnTo: string): Promise<DataResult<string>> {
+      return stripePage("billing/checkout", { plan: which, returnTo }, "https://checkout.stripe.com/");
+    },
+
+    /** The address of Stripe's page to change or cancel Pro. */
+    manage(returnTo: string): Promise<DataResult<string>> {
+      return stripePage("billing/portal", { returnTo }, "https://billing.stripe.com/");
+    },
   };
+
+  async function stripePage(path: string, body: unknown, mustStart: string): Promise<DataResult<string>> {
+    const r = await client.asPersonFunction(path, body);
+    if (r.kind !== "ok") return r;
+    const url = (r.body as { url?: unknown } | undefined)?.url;
+    // Only ever Stripe's own pages: a wrong answer never sends the person somewhere else.
+    return typeof url === "string" && url.startsWith(mustStart) ? { kind: "ok", value: url } : { kind: "failed", reason: "malformed" };
+  }
 }
+
+const PLANS = ["free", "pro", "team"] as const;
+export type Plan = { readonly plan: (typeof PLANS)[number]; readonly renewsAt: string | null; readonly cancels: boolean };
 
 export type AccountData = ReturnType<typeof accountData>;

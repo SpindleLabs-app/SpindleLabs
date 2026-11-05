@@ -5,6 +5,7 @@
 
 import type { BodyView, Plane } from "@fission/core";
 import { bodyFrame } from "./face-sketch.ts";
+import { featureBody, type NamedBody } from "./boolean-names.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BuiltBody } from "./rebuild.ts";
 
@@ -26,4 +27,14 @@ export function namesOfBody(b: BuiltBody, view: BodyView): BodyNames {
   for (const n of parts) if (n !== null) counts.set(n, (counts.get(n) ?? 0) + 1);
   const shared = new Map([...counts].filter(([, k]) => k > 1));
   return { feature: b.feature, faces: parts.map((n) => (n !== null && !shared.has(n) ? n : null)), edges: view.edge_faces.map(() => null), shared: { faces: shared, edges: new Map() } };
+}
+
+/**
+ * A body as boolean-names.ts names it (35f1): a Combine's result with the
+ * names its Combine gave; any other with its item's face names (naming.ts),
+ * made order its item's place in the timeline (`place`).
+ */
+export function namedBody(id: string, b: BuiltBody, view: BodyView, place: number): NamedBody {
+  if (b.named !== undefined) return { id, handle: b.handle, view, faces: b.named.faces, made: b.named.made };
+  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves }, view), place);
 }

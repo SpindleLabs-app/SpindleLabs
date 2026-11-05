@@ -63,6 +63,36 @@ export function panelSizeRefused(kind: PartKind, typed: Record<SizeKey, string>)
   }
   if (kind === "slot" && Number(typed.width) - Number(typed.depth) < MIN_TYPED)
     return `A slot's depth must be less than its width, by at least ${MIN_TYPED} mm: its round ends are as wide as it is deep.`;
+  return presetTooSmall(kind, Number(typed.width), Number(typed.depth));
+}
+
+/**
+ * How far a star's nearest two sides are apart, for each mm of its smaller side (profiles.ts: outer radius r = m/2,
+ * inner corners at 0.4·r, ten corners 36° apart): the inner corner at 36° from the side joining the outer corner at
+ * 72° to the inner one at 108°, 0.4442·r = 0.2221·m (test/tiny-presets.test.ts works it by hand).
+ */
+const STAR_GAP = (() => {
+  const at = (deg: number, r: number) => [r * Math.cos((deg * Math.PI) / 180), r * Math.sin((deg * Math.PI) / 180)];
+  const [p, a, b] = [at(36, 0.2), at(72, 0.5), at(108, 0.2)];
+  const v = [b[0] - a[0], b[1] - a[1]];
+  const w = [p[0] - a[0], p[1] - a[1]];
+  return Math.abs(v[0] * w[1] - v[1] * w[0]) / Math.hypot(v[0], v[1]);
+})();
+
+/**
+ * Why an L-bracket, plate or star `w` × `d` mm is too small for the modeller (clumsy-user hunt 2026-11-04: it failed in
+ * the kernel's words and was kept as a broken part), or null. Each piece of its outline (profiles.ts) must be at least
+ * MIN_TYPED long, wide or apart: an L-bracket's arms are 0.3·m thick (m = the smaller side); a plate's holes 0.15·m in
+ * radius and w/4 − 0.15·m from its ends; a star's nearest sides STAR_GAP·m apart. The size suggested is the next one up
+ * that builds.
+ */
+export function presetTooSmall(kind: PartKind, w: number, d: number): string | null {
+  const m = Math.min(w, d);
+  const words = (shape: string, what: string, least: string) =>
+    `${shape} this small has ${what} ${MIN_TYPED} mm, the smallest piece the modeller keeps: make its width and depth at least ${least} mm.`;
+  if (kind === "l-bracket" && 0.3 * m < MIN_TYPED) return words("An L-bracket", "arms thinner than", "0.0034");
+  if (kind === "plate" && (0.15 * m < MIN_TYPED || w / 4 - 0.15 * m < MIN_TYPED)) return words("A plate", "holes, or gaps beside them, under", "0.01");
+  if (kind === "star" && STAR_GAP * m < MIN_TYPED) return words("A star", "points closer together than", "0.0046");
   return null;
 }
 

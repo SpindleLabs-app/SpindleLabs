@@ -132,6 +132,17 @@ export function authClient(deps: AuthDeps) {
       return reply.ok ? { kind: "ok", body: reply.body } : { kind: "failed", reason: reply.reason };
     },
 
+    /**
+     * A request to one of the service's server functions (`path` under /functions/v1/) as the signed-in person, token
+     * refreshed first. The function checks the token itself.
+     */
+    async asPersonFunction(path: string, body?: unknown): Promise<PersonReply> {
+      const t = await client.accessToken();
+      if (t.kind !== "ok") return t;
+      const reply = await request("POST", `/functions/v1/${path}`, body ?? {}, t.token);
+      return reply.ok ? { kind: "ok", body: reply.body } : { kind: "failed", reason: reply.reason };
+    },
+
     /** Forgets the session on this device without asking the service (after the account itself was deleted). */
     forget(): void {
       remove(SESSION_KEY);

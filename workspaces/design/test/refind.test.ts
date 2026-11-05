@@ -376,3 +376,17 @@ test("regression (25a4 hunt): a name holding a bad escape is labelled as stored,
   assert.deepEqual(selectionRows([bad], scene)[0], { name: "Side of line%2 face", type: NOT_ON_BODY, id: "face:feature-1/side:line%2" });
   assert.equal(droppedNote([bad]), "Taken out of the selection: Side of line%2 face. The edit took them off the body, so they could not be followed.");
 });
+
+test("regression (35f1e review): once a Combine is in the design, a plain body's name two of its faces carry is still shared, not gone", async () => {
+  const { designNames, featureBody } = await import("../src/boolean-names.ts");
+  // The same two bodies, now named across the design as once any Combine built (scene.ts `design`): the box's two
+  // "right" faces carry no name there (a name two faces would share), so the design-wide lookup alone finds nothing;
+  // it must still say shared, as before a Combine, never gone.
+  // (These hand-made views have no corners; rule 5's ends need none here.)
+  const corners = (v: BodyView) => ({ ...v, vertex_points: v.vertex_points ?? [], edge_vertices: v.edge_vertices ?? v.edge_faces.map(() => []) }) as BodyView;
+  const bodies = scene.bodies.map((b, k) => featureBody(b.body ?? "body:feature-2", 0 as never, corners(b.view), b.names, k));
+  const withDesign = { ...scene, design: { bodies, names: designNames(bodies), shown: [0, 1] } };
+  assert.deepEqual(findInScene(ref("face", "feature-2", "right"), withDesign), { status: "shared", count: 2 });
+  assert.deepEqual(findInScene(ref("face", "feature-2", "top"), withDesign), { status: "found", index: 4 });
+  assert.deepEqual(findInScene(ref("face", "feature-2", "left"), withDesign), { status: "gone" });
+});
