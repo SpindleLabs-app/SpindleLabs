@@ -31,6 +31,15 @@ export const EXPLAIN_RULE = 'After the commands, write in "explanation" one shor
 export const CANNOT_RULE =
   "When the commands can do what the user asks, always send them. Only when it needs something none of them can do (drawing a sketch, a hole, a fillet, or anything else the list doesn't have) send an empty commands list, and say in the explanation that it can't be done yet and why. Never stand in for it with another shape or a tiny size.";
 
+/**
+ * Only what was asked (AI8b, Ben 2026-11-03): asked for one thing, a
+ * model planned a 4 mm extrude and a rename nobody asked for in its
+ * working out. Named examples, since small models copy the shape of an
+ * instruction better than its idea.
+ */
+export const ONLY_ASKED_RULE =
+  "Do only what the user asks for, nothing more: never add a step they didn't ask for, such as extruding a sketch they only asked to draw, renaming something they didn't name, or changing a size they didn't mention, and don't plan any in the explanation.";
+
 function describe(name: string, p: ParamSpec): string {
   const kind = p.type === "length" ? "millimetres, more than 0" : p.type === "choice" ? `one of: ${p.values.join(", ")}` : "";
   const notes = [kind, p.optional ? "optional" : ""].filter(Boolean).join("; ");
@@ -55,6 +64,7 @@ export function systemPrompt(setup: readonly Command[], specs: readonly CommandS
     CUBE_RULE,
     EXPLAIN_RULE,
     CANNOT_RULE,
+    ONLY_ASKED_RULE,
     "Answer with the commands that make what the user asks for. Keep every size the user doesn't mention as it is now.",
   ].join("\n");
 }
