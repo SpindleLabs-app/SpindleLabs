@@ -9,7 +9,7 @@ import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, ty
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
-import { faceFraming, lookAtFraming, partFraming, pointsInPlane, selectionFraming } from "./framing.ts";
+import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
@@ -1559,7 +1559,7 @@ export class Viewer implements SharedViewport {
     const corners = box.isEmpty() ? [] : [box.min.toArray(), box.max.toArray()];
     const whole = lookAtFraming([...corners, ...this.editedWorld], plane.origin);
     const inPlane = this.mesh ? pointsInPlane(this.mesh.positions, plane) : [];
-    return faceFraming(inPlane, this.editedWorld, whole, plane.origin);
+    return faceFraming(inPlane, this.editedWorld, whole, plane.origin, this.mesh && inPlane.length >= 3 ? pieceCount(this.mesh.positions, this.mesh.indices) : 1);
   }
 
   /** Look At in the main view. */

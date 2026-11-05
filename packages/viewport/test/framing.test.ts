@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LOOK_AT_EMPTY_RADIUS, lookAtFraming, needsRefit, partFraming, pointsInPlane, faceFraming, LOOK_AT_FACE_MARGIN, selectionFraming } from "../src/framing.ts";
+import { LOOK_AT_EMPTY_RADIUS, lookAtFraming, needsRefit, partFraming, pointsInPlane, faceFraming, LOOK_AT_FACE_MARGIN, pieceCount, selectionFraming } from "../src/framing.ts";
 
 test("camera re-frames when the body stops fitting or becomes a speck", () => {
   const at = (x: number, y: number, z: number, radius: number) => ({ centre: [x, y, z] as [number, number, number], radius });
@@ -130,4 +130,20 @@ test("hand-worked: a sketch on a small face frames that face with a margin; on a
   assert.deepEqual(faceFraming(topFace, [], tight, [0, 0, 20]), tight);
   // Fewer than three corners in the plane: the body.
   assert.deepEqual(faceFraming([[0, 0, 0], [1, 0, 0]], [], tight, [0, 0, 0]), tight);
+});
+
+test("hand-worked: pieces of a mesh, and a scene with other bodies keeps all of it in the picture", () => {
+  // Two triangles sharing the edge (1,0,0)-(0,1,0) are one piece; a third far away is another.
+  const positions = [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 50, 50, 50, 51, 50, 50, 50, 51, 50];
+  const indices = [0, 1, 2, 1, 3, 2, 4, 5, 6];
+  assert.equal(pieceCount(positions, indices), 2);
+  assert.equal(pieceCount(positions, indices.slice(0, 6)), 1, "just the first two triangles");
+  // Triangles that meet only at the same position (separate vertices, same place) are joined.
+  assert.equal(pieceCount([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0], [0, 1, 2, 3, 4, 5]), 1);
+  assert.equal(pieceCount([], []), 0, "nothing is no pieces");
+  // The 30 × 40 face on a 100 mm block frames tight alone (27.5), but with another body in the scene (2 pieces) it frames the whole.
+  const whole = lookAtFraming([[0, 0, 0], [100, 100, 100]], [0, 0, 100]);
+  const face = [[10, 10, 100], [40, 10, 100], [40, 50, 100], [10, 50, 100]];
+  assert.ok(Math.abs(faceFraming(face, [], whole, [0, 0, 100], 1).radius - 27.5) < 1e-12);
+  assert.deepEqual(faceFraming(face, [], whole, [0, 0, 100], 2), whole);
 });

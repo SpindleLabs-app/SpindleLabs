@@ -78,12 +78,42 @@ export function pointsInPlane(positions: ArrayLike<number>, plane: { origin: rea
 export const LOOK_AT_FACE_MARGIN = 1.1;
 
 /**
+ * How many separate pieces the mesh is: vertices at the same place are one, and a triangle joins its three. Two bodies
+ * that do not touch are two pieces; a body with a hole is one. `positions` is x, y, z per vertex, `indices` three per triangle.
+ */
+export function pieceCount(positions: ArrayLike<number>, indices: ArrayLike<number>): number {
+  const id = new Map<string, number>();
+  const parent: number[] = [];
+  const vertex = (i: number): number => {
+    const key = `${Math.round(positions[3 * i] * 1e5)},${Math.round(positions[3 * i + 1] * 1e5)},${Math.round(positions[3 * i + 2] * 1e5)}`;
+    let n = id.get(key);
+    if (n === undefined) {
+      n = parent.length;
+      id.set(key, n);
+      parent.push(n);
+    }
+    return n;
+  };
+  const find = (n: number): number => {
+    while (parent[n] !== n) n = parent[n] = parent[parent[n]];
+    return n;
+  };
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    const [a, b, c] = [vertex(indices[t]), vertex(indices[t + 1]), vertex(indices[t + 2])];
+    parent[find(b)] = find(a);
+    parent[find(c)] = find(a);
+  }
+  return new Set(parent.map((_, n) => find(n))).size;
+}
+
+/**
  * What a sketch on a face frames (U7a2): the face (`inPlane`, the body's corners in its plane) and the sketch's ends, with
  * LOOK_AT_FACE_MARGIN round them, but never looser than `whole` (the whole body and the sketch): a face as big as the
- * body frames the body, as before; a small face of a big body fills the view.
+ * body frames the body, as before; a small face of a big body fills the view. Only for one body (`pieces` 1): with others
+ * in the scene the picture keeps all of it, so what the sketch can snap or project from stays in view.
  */
-export function faceFraming(inPlane: readonly (readonly number[])[], extra: readonly (readonly number[])[], whole: Framing, fallback: readonly number[]): Framing {
-  if (inPlane.length < 3) return whole;
+export function faceFraming(inPlane: readonly (readonly number[])[], extra: readonly (readonly number[])[], whole: Framing, fallback: readonly number[], pieces = 1): Framing {
+  if (inPlane.length < 3 || pieces !== 1) return whole;
   const face = lookAtFraming([...inPlane, ...extra], fallback);
   const radius = face.radius * LOOK_AT_FACE_MARGIN;
   return radius < whole.radius ? { centre: face.centre, radius } : whole;
