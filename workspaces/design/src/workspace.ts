@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -61,6 +61,7 @@ import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
+import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -752,7 +753,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let failure: string | undefined;
     if (result?.status === "failed") failure = result.message;
     else if (feature && result && (result.status !== "built" || build.bodies[bodyIdOf(feature.id)] === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
-    return { scene: joinBodies(drawn, build), warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
+    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
   }
   /**
    * The rebuild's warnings in timeline order: an extrude built from its kept
@@ -774,6 +775,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.projections) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.projections.message}.` });
     }
     return out;
+  }
+  /** Where the last rebuild's refused Combines would touch themselves or be too thin (36d), or null. */
+  let refusalsNow: AnalysisOverlay | null = null;
+  /** Points at them in the view while Design is on screen. */
+  function showRefusals() {
+    if (refusalsNow && shown) viewport.setOverlay(refusalsNow);
+    else viewport.clearOverlay(REFUSAL_OVERLAY);
   }
   /** The last rebuild's warnings: shown on their timeline rows and items and, once the sketch each is about is finished, in the panel. */
   let warningsNow: Warned[] = [];
@@ -1294,6 +1302,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       }
       markStale(failure !== undefined);
       viewport.showBody(scene.mesh);
+      // 36d: where a refused Combine would touch itself or be too thin, pointed at over everything.
+      refusalsNow = refusalOverlay(doc.timeline.features, value.results);
+      showRefusals();
       // A sketch on a face is drawn where this rebuild placed it (26c).
       drawSketches();
       const empty = scene.bodies.length === 0;
@@ -3058,6 +3069,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sleep() {
     if (!shown) return;
     shown = false;
+    // Design's own overlay goes with it: another workspace's view says nothing about a Combine (36d).
+    viewport.clearOverlay(REFUSAL_OVERLAY);
     showBuildAreaWords();
     viewport.onPick = null;
     viewport.onMenu = null;
@@ -3222,6 +3235,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       listen();
       showStart();
       showBuildAreaWords();
+      showRefusals();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;

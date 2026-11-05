@@ -262,6 +262,7 @@ Faces on faces (36)
 7. 36b+36c2. Results that are not a clean solid refused: edges used four times, too-thin faces, too-short edges: 20 h
 8. 36c1. Tidying: neighbouring faces on one surface merged, and the history of which face came from which: 18 h
 9. 36d. Design side: merged faces keep their names, refusals shown on the Combine row, journeys: 14 h
+   - Done (branch claude/project-thread-8ncdt7): a Combine the kernel refuses as touching itself or too thin is pointed at in the view as well as on its row (refusal-overlay.ts: a red line for an edge or gap, a red dot for a corner, drawn over the bodies; the legend in the error's red, moved to the top centre where Design's Properties toggle no longer covers it; taken off while another workspace is shown). Checked: hand-worked unit tests on the real kernel (cubes meeting at an edge and at a corner), the places layer, the journey combine-refused.journey.ts (apart, edge, flush, 2 µm clear, corner, undo, redo, close) and the browser check e2e/combine-refused.mjs at 1280 and 375 px (pixels on the edge red, the legend on top and one line); four planted breaks each caught. Merged faces keeping their names came with 36c (boolean-names.ts); their sessions run once kernel #132 ships. Next: 36e.
 10. 36e. Bug hunt with 100,000 seeded cases and the scale sweep: 18 h
 
 Curved booleans, first part (C1–C2, 37, 38a)

@@ -27,6 +27,7 @@ export { pickChange, type SelectionChange } from "./picking.ts";
 export { droppedNote, highlightOf, NAME_SHARED, panelFocus, panelPart, referenceLabel, selectionRows, survivors, type PanelFocus } from "./selection.ts";
 export { designNames, featureBody, resolveFaceName, type DesignNames, type NamedBody } from "./boolean-names.ts";
 export { changedCombine, COMBINE_STEP, combineSummary, insertCombine } from "./combine.ts";
+export { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 export { combineBodies, isCombineItem, type CombineOperation } from "./document.ts";
 export { bodyOf, findInScene, joinBodies, resolveInScene, sceneHit, sceneReference, shownBodies, type Found, type Scene, type ShownBody } from "./scene.ts";
 export { shownFrame } from "./built-body.ts";
