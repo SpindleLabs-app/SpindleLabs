@@ -29,6 +29,16 @@ async function fresh(width = 1280, touch = false) {
   const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  // watchLabels: each press, click and double-click since the last box, with what it landed on, for a failure's message.
+  await page.addInitScript(() => {
+    window.labelEvents = [];
+    for (const type of ["pointerdown", "focusout", "click", "dblclick"])
+      addEventListener(type, (e) => {
+        const t = e.target instanceof Element ? e.target : null;
+        const what = t?.closest(".sketch-label")?.dataset.dimension ? `label ${t.closest(".sketch-label").dataset.dimension}${t.isConnected ? "" : " (gone)"}` : t?.id || t?.tagName || "?";
+        window.labelEvents.push(`${type}:${what}`);
+      }, true);
+  });
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -143,10 +153,10 @@ const shot = async (page, name) => shots && page.screenshot({ path: `${shots}/${
 /** The sketch's points, as numbers. */
 const pointList = async (page) => (await points(page)).split(" ").filter(Boolean).map((p) => p.split(",").map(Number));
 const nearly = (got, want, what, tol = 1e-4) => assert.ok(got.length === want.length && got.every((v, k) => Math.abs(v - want[k]) <= tol), `${what}: ${got.join(", ")}, not ${want.join(", ")}`);
-/** The box a dimension's value is typed in, waited for with the keys in it. */
-async function boxFor(page, field) {
-  await until(page, (f) => document.activeElement?.id === `typed-${f}`, field, `the ${field} box has the keys`).catch(async (e) =>
-    assert.fail(`${e.message} (focus on ${await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName)}, error "${await page.evaluate(() => document.querySelector("#sketch-grid-error")?.textContent ?? "")}", boxes ${await page.evaluate(() => document.querySelector("#typed-entry")?.hidden)})`));
+/** The box a dimension's value is typed in, waited for with the keys in it; `step` names the wait in a failure, with the label events since the last (watchLabels). */
+async function boxFor(page, field, step) {
+  await until(page, (f) => document.activeElement?.id === `typed-${f}`, field, `${step}: the ${field} box has the keys`).then(() => page.evaluate(() => (window.labelEvents = []))).catch(async (e) =>
+    assert.fail(`${e.message} (events ${await page.evaluate(() => (window.labelEvents ?? []).join(" "))}; focus on ${await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName)}, error "${await page.evaluate(() => document.querySelector("#sketch-grid-error")?.textContent ?? "")}", boxes ${await page.evaluate(() => document.querySelector("#typed-entry")?.hidden)})`));
 }
 /** The label showing `text`, its centre on screen once it has stopped moving (the view may still be settling after a solve:
  * a slow machine tapped where the label was a moment before, and hit the view). */
@@ -172,7 +182,7 @@ try {
     await until(page, () => document.querySelector("#sketch-tool-dimension")?.getAttribute("aria-pressed") === "true", null, "Dimension pressed");
     // The line's middle (10, 3): the line is picked and its length waits in the box, the keys in it.
     await at(page, [10, 3]);
-    await boxFor(page, "length");
+    await boxFor(page, "length", "the line picked");
     assert.equal(await page.locator("#typed-length").getAttribute("placeholder"), "20.881", "the box starts at the length as drawn, √436 = 20.881");
     await shot(page, "dimensions-box-1280");
     await page.keyboard.type("30");
@@ -187,7 +197,7 @@ try {
     // A double-click on the label opens its box again; 12 and Enter.
     const l = await labelAt(page, "30");
     await page.mouse.dblclick(l.x, l.y);
-    await boxFor(page, "length");
+    await boxFor(page, "length", "the label double-clicked");
     await page.keyboard.type("12");
     await page.keyboard.press("Enter");
     await shown(page, "sketchLabels", "12");
@@ -196,7 +206,7 @@ try {
     assert.equal(await data(page, "sketchConstraints"), "1", "a change adds no dimension");
     // 40 on the same line fights the 12: refused with the reason, the 12 drawn red, nothing moves.
     await at(page, [6, 1.8]);
-    await boxFor(page, "length");
+    await boxFor(page, "length", "40 on the same line");
     await page.keyboard.type("40");
     await page.keyboard.press("Enter");
     await until(page, () => /That dimension fights the ones shown in red/.test(document.querySelector("#sketch-grid-error")?.textContent ?? ""), null, "the fight refused");
@@ -206,7 +216,7 @@ try {
     await shot(page, "dimensions-fight-1280");
     // Escape in the box: nothing added.
     await at(page, [6, 1.8]);
-    await boxFor(page, "length");
+    await boxFor(page, "length", "the line picked again, for Escape");
     await page.keyboard.type("5");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
@@ -218,7 +228,7 @@ try {
     await until(page, () => Number(document.querySelector("#viewport").dataset.sketchLines) > 1, null, "the circle drawn");
     await page.click("#sketch-tool-dimension");
     await at(page, [0, -10]);
-    await boxFor(page, "diameter");
+    await boxFor(page, "diameter", "the circle picked");
     assert.equal(await page.locator("#typed-diameter").getAttribute("placeholder"), "10");
     await page.keyboard.type("16");
     await page.keyboard.press("Enter");
@@ -245,7 +255,7 @@ try {
     assert.ok(box.x >= 0 && box.x + box.width <= 375, `Dimension is off screen at x ${box.x}..${box.x + box.width}`);
     await page.tap("#sketch-tool-dimension");
     await at(page, [10, 3], { tap: true });
-    await boxFor(page, "length");
+    await boxFor(page, "length", "the line tapped");
     await page.keyboard.type("25");
     await page.keyboard.press("Enter");
     await shown(page, "sketchLabels", "25");
@@ -255,7 +265,7 @@ try {
     const l = await labelAt(page, "25");
     assert.ok(l.box.height >= 28, `the label is ${l.box.height} px tall`);
     await page.touchscreen.tap(l.x, l.y);
-    await boxFor(page, "length");
+    await boxFor(page, "length", "the label tapped");
     await page.keyboard.type("8");
     await page.keyboard.press("Enter");
     await shown(page, "sketchLabels", "8");
