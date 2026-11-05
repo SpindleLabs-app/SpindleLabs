@@ -52,6 +52,9 @@ const scene = joinBodies([box, cylinder]);
 test("a point turned the way a Move turns, by hand: counter-clockwise looking down each axis, X then Y then Z, then shifted", () => {
   // 90° about Z takes +X to +Y (x, y) → (−y, x); about X, +Y to +Z; about Y, +Z to +X.
   close(movedPoint([1, 0, 0], v({ turnZ: 90 })), [0, 1, 0], "Z");
+  // The preview turns a huge angle as the Move does: 1e20° is 280° and whole turns (move.test.ts works it out), so
+  // (1, 0, 0) lands at (cos 280°, sin 280°, 0) (clumsy hunt 2026-11-04: it landed elsewhere).
+  close(movedPoint([1, 0, 0], v({ turnZ: 1e20 })), [Math.cos((280 * Math.PI) / 180), Math.sin((280 * Math.PI) / 180), 0], "Z, 1e20°");
   close(movedPoint([0, 1, 0], v({ turnX: 90 })), [0, 0, 1], "X");
   close(movedPoint([0, 0, 1], v({ turnY: 90 })), [1, 0, 0], "Y");
   // The order: (0, 1, 0) turned 90° about X is (0, 0, 1), then 90° about Y is (1, 0, 0).

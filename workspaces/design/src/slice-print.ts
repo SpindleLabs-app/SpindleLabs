@@ -10,11 +10,12 @@
 // docs/progress/slice.md). Styles: src/styles/slice-print.css.
 
 import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, StlFile, SupportStyle } from "@fission/core";
-import type { SaveKind } from "@fission/ui";
-import type { DesignDocument } from "./document.ts";
-import { endSpec } from "./move-tool.ts";
+import { repeatGuard, type SaveKind } from "@fission/ui";
+import { bodyIdOf, type DesignDocument } from "./document.ts";
+import { endStls } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
 import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
+import { overhangArea, supportsHint } from "./overhang.ts";
 
 /**
  * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
@@ -141,7 +142,7 @@ export function presetSettingsOf(raw: unknown): PresetSettings | null {
 export const P1S_KIND: SaveKind = { description: "Bambu Lab P1S print file", mime: "model/3mf", extension: ".gcode.3mf" };
 
 /** What the dialog says of any slice, plain or packed. */
-export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume"> & { levelNote?: string };
+export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume"> & { levelNote?: string; overhangMm2?: number };
 
 /**
  * The bodies' STL files back to back, one file per body, as the engine
@@ -305,13 +306,16 @@ export function stlHighestZ(stl: Uint8Array): number {
 }
 
 /** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, the note on their heights, and how tall they are together. */
-async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number }> {
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string; height: number; overhang: number }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
-  const files: StlFile[] = [];
-  for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
+  const files: StlFile[] = await endStls(kernel, doc, features.map((f) => ("body" in f ? { ...f, name: "body" } : { body: bodyIdOf(f.id), feature: f, name: "body" })));
   const height = Math.max(...files.map((f) => stlHighestZ(f.bytes))) - Math.min(...files.map((f) => stlLowestZ(f.bytes)));
-  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNoteOf(files.map((f) => f.bytes)), height };
+  const bytes = files.map((f) => f.bytes);
+  return { stl: stackStl(bytes), note: levelNoteOf(bytes), height, overhang: overhangArea(bytes) };
 }
+
+/** A body to slice: an item's own (by the item), or any body by its id and the item its row stands for (35f1: a Combine's piece). */
+export type SliceBody = Feature | { body: string; feature: Feature };
 
 /** The height of the bodies a refusal was for (slicer hunt 2026-11-04, ui 2), so its words can say how tall the part really is. */
 const refusedHeights = new WeakMap<object, number>();
@@ -365,25 +369,25 @@ async function asRun<T>(kernel: KernelCalls, slice: (run: SliceRun) => Promise<T
 }
 
 /** The bodies' files for `run`, or SliceDropped if it was stopped while they were made. */
-async function runStl(run: SliceRun, doc: DesignDocument, features: readonly Feature[]) {
+async function runStl(run: SliceRun, doc: DesignDocument, features: readonly SliceBody[]) {
   const stl = await bodiesStl(run.kernel, doc, features);
   if (run.stopped) throw new SliceDropped();
   return stl;
 }
 
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
+export function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string; overhangMm2: number }> {
   return asRun(kernel, async (run) => {
-    const { stl, note, height } = await runStl(run, doc, features);
-    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note };
+    const { stl, note, height, overhang } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp, choices.betterGrip))), levelNote: note, overhangMm2: overhang };
   });
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
-export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
+export function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly SliceBody[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string; overhangMm2: number }> {
   return asRun(kernel, async (run) => {
-    const { stl, note, height } = await runStl(run, doc, features);
-    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note };
+    const { stl, note, height, overhang } = await runStl(run, doc, features);
+    return { ...(await engine(height, () => kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp, choices.betterGrip))), levelNote: note, overhangMm2: overhang };
   });
 }
 
@@ -538,6 +542,13 @@ export const nameLead = (project?: string): string => {
   return name === "" || /^untitled$/i.test(name) ? "spindlelabs" : name;
 };
 
+/**
+ * The name a print file starts with: the project's own name, or when it has none (empty or "Untitled") the name of the
+ * file it was opened from or saved to, so a saved "bracket" prints as "bracket-…", not "spindlelabs-…" (slicer hunt
+ * 2026-11-04, package 4b: the app never names a project, so every print file was "spindlelabs-…").
+ */
+export const printLead = (project: string | undefined, file: string | null | undefined): string | undefined => (nameLead(project) === "spindlelabs" && file && file.trim() !== "" ? file : project);
+
 const settingsPart = (choices: PrintChoices) => `-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}${choices.betterGrip ? "-grip" : ""}`;
 
 /** The most a file's name may hold, as the save box cuts it (packages/ui save-file.ts): characters and bytes of UTF-8. */
@@ -656,15 +667,26 @@ export function fileCrawl(fraction: number, beforeMs: number, inFileMs: number):
   return fraction + (FILE_CRAWL_TOP - fraction) * (1 - Math.exp(-inFileMs / tau));
 }
 
+/** Slice and download's words when a choice was changed while it sliced (slicer hunt 2026-11-04, ui 5). */
+export const SLICE_EARLIER = "A choice was changed while it sliced, so this is the slice of the earlier choices: slice again for the new ones.";
+/** The print preview's words when a choice was changed while its slice ran (the hunt's leftover: the preview said nothing). */
+export const PREVIEW_EARLIER = "A choice was changed while it sliced, so this preview shows the earlier choices: preview again for the new ones.";
+
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
   slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
-  /** Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b, H2c); nothing is saved. */
-  preview(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<void>;
+  /**
+   * Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b,
+   * H2c); nothing is saved. `changed()` turns true once a choice is changed while it slices: the preview then says it
+   * shows the earlier choices (PREVIEW_EARLIER).
+   */
+  preview(choices: PrintChoices, file: FileChoices, alive: () => boolean, changed: () => boolean): Promise<void>;
   /** Calls `listener` as a slice reports how far it has got (KernelCalls.onProgress); returns the way to stop. Left out: the bar just says it is slicing. */
   onProgress?(listener: (progress: SliceProgress) => void): () => void;
   /** Called when the warm-up loop or Better grip is ticked or unticked (the build area counts them). */
   extrasChanged?(extras: FirstLayerExtras): void;
+  /** The clock that tells a double press from two presses, in ms (the tests' own); left out, performance.now(). */
+  now?(): number;
 }
 
 export interface SlicePrint {
@@ -772,6 +794,25 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   format.select.addEventListener("change", plateFor);
   const status = el("p", "slice-print-status");
   status.setAttribute("role", "status");
+  // The supports hint after a slice (Ben, 2026-11-04): recommended or not, by the bodies' overhangs (overhang.ts), and
+  // one button that flips the Supports choice when it disagrees. Hidden until a slice, and again on any change.
+  const hint = el("div", "slice-print-supports-hint");
+  hint.className = "slice-print-supports-hint";
+  hint.hidden = true;
+  const hintWords = el("span", "slice-print-supports-hint-words");
+  const flip = el("button", "slice-print-supports-flip");
+  flip.type = "button";
+  hint.append(hintWords, flip);
+  let flipTo: SupportStyle | null = null;
+  const showHint = (overhangMm2: number | undefined) => {
+    const h = overhangMm2 === undefined ? null : supportsHint(overhangMm2, supports.select.value !== "off");
+    hint.hidden = h === null;
+    hint.dataset.recommended = String(h?.recommended ?? false);
+    hintWords.textContent = h?.words ?? "";
+    flipTo = h?.flip?.to ?? null;
+    flip.hidden = h?.flip == null;
+    flip.textContent = h?.flip?.label ?? "";
+  };
   // The bar while a slice runs (Ben, 2026-11-01): how far the engine has got, from its own reports; no value (the
   // browser's moving bar) until the first one, and hidden when nothing runs.
   const bar = el("div", "slice-print-progress");
@@ -857,7 +898,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const top = document.createElement("div");
   top.className = "slice-print-top";
   top.append(heading, presets.element);
-  dialog.append(top, printer, untested, choices6, bar, status, actions);
+  dialog.append(top, printer, untested, choices6, bar, status, hint, actions);
   slot.append(dialog);
   let busy = false;
   /** Shows the bar from now until `end` is called, following the engine's reports. */
@@ -935,23 +976,45 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   for (const c of [quality, walls, infill, supports, format, plate, nozzle, { select: warmUp }, { select: grip }])
     c.select.addEventListener("change", () => {
       if (busy) changedWhileBusy = true;
-      else say("", false);
+      else {
+        say("", false);
+        showHint(undefined);
+      }
       presets.changed();
       keep();
     });
+  // A double press, or presses while it slices and just after, are one slice and one file (clumsy-user hunt 11-04).
+  // A disabled button hears no press, so the end of a slice counts as one: a tap that came during it waits again.
+  // A changed choice (or a preset picked) asks for a new file, so its press is meant however soon.
+  const clock = events.now ? () => events.now!() : undefined;
+  const goRepeats = repeatGuard(clock);
+  const previewRepeats = repeatGuard(clock);
+  dialog.addEventListener("change", () => (goRepeats.reset(), previewRepeats.reset()));
+  // One tap switches Supports to what the hint says; the next slice uses it.
+  flip.addEventListener("click", () => {
+    if (busy || flipTo === null) return;
+    const on = flipTo !== "off";
+    supports.select.value = flipTo;
+    // Bubbling, as a person's pick does: the dialog hears a changed choice, so the next press of Slice is never taken for a repeat.
+    supports.select.dispatchEvent(new (document.defaultView?.Event ?? Event)("change", { bubbles: true }));
+    say(on ? "Supports turned on (Normal). Slice again to make the file with them." : "Supports turned off. Slice again to make the file without them.", false);
+    go.focus();
+  });
   go.addEventListener("click", async () => {
-    if (busy) return;
+    if (goRepeats() || busy) return;
     working(true);
     changedWhileBusy = false;
     const mine = alive();
     say("Slicing…", false);
+    showHint(undefined);
     const end = showProgress();
     try {
       const { print, saved, name } = await events.slice(choices(), file(), mine);
       end();
-      const earlier = changedWhileBusy ? "A choice was changed while it sliced, so this is the slice of the earlier choices: slice again for the new ones." : null;
+      const earlier = changedWhileBusy ? SLICE_EARLIER : null;
       const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
+      showHint(print.overhangMm2);
     } catch (e) {
       end();
       // Dropped (closed, or stopped by Stop): nothing to say, the engine's "stopped" included.
@@ -959,16 +1022,19 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       else say(refusalOf(e), true);
     } finally {
       working(false);
+      goRepeats();
     }
   });
   preview.addEventListener("click", async () => {
-    if (busy) return;
+    if (previewRepeats() || busy) return;
     working(true);
+    changedWhileBusy = false;
     const mine = alive();
     say("Slicing…", false);
+    showHint(undefined);
     const end = showProgress();
     try {
-      await events.preview(choices(), file(), mine);
+      await events.preview(choices(), file(), mine, () => changedWhileBusy);
       end();
       say("", false);
       dialog.close();
@@ -979,6 +1045,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       else say(refusalOf(e), true);
     } finally {
       working(false);
+      previewRepeats();
     }
   });
   close.addEventListener("click", () => dialog.close());
@@ -987,7 +1054,10 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   return {
     ask() {
       if (dialog.open) return;
-      if (!busy) say("", false); // a slice still running keeps saying so
+      if (!busy) {
+        say("", false); // a slice still running keeps saying so
+        showHint(undefined);
+      }
       presets.refresh(); // another tab may have changed them
       dialog.showModal();
       go.focus();

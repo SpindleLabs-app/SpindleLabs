@@ -126,6 +126,8 @@ export interface WorkspaceContext {
   openFile?(): void;
   /** The design was cleared by Start fresh (File > New): the shell lets go of the file it was saved to or opened from, so Save asks again. */
   startedFresh?(): void;
+  /** The name of the file the project was opened from or last saved to, without its ending; null when it has none. Print files take it when the project has no name of its own. */
+  fileName?(): string | null;
 }
 
 /**

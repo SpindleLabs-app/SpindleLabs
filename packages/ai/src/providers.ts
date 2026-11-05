@@ -56,6 +56,8 @@ export interface AIRequest {
    * `complete` returns, and still what is checked.
    */
   onText?: (soFar: string) => void;
+  /** When it aborts, the provider stops (the panel stopped waiting, AI8a); what it does after that is ignored. */
+  signal?: AbortSignal;
 }
 
 export interface AIProvider {
