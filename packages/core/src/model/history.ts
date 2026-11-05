@@ -28,6 +28,18 @@ export interface History {
    * step that could be redone.
    */
   record(label: string, mergeKey?: string): boolean;
+  /**
+   * Every step kept, oldest first, for a list the person can jump about in: item 0 is the start (label ""), then one
+   * item per step, each with when it was made (ms by the clock the history was given) and where it stands against the
+   * present: "done" (before it), "current" (the project as it is now) or "undone" (a redo away or more).
+   */
+  steps(): HistoryStepInfo[];
+  /**
+   * Puts the project back as it was at step `step` of `steps()` (0 is the start), by as many undos or redos as it takes,
+   * as one restore. Returns that step's label, or null when it is the present, or not a step (not a whole number, below
+   * 0 or past the last). Refused inside an undo step, like undo and redo.
+   */
+  jumpTo(step: number): string | null;
   /** Puts back the state before the last step; returns that step's label, or null when there is nothing to undo. */
   undo(): string | null;
   /** Puts back the step last undone; returns its label, or null when there is nothing to redo. */
@@ -79,6 +91,15 @@ export interface History {
   busy(): boolean;
   /** Settles once no held work runs, including work held while waiting; at once when none does. */
   whenIdle(): Promise<void>;
+}
+
+/** One line of `History.steps()`. */
+export interface HistoryStepInfo {
+  /** The step's name ("" for the start). */
+  label: string;
+  /** When it was made, ms. */
+  at: number;
+  state: "done" | "current" | "undone";
 }
 
 export interface HistoryOptions {
@@ -183,6 +204,13 @@ export function createHistory(options: HistoryOptions): History {
       }
       changed();
       return true;
+    },
+    steps: () => entries.map((e, i) => ({ label: e.label, at: e.at, state: i < index ? "done" : i === index ? "current" : "undone" })),
+    jumpTo(step) {
+      refuseInStep("jump back");
+      if (!Number.isInteger(step) || step < 0 || step >= entries.length || step === index) return null;
+      go(step);
+      return entries[step].label;
     },
     undo() {
       refuseInStep("undo");

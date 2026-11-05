@@ -38,6 +38,8 @@ export const ICONS = {
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
   // The print check (Inspect ▾, H1): a nozzle over printed layers.
   "print-check": [tone("M4 15H20V20H4Z"), line("M9 3H15V7L13 10H11L9 7ZM12 10V12.5M4 15H20V20H4ZM4 17.5H20")],
+  // Two blocks pushed apart along a diagonal arrow: Inspect ▾ Exploded view.
+  explode: [tone("M3.5 13.5H10.5V20.5H3.5Z"), line("M3.5 13.5H10.5V20.5H3.5ZM13.5 3.5H20.5V10.5H13.5ZM10.5 13.5 13.5 10.5M10.5 10.5H13.5V13.5")],
   // The presets (Insert ▾), one per shape.
   box: CUBE,
   cylinder: [tone("M5 6.5A7 2.5 0 1 0 19 6.5A7 2.5 0 1 0 5 6.5Z"), line("M5 6.5A7 2.5 0 1 0 19 6.5A7 2.5 0 1 0 5 6.5ZM5 6.5V17.5A7 2.5 0 0 0 19 17.5V6.5")],
