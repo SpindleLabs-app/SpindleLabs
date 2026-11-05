@@ -118,7 +118,7 @@ test("a region that can't be extruded says why when picked and stays unpicked; O
   await a.settle();
   const refused = offered(a).find((o) => o.refused !== undefined)!;
   await a.extrudePointer({ kind: "pick", profile: refused.id });
-  assert.match(a.$("#feature-edit-error")!.textContent!, /^This region of Sketch 1 can't be extruded: two of its curves come 0\.0005 mm/);
+  assert.match(a.$("#feature-edit-error")!.textContent!, /^This region of Sketch 1 can't be extruded: line 1 and circle 1 come closer than 0\.001 mm without meeting; move them apart or join them$/);
   assert.notEqual(a.extrudeShown()!.chosen, refused.id);
   (a.$("#feature-edit-ok") as HTMLButtonElement).click();
   await a.settle();

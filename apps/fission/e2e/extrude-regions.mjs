@@ -311,20 +311,20 @@ try {
       await shot(page, `edit-region-done-${width}`);
       await page.context().close();
     });
-    await check(`${width} × ${height}${tap ? " with taps" : ""}: a region whose hole comes 0.0005 mm from its sides is shaded red and says why in plain words; picking it makes nothing; the disc in it still extrudes (π × 14.9995² × 10 = 7068.11 mm³)`, async () => {
+    await check(`${width} × ${height}${tap ? " with taps" : ""}: a region whose hole comes 0.0005 mm from its sides is shaded red and says why in the sketch's words; picking it makes nothing; the disc in it still extrudes (π × 14.9995² × 10 = 7068.11 mm³)`, async () => {
       const page = await openClose(width, tap, height);
       await press(page, "#extrude", tap);
       if (tap) await closePanels(page, true);
       await until(page, () => /^sketch-2#0 sketch-2#1 face:feature-1\//.test(document.querySelector("#viewport").dataset.extrudeProfiles ?? ""), null, "both regions offered, then the box's faces").catch(async (e) => assert.fail(`${e.message} (offered "${await data(page, "extrudeProfiles")}")`));
       await statusSays(page, /^Sketch 1 has 2 regions: click or tap the one to extrude\.$/, "asks which region");
-      const words = /can't be extruded: two of its curves come 0\.0005 mm from each other without meeting; curves must meet or be at least 0\.001 mm apart$/;
+      const words = /^This region of Sketch 1 can't be extruded: line 1 and circle 1 come closer than 0\.001 mm without meeting; move them apart or join them$/;
       // (−58, 2): inside the rectangle, 22.4 mm from the circle's centre: the plate, the refused one.
       const corner = toScreen(await camera(page), await canvasBox(page), [-58, 2, 0]);
       if (!tap) {
         // The pointer over it says why (the view's title), before any click.
         await page.mouse.move(corner.x, corner.y);
         await until(page, () => document.querySelector("#viewport").dataset.extrudeHover === "sketch-2#0", null, "the plate lit under the pointer");
-        assert.match(await page.evaluate(() => document.querySelector("#viewport").title), /^two of its curves come 0\.0005 mm/);
+        assert.match(await page.evaluate(() => document.querySelector("#viewport").title), /^this region can't be extruded: line 1 and circle 1 come closer than 0\.001 mm/);
       }
       // Drawn red (the refused colour, 0xff6b6b, see-through over the dark view), where the disc is drawn blue (0x6cc4ff).
       const pixel = (q) =>
