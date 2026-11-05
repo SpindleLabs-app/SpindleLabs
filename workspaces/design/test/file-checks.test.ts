@@ -32,23 +32,23 @@ test("hand-worked: a box the user names 'Feature 1 (box)' keeps that name after 
 test("the version tells old from new: the same data says version 3 and is renamed, says version 4, 5, 6 or 7 and is not", () => {
   // The break that shows the check reads the version: one word changed in an otherwise identical file.
   const doc = partDocument("box", 40, 30, 20);
-  assert.equal(doc.version, 9);
+  assert.equal(doc.version, 10);
   const r = renameItem(doc, "feature-1", "Feature 1 (box)");
   assert.ok("doc" in r);
   const data = JSON.parse(JSON.stringify(r.doc));
   // Older data has no bodies' numbers (version 5 brought them, 35e): the same data without them.
   const { bodies: _, nextBody: __, ...older } = data;
   assert.equal(label(readDesignDocument({ ...older, version: 3 })), "Box 1");
-  assert.equal(readDesignDocument({ ...older, version: 3 }).version, 9);
+  assert.equal(readDesignDocument({ ...older, version: 3 }).version, 10);
   assert.equal(label(readDesignDocument({ ...older, version: 4 })), "Feature 1 (box)");
   assert.equal(label(readDesignDocument(data)), "Feature 1 (box)");
   assert.equal(label(readDesignDocument({ ...data, version: 5 })), "Feature 1 (box)");
   assert.equal(label(readDesignDocument({ ...data, version: 6 })), "Feature 1 (box)");
 });
 
-test("data newer than version 9 is refused, naming the versions this SpindleLabs reads", () => {
-  const data = { ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version: 10 };
-  assert.throws(() => readDesignDocument(data), /Design data version 10 is not one this SpindleLabs reads \(1, 2, 3, 4, 5, 6, 7, 8 or 9\)/);
+test("data newer than version 10 is refused, naming the versions this SpindleLabs reads", () => {
+  const data = { ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version: 11 };
+  assert.throws(() => readDesignDocument(data), /Design data version 11 is not one this SpindleLabs reads \(1, 2, 3, 4, 5, 6, 7, 8, 9 or 10\)/);
 });
 
 /** partDocument's box as file data, broken by `mutate`. */
@@ -81,7 +81,7 @@ test("a timeline item with no provenance, no name of its own, or no 'from' list 
 // item pushed the counter past it, and the autosaved project no longer opened. The reader now refuses a counter
 // above MAX_NEXT_ID, leaving room for more ids than any design can use. (4) An item depending on itself or on a later
 // item opened, the graph refused it, and the design showed nothing with no message: refused on open, naming it. (5)
-// Data newer than version 9 is refused as a NewerFormatError, so the unsaved-changes journal keeps it (storage).
+// Data newer than version 10 is refused as a NewerFormatError, so the unsaved-changes journal keeps it (storage).
 
 test("hand-worked: the counter may be 2^52 = 4,503,599,627,370,496 but not one more, and a project that opens still opens after an edit", async () => {
   const { MAX_NEXT_ID, insertPreset } = await import("../src/document.ts");
@@ -129,10 +129,10 @@ test("an item depending on itself, or on an item after it, is refused on open na
   assert.equal(readDesignDocument(right).timeline.features.length, 2);
 });
 
-test("design data newer than version 9 is refused as a NewerFormatError; text '10' or 9.5 is not newer, only wrong", async () => {
+test("design data newer than version 10 is refused as a NewerFormatError; text '11' or 10.5 is not newer, only wrong", async () => {
   const { NewerFormatError } = await import("@fission/core");
   const data = (version: unknown) => ({ ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version });
-  assert.throws(() => readDesignDocument(data(10)), (e) => e instanceof NewerFormatError);
-  assert.throws(() => projectFromJson(projectToJson({ ...emptyProject("P"), workspaces: { design: data(10) } }), [designWorkspace]), (e) => e instanceof NewerFormatError && /design workspace's data: Design data version 10/.test(e.message));
-  for (const v of ["10", 9.5]) assert.throws(() => readDesignDocument(data(v)), (e) => e instanceof Error && !(e instanceof NewerFormatError));
+  assert.throws(() => readDesignDocument(data(11)), (e) => e instanceof NewerFormatError);
+  assert.throws(() => projectFromJson(projectToJson({ ...emptyProject("P"), workspaces: { design: data(11) } }), [designWorkspace]), (e) => e instanceof NewerFormatError && /design workspace's data: Design data version 11/.test(e.message));
+  for (const v of ["11", 10.5]) assert.throws(() => readDesignDocument(data(v)), (e) => e instanceof Error && !(e instanceof NewerFormatError));
 });

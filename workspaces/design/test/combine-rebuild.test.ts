@@ -161,7 +161,7 @@ test("a second Combine can't use a tool the first used up, and says so; one usin
   let { build, cache } = await built(again.doc);
   const r = build.results[again.id];
   assert.equal(r.status, "failed");
-  assert.match(r.status === "failed" ? r.message : "", /an earlier Combine used it up/);
+  assert.match(r.status === "failed" ? r.message : "", /an earlier Combine or extrude used it up/);
   await cache.close();
   // The far piece (x 40..100) cut by a 5 × 5 post at x 80..85, y 5..10 right through: 12,000 − 5 · 5 · 10 = 11,750 mm³.
   const piece = `body:${first.id}/piece:1`;

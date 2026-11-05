@@ -7,7 +7,7 @@
 // target's piece keeping its id.
 
 import type { Feature } from "@fission/core";
-import { bodyItem, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyItem, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, makesPieces, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
 
 /** The undo step a new Combine is recorded as. */
 export const COMBINE_STEP = "Combine bodies";
@@ -40,7 +40,7 @@ function itemsFor(doc: DesignDocument, target: string, tools: readonly string[],
     const item = bodyItem(b);
     const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[place];
-    if (f === undefined || !(isPiece(b) ? isCombineItem(f) && numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
+    if (f === undefined || !(isPiece(b) ? makesPieces(f) && numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
     if (place >= end) throw new Error(`${f.provenance.self.label} comes after ${at} can't use it`);
     return f;
   });
