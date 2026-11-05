@@ -46,3 +46,34 @@ export function parseLength(text: string, unit: Unit): number | null {
 
 /** A saved unit choice read back: anything but "mm" or "in" is millimetres. */
 export const readUnit = (raw: unknown): Unit => (raw === "in" ? "in" : "mm");
+
+/** A volume of `mm3` cubic millimetres in cubic `unit`s (a cubic inch is 25.4³ mm³ = 16387.064 mm³). */
+export const volumeIn = (mm3: number, unit: Unit): number => (unit === "in" ? mm3 / MM_PER_INCH ** 3 : mm3);
+/** An area of `mm2` square millimetres in square `unit`s (a square inch is 25.4² mm² = 645.16 mm²). */
+export const areaIn = (mm2: number, unit: Unit): number => (unit === "in" ? mm2 / MM_PER_INCH ** 2 : mm2);
+
+/** A number as plain decimal text (never 1e-7): at least 1 gets 3 decimals, a smaller one 3 significant digits; trailing zeros dropped. */
+function plain(x: number): string {
+  const s = Math.abs(x) >= 1 ? x.toFixed(3) : Number(x.toPrecision(3)).toFixed(12);
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+}
+
+/**
+ * What a number box shows for a length of `mm` (U2c2): millimetres as `boxValue` (the whole value); inches to 3 decimals,
+ * or 3 significant digits under an inch so a thin 0.5 mm wall reads 0.0197, not 0.02 (the 40 × 30 × 20 mm box is
+ * 1.575 × 1.181 × 0.787). A box that still holds this text is read back as the exact millimetres it was made from
+ * (properties.ts `sizeBox`), so the rounding costs nothing until the person types in it.
+ */
+export const boxShown = (mm: number, unit: Unit): string => (unit === "in" ? plain(fromMm(mm, unit)) : boxValue(mm, unit));
+
+/**
+ * Words that give lengths in millimetres, said in `unit`: every "N mm" becomes the same length in the unit
+ * ("0.001 mm" is "0.0000394 in"), and "in mm" ("Type the width in mm.") becomes "in inches". Areas and volumes
+ * (mm² and mm³) are left alone: they are never in a refusal's words. Millimetres leave the text exactly as it was.
+ */
+export function wordsInUnit(text: string, unit: Unit): string {
+  if (unit === "mm") return text;
+  return text
+    .replace(/\bin mm\b/g, "in inches")
+    .replace(/(\d+(?:\.\d+)?(?:e[+-]?\d+)?) mm(?![²³\w])/gi, (_, n: string) => `${plain(fromMm(Number(n), unit))} in`);
+}

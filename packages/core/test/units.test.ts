@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { boxValue, formatLength, fromMm, MM_PER_INCH, parseLength, readUnit, toMm } from "../src/model/units.ts";
+import { areaIn, boxShown, boxValue, formatLength, fromMm, MM_PER_INCH, parseLength, readUnit, toMm, volumeIn, wordsInUnit } from "../src/model/units.ts";
 
 test("hand-worked: an inch is exactly 25.4 mm, both ways", () => {
   assert.equal(MM_PER_INCH, 25.4);
@@ -64,4 +64,36 @@ test("a saved unit choice reads back, anything odd is millimetres", () => {
   assert.equal(readUnit("in"), "in");
   assert.equal(readUnit("mm"), "mm");
   for (const odd of [undefined, null, "", "cm", 1, {}, "IN"]) assert.equal(readUnit(odd), "mm");
+});
+
+test("hand-worked: areas and volumes in inches", () => {
+  // A square inch is 25.4 × 25.4 = 645.16 mm², a cubic inch 25.4 × 645.16 = 16387.064 mm³.
+  assert.equal(areaIn(645.16, "in"), 1);
+  assert.ok(Math.abs(volumeIn(16387.064, "in") - 1) < 1e-12);
+  // The 40 × 30 × 20 mm box: 24000 mm³ = 24000 / 16387.064 = 1.46457 in³ (1.575 × 1.181 × 0.787 = 1.4639 with the sides rounded).
+  assert.ok(Math.abs(volumeIn(24000, "in") - 1.46457) < 1e-5);
+  assert.equal(volumeIn(24000, "mm"), 24000);
+  assert.equal(areaIn(5.5, "mm"), 5.5);
+});
+
+test("refusal words said in inches; millimetres are left exactly as they were", () => {
+  const mm = "A length must be at least 0.001 mm, the smallest piece the modeller keeps.";
+  assert.equal(wordsInUnit(mm, "mm"), mm);
+  // 0.001 mm / 25.4 = 0.0000393701 in, to 3 significant digits 0.0000394.
+  assert.equal(wordsInUnit(mm, "in"), "A length must be at least 0.0000394 in, the smallest piece the modeller keeps.");
+  // 1 km = 1,000,000 mm = 39370.079 in.
+  assert.equal(wordsInUnit("A length can be at most 1000000 mm (1 km), the largest size.", "in"), "A length can be at most 39370.079 in (1 km), the largest size.");
+  assert.equal(wordsInUnit("Type the width in mm.", "in"), "Type the width in inches.");
+  assert.equal(wordsInUnit("It is back to 40 mm.", "in"), "It is back to 1.575 in.");
+  assert.equal(wordsInUnit("The volume is 5 mm³ over 2 mm².", "in"), "The volume is 5 mm³ over 2 mm².", "areas and volumes are not lengths");
+  assert.equal(wordsInUnit("A length must be more than 0 mm.", "in"), "A length must be more than 0 in.");
+});
+
+test("hand-worked: what a number box shows in inches", () => {
+  // 40 / 25.4 = 1.5748 → 1.575; 30 / 25.4 = 1.1811 → 1.181; 20 / 25.4 = 0.7874 → 0.787 (3 significant digits under an inch).
+  assert.deepEqual([40, 30, 20].map((mm) => boxShown(mm, "in")), ["1.575", "1.181", "0.787"]);
+  assert.equal(boxShown(0.5, "in"), "0.0197", "a 0.5 mm wall: 0.5 / 25.4 = 0.019685, not 0.02");
+  assert.equal(boxShown(25.4, "in"), "1");
+  assert.equal(boxShown(0.001, "in"), "0.0000394", "the smallest length, never in 1e-5 notation");
+  assert.equal(boxShown(40, "mm"), "40", "millimetres are the whole value");
 });
