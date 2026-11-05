@@ -64,6 +64,22 @@ export interface SketchArcCurve {
   centre: string;
 }
 
+/**
+ * A sketch constraint (step 47d2), on points by id: horizontal or vertical
+ * keeps two points level or upright (a line's two ends when a line is
+ * picked), coincident keeps two points in one place, fix holds a point
+ * where it is. The sketch's points are always stored solved
+ * (constraints.ts), so a fix needs no value of its own. Kept in the order
+ * they were made, oldest first (the solver blames the oldest that fights).
+ */
+export type SketchConstraint = { id: string; kind: "horizontal" | "vertical" | "coincident"; a: string; b: string } | { id: string; kind: "fix"; point: string };
+
+/** The points a constraint names: two, or one for a fix. */
+export const constraintPoints = (c: SketchConstraint): string[] => (c.kind === "fix" ? [c.point] : [c.a, c.b]);
+
+/** The most constraints one sketch may hold: the solver's own limit (four a point at its 2,000 points). */
+export const MAX_SKETCH_CONSTRAINTS = 8000;
+
 /** A sketch's curves: lines, circles and arcs. */
 export type SketchCurve = SketchLineCurve | SketchCircleCurve | SketchArcCurve;
 
@@ -82,8 +98,8 @@ export interface Sketch {
   id: string;
   points: SketchPoint[];
   curves: SketchCurve[];
-  /** Empty until the solver (step 47). */
-  constraints: never[];
+  /** Its constraints, oldest first (step 47d2). */
+  constraints: SketchConstraint[];
   /** Only for a sketch on a face (step 26c). */
   face?: SketchFace;
   /**
@@ -814,9 +830,32 @@ function checkSketch(s: unknown, i: number): void {
   if (!isRecord(s) || typeof s.id !== "string") throw new Error(`Design sketch ${i + 1} has no id`);
   const at = `Design sketch ${s.id}`;
   if (!Array.isArray(s.points) || !Array.isArray(s.curves) || !Array.isArray(s.constraints)) throw new Error(`${at} needs points, curves and constraints lists`);
-  if (s.constraints.length > 0) throw new Error(`${at} has constraints, which this SpindleLabs can't read yet`);
   notTooMany(s.points.length + s.curves.length, DESIGN_LIMITS.sketch, `${at} has`, "points and curves");
+  notTooMany(s.constraints.length, MAX_SKETCH_CONSTRAINTS, `${at} has`, "constraints");
   checkContent(s.points, s.curves, at);
+  checkConstraints(s.constraints, new Set(s.points.map((p) => (p as SketchPoint).id)), at);
+}
+
+/**
+ * A sketch's constraints, checked (step 47d2): each with an id of its own,
+ * a kind this SpindleLabs knows, and points of the same sketch (two
+ * different ones, or one for a fix). Whether they hold is the solver's,
+ * the next time one is added.
+ */
+function checkConstraints(list: unknown[], points: ReadonlySet<string>, at: string): void {
+  const ids = new Set<string>();
+  for (const [j, c] of list.entries()) {
+    if (!isRecord(c) || typeof c.id !== "string") throw new Error(`${at}: constraint ${j + 1} has no id`);
+    if (ids.has(c.id)) throw new Error(`${at}: two constraints are called ${shown(c.id)}`);
+    ids.add(c.id);
+    if (c.kind === "fix") {
+      if (typeof c.point !== "string" || !points.has(c.point)) throw new Error(`${at}: constraint ${c.id} fixes ${shown(c.point)}, which is not one of the sketch's points`);
+      continue;
+    }
+    if (c.kind !== "horizontal" && c.kind !== "vertical" && c.kind !== "coincident") throw new Error(`${at}: constraint ${c.id} is a ${shown(c.kind)}, which this SpindleLabs can't read yet`);
+    for (const p of [c.a, c.b]) if (typeof p !== "string" || !points.has(p)) throw new Error(`${at}: constraint ${c.id} names ${shown(p)}, which is not one of the sketch's points`);
+    if (c.a === c.b) throw new Error(`${at}: constraint ${c.id} joins point ${c.a} to itself`);
+  }
 }
 
 /** Refuses a count above its limit (DESIGN_LIMITS) before anything loops over what it counts: "Design data has 6000 timeline items, more than the 5000 …". */
@@ -1383,7 +1422,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const ids = [
     ...d.profiles.map((p) => p.id),
     ...d.timeline.features.map((f) => f.id),
-    ...d.sketches.flatMap((s) => [...s.points.map((p) => p.id), ...s.curves.map((c) => c.id), ...(s.projected ?? []).map((p) => p.id)]),
+    ...d.sketches.flatMap((s) => [...s.points.map((p) => p.id), ...s.curves.map((c) => c.id), ...(s.projected ?? []).map((p) => p.id), ...s.constraints.map((c) => c.id)]),
   ];
   // A kept shape holds a sketch's old ids (some may still be in the sketch): never repeated by a new id, so the counter is above them too.
   // So does a move's deleted body, so no new body takes its id and is moved by it.
@@ -1399,6 +1438,17 @@ export function readDesignDocument(data: unknown): DesignDocument {
     seen.add(id);
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
+  }
+  // No constraint names a point that follows a body (47d4 review): a body's edit moves it without a solve, so the constraint would stop holding.
+  for (const s of d.sketches) {
+    if (s.constraints.length === 0) continue;
+    const curves = new Map(s.curves.map((c) => [c.id, c]));
+    const follows = new Set((s.pins ?? []).map((p) => p.point));
+    for (const p of s.projected ?? []) {
+      const c = curves.get(p.made);
+      for (const q of c === undefined ? [p.made] : c.kind === "line" ? [c.start, c.end] : c.kind === "circle" ? [c.centre] : [c.start, c.end, c.centre]) follows.add(q);
+    }
+    for (const c of s.constraints) for (const q of constraintPoints(c)) if (follows.has(q)) throw new Error(`Design sketch ${s.id}: constraint ${c.id} names ${q}, which follows a body's edge, so a constraint can't hold it`);
   }
   // Every solid feature is its own body (24d1), so each one's sizes or profile are checked, not only the part's.
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).

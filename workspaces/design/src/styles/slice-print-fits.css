@@ -1,0 +1,8 @@
+/* Slice for printing's Printer fits line (slice-print.ts, fit-calibration.ts): what the fits are for the nozzle
+   chosen, and a plain button that opens Printer fits, on one line where there is room. */
+.slice-print-fits:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 12px; }
+.slice-print-fits #slice-print-fits-words { flex: 1 1 14em; min-width: 0; }
+.slice-print-fits #slice-print-fits-open:not(#none) { min-height: var(--look-target); padding: 0 12px; }
+@media (max-width: 640px) {
+  .slice-print-fits #slice-print-fits-open:not(#none) { min-height: 44px; }
+}

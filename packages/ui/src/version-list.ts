@@ -1,14 +1,20 @@
 // File > Earlier versions… (missing basics 3b): the open project's earlier versions kept in this browser
 // (@fission/storage versions.ts: one every ten minutes or so as you work, the newest twenty), newest first, each with
 // when it was saved; Restore puts one in place of the project as it is now, as ONE undo step, so Undo takes it back
-// and nothing asks first. The shell does the restoring (apps/fission main.ts `restoreVersion`). The dialog wears the
-// project list's look (styles/project-list.css).
+// and nothing asks first. Signed in, with the project kept in the account (My designs), the account's versions are
+// listed too (account features 2: the copy each save replaces, kept on the account's side), so one saved on another
+// device can be restored here; one kept in both places is listed once. The shell does the restoring (apps/fission
+// main.ts `restoreVersion`). The dialog wears the project list's look (styles/project-list.css).
 
 import { savedWhen } from "./project-list.ts";
 
 export const VERSIONS_TITLE = "Earlier versions";
 export const VERSIONS_NOTE = "Kept in this browser as you work, one every ten minutes or so, the newest 20. Restore puts one in place of what you have now, and Undo takes it back.";
 export const NO_VERSIONS = "No earlier versions yet: one is kept once you have worked on this project for ten minutes or so.";
+/** Added to the note when the account's versions are listed too. */
+export const ACCOUNT_NOTE = "Your account keeps them too, so one saved on another device can be restored here.";
+/** The tag on a version kept only in the account. */
+export const ACCOUNT_TAG = "From your account";
 export const NOT_KEPT = "This project isn't kept in this browser yet, so it has no earlier versions: it is kept once you change something.";
 
 /** The time of day, and the day too when it isn't `now`'s, in the reader's own way ("14:05", "3 Nov, 14:05"). */
@@ -17,24 +23,40 @@ export function versionTime(at: Date, now: Date): string {
   return at.toDateString() === now.toDateString() ? time : `${at.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${time}`;
 }
 
+/** Where a version is kept: in this browser (also in the account, perhaps), or only in the account. */
+export type VersionPlace = "browser" | "account";
+
 export interface VersionRow {
   at: Date;
+  where: VersionPlace;
   /** "Saved 25 minutes ago". */
   when: string;
   /** "14:05". */
   time: string;
 }
 
-/** The rows, in the order given (newest first). Pure, so it is tested by hand. */
-export function versionRows(times: readonly Date[], now: Date, time: (at: Date, now: Date) => string = versionTime): VersionRow[] {
-  return times.map((at) => ({ at, when: savedWhen(at, now), time: time(at, now) }));
+/**
+ * The rows, newest first: this browser's versions, and the account's that this browser doesn't keep (the same save
+ * time, to the millisecond, is the same version). Pure, so it is tested by hand.
+ */
+export function versionRows(times: readonly Date[], now: Date, time: (at: Date, now: Date) => string = versionTime, account: readonly Date[] = []): VersionRow[] {
+  const here = new Set(times.map((t) => t.getTime()));
+  const all: { at: Date; where: VersionPlace }[] = [...times.map((at) => ({ at, where: "browser" as const })), ...account.filter((t) => !here.has(t.getTime())).map((at) => ({ at, where: "account" as const }))];
+  all.sort((a, b) => b.at.getTime() - a.at.getTime());
+  return all.map(({ at, where }) => ({ at, where, when: savedWhen(at, now), time: time(at, now) }));
 }
 
+/** The account's side of the list: its versions' times, or why they can't be listed now. */
+export type AccountVersions = { times: Date[] } | { problem: string };
+
 export interface VersionListParts {
-  /** The open project's name, and its versions newest first; null when the open project isn't kept yet. May refuse. */
-  list(): Promise<{ name: string; times: Date[] } | null>;
-  /** Puts version `at` in place of the project as it is now (one undo step); a refusal is said in the dialog, which stays. */
-  restore(at: Date): Promise<void>;
+  /**
+   * The open project's name, and its versions newest first; null when the open project isn't kept yet. `account`, when
+   * the project is kept in the person's account too, is the account's. May refuse.
+   */
+  list(): Promise<{ name: string; times: Date[]; account?: AccountVersions | null } | null>;
+  /** Puts version `at`, kept `where`, in place of the project as it is now (one undo step); a refusal is said in the dialog, which stays. */
+  restore(at: Date, where: VersionPlace): Promise<void>;
   now?: () => Date;
 }
 
@@ -84,32 +106,38 @@ export function versionList(doc: Document, parts: VersionListParts): VersionList
     if (ticket !== filling) return;
     title.textContent = found === null ? VERSIONS_TITLE : `${VERSIONS_TITLE} of “${found.name || "Untitled"}”`;
     const now = (parts.now ?? (() => new Date()))();
-    const rows = found === null ? [] : versionRows(found.times, now);
+    const account = found?.account ?? null;
+    const rows = found === null ? [] : versionRows(found.times, now, versionTime, account && "times" in account ? account.times : []);
+    note.textContent = account && "times" in account ? `${VERSIONS_NOTE} ${ACCOUNT_NOTE}` : VERSIONS_NOTE;
     items.replaceChildren(...rows.map(rowFor));
     if (found === null) say(NOT_KEPT);
+    else if (account && "problem" in account) say(`Your account's versions can't be listed right now. ${account.problem} ${rows.length ? "These are the ones kept in this browser." : ""}`.trim());
     else if (rows.length === 0) say(NO_VERSIONS);
   }
 
   function rowFor(row: VersionRow): HTMLLIElement {
     const li = el("li", { className: "project-row" });
     li.dataset.at = String(row.at.getTime());
+    li.dataset.where = row.where;
     const words = el("div", { className: "project-row-words" });
-    words.append(el("span", { className: "project-row-name", textContent: row.time }), el("span", { className: "project-row-when", textContent: row.when }));
+    const name = el("span", { className: "project-row-name", textContent: row.time });
+    if (row.where === "account") name.append(" ", el("span", { className: "version-account-tag", textContent: ACCOUNT_TAG }));
+    words.append(name, el("span", { className: "project-row-when", textContent: row.when }));
     const actions = el("div", { className: "project-row-actions" });
     const restore = el("button", { type: "button", className: "project-list-button version-restore", textContent: "Restore", title: `Put the version from ${row.time} in place of what you have now (Undo takes it back)` });
-    restore.addEventListener("click", () => void act(row.at));
+    restore.addEventListener("click", () => void act(row.at, row.where));
     actions.append(restore);
     li.append(words, actions);
     return li;
   }
 
-  async function act(at: Date) {
+  async function act(at: Date, where: VersionPlace) {
     if (busy) return;
     busy = true;
     dialog.setAttribute("aria-busy", "true");
     say("");
     try {
-      await parts.restore(at);
+      await parts.restore(at, where);
       finish();
     } catch (e) {
       say(message(e).replace(/^./, (c) => c.toUpperCase()), true);
@@ -145,6 +173,7 @@ export function versionList(doc: Document, parts: VersionListParts): VersionList
   return {
     async show() {
       say("");
+      note.textContent = VERSIONS_NOTE;
       items.replaceChildren();
       title.textContent = VERSIONS_TITLE;
       if (!dialog.open) {

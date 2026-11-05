@@ -3,13 +3,15 @@
    the timeline's item menu, an entry that is off greyed with why under
    it), and the box that asks before a used sketch is deleted. Delete in the box is the
    warning red of something that removes work; Cancel keeps the plain look
-   and has the focus. ":not(#none)" lifts a rule over the base layout's
+   and has the focus. The menu is never taller than the window (it scrolls
+   inside), and delete-ask.ts places it again when the window changes size
+   (a phone turned). ":not(#none)" lifts a rule over the base layout's
    "#workspace button" while every selector still starts with .delete-ask. */
 .delete-ask.delete-ask-row { display: flex; align-items: center; gap: 4px; }
 .delete-ask.delete-ask-row > .tree-row { flex: 1; min-width: 0; }
 .delete-ask.delete-ask-row > .delete-ask-more:not(#none) { padding: 0 6px; min-width: 28px; background: none; border: 1px solid transparent; border-radius: var(--look-radius-s); color: var(--text-b5bbc4); cursor: pointer; line-height: 1.4; }
 .delete-ask.delete-ask-row > .delete-ask-more:not(#none):hover, .delete-ask.delete-ask-row > .delete-ask-more:not(#none):focus-visible { border-color: var(--line-strong); color: var(--text); }
-.delete-ask .delete-ask-menu { position: fixed; inset: auto; margin: 0; padding: 4px; min-width: 140px; background: var(--surface); color: var(--text); border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.delete-ask .delete-ask-menu { position: fixed; inset: auto; margin: 0; box-sizing: border-box; max-height: 100vh; overflow-y: auto; padding: 4px; min-width: 140px; background: var(--surface); color: var(--text); border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .delete-ask .delete-ask-menu::backdrop { background: transparent; }
 .delete-ask .delete-ask-menu button:not(#none) { display: block; width: 100%; text-align: left; padding: 6px 10px; background: none; border: none; border-radius: var(--look-radius-s); color: var(--text); font: inherit; cursor: pointer; }
 .delete-ask .delete-ask-menu #row-menu-delete:not(#none):enabled { color: var(--text-ff8a8a); }

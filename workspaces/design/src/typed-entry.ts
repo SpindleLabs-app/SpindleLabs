@@ -20,6 +20,7 @@ import type { SketchXY } from "@fission/core";
 import type { DesignDocument } from "./document.ts";
 import type { CentreArcTool, SketchTool } from "./sketch-tool.ts";
 import { sweep } from "./centre-arc.ts";
+import { isConstraintTool } from "./constraint-tool.ts";
 
 /** The boxes a tool shows: a line's length and angle, a rectangle's width and height, a centre arc's radius and angle, then its arc angle (`sweep`), a circle's diameter. */
 export type TypedField = "length" | "angle" | "width" | "height" | "radius" | "sweep" | "diameter";
@@ -208,7 +209,7 @@ export function anchorOf(doc: DesignDocument, tool: SketchTool): SketchXY | null
   if (tool.kind === "arc") return tool.end === null ? tool.start : null;
   if (tool.kind === "centre") return tool.centre;
   if (tool.kind === "circle") return tool.centre;
-  if (tool.kind === "project" || tool.kind === "select" || tool.from === null) return null;
+  if (tool.kind === "project" || tool.kind === "select" || isConstraintTool(tool) || tool.from === null) return null;
   return typeof tool.from === "string" ? pointOf(doc, tool.sketch, tool.from) : tool.from;
 }
 

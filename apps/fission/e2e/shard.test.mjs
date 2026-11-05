@@ -3,9 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { commands, fileOf, shares, UNKNOWN } from "./shard.mjs";
-
-const script = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts.e2e;
+import { fileOf, shares, UNKNOWN } from "./shard.mjs";
+import { allChecks } from "./checks.mjs";
 
 test("shares are dealt longest first onto the lightest share, worked by hand", () => {
   const cmds = ["node e2e/a.mjs", "node e2e/b.mjs", "node e2e/c.mjs", "node e2e/d.mjs"];
@@ -25,11 +24,11 @@ test("shares are dealt longest first onto the lightest share, worked by hand", (
   assert.equal(UNKNOWN > 0, true);
 });
 
-test("every check of npm run e2e lands in exactly one share, for 1 to 8 shares", () => {
-  const all = commands(script);
-  assert.ok(all.length >= 20, `only ${all.length} checks read from the e2e script`);
+test("every browser check lands in exactly one share, for 1 to 8 shares", () => {
+  const all = allChecks();
+  assert.ok(all.length >= 20, `only ${all.length} checks found in e2e/`);
   for (const p of all) assert.ok(existsSync(new URL(fileOf(p), import.meta.url)), `${p} names no file`);
-  assert.equal(new Set(all).size, all.length, "a check is listed twice in the e2e script");
+  assert.equal(new Set(all).size, all.length, "a check is found twice");
   for (let n = 1; n <= 8; n++) {
     const split = shares(all, n);
     assert.equal(split.length, n);
@@ -40,18 +39,8 @@ test("every check of npm run e2e lands in exactly one share, for 1 to 8 shares",
   assert.deepEqual(shares(all, 1)[0], all);
 });
 
-test("a script that is not a plain && chain of checks is refused, not half run", () => {
-  for (const bad of [
-    "node e2e/a.mjs || true",
-    "node e2e/a.mjs; node e2e/b.mjs",
-    "node e2e/a.mjs & node e2e/b.mjs",
-    "node e2e/a.mjs | tee log",
-    "node e2e/a.mjs && npx vite build",
-    "node e2e/a.mjs && cd .. && node e2e/b.mjs",
-    "node e2e/a.mjs &&  && node e2e/b.mjs",
-    "",
-  ]) assert.throws(() => commands(bad), Error, bad);
-  assert.deepEqual(commands("node e2e/a.mjs && node --experimental-strip-types --no-warnings e2e/b-c.mjs"),
-    ["node e2e/a.mjs", "node --experimental-strip-types --no-warnings e2e/b-c.mjs"]);
+test("npm run e2e runs all of the checks through this runner, in one share", () => {
+  const scripts = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts;
+  assert.equal(scripts.e2e, "node e2e/shard.mjs 1 1");
   for (const n of [0, -1, 1.5, NaN]) assert.throws(() => shares(["node e2e/a.mjs"], n), /shard count/);
 });
