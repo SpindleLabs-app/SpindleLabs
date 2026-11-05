@@ -95,7 +95,8 @@ Research behind it (in the thread, plain words): Apple's 44 pt and Material's 48
 - [ ] U6c. Picture tiles as an option: a small render saved with each project when it is saved, shown in tile view. Test: the tile's render matches the part (pixel probe of the body colour in the middle), a project with no body shows a blank tile, the view choice remembered.
 
 ### U7. Leftovers from earlier asks
-- [ ] U7a. On sketch start the camera fits the sketch plane or face exactly from above, and the plane stays clearly highlighted while orbiting. Test: hand-worked framing of the 40 × 30 top face; pixel probes of the highlight from an orbited view.
+- [x] U7a1. While a sketch is edited its plane is drawn as a lightly tinted sheet under the grid (`PLANE_TINT_OPACITY` in `viewer.ts`, `gridSheet` in `sketch-view.ts`), so it stays clearly there when orbited to the other side. Test: `gridSheet` hand-worked in `sketch-view.test.ts`; `e2e/plane-tint.mjs` reads the canvas from above and from below before and after Finish (fails with the tint at 0).
+- [ ] U7a2. On sketch start the camera fits the sketch plane or face exactly from above (today Look At frames the whole body and the sketch: `lookAtFraming` in `framing.ts`; sketching on a face would frame that face's outline instead, needing the face's corners passed to `lookAt`). Test: hand-worked framing of the 40 × 30 top face.
 - [x] U7b. Escape turns off an active view-bar tool (Pan or Zoom back to Orbit), ordered against Design's Escape in the shortcut table. Test: in `e2e/navigation.mjs` and `e2e/shortcuts.mjs`.
 
 ### U8. Bug hunt
