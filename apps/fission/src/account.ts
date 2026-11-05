@@ -7,10 +7,12 @@
 
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { withIcon } from "@fission/ui";
+import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
 import "./styles/account.css";
 
 /** What signing in gives, shown beside the button. Each line must be true in the build that ships it. */
 export const SIGN_IN_GIVES = [
+  "My designs: your designs kept in your account, to open on any device you sign in on. You can turn this off.",
   "SpindleLabs Pro and its AI allowance when they open, on any device you sign in on.",
   "News of new features first, if you choose to get emails.",
 ];
@@ -41,7 +43,15 @@ function browserStore(): SmallStore {
   }
 }
 
-export async function startAccounts(service: { url: string; anonKey: string }): Promise<void> {
+/** What the shell can ask of the account code once it has started (main.ts). */
+export interface AccountHooks {
+  /** A project was just kept in this browser: send it to My designs a few seconds later. */
+  saved(): void;
+  /** File > My designs…: the list, or Sign in when signed out. */
+  showDesigns(): void;
+}
+
+export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost): Promise<AccountHooks | undefined> {
   const redirectTo = location.origin + location.pathname;
   const checked = checkConfig({ ...service, redirectTo });
   if (!checked.ok) return; // a build with broken settings simply has no sign-in
@@ -54,7 +64,8 @@ export async function startAccounts(service: { url: string; anonKey: string }): 
   });
   const store = browserStore();
   const data = accountData(client, store);
-  const ui = accountUi(client, data, store);
+  const designs = host ? startDesigns(client, host, store) : null;
+  const ui = accountUi(client, data, store, designs);
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
@@ -80,10 +91,21 @@ export async function startAccounts(service: { url: string; anonKey: string }): 
     const r = await data.setEmailChoice(true);
     if (r.kind !== "ok") ui.open("Signed in, but your yes to emails couldn't be saved. You can tick it again under your account.");
   }
+  // Just signed in: projects already in this browser are kept in the account only once the person says they're
+  // theirs (My designs opens to ask); signed in from before: anything changed since is sent.
+  if (back.kind === "signed-in") void designs?.askIfNeeded();
+  else void designs?.sendNow();
   // Another tab signing in or out shows here too.
   addEventListener("storage", (e) => {
     if (e.key === SESSION_KEY || e.key === null) ui.render();
   });
+  return {
+    saved: () => designs?.saved(),
+    showDesigns: () => {
+      if (client.state().kind === "signed-in" && designs) void designs.show();
+      else ui.open("Sign in to keep your designs in your account and open them on any device.");
+    },
+  };
 }
 
 const PAID_WORDS = "Thanks! Stripe took the test payment. Pro shows here as soon as Stripe confirms it, usually within a few seconds.";
@@ -93,7 +115,7 @@ function dataWords(r: Exclude<DataResult<unknown>, { kind: "ok" }>): string {
   return r.kind === "signed-out" ? "You're signed out. Sign in again to do that." : FAILURE_WORDS[r.reason];
 }
 
-function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
+function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null) {
   const doc = document;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
     const e = doc.createElement(tag);
@@ -207,7 +229,15 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
       del.type = "button";
       del.addEventListener("click", () => confirmDelete());
       yours.append(copy, del);
-      body.append(who, plan, emails.row, out, yours);
+      if (designs) {
+        const mine = el("button", "account-action account-my-designs", "My designs");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          void designs.show();
+        });
+        body.append(who, plan, mine, emails.row, out, yours);
+      } else body.append(who, plan, emails.row, out, yours);
     } else {
       const list = el("ul", "account-gives");
       for (const line of SIGN_IN_GIVES) list.append(el("li", undefined, line));
@@ -340,8 +370,10 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
     no.addEventListener("click", () => fill());
     yes.addEventListener("click", async () => {
       yes.disabled = no.disabled = true;
+      const before = client.state();
       const r = await data.deleteAccount();
       if (r.kind === "ok") {
+        if (before.kind === "signed-in") designs?.forget(before.user.id);
         note = "Your account was deleted. Designs on this device are still here.";
         render();
         return fill();
@@ -350,7 +382,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore) {
     });
     const row = el("div", "account-yours");
     row.append(no, yes);
-    body.append(el("p", undefined, "This deletes your sign-in, your plan and your email choice from SpindleLabs' servers, straight away. If you have Pro, it is cancelled at Stripe first, so nothing more is charged. It can't be undone."), el("p", undefined, "Designs on this device are not touched."), row);
+    body.append(el("p", undefined, "This deletes your sign-in, your plan, your email choice and every design kept in your account (My designs) from SpindleLabs' servers, straight away. If you have Pro, it is cancelled at Stripe first, so nothing more is charged. It can't be undone."), el("p", undefined, "Designs on this device are not touched."), row);
     dialog.replaceChildren(header, body);
   }
 

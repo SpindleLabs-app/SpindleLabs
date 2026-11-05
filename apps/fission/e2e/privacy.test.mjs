@@ -80,3 +80,15 @@ test("the check can fail: a page missing a service, or an unlisted address, is c
 test("the privacy page has no unfilled blanks", () => {
   assert.equal(/\{\{|\}\}/.test(page), false, "privacy.html still has a {{…}} blank to fill");
 });
+
+// My designs (account features 1): the page says what is kept, the first-time question, and the limits the code uses.
+test("with My designs in the app, the privacy page says what it keeps, when it is sent, and its limits", () => {
+  const designs = readFileSync(join(root, "packages/account/src/designs.ts"), "utf8");
+  const n = (name) => Number(new RegExp(`${name}: ([\\d* ]+)`).exec(designs)[1].split("*").reduce((a, b) => a * Number(b), 1));
+  const MIB = 1024 * 1024;
+  assert.equal(n("maxDesigns"), 200);
+  const words = page.replace(/\s+/g, " ");
+  assert.match(words, new RegExp(`up to ${n("maxDesigns")} designs and ${n("maxBytes") / MIB} MB in all, each design up to ${n("maxDesignBytes") / MIB} MB`));
+  for (const must of ["My designs", "its project file", "a small picture of it", "which workspace it was last saved from", "nothing is sent until you choose", "Keep my designs in my account", "Deleting your account deletes every design in it", "including every design in your account"]) assert.ok(words.includes(must), `the page says "${must}"`);
+  assert.ok(!/Your designs stay in your browser on your device: the people who make SpindleLabs never receive them/.test(words), "the old promise that designs never leave the device is gone");
+});
