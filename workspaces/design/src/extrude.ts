@@ -11,7 +11,7 @@
 // them: it is added to the timeline at the marker and replaces nothing.
 
 import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fission/core";
-import { bodyItem, COMBINE_OPERATIONS, counted, extrudeOperation, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, extrudeOperation, isCombineItem, isMoveItem, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 import { lengthRefused } from "./typed-entry.ts";
@@ -46,8 +46,7 @@ export const extrudeStep = (doc: DesignDocument, sketchId: string) => `Extrude $
 /** The undo step a typed distance is recorded as, merged per box like the other sizes. */
 export const DISTANCE_STEP = "Change extrude distance";
 
-const summary = (sketchLabel: string, distance: number, flip = false, f?: Feature) => `Extrude ${sketchLabel} by ${distance} mm${flip ? ", flipped" : ""}${f ? operationWords(f) : ""}`;
-
+const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel} by ${distance} mm${flip ? ", flipped" : ""}${operationWords(f)}`;
 
 /** An operation extrude's bodies and what they are called, as it names them (its provenance): an item's name, or "a piece of" the item that made it. */
 function bodyWords(f: Feature, bodies: readonly string[]): string[] {
@@ -207,10 +206,35 @@ export function setExtrudeOperation(doc: DesignDocument, id: string, choice: Ope
   const sketchId = old.intent.parameters.sketch as string;
   const there = doc.timeline.features.some((f) => f.id === sketchId);
   const label = there ? sketchItem(doc, sketchId).provenance.self.label : (old.provenance.from.find((p) => p.id === sketchId)?.label ?? sketchId);
+  if (choice?.bodies.includes(bodyIdOf(id))) throw new Error(`${old.provenance.self.label} can't join, cut or intersect its own body`);
   const makers = choice === null ? [] : makersFor(doc, choice.bodies, at, `${old.provenance.self.label}, so it`);
   const made = withOperation(old, sketchId, label, choice, makers);
   const feature: Feature = { ...made, intent: { ...made.intent, summary: summary(label, old.intent.parameters.distance as number, isFlipped(old), made) } };
-  return numberBodies({ ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } });
+  // The bodies it stops making: its own (a new body becoming Join, Cut or Intersect), or its pieces (back to a new body).
+  // A later item working on one of them refuses the change; an eye shut on one goes with it (else the file would not open).
+  const gone = was === null ? [bodyIdOf(id)] : choice === null ? (doc.bodies ?? []).map((b) => b.id).filter((b) => isPiece(b) && bodyItem(b) === id) : [];
+  for (const later of doc.timeline.features.slice(at + 1)) {
+    const used = bodiesUsed(later).find((b) => gone.includes(b));
+    if (used !== undefined) {
+      const name = `Body ${bodyNumbers(doc).get(used) ?? "?"}`;
+      throw new Error(`${later.provenance.self.label} uses ${name}, which ${old.provenance.self.label} would no longer make: change or delete ${later.provenance.self.label} first`);
+    }
+  }
+  const eyes: DesignDocument = { ...doc };
+  const hidden = doc.hidden?.filter((h) => !gone.includes(h)) ?? [];
+  if (hidden.length === 0) delete eyes.hidden;
+  else if (hidden.length !== doc.hidden!.length) eyes.hidden = hidden;
+  return numberBodies({ ...eyes, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } });
+}
+
+/** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, an extrude's operation's. */
+function bodiesUsed(f: Feature): string[] {
+  if (isMoveItem(f)) return Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : [];
+  if (isCombineItem(f)) {
+    const c = combineBodies(f);
+    return [c.target, ...c.tools];
+  }
+  return extrudeOperation(f)?.bodies ?? [];
 }
 
 /**

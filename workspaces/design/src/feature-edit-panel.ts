@@ -22,6 +22,8 @@ export interface FeatureEditEvents {
   operation?(operation: ExtrudeOperation): void;
   /** A body in its list ticked or unticked. */
   tick?(body: string, on: boolean): void;
+  /** A size typed or Flip changed (each shown box as typed, and Flip), so the bodies an extrude reaches can be found again. */
+  sizes?(typed: Partial<Record<SizeKey, string>>, flip?: boolean): void;
 }
 
 export interface FeatureEditPanel {
@@ -87,6 +89,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
         input.addEventListener("keydown", (e) => {
           if (e.key === "Enter" && ok && !ok.disabled) on.ok(typed(), flip?.checked);
         });
+        input.addEventListener("input", () => on.sizes?.(typed(), flip?.checked));
         inputs.push([r.key, input]);
         const label = el("label", "", "feature-edit-row");
         // A sketch extrude's one size is its distance; the main panel calls the same box "Extrude by".
@@ -98,6 +101,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
         flip = el("input", "edit-flip");
         flip.type = "checkbox";
         flip.checked = f.flip;
+        flip.addEventListener("change", () => on.sizes?.(typed(), flip?.checked));
         const row = el("label", "", "feature-edit-row feature-edit-flip");
         row.title = "Extrude the other way from the sketch's plane; the body still starts on it";
         row.append(flip, " Flip");

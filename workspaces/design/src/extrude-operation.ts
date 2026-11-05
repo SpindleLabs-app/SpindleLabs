@@ -48,10 +48,12 @@ export interface BodyChoice {
  * The panel's list for an extrude whose preview's box is `reach`: every
  * body of `bodies` (in their order, the scene's) whose box meets it,
  * ticked unless `unticked` holds it. A body no longer reached drops off
- * the list (and its untick is kept, for when the distance brings it back).
+ * the list (and its untick is kept, for when the distance brings it back),
+ * except one `kept` holds (an edited extrude's own bodies, listed reached
+ * or not, so OK never drops one silently).
  */
-export function bodyChoices(reach: Bounds, bodies: readonly ListedBody[], unticked: ReadonlySet<string>): BodyChoice[] {
-  return bodies.filter((b) => boxesMeet(reach, b.bounds)).map((b) => ({ body: b.body, label: b.label, ticked: !unticked.has(b.body) }));
+export function bodyChoices(reach: Bounds, bodies: readonly ListedBody[], unticked: ReadonlySet<string>, kept: ReadonlySet<string> = new Set()): BodyChoice[] {
+  return bodies.filter((b) => kept.has(b.body) || boxesMeet(reach, b.bounds)).map((b) => ({ body: b.body, label: b.label, ticked: !unticked.has(b.body) }));
 }
 
 /** The bodies ticked, in the list's order: what the extrude saves as its `bodies`. */

@@ -2648,6 +2648,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       else editOps.unticked.add(body);
       showEditBodies();
     },
+    sizes: (typed, flip) => void reachAgain(typed, flip),
   });
   /**
    * Edit feature on an extrude of a sketch with Combine shown: its operation
@@ -2655,13 +2656,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * and its own body's box, found once the panel opens (null meanwhile); the
    * bodies its operation uses are ticked, any of the others reached unticked.
    */
-  let editOps: { id: string; operation: ExtrudeOperation; candidates: ListedBody[] | null; own: Bounds | null; unticked: Set<string>; choices: BodyChoice[] } | null = null;
+  let editOps: { id: string; operation: ExtrudeOperation; candidates: ListedBody[] | null; own: Bounds | null; kept: Set<string>; unticked: Set<string>; choices: BodyChoice[]; asked: number } | null = null;
   /** The bodies an edited extrude can work on, and what OK will do, in the Edit panel. */
   function showEditBodies() {
     const e = editOps;
     if (e === null || e.operation === "new") return;
     if (e.candidates === null || e.own === null) return editBox.showBodies([], "Finding the bodies the extrude reaches…", false);
-    e.choices = bodyChoices(e.own, e.candidates, e.unticked);
+    e.choices = bodyChoices(e.own, e.candidates, e.unticked, e.kept);
     const note = operationNote(e.operation, e.choices);
     editBox.showBodies(e.choices, note.text, note.ready);
   }
@@ -2681,9 +2682,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const build = await rebuildTimeline(rolled, store, kernel);
       const numbers = bodyNumbers(doc);
       const candidates = await Promise.all(Object.entries(build.bodies).map(async ([body, b]) => ({ body, label: `Body ${numbers.get(body) ?? "?"}`, bounds: (await store.view(b.handle)).bounds })));
-      const handle = await kernel.call("body_build", await featureSpec(kernel, doc, f));
-      const view = await kernel.call("body_view", handle).finally(() => void kernel.call("body_free", handle));
-      found = { candidates, own: view.bounds };
+      found = { candidates, own: await ownBox(doc, f) };
     } catch {
       // Its sketch makes no outline now, or the kernel refused: no list, and Join, Cut or Intersect can't be picked anew.
       found = { candidates: [], own: [[0, 0, 0], [0, 0, 0]] };
@@ -2696,8 +2695,36 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Its own bodies first in their order, reached or not; the others reached, unticked when it already has bodies.
     const listed = [...(saved ?? []).map((b) => found.candidates.find((c) => c.body === b) ?? { body: b, label: `Body ${bodyNumbers(doc).get(b) ?? "?"}`, bounds: found.own }), ...found.candidates.filter((c) => !(saved ?? []).includes(c.body))];
     e.candidates = listed;
-    e.own = found.own;
+    e.own ??= found.own;
+    e.kept = new Set(saved ?? []);
     if (saved !== null) for (const c of found.candidates) if (!saved.includes(c.body)) e.unticked.add(c.body);
+    showEditBodies();
+  }
+
+  /** The box round extrude `f`'s own body in `doc`, as the kernel builds it. */
+  async function ownBox(doc: DesignDocument, f: Feature): Promise<Bounds> {
+    return (await buildSpec(kernel, await featureSpec(kernel, doc, f))).bounds;
+  }
+  /**
+   * A distance typed or Flip changed in the Edit panel: the extrude's own box found again at the sizes typed, so the list
+   * holds the bodies it reaches now (as the new extrude's preview does); a size that can't be read or built leaves it as it was.
+   */
+  async function reachAgain(typed: Partial<Record<SizeKey, string>>, flip?: boolean) {
+    const e = editOps;
+    if (e === null) return;
+    const asked = ++e.asked;
+    const doc = designDoc();
+    let own: Bounds;
+    try {
+      const read = readTyped(editableFeature(doc, e.id).keys, typed);
+      if (!("sizes" in read)) return;
+      const next = editFeature(doc, e.id, read.sizes, flip, editRegions?.id === e.id ? (editRegions.picked ?? undefined) : undefined);
+      own = await ownBox(next, next.timeline.features.find((f) => f.id === e.id)!);
+    } catch {
+      return;
+    }
+    if (editOps !== e || e.asked !== asked || designDoc() !== doc) return;
+    e.own = own;
     showEditBodies();
   }
 
@@ -2924,7 +2951,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Extrude's Operation row (with Combine shown), as Fusion's Extrude edited.
     if (combineShown() && isSketchExtrude(item)) {
       const op = extrudeOperation(item)?.operation ?? "new";
-      editOps = { id, operation: op, candidates: null, own: null, unticked: new Set(), choices: [] };
+      editOps = { id, operation: op, candidates: null, own: null, kept: new Set(), unticked: new Set(), choices: [], asked: 0 };
       editBox.showOperation(op);
       showEditBodies();
       void loadEditBodies(id);
