@@ -463,7 +463,10 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         // measureCombined's edges are the view's edges that join two faces, in order: each one's kernel index.
         const kernel = x.view.edge_faces.flatMap((pair, e) => (pair === null ? [] : [e]));
         edges = b.edges.map((e, k) => {
-          const said = d.of.names.edges[d.at]?.[kernel[k]]?.name ?? null;
+          // The name the app writes; where it writes none because two edges would share it (never guessed), the two faces
+          // it found for the edge, as the model names both.
+          const app = d.of.names.edges[d.at]?.[kernel[k]] ?? null;
+          const said = app === null ? null : (app.name ?? `edge:${app.faces.join("+")}`);
           if (said === null) return { ...e, name: { ...edgeName(faceName(x.feature, null, kernel[k]), faceName(x.feature, null, kernel[k]), false), pair: true as const } };
           const [a, c] = said.slice("edge:".length).split(";")[0].split("+");
           const face = (n: string) => fullFaceName(n, parseDesignFace(n.split("#")[0]));

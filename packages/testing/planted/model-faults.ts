@@ -236,6 +236,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
     ],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
+    why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions; planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught); workspaces/design/test/combine-scene.test.ts catches it by hand",
   },
   "combine-edge-tags-dropped": {
     what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
