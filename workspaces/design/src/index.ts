@@ -23,7 +23,7 @@ export { PART_VIEW, syncGraph } from "./graph.ts";
 export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
 export { bodyReference, designReference, NAME_NOTE, profileReference, readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
 export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type PieceWays } from "./naming.ts";
-export { pickChange, type SelectionChange } from "./picking.ts";
+export { applyChange, pickChange, type SelectionChange } from "./picking.ts";
 export { droppedNote, highlightOf, NAME_SHARED, panelFocus, panelPart, referenceLabel, selectionRows, survivors, type PanelFocus } from "./selection.ts";
 export { designNames, featureBody, resolveFaceName, type DesignNames, type NamedBody } from "./boolean-names.ts";
 export { changedCombine, COMBINE_STEP, combineSummary, insertCombine } from "./combine.ts";

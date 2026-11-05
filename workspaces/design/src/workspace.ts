@@ -39,7 +39,7 @@ import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
-import { pickChange } from "./picking.ts";
+import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
@@ -3017,15 +3017,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.shown && snapping) return snapPick(pick);
     // A Move (35e2b; an edited one too since 35e2i), or a new Combine (35f1c): a click on a body adds it or takes it out; empty space keeps what is picked.
     if (moveBox.shown || combineBox.shown) {
-      const c = pickChange({ ...pick, shift: true }, lastScene);
+      const c = pickChange({ ...pick, shift: true, double: undefined }, lastScene); // every click toggles a body here, a quick second one too
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
       if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
       return;
     }
-    const c = pickChange(pick, lastScene);
-    if (c.change === "set") ctx.selection.set([c.item]);
-    else if (c.change === "toggle") ctx.selection.toggle(c.item);
-    else if (c.change === "clear") ctx.selection.clear();
+    applyChange(ctx.selection, pickChange(pick, lastScene)); // a double-click picks the whole body (picking.ts)
   };
   let stopWatching = () => {};
   // The phone turned or the window resized (a keyboard, a panel): the line's point moved on screen, so the typed
