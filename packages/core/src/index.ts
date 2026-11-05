@@ -49,7 +49,7 @@ export { ActionRegistry } from "./model/actions.ts";
 export type { LeftDrag, MousePreset, MousePresetInfo } from "./model/mouse.ts";
 export { leftDragOf, MOUSE_ATTRIBUTE, MOUSE_EVENT, MOUSE_PRESETS, readMousePreset } from "./model/mouse.ts";
 export type { Unit } from "./model/units.ts";
-export { areaIn, boxShown, boxValue, formatLength, fromMm, MM_PER_INCH, parseLength, readUnit, toMm, UNITS, volumeIn, wordsInUnit } from "./model/units.ts";
+export { areaIn, boxShown, boxValue, formatLength, fromMm, MM_PER_INCH, parseLength, readUnit, summaryInUnit, toMm, UNITS, volumeIn, wordsInUnit } from "./model/units.ts";
 export type { Chord, KeyPress, ShortcutClash, ShortcutEntry, ShortcutScope, ShortcutSource, ShortcutSpec } from "./model/shortcuts.ts";
 export { BROWSER_RESERVED, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable } from "./model/shortcuts.ts";
 export type { AIView, FileEntries, FileEntry, ToolbarItem, ViewportOverlay, MountedWorkspace, WorkspaceContext, WorkspacePlugin } from "./model/workspace.ts";
