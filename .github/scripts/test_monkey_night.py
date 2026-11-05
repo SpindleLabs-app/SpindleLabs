@@ -32,7 +32,7 @@ def git(cwd, *args):
 
 
 class Night(unittest.TestCase):
-    def night(self, log, first=20261025, count=2, steps=2000, saved=(), how=None):
+    def night(self, log, first=20261025, count=2, steps=2000, saved=(), how=None, combine=False):
         """Runs monkey_night.write; returns (failed, {relative path: text}). `how`: the fields the monkey adds to a saved list."""
         with tempfile.TemporaryDirectory() as d:
             results, out = os.path.join(d, "results"), os.path.join(d, "out")
@@ -40,7 +40,7 @@ class Night(unittest.TestCase):
             for seed in saved:
                 with open(os.path.join(results, f"seed-{seed}.json"), "w") as f:
                     json.dump({"seed": seed, **(how or {}), "actions": [{"kind": "phone"}]}, f)
-            failed = monkey_night.write(log, results, out, first, count, steps)
+            failed = monkey_night.write(log, results, out, first, count, steps, combine=combine)
             files = {}
             for root, _, names in os.walk(out):
                 for n in names:
@@ -144,6 +144,42 @@ class Night(unittest.TestCase):
         failed, files = self.night(LOG, saved=[20261026])
         self.assertEqual(failed, 1)
         self.assertNotIn("seed-monkey-unexplained/monkey-report.txt", files)
+
+    def test_a_night_that_tried_no_combine_fails_when_combine_is_asked_for(self):
+        # 35f1d: the nightly job passes "combine"; the monkey's last lines say how many Combines it made and tried
+        # (tried: OK pressed with both bodies picked; a sphere's Combine is refused in words until step 37, still tried).
+        clean = ("seed 5: pass (2000 actions, 2 Combines made of 5 tried)\nseed 6: pass (2000 actions, 1 Combine made of 2 tried)\n"
+                 "monkey: 3 Combines made, 7 tried\nmonkey: all passed\n")
+        failed, files = self.night(clean, first=5, combine=True)
+        self.assertEqual(failed, 0)
+        # By hand: 2 + 1 = 3 made of 5 + 2 = 7 tried, said in the first line; the seeds' lines read as passes.
+        self.assertEqual(files["report.txt"].splitlines()[0],
+                         "Monkey, seeds 5-6: 2 session(s) of 2000 actions in Chromium; 3 Combines made of 7 tried; every check passed after every action")
+        self.assertEqual(files["report.txt"].splitlines()[1:], ["seed 5: pass (2000 actions)", "seed 6: pass (2000 actions)"])
+        # One made: "1 Combine made", singular.
+        one = clean.replace("monkey: 3 Combines made, 7 tried", "monkey: 1 Combine made, 7 tried")
+        self.assertIn("; 1 Combine made of 7 tried;", self.night(one, first=5, combine=True)[1]["report.txt"].splitlines()[0])
+        # Tried but none made (every pick curved): still tested, so no failure.
+        refused = clean.replace("monkey: 3 Combines made, 7 tried", "monkey: 0 Combines made, 7 tried")
+        self.assertEqual(self.night(refused, first=5, combine=True)[0], 0)
+        # None tried: a failure of its own, filed under its own kind, though every seed passed.
+        none = clean.replace("monkey: 3 Combines made, 7 tried", "monkey: 0 Combines made, 0 tried")
+        failed, files = self.night(none, first=5, combine=True)
+        self.assertEqual(failed, 1)
+        self.assertIn("0 Combines made of 0 tried; 1 FAILED", files["report.txt"].splitlines()[0])
+        report = files["seed-monkey-combine/monkey-report.txt"].splitlines()
+        self.assertTrue(report[1].startswith("failure: the monkey tried no Combine in the night's sessions, so the hidden Combine tool went untested"), report[1])
+        self.assertEqual(list(kinds_of({"monkey-report.txt": files["seed-monkey-combine/monkey-report.txt"]})),
+                         ["monkey the monkey tried no Combine in the night's sessions, so the hidden Combine tool went untested (is ?combine still in its address?)"])
+        # No count at all (an older monkey, or the older "made" line alone): a failure too, saying so.
+        for log in ("seed 5: pass (2000 actions)\nseed 6: pass (2000 actions)\nmonkey: all passed\n", clean.replace(", 7 tried", "")):
+            failed, files = self.night(log, first=5, combine=True)
+            self.assertEqual(failed, 1)
+            self.assertIn("never said how many Combines", files["seed-monkey-combine/monkey-report.txt"])
+        # Without "combine" (a night by hand, the older tests above): no count asked for, nothing added.
+        failed, files = self.night(none, first=5)
+        self.assertEqual((failed, sorted(files)), (0, ["report.txt"]))
+        self.assertNotIn("Combine", files["report.txt"].splitlines()[0])
 
     def test_the_kind_takes_numbers_out(self):
         _, files = self.night(LOG, saved=[20261026])

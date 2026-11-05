@@ -11,7 +11,7 @@ import { releaseShared } from "./release.ts";
 import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
-import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
+import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
@@ -167,6 +167,9 @@ export class ViewportView {
     this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
     this.controls.mouseButtons.RIGHT = null;
     this.controls.zoomToCursor = true;
+    // Never so far out or close in that the camera's numbers break: the wheel, a drag in Zoom mode and a pinch all stop here.
+    this.controls.minDistance = NEAREST_VIEW;
+    this.controls.maxDistance = FARTHEST_VIEW;
     this.dragArrow(); // first, so a press on Extrude's arrow is a drag whatever the navigation mode
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.dragSketchPoint(); // and a press on a sketch point the Select tool can drag (47d3)
@@ -437,7 +440,8 @@ export class ViewportView {
       const s = this.arrowAt(e.clientX, e.clientY);
       if (s === null) return;
       e.preventDefault(); // which also keeps the focus where it was, so it is let go by hand: Enter after a drag is the panel's OK, not a toolbar button's
-      e.stopPropagation();
+      // Immediate: navigate()'s listener is on this element too, and in Pan or Zoom mode it moved the camera as well (clumsy-user hunt 11-04).
+      e.stopImmediatePropagation();
       if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
       canvas.setPointerCapture(e.pointerId);
       this.arrowDrag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance };
@@ -492,7 +496,8 @@ export class ViewportView {
       const at = handle === null ? null : this.alongHandle(handle, centre, e.clientX, e.clientY);
       if (handle === null || at === null) return;
       e.preventDefault(); // keeps the focus where it was, so Enter after a drag is the panel's OK
-      e.stopPropagation();
+      // Immediate: navigate()'s listener is on this element too, and in Pan or Zoom mode it moved the camera as well (clumsy-user hunt 11-04).
+      e.stopImmediatePropagation();
       if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
       canvas.setPointerCapture(e.pointerId);
       this.moveDrag = { id: e.pointerId, handle, centre: [...centre], start: at, last: at, turned: 0, amount: 0 };
@@ -980,8 +985,8 @@ export class ViewportView {
     this.cube.element.hidden = false;
     this.controls.enableRotate = true;
     this.applyButtons();
-    this.controls.minDistance = 0;
-    this.controls.maxDistance = Infinity;
+    this.controls.minDistance = NEAREST_VIEW;
+    this.controls.maxDistance = FARTHEST_VIEW;
     this.controls.target.copy(saved.target);
     this.camera.position.copy(saved.position);
     this.camera.near = saved.near;

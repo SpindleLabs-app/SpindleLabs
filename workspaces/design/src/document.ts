@@ -496,8 +496,34 @@ export const isSketchItem = (f: Feature) => f.intent.type === "sketch";
  */
 export const isMoveItem = (f: Feature) => f.intent.type === "move";
 
-/** Whether an item makes a body of its own: anything but a sketch or a Move. */
-export const makesBody = (f: Feature) => !isSketchItem(f) && !isMoveItem(f);
+/**
+ * A Combine (step 35f1): Join, Cut or Intersect of its target body with
+ * its tool bodies (`COMBINE_PARAMS`, every body one made before it), in
+ * the order picked. The target's result keeps the target's id, any other
+ * piece is `body:<the Combine>/piece:<k>` (rule 1), and the tools are used
+ * up unless `keepTools`. It depends on the items that made those bodies,
+ * as a Move does, and makes no body under its own id.
+ */
+export const isCombineItem = (f: Feature) => f.intent.type === "combine";
+
+/** Combine's operations, as the panel names them. */
+export const COMBINE_OPERATIONS = ["join", "cut", "intersect"] as const;
+export type CombineOperation = (typeof COMBINE_OPERATIONS)[number];
+
+/** A Combine's parameters, all in every Combine. */
+export const COMBINE_PARAMS = ["target", "tools", "operation", "keepTools"] as const;
+
+/** Whether an item works on bodies other items made (a Move, a Combine), depending on those items, rather than making one of its own. */
+export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f);
+
+/** Whether an item makes a body of its own: anything but a sketch, a Move or a Combine. */
+export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f);
+
+/** A Combine's bodies by body id: its target, then its tools in the order picked. */
+export function combineBodies(f: Feature): { target: string; tools: string[]; operation: CombineOperation; keepTools: boolean } {
+  const p = f.intent.parameters;
+  return { target: p.target as string, tools: [...(p.tools as string[])], operation: p.operation as CombineOperation, keepTools: p.keepTools === true };
+}
 
 /**
  * A body's own id and the number people read in "Body 3" (step 35e;
@@ -544,8 +570,10 @@ export const isPiece = (bodyId: string): boolean => bodyItem(bodyId) !== null &&
 export function numberBodies(doc: DesignDocument): DesignDocument {
   const made = doc.timeline.features.filter(makesBody);
   const live = new Set(made.map((f) => bodyIdOf(f.id)));
+  // A Combine's pieces (35f1) keep their numbers while the Combine is there; `numberPieces` gives them theirs.
+  const combines = new Set(doc.timeline.features.filter(isCombineItem).map((f) => f.id));
   const old = doc.bodies ?? [];
-  const kept = old.filter((b) => live.has(b.id));
+  const kept = old.filter((b) => live.has(b.id) || (isPiece(b.id) && combines.has(bodyItem(b.id)!)));
   const have = new Set(kept.map((b) => b.id));
   const missing = made.filter((f) => !have.has(bodyIdOf(f.id)));
   // Which build is asked only when a body needs a number (the browser asks for the numbers on every draw of a 5,000-item timeline).
@@ -554,6 +582,23 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
   if (fresh.length === 0 && kept.length === old.length && doc.bodies !== undefined && doc.nextBody !== undefined) return doc;
   let next = Math.max(doc.nextBody ?? 1, ...kept.map((b) => b.number + 1));
   return { ...doc, bodies: [...kept, ...fresh.map((id) => ({ id, number: next++ }))], nextBody: next };
+}
+
+/**
+ * The document with each of `pieces` (Combine pieces a rebuild made,
+ * "body:<combine>/piece:<k>", 35f1) that has no number yet numbered, in
+ * the order given, the counter going up; the same document when all have
+ * one. Called once a rebuild shows which pieces there are, so a piece is
+ * numbered when it first appears and keeps that number from then on.
+ */
+export function numberPieces(doc: DesignDocument, pieces: readonly string[]): DesignDocument {
+  const numbered = numberBodies(doc);
+  const have = new Set(numbered.bodies!.map((b) => b.id));
+  const combines = new Set(doc.timeline.features.filter(isCombineItem).map((f) => f.id));
+  const fresh = [...new Set(pieces)].filter((id) => isPiece(id) && combines.has(bodyItem(id)!) && !have.has(id));
+  if (fresh.length === 0) return numbered;
+  let next = numbered.nextBody!;
+  return { ...numbered, bodies: [...numbered.bodies!, ...fresh.map((id) => ({ id, number: next++ }))], nextBody: next };
 }
 
 /** Each body's number by its id, numbered as `numberBodies` would. */
@@ -1121,6 +1166,7 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
   const base = (f: Feature): string => {
     if (isSketchItem(f)) return "Sketch";
     if (isMoveItem(f)) return "Move";
+    if (isCombineItem(f)) return "Combine";
     if (isSketchExtrude(f)) return "Extrude";
     const kind = kindOf(f);
     return kind === null ? "Item" : SHAPE_LABELS[kind];
@@ -1180,6 +1226,37 @@ function checkMove(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<str
 }
 
 /**
+ * A Combine, checked (step 35f1): its parameters exactly `COMBINE_PARAMS`;
+ * a target and at least one tool, each a body made before it (by body id,
+ * as a Move's; one deleted since is allowed, the rebuild fails the
+ * Combine naming it), none twice and the target not a tool; an operation
+ * of `COMBINE_OPERATIONS`; `keepTools` true or false; and `dependsOn` the
+ * items that made them, target's first, each once.
+ */
+function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design combine ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of Object.keys(p)) if (!(COMBINE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a parameter ${JSON.stringify(key)} a combine doesn't have`);
+  if (!(COMBINE_OPERATIONS as readonly unknown[]).includes(p.operation)) throw new Error(`${at}'s operation ${shown(p.operation)} is not join, cut or intersect`);
+  if (typeof p.keepTools !== "boolean") throw new Error(`${at}'s keepTools ${shown(p.keepTools)} is not true or false`);
+  if (!Array.isArray(p.tools) || p.tools.length === 0) throw new Error(`${at} has no tool bodies`);
+  const bodies = [p.target, ...(p.tools as unknown[])];
+  const once = new Set<unknown>();
+  for (const [i, id] of bodies.entries()) {
+    const maker = typeof id === "string" ? bodyItem(id) : null;
+    const there = maker === null ? undefined : byId.get(maker);
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    const what = i === 0 ? "its target" : `tool ${shown(id)}`;
+    if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at}: ${what === "its target" ? `its target ${shown(id)}` : what} is not a body made before it in the timeline`);
+    if (once.has(id)) throw new Error(i > 0 && id === p.target ? `${at}'s target ${id} is also a tool` : `${at} picks ${id} twice`);
+    once.add(id);
+  }
+  const makers = [...new Set((bodies as string[]).map((b) => bodyItem(b)!))];
+  if (!Array.isArray(f.dependsOn) || f.dependsOn.length !== makers.length || makers.some((m, i) => f.dependsOn[i] !== m))
+    throw new Error(`${at} must depend on exactly the items that made its target and tools, in their order (${makers.join(", ")})`);
+}
+
+/**
  * Whether `id` is a body of the design by its body id (version 6): an
  * item's own ("body:feature-3", the item making a body), or a piece
  * ("body:feature-5/piece:1") the data's bodies list numbers (35ec).
@@ -1189,7 +1266,7 @@ function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: 
   if (maker === null) return false;
   const at = byId.get(maker);
   if (!isPiece(id)) return at !== undefined && makesBody(at.item);
-  return at !== undefined && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id);
+  return at !== undefined && isCombineItem(at.item) && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id);
 }
 
 /**
@@ -1212,7 +1289,10 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
     if (!isRecord(b) || typeof b.id !== "string") throw new Error(`Design body ${i + 1} has no id`);
     const m = /^body:([^:/]+)$/.exec(b.id);
     const item = m ? byId.get(m[1])?.item : undefined;
-    if (!m || (item && !makesBody(item))) throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body`);
+    // A piece (35f1): "body:<a Combine>/piece:<k>"; one whose Combine is gone is dropped by `numberBodies`, as a body whose item is.
+    const maker = isPiece(b.id) ? byId.get(bodyItem(b.id)!)?.item : undefined;
+    if (isPiece(b.id) ? maker !== undefined && !isCombineItem(maker) : !m || (item && !makesBody(item)))
+      throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body, or a piece of a Combine`);
     if (ids.has(b.id)) throw new Error(`Design body ${b.id} is listed twice`);
     ids.add(b.id);
     if (!Number.isSafeInteger(b.number) || b.number < 1) throw new Error(`Design body ${b.id}'s number ${typeof b.number === "string" ? JSON.stringify(b.number) : shown(b.number)} is not a counting number`);
@@ -1371,7 +1451,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   ];
   // A kept shape holds a sketch's old ids (some may still be in the sketch): never repeated by a new id, so the counter is above them too.
   // So does a move's deleted body, so no new body takes its id and is moved by it.
-  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter(isMoveItem).flatMap((f) => f.dependsOn)];
+  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter(actsOnBodies).flatMap((f) => f.dependsOn)];
   for (const id of kept) {
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
@@ -1404,6 +1484,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of d.timeline.features) if (makesBody(f)) shapeWith(f, (id) => profiles.get(id));
   // A Move's numbers and bodies (step 35e2).
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
+  // A Combine's bodies and operation (step 35f1).
+  for (const f of d.timeline.features) if (isCombineItem(f)) checkCombine(d, f, byId);
   // Each dependency an id (after the Move's own check, which says what a move's should be).
   for (const f of d.timeline.features)
     for (const id of f.dependsOn as unknown[]) {
@@ -1466,7 +1548,7 @@ function asking(document: DesignDocument): Asked {
 /** What an item is built on, of the items in the timeline: a sketch's (`sketchInputs`); an extrude of a sketch, the sketch; else nothing. */
 function inputsOf(a: Asked, f: Feature): Feature[] {
   if (isSketchItem(f)) return sketchInputs(f, a.contents.get(f.id)).flatMap((id) => a.byId.get(id) ?? []);
-  if (isMoveItem(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
+  if (actsOnBodies(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
   const sketch = isSketchExtrude(f) ? a.sketches.get(f.intent.parameters.sketch) : undefined;
   return sketch === undefined ? [] : [sketch];
 }
@@ -1497,8 +1579,8 @@ function buildsNow(a: Asked, f: Feature): boolean {
   if (at < 0 || f.suppressed) return false;
   if (a.marker !== null && at > a.marker) return false;
   if (greyedIn(a, f) !== null) return false;
-  // A Move builds when every body it moves does.
-  if (isMoveItem(f)) return inputsOf(a, f).every((x) => buildsIn(a, x));
+  // A Move builds when every body it moves does; a Combine when its target and tools do.
+  if (actsOnBodies(f)) return inputsOf(a, f).every((x) => buildsIn(a, x));
   if (isSketchItem(f) || !isSketchExtrude(f)) return true;
   const [sketch] = inputsOf(a, f);
   // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2).
@@ -1549,15 +1631,15 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
   for (const f of open) {
     // A sketch: its face's feature, then each feature a pin (27c) or a projection (27d) names, as `inputsOf` (one lookup each, audit S2).
     const sketch = isSketchExtrude(f) ? sketches.get(f.intent.parameters.sketch) : undefined;
-    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : isMoveItem(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : sketch === undefined ? [] : [sketch];
+    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : actsOnBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : sketch === undefined ? [] : [sketch];
     const input = inputs[0];
     let by: string | null = null;
     for (const x of inputs) if ((by = x.suppressed ? x.id : (greyed.get(x) ?? null)) !== null) break;
     if (by !== null) greyed.set(f, by);
     // A sketch builds, on a face followed or held (26c); an extrude when its sketch does (a sketch on an origin plane
     // whenever it is in range and on, wherever it is), or from its kept shape when it is gone.
-    // A Move when every body it moves builds (step 35e2).
-    else if (isMoveItem(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input)))) building.add(f);
+    // A Move when every body it moves builds (step 35e2), a Combine when its target and tools do (35f1).
+    else if (actsOnBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input)))) building.add(f);
   }
   return { building, greyed };
 }

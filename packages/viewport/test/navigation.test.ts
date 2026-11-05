@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_STEP, POLE_EPS, ZOOM_PER_PIXEL, clampZoom, cubeDragAngles, orbitBy, dragAction, dragZoomFactor, focusPixel, focusPoint, panBy, wheelFactor, zoomAt, type CameraPose, type Lens, type Vec3 } from "../src/navigation.ts";
+import { FARTHEST_VIEW, MAX_STEP, NEAREST_VIEW, POLE_EPS, ZOOM_PER_PIXEL, clampZoom, cubeDragAngles, orbitBy, dragAction, dragZoomFactor, focusPixel, focusPoint, panBy, wheelFactor, zoomAt, type CameraPose, type Lens, type Vec3 } from "../src/navigation.ts";
 
 const near = (a: readonly number[], b: readonly number[], eps = 1e-9, what = "") =>
   a.forEach((x, i) => assert.ok(Math.abs(x - b[i]) <= eps, `${what} [${a}] vs [${b}]`));
@@ -110,6 +110,26 @@ test("boundary: zooms stop at the view's nearest and farthest distances", () => 
   assert.equal(clampZoom(100, 10 * 0.9, 10, 1000), 10 * 0.9);
   // No limits (the 3D view): anything goes.
   assert.equal(clampZoom(100, 1e-6, 0, Infinity), 1e-6);
+});
+
+test("hand-worked: the 3D view's own nearest and farthest distances stop an endless zoom (clumsy hunt 2026-11-04)", () => {
+  // Wheeling out about 1,760 notches took the camera to where its numbers turned NaN, and the view never came back
+  // without Fit. The 3D view now stops at 1e8 mm (100 km, past the modeller's 1 km parts with room to see them whole)
+  // and 1e-4 mm (a tenth of the 0.001 mm the modeller keeps).
+  assert.equal(FARTHEST_VIEW, 1e8);
+  assert.equal(NEAREST_VIEW, 1e-4);
+  // From 5e7 mm, ×4 (the largest wheel step) would be 2e8: stops at 1e8, ×2. From 1e8 nothing further out moves.
+  assert.equal(clampZoom(5e7, 4, NEAREST_VIEW, FARTHEST_VIEW), 2);
+  assert.equal(clampZoom(1e8, 4, NEAREST_VIEW, FARTHEST_VIEW), 1);
+  // 0.9× and 1.1× of the limits: inside is kept, outside stops at the limit.
+  assert.equal(clampZoom(1e7, 0.9 * 10, NEAREST_VIEW, FARTHEST_VIEW), 9);
+  assert.equal(clampZoom(1e7, 1.1 * 10, NEAREST_VIEW, FARTHEST_VIEW), 10);
+  assert.equal(clampZoom(1e-3, 1.1 * 0.1, NEAREST_VIEW, FARTHEST_VIEW), 1.1 * 0.1, "kept as asked");
+  assert.ok(Math.abs(clampZoom(1e-3, 0.9 * 0.1, NEAREST_VIEW, FARTHEST_VIEW) - 0.1) < 1e-15);
+  // A thousand ×4 steps out from 100 mm end at the farthest, never at Infinity or NaN.
+  let d = 100;
+  for (let i = 0; i < 1000; i++) d *= clampZoom(d, 4, NEAREST_VIEW, FARTHEST_VIEW);
+  assert.ok(Math.abs(d - FARTHEST_VIEW) < 1e-6 * FARTHEST_VIEW, String(d));
 });
 
 test("which drag a press starts: middle pans, Shift+middle orbits, right does nothing (kept for a menu), left follows the mode", () => {
