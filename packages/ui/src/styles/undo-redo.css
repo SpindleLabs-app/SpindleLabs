@@ -17,3 +17,5 @@
 @keyframes undo-redo-waiting { from { opacity: 1; } to { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .undo-redo button[aria-busy="true"] { animation: none; } }
 .undo-redo .history-button[aria-expanded="true"] { border-color: var(--look-accent); color: var(--look-accent-text); }
+
+.undo-redo .history-button[hidden] { display: none; }

@@ -165,5 +165,22 @@ export function historyPanel(doc: Document, parts: HistoryPanelParts): HistoryPa
     if (isOpen && !panel.contains(e.target as Node) && !button.contains(e.target as Node)) closePanel(false);
   });
 
-  return { button, panel, open, close: () => closePanel(), isOpen: () => isOpen, refresh: () => isOpen && refresh() };
+  // The button comes with the first step: on a new project there is nothing to go back to, and (at phone width) the
+  // docked column of buttons stays short enough for the start card to clear it.
+  const sync = () => {
+    button.hidden = parts.steps().length <= 1 && !isOpen;
+  };
+  sync();
+
+  return {
+    button,
+    panel,
+    open,
+    close: () => closePanel(),
+    isOpen: () => isOpen,
+    refresh: () => {
+      sync();
+      if (isOpen) refresh();
+    },
+  };
 }

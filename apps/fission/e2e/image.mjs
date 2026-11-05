@@ -404,7 +404,7 @@ try {
       await p.keyboard.press("Tab");
       const stop = await p.evaluate(() => {
         const el = document.activeElement;
-        return { region: el?.closest("#topbar, #toolbar, #panel-toggles, #undo-redo, #browser, #view-controls, #split-toggle, #properties")?.id ?? "other", id: el?.id || el?.className || el?.tagName };
+        return { region: el?.closest("#topbar, #toolbar, #panel-toggles, #browser, #view-controls, #split-toggle, #properties")?.id ?? "other", id: el?.id || el?.className || el?.tagName };
       });
       stops.push(stop.id);
       if (stop.region !== regions.at(-1)) regions.push(stop.region);
@@ -497,9 +497,8 @@ try {
       // Focus from the top follows the page as drawn: the Browser sheet is closed (one sheet at a time), Properties open.
       await openPanel(p, "properties");
       await p.$eval("#workspace", (el) => el.scrollTo(0, 0));
-      // The History button (U7b) is docked with Undo and Redo and is always on, so it is a stop of its own (those two are off here).
       const { regions } = await focusOrder(p, "image-brightness");
-      assert.deepEqual(regions, ["topbar", "toolbar", "panel-toggles", "undo-redo", "view-controls", "properties"]);
+      assert.deepEqual(regions, ["topbar", "toolbar", "panel-toggles", "view-controls", "properties"]);
     } finally {
       await p.close();
     }

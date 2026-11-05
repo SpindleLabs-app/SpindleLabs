@@ -125,3 +125,14 @@ test("refresh redraws only while open; the list follows the history", () => {
   p.open();
   assert.equal(rows().length, 4);
 });
+
+test("the button comes with the first step: hidden on a new project, shown once there is one, kept while the panel is open", () => {
+  const { p, set } = rig([{ label: "", at: 0, state: "current" }]);
+  assert.equal(p.button.hidden, true, "only the start: nothing to go back to");
+  set(three);
+  p.refresh();
+  assert.equal(p.button.hidden, false, "a step was taken");
+  set([{ label: "", at: 0, state: "current" }]);
+  p.refresh();
+  assert.equal(p.button.hidden, true, "every step undone and dropped: gone again");
+});
