@@ -12,7 +12,7 @@ export type Source = (typeof SOURCES)[number];
 export const isSource = (s: unknown): s is Source => typeof s === "string" && (SOURCES as readonly string[]).includes(s);
 
 /** The limits, as the database keeps them (design_limits()). Checked there; here only to say them in words. */
-export const LIMITS = { maxDesigns: 200, maxBytes: 20 * 1024 * 1024, maxDesignBytes: 5 * 1024 * 1024, maxPictureBytes: 32 * 1024 } as const;
+export const LIMITS = { maxDesigns: 200, maxBytes: 20 * 1024 * 1024, maxDesignBytes: 5 * 1024 * 1024, maxPictureBytes: 32 * 1024, versionsKept: 20, versionGapMinutes: 10 } as const;
 
 /** One design in the account, as My designs lists it (no file text). */
 export interface DesignRow {
