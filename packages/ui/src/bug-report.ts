@@ -2,6 +2,9 @@
 // issue on SpindleLabs' public GitHub repo, filled in and opened in a new
 // tab for the person to check and send (they need a free GitHub account).
 // No server and no key: nothing is sent until they press Submit on GitHub.
+// Public for now (Ben, 2026-11-05): reports may move somewhere private
+// later (a private repo behind a small server); only `ISSUES_NEW` and how
+// the link is opened would change, the form stays.
 // The app adds what a person wouldn't think to type (version, browser,
 // screen, workspace) and nothing from their project. Pure, but for the
 // dialog (`bugReportDialog`).
