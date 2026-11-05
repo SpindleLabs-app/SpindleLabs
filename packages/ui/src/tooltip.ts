@@ -183,6 +183,8 @@ export function startTooltips(doc: Document): Tooltips {
     if (on) hide();
     const text = hold(target);
     if (!text) return;
+    // An element that draws its own card (`data-own-tip`: the timeline's items) keeps its title from the browser but gets no box.
+    if (target.hasAttribute("data-own-tip")) return;
     show(target, text, false);
   };
   const onOut = (e: Event) => {
