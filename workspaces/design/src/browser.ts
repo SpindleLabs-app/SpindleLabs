@@ -6,7 +6,7 @@
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
 import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "./build-area.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -94,6 +94,12 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
       const { target, tools, keepTools } = combineBodies(f);
       if (![target, ...tools].every((b) => out.has(b))) continue;
       if (!keepTools) for (const t of tools) out.delete(t);
+      for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
+    } else {
+      // An extrude with an operation (version 10): its own body never stays; Join uses up every body after the first.
+      const op = extrudeOperation(f);
+      if (op === null || !op.bodies.every((b) => out.has(b))) continue;
+      if (op.operation === "join") for (const b of op.bodies.slice(1)) out.delete(b);
       for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
     }
   }
