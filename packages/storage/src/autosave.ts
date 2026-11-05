@@ -112,6 +112,12 @@ export interface Autosave {
    * apart.
    */
   finish(): string | null;
+  /**
+   * Settles once every save this autosave started has finished, either way: `finish()`'s last one too. A project
+   * looked up in the store after another was replaced waits for it, or it reads the store from before that save
+   * landed (nightly issue #331: Save, New, then Open of that same file said another tab had changed it).
+   */
+  settled(): Promise<void>;
 }
 
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
@@ -414,7 +420,7 @@ export function startAutosave(
         }
       }
       const last = text;
-      void flight.then(async () => {
+      flight = flight.then(async () => {
         try {
           startedAt = at;
           await store.save(id, JSON.parse(last) as Project, at, base, false, writer);
@@ -439,5 +445,9 @@ export function startAutosave(
       });
       return null;
     },
+    settled: () => flight.then(
+      () => {},
+      () => {},
+    ),
   };
 }

@@ -399,13 +399,6 @@
     "why": "weakMatches returns false for any other format, so calling it for them gives the same renamed answer."
   },
   {
-    "file": "packages/core/src/model/files.ts",
-    "mutator": "StringLiteral",
-    "original": "\"\"",
-    "replacement": "\"Stryker was here!\"",
-    "why": "andList is never given an empty list: routeFiles checks opens.length and planned.workspaces.length before calling it."
-  },
-  {
     "file": "packages/core/src/model/graph.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
@@ -2847,5 +2840,40 @@
     "original": "{ return undefined; }",
     "replacement": "{}",
     "why": "parseJson's catch: a function that falls off its end also returns undefined."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "OptionalChaining",
+    "original": "store?.setItem",
+    "replacement": "store.setItem",
+    "why": "With no store the call throws inside remember's try, whose empty catch gives the same result: nothing remembered."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "OptionalChaining",
+    "original": "store?.removeItem",
+    "replacement": "store.removeItem",
+    "why": "With no store the call throws inside forgetSeen's try, whose empty catch gives the same result: nothing to forget."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "OptionalChaining",
+    "original": "store?.getItem",
+    "replacement": "store.getItem",
+    "why": "With no store the call throws inside the try, whose catch returns null, the same answer as no stored value."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return null; }",
+    "replacement": "{}",
+    "why": "kept is still null when getItem throws, so neither stored form matches and lastEmailChoice returns null at its end anyway."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "ConditionalExpression",
+    "original": "state.kind === \"signed-in\"",
+    "replacement": "true",
+    "why": "state is read in the same tick as asPerson reads the same stored session, so a signed-out state always gets a signed-out reply and returns before this line."
   }
 ]

@@ -247,6 +247,28 @@ try {
     await context.close();
   });
 
+  // Nightly issue #331 (the soak stalled): Save, File > New, then Open of that same file in one tab said "Not saved:
+  // This project was changed in another tab", and the opened project was never stored. Save renames the project after
+  // its file, which New's last autosave write stores; Open looked up the stored copy while that write was still
+  // landing, read the save time from before it, and its first save was refused as if another tab had saved since.
+  await check("#331: Save, New, then Open of that same file in one tab is stored, never 'changed in another tab'", async () => {
+    const { context, page } = await fresh();
+    for (let round = 1; round <= 3; round++) {
+      const file = await saveFile(page);
+      await chooseFile(page, "start-fresh");
+      await page.click("#start-fresh-confirm");
+      await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, `round ${round}: New`);
+      await openFile(page, "box.spindle", file);
+      await volume(page, "24,000 mm³");
+      await until(page, () => document.querySelector("#save-status").dataset.state !== "saving", null, `round ${round}: the opened file's first save`);
+      const status = await page.$eval("#save-status", (e) => `${e.dataset.state}: ${e.textContent}`);
+      assert.equal(status, "saved: Saved", `round ${round}`);
+    }
+    await page.reload(); // the opened file is the project a reload brings back, stored and whole
+    await volume(page, "24,000 mm³");
+    await context.close();
+  });
+
   assert.deepEqual(errors, [], "no page errors");
 } catch (e) {
   failed++;

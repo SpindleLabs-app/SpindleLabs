@@ -138,9 +138,14 @@ async function emptyDesign(p) {
 let problems = [];
 const fail = (cycleNo, list) => list.length && problems.push(...list.map((x) => `cycle ${cycleNo}: ${x}`));
 
-/** Another workspace shown, then Design again. */
+/**
+ * Another workspace shown, then Design again. DESIGN ▾'s Slice item runs Design's Slice for printing instead of showing
+ * the Slice workspace (src/main.ts, sliceForPrinting, since 2026-11-04), so Slice's own screen is opened by its link, as
+ * an unlisted workspace is: the soak still visits all nine, and the seed draws the same cycles.
+ */
 async function visit(id) {
-  await switchTo(page, id);
+  if (id === "slice") await page.evaluate((hash) => (location.hash = hash), `#${id}`);
+  else await switchTo(page, id);
   await until(page, (w) => document.body.dataset.activeWorkspace === w, id);
   await switchTo(page, "design");
   await until(page, () => document.body.dataset.activeWorkspace === "design");
