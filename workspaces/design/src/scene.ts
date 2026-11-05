@@ -23,6 +23,8 @@ export interface ShownBody {
   names: BodyNames;
   /** Where the Moves before it put its own frame (face-sketch.ts `bodyFrame`); none when not moved. */
   frame?: Plane;
+  /** A Combine's result (35f1e2): each face's frame, as its input body's was (rebuild.ts `BuiltBody.frames`); read with built-body.ts `shownFrame`. */
+  frames?: readonly (Plane | null)[];
   /** A Combine's result (35f1): its faces named by its Combine. */
   combined?: true;
   /** Once a Combine has built (35f1e): every body of the design named as one (`SceneDesign`), and this body's place in it. */
@@ -49,6 +51,15 @@ export interface Scene {
   edgeStart: readonly number[];
   /** The design's names, once a Combine built (35f1e), and each of its bodies' index among those shown (−1: hidden). */
   design?: SceneDesign & { shown: readonly number[] };
+  /**
+   * 35f1e2: the face sketches the rebuild placed on their face (built, with
+   * no "plane lost" or "plane ambiguous"), when the scene was joined with
+   * its rebuild. The screen names faces over the finished design, a sketch
+   * is placed over the bodies built before it, so a Combine after it can
+   * leave its face's name on two pieces alike though it is placed: this
+   * is the rebuild's verdict (face-edges.ts `faceHeld`).
+   */
+  placed?: ReadonlySet<string>;
 }
 
 /**
@@ -90,7 +101,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
       continue;
     }
     const frame = frameOfBody(b);
-    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.named !== undefined && { combined: true as const }) });
+    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.frames && { frames: b.frames }), ...(b.named !== undefined && { combined: true as const }) });
   }
   // 35f1e: once a Combine built, the design is named as one, over every body it holds, hidden ones too.
   if (!ids.some((id) => build.bodies[id].named !== undefined)) return shown;
@@ -111,6 +122,10 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
   return shown.map((x) => ({ ...x, design: { of, at: bodies.findIndex((b) => b.id === x.body) } }));
 }
 
+/** The sketches a rebuild placed (Scene `placed`): built with a placement and no lost or ambiguous plane (a split face's piece counts). */
+const placedSketches = (build: Pick<TimelineBuild, "results">): ReadonlySet<string> =>
+  new Set(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement !== undefined && (r.plane === undefined || r.plane.cause === "plane-split") ? [id] : [])));
+
 /**
  * Joins the bodies' display meshes: positions and normals one after
  * another, each body's triangle corners moved past the previous bodies'
@@ -119,7 +134,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
  * face or edge its body does not have (it would be drawn as another
  * body's).
  */
-export function joinBodies(bodies: readonly ShownBody[]): Scene {
+export function joinBodies(bodies: readonly ShownBody[], build?: Pick<TimelineBuild, "results">): Scene {
   const mesh: DisplayMesh = { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] };
   const faceStart: number[] = [];
   const edgeStart: number[] = [];
@@ -147,9 +162,10 @@ export function joinBodies(bodies: readonly ShownBody[]): Scene {
     edges += view.edges;
   }
   const of = bodies.find((b) => b.design !== undefined)?.design?.of;
-  if (of === undefined) return { bodies, mesh, faceStart, edgeStart };
+  const placed = build === undefined ? {} : { placed: placedSketches(build) };
+  if (of === undefined) return { bodies, mesh, faceStart, edgeStart, ...placed };
   const shown = of.bodies.map((nb) => bodies.findIndex((b) => b.body === nb.id));
-  return { bodies, mesh, faceStart, edgeStart, design: { ...of, shown } };
+  return { bodies, mesh, faceStart, edgeStart, design: { ...of, shown }, ...placed };
 }
 
 /** Adds `from` to the end of `to`, each plus `by` (a loop: a big mesh would overflow push's argument list). */
@@ -225,7 +241,8 @@ export function bodyOf(scene: Scene, ref: GeometryReference): number {
  * whose name two faces share holds its last place (naming-model.ts
  * `placeOn`): the holder shows a warning and the user picks again.
  */
-export type Found = { status: "found"; index: number } | { status: "gone" } | { status: "shared"; count: number };
+/** `followed` (35f1e2): an edge reference whose ends no longer fit, found on the only edge left between its two faces (rule 5), so the user is told. */
+export type Found = { status: "found"; index: number; followed?: true } | { status: "gone" } | { status: "shared"; count: number };
 
 export function findInScene(ref: GeometryReference, scene: Scene): Found {
   if (scene.design !== undefined && ref.kind !== "body") return designFind(ref, scene);
@@ -268,11 +285,16 @@ function designFind(ref: GeometryReference, scene: Scene): Found {
     found = resolveOldEdge(d.bodies, a, b);
   }
   // A name two faces of its own plain body would share carries on neither (naming.ts): said as before a Combine, shared.
-  if ("lost" in found) return r.kind === "face" ? ownFind(ref, scene) : { status: "gone" };
+  // Only that: a name no face carries, or a tag no piece has (rule 3: a reference holding a tag finds the one piece with
+  // that tag), is gone, never found on its own body without its tag (35f1e2, seed 48 on the next kernel).
+  if ("lost" in found) {
+    const own = r.kind === "face" ? ownFind(ref, scene) : null;
+    return own?.status === "shared" ? own : { status: "gone" };
+  }
   if ("ambiguous" in found) return { status: "shared", count: found.ambiguous };
   const shown = d.shown[found.body];
   if (shown < 0) return { status: "gone" };
-  return { status: "found", index: found.index + (ref.kind === "face" ? scene.faceStart[shown] : scene.edgeStart[shown]) };
+  return { status: "found", index: found.index + (ref.kind === "face" ? scene.faceStart[shown] : scene.edgeStart[shown]), ...(found.warning === "ends" && { followed: true as const }) };
 }
 
 /** The first shown body with a face carrying the face name a reference holds (an edge's: either of its faces'), or −1. */

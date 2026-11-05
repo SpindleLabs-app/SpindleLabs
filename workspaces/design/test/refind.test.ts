@@ -143,6 +143,7 @@ test("the selection drops a shared face as it does a gone one, and the note says
     kept: [top],
     dropped: [left, right],
     shared: [right],
+    followed: [],
   });
   assert.equal(
     droppedNote([left, right], [right]),

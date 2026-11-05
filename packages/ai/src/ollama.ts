@@ -5,6 +5,7 @@
 // it is treated like a hosted provider (providers.ts, `sendsAway`).
 
 import { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, requestJson, streamLines, type Fetch } from "./http.ts";
+import { AIError, kindOf } from "./trouble.ts";
 import type { AIProvider, AIRequest } from "./providers.ts";
 
 export const OLLAMA_ENDPOINT = "http://localhost:11434";
@@ -88,26 +89,29 @@ export function ollamaProvider(o: { model?: string; endpoint?: string; fetch: Fe
     },
     async complete(request) {
       if (model === "") throw new Error("no Ollama model is chosen");
-      const post = { fetch: o.fetch, url: `${endpoint}/api/chat`, body: ollamaBody(model, request), timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who };
+      const post = { fetch: o.fetch, url: `${endpoint}/api/chat`, body: ollamaBody(model, request), timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who, signal: request.signal };
       const onText = request.onText;
       if (onText) {
         // One JSON object per line, each with the next piece of the answer; an error comes as {"error": "…"}.
         let text = "";
         await streamLines(post, (line) => {
           if (line.trim() === "") return;
-          let piece: { message?: { content?: unknown }; error?: unknown };
+          let piece: { message?: { content?: unknown }; error?: unknown; done_reason?: unknown };
           try {
             piece = JSON.parse(line);
           } catch {
             throw new Error(`${who} sent a line that isn't JSON: ${line.slice(0, 80)}`);
           }
-          if (typeof piece.error === "string") throw new Error(`${who}: ${piece.error}`);
+          if (typeof piece.error === "string") throw new AIError(kindOf(new Error(piece.error)), `${who}: ${piece.error}`);
+          // Ollama's num_predict reached: the answer stops where it was cut (AI8c).
+          if (piece.done_reason === "length") throw new AIError("cut-off", `${who}: the answer reached the model's output limit`);
           const more = piece.message?.content;
           if (typeof more === "string" && more !== "") onText((text += more));
         });
         return text;
       }
       const reply = await requestJson(post);
+      if ((reply as { done_reason?: unknown }).done_reason === "length") throw new AIError("cut-off", `${who}: the answer reached the model's output limit`);
       const content = (reply as { message?: { content?: unknown } }).message?.content;
       if (typeof content !== "string") throw new Error(`${who} sent a reply with no message in it`);
       return content;

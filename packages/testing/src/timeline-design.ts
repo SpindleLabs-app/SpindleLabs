@@ -61,6 +61,7 @@ import {
   reorderItem,
   findInScene,
   sceneHit,
+  shownFrame,
   settleKept,
   shownBodies,
   shapeOf,
@@ -74,8 +75,6 @@ import {
   type SketchPlacement,
   type TimelineBuild,
   bodyIdOf,
-  designNames,
-  type NamedBody,
 } from "@fission/design";
 import { edgeName, faceKey, type Vec3, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type Turn, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
 import type { EdgeClose, TimelineSubject } from "./timeline-session.ts";
@@ -272,7 +271,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     const drawn = drawnOnFace(s.bodies[hit.body].view, hit.index);
     if (drawn === null) throw new Error(`harness: ${faceKey(name)} is curved`);
     // 35e2h: with where the Moves had put the body, as the pick records it (face-pick.ts `sketchSpot`).
-    return { ...drawn, body: s.bodies[hit.body].frame ?? worldFrame() };
+    return { ...drawn, body: shownFrame(s.bodies[hit.body], hit.index) ?? worldFrame() };
   }
 
   /** The edit on Design's side: the new state and the ids it made, or a refusal. */
@@ -442,27 +441,40 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
   }
 
   /**
-   * Rules 3 and 5 across the design, as Design's boolean-names.ts gives
-   * them (`designNames` on every body shown): each face's full name, its
-   * tag when another face carries its shown name, and a combined body's
-   * edges by their two faces' full names. Fresh bodies: the measured ones
-   * are kept between rebuilds.
+   * Rules 3 and 5 across the design as the app writes them (35f1e2): each
+   * shown body's face full names and a combined body's edge names read off
+   * the scene's design names (scene.ts `SceneDesign`, over every body the
+   * rebuild holds, hidden ones too), never worked out again here, so a
+   * name the app writes wrong reaches the comparison with the model. An
+   * edge's `;ends:` is dropped (the model names an edge by its two faces
+   * only, and checks two edges sharing that where it has them too).
    */
   function tagged(r: Rebuild, scene: Awaited<ReturnType<typeof shownBodies>>, measured: Map<string, ModelBody>): Rebuild {
-    const named = scene.map((x) => {
-      const b = measured.get(x.body) ?? null;
-      return { x, b };
-    });
-    const list = named.map(({ x, b }) => ({ id: x.body, handle: 0, view: x.view, made: new Map(), faces: (b?.faces ?? []).map((f) => ({ names: [f.name, ...(f.also ?? [])].map(designFace) })) })) as unknown as NamedBody[];
-    if (!named.some(({ b }) => b?.combined)) return r;
-    const full = designNames(list).full;
+    if (!scene.some((x) => measured.get(x.body)?.combined)) return r;
     const again = new Map<ModelBody, ModelBody>();
-    named.forEach(({ b }, bi) => {
-      if (b === null) return;
-      const faces = b.faces.map((f, fi) => ({ ...f, name: fullFaceName(full[bi][fi], f.name) }));
-      const edges = b.combined ? b.edges.map((e) => ({ ...e, name: { ...edgeName(faces[e.between![0]].name, faces[e.between![1]].name, false), pair: true as const } })) : b.edges;
+    for (const x of scene) {
+      const b = measured.get(x.body);
+      const d = x.design;
+      if (b === undefined || d === undefined || d.at < 0) continue;
+      const full = d.of.names.full[d.at] ?? [];
+      const faces = b.faces.map((f, fi) => ({ ...f, name: fullFaceName(full[fi] ?? null, f.name) }));
+      let edges = b.edges;
+      if (b.combined) {
+        // measureCombined's edges are the view's edges that join two faces, in order: each one's kernel index.
+        const kernel = x.view.edge_faces.flatMap((pair, e) => (pair === null ? [] : [e]));
+        edges = b.edges.map((e, k) => {
+          // The name the app writes; where it writes none because two edges would share it (never guessed), the two faces
+          // it found for the edge, as the model names both.
+          const app = d.of.names.edges[d.at]?.[kernel[k]] ?? null;
+          const said = app === null ? null : (app.name ?? `edge:${app.faces.join("+")}`);
+          if (said === null) return { ...e, name: { ...edgeName(faceName(x.feature, null, kernel[k]), faceName(x.feature, null, kernel[k]), false), pair: true as const } };
+          const [a, c] = said.slice("edge:".length).split(";")[0].split("+");
+          const face = (n: string) => fullFaceName(n, parseDesignFace(n.split("#")[0]));
+          return { ...e, name: { ...edgeName(face(a), face(c), false), pair: true as const } };
+        });
+      }
       again.set(b, { ...b, faces, edges });
-    });
+    }
     const swap = (b: ModelBody) => again.get(b) ?? b;
     for (const id of r.order) {
       const res = r.results[id];
@@ -510,7 +522,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     const b = await build();
     const shown = await shownBodies(state.doc, b, cache);
     if (fs.has("scene-drops-body")) shown.shift();
-    return joinBodies(shown);
+    return joinBodies(shown, b);
   }
 
   return {

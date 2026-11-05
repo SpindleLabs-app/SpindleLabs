@@ -10,6 +10,7 @@
 import type { ViewportPick } from "@fission/core";
 import { SKETCH_PLANES, type SketchPlane } from "./document.ts";
 import { drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
+import { shownFrame } from "./built-body.ts";
 import { findInScene, sceneHit, shownReference, type Scene } from "./scene.ts";
 
 /** What a click on a curved face says (Q5). */
@@ -47,7 +48,7 @@ export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot 
   if (ref === null || feature === null) return { kind: "refused", message: UNNAMED_FACE };
   const again = scene.design === undefined ? null : findInScene(ref, scene);
   if (again === null ? feature !== body.feature : again.status !== "found" || again.index !== pick.face) return { kind: "refused", message: UNNAMED_FACE };
-  return { kind: "face", face: { plane: ref.id, feature }, drawn: { ...drawn, body: body.frame ?? worldFrame() } };
+  return { kind: "face", face: { plane: ref.id, feature }, drawn: { ...drawn, body: shownFrame(body, hit.index) ?? worldFrame() } };
 }
 
 /** The faces of the bodies on screen a sketch can go on (joined numbering, for the viewport to light): the flat ones with a name of their own. */

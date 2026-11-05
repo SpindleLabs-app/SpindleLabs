@@ -224,6 +224,33 @@ export const PLANTS: Record<ModelFault, Plant> = {
     caught: "a reference guessed between pieces",
     why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner)",
   },
+  // 35f1e2: recorded on the #132 kernel built locally with the sessions given MODEL_KNOWS, 2026-11-05.
+  "combine-face-moves-with-target": {
+    what: "every face of a Combine's result is carried by the target's Moves, so a sketch on a tool's face slides when the target moves",
+    edits: [
+      {
+        file: REBUILD,
+        find: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);",
+        replace: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], new Map([...built.keys()].map((h) => [h, built.get(t.handle)!] as const)));",
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+    why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions; planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught); workspaces/design/test/combine-scene.test.ts catches it by hand",
+  },
+  "combine-edge-tags-dropped": {
+    what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
+    edits: [
+      {
+        file: NAMES,
+        find: "      const [fa, fb] = [full[bi][pair[0]] ?? null, full[bi][pair[1]] ?? null];",
+        replace: '      const [fa, fb] = [full[bi][pair[0]]?.split("#")[0] ?? null, full[bi][pair[1]]?.split("#")[0] ?? null];',
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+    why: "recorded on the #132 kernel built locally with MODEL_KNOWS, 2026-11-05 (seed 3); before 35f1e2 the sessions named a combined body's edges themselves from its faces' full names, so this mistake in the app was never compared: they now read the names the app writes",
+  },
   "save-stamps": {
     what: "each save writes a counter into the file",
     edits: [

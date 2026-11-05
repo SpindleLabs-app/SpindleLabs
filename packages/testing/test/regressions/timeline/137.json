@@ -1,0 +1,43 @@
+{
+ "seed": "137",
+ "check": "the rebuild differs from the model",
+ "what": "Design on the next kernel (kernel #132 built locally, 2026-11-05), MODEL_KNOWS: a sketch on a top that a Cut before it turned into a cavity roof; the model had it facing down, against rule 8 (Design keeps the drawn side, up). Fixed in the model; hand test in test/timeline-combine.test.ts.",
+ "steps": [
+  {
+   "op": "add-face-sketch",
+   "pick": 0.13982365118381113,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -40,
+     14
+    ],
+    "radius": 21
+   }
+  },
+  {
+   "op": "marker",
+   "pick": 0.7232249405745477
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    2,
+    47,
+    29
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.6688104578905533,
+   "tool": 0.47579237173981603,
+   "operation": "cut",
+   "keep": false
+  },
+  {
+   "op": "marker",
+   "pick": 0.9430679391479522
+  }
+ ]
+}

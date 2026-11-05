@@ -178,7 +178,7 @@ test("a retry shows the model its own bad answer, then says why it can't be used
   const provider: AIProvider = { kind: "ollama", structuredOutput: true, check: async () => ({ ok: true }), complete: async (r) => (seen.push(structuredClone(r)), "not json") };
   const spec = { op: "go", summary: "Go.", params: {} };
   const r = await askForCommands(provider, { system: "s", messages: [{ role: "user", content: "hi" }] }, [spec]);
-  assert.deepEqual(r, { ok: false, error: "The AI's answer couldn't be used, even after one retry: the answer is not JSON. Nothing was changed." });
+  assert.deepEqual(r, { ok: false, error: "The AI's answer couldn't be used, even after one retry: the answer is not JSON. Nothing was changed.", kind: "unusable", detail: "the answer is not JSON" });
   assert.deepEqual(seen[1].messages, [
     { role: "user", content: "hi" },
     { role: "assistant", content: "not json" },

@@ -177,8 +177,9 @@ export function survivors(
   outlineIds: readonly string[] = [],
   inTimeline: (featureId: string) => boolean = () => true,
   hidden: (bodyId: string) => boolean = () => false,
-): { kept: GeometryReference[]; dropped: GeometryReference[]; shared: GeometryReference[] } {
+): { kept: GeometryReference[]; dropped: GeometryReference[]; shared: GeometryReference[]; followed: GeometryReference[] } {
   const kept: GeometryReference[] = [];
+  const followed: GeometryReference[] = [];
   const dropped: GeometryReference[] = [];
   const shared: GeometryReference[] = [];
   for (const item of items) {
@@ -195,10 +196,24 @@ export function survivors(
       const found = findInScene(item, scene);
       keep = found.status === "found";
       if (found.status === "shared") shared.push(item);
+      if (found.status === "found" && found.followed) followed.push(item);
     }
     (keep ? kept : dropped).push(item);
   }
-  return { kept, dropped, shared };
+  return { kept, dropped, shared, followed };
+}
+
+/**
+ * The visible note for edges a rebuild kept on the only edge left between
+ * their two faces though the faces at their ends changed (35f1e2, rule 5,
+ * Ben's call: followed, never silently); "" when none were.
+ */
+export function followedNote(followed: readonly GeometryReference[]): string {
+  if (followed.length === 0) return "";
+  const many = followed.length > 1;
+  return many
+    ? `Kept in the selection: ${listed(followed.map(referenceLabel))}. The faces at their ends changed, but each is still the only edge between its two faces: check they are the edges you meant.`
+    : `Kept in the selection: ${referenceLabel(followed[0])}. The faces at its ends changed, but it is still the only edge between its two faces: check it is the edge you meant.`;
 }
 
 /** "A", "A and B", "A, B and C". */

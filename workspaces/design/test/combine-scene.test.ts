@@ -15,9 +15,11 @@ import { insertCombine } from "../src/combine.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { sketchSpot } from "../src/face-pick.ts";
-import { insertMove, NO_MOVE } from "../src/move.ts";
+import { faceHeld, sketchEdgeTargets } from "../src/face-edges.ts";
+import { changedMove, insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, rebuildTimeline, settleKept } from "../src/rebuild.ts";
 import { extrudeSketch } from "../src/extrude.ts";
+import { editFeature } from "../src/feature-edit.ts";
 import { readDesignReference } from "../src/references.ts";
 import { findInScene, joinBodies, sceneReference, shownBodies, type Scene } from "../src/scene.ts";
 import { referenceLabel } from "../src/selection.ts";
@@ -44,7 +46,7 @@ function boxes(...list: [[number, number, number], [number, number, number]][]):
 async function sceneOf(doc: DesignDocument) {
   const cache = new BodyCache(kernel);
   const build = await rebuildTimeline(doc, cache, kernel);
-  const scene = joinBodies(await shownBodies(doc, build, cache));
+  const scene = joinBodies(await shownBodies(doc, build, cache), build);
   return { build, scene, cache };
 }
 
@@ -270,4 +272,100 @@ test("a face on a hidden body is not found on screen, though its name still coun
   const nearTop = faceAt(scene, "body:feature-1", [0, 0, 1]);
   assert.equal(sceneReference("face", scene, nearTop)?.id, "face:feature-1/top#face:feature-1/left,face:feature-2/left");
   await cache.clear();
+});
+
+// 35f1e2: Box A 20 × 20 × 10 (feature-1) moved +10 in x by Move M (feature-2), so x 10..30, y 0..20, z 0..10. Box B
+// 20 × 10 × 30 (feature-3) moved to (25, 5, −5) (feature-4): x 25..45, y 5..15, z −5..25, so it overlaps A at x 25..30
+// and no face of one lies on a face of the other. Join, A the target (feature-5). B's top (z = 25) is whole on the
+// result, A's top (z = 10) keeps a notch where B goes through it.
+const JOINED = () => {
+  const { doc, bodies } = boxes([[20, 20, 10], [10, 0, 0]], [[20, 10, 30], [25, 5, -5]]);
+  return { ...insertCombine(doc, bodies[0], [bodies[1]], "join"), bodies };
+};
+
+test("hand-worked: a sketch on a face that came from a Combine's tool stays put when the target's Move changes; one on the target's face slides with it", async () => {
+  const { doc: joined, id } = JOINED();
+  assert.equal(id, "feature-5");
+  const { scene, cache } = await sceneOf(joined);
+  // Each sketch put where a click on its face puts it (the app's pick, which records where its body's Moves had put it).
+  const clicked = (doc: DesignDocument, n: [number, number, number], x: number) => {
+    const spot = sketchSpot({ face: faceAt(scene, "body:feature-1", n, x), shift: false }, scene);
+    assert.ok(spot?.kind === "face", JSON.stringify(spot));
+    return addFaceSketch(doc, spot.face, spot.drawn);
+  };
+  // B's top: centroid x (25 + 45) / 2 = 35. A's top: x 10..30 less the notch x 25..30, y 5..15; its centroid x is
+  // (400 · 20 − 50 · 27.5) / 350 = (8000 − 1375) / 350 = 18.928…
+  const onB = clicked(joined, [0, 0, 1], 35);
+  const onA = clicked(onB.doc, [0, 0, 1], 6625 / 350);
+  const placed = async (doc: DesignDocument) => {
+    const { build, cache: c } = await sceneOf(doc);
+    const at = (sid: string) => {
+      const r = build.results[sid];
+      assert.ok(r.status === "built" && r.plane === undefined, JSON.stringify(r));
+      return { origin: r.placement!.plane.origin.map((v) => Math.round(v * 1e9) / 1e9 + 0), x: r.placement!.plane.xAxis.map((v) => Math.round(v * 1e9) / 1e9 + 0) };
+    };
+    const out = { b: at(onB.id), a: at(onA.id) };
+    await c.clear();
+    return out;
+  };
+  // As drawn (26e): each frame's origin is its top's plane's nearest point to the world's origin, x along the world's X.
+  assert.deepEqual(await placed(onA.doc), { b: { origin: [0, 0, 25], x: [1, 0, 0] }, a: { origin: [0, 0, 10], x: [1, 0, 0] } });
+  // M now moves A +20: A is at x 20..40, B where it was (x 25..45, its top still whole at z = 25, above A's top). The
+  // sketch on B's top must not move at all; the one on A's top slides the 10 mm A moved further (35e2h), to (10, 0, 10).
+  const moved = changedMove(onA.doc, "feature-2", { ...NO_MOVE, x: 20 });
+  assert.deepEqual(await placed(moved), { b: { origin: [0, 0, 25], x: [1, 0, 0] }, a: { origin: [10, 0, 10], x: [1, 0, 0] } });
+  await cache.clear();
+});
+
+test("hand-worked: a sketch placed on a whole face before a Cut splits it into two pieces alike still takes points from the bodies (35f1e2)", async () => {
+  // The bar 100 × 20 × 10 (feature-1); a block 10 × 10 × 10 (feature-2) moved to y 30..40 (feature-3), its top at z =
+  // 10 too; a sketch on the bar's top (feature-4) drawn before anything cuts it; then the tool 10 × 40 × 20 moved to x
+  // 45..55 and the Cut: the bar's top ends as two pieces of 45 × 20 = 900 mm² each that no untagged name tells apart.
+  // The rebuild placed the sketch on the whole top, built before the Cut, at z = 10 with no warning; the screen names
+  // the faces of the finished design, where "feature-1/top" is two pieces alike. Before 35f1e2 that read as a lost
+  // face, so the sketch took no points from any body (no snap to the block's corners) though it is placed. The
+  // rebuild's verdict (the scene's `placed`) has the last word.
+  const block = insertPreset(partDocument("box", 100, 20, 10), "box", 10, 10, 10);
+  const blockMoved = insertMove(block.doc, [`body:${block.id}`], { ...NO_MOVE, y: 30 }).doc;
+  const s = addFaceSketch(blockMoved, { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [50, 10, 10]));
+  const p = insertPreset(s.doc, "box", 10, 40, 20);
+  const moved = insertMove(p.doc, [`body:${p.id}`], { ...NO_MOVE, x: 45, y: -10, z: -5 }).doc;
+  const { doc } = insertCombine(moved, "body:feature-1", [`body:${p.id}`], "cut");
+  const { build, scene, cache } = await sceneOf(doc);
+  const r = build.results[s.id];
+  assert.ok(r.status === "built" && r.plane === undefined && r.placement?.plane.origin[2] === 10, JSON.stringify(r));
+  assert.equal(findInScene(face(facePlane("feature-1", "top")), scene).status, "shared");
+  assert.equal(faceHeld(doc, s.id, scene), false);
+  // The block's top corners lie on the sketch's plane (z = 10), whose frame is the world's lifted to z = 10: (0, 30)
+  // and (10, 40) in sketch x, y.
+  const corners = (sc: Scene) => sketchEdgeTargets(doc, s.id, sc, r.placement!.plane).filter((t) => t.kind === "endpoint").map((t) => t.at.join(","));
+  for (const c of ["0,30", "10,40"]) assert.ok(corners(scene).includes(c), `${c} in ${corners(scene).join(" ")}`);
+  // A scene without the rebuild's verdict (a caller that has none) still reads the shared name as held, as before.
+  const bare = joinBodies(scene.bodies);
+  assert.equal(faceHeld(doc, s.id, bare), true);
+  assert.deepEqual(corners(bare), []);
+  await cache.clear();
+});
+
+test("hand-worked: a reference holding a tag no piece has any more is lost, never found on its own body without the tag (35f1e2, seed 48)", async () => {
+  // The bar 100 × 20 × 10 (feature-1) cut by the tool 10 × 40 × 20 (feature-2) moved to (30, −10, −5) (feature-3),
+  // Keep tools on (feature-4). The tool's left (x = 30) is on two faces: its own, and the near piece's wall the Cut left
+  // there (rule 2). Its own borders the tool's back, bottom, front and top, none of which the wall borders (the wall
+  // borders the bar's top, bottom, front and back): that is its tag (rule 3).
+  const { doc: two, bodies } = boxes([[100, 20, 10], [0, 0, 0]], [[10, 40, 20], [30, -10, -5]]);
+  const { doc } = insertCombine(two, bodies[0], [bodies[1]], "cut", true);
+  const old = face("face:feature-2/left#face:feature-2/back,face:feature-2/bottom,face:feature-2/front,face:feature-2/top");
+  const before = await sceneOf(doc);
+  assert.equal(findInScene(old, before.scene).status, "found");
+  await before.cache.clear();
+  // The tool 12 tall instead: z −5..7, so it notches the bar from below, its top now the notch's roof at z = 7 (rule 2:
+  // the roof carries the tool's top). The wall at x = 30 now borders that roof, feature-2/top, as the tool's own left
+  // does, so the tool's own left is tagged by its back, bottom and front only. Rule 3: "a reference holding a tag finds
+  // the one piece with that tag": none has the old one, so the reference is lost (gone), as the model has it; before
+  // this fix Design fell back on the tool's own body, where the name without its tag found the face.
+  const taller = editFeature(doc, "feature-2", { height: 12 });
+  const after = await sceneOf(taller);
+  assert.equal(findInScene(old, after.scene).status, "gone");
+  assert.equal(findInScene(face("face:feature-2/left#face:feature-2/back,face:feature-2/bottom,face:feature-2/front"), after.scene).status, "found");
+  await after.cache.clear();
 });
