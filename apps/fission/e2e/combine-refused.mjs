@@ -7,11 +7,13 @@
 // line, no dot. Switching to another workspace takes the line off the view;
 // coming back puts it on again. 1280 px with a mouse and 375 px with taps.
 // Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after
-// `npm run build`).
+// `npm run build`). Then a Combine that builds, using up the design's last
+// box (Ben's file of 2026-11-05): no failure shown anywhere.
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
+import { readFileSync } from "node:fs";
 
 const server = await preview({ preview: { port: 4296, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4296/";
@@ -121,6 +123,19 @@ try {
     await until(page, () => document.querySelector("#viewport").dataset.overlayPlaces === undefined, null, `${width}: the line off the view in Laser`);
     await switchTo(page, "design");
     await until(page, () => document.querySelector("#viewport").dataset.overlayPlaces === "points 0 lines 1", null, `${width}: the line back in Design`);
+    // Ben's design (2026-11-05): the last box cut from the part by a Combine that builds. Nothing failed, so no
+    // red line under the body and no ⚠ on the folded Properties button (it said "Box 5 is built").
+    await page.setInputFiles("#open-file", { name: "Untitled.spindle", mimeType: "application/json", buffer: readFileSync(new URL("../../../workspaces/design/test/regressions/combined-part.spindle", import.meta.url)) });
+    await until(page, () => document.querySelector('#timeline li[data-item="feature-57"]') !== null, null, `${width}: Ben's file open`, 15000);
+    await rebuilt(page);
+    const used = await page.evaluate(() => ({
+      error: document.querySelector("#error").textContent,
+      problem: document.querySelector("#properties").hasAttribute("data-problem"),
+      failed: [...document.querySelectorAll("#timeline li[data-failed], #timeline li[data-warned]")].map((li) => li.dataset.item),
+      outOfDate: !document.querySelector("#stale-note").hidden,
+    }));
+    assert.deepEqual(used, { error: "", problem: false, failed: [], outOfDate: false }, `${width}: a Combine using up the last box is no failure`);
+    if (shots) await page.screenshot({ path: `${shots}/combine-used-up-${width}.png` });
     await context.close();
   }
   assert.deepEqual(errors, [], "no page errors");

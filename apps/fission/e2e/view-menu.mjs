@@ -6,7 +6,9 @@
 // it again; a right-click on empty space opens none. 375 px with a finger:
 // a quick tap only selects, one moved first only turns the view; a finger
 // held still 0.7 s opens the menu (CDP touch events, as a phone sends them),
-// which stays open as it lifts, and its Delete takes the box out.
+// which stays open as it lifts, and its Delete takes the box out. The
+// Delete and Backspace keys outside a sketch (round 2 hunt E5) delete the
+// selected body's item, or the focused bar item's, the menu's way.
 // Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after
 // `npm run build`).
 import assert from "node:assert/strict";
@@ -133,6 +135,33 @@ try {
     await until(page, () => document.getElementById("undo").title === "Undo Delete Box 1 (Ctrl+Z)", null, "Delete recorded");
     // The selection leaves once the rebuild after the delete has run, which can be after Undo's title changes (merge queue, #306).
     await until(page, () => document.querySelector("#viewport").dataset.highlight === "faces  edges ", null, "nothing selected once deleted").catch(async (e) => assert.fail(`${e.message} (shows "${await highlight(page)}")`));
+    await page.context().close();
+  });
+  await check("1280 px, round 2 hunt E5: Delete with the box selected in the view deletes Box 1 as one step, Ctrl+Z brings it back; Backspace on its focused bar item too; with nothing selected the key does nothing", async () => {
+    const page = await fresh();
+    const items = () => page.$$eval("#timeline [data-item]", (lis) => lis.length);
+    const undoTitle = () => page.evaluate(() => document.getElementById("undo").title);
+    // Nothing selected, focus on the page: nothing happens.
+    await page.evaluate(() => document.activeElement?.blur());
+    const before = await undoTitle();
+    await page.keyboard.press("Delete");
+    await page.waitForTimeout(400);
+    assert.equal(await items(page), 1, "nothing selected: nothing deleted");
+    assert.equal(await undoTitle(), before, "and nothing recorded");
+    // The box's face clicked in the view (a click selects it), then Delete: nothing is built from Box 1, so it goes at once.
+    const centre = await spot(page, 0.5, 0.5);
+    await page.mouse.click(centre.x, centre.y);
+    await until(page, () => /faces \d|edges \d/.test(document.querySelector("#viewport").dataset.highlight ?? ""), null, "the face selected");
+    await page.keyboard.press("Delete");
+    await until(page, () => document.getElementById("undo").title === "Undo Delete Box 1 (Ctrl+Z)", null, "Delete recorded as one step");
+    await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 0, null, "Box 1 gone");
+    await page.keyboard.press("Control+z");
+    await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 1, null, "Ctrl+Z brings it back");
+    // Backspace with Box 1's bar item focused (the keyboard's way to a timeline item).
+    await page.focus("#timeline [data-item]");
+    await page.keyboard.press("Backspace");
+    await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 0, null, "Backspace on the bar item deletes it");
+    await shot(page, "delete-key-1280");
     await page.context().close();
   });
 } finally {
