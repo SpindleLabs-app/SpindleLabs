@@ -241,7 +241,8 @@ export function bodyOf(scene: Scene, ref: GeometryReference): number {
  * whose name two faces share holds its last place (naming-model.ts
  * `placeOn`): the holder shows a warning and the user picks again.
  */
-export type Found = { status: "found"; index: number } | { status: "gone" } | { status: "shared"; count: number };
+/** `followed` (35f1e2): an edge reference whose ends no longer fit, found on the only edge left between its two faces (rule 5), so the user is told. */
+export type Found = { status: "found"; index: number; followed?: true } | { status: "gone" } | { status: "shared"; count: number };
 
 export function findInScene(ref: GeometryReference, scene: Scene): Found {
   if (scene.design !== undefined && ref.kind !== "body") return designFind(ref, scene);
@@ -293,7 +294,7 @@ function designFind(ref: GeometryReference, scene: Scene): Found {
   if ("ambiguous" in found) return { status: "shared", count: found.ambiguous };
   const shown = d.shown[found.body];
   if (shown < 0) return { status: "gone" };
-  return { status: "found", index: found.index + (ref.kind === "face" ? scene.faceStart[shown] : scene.edgeStart[shown]) };
+  return { status: "found", index: found.index + (ref.kind === "face" ? scene.faceStart[shown] : scene.edgeStart[shown]), ...(found.warning === "ends" && { followed: true as const }) };
 }
 
 /** The first shown body with a face carrying the face name a reference holds (an edge's: either of its faces'), or −1. */

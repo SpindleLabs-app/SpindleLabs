@@ -369,7 +369,8 @@ export interface FaceNameReference {
 }
 
 /** What a reference finds on the design's bodies: a face or edge by body and kernel index; two or more, never guessed between; or none. */
-export type NameFound = { body: number; index: number; warning: "split" | null } | { ambiguous: number } | { lost: true };
+/** "split": a face reference made whole found a piece (rule 3); "ends": an edge reference whose ends no longer fit found the only edge between its two faces (rule 5). */
+export type NameFound = { body: number; index: number; warning: "split" | "ends" | null } | { ambiguous: number } | { lost: true };
 
 /**
  * Whether face `f` of `view` holds point `p`: within SAME_CORNER of one of
@@ -446,21 +447,34 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
 }
 
 /**
- * An edge by rule 5's name: found when exactly one edge has it. When two or
- * more edges fit it (its two faces now meet more than once, so they carry
- * `;ends:` the name never had, or even their ends tie and they are shared),
- * ambiguous, never guessed; else lost.
+ * An edge by rule 5's name: found when exactly one edge has it. Else, of
+ * the edges between its two faces: a name with `;ends:` finds the one whose
+ * ends are its own (two such: ambiguous); when none has them but only one
+ * edge lies between its two faces, that one, with the warning "ends" (Ben's
+ * call 2026-11-05: the best end product, never a silent guess; as a tagged
+ * face finds its face whole again); two or more, none with its ends: lost.
+ * A name without `;ends:` that two or more edges fit (its two faces now meet
+ * more than once): ambiguous, never guessed; else lost.
  */
 export function resolveEdgeName(names: DesignNames, name: string): NameFound {
-  let fits = 0;
+  const [pair, ends] = name.split(";ends:") as [string, string | undefined];
+  const fits: { body: number; index: number }[] = [];
+  const same: { body: number; index: number }[] = [];
   for (const [body, edges] of names.edges.entries())
     for (const [index, e] of edges.entries()) {
       if (e === null) continue;
       if (e.name === name) return { body, index, warning: null };
-      const pair = `edge:${e.faces.join("+")}`;
-      if (name === pair || name === `${pair};ends:${e.ends.join(",")}`) fits++;
+      if (`edge:${e.faces.join("+")}` !== pair) continue;
+      fits.push({ body, index });
+      if (ends !== undefined && e.ends.join(",") === ends) same.push({ body, index });
     }
-  return fits > 1 ? { ambiguous: fits } : { lost: true };
+  if (ends !== undefined) {
+    if (same.length === 1) return { ...same[0], warning: null };
+    if (same.length > 1) return { ambiguous: same.length };
+    if (fits.length === 1) return { ...fits[0], warning: "ends" };
+    return { lost: true };
+  }
+  return fits.length > 1 ? { ambiguous: fits.length } : { lost: true };
 }
 
 /**
