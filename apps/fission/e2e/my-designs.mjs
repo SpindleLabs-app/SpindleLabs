@@ -237,7 +237,9 @@ try {
     assert.ok(first, "the account kept device A's first save");
     const now = await b.page.textContent("#volume");
     await chooseFile(b.page, "file-versions");
-    await until(b.page, () => document.querySelector('#versions-items .project-row[data-where="account"]'), undefined, "an account version listed");
+    await until(b.page, () => document.querySelector('#versions-items .project-row[data-where="account"]'), undefined, "an account version listed").catch(async (e) => {
+      throw new Error(`${e.message}; dialog: ${await b.page.textContent("#versions")}; calls: ${svc.calls.slice(-6).join(", ")}`);
+    });
     const accountRows = await b.page.$$eval('#versions-items .project-row[data-where="account"]', (rs) => rs.map((r) => [Number(r.dataset.at), r.querySelector(".version-account-tag")?.textContent]));
     assert.ok(accountRows.some(([at, tag]) => at === Date.parse(first.saved_at) && tag === "From your account"), JSON.stringify(accountRows));
     assert.match(await b.page.textContent("#versions .project-list-note"), /Your account keeps them too/);
