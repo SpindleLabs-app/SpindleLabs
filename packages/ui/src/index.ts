@@ -25,5 +25,6 @@ export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesi
 export { ACCOUNT_NOTE, ACCOUNT_TAG, NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIONS_TITLE, versionList, versionRows, versionTime, type AccountVersions, type VersionList, type VersionListParts, type VersionPlace, type VersionRow } from "./version-list.ts";
 export { startTooltips, tipWords, quickInfoFor, TIP_SHORT_MAX, type TipWords, type Tooltips } from "./tooltip.ts";
 export { agoWords, historyPanel, stepWords, type HistoryPanel, type HistoryPanelParts } from "./history-panel.ts";
+export { currentDesignDefaults, DEFAULT_GRID_MM, DEFAULT_GRID_SNAP_ON, GRID_SIZE_SETTING, GRID_SNAP_SETTING, readGridSize, readGridSnap, startDesignDefaults, type DesignDefaultChoices, type DesignDefaults } from "./design-defaults.ts";
 export { currentUnit, readUnitChoice, startUnits, UNIT_CHOICES, UNIT_EVENT, UNIT_SETTING } from "./unit-choice.ts";
 export { CUSTOM_NAMES, DEFAULT_CUSTOM, contrast, deriveCustom, parseHex, readTokens, toHex, type CustomColours, type CustomResult } from "./custom-theme.ts";

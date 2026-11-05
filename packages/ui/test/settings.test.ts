@@ -51,8 +51,8 @@ test("a test can fail: a stored value is not what a fallback of another kind ret
 test("the sections are the planned six with unique ids, and every empty one says what will live there", () => {
   assert.deepEqual(SETTINGS_SECTIONS.map((s) => s.id), ["general", "design", "phone", "printing", "privacy", "about"]);
   assert.equal(new Set(SETTINGS_SECTIONS.map((s) => s.id)).size, 6);
-  for (const s of SETTINGS_SECTIONS) if (!["general", "privacy", "about"].includes(s.id)) assert.match(s.coming, /will be set here\.$/);
-  // General has real controls (theme, units, shortcuts), so it no longer says Units are coming.
+  for (const s of SETTINGS_SECTIONS) if (!["general", "design", "privacy", "about"].includes(s.id)) assert.match(s.coming, /will be set here\.$/);
+  // General and Design have real controls (theme, units, shortcuts; the grid and snap defaults), so they say nothing is coming.
   assert.equal(SETTINGS_SECTIONS.find((s) => s.id === "general")!.coming, "");
 });
 
