@@ -174,6 +174,19 @@ export interface SizeBox {
   reshow(): void;
 }
 
+/**
+ * Calls `onUnit` on each `unitchange` of `doc` while it returns true. The page's listener holds `onUnit` only weakly and
+ * is made here, apart from the panel, so its scope holds none of the panel's elements: a closed view is not kept alive
+ * by it (a closure shares one scope with its siblings, so the listener must not be made beside the panel's own).
+ */
+function followUnit(doc: Document, onUnit: () => boolean): void {
+  const weak = new WeakRef(onUnit);
+  const listener = () => {
+    if (weak.deref()?.() !== true) doc.removeEventListener(UNIT_EVENT, listener);
+  };
+  doc.addEventListener(UNIT_EVENT, listener);
+}
+
 /** A size box over `el`, showing the unit `unitNow()` gives, now and after each `reshow`. */
 export function sizeBox(el: HTMLInputElement, unitNow: () => Unit): SizeBox {
   let unit: Unit = unitNow(); // the unit the text in the box is in
@@ -213,6 +226,8 @@ export function sizeBox(el: HTMLInputElement, unitNow: () => Unit): SizeBox {
 }
 
 export interface PropertiesPanel {
+  /** Shows the unit now chosen (false once the panel was replaced). Held here because the page holds its listener for it only weakly. */
+  onUnit: () => boolean;
   /** The size boxes, in SIZE_KEYS order. */
   inputs: SizeBox[];
   /** The Shape choice (U0d), standing for the part's shape as the toolbar's shape buttons did. */
@@ -268,16 +283,18 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     $("volume").textContent = `${fmt(volumeIn(shownBody.volume, unit))} ${unit}³`;
     $("area").textContent = `${fmt(areaIn(shownBody.area, unit))} ${unit}²`;
   };
-  const onUnit = () => {
-    // The panel was filled again (Design mounted anew): this one is gone.
-    if (slot.querySelector("#width") !== boxes[0].el) return doc.removeEventListener(UNIT_EVENT, onUnit);
+  /** Shows the unit now chosen; false once this panel was filled again (Design mounted anew), and it is no longer wanted. */
+  const onUnit = (): boolean => {
+    if (slot.querySelector("#width") !== boxes[0].el) return false;
     for (const b of boxes) b.reshow();
     for (const name of slot.querySelectorAll(".unit-name")) name.textContent = currentUnit(doc);
     drawBody();
+    return true;
   };
-  doc.addEventListener(UNIT_EVENT, onUnit);
+  followUnit(doc, onUnit);
   for (const name of slot.querySelectorAll(".unit-name")) name.textContent = currentUnit(doc);
   return {
+    onUnit, // kept by the panel, which the page's listener holds only weakly
     inputs: boxes,
     shapeChoice: $<HTMLSelectElement>("shape"),
     setShape(shape, pressed) {
