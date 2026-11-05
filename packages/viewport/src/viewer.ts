@@ -8,6 +8,7 @@ import { clientToNdc, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClie
 import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
+import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
@@ -114,6 +115,8 @@ export class ViewportView {
    */
   /** The kind of pointer last pressed on the view, whose reach places and grabs the Move handles (a finger's wider); a coarse pointer's at first. */
   private pointerKind: "mouse" | "touch" = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
+  /** The last click that picked on the body (not one of a double-click), to tell a double-click's second (double-pick.ts). */
+  private lastClick: ViewClick | null = null;
   private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
@@ -187,6 +190,10 @@ export class ViewportView {
       const edge = this.edgeAt(x, y);
       return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
     };
+    // A press anywhere else (a browser row, a button, the view cube) comes between two clicks: they are no double-click.
+    document.addEventListener("pointerdown", (e) => {
+      if (e.target !== canvas) this.lastClick = null;
+    }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointerdown", (e) => {
       down = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
       endHold(); // a second finger (a pinch) is no hold
@@ -231,7 +238,11 @@ export class ViewportView {
       // Picking where a sketch goes: the face under the pointer, else the nearest offered plane, never an edge (26d).
       if (this.host.offeredFaces()) return this.host.pick({ ...this.planeTarget(e.clientX, e.clientY), edge: null, shift: e.shiftKey });
       const edge = this.edgeAt(e.clientX, e.clientY);
-      this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey });
+      // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
+      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch: e.pointerType === "touch", shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
+      const double = isDoublePick(this.lastClick, click);
+      this.lastClick = double ? null : click;
+      this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
     });
     // Hover: what a click would pick, looked up at most once a frame, never while a button is held.
     let pointer: { x: number; y: number } | null = null;
