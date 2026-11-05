@@ -16,6 +16,21 @@ export function isClick(down: { x: number; y: number }, up: { x: number; y: numb
  */
 export const HOLD_MS = 500;
 
+/** How near on screen (CSS pixels) a press must be to a sketch point to drag it (step 47d3): the Select tool's pick reach. */
+export const SKETCH_GRAB_PX = { mouse: 10, touch: 24 };
+
+/** Which of these points on screen a press at `at` grabs: the nearest within `reach`, by index; null for none. */
+export function nearestWithin(points: readonly ({ x: number; y: number } | null)[], at: { x: number; y: number }, reach: number): number | null {
+  let best: number | null = null;
+  let bestD = reach;
+  points.forEach((p, i) => {
+    if (!p) return;
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    if (d <= bestD && (best === null || d < bestD)) [best, bestD] = [i, d];
+  });
+  return best;
+}
+
 /** A rectangle on screen in client (CSS) pixels, as getBoundingClientRect gives. */
 export interface ClientRect {
   left: number;

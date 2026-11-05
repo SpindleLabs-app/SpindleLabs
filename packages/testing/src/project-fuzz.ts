@@ -145,6 +145,29 @@ function drawCurve(r: SeededRandom, doc: DesignDocument, id: string): DesignDocu
   return drawLine(doc, id, from, [below(r, 100), -below(r, 1000) / 100]).doc;
 }
 
+/**
+ * Sketch `id`'s first four lines (a rectangle just drawn: bottom, right,
+ * top, left) with some of horizontal on the bottom and top, vertical on the
+ * sides and a fix on its first corner, each with an id from the counter, as
+ * Design saves them (step 47d2): each already holds, so the stored points
+ * stay solved.
+ */
+function squared(r: SeededRandom, doc: DesignDocument, id: string): DesignDocument {
+  const sketch = doc.sketches.find((x) => x.id === id)!;
+  const sides = sketch.curves.slice(0, 4).flatMap((c) => (c.kind === "line" ? [c] : []));
+  if (sides.length < 4) return doc;
+  const wanted: Omit<DesignDocument["sketches"][number]["constraints"][number], "id">[] = [
+    { kind: "horizontal", a: sides[0].start, b: sides[0].end },
+    { kind: "vertical", a: sides[1].start, b: sides[1].end },
+    { kind: "horizontal", a: sides[2].start, b: sides[2].end },
+    { kind: "vertical", a: sides[3].start, b: sides[3].end },
+    { kind: "fix", point: sides[0].start },
+  ].filter(() => r.next() < 0.7) as never;
+  let nextId = doc.nextId;
+  const constraints = [...sketch.constraints, ...wanted.map((c) => ({ ...c, id: `constraint-${nextId++}` }) as DesignDocument["sketches"][number]["constraints"][number])];
+  return { ...doc, nextId, sketches: doc.sketches.map((x) => (x.id === id ? { ...x, constraints } : x)) };
+}
+
 /** A new sketch on any plane, put in at the marker: often a closed rectangle, sometimes with loose curves too (the kernel judges the outline when it builds). */
 function drawSketch(r: SeededRandom, doc: DesignDocument): DesignDocument {
   const sketch = addSketch(doc, pick(r, SKETCH_PLANES));
@@ -152,6 +175,10 @@ function drawSketch(r: SeededRandom, doc: DesignDocument): DesignDocument {
   if (r.next() < 0.7) {
     const [x, y] = [below(r, 60) - 30, below(r, 60) - 30];
     next = drawRectangle(next, sketch.id, [x, y], [x + 1 + below(r, 60), y + 1 + below(r, 40)]).doc;
+    // 47d2: sometimes kept square by constraints, as the Horizontal, Vertical and Fix tools leave it (they already hold);
+    // chosen by a generator of their own, seeded from the corner, so the rest of the seeded stream is as it was.
+    const own = seeded(BigInt((x + 30) * 60 + (y + 30)) + 47002n);
+    if (own.next() < 0.4) next = squared(own, next, sketch.id);
   }
   for (let k = r.next() < 0.6 ? 0 : 1 + below(r, 3); k > 0; k--) next = drawCurve(r, next, sketch.id);
   return next;
@@ -613,7 +640,7 @@ export function shrink(text: string, kind: string, readers: readonly DataReader[
 }
 
 /** The timelines an opened file can hold (25b), each of which a round must reach. */
-const timelineCounts = () => ({ openedProjected: 0, openedGreyedByProjection: 0, openedKept: 0, openedKeptSketchThere: 0, openedSuppressed: 0, openedMarkerOnItem: 0, openedFailedExtrude: 0, openedSeveralExtrudes: 0 });
+const timelineCounts = () => ({ openedConstrained: 0, openedProjected: 0, openedGreyedByProjection: 0, openedKept: 0, openedKeptSketchThere: 0, openedSuppressed: 0, openedMarkerOnItem: 0, openedFailedExtrude: 0, openedSeveralExtrudes: 0 });
 
 function countTimeline(design: DesignDocument, counts: ReturnType<typeof timelineCounts>) {
   const { features, marker } = design.timeline;
@@ -621,6 +648,7 @@ function countTimeline(design: DesignDocument, counts: ReturnType<typeof timelin
   const extrudes = features.filter(isSketchExtrude);
   const building = buildingItems(design);
   const end = marker === undefined ? features.length : marker === "start" ? 0 : features.findIndex((f) => f.id === marker) + 1;
+  if (design.sketches.some((s) => s.constraints.length > 0)) counts.openedConstrained++;
   if (design.sketches.some((s) => s.projected !== undefined)) counts.openedProjected++;
   if (design.sketches.some((s) => s.projected?.some((p) => features.some((f) => f.id === p.feature && f.suppressed)))) counts.openedGreyedByProjection++;
   if (kept.length > 0) counts.openedKept++;
