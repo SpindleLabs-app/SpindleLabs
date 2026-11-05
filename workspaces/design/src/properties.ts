@@ -3,8 +3,8 @@
 // with their validation, staleness and STL notes. The workspace drives it;
 // the panel only shows what it is given.
 
-import { describeProvenance, type BodyView, type Feature } from "@fission/core";
-import { downstreamChip, formatQuantity as fmt, type ChipInfo } from "@fission/ui";
+import { areaIn, boxShown, describeProvenance, toMm, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
+import { currentUnit, downstreamChip, formatQuantity as fmt, UNIT_EVENT, type ChipInfo } from "@fission/ui";
 import { SHAPES } from "./commands.ts";
 import type { PartKind } from "./document.ts";
 import { SHAPE_LABELS } from "./toolbar.ts";
@@ -127,7 +127,7 @@ const HTML = `
   <h2>Parameters</h2>
   <p id="no-part" hidden>${NO_PART}</p>
   <label id="shape-row" title="${SHAPE_TITLE}">Shape <select id="shape" class="dark-select"><option value="" disabled hidden>—</option><option value="sketch-extrude" disabled hidden>${EXTRUDED_SKETCH}</option>${SHAPES.map((k) => `<option value="${k}">${SHAPE_LABELS[k]}</option>`).join("")}</select></label>
-  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="number" value="${DEFAULT_SIZES[k]}" step="any" /> mm</label>`).join("\n  ")}
+  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="number" value="${DEFAULT_SIZES[k]}" step="any" /> <span class="unit-name">mm</span></label>`).join("\n  ")}
   <h2>Feature</h2>
   <dl id="feature-info">
     <dt>Feature</dt><dd id="intent">…</dd>
@@ -159,9 +159,62 @@ export interface Verb {
   title: string;
 }
 
+/**
+ * A size box. The document holds millimetres, so `value` is always millimetres as text, whichever unit the box shows
+ * (U2c2): reading converts what is typed, writing converts what is put in. Nothing else in the Design workspace knows
+ * the box may show inches. In millimetres it is the input's own text, untouched.
+ */
+export interface SizeBox {
+  /** The number box itself, in the unit it shows (the e2e tests and the page see this). */
+  readonly el: HTMLInputElement;
+  /** Millimetres as text; text that is no number (empty, "e") is returned as the input has it, for the refusal to name. */
+  value: string;
+  addEventListener(type: "input" | "change" | "blur", listener: () => void): void;
+  /** The unit changed (Settings): show the same length in the new unit. */
+  reshow(): void;
+}
+
+/** A size box over `el`, showing the unit `unitNow()` gives, now and after each `reshow`. */
+export function sizeBox(el: HTMLInputElement, unitNow: () => Unit): SizeBox {
+  let unit: Unit = unitNow(); // the unit the text in the box is in
+  /** The millimetres last put in, while the box still has the text that was put there: read back exactly, not through a division. */
+  let put: { text: string; mm: string } | null = null;
+  const read = (): string => {
+    if (put !== null && el.value === put.text) return put.mm;
+    const text = el.value;
+    const n = Number(text);
+    if (unit === "mm" || text.trim() === "" || !Number.isFinite(n)) return text;
+    return String(Number(toMm(n, unit).toPrecision(12)));
+  };
+  const write = (mm: string) => {
+    unit = unitNow();
+    const n = Number(mm);
+    if (unit === "mm" || mm.trim() === "" || !Number.isFinite(n)) {
+      el.value = mm;
+      put = null;
+      return;
+    }
+    el.value = boxShown(n, unit);
+    put = { text: el.value, mm };
+  };
+  return {
+    el,
+    get value() {
+      return read();
+    },
+    set value(mm: string) {
+      write(mm);
+    },
+    addEventListener: (type, listener) => el.addEventListener(type, listener),
+    reshow() {
+      write(read());
+    },
+  };
+}
+
 export interface PropertiesPanel {
-  /** The size inputs, in SIZE_KEYS order. */
-  inputs: HTMLInputElement[];
+  /** The size boxes, in SIZE_KEYS order. */
+  inputs: SizeBox[];
   /** The Shape choice (U0d), standing for the part's shape as the toolbar's shape buttons did. */
   shapeChoice: HTMLSelectElement;
   /** Labels and shows the size inputs for this shape; the Shape choice shows the part's shape (`pressed`), or "—" for a design with no body. */
@@ -205,8 +258,27 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     if ($("error").textContent !== "" || !$("kept-warning").hidden) slot.dataset.problem = "";
     else delete slot.dataset.problem;
   };
+  const doc = slot.ownerDocument;
+  const boxes = SIZE_KEYS.map((k) => sizeBox($<HTMLInputElement>(k), () => currentUnit(doc)));
+  /** The body numbers last shown, drawn again when the unit changes. */
+  let shownBody: BodyView | null = null;
+  const drawBody = () => {
+    if (shownBody === null) return;
+    const unit = currentUnit(doc);
+    $("volume").textContent = `${fmt(volumeIn(shownBody.volume, unit))} ${unit}³`;
+    $("area").textContent = `${fmt(areaIn(shownBody.area, unit))} ${unit}²`;
+  };
+  const onUnit = () => {
+    // The panel was filled again (Design mounted anew): this one is gone.
+    if (slot.querySelector("#width") !== boxes[0].el) return doc.removeEventListener(UNIT_EVENT, onUnit);
+    for (const b of boxes) b.reshow();
+    for (const name of slot.querySelectorAll(".unit-name")) name.textContent = currentUnit(doc);
+    drawBody();
+  };
+  doc.addEventListener(UNIT_EVENT, onUnit);
+  for (const name of slot.querySelectorAll(".unit-name")) name.textContent = currentUnit(doc);
   return {
-    inputs: SIZE_KEYS.map((k) => $<HTMLInputElement>(k)),
+    inputs: boxes,
     shapeChoice: $<HTMLSelectElement>("shape"),
     setShape(shape, pressed) {
       const choice = $<HTMLSelectElement>("shape");
@@ -245,8 +317,8 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     },
     showBody(view, name) {
       $("body-heading").textContent = name;
-      $("volume").textContent = `${fmt(view.volume)} mm³`;
-      $("area").textContent = `${fmt(view.area)} mm²`;
+      shownBody = view;
+      drawBody();
       $("topology").textContent = `${view.vertices} V · ${view.edges} E · ${view.faces} F`;
       const status = $("status");
       status.textContent = view.errors.length === 0 ? "valid" : `${view.errors.length} problem(s)`;
@@ -255,6 +327,7 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
       $("body-problems").hidden = view.errors.length === 0;
     },
     showNoBody() {
+      shownBody = null;
       $("body-heading").textContent = "Body";
       for (const id of ["volume", "area", "topology", "status"]) $(id).textContent = NONE;
       $("status").className = "";
