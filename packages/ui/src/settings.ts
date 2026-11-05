@@ -40,8 +40,13 @@ export class SettingsStore {
   private readonly storage: SettingsStorage | null;
   constructor(storage: SettingsStorage | null) {
     this.storage = storage;
+    this.reload();
+  }
+  /** Reads the stored settings again, dropping what was read before (settings brought from the account were just written). */
+  reload(): void {
+    this.values = new Map();
     try {
-      const raw = storage?.getItem(SETTINGS_KEY);
+      const raw = this.storage?.getItem(SETTINGS_KEY);
       const parsed: unknown = raw ? JSON.parse(raw) : null;
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         for (const [k, v] of Object.entries(parsed)) if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") this.values.set(k, v);
