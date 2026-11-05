@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectToJson, type Project } from "@fission/core";
 import {
-  fromAnotherTab,
+  keptCopyName,
   journalEntry,
   memoryKeyValue,
   NEWER_PREFIX,
@@ -97,9 +97,9 @@ async function withCrypto<T>(value: unknown, run: () => Promise<T>): Promise<T> 
   }
 }
 
-test("a stale tab's change with no name is kept as Untitled (from another tab) (catches \"Untitled\" made \"\")", () => {
-  assert.equal(fromAnotherTab(""), "Untitled (from another tab)");
-  assert.equal(fromAnotherTab("Box"), "Box (from another tab)");
+test("a stale tab's change with no name is kept as Untitled (kept copy) (catches \"Untitled\" made \"\")", () => {
+  assert.equal(keptCopyName(""), "Untitled (kept copy)");
+  assert.equal(keptCopyName("Box"), "Box (kept copy)");
 });
 
 /** Recovery of a stale tab's entry over another tab's newer save, with the default new id: the copy's id. */
@@ -186,7 +186,7 @@ test("a stale tab's change is kept as a copy when the store's project can't be r
   journal.setItem(unsavedKey("p"), journalEntry(projectToJson(part(25)), new Date(1300), false, new Date(0), "b"));
   const problems = await recoverUnsaved(store, journal, [], () => "copy-1");
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /kept as a separate project, "Box \(from another tab\)"/);
+  assert.match(problems[0], /kept as a separate project, "Box \(kept copy\)"/);
   assert.equal(widthOf(await real.open("copy-1")), 25);
   assert.equal(journal.items.size, 0);
   // The copy is stored as of when the entry was written, 1300, not the clock's 2000 (catches the copy's `entry.written ?? undefined` made &&).

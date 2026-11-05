@@ -18,7 +18,7 @@ type Shown = "ready" | "elsewhere";
 
 const WORDS: Record<Shown, string> = {
   ready: "A new version of SpindleLabs is ready.",
-  elsewhere: "SpindleLabs was updated in another tab.",
+  elsewhere: "SpindleLabs was updated in another tab. Reload to use the new version here too.",
 };
 
 /** The worker could not keep a new version for lack of storage (it says so once, then waits a day before trying again). */

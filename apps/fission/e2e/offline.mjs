@@ -327,7 +327,7 @@ try {
 
       // The other tab, still on A, is told, and its Reload (a tap) gives B.
       await two.waitForSelector('#app-update[data-kind="elsewhere"]', { timeout: 20000 });
-      assert.equal(await two.textContent("#app-update span"), "SpindleLabs was updated in another tab.");
+      assert.equal(await two.textContent("#app-update span"), "SpindleLabs was updated in another tab. Reload to use the new version here too.");
       const box = await two.$eval("#app-update", (e) => e.getBoundingClientRect().toJSON());
       assert.ok(box.left >= 0 && box.right <= 375, `the notice fits 375 px (${box.left}…${box.right})`);
       if (shots) await two.screenshot({ path: `${shots}/update-elsewhere-375.png` });
