@@ -1,0 +1,243 @@
+{
+ "seed": 3,
+ "note": "Monkey seed 3 after My designs added a line to the sign-in dialog: a double-click meant for the view landed on Sign in with Google in the open dialog and left the app for Google's page. The tester never presses a control that leaves the app; this list must now pass.",
+ "actions": [
+  {
+   "do": "resize",
+   "size": [
+    1280,
+    800
+   ]
+  },
+  {
+   "do": "canvas",
+   "x": 0.117,
+   "y": 0.737,
+   "double": false
+  },
+  {
+   "do": "hover",
+   "x": 0.196,
+   "y": 0.287
+  },
+  {
+   "do": "wheel",
+   "x": 0.225,
+   "y": 0.125,
+   "dy": 100
+  },
+  {
+   "do": "hover",
+   "x": 0.764,
+   "y": 0.842
+  },
+  {
+   "do": "click",
+   "sel": "#rotate"
+  },
+  {
+   "do": "key",
+   "key": "Control+z"
+  },
+  {
+   "do": "undo-redo"
+  },
+  {
+   "do": "hover",
+   "x": 0.06,
+   "y": 0.84
+  },
+  {
+   "do": "type",
+   "sel": "#move-turnZ",
+   "text": "1e",
+   "finish": "Tab"
+  },
+  {
+   "do": "key",
+   "key": "a"
+  },
+  {
+   "do": "type",
+   "sel": "#move-turnZ",
+   "text": "12",
+   "finish": "Enter"
+  },
+  {
+   "do": "canvas",
+   "x": 0.827,
+   "y": 0.593,
+   "double": false
+  },
+  {
+   "do": "open",
+   "edit": "swap",
+   "at": 581
+  },
+  {
+   "do": "click",
+   "sel": "#extrude"
+  },
+  {
+   "do": "open",
+   "edit": "marker-start",
+   "at": 463
+  },
+  {
+   "do": "drag",
+   "x": 0.564,
+   "y": 0.748,
+   "x2": 0.82,
+   "y2": 0.648,
+   "button": "middle",
+   "shift": false
+  },
+  {
+   "do": "resize",
+   "size": [
+    375,
+    740
+   ]
+  },
+  {
+   "do": "unstick"
+  },
+  {
+   "do": "select-bodies"
+  },
+  {
+   "do": "resize",
+   "size": [
+    820,
+    600
+   ]
+  },
+  {
+   "do": "round-trip"
+  },
+  {
+   "do": "open",
+   "edit": "same",
+   "at": 66
+  },
+  {
+   "do": "drag",
+   "x": 0.829,
+   "y": 0.36,
+   "x2": 0.536,
+   "y2": 0.311,
+   "button": "middle",
+   "shift": false
+  },
+  {
+   "do": "key",
+   "key": "Enter"
+  },
+  {
+   "do": "open",
+   "edit": "suppress",
+   "at": 952
+  },
+  {
+   "do": "key",
+   "key": "Tab"
+  },
+  {
+   "do": "open",
+   "edit": "same",
+   "at": 412
+  },
+  {
+   "do": "click",
+   "sel": "button[data-view=\"top\"]"
+  },
+  {
+   "do": "key",
+   "key": "p"
+  },
+  {
+   "do": "unstick"
+  },
+  {
+   "do": "unstick"
+  },
+  {
+   "do": "key",
+   "key": "h"
+  },
+  {
+   "do": "round-trip"
+  },
+  {
+   "do": "undo-redo"
+  },
+  {
+   "do": "click",
+   "sel": "#start-hint-open"
+  },
+  {
+   "do": "canvas",
+   "x": 0.589,
+   "y": 0.177,
+   "double": false
+  },
+  {
+   "do": "wheel",
+   "x": 0.281,
+   "y": 0.843,
+   "dy": -400
+  },
+  {
+   "do": "undo-redo"
+  },
+  {
+   "do": "click",
+   "sel": "#modify-menu"
+  },
+  {
+   "do": "click",
+   "sel": "#account-open"
+  },
+  {
+   "do": "click",
+   "sel": "#account-emails"
+  },
+  {
+   "do": "click",
+   "sel": "button:text-is(\"Close\")"
+  },
+  {
+   "do": "drag",
+   "x": 0.617,
+   "y": 0.795,
+   "x2": 0.67,
+   "y2": 0.777,
+   "button": "left",
+   "shift": true
+  },
+  {
+   "do": "click",
+   "sel": "button:text-is(\"Close\")"
+  },
+  {
+   "do": "canvas",
+   "x": 0.705,
+   "y": 0.337,
+   "double": false
+  },
+  {
+   "do": "click",
+   "sel": "button:text-is(\"Close\")"
+  },
+  {
+   "do": "click",
+   "sel": "#account-emails"
+  },
+  {
+   "do": "canvas",
+   "x": 0.3,
+   "y": 0.654,
+   "double": true
+  }
+ ]
+}

@@ -139,12 +139,20 @@ export function combineNames(feature: string, op: BooleanOp, target: NamedBody, 
   const made = new Map<string, readonly number[]>();
   for (const b of [target, ...tools]) for (const [n, m] of b.made) if (!made.has(n)) made.set(n, m);
 
-  // Rules 2 and 4: each result face's names, from the input faces it lies on.
+  // Rules 2 and 4: each result face's names, from the input faces it lies on: its first origin's, then (36d, a kernel
+  // that merges faces in one plane) every face merged into it, the target's names first, then each tool's in the order
+  // picked, each body's in made order; each name once.
   const named = result.history.map((h) =>
-    h.faces.map((from) => {
-      const input = inputs.get(from.body);
-      if (input === undefined) throw new Error(`the result names a body that was not an input (${from.body})`);
-      return { names: input.body.faces[from.face]?.names ?? [] };
+    h.faces.map((first, i) => {
+      const origins = [first, ...(h.also?.[i] ?? [])].map((from) => {
+        const input = inputs.get(from.body);
+        if (input === undefined) throw new Error(`the result names a body that was not an input (${from.body})`);
+        return { order: input.order, names: input.body.faces[from.face]?.names ?? [] };
+      });
+      const all = origins.flatMap((o, k) => o.names.map((n, j) => ({ n, order: o.order, made: made.get(n) ?? [Infinity], k, j })));
+      // As the naming model's faces rank them: the body's place among the inputs, the name's place in its face's list, then made order.
+      all.sort((x, y) => x.order - y.order || x.j - y.j || lex(x.made, y.made) || x.k - y.k);
+      return { names: [...new Set(all.map((x) => x.n))] };
     }),
   );
 
@@ -361,7 +369,8 @@ export interface FaceNameReference {
 }
 
 /** What a reference finds on the design's bodies: a face or edge by body and kernel index; two or more, never guessed between; or none. */
-export type NameFound = { body: number; index: number; warning: "split" | null } | { ambiguous: number } | { lost: true };
+/** "split": a face reference made whole found a piece (rule 3); "ends": an edge reference whose ends no longer fit found the only edge between its two faces (rule 5). */
+export type NameFound = { body: number; index: number; warning: "split" | "ends" | null } | { ambiguous: number } | { lost: true };
 
 /**
  * Whether face `f` of `view` holds point `p`: within SAME_CORNER of one of
@@ -421,7 +430,7 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
   if (pieces.length === 0) return { lost: true };
   if (pieces.length === 1) return { ...pieces[0], warning: null };
   if (ref.tag !== undefined) {
-    const want = ref.tag.join(",");
+    const want = [...ref.tag].sort().join(","); // tags are kept sorted (tagAmong); one written in another order is the same set
     const match = pieces.filter((p) => names.tagFor(p.body, p.index, ref.name).join(",") === want);
     if (match.length === 0) return { lost: true };
     if (match.length > 1) return { ambiguous: match.length };
@@ -438,21 +447,34 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
 }
 
 /**
- * An edge by rule 5's name: found when exactly one edge has it. When two or
- * more edges fit it (its two faces now meet more than once, so they carry
- * `;ends:` the name never had, or even their ends tie and they are shared),
- * ambiguous, never guessed; else lost.
+ * An edge by rule 5's name: found when exactly one edge has it. Else, of
+ * the edges between its two faces: a name with `;ends:` finds the one whose
+ * ends are its own (two such: ambiguous); when none has them but only one
+ * edge lies between its two faces, that one, with the warning "ends" (Ben's
+ * call 2026-11-05: the best end product, never a silent guess; as a tagged
+ * face finds its face whole again); two or more, none with its ends: lost.
+ * A name without `;ends:` that two or more edges fit (its two faces now meet
+ * more than once): ambiguous, never guessed; else lost.
  */
 export function resolveEdgeName(names: DesignNames, name: string): NameFound {
-  let fits = 0;
+  const [pair, ends] = name.split(";ends:") as [string, string | undefined];
+  const fits: { body: number; index: number }[] = [];
+  const same: { body: number; index: number }[] = [];
   for (const [body, edges] of names.edges.entries())
     for (const [index, e] of edges.entries()) {
       if (e === null) continue;
       if (e.name === name) return { body, index, warning: null };
-      const pair = `edge:${e.faces.join("+")}`;
-      if (name === pair || name === `${pair};ends:${e.ends.join(",")}`) fits++;
+      if (`edge:${e.faces.join("+")}` !== pair) continue;
+      fits.push({ body, index });
+      if (ends !== undefined && e.ends.join(",") === ends) same.push({ body, index });
     }
-  return fits > 1 ? { ambiguous: fits } : { lost: true };
+  if (ends !== undefined) {
+    if (same.length === 1) return { ...same[0], warning: null };
+    if (same.length > 1) return { ambiguous: same.length };
+    if (fits.length === 1) return { ...fits[0], warning: "ends" };
+    return { lost: true };
+  }
+  return fits.length > 1 ? { ambiguous: fits.length } : { lost: true };
 }
 
 /**

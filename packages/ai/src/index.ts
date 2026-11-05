@@ -6,10 +6,11 @@ export { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, streamLines, type Fetch } from "./
 export { apiOrigin, DEFAULT_MODELS, listHostedModels, otherEndpoint, vendorFromKey, VENDOR_ORIGINS } from "./hosted.ts";
 export { isThisComputer, OLLAMA_ENDPOINT, ollamaModels } from "./ollama.ts";
 export { gpuCanRun, IN_BROWSER_MODEL, inBrowserDownloadBytes, type BuiltInModelLike, type GpuLike, type WebLLMChunk, type WebLLMLike, type WebLLMModel, type WebLLMReply } from "./local.ts";
-export { askForCommands, saysCannot, type AskResult } from "./commands.ts";
+export { askForCommands, saysCannot, SHORTER_RULE, type AskResult } from "./commands.ts";
+export { AIError, kindOf, STALL_MS, troubleWords, type TroubleKind } from "./trouble.ts";
 export { ASKING, CHECKING, partialString, PREVIEWING, progressOf, TYPICAL_ANSWER, waiting, type Progress, type Stage } from "./progress.ts";
 export { acceptCommands, AI_LABEL, proposeAction, type AIAction, type ParameterChange, type Preview, type ProposeOptions } from "./actions.ts";
-export { CANNOT_RULE, CUBE_RULE, EXPLAIN_RULE, RADIUS_RULE, systemPrompt, UNIT_RULE } from "./prompt.ts";
+export { CANNOT_RULE, CUBE_RULE, EXPLAIN_RULE, ONLY_ASKED_RULE, RADIUS_RULE, systemPrompt, UNIT_RULE } from "./prompt.ts";
 export { buildContext, type AIContext, type ContextOptions } from "./context.ts";
 export { loadSpecialist, SPECIALISTS, type SpecialistInfo, type SpecialistModel, type SpecialistTask } from "./specialists.ts";
 export { AI_FEATURES } from "./features.ts";

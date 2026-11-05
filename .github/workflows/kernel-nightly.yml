@@ -353,7 +353,7 @@ jobs:
           # Copied out first: collect-results.sh switches the clone to test-results.
           export IN="$RUNNER_TEMP/incoming"
           cp -R "$r/runs/$RUN" "$IN" 2>/dev/null || mkdir -p "$IN"
-          cp .github/scripts/collect-results.sh .github/scripts/file_issues.py .github/scripts/dump_pictures.sh "$RUNNER_TEMP/"
+          cp .github/scripts/collect-results.sh .github/scripts/file_issues.py .github/scripts/dump_pictures.sh .github/scripts/coverage_issue.py "$RUNNER_TEMP/"
           # The summary and issue text name kernel tests: only into the private repo, never this log.
           cd "$r" && GITHUB_STEP_SUMMARY='' "$GITHUB_WORKSPACE/.github/scripts/kernel_ci.sh" run collect "$RUNNER_TEMP/logs" bash "$RUNNER_TEMP/collect-results.sh"
       - name: Save the collect log to kernel-results

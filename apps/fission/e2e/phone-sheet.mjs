@@ -544,6 +544,39 @@ if (browserName === "chromium") {
   await context.close();
 }
 
+// One sheet at a time after a resize (clumsy-user hunt 2026-11-04): Properties opened on a phone, the window widened
+// (both panels shown beside the view), the AI panel opened there, then narrowed again: the AI sheet and Properties were
+// both open, one over the other. The one opened last stays; so with Files (the browser) opened on the phone last.
+{
+  const sheets = (page) => page.evaluate(() => [
+    ...["browser", "properties"].filter((s) => document.getElementById("workspace").dataset[s] === "open"),
+    ...(document.getElementById("assistant").hidden ? [] : ["assistant"]),
+  ]);
+  const { page, context } = await open(375, 667);
+  await page.tap("#properties-toggle");
+  assert.deepEqual(await sheets(page), ["properties"]);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.click("#assistant-toggle");
+  await page.waitForFunction(() => !document.getElementById("assistant").hidden);
+  if (shots) await page.screenshot({ path: `${shots}/sheets-resize-1280.png` });
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.waitForFunction(() => matchMedia("(max-width: 640px)").matches);
+  assert.deepEqual(await sheets(page), ["assistant"], "narrowed again: only the AI sheet, opened last");
+  if (shots) await page.screenshot({ path: `${shots}/sheets-resize-375.png` });
+  // The other way: the AI panel opened wide, Files opened on the phone, widened and narrowed again: Files alone.
+  await page.tap("#browser-toggle");
+  assert.deepEqual(await sheets(page), ["browser"], "opening Files puts the AI sheet away, as before");
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.click("#assistant-toggle");
+  await page.waitForFunction(() => !document.getElementById("assistant").hidden);
+  await page.click("#assistant-toggle");
+  await page.click("#assistant-toggle"); // closed and opened again: still the last opened
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.waitForFunction(() => matchMedia("(max-width: 640px)").matches);
+  assert.deepEqual(await sheets(page), ["assistant"]);
+  await context.close();
+}
+
 // Rules off, the old layout: Properties stacked under the view and the page scrolled.
 {
   const { page, context } = await open(375, 667, false);
