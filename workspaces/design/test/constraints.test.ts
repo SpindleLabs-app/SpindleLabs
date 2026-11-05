@@ -109,7 +109,8 @@ test("horizontal and vertical on one line's two ends would make it a point: refu
   const { doc, id } = oneLine();
   const h = ok(await addConstraint(kernel, doc, id, { kind: "horizontal", a: "point-3", b: "point-4" }));
   const r = no(await addConstraint(kernel, h.doc, id, { kind: "vertical", a: "point-3", b: "point-4" }));
-  assert.match(r.refused, /would shrink line-5 to almost nothing/);
+  assert.match(r.refused, /would shrink the line shown in red to almost nothing/);
+  assert.deepEqual(r.fighting, ["line-5"], "the line drawn red");
   assert.deepEqual(sketchOf(h.doc, id).constraints.length, 1);
 });
 

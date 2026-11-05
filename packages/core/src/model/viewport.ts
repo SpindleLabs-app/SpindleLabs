@@ -66,6 +66,12 @@ export interface SketchDrawing {
   side?: 1 | -1;
   lines: readonly (readonly [SketchXY, SketchXY])[];
   /**
+   * Its construction curves (step 47f, Design's construction.ts), already
+   * cut into dashes, drawn in a colour of their own while it is edited and
+   * as its lines are otherwise. Not in `lines`; absent when none.
+   */
+  construction?: readonly (readonly [SketchXY, SketchXY])[];
+  /**
    * A finished sketch whose plane is lost (step 26e: its face is gone, so
    * it stays where it was): drawn red, as the reference app draws a lost
    * profile. Absent means drawn as usual.
@@ -103,6 +109,12 @@ export interface SketchDrawing {
     constraints?: readonly (readonly [SketchXY, SketchXY])[];
     fighting?: readonly (readonly [SketchXY, SketchXY])[];
     constraintCount?: number;
+    /**
+     * The sketch's dimensions' values (step 47e): each one's words ("12.5",
+     * "R 4", "⌀ 10") at its spot, by the constraint's id, `fighting` when it
+     * fought the one just refused. Absent when none.
+     */
+    labels?: readonly { id: string; at: SketchXY; text: string; fighting?: boolean }[];
     /**
      * The points a press drags (step 47d3, the Select tool): a press within
      * a pick's reach of one on screen grabs the nearest (SketchPointer
