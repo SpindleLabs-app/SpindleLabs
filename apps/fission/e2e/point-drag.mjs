@@ -30,7 +30,7 @@ import { mkdirSync } from "node:fs";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { closePanels, pickPlane, sheetsClearFor } from "./start.mjs";
+import { closePanels, openPanel, pickPlane, sheetsClearFor } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4284, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4284/?test-hooks";
@@ -75,6 +75,18 @@ function toScreen(cam, box, p) {
   const ny = dot(v, up) / (dot(v, forward) * T);
   return { x: box.x + ((nx + 1) / 2) * box.width, y: box.y + ((1 - ny) / 2) * box.height };
 }
+/** The point of XY (z = 0) under screen point (sx, sy): toScreen the other way, along the ray through it. */
+function fromScreen(cam, box, sx, sy) {
+  const forward = unit(sub(cam.target, cam.position));
+  const right = unit(cross(forward, cam.up));
+  const up = cross(right, forward);
+  const nx = (2 * (sx - box.x)) / box.width - 1;
+  const ny = 1 - (2 * (sy - box.y)) / box.height;
+  const aspect = box.width / box.height;
+  const ray = [0, 1, 2].map((i) => forward[i] + right[i] * nx * T * aspect + up[i] * ny * T);
+  const t = -cam.position[2] / ray[2];
+  return [cam.position[0] + t * ray[0], cam.position[1] + t * ray[1]];
+}
 /** Millimetres per screen pixel on the plane the camera looks straight down at. */
 async function mmPerPixel(page) {
   const cam = await camera(page);
@@ -116,7 +128,21 @@ async function sketchOnXY(page, tap) {
   await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on XY");
   await settle(page);
+  await halfMillimetreGrid(page, tap);
   if (tap) await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
+}
+
+/**
+ * Grid snap on a 0.5 mm grid, so a click lands exactly on the point it aims at in every engine: Firefox and WebKit
+ * send the pointer on whole pixels, and the nearest round number within half a pixel of that can be 0.1 mm off (19.9 for 20).
+ * Every point these checks draw is on the 0.5 mm grid. Drags are not snapped (they follow the pointer).
+ */
+async function halfMillimetreGrid(page, tap) {
+  await openPanel(page, "properties", tap);
+  await page.fill("#sketch-grid", "0.5");
+  await page.press("#sketch-grid", "Enter");
+  await page.check("#sketch-grid-snap");
+  await closePanels(page, tap);
 }
 
 const error = (page) => page.evaluate(() => document.querySelector("#sketch-grid-error")?.textContent ?? "");
@@ -138,11 +164,16 @@ async function constrain(page, kind, picks, tap = false) {
  * jump (`moves` pointer moves along the way, 1 for a jump), by mouse or,
  * with `finger` in Chromium, by touch; waits until the workspace says the
  * drag has ended. Gives the frames, the pointer's press and release on
- * screen, and the solved steps the drag took.
+ * screen, the solved steps the drag took, and `aim`: the point of XY under
+ * the pixel it was let go on. The press and release are on whole pixels in
+ * every engine (Firefox and WebKit send no others), so where it lands is
+ * judged against `aim`, up to half a pixel from `to`, never against `to`.
  */
 async function drag(page, from, to, { moves = 1, finger = false } = {}) {
-  const a = await screenAt(page, from, finger);
-  const b = await screenAt(page, to, finger);
+  const whole = (p) => ({ x: Math.round(p.x), y: Math.round(p.y) });
+  const a = whole(await screenAt(page, from, finger));
+  const b = whole(await screenAt(page, to, finger));
+  const aim = fromScreen(await camera(page), await canvasBox(page), b.x, b.y);
   const ended = Number((await data(page, "pointDrags")) || 0) + 1;
   const solvesBefore = Number((await data(page, "dragSolves")) || 0);
   await page.evaluate(() => {
@@ -168,7 +199,7 @@ async function drag(page, from, to, { moves = 1, finger = false } = {}) {
   }
   await until(page, (n) => Number(document.querySelector("#viewport").dataset.pointDrags ?? 0) >= n, ended, "the drag's end heard by the workspace");
   const frames = await page.evaluate(() => (window.dragWatch.disconnect(), window.dragFrames));
-  return { frames: frames.map(pointsOf), steps: Number((await data(page, "dragSolves")) || 0) - solvesBefore };
+  return { frames: frames.map(pointsOf), steps: Number((await data(page, "dragSolves")) || 0) - solvesBefore, aim };
 }
 
 /** Twice the signed area of the triangle a, b, c. */
@@ -211,7 +242,7 @@ try {
     await page.click("#sketch-tool-select");
     const cam = await camera(page);
     const mm = await mmPerPixel(page);
-    const { frames, steps } = await drag(page, [20, 15], [45, 30]);
+    const { frames, steps, aim } = await drag(page, [20, 15], [45, 30]);
     // The jump from (20, 15) to (45, 30), √(25² + 15²) ≈ 29.2 mm, at most 8 px a step: at least ⌈29.2 / (8 · mm)⌉ − 1 solves (the
     // first 6 px move takes one of its own, and the jump starts from there), at most 32; and the 6 px move one more.
     const least = Math.min(32, Math.ceil(Math.hypot(25, 15) / (8 * mm)) - 1);
@@ -228,7 +259,7 @@ try {
       assert.ok(away <= 6 * mm + 1e-9, `frame ${k}: the corner ${f[2]} is ${away / mm} px off the way it was dragged`);
     }
     // It lands under the pointer, within half a pixel (the pointer's ray meets the plane between pixels).
-    assert.ok(near(end, [45, 30], 0.5 * mm + 1e-9), `the corner landed at ${end}, not under the pointer at (45, 30)`);
+    assert.ok(near(end, aim, 0.5 * mm + 1e-9), `the corner landed at ${end}, not under the pointer at ${aim} (aimed at (45, 30))`);
     assert.ok(same(last[1], [end[0], 0]) && same(last[3], [0, end[1]]), `the rectangle landed as ${JSON.stringify(last)}`);
     stayed(await camera(page), cam);
     await shot(page, "point-drag-rectangle-1280");
@@ -303,19 +334,19 @@ try {
     const first = await drag(page, [20, 10], [25, 20]);
     const second = await drag(page, [40, 10], [45, 25]);
     const last = second.frames.at(-1);
-    assert.ok(near(last[1], [25, 20], 0.5 * mm + 1e-9) && near(last[3], [45, 25], 0.5 * mm + 1e-9), `the two drags landed as ${JSON.stringify(last)} (first ${JSON.stringify(first.frames.at(-1))})`);
+    assert.ok(near(last[1], first.aim, 0.5 * mm + 1e-9) && near(last[3], second.aim, 0.5 * mm + 1e-9), `the two drags landed as ${JSON.stringify(last)} (first ${JSON.stringify(first.frames.at(-1))})`);
     assert.ok(same(last[0], [0, 0]) && same(last[2], [30, 0]), "the other ends stayed");
     await page.keyboard.press("Control+z");
     await until(page, () => document.querySelector("#viewport").dataset.sketchPoints.split(" ")[3] === "40,10", null, "one undo puts back only the second drag");
-    assert.ok(near(pointsOf(await data(page, "sketchPoints"))[1], [25, 20], 0.5 * mm + 1e-9), "the first drag is still there");
+    assert.ok(near(pointsOf(await data(page, "sketchPoints"))[1], first.aim, 0.5 * mm + 1e-9), "the first drag is still there");
     // Delete the first line (picked by its middle), then drag the second's end at once: both happen.
     await at(page, [12.5, 10]);
     await shown(page, "sketchPicked", "1");
     await page.keyboard.press("Delete");
-    await drag(page, [40, 10], [35, 20]);
+    const third = await drag(page, [40, 10], [35, 20]);
     await shown(page, "sketchLines", "1");
     const after = await points(page);
-    assert.ok(after.length === 2 && same(after[0], [30, 0]) && near(after[1], [35, 20], 0.5 * mm + 1e-9), `after the delete and the drag: ${JSON.stringify(after)}`);
+    assert.ok(after.length === 2 && same(after[0], [30, 0]) && near(after[1], third.aim, 0.5 * mm + 1e-9), `after the delete and the drag: ${JSON.stringify(after)}`);
     await page.context().close();
   });
 
@@ -331,9 +362,9 @@ try {
     await page.click("#view-controls [data-nav=pan]");
     const cam = await camera(page);
     const mm = await mmPerPixel(page);
-    const { frames } = await drag(page, [20, 10], [10, 20], { moves: 4 });
+    const { frames, aim } = await drag(page, [20, 10], [10, 20], { moves: 4 });
     stayed(await camera(page), cam);
-    assert.ok(near(frames.at(-1)[1], [10, 20], 0.5 * mm + 1e-9), `the end landed at ${frames.at(-1)[1]}`);
+    assert.ok(near(frames.at(-1)[1], aim, 0.5 * mm + 1e-9), `the end landed at ${frames.at(-1)[1]}, not under the pointer at ${aim}`);
     await page.context().close();
   });
 
@@ -347,9 +378,9 @@ try {
     await page.tap("#sketch-tool-select");
     const cam = await camera(page);
     const mm = await mmPerPixel(page);
-    const { frames } = await drag(page, [10, 5], [5, 12], { moves: 3, finger: true });
+    const { frames, aim } = await drag(page, [10, 5], [5, 12], { moves: 3, finger: true });
     const end = frames.at(-1)[1];
-    assert.ok(near(end, [5, 12], 0.5 * mm + 1e-9), `the end landed at ${end}, not under the finger at (5, 12)`);
+    assert.ok(near(end, aim, 0.5 * mm + 1e-9), `the end landed at ${end}, not under the finger at ${aim} (aimed at (5, 12))`);
     assert.ok(same(frames.at(-1)[0], [0, 0]), "the start stayed");
     stayed(await camera(page), cam);
     await shot(page, "point-drag-375");
