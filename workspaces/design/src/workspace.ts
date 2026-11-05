@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -42,7 +42,7 @@ import { viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
-import { droppedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
+import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
 import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
@@ -61,6 +61,7 @@ import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus
 import type { Sketch, SketchPlane } from "./document.ts";
 import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
+import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -752,7 +753,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let failure: string | undefined;
     if (result?.status === "failed") failure = result.message;
     else if (feature && result && (result.status !== "built" || build.bodies[bodyIdOf(feature.id)] === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
-    return { scene: joinBodies(drawn), warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
+    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
   }
   /**
    * The rebuild's warnings in timeline order: an extrude built from its kept
@@ -774,6 +775,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.projections) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.projections.message}.` });
     }
     return out;
+  }
+  /** Where the last rebuild's refused Combines would touch themselves or be too thin (36d), or null. */
+  let refusalsNow: AnalysisOverlay | null = null;
+  /** Points at them in the view while Design is on screen. */
+  function showRefusals() {
+    if (refusalsNow && shown) viewport.setOverlay(refusalsNow);
+    else viewport.clearOverlay(REFUSAL_OVERLAY);
   }
   /** The last rebuild's warnings: shown on their timeline rows and items and, once the sketch each is about is finished, in the panel. */
   let warningsNow: Warned[] = [];
@@ -1294,6 +1302,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       }
       markStale(failure !== undefined);
       viewport.showBody(scene.mesh);
+      // 36d: where a refused Combine would touch itself or be too thin, pointed at over everything.
+      refusalsNow = refusalOverlay(doc.timeline.features, value.results);
+      showRefusals();
       // A sketch on a face is drawn where this rebuild placed it (26c).
       drawSketches();
       const empty = scene.bodies.length === 0;
@@ -1316,7 +1327,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // note (17e); so do ones whose name now names two (25a4: never a guess);
       // the rest follow their names, however the kernel numbers them now.
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
-      const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
+      const { kept, dropped, shared, followed } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
       lastScene = scene;
       if (buildAreaOn) showOrigin(doc);
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
@@ -1331,7 +1342,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (extruding && designDoc() === doc) void offerProfiles(doc, [...extruding.usable]);
       const part = partFeature(doc);
       partShown = scene.bodies.find((b) => b.feature === part?.id) ?? (failure === undefined ? null : partShown);
-      note = droppedNote(dropped, shared, selectedSketches);
+      note = [droppedNote(dropped, shared, selectedSketches), followedNote(followed)].filter((x) => x !== "").join(" ");
       if (kept.length < ctx.selection.items.length) {
         settling = true;
         ctx.selection.set(kept);
@@ -3055,6 +3066,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sleep() {
     if (!shown) return;
     shown = false;
+    // Design's own overlay goes with it: another workspace's view says nothing about a Combine (36d).
+    viewport.clearOverlay(REFUSAL_OVERLAY);
     showBuildAreaWords();
     viewport.onPick = null;
     viewport.onMenu = null;
@@ -3142,6 +3155,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (!shown) return false; // the shell only asks while shown; never act asleep
       // Escape during a drag on the timeline bar calls the drag off, and only that (timeline hunt, finding 7).
       if (id === "clear-selection" && callOffDrag()) return true;
+      // Escape with Pan or Zoom lit on the view bar turns it off, back to Orbit, and only that (U7b, as in Fusion).
+      if (id === "clear-selection" && viewport.leaveNavTool?.()) return true;
       // Escape with the Create menu open closes the menu, and only that.
       if (id === "clear-selection" && sketchBar.menuOpen) return sketchBar.closeMenu(), true;
       // Escape in the sketch tool: leaves the plane prompt, or ends the line, rectangle, circle, arc or tangent arc being drawn.
@@ -3219,6 +3234,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       listen();
       showStart();
       showBuildAreaWords();
+      showRefusals();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;

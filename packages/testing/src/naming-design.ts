@@ -213,7 +213,7 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
         // As a pick lands: the face found by its name on the scene the app draws, its frame worked out from the kernel's face.
         const plane = planeOfFace(op.face);
         const b = await build(doc);
-        const scene = joinBodies(await shownBodies(doc, b, cache));
+        const scene = joinBodies(await shownBodies(doc, b, cache), b);
         const found = findInScene({ kind: "face", id: plane as StableId }, scene);
         if (found.status !== "found") throw new Error(`harness: no single face ${plane} to sketch on (${found.status})`);
         const hit = sceneHit(scene, "face", found.index)!;
@@ -258,7 +258,7 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
       case "project": {
         // Step 27d: the edge picked on the scene the app draws (by its joined index, as a click on it would give), taken as the Project tool takes it.
         const b = await build(doc);
-        const scene = joinBodies(await shownBodies(doc, b, cache));
+        const scene = joinBodies(await shownBodies(doc, b, cache), b);
         const k = scene.bodies.findIndex((x) => x.feature === op.edge.feature);
         const body = scene.bodies[k];
         const e = body ? Array.from({ length: body.view.edges }, (_, i) => i).find((i) => { const n = edgeName(body.names, i); return n !== null && edgeMatches(n, op.edge); }) : undefined;
@@ -301,7 +301,7 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
   /** What a pointer on sketch `id` may snap to on its face's edges, as the app works it out: on the scene drawn, where the rebuild placed the sketch. */
   async function edgeTargetsOf(doc: DesignDocument, id: string): Promise<EdgeTarget[]> {
     const b = await build(doc);
-    const scene = joinBodies(await shownBodies(doc, b, cache));
+    const scene = joinBodies(await shownBodies(doc, b, cache), b);
     const r = b.results[id];
     return sketchEdgeTargets(doc, id, scene, r?.status === "built" ? r.placement?.plane : undefined);
   }

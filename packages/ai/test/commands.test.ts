@@ -52,13 +52,15 @@ test("two bad answers fail clearly and change nothing", async () => {
   assert.deepEqual(await askForCommands(provider, request, specs), {
     ok: false,
     error: "The AI's answer couldn't be used, even after one retry: the answer is not JSON. Nothing was changed.",
+    kind: "unusable",
+    detail: "the answer is not JSON",
   });
   assert.equal(asked.length, 2, "only one retry");
 });
 
-test("a provider error is reported, not thrown", async () => {
+test("a provider error is reported in plain words, not thrown; its own words are kept only as the detail (AI8c)", async () => {
   const { provider } = scripted([new Error("connection refused")]);
-  assert.deepEqual(await askForCommands(provider, request, specs), { ok: false, error: "the AI provider failed: connection refused" });
+  assert.deepEqual(await askForCommands(provider, request, specs), { ok: false, error: "The AI provider couldn't answer this time. Nothing was changed.", kind: "failed", detail: "connection refused" });
 });
 
 test("the working out comes back with the commands, as the model wrote it", async () => {
@@ -81,6 +83,8 @@ test("no commands with a reason is an honest answer; no commands and no reason i
   assert.deepEqual(await askForCommands(twice.provider, request, specs), {
     ok: false,
     error: "The AI's answer couldn't be used, even after one retry: it has no commands and doesn't say why. Nothing was changed.",
+    kind: "unusable",
+    detail: "it has no commands and doesn't say why",
   });
 });
 
