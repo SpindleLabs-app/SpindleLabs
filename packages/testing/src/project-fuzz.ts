@@ -185,6 +185,25 @@ function drawSketch(r: SeededRandom, doc: DesignDocument): DesignDocument {
 }
 
 /**
+ * A region for an extrude of sketch `id` (step 48, Design data version 9),
+ * or none: about half the time some of the sketch's curves by id, in any
+ * order, some run backwards, and a centroid. Without a kernel nothing asks
+ * whether the sketch makes that region; a file may name one it no longer
+ * makes (its extrude then fails or keeps its last shape), so any such is
+ * valid. Chosen by a generator of its own, seeded from the document's id
+ * counter, so the rest of the seeded stream is as it was before step 48.
+ */
+function regionFor(doc: DesignDocument, id: string): Parameters<typeof extrudeSketch>[4] {
+  const curves = doc.sketches.find((s) => s.id === id)?.curves ?? [];
+  const own = seeded(BigInt(doc.nextId) + 48003n);
+  if (curves.length === 0 || own.next() < 0.5) return undefined;
+  const outer = curves.filter(() => own.next() < 0.8).map((c) => ({ curve: c.id, reversed: own.next() < 0.3 }));
+  if (outer.length === 0) return undefined;
+  if (own.next() < 0.3) outer.reverse();
+  return { outer, centroid: [Math.round(own.next() * 2000) / 10 - 100, Math.round(own.next() * 2000) / 10 - 100] };
+}
+
+/**
  * The kept shapes an edit that lost sketch `id`'s outline leaves (24d2):
  * each extrude of it with no kept shape yet keeps the sketch as it was in
  * `before`. Design's `settleKept` keeps it only when the kernel found an
@@ -214,7 +233,7 @@ function keepFor(r: SeededRandom, before: DesignDocument, after: DesignDocument,
 export function timelineEdits(r: SeededRandom, start: DesignDocument): DesignDocument {
   // A sketch extruded first, so most timelines have an extrude for the later edits to break.
   let doc = drawSketch(r, start);
-  if (r.next() < 0.8) doc = extrudeSketch(doc, doc.sketches.at(-1)!.id, 1 + below(r, 50)).doc;
+  if (r.next() < 0.8) doc = extrudeSketch(doc, doc.sketches.at(-1)!.id, 1 + below(r, 50), false, regionFor(doc, doc.sketches.at(-1)!.id)).doc;
   for (let k = 3 + below(r, 10); k > 0; k--) {
     const items = doc.timeline.features;
     const e = r.next();
@@ -222,7 +241,10 @@ export function timelineEdits(r: SeededRandom, start: DesignDocument): DesignDoc
     else if (e < 0.35) {
       // An extrude goes in at the marker, so only a sketch before it can be extruded.
       const open = items.slice(0, insertAt(doc)).filter(isSketchItem);
-      if (open.length > 0) doc = extrudeSketch(doc, pick(r, open).id, (below(r, 401) - 200) / 10 || 5).doc;
+      if (open.length > 0) {
+        const sketch = pick(r, open).id;
+        doc = extrudeSketch(doc, sketch, (below(r, 401) - 200) / 10 || 5, false, regionFor(doc, sketch)).doc;
+      }
     } else if (e < 0.41) doc = insertPreset(doc, pick(r, SHAPES), 1 + below(r, 50), 1 + below(r, 50), 1 + below(r, 50)).doc;
     else if (e < 0.5) {
       const solids = items.filter((f) => !isSketchItem(f));

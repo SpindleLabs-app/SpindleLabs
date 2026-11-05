@@ -38,6 +38,8 @@ import {
   type FeatureResult,
 } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
+import { regionRef, sketchRegions } from "../../../workspaces/design/src/regions.ts";
+import { deleteCurve, drawLine } from "../../../workspaces/design/src/sketch.ts";
 import { NAMING_DESIGN_FAULTS, namingDesignSubject, prismCentroid, type NamingDesignFault } from "../src/naming-design.ts";
 import { FUSION_CASES, NamingFailure, namingFailureOf, randomNamingSession, runFusionCase, runNamingSession, setupOps, shrinkNaming, BEN, type NamingCounts, type NamingSession } from "../src/naming-session.ts";
 
@@ -198,6 +200,65 @@ test("hand-worked: the outline's sketch deleted, its extrude keeps the sketch's 
     assert.equal(base.kind === "solid" && base.warning?.cause, "deleted-input");
   } finally {
     await subject.dispose();
+  }
+});
+
+test("hand-worked (48d3): a region's extrude keeps its faces' names while the sketch changes elsewhere, so sketches on its side and its top stay put", async () => {
+  // A 40 × 30 plate from (0, 0) on XY with a radius 5 hole round (20, 15), its region extruded 10. A circle of radius 3 at
+  // (15, 5) on the right side (x = 40, its frame at (40, 0, 0) facing +X, sketch x along +Y and y along +Z) extruded 4
+  // is the cylinder x 40..44, y 15, z 5: middle (42, 15, 5). A circle of radius 2 at (5, 5) on the top (z = 10) extruded 3
+  // is z 10..13: middle (5, 5, 11.5). Then a second hole (radius 2 round (32, 22)) and a triangle off to the right
+  // are drawn in the plate's sketch, then the second hole or the loose line drawn first deleted: every face is found by its name each time, so
+  // both cylinders stay where they were; only the plate's volume changes, (1200 − 25π − 4π) × 10 and back to (1200 − 25π) × 10.
+  const empty: DesignDocument = { version: 9, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
+  const s = addSketch(empty, "XY");
+  // A loose line drawn first, off to the left, so deleting it later moves every other line one place down the sketch's list.
+  const loose = drawLine(s.doc, s.id, [-20, 0], [-10, 5]);
+  const rect = drawRectangle(loose.doc, s.id, [0, 0], [40, 30]);
+  let doc = drawCircle(rect.doc, s.id, [20, 15], 5).doc;
+  const found = await sketchRegions(kernel, doc.sketches[0]);
+  const plate = found.regions.find((g) => g.holes.length === 1)!;
+  const e = extrudeSketch(doc, s.id, 10, false, regionRef(plate, found.ids));
+  doc = e.doc;
+  const cache = new BodyCache(kernel);
+  try {
+    const faceAt = async (d: DesignDocument, part: string) => {
+      const scene = joinBodies(await shownBodies(d, await rebuildTimeline(d, cache, kernel), cache));
+      const got = findInScene({ kind: "face", id: `face:${e.id}/${part}` as StableId }, scene);
+      assert.equal(got.status, "found", part);
+      const hit = sceneHit(scene, "face", (got as { index: number }).index)!;
+      return drawnOnFace(scene.bodies[hit.body].view, hit.index)!;
+    };
+    const right = `side:${rect.ids[1]}`;
+    const onSide = addFaceSketch(doc, { plane: facePlane(e.id, right), feature: e.id }, await faceAt(doc, right));
+    doc = drawCircle(onSide.doc, onSide.id, [15, 5], 3).doc;
+    const pin = extrudeSketch(doc, onSide.id, 4);
+    doc = pin.doc;
+    const onTop = addFaceSketch(doc, { plane: facePlane(e.id, "end"), feature: e.id }, await faceAt(doc, "end"));
+    doc = drawCircle(onTop.doc, onTop.id, [5, 5], 2).doc;
+    const peg = extrudeSketch(doc, onTop.id, 3);
+    doc = peg.doc;
+    const check = async (d: DesignDocument, holes: number, what: string) => {
+      const got = await solids(d);
+      for (const id of [onSide.id, onTop.id]) assert.ok(got.results[id].status === "built" && got.results[id].plane === undefined, `${what}: ${JSON.stringify(got.results[id])}`);
+      assert.ok(near([got.bodies[e.id].volume], [(1200 - holes * Math.PI) * 10]), `${what}: plate ${got.bodies[e.id].volume}`);
+      assert.ok(near(got.bodies[pin.id].centroid, [42, 15, 5]), `${what}: side cylinder ${got.bodies[pin.id].centroid}`);
+      assert.ok(near(got.bodies[peg.id].centroid, [5, 5, 11.5]), `${what}: top cylinder ${got.bodies[peg.id].centroid}`);
+    };
+    await check(doc, 25, "as drawn");
+    const second = drawCircle(doc, s.id, [32, 22], 2);
+    let edited = second.doc;
+    const a = drawLine(edited, s.id, [50, 0], [60, 0]);
+    const ends = a.doc.sketches[0].curves.find((c) => c.id === a.id) as { start: string; end: string };
+    const b = drawLine(a.doc, s.id, ends.end, [55, 10]);
+    const tip = (b.doc.sketches[0].curves.find((c) => c.id === b.id) as { end: string }).end;
+    edited = drawLine(b.doc, s.id, tip, ends.start).doc;
+    await check(edited, 29, "a second hole and a triangle drawn");
+    await check(reopen(edited), 29, "saved and opened");
+    await check(deleteCurve(edited, s.id, second.id), 25, "the second hole deleted");
+    await check(deleteCurve(edited, s.id, loose.id), 29, "the first line drawn deleted");
+  } finally {
+    await cache.clear();
   }
 });
 

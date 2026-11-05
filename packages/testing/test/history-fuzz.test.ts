@@ -49,6 +49,11 @@
 // everything built on it (Q3), as suppressing a sketch greys its extrudes;
 // a greyed sketch can't be opened; deleting the box leaves it held where it
 // was, still built (Q1), so its extrude builds and can be the part.
+//
+// Step 48d3: half the extrudes name a region of their sketch (Design data
+// version 9). The model keeps it as the text it was made from, so an edit,
+// undo, redo, save or Edit feature that drops, changes or moves it to
+// another item differs from the model.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHistory, emptyProject, projectFromJson, projectToJson, type Feature, type Project } from "@fission/core";
@@ -109,7 +114,7 @@ type Line = [string, number, number, number, number] | [string, number, number, 
 const placesOf = (c: Line): string[] => (c.length === 4 ? [`${c[1]},${c[2]}`] : Array.from({ length: (c.length - 1) / 2 }, (_, k) => `${c[1 + 2 * k]},${c[2 + 2 * k]}`));
 
 /** A timeline item as the model keeps it. */
-type Item = { id: string; kind: "box"; size: number; off: boolean } | { id: string; kind: "sketch"; off: boolean; on?: string } | { id: string; kind: "extrude"; sketch: string; size: number; off: boolean };
+type Item = { id: string; kind: "box"; size: number; off: boolean } | { id: string; kind: "sketch"; off: boolean; on?: string } | { id: string; kind: "extrude"; sketch: string; size: number; off: boolean; region?: string };
 
 /**
  * The model's state: the timeline's items in order, the marker ("start",
@@ -188,7 +193,13 @@ function stateOf(p: Project): string {
       const on = isFacePlane(f.intent.parameters.plane) ? faceFeature(f.intent.parameters.plane as string) : null;
       return on === null ? { id: f.id, kind: "sketch", off: f.suppressed } : { id: f.id, kind: "sketch", off: f.suppressed, on };
     }
-    if (isSketchExtrude(f)) return { id: f.id, kind: "extrude", sketch: f.intent.parameters.sketch as string, size: f.intent.parameters.distance as number, off: f.suppressed };
+    if (isSketchExtrude(f)) {
+      const { sketch, distance, region } = f.intent.parameters;
+      const item: Item = { id: f.id, kind: "extrude", sketch: sketch as string, size: distance as number, off: f.suppressed };
+      // Written field by field: a save writes an object's keys sorted.
+      const { outer, centroid } = (region ?? {}) as { outer?: unknown; centroid?: unknown };
+      return region === undefined ? item : { ...item, region: JSON.stringify({ outer, centroid }) };
+    }
     const { shape, sizes } = shapeOf(doc, f);
     assert.equal(shape, "box", `${f.id} is a ${shape}`);
     return { id: f.id, kind: "box", size: sizes.width, off: f.suppressed };
@@ -301,7 +312,7 @@ function session(seed: bigint, steps: number) {
     if (m.items.some((x) => x.kind === "extrude" && buildsIn(m, x) && (inputOf(m, x) as { on?: string } | undefined)?.on !== undefined)) counts.faceExtrudeBuilds++;
   };
   const counts = {
-    draws: 0, chained: 0, circles: 0, centred: 0, arcs: 0, arcsChained: 0, deletes: 0, moves: 0, extrudes: 0, extrudesRefused: 0, sketchesAdded: 0, distances: 0, edits: 0, merged: 0, foldedAway: 0, same: 0, dropped: 0, undos: 0, redos: 0, empty: 0, failed: 0, nasty: 0, resets: 0, walks: 0, amends: 0, amendedAway: 0, steps: 0, stepsFailed: 0, stepsEmpty: 0,
+    draws: 0, chained: 0, circles: 0, centred: 0, arcs: 0, arcsChained: 0, deletes: 0, moves: 0, extrudes: 0, extrudesRefused: 0, regions: 0, featureEditsRegion: 0, sketchesAdded: 0, distances: 0, edits: 0, merged: 0, foldedAway: 0, same: 0, dropped: 0, undos: 0, redos: 0, empty: 0, failed: 0, nasty: 0, resets: 0, walks: 0, amends: 0, amendedAway: 0, steps: 0, stepsFailed: 0, stepsEmpty: 0,
     // Step 24e3: the timeline edits.
     itemsDeleted: 0, sketchDeleted: 0, markerMovedBack: 0, reorders: 0, reorderedInPlace: 0, refusedBefore: 0, refusedAfter: 0, suppressed: 0, unsuppressed: 0, markers: 0, markersSame: 0, nothingBuilt: 0, partNotLast: 0,
     // Step 24f4: a design with no body.
@@ -451,10 +462,17 @@ function session(seed: bigint, steps: number) {
             check(at);
             continue;
           }
-          const extruded = extrudeSketch(doc, sketch.id, d);
+          // Step 48: half the extrudes name a region of the sketch (its curves by id, some turned round, and a centroid), chosen
+          // by a generator of their own, seeded from the count, so the rest of the seeded stream is as it was. With no kernel here
+          // the region is never looked for: it must only ride through every edit, undo, redo and save exactly as it was made.
+          const own = seeded(BigInt(counts.extrudes) + 48004n);
+          const region = own.next() < 0.5 && sketch.curves.length > 0 ? { outer: sketch.curves.filter(() => own.next() < 0.7).map((c) => ({ curve: c.id, reversed: own.next() < 0.3 })), centroid: [Math.round(own.next() * 2000) / 10 - 100, Math.round(own.next() * 2000) / 10 - 100] as [number, number] } : undefined;
+          const named = region !== undefined && region.outer.length > 0 ? region : undefined;
+          const extruded = extrudeSketch(doc, sketch.id, d, false, named);
           isNew(extruded.id, at);
           project = { ...project, workspaces: { design: extruded.doc } };
-          after = insert(m, { id: extruded.id, kind: "extrude", sketch: sketch.id, size: d, off: false });
+          after = insert(m, { id: extruded.id, kind: "extrude", sketch: sketch.id, size: d, off: false, ...(named ? { region: JSON.stringify(named) } : {}) });
+          if (named) counts.regions++;
           counts.extrudes++;
         } else {
           const p = pick(r, sketch.points);
@@ -575,6 +593,7 @@ function session(seed: bigint, steps: number) {
           counts.featureEdits++;
           if (item.id !== partOf(m)) counts.featureEditsNotPart++;
           if (item.kind === "extrude") counts.featureEditsExtrude++;
+          if (item.kind === "extrude" && item.region !== undefined) counts.featureEditsRegion++;
           if (!buildsIn(m, item)) counts.featureEditsUnbuilt++;
         }
       }

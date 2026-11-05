@@ -44,7 +44,7 @@ import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { readAnswer, shrunk, solverRequest } from "./constraints.ts";
-import { findRegion, regionOutline, type RegionRef } from "./regions.ts";
+import { findRegion, plainRefusal, regionOutline, type RegionRef } from "./regions.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -406,7 +406,7 @@ async function outlineOf(kernel: KernelCalls, content: KeptShape & Pick<Sketch, 
       const found = findRegion(answer.regions, ids, region);
       if (found === undefined) return { lost: "open-outline", message: answer.regions.length === 0 && answer.why !== undefined ? answer.why : REGION_GONE, curves: [] };
       if (found.extrudes) return { outline: regionOutline(found) };
-      return { lost: "invalid-outline", message: found.refused ?? "this region can't be extruded", curves: namedCurves(found.invalid ?? [], ids) };
+      return { lost: "invalid-outline", message: plainRefusal(found.refused ?? "this region can't be extruded"), curves: namedCurves(found.invalid ?? [], ids) };
     }
     const out = plainOutline(await kernel.call("sketch_outline", c.lines, c.circles, c.arcs));
     if ("closed" in out) return { outline: out.closed };

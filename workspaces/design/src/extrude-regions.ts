@@ -62,3 +62,15 @@ export const regionChosenWords = (name: string) => `${name}: region chosen.`;
 
 /** What it says when a click or tap lands on a region that can't be extruded. */
 export const regionRefusedWords = (name: string, why: string) => `This region of ${name} can't be extruded: ${why}`;
+
+/**
+ * What Edit feature says of an extrude's region (48d4): with one region
+ * chosen, nothing to pick; with several, the one extruded chosen and how
+ * to pick another, or, none of them its (an old extrude, or its region
+ * gone), how to pick one; once another is picked, that OK extrudes it.
+ */
+export function editRegionWords(name: string, n: number, chosen: boolean, picked: boolean): string | null {
+  if (picked) return `Another region of ${name} chosen: OK extrudes it.`;
+  if (n === 1) return chosen ? null : `${name}'s region is shaded: click or tap it to extrude it.`;
+  return chosen ? `${name} has ${n} regions: the one extruded is chosen; click or tap another to extrude it instead.` : `${name} has ${n} regions: click or tap the one to extrude.`;
+}

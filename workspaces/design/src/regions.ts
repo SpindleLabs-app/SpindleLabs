@@ -130,8 +130,25 @@ export function regionCurveIds(content: Pick<Sketch, "points" | "curves" | "proj
   };
 }
 
-/** Every region of a sketch's points and curves, from the kernel, with the ids its pieces name (`ids`). A curve the kernel refuses outright is its error. */
+/** A number of mm as a person writes it: two significant figures, no exponent (5.000000000006111e-4 is 0.0005). */
+const shortMm = (x: number) => String(Number(x.toPrecision(2)));
+
+/**
+ * Why a region can't be extruded, in plain words (48d3 browser check). The
+ * kernel's words for a gap too thin named its loops and pieces by number
+ * ("profile pieces (0, 0) and (1, 0) (loop, piece) are 5.000000000006111e-4
+ * mm apart"), which mean nothing to a person; any other reason is kept.
+ */
+export function plainRefusal(why: string): string {
+  const gap = /are ([-+0-9.e]+) mm apart; features must be at least ([-+0-9.e]+) mm/.exec(why);
+  if (gap) return `two of its curves come ${shortMm(Number(gap[1]))} mm from each other without meeting; curves must meet or be at least ${shortMm(Number(gap[2]))} mm apart`;
+  return why;
+}
+
+/** Every region of a sketch's points and curves, from the kernel, with the ids its pieces name (`ids`); a refused region's reason in plain words. A curve the kernel refuses outright is its error. */
 export async function sketchRegions(kernel: KernelCalls, content: Pick<Sketch, "points" | "curves" | "projected">): Promise<SketchRegions & { ids: CurveIds }> {
   const c = curvesOf(content.points, profileCurves(content));
-  return { ...(await kernel.call("sketch_regions", c.lines, c.circles, c.arcs)), ids: regionCurveIds(content) };
+  const found = await kernel.call("sketch_regions", c.lines, c.circles, c.arcs);
+  const regions = found.regions.map((r) => (r.refused === undefined ? r : { ...r, refused: plainRefusal(r.refused) }));
+  return { ...found, regions, ids: regionCurveIds(content) };
 }

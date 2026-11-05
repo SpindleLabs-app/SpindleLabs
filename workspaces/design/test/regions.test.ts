@@ -13,7 +13,7 @@ import { partDocument, readDesignDocument, type DesignDocument, type Sketch } fr
 import { arrowOf, extrudeSketch, featureSpec } from "../src/extrude.ts";
 import { featureNames } from "../src/naming.ts";
 import { BodyCache, builtBody, rebuildTimeline, REGION_GONE, settleKept, type CurveIds } from "../src/rebuild.ts";
-import { findRegion, mirroredLoop, REDRAWN_CENTROID, regionRef, sameLoop, sketchRegions, type RegionRef } from "../src/regions.ts";
+import { findRegion, mirroredLoop, plainRefusal, REDRAWN_CENTROID, regionRef, sameLoop, sketchRegions, type RegionRef } from "../src/regions.ts";
 import { addSketch, deleteCurve, drawCircle, drawLine, drawRectangle, movePoint } from "../src/sketch.ts";
 
 const kernel = nodeKernel();
@@ -365,4 +365,28 @@ test("a name read the other way round (reversed order, every piece flipped) is t
   assert.equal(mirroredLoop([n("a"), n("b"), n("c")], [n("b", true), n("a", true), n("c", true)]), true);
   assert.equal(mirroredLoop([n("a"), n("b"), n("c")], [n("b"), n("a"), n("c")]), false, "flags not flipped: another loop");
   assert.equal(mirroredLoop([], []), false);
+});
+
+test("regression (48d3 browser check): a region refused for a gap too thin says so in plain words, never the kernel's loop and piece numbers", async () => {
+  // A 40 × 30 rectangle from (0, 0) and a circle of radius 14.9995 round (20, 15): the circle comes 30 / 2 − 14.9995 =
+  // 0.0005 mm from the top and the bottom without touching them, under the 0.001 mm every feature must have. The plate
+  // round it is refused; the disc, π × 14.9995² = 706.81 mm², is not.
+  const s = addSketch({ ...partDocument("box", 10, 10, 10), timeline: { features: [] }, profiles: [], bodies: [], nextBody: 1 } as DesignDocument);
+  const r = drawRectangle(s.doc, s.id, [0, 0], [40, 30]);
+  const c = drawCircle(r.doc, s.id, [20, 15], 14.9995);
+  const found = await sketchRegions(kernel, sketchOf(c.doc, s.id));
+  const disc = found.regions.find((g) => g.extrudes)!;
+  close(disc.area, Math.PI * 14.9995 ** 2, "the disc");
+  const plate = found.regions.find((g) => !g.extrudes)!;
+  assert.equal(plate.refused, "two of its curves come 0.0005 mm from each other without meeting; curves must meet or be at least 0.001 mm apart");
+  // An extrude saved naming the plate fails with the same words.
+  const e = extrudeSketch(c.doc, s.id, 10, false, regionRef(plate, found.ids));
+  const { build: b } = await build(e.doc);
+  assert.match(JSON.stringify(b.results[e.id]), /come 0\.0005 mm from each other without meeting/);
+});
+
+test("plainRefusal: the kernel's thin-gap words made plain, any number formatted short; other words kept as they are", () => {
+  assert.equal(plainRefusal("this region is not a valid outline: profile pieces (0, 0) and (1, 2) (loop, piece) are 5.000000000006111e-4 mm apart; features must be at least 0.001 mm"), "two of its curves come 0.0005 mm from each other without meeting; curves must meet or be at least 0.001 mm apart");
+  assert.equal(plainRefusal("this region is not a valid outline: profile pieces (0, 0) and (0, 3) (loop, piece) are 9.9e-4 mm apart; features must be at least 0.001 mm"), "two of its curves come 0.00099 mm from each other without meeting; curves must meet or be at least 0.001 mm apart");
+  assert.equal(plainRefusal("the curves meet too closely to tell the regions apart"), "the curves meet too closely to tell the regions apart");
 });
