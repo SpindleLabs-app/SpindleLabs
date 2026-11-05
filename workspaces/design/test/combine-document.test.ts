@@ -169,3 +169,29 @@ test("hand-worked: an edited Combine changes its operation, Keep tools and bodie
   assert.throws(() => changedCombine(d, "feature-3", "body:feature-1", ["body:feature-2"], "union" as never, false), { message: 'union is not join, cut or intersect' });
   assert.throws(() => changedCombine(d, "feature-3", "body:feature-1", ["body:feature-1"], "join", false), { message: "body:feature-1 is the target, so it can't be a tool too" });
 });
+
+test("regression (35f1e sessions, seed 11): a Combine whose tool's item was deleted can still change its operation, its bodies kept as picked", async () => {
+  const { changedCombine, insertCombine } = await import("../src/combine.ts");
+  const { insertPreset, partDocument } = await import("../src/document.ts");
+  const { deleteItem } = await import("../src/timeline-edits.ts");
+  // Box 1, Box 2, Combine 1 (Join Box 2 to Box 1); then Box 2 is deleted, so Combine 1 fails saying so. Changing Join
+  // to Cut changes only its operation and words; the bodies stay as picked (Box 2's name from its provenance), never
+  // refused because one of them is gone.
+  let d = partDocument("box", 10, 10, 10);
+  d = insertPreset(d, "box", 10, 10, 10).doc;
+  d = insertCombine(d, "body:feature-1", ["body:feature-2"], "join").doc;
+  d = deleteItem(d, "feature-2");
+  const f = changedCombine(d, "feature-3", "body:feature-1", ["body:feature-2"], "cut", false).timeline.features.find((x) => x.id === "feature-3")!;
+  assert.deepEqual(combineBodies(f), { target: "body:feature-1", tools: ["body:feature-2"], operation: "cut", keepTools: false });
+  assert.equal(f.intent.summary, "Cut Box 2 from Box 1");
+  // Picking another body still needs it to be there.
+  assert.throws(() => changedCombine(d, "feature-3", "body:feature-1", ["body:feature-9"], "cut", false), { message: "body:feature-9 is not a body in the design" });
+});
+
+test("regression (35f1e review): a Combine read with a broken body id changing only its operation is refused in words, never crashing", async () => {
+  const { changedCombine } = await import("../src/combine.ts");
+  const d = readDesignDocument(file());
+  // The file's Combine as if its tool's id were broken (written by hand): its operation changed, the id is named.
+  const broken = { ...d, timeline: { ...d.timeline, features: d.timeline.features.map((f) => (f.id === "feature-3" ? { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, tools: ["feature-2"] } } } : f)) } };
+  assert.throws(() => changedCombine(broken, "feature-3", "body:feature-1", ["feature-2"], "join", false), { message: "feature-2 is not a body in the design" });
+});

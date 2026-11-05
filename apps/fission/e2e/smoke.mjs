@@ -621,13 +621,12 @@ try {
     await page.selectOption("#shape", "cylinder");
     await page.waitForFunction(() => document.querySelector("#error").textContent.startsWith("The diameter must be at least 0.002 mm"));
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
-    // A part the kernel refuses gets the kernel's own reason: as a plate, its holes' radius is 0.15 of the smaller of
-    // width and depth (profiles.ts), 0.15 · 0.0015 = 0.000225 mm, which the panel doesn't judge.
+    // As a plate, its holes' radius is 0.15 of the smaller of width and depth (profiles.ts), 0.15 · 0.0015 = 0.000225
+    // mm: once the kernel's own reason, now the panel's plain words (clumsy hunt leftovers, 11-04), and nothing is built.
+    // (A part the panel takes and the kernel refuses keeps its old numbers marked out of date: timeline.mjs.)
     await page.selectOption("#shape", "plate");
-    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("circle radius 0.000225 must be within"));
-    // The old numbers stay on screen, but marked out of date, never shown as current.
-    assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "true");
-    assert.equal(await page.isVisible("#stale-note"), true);
+    await page.waitForFunction(() => document.querySelector("#error").textContent.startsWith("A plate this small has holes"));
+    assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
     await page.selectOption("#shape", "box");
     await setSize("width", 40);
     await page.waitForFunction(() => document.querySelector("#error").textContent === "");
@@ -820,14 +819,15 @@ try {
     await page.screenshot({ path: "e2e/star.png" });
   });
 
-  await check("an outline with walls under 1 µm shows the kernel's reason", async () => {
+  await check("an outline with walls under 1 µm is refused in plain words", async () => {
     // Plate 0.008 × 0.008: holes of radius 0.15·0.008 = 0.0012 (a legal
     // radius) centred 0.002 from the edge, leaving a 0.0008 mm wall, below
-    // the 0.001 mm minimum feature.
+    // the 0.001 mm minimum feature: once the kernel's reason ("features must
+    // be at least"), the panel's own words since the clumsy hunt's leftovers.
     await chooseShape(page, "plate");
     await rebuilt();
     for (const id of ["width", "depth"]) await setSize(id, 0.008);
-    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("features must be at least"));
+    await page.waitForFunction(() => document.querySelector("#error").textContent.startsWith("A plate this small has holes, or gaps beside them, under 0.001 mm"));
     for (const [id, v] of [["width", 40], ["depth", 30]]) await setSize(id, v);
     await page.waitForFunction(() => document.querySelector("#error").textContent === "");
     await chooseShape(page, "box");

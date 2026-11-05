@@ -36,6 +36,7 @@ import { seeded, type SeededRandom } from "./index.ts";
 import { LANDED } from "./landed.ts";
 import {
   applyOp,
+  bodiesNow,
   bodyKeys,
   buildBounds,
   createModel,
@@ -60,7 +61,11 @@ import {
   type Rebuild,
   type TimelineModel,
   type Vec3,
+  UnmodelledCombine,
+  type CombineOperation,
+  type ModelBody,
 } from "./timeline-model.ts";
+import { combinable, findFace, formOf } from "./timeline-combine.ts";
 
 /** One random step. `pick` and `to` are fractions in [0, 1), resolved against the document when the step runs. */
 export type SessionOp =
@@ -84,7 +89,7 @@ export type SessionOp =
   | WaitingOp;
 
 /** The operations a boolean move can ask for (35b: union, subtract, intersect). */
-export type BooleanKind = "join" | "cut" | "intersect";
+export type BooleanKind = CombineOperation;
 
 /**
  * A move the session bots gain when its step lands (`WAITING_MOVES`, step
@@ -367,10 +372,17 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
       // As in the app: a flat face of a body shown, before where the new item goes (26e: the faces facing +Z).
       const built = rebuild(doc);
       const before = new Set(doc.items.slice(0, insertAt(doc)).map((i) => i.id));
-      const faces = built.order.flatMap((id) => {
-        const res = built.results[id];
-        return before.has(id) && res.status === "built" && res.body ? res.body.faces.filter((f) => f.name.role === "top" || f.name.role === "end").map((f) => f.name) : [];
-      });
+      // 35f1d2: a Combine's result and its pieces too, each face by its full name (a piece of a split face with its tag).
+      const shown: Record<string, ItemResult> = {};
+      for (const id of built.order) if (before.has(id)) shown[id] = built.results[id];
+      // (Never a face a Combine turned to look down: the model's extrudes go up. 35f1e: nor a piece its full name doesn't
+      // find again, as the app refuses one, face-pick.ts: two pieces whose tags are alike.)
+      const bodies = bodiesNow(shown);
+      const findsItself = (b: number, k: number) => {
+        const found = findFace(bodies, bodies[b].faces[k].name);
+        return found !== null && "body" in found && found.body === b && found.face === k && !found.split;
+      };
+      const faces = bodies.flatMap((b, bi) => b.faces.flatMap((f, k) => ((f.name.role === "top" || f.name.role === "end") && !f.down && findsItself(bi, k) ? [f.name] : [])));
       const face = choose(faces, step.pick);
       return edit(face && { op: "add-face-sketch", shape: step.shape, face });
     }
@@ -444,10 +456,7 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
       return { kind: "save-open" };
     case "hold-ref": {
       const r = rebuild(doc);
-      const faces = r.order.flatMap((id) => {
-        const res = r.results[id];
-        return res.status === "built" && res.body ? res.body.faces.map((f) => f.name) : [];
-      });
+      const faces = bodiesNow(r.results).flatMap((b) => b.faces.map((f) => f.name));
       const name = choose(faces, step.pick);
       return name ? { kind: "hold-ref", name } : null;
     }
@@ -473,8 +482,34 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
       const picked = k < bodies.length || bodies.length === 1 ? [bodies[k % bodies.length]] : [bodies[k - bodies.length], bodies[(k + 1) % bodies.length]];
       return edit({ op: "set-move", item: m.id, shift: step.shift, turnZ: step.turnZ, pivot: step.pivot, bodies: picked });
     }
-    case "add-combine":
-    case "set-combine":
+    case "add-combine": {
+      // As in the app: two bodies shown, built before where the new item goes; of those, the ones the model answers
+      // exactly or a curved one (refused in words), never a flat one it has no boolean for (timeline-combine.ts).
+      const built = rebuild(doc);
+      const before = new Set(doc.items.slice(0, insertAt(doc)).map((i) => i.id));
+      const bodies = built.order.filter((id) => {
+        const r = built.results[id];
+        return before.has(id) && r.status === "built" && r.body !== undefined && combinable(r.body);
+      });
+      // Four draws in five among the bodies the model answers exactly (boxes and what Combines made of them), so most
+      // Combines build; the fifth among them all, curved ones included, so the kernel's refusal is met too.
+      const exact = (id: string) => formOf((built.results[id] as { body: ModelBody }).body) !== undefined;
+      const among = (xs: string[], f: number) => (f < 0.8 && xs.some(exact) ? choose(xs.filter(exact), f / 0.8) : choose(xs, f < 0.8 ? f / 0.8 : (f - 0.8) / 0.2));
+      const target = among(bodies, step.target);
+      const tool = among(
+        bodies.filter((b) => b !== target),
+        step.tool,
+      );
+      if (target === undefined || tool === undefined) return null;
+      return edit({ op: "add-combine", target, tool, operation: step.operation, keep: step.keep });
+    }
+    case "set-combine": {
+      const c = choose(
+        doc.items.filter((i) => i.kind === "combine"),
+        step.pick,
+      );
+      return edit(c && { op: "set-combine", item: c.id, operation: step.operation });
+    }
     case "add-extrude-into":
     case "set-extrude-operation":
       throw new WaitingMoveError(step);
@@ -496,28 +531,62 @@ function resultDiff(a: ItemResult, b: ItemResult, edgeClose: EdgeClose = exactEd
   const warned = (r: typeof a) => (r.warning ? `kept, warning ${r.warning.cause} ${r.warning.input}` : "no warning");
   if (warned(a) !== warned(b)) return `${warned(a)} vs ${warned(b)}`;
   // 26e: where a face sketch lies, whether it is held, and an extrude's lost source.
-  const placed = (r: typeof a) => (r.lift === undefined ? "on XY" : `at z ${r.lift}${r.turn ? ` along (${r.turn.x.join(", ")}) from (${r.turn.at.join(", ")})` : ""}${r.plane ? `, ${r.plane}` : ""}`);
+  const placed = (r: typeof a) => (r.lift === undefined ? "on XY" : `at z ${r.lift}${r.down ? " facing down" : ""}${r.turn ? ` along (${r.turn.x.join(", ")}) from (${r.turn.at.join(", ")})` : ""}${r.plane ? `, ${r.plane}` : ""}`);
   // 35e2h: and where along its face a Move carried it (left out: where drawn, x along X from over the world's origin).
   const along = (r: typeof a) => [...(r.turn?.x ?? [1, 0]), ...(r.turn?.at ?? [0, 0])];
   const carried = (r: typeof a) => r.lift !== undefined && !along(a).every((x, k) => close(x, along(b)[k]));
-  if ((a.lift === undefined) !== (b.lift === undefined) || a.plane !== b.plane || (a.lift !== undefined && !close(a.lift, b.lift!)) || carried(a)) return `${placed(a)} vs ${placed(b)}`;
+  if ((a.lift === undefined) !== (b.lift === undefined) || a.plane !== b.plane || a.down !== b.down || (a.lift !== undefined && !close(a.lift, b.lift!)) || carried(a)) return `${placed(a)} vs ${placed(b)}`;
   if (a.source !== b.source) return `source lost ${a.source ?? "no"} vs ${b.source ?? "no"}`;
-  if (!a.body || !b.body) return a.body || b.body ? `a body vs ${a.body ? "none" : "a body"}` : null;
-  if (!close(a.body.volume, b.body.volume)) return `volume ${a.body.volume} vs ${b.body.volume}`;
-  const keysA = a.body.faces.map((f) => faceKey(f.name)).sort();
-  const keysB = b.body.faces.map((f) => faceKey(f.name)).sort();
-  if (keysA.join() !== keysB.join()) return `faces [${keysA.join(", ")}] vs [${keysB.join(", ")}]`;
-  for (const f of a.body.faces) {
-    const g = b.body.faces.find((x) => sameName(x.name, f.name))!;
-    if (!close(f.area, g.area)) return `${faceKey(f.name)} area ${f.area} vs ${g.area}`;
-    if (!f.centroid.every((x, k) => close(x, g.centroid[k]))) return `${faceKey(f.name)} centroid (${f.centroid.join(", ")}) vs (${g.centroid.join(", ")})`;
+  if (!a.body || !b.body) {
+    if (a.body || b.body) return `a body vs ${a.body ? "none" : "a body"}`;
+  } else {
+    const d = bodyDiff(a.body, b.body, edgeClose);
+    if (d !== null) return d;
   }
-  const edgesA = a.body.edges.map((e) => edgeKey(e.name)).sort();
-  const edgesB = b.body.edges.map((e) => edgeKey(e.name)).sort();
+  // 35f1d2: a Combine's pieces, in their numbers' order.
+  const [pa, pb] = [a.pieces ?? [], b.pieces ?? []];
+  if (pa.length !== pb.length) return `${pa.length} pieces vs ${pb.length}`;
+  for (const [k, p] of pa.entries()) {
+    const d = bodyDiff(p, pb[k], edgeClose);
+    if (d !== null) return `piece ${k + 1}: ${d}`;
+  }
+  return null;
+}
+
+/**
+ * The first difference between two bodies, or null: volume; each face by
+ * its full name (with its tag, rule 3) with its other names (rule 4), area
+ * and centroid; each edge by its name with its length and centroid. Two
+ * faces or edges may carry one name (pieces tagged alike, rule 3; the same
+ * two faces meeting twice, rule 5): those are matched by where they are.
+ */
+function bodyDiff(a: ModelBody, b: ModelBody, edgeClose: EdgeClose): string | null {
+  if (!close(a.volume, b.volume)) return `volume ${a.volume} vs ${b.volume}`;
+  const also = (f: ModelBody["faces"][number]) => (f.also ?? []).map(faceKey).join(" ");
+  const keysA = a.faces.map((f) => faceKey(f.name)).sort();
+  const keysB = b.faces.map((f) => faceKey(f.name)).sort();
+  if (keysA.join() !== keysB.join()) return `faces [${keysA.join(", ")}] vs [${keysB.join(", ")}]`;
+  const byPlace = <T extends { centroid: readonly number[] }>(xs: T[]) => [...xs].sort((p, q) => p.centroid[0] - q.centroid[0] || p.centroid[1] - q.centroid[1] || p.centroid[2] - q.centroid[2]);
+  for (const key of new Set(keysA)) {
+    const fa = byPlace(a.faces.filter((x) => faceKey(x.name) === key));
+    const fb = byPlace(b.faces.filter((x) => faceKey(x.name) === key));
+    for (const [k, f] of fa.entries()) {
+      const g = fb[k];
+      if (also(f) !== also(g)) return `${key} also named [${also(f)}] vs [${also(g)}]`;
+      if (!close(f.area, g.area)) return `${key} area ${f.area} vs ${g.area}`;
+      if (!f.centroid.every((x, i) => close(x, g.centroid[i]))) return `${key} centroid (${f.centroid.join(", ")}) vs (${g.centroid.join(", ")})`;
+    }
+  }
+  const edgesA = a.edges.map((e) => edgeKey(e.name)).sort();
+  const edgesB = b.edges.map((e) => edgeKey(e.name)).sort();
   if (edgesA.join() !== edgesB.join()) return `edges [${edgesA.join(", ")}] vs [${edgesB.join(", ")}]`;
-  for (const e of a.body.edges) {
-    const g = b.body.edges.find((x) => edgeKey(x.name) === edgeKey(e.name))!;
-    if (!edgeClose(e, g)) return `${edgeKey(e.name)} length ${e.length} vs ${g.length}, centroid (${e.centroid.join(", ")}) vs (${g.centroid.join(", ")})`;
+  for (const key of new Set(edgesA)) {
+    const ea = byPlace(a.edges.filter((x) => edgeKey(x.name) === key));
+    const eb = byPlace(b.edges.filter((x) => edgeKey(x.name) === key));
+    for (const [k, e] of ea.entries()) {
+      const g = eb[k];
+      if (!edgeClose(e, g)) return `${key} length ${e.length} vs ${g.length}, centroid (${e.centroid.join(", ")}) vs (${g.centroid.join(", ")})`;
+    }
   }
   return null;
 }
@@ -533,8 +602,12 @@ export function rebuildDiff(a: Rebuild, b: Rebuild, edgeClose?: EdgeClose): stri
 }
 
 /** A model rebuild with every id swapped for the subject's. */
-const nameTo = (n: FaceName, to: (id: string) => string): FaceName =>
-  n.curve === undefined ? { feature: to(n.feature), role: n.role } : { feature: to(n.feature), role: n.role, curve: to(n.curve) };
+const nameTo = (n: FaceName, to: (id: string) => string): FaceName => ({
+  feature: to(n.feature),
+  role: n.role,
+  ...(n.curve !== undefined && { curve: to(n.curve) }),
+  ...(n.tag !== undefined && { tag: n.tag.map((t) => nameTo(t, to)) }),
+});
 
 function translateRebuild(r: Rebuild, to: (id: string) => string): Rebuild {
   const results: Record<string, ItemResult> = {};
@@ -546,18 +619,25 @@ function translateResult(res: ItemResult, to: (id: string) => string): ItemResul
   if (res.status === "failed") return { ...res, input: res.input === undefined ? undefined : to(res.input) };
   if (res.status === "greyed") return { status: "greyed", by: to(res.by) };
   if (res.status !== "built") return res;
-  const { warning, source, body, ...rest } = res;
+  const { warning, source, body, pieces, ...rest } = res;
   return {
     ...rest,
     ...(warning && { warning: { cause: warning.cause, input: to(warning.input) } }),
     ...(source !== undefined && { source: to(source) }),
-    ...(body && {
-      body: {
-        volume: body.volume,
-        faces: body.faces.map((f) => ({ ...f, name: nameTo(f.name, to) })),
-        edges: body.edges.map((e) => ({ ...e, name: edgeName(nameTo(e.name.faces[0], to), nameTo(e.name.faces[1], to), e.name.ordered) })),
-      },
+    ...(body && { body: translateBody(body, to) }),
+    ...(pieces && { pieces: pieces.map((b) => translateBody(b, to)) }),
+  };
+}
+
+function translateBody(body: ModelBody, to: (id: string) => string): ModelBody {
+  return {
+    volume: body.volume,
+    faces: body.faces.map((f) => ({ ...f, name: nameTo(f.name, to), ...(f.also && { also: f.also.map((n) => nameTo(n, to)) }) })),
+    edges: body.edges.map((e) => {
+      const [a, b] = [nameTo(e.name.faces[0], to), nameTo(e.name.faces[1], to)];
+      return { ...e, name: e.name.pair ? { ...edgeName(a, b, false), pair: true as const } : edgeName(a, b, e.name.ordered) };
     }),
+    ...(body.combined && { combined: true as const }),
   };
 }
 
@@ -583,6 +663,10 @@ function translateOp(op: ConcreteOp, to: (id: string) => string): ConcreteOp {
       return { ...op, bodies: op.bodies.map(to) };
     case "set-move":
       return { ...op, item: to(op.item), ...(op.bodies ? { bodies: op.bodies.map(to) } : {}) };
+    case "add-combine":
+      return { ...op, target: to(op.target), tool: to(op.tool) };
+    case "set-combine":
+      return { ...op, item: to(op.item) };
     default:
       return op;
   }
@@ -592,16 +676,22 @@ function translateOp(op: ConcreteOp, to: (id: string) => string): ConcreteOp {
 const idsOf = (doc: ModelDoc): string[] =>
   doc.items.flatMap((i) => [i.id, ...(i.kind === "sketch" ? i.curves.filter((c): c is string => c !== null) : i.kind === "extrude" && i.kept ? i.kept.curves : [])]);
 
-/** The items that depend on `id`, directly or through others, and `id` itself. */
+/**
+ * The items that depend on `id`, directly or through others, and `id`
+ * itself; 35f1d2: and a Combine's target and tool once it does, whose
+ * rows show what it left of their bodies, and what depends on them.
+ */
 function dependents(doc: ModelDoc, id: string): Set<string> {
   const out = new Set([id]);
   for (let grew = true; grew; ) {
     grew = false;
-    for (const i of doc.items)
-      if (!out.has(i.id) && dependsOn(i).some((d) => out.has(d))) {
-        out.add(i.id);
+    for (const i of doc.items) {
+      const reached = [...(!out.has(i.id) && dependsOn(i).some((d) => out.has(d)) ? [i.id] : []), ...(i.kind === "combine" && out.has(i.id) ? [i.target, i.tool].filter((x) => !out.has(x)) : [])];
+      for (const x of reached) {
+        out.add(x);
         grew = true;
       }
+    }
   }
   return out;
 }
@@ -681,6 +771,12 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
       count("skipped");
       continue;
     }
+    // 35f1d2: an edit after which a Combine would take a body the model has no exact boolean for (a polygon's extrude, a
+    // box turned other than by quarter turns) is left out, counted, never checked against a guess (timeline-combine.ts).
+    if (resolved.kind === "edit" && unmodelled(model, resolved.op)) {
+      count("skipped:combine-unmodelled");
+      continue;
+    }
     if (numbers) numbers.rebuilds++;
     let edited: string | null = null;
     if (resolved.kind === "save-open") {
@@ -726,18 +822,23 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
 
     const now = await subject.rebuild();
     const builtNow = subject.builds ? (await subject.builds()) - built : 0;
-    const names = now.order.flatMap((id) => {
-      const r = now.results[id];
-      return r.status === "built" && r.body ? r.body.faces.map((f) => faceKey(f.name)) : [];
-    });
-    const dup = names.find((n, k) => names.indexOf(n) !== k);
-    if (dup !== undefined) fail("two faces share a name", dup);
-    const edgeNames = now.order.flatMap((id) => {
-      const r = now.results[id];
-      return r.status === "built" && r.body ? r.body.edges.map((e) => edgeKey(e.name)) : [];
-    });
-    const dupEdge = edgeNames.find((n, k) => edgeNames.indexOf(n) !== k);
-    if (dupEdge !== undefined) fail("two edges share a name", dupEdge);
+    const expected = rebuild(model.doc);
+    const translated = translateRebuild(expected, to);
+    // Two faces (or edges) under one name only where the model has them too (35f1d2: pieces whose tags are alike, rule 3;
+    // the same two faces meeting twice, rule 5); before any Combine, never.
+    const shared = (r: Rebuild, key: (b: ModelBody) => string[]) => {
+      const n = new Map<string, number>();
+      for (const k of bodiesNow(r.results).flatMap(key)) n.set(k, (n.get(k) ?? 0) + 1);
+      return n;
+    };
+    const faceKeys = (b: ModelBody) => b.faces.map((f) => faceKey(f.name));
+    const edgeKeys = (b: ModelBody) => b.edges.map((e) => edgeKey(e.name));
+    const [gotFaces, wantFaces] = [shared(now, faceKeys), shared(translated, faceKeys)];
+    const dup = [...gotFaces].find(([k, n]) => n > 1 && n > (wantFaces.get(k) ?? 0));
+    if (dup !== undefined) fail("two faces share a name", dup[0]);
+    const [gotEdges, wantEdges] = [shared(now, edgeKeys), shared(translated, edgeKeys)];
+    const dupEdge = [...gotEdges].find(([k, n]) => n > 1 && n > (wantEdges.get(k) ?? 0));
+    if (dupEdge !== undefined) fail("two edges share a name", dupEdge[0]);
 
     const d2 = rebuildDiff(now, await subject.rebuild());
     if (d2 !== null) fail("rebuilding twice differs", d2);
@@ -762,25 +863,39 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
         }
     }
 
-    const expected = rebuild(model.doc);
     if (numbers && expected.order.some((id) => expected.results[id].status === "failed")) numbers.withFailedFeature++;
-    const d4 = rebuildDiff(now, translateRebuild(expected, to), edgeClose);
+    const d4 = rebuildDiff(now, translated, edgeClose);
     if (d4 !== null) fail("the rebuild differs from the model", d4);
 
     for (const ref of refs) {
-      const there = resolveFace(expected, ref) !== null;
+      // The face the model's rules find (rule 3 from 35f1d2: its own, a piece of it, the face it merged into), named as
+      // the subject must name what it finds: its full name now, with its tag.
+      const want = resolveFace(expected, ref);
+      const wanted = want === null || want === "shared" ? want : nameTo(want.name, to);
       const name = nameTo(ref, to);
       const found = await subject.resolve(name);
       if (numbers) numbers.references++;
-      // The model's names are unique (checked above), so a name the subject finds on two faces is always wrong here.
+      const said = (x: FaceName | "shared" | null) => (x === null ? "nothing" : x === "shared" ? "two or more faces" : faceKey(x));
+      const right = wanted === null || wanted === "shared" ? found === wanted : found !== null && found !== "shared" && sameName(found, wanted);
       if (tally) {
         tally.checked++;
-        if (found === "shared" || (there ? found === null || !sameName(found, name) : found !== null)) tally.missed++;
-      } else if (found === "shared") fail("a reference resolved to more than one face", `${faceKey(name)} matched two or more faces, model ${there ? "one" : "none"}`);
-      else if (there && (found === null || !sameName(found, name))) fail("a reference was lost", `${faceKey(name)} resolved to ${found ? faceKey(found) : "nothing"}`);
-      else if (!there && found !== null) fail("a broken reference resolved to another face", `${faceKey(name)} resolved to ${faceKey(found)}`);
+        if (!right) tally.missed++;
+      } else if (!right && found === "shared") fail("a reference resolved to more than one face", `${faceKey(name)} matched two or more faces, model ${said(wanted)}`);
+      else if (!right && wanted === "shared") fail("a reference guessed between pieces", `${faceKey(name)} resolved to ${said(found)}, model two or more alike`);
+      else if (!right && wanted !== null) fail("a reference was lost", `${faceKey(name)} resolved to ${said(found)}, model ${said(wanted)}`);
+      else if (!right) fail("a broken reference resolved to another face", `${faceKey(name)} resolved to ${said(found)}`);
       const owner = expected.results[ref.feature];
-      count(there ? "ref:kept" : owner?.status === "built" ? "ref:missing-on-built-feature" : "ref:missing");
+      count(
+        want === "shared"
+          ? "ref:shared"
+          : want !== null
+            ? faceKey(want.name) === faceKey(ref)
+              ? "ref:kept"
+              : "ref:followed"
+            : owner?.status === "built"
+              ? "ref:missing-on-built-feature"
+              : "ref:missing",
+      );
     }
 
     const keys = [...bodyKeys(model.doc, expected).values()];
@@ -801,10 +916,29 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
       // 26e: sketches on a face followed, held, and what is built from a held one.
       if (r.status === "built" && r.lift !== undefined) count(r.plane ? `plane:${r.plane}` : "plane:followed");
       if (r.status === "built" && r.source !== undefined) count("source-lost");
+      // 35f1d2: what the Combines did: built (and how), refused in the kernel's words, or not reached.
+      const item = model.doc.items.find((x) => x.id === id);
+      if (item?.kind === "combine") {
+        count(`combine:${r.status === "failed" ? `failed-${r.cause}` : r.status}`);
+        if (r.status === "built") count(`combine:${item.operation}${item.keep ? "-keep" : ""}${r.pieces ? "-pieces" : ""}`);
+      }
     }
     prev = now;
   }
   return counts;
+}
+
+/** Whether `op` on the model would leave a Combine the model can't answer exactly (35f1d2), tried on a copy. */
+function unmodelled(model: TimelineModel, op: ConcreteOp): boolean {
+  const trial: TimelineModel = { ...model, doc: JSON.parse(JSON.stringify(model.doc)), undo: [...model.undo], redo: [...model.redo] };
+  try {
+    applyOp(trial, op);
+    rebuild(trial.doc);
+    return false;
+  } catch (e) {
+    if (e instanceof UnmodelledCombine) return true;
+    throw e;
+  }
 }
 
 /** The first failure in `steps` on a fresh subject, or null. */
@@ -914,8 +1048,10 @@ export function modelSubject(faults: Iterable<ModelFault> = []): TimelineSubject
       if (fs.has("resolve-last-body-only")) {
         const last = [...r.order].reverse().find((id) => r.results[id].status === "built" && (r.results[id] as { body?: unknown }).body);
         r.order = last === undefined ? [] : [last];
+        r.results = last === undefined ? {} : { [last]: r.results[last] };
       }
-      const f = resolveFace(r, name);
+      const f = resolveFace(r, name, fs);
+      if (f === "shared") return "shared";
       if (f) return f.name;
       // Planted bug: a name that is gone falls back to another face of the same feature.
       const res = r.results[name.feature];
