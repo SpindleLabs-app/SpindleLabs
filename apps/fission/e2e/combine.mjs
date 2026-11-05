@@ -313,6 +313,9 @@ try {
       await page.click("#combine-cancel");
       await closed(page);
       // Reloaded without ?combine: still on in this tab. With ?combine=off: gone, and still gone on the next load.
+      // Stored first: a load while a change still waits puts it back from the unsaved-change journal and the start
+      // card stays hidden (start.mjs reloadEmpty; merge queue run 41990536637).
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       await page.goto(`${url}?test-hooks#design`);
       await page.locator("#start-hint").waitFor();
       assert.ok((await modifyItems(page, false)).includes("modify-menu-combine"), "kept for the tab");

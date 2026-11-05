@@ -156,3 +156,18 @@ test("while held, the title's setters and removal work as on any element, and a 
   assert.equal(b.hasAttribute("title"), false);
   t.stop();
 });
+
+test("hover: an element that draws its own card (data-own-tip, the timeline's items) keeps its title from the browser but gets no box", () => {
+  const { window, doc } = page();
+  doc.body.innerHTML = `<li id="i" data-own-tip="" title="1. Box 1\nBox: 40 × 30 × 20 mm">x</li>`;
+  const t = startTooltips(doc);
+  const i = doc.getElementById("i")!;
+  fire(window, i, "pointerover");
+  assert.equal(doc.getElementById("tooltip")!.hidden, true, "no box: its card says it");
+  assert.equal(i.matches("[title]"), false, "held back, or the browser's own box would show over the card");
+  assert.equal(i.title, "1. Box 1\nBox: 40 × 30 × 20 mm");
+  fire(window, i, "pointerout", { relatedTarget: doc.body });
+  assert.equal(i.getAttribute("title"), "1. Box 1\nBox: 40 × 30 × 20 mm", "put back on leaving");
+  assert.equal(i.matches("[title]"), true);
+  t.stop();
+});

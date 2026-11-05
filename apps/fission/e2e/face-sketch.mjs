@@ -498,6 +498,18 @@ try {
       assert.equal(await page.evaluate(() => document.getElementById("undo").title), undoBefore, "nothing recorded");
       assert.deepEqual(await page.$$eval("#timeline [data-item]", (lis) => lis.map((li) => li.dataset.item)), ids, "nothing moved");
 
+      // 2b. Delete on the keyboard with the box's bar item focused (round 2 hunt E5) asks the same; Cancel changes nothing.
+      if (!tap) {
+        const undoNow = await page.evaluate(() => document.getElementById("undo").title);
+        await page.focus(`#timeline [data-item="${box}"]`);
+        await page.keyboard.press("Delete");
+        await until(page, () => document.getElementById("delete-ask").open, null, "Delete on the keyboard asks");
+        assert.equal(await page.textContent("#delete-ask-heading"), "Delete Box 1?");
+        await page.click("#delete-ask-cancel");
+        await until(page, () => !document.getElementById("delete-ask").open, null, "Cancel closes it");
+        assert.equal(await page.evaluate(() => document.getElementById("undo").title), undoNow, "nothing recorded");
+        assert.equal(await page.$$eval("#timeline [data-item]", (lis) => lis.length), 3, "nothing deleted");
+      }
       // 3. The box deleted: asked first, naming what stays; then the block stays at z 20 to 30, the sketch and the extrude warned red.
       await menu(box);
       await choose("delete");
