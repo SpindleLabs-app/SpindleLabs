@@ -20,6 +20,7 @@ import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, pl
 import { PlacesLayer } from "./places-layer.ts";
 import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
+import { SketchLabels, type PlacedLabel } from "./sketch-labels.ts";
 import { BUILD_AREA_COLOURS, GROUND_GRID, SKETCH_COLOURS, onViewTheme } from "./view-theme.ts";
 import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
 
@@ -1197,6 +1198,8 @@ export class Viewer implements SharedViewport {
   private minorMaterial: THREE.LineBasicMaterial | null = null;
   /** The edited sketch's ends in model space, for Look At. */
   private editedWorld: number[][] = [];
+  /** The edited sketch's dimension values (47e), kept over their spots each frame of the main view. */
+  private sketchLabels: SketchLabels;
   /** Every finished sketch's line ends in world space (lost ones too), framed with the body by Fit (fitFraming). */
   private finishedWorld: number[][] = [];
   /** The sketches drawn (showSketches) and the plane of the one being edited. */
@@ -1290,6 +1293,7 @@ export class Viewer implements SharedViewport {
       },
     };
     this.views.push(new ViewportView(this.host, container));
+    this.sketchLabels = new SketchLabels(container);
     this.paint();
   }
 
@@ -1497,6 +1501,8 @@ export class Viewer implements SharedViewport {
     let lines = 0;
     let lost = 0;
     let projected = 0;
+    let labels: PlacedLabel[] = [];
+    let construction = 0;
     for (const d of drawings) {
       const at = (p: SketchXY) => toWorld(d.plane, p);
       const segments = (pairs: readonly (readonly [SketchXY, SketchXY])[], colour: number, order: number) => {
@@ -1518,17 +1524,19 @@ export class Viewer implements SharedViewport {
         this.sketches.add(dot);
       };
       lines += d.lines.length;
+      construction += d.construction?.length ?? 0;
       const shown = d.projected ?? { lines: [], points: [] };
       projected += shown.lines.length + shown.points.length;
       const projectedWorld = [...shown.lines.flatMap(([a, b]) => [at(a), at(b)]), ...shown.points.map(at)];
       if (!d.editing) {
-        this.finishedWorld.push(...d.lines.flatMap(([a, b]) => [at(a), at(b)]), ...projectedWorld);
+        this.finishedWorld.push(...[...d.lines, ...(d.construction ?? [])].flatMap(([a, b]) => [at(a), at(b)]), ...projectedWorld);
         // 27d: projected edges in their own colour (red with the rest when the sketch is lost).
         segments(shown.lines, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.projectedFinished, d.lost ? LOST_SKETCH_ORDER : FINISHED_SKETCH_ORDER);
         dots(shown.points, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.projectedFinished, FINISHED_SKETCH_ORDER);
         // 26e: a sketch whose plane is lost red, where it stays.
         if (d.lost) segments(d.lines, SKETCH_COLOURS.lost, LOST_SKETCH_ORDER);
         else segments(d.lines, SKETCH_COLOURS.finished, FINISHED_SKETCH_ORDER);
+        if (d.construction) segments(d.construction, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.finished, d.lost ? LOST_SKETCH_ORDER : FINISHED_SKETCH_ORDER);
         if (d.lost) lost += d.lines.length;
         continue;
       }
@@ -1538,7 +1546,9 @@ export class Viewer implements SharedViewport {
       this.editedGrab = d.editing.grab && d.editing.grab.length > 0 ? d.editing.grab.map(at) : null;
       this.gridFor = { plane: d.plane, step: d.editing.gridSnap ? d.editing.grid : null };
       this.editedWorld = [...d.lines.flatMap(([a, b]) => [at(a), at(b)]), ...d.editing.points.map(at), ...projectedWorld];
+      labels = (d.editing.labels ?? []).map((l) => ({ id: l.id, world: at(l.at), text: l.text, fighting: l.fighting }));
       segments(d.lines, SKETCH_COLOURS.line, 3);
+      if (d.construction) segments(d.construction, SKETCH_COLOURS.construction, 3);
       segments(shown.lines, SKETCH_COLOURS.projected, 3);
       // The Select tool's: the curve under the pointer lighter, the selected ones lit over it.
       if (d.editing.hover && d.editing.hover.length > 0) segments(d.editing.hover, SKETCH_COLOURS.hover, 3.5);
@@ -1563,6 +1573,7 @@ export class Viewer implements SharedViewport {
     const edited = drawings.find((d) => d.editing)?.editing;
     const xy = (p: SketchXY) => `${p[0]},${p[1]}`;
     this.element.dataset.sketchLines = String(lines);
+    this.element.dataset.sketchConstruction = String(construction);
     this.element.dataset.sketchLost = String(lost);
     this.element.dataset.sketchProjected = String(projected);
     this.element.dataset.sketchPicks = String(this.editedPicks);
@@ -1572,6 +1583,8 @@ export class Viewer implements SharedViewport {
     this.element.dataset.sketchPicked = String(edited?.picked?.length ?? 0);
     this.element.dataset.sketchConstraints = String(edited?.constraintCount ?? 0);
     this.element.dataset.sketchFighting = String(edited?.fighting?.length ?? 0);
+    this.sketchLabels.show(labels);
+    this.element.dataset.sketchLabels = labels.map((l) => l.text).join(" | ");
     this.labelSketches();
   }
 
@@ -1582,8 +1595,10 @@ export class Viewer implements SharedViewport {
    * its spacing or reach changed; the minor lines' strength follows the zoom.
    */
   private frame(view: ViewportView) {
-    if (view !== this.main || !this.gridFor) return;
+    if (view !== this.main) return;
     const state = view.cameraState();
+    this.sketchLabels.place(state, (points) => view.screenPoints(points));
+    if (!this.gridFor) return;
     if (state === this.gridCamera) return;
     this.gridCamera = state;
     const look = view.planeLook(this.gridFor.plane);
