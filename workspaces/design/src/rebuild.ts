@@ -34,7 +34,7 @@
 // asks (Retry on its row) or changes it or anything before it: a call that
 // always runs too long would otherwise stop every fresh kernel in turn.
 
-import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type KernelTouch, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
+import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { bodyIdOf, bodyItem, buildingItems, combineBodies, isCombineItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
@@ -106,6 +106,8 @@ export type FeatureResult =
       curves?: string[];
       /** A Combine whose result would touch itself (35f1, the kernel's "non-manifold-result"): where, in the world, for the overlay on its row (36d). */
       touches?: KernelTouch[];
+      /** A Combine whose result would be too thin (36d, the kernel's "thin-result"): where, in the world, for the same overlay. */
+      thin?: KernelThin[];
     }
 
 /**
@@ -1047,8 +1049,8 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
     result = await cache.boolean(t.handle, ts.map((x) => x.handle), op);
   } catch (e) {
     if (timedOut(e)) throw e;
-    if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result")) {
-      return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}) };
+    if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) {
+      return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}) };
     }
     throw e;
   }
