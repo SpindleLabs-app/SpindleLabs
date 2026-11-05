@@ -17,6 +17,7 @@ import { bodyReference, profileReference } from "../src/references.ts";
 import { droppedNote, selectionRows, survivors } from "../src/selection.ts";
 import { moveMarker, suppressItem } from "../src/timeline-edits.ts";
 import type { Scene } from "../src/scene.ts";
+import { SOLID_OVERLAY, stampChecked } from "../src/solid-badge.ts";
 
 /**
  * The timeline every test here reads, built by Design's own edits:
@@ -155,7 +156,10 @@ test("joinStl refuses a file whose length disagrees with its count, or too short
 /** The kernel's outline of a 40 × 30 rectangle from (0, 0). */
 const RECTANGLE = { outer: { path: { corners: [0, 0, 40, 0, 40, 30, 0, 30], bulges: [0, 0, 0, 0] } }, holes: [] };
 
-/** Design's Download STL with a kernel that answers export_stl with `file(name)`, recording what it was asked. */
+/** The solid check's answer for these files (its own tests are actions.test.ts's and solid-badge.test.ts's): solid. */
+const SOLID = { verdict: "solid", triangles: 1, shells: 1, volume: 1, problems: [] };
+
+/** Design's Download STL with a kernel that answers export_stl with `file(name)` and check_solid with SOLID, recording what export_stl was asked. */
 function downloading(file: (name: string) => StlFile, scene?: Scene | null) {
   const saved: { name: string; bytes: number[] }[] = [];
   const r = new ActionRegistry();
@@ -168,7 +172,7 @@ function downloading(file: (name: string) => StlFile, scene?: Scene | null) {
     project,
     scene,
     // Extrude 1's outline is asked of the kernel first: Sketch 1's 40 × 30 rectangle.
-    kernel: { call: async (...args: unknown[]) => (args[0] === "sketch_outline" ? { closed: RECTANGLE } : (calls.push(args), file(args[2] as string))) },
+    kernel: { call: async (...args: unknown[]) => (args[0] === "sketch_outline" ? { closed: RECTANGLE } : args[0] === "check_solid" ? SOLID : (calls.push(args), file(args[2] as string))) },
     viewport: { setOverlay: (o: AnalysisOverlay) => overlays.push(o), clearOverlay: (id: string) => overlays.push(`clear ${id}`) },
   } as unknown as DesignRun;
   return { run: (targets: Selected[]) => r.get(DOWNLOAD_STL)!.run(targets, ctx as WorkspaceContext), saved, calls, overlays };
@@ -176,21 +180,21 @@ function downloading(file: (name: string) => StlFile, scene?: Scene | null) {
 
 test("hand-worked: an earlier body downloads alone, as its own shape (Body 1 is not the part)", async () => {
   const d = downloading(() => ({ bytes: stl("box", 1, 5), rounding: 0, warning: null }));
-  assert.deepEqual(await d.run([body("feature-1")]), { message: "Exported spindlelabs-box.stl.", bad: false });
+  assert.deepEqual(await d.run([body("feature-1")]), { message: "Exported spindlelabs-box.stl. Checked solid.", bad: false, solid: SOLID });
   // The box's own spec: feature-1's, not the part's (the slot, feature-17).
   assert.deepEqual(d.calls, [["export_stl", specOf(doc, doc.timeline.features[0]), "box"]]);
-  assert.deepEqual(d.saved, [{ name: "spindlelabs-box.stl", bytes: [...stl("box", 1, 5)] }]);
+  assert.deepEqual(d.saved, [{ name: "spindlelabs-box.stl", bytes: [...stampChecked(stl("box", 1, 5), "box")] }]);
 });
 
 test("hand-worked: two bodies picked slot first come out in build order, joined into one file", async () => {
   // The box answers 1 triangle of 30s, the slot's extrude 2 of 40, 41.
   const d = downloading((name) => ({ bytes: name === "box" ? stl(name, 1, 30) : stl(name, 2, 40), rounding: 0, warning: null }));
-  assert.deepEqual(await d.run([body("feature-17"), body("feature-1")]), { message: "Exported spindlelabs-2-bodies.stl. The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.", bad: false });
+  assert.deepEqual(await d.run([body("feature-17"), body("feature-1")]), { message: "Exported spindlelabs-2-bodies.stl. Checked solid. The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.", bad: false, solid: SOLID });
   assert.deepEqual(d.calls.map((c) => c[2]), ["box", "slot"]);
   assert.equal(d.saved.length, 1);
   assert.equal(d.saved[0].name, "spindlelabs-2-bodies.stl");
-  assert.deepEqual(d.saved[0].bytes, [...joinStl([stl("box", 1, 30), stl("slot", 2, 40)], "2 bodies")]);
-  assert.deepEqual(d.overlays, [`clear ${STL_OVERLAY}`]);
+  assert.deepEqual(d.saved[0].bytes, [...stampChecked(joinStl([stl("box", 1, 30), stl("slot", 2, 40)], "2 bodies"), "2 bodies")]);
+  assert.deepEqual(d.overlays, [`clear ${SOLID_OVERLAY}`, `clear ${STL_OVERLAY}`]);
 });
 
 /** Two bodies on screen: the box (6 faces from 0) and Extrude 1 (6 faces from 6); the slot failed. */
@@ -211,11 +215,11 @@ test("a warning on one of two bodies names it by its row, marks it alone, and th
   const warning = "single-precision numbers: this part's corners move by up to 1.250e-2 mm";
   const d = downloading((name) => ({ bytes: stl(name, 1, 1), rounding: name === "extrude" ? 0.0125 : 0, warning: name === "extrude" ? warning : null }), twoShown);
   // Picked Extrude 1 first; the file is still in build order, and the message names its row.
-  assert.deepEqual(await d.run([body("feature-11"), body("feature-1")]), { message: `Exported spindlelabs-2-bodies.stl. Body 2: ${warning} The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.`, bad: true });
+  assert.deepEqual(await d.run([body("feature-11"), body("feature-1")]), { message: `Exported spindlelabs-2-bodies.stl. Checked solid. Body 2: ${warning} The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.`, bad: true, solid: SOLID });
   assert.equal(d.saved.length, 1, "the file is still saved: the warning says how far it is off");
-  assert.deepEqual(d.saved[0].bytes, [...joinStl([stl("box", 1, 1), stl("extrude", 1, 1)], "2 bodies")]);
+  assert.deepEqual(d.saved[0].bytes, [...stampChecked(joinStl([stl("box", 1, 1), stl("extrude", 1, 1)], "2 bodies"), "2 bodies")]);
   // Only Extrude 1's six faces, 6 to 11, are marked.
-  assert.deepEqual(d.overlays, [{ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: warning, marks: warnedMarks(["body:feature-11"], twoShown) }]);
+  assert.deepEqual(d.overlays, [`clear ${SOLID_OVERLAY}`, { id: STL_OVERLAY, label: "Too big for an accurate STL", detail: warning, marks: warnedMarks(["body:feature-11"], twoShown) }]);
 });
 
 test("Design's own run refuses a body the scene does not show (the last rebuild failed it), before asking the kernel", async () => {
