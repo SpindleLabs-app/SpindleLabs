@@ -308,6 +308,20 @@ export class ViewportView {
     this.renderer.setAnimationLoop(this.draw);
   }
 
+  /**
+   * A picture of this view as on screen, without the view cube, as a PNG
+   * (File > Save picture, quick wins): drawn once more and read at once, as
+   * the canvas keeps its drawing buffer until the next frame.
+   */
+  picture(): Promise<Blob | null> {
+    this.controls.update();
+    this.host.frame(this);
+    paintBackdrop(this.renderer);
+    this.renderer.render(this.host.scene, this.camera);
+    const canvas = this.renderer.domElement;
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  }
+
   private draw = () => {
     this.controls.update();
     this.bar.canLookAt(!this.image && this.host.sketchPlane() !== null);
@@ -1864,6 +1878,11 @@ export class Viewer implements SharedViewport {
   /** Frames the current body from the home view in the main view; returns what it framed (null if none). */
   fit(): Framing | null {
     return this.main.fit();
+  }
+
+  /** A picture of the main view as on screen, without the view cube (File > Save picture). */
+  picture(): Promise<Blob | null> {
+    return this.main.picture();
   }
 
   /** Turns the main view's camera to a standard view, framing the current body. */
