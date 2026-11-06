@@ -557,7 +557,9 @@ try {
         // The new box is the part now: 50 · 30 · 10 = 15,000 mm³; Extrude 1 is still item 3.
         await volume(page, "15,000 mm³");
         assert.equal(await undoTitle(page), `Undo AI: new box 50 × 30 × 10 mm (Ctrl+Z)`);
-        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2 feature-11 feature-12");
+        // Ids: sketch-2, its 4 corners and 4 lines 3 to 10, the rectangle's Horizontal and Vertical 11 to 14 (the two
+        // through the origin's corner dropped once it follows the origin, their ids not reused), Extrude 1 feature-15, the box 16.
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2 feature-15 feature-16");
         await page.click("#undo");
         await volume(page, "12,000 mm³");
         assert.equal(await undoTitle(page), steps, "one step, taken back whole");
