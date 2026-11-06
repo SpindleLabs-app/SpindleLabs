@@ -24,8 +24,10 @@ export function propertyNames(source: string, name: string): string[] {
 }
 
 // Design data version 8 (47e, 47f): construction curves (`construction` on each curve kind) and dimensions (two new
-// constraint kinds, held to their fields below), which a version 7 reader would build without. Changing any list: see the top of this file.
-const LEDGER_VERSION = 8;
+// constraint kinds, held to their fields below), which a version 7 reader would build without. Version 9 (hunt 11-06):
+// each Combine piece's faces (`faces` on BodyRecord), which a version 8 reader would renumber pieces without. Changing
+// any list: see the top of this file.
+const LEDGER_VERSION = 9;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
@@ -36,11 +38,14 @@ const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "SketchDistance", names: ["id", "kind", "a", "b", "value"] },
   { file: "workspaces/design/src/document.ts", type: "SketchDiameter", names: ["id", "kind", "circle", "value"] },
   { file: "workspaces/design/src/face-sketch.ts", type: "SketchFace", names: ["frame", "side", "held", "body"] },
+  { file: "workspaces/design/src/document.ts", type: "BodyRecord", names: ["id", "number", "faces"] },
 ];
 
 test("the saved types' fields are exactly the ledger of the current data version", () => {
   const doc = read("workspaces/design/src/document.ts");
-  assert.match(doc, new RegExp(`^ {2}version: ${LEDGER_VERSION};`, "m"), "DesignDocument.version changed: update LEDGER_VERSION and the ledger");
+  // The version is written once, as DESIGN_VERSION, and DesignDocument.version is its type.
+  assert.match(doc, new RegExp(`^export const DESIGN_VERSION = ${LEDGER_VERSION};`, "m"), "DESIGN_VERSION changed: update LEDGER_VERSION and the ledger");
+  assert.match(doc, /^ {2}version: typeof DESIGN_VERSION;/m, "DesignDocument.version is not DESIGN_VERSION's type");
   for (const { file, type, names } of LEDGER) {
     assert.deepEqual(propertyNames(read(file), type), names, `${type} changed: add the field to the ledger, to docs/project-format.md, and bump the version if older readers would build it differently`);
   }

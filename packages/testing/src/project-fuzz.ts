@@ -58,6 +58,7 @@ import {
   unproject,
   withPart,
   withRuledNames,
+  DESIGN_VERSION,
   type DesignDocument,
   type EdgeToProject,
   type KeptShape,
@@ -612,12 +613,12 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   // Version 4 to 5 numbers the bodies as the file showed them, and version 5 is settled as an edit would settle it:
   // a body with no number gets the next, a gone item's number goes (35e).
   const v4 = upgraded.workspaces.design;
-  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6 || v4.version === 7 || v4.version === 8)) {
+  if (isObj(v4) && typeof v4.version === "number" && v4.version >= 4 && v4.version <= DESIGN_VERSION) {
     // Version 5 to 6 lists bodies by body id (35ec): the eyes' and each Move's.
-    const v5 = v4.version === 6 || v4.version === 7 || v4.version === 8 ? v4 : migrateDesignV5({ ...v4, version: 5 });
-    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01); 7 to 8 (47f) changes no field.
-    const v6 = v5.version === 7 || v5.version === 8 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
-    upgraded.workspaces.design = numberBodies({ ...v6, version: 8 } as unknown as DesignDocument);
+    const v5 = v4.version >= 6 ? v4 : migrateDesignV5({ ...v4, version: 5 });
+    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01); 7 to 8 (47f) and 8 to 9 (hunt 11-06: pieces' faces, given on their next build) change no field.
+    const v6 = typeof v5.version === "number" && v5.version >= 7 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
+    upgraded.workspaces.design = numberBodies({ ...v6, version: DESIGN_VERSION } as unknown as DesignDocument);
   }
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;

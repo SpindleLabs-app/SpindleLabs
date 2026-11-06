@@ -183,7 +183,14 @@ export type SketchPlane = (typeof SKETCH_PLANES)[number];
  * The kernel's own limit on one outline is 2,000 corners, so a sketch has
  * ten times that.
  */
-export const DESIGN_LIMITS = { items: 5_000, profiles: 5_000, sketch: 20_000, content: 500_000 } as const;
+export const DESIGN_LIMITS = { items: 5_000, profiles: 5_000, sketch: 20_000, content: 500_000, faces: 500_000 } as const;
+
+/**
+ * The version of the Design data this SpindleLabs writes
+ * (docs/project-format.md): 9 from hunt 11-06, each Combine piece's
+ * faces remembered. Older data is read and given this version.
+ */
+export const DESIGN_VERSION = 9;
 
 /**
  * The highest id counter a file may hold: 2^52, half the safe integers, so the ids every later edit takes (a few
@@ -208,7 +215,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 8;
+  version: typeof DESIGN_VERSION;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -400,7 +407,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 8, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: DESIGN_VERSION, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -536,6 +543,13 @@ export function combineBodies(f: Feature): { target: string; tools: string[]; op
 export interface BodyRecord {
   id: string;
   number: number;
+  /**
+   * A Combine's piece only (hunt 11-06): the shown names of its faces as
+   * its Combine made it when it was first numbered, sorted, each once. A
+   * rebuild keeps the piece's id on the piece with these faces, so an
+   * earlier edit never moves the number to another piece silently.
+   */
+  faces?: string[];
 }
 
 /** The id of the body item `featureId` makes (rule 1): "body:feature-3". */
@@ -590,15 +604,26 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
  * the order given, the counter going up; the same document when all have
  * one. Called once a rebuild shows which pieces there are, so a piece is
  * numbered when it first appears and keeps that number from then on.
+ * `faces` (rebuild.ts `builtPieceFaces`: the shown names of each piece's
+ * faces as its Combine made it) is remembered with a piece numbered now,
+ * and with a numbered piece that has none yet (one numbered by a version 8
+ * file); a piece's remembered faces never change after (hunt 11-06).
  */
-export function numberPieces(doc: DesignDocument, pieces: readonly string[]): DesignDocument {
+export function numberPieces(doc: DesignDocument, pieces: readonly string[], faces: ReadonlyMap<string, readonly string[]> = new Map()): DesignDocument {
   const numbered = numberBodies(doc);
   const have = new Set(numbered.bodies!.map((b) => b.id));
   const combines = new Set(doc.timeline.features.filter(isCombineItem).map((f) => f.id));
-  const fresh = [...new Set(pieces)].filter((id) => isPiece(id) && combines.has(bodyItem(id)!) && !have.has(id));
-  if (fresh.length === 0) return numbered;
+  const built = new Set(pieces);
+  const fresh = [...built].filter((id) => isPiece(id) && combines.has(bodyItem(id)!) && !have.has(id));
+  const facesOf = (id: string) => {
+    const f = faces.get(id);
+    return f === undefined || f.length === 0 ? {} : { faces: [...new Set(f)].sort() };
+  };
+  const filled = numbered.bodies!.map((b) => (b.faces === undefined && isPiece(b.id) && built.has(b.id) ? { ...b, ...facesOf(b.id) } : b));
+  const changed = filled.some((b, i) => b.faces !== numbered.bodies![i].faces);
+  if (fresh.length === 0 && !changed) return numbered;
   let next = numbered.nextBody!;
-  return { ...numbered, bodies: [...numbered.bodies!, ...fresh.map((id) => ({ id, number: next++ }))], nextBody: next };
+  return { ...numbered, bodies: [...(changed ? filled : numbered.bodies!), ...fresh.map((id) => ({ id, number: next++, ...facesOf(id) }))], nextBody: next };
 }
 
 /** Each body's number by its id, numbered as `numberBodies` would. */
@@ -1286,6 +1311,7 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
   if (!Number.isSafeInteger(nextBody) || nextBody! < 1) throw new Error(`Design data's nextBody ${shown(nextBody)} is not a counting number`);
   const ids = new Set<string>();
   const numbers = new Set<number>();
+  let faceCount = 0;
   for (const [i, b] of bodies.entries()) {
     if (!isRecord(b) || typeof b.id !== "string") throw new Error(`Design body ${i + 1} has no id`);
     const m = /^body:([^:/]+)$/.exec(b.id);
@@ -1300,7 +1326,23 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
     if (numbers.has(b.number)) throw new Error(`Design body number ${b.number} is given twice`);
     numbers.add(b.number);
     if (b.number >= nextBody!) throw new Error(`Design data's nextBody ${nextBody} is not above body ${b.id}'s number ${b.number}, so a new body could repeat it`);
+    if (Object.hasOwn(b, "faces")) faceCount += checkPieceFaces(b as Record<string, unknown> & { id: string }, faceCount);
   }
+}
+
+/** A piece's remembered faces (version 9, hunt 11-06): only on a piece, a list of its faces' names, each once; how many it holds. `before` counts the earlier pieces' names, so the limit is on them all. */
+function checkPieceFaces(b: Record<string, unknown> & { id: string }, before: number): number {
+  const { faces } = b;
+  if (!isPiece(b.id)) throw new Error(`Design body ${b.id} has faces, which only a Combine's piece remembers`);
+  if (!Array.isArray(faces) || faces.length === 0) throw new Error(`Design body ${b.id}'s faces are not a list of face names`);
+  notTooMany(before + faces.length, DESIGN_LIMITS.faces, "Design data's pieces have at least", "face names together");
+  const seen = new Set<string>();
+  for (const name of faces as unknown[]) {
+    if (typeof name !== "string" || !name.startsWith("face:")) throw new Error(`Design body ${b.id}'s face ${typeof name === "string" ? JSON.stringify(name) : shown(name)} is not a face's name`);
+    if (seen.has(name)) throw new Error(`Design body ${b.id} lists face ${name} twice`);
+    seen.add(name);
+  }
+  return faces.length;
 }
 
 /** Whether version 7 data holds what only version 8 brought (47e, 47f): a construction curve, or a distance or diameter dimension, in a sketch or a kept shape. */
@@ -1311,6 +1353,9 @@ function hasVersion8Fields(d: Record<string, unknown>): boolean {
   const kept = isRecord(d.kept) ? Object.values(d.kept).filter(isRecord) : [];
   return sketches.some((s) => curves(s.curves) || dims(s.constraints)) || kept.some((k) => curves(k.curves));
 }
+
+/** Whether version 8 data holds what only version 9 brought (hunt 11-06): a body's remembered faces. */
+const hasVersion9Fields = (d: Record<string, unknown>): boolean => Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && Object.hasOwn(b, "faces"));
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1325,7 +1370,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8) && !numbered);
+  const unnumbered = old || v3.version === 4 || (typeof v3.version === "number" && v3.version >= 5 && v3.version <= DESIGN_VERSION && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
@@ -1334,10 +1379,16 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const v7 = pieceNames ? { ...v6, version: 7 } : v6;
   // Version 8 (47f) adds construction curves and dimensions, which version 7 never held; its fields are read as they are.
   if (v7.version === 7 && hasVersion8Fields(v7)) throw new Error("Design data says version 7 but has construction curves or dimensions, which version 8 brought");
-  const d = (v7.version === 7 ? { ...v7, version: 8 } : v7) as Partial<DesignDocument>;
+  const v8 = v7.version === 7 ? { ...v7, version: 8 } : v7;
+  // Version 9 (hunt 11-06) remembers each Combine piece's faces, which version 8 never held; other version 8 data is read
+  // as it is, its pieces given their faces on their next build (`numberPieces`).
+  if (v8.version === 8 && hasVersion9Fields(v8)) throw new Error(`Design data says version ${shown(data.version)} but has pieces' faces, which version 9 brought`);
+  const d = (v8.version === 8 ? { ...v8, version: DESIGN_VERSION } : v8) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 8 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 8) throw new (Number.isSafeInteger(d.version) && d.version! > 8 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7 or 8)`);
+  // A whole number above this one is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  const reads = [...Array(DESIGN_VERSION - 1).keys()].map((i) => i + 1).join(", ");
+  if (d.version !== DESIGN_VERSION)
+    throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (${reads} or ${DESIGN_VERSION})`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");

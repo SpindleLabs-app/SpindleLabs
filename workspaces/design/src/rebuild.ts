@@ -35,11 +35,11 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, combineBodies, isCombineItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, buildingItems, combineBodies, isCombineItem, isMoveItem, isPiece, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
-import { combineNames, designNames, resolveFaceName, type NamedBody } from "./boolean-names.ts";
+import { combineNames, designNames, resolveFaceName, shownFaces, type NamedBody } from "./boolean-names.ts";
 import { frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
@@ -96,6 +96,10 @@ export type FeatureResult =
       constraints?: { message: string };
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
+      /** A Combine's pieces (35f1) by id, each with the shown names of its faces as the Combine made them: what the data remembers a piece by when it is first numbered (hunt 11-06). */
+      pieceFaces?: Record<string, string[]>;
+      /** A Combine whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why. */
+      pieces?: { message: string };
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -1107,7 +1111,9 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
     throw e;
   }
   const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
-  const named = combineNames(f.id, op, t, ts, result, views);
+  // Each piece the data numbered with its faces (hunt 11-06): it stays on the piece with those faces.
+  const remembered = new Map((doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])));
+  const named = combineNames(f.id, op, t, ts, result, views, 1, remembered);
   if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}` };
   const targetFeature = bodies[target].feature;
   for (const tool of keepTools ? [] : tools) delete bodies[tool];
@@ -1118,7 +1124,17 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
     bodies[nb.id] = { feature: nb.id === target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, ...(frames && { frames }) };
     ids.push(nb.id);
   }
-  return { status: "built", bodies: ids, holds: inputs.map((x) => x.handle) };
+  const pieces = named.bodies.slice(1);
+  const pieceFaces = pieces.length === 0 ? {} : { pieceFaces: Object.fromEntries(pieces.map((nb) => [nb.id, shownFaces(nb.faces)])) };
+  // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
+  const renumbered = named.renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
+  const warn = renumbered.length === 0 ? {} : { pieces: { message: `${label}'s pieces changed since they were numbered, so ${renumbered.join(" and ")} may now be ${renumbered.length === 1 ? "another piece" : "other pieces"}: check the items that use ${renumbered.length === 1 ? "it" : "them"}` } };
+  return { status: "built", bodies: ids, holds: inputs.map((x) => x.handle), ...pieceFaces, ...warn };
+}
+
+/** Each Combine piece the build made, by id, with the shown names of its faces as its Combine made them (hunt 11-06). */
+export function builtPieceFaces(build: Pick<TimelineBuild, "results">): Map<string, string[]> {
+  return new Map(Object.values(build.results).flatMap((r) => (r.status === "built" && r.pieceFaces ? Object.entries(r.pieceFaces) : [])));
 }
 
 /** What an extrude of a sketch is built from, and the warning when that is its kept shape. */

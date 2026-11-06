@@ -128,12 +128,12 @@ test("an old file (version 6) naming the L-bracket's side, a pin and a projected
   assert.ok(pin.name.includes("side:l-bracket-piece-2") && pin.name.includes("side:l-bracket-piece-3"), pin.name);
   assert.ok(projected.edge.includes("side:l-bracket-piece-2"), projected.edge);
   const json = projectToJson({ ...emptyProject(), workspaces: { design: today.doc } });
-  assert.ok(json.includes('"version": 8') || json.includes('"version":8'), "saved as version 8");
-  const old = json.replaceAll("l-bracket-piece-", "piece-").replace(/"version": ?8/, '"version": 6');
+  assert.ok(json.includes('"version": 9') || json.includes('"version":9'), "saved as version 9");
+  const old = json.replaceAll("l-bracket-piece-", "piece-").replace(/"version": ?9/, '"version": 6');
   assert.ok(old.includes(JSON.stringify(OLD_SIDE)) && !old.includes("l-bracket-piece"), "every name as version 6 wrote it");
-  // Opened: version 8 (7 to 8 changes no field), every name as today writes it, so it is the design saved, exactly.
+  // Opened: version 9 (7 to 8 and 8 to 9 change no field), every name as today writes it, so it is the design saved, exactly.
   const opened = projectFromJson(old, DESIGN).workspaces.design as DesignDocument;
-  assert.equal(opened.version, 8);
+  assert.equal(opened.version, 9);
   assert.deepEqual(opened, readDesignDocument(today.doc));
   // And it builds as before: the sketch on the side, its pin and projection found, the extrude where it was.
   const a = await build(today.doc);
@@ -157,7 +157,7 @@ test("an old file's plate hole names are read with their own shapes; sketch extr
   // Version 7 data is today's: a name in it is read as it is, even one of the old form (it finds nothing: plane-lost words).
   assert.equal(readDesignDocument(file(7, "end+side:hole-1-piece-0")).sketches[0].projected![0].edge, "end+side:hole-1-piece-0");
   // Version 8 is newer than this SpindleLabs.
-  assert.throws(() => readDesignDocument(file(9, "end+side:hole-1-piece-0")), { message: "Design data version 9 is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7 or 8)" });
+  assert.throws(() => readDesignDocument(file(10, "end+side:hole-1-piece-0")), { message: "Design data version 10 is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8 or 9)" });
   // A box's names have no pieces; a sketch's extrude's are its curve ids, which never say "piece": both kept.
   const box = addFaceSketch(partDocument("box", 40, 30, 20), { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
   assert.deepEqual(readDesignDocument({ ...box.doc, version: 6 }), box.doc);

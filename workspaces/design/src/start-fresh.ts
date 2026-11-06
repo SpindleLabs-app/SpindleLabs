@@ -7,14 +7,14 @@
 // project is the cleared one by then; real-use hunt B4). Styles: src/styles/start-fresh.css.
 
 import type { FileEntry } from "@fission/core";
-import { isSketchItem, type DesignDocument } from "./document.ts";
+import { DESIGN_VERSION, isSketchItem, type DesignDocument } from "./document.ts";
 
 /** The undo step Start fresh is recorded as. */
 export const START_FRESH_STEP = "Start fresh";
 
 /** The design a new project opens with (U0c, the owner's ask): nothing in it, the id counter at 1. */
 export function freshDesign(): DesignDocument {
-  return { version: 8, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
+  return { version: DESIGN_VERSION, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
 }
 
 /**
