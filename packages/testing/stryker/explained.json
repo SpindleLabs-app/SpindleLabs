@@ -2823,9 +2823,142 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
-    "original": "d.version! > 7",
-    "replacement": "d.version! >= 7",
-    "why": "Reached only when d.version !== 7, so > 7 and >= 7 never differ."
+    "original": "d.version! > 8",
+    "replacement": "d.version! >= 8",
+    "why": "Reached only when d.version !== 8, so the two differ only at 8, which never gets here."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof c.circle === \"string\"",
+    "replacement": "true",
+    "why": "A diameter's circle is looked up in a map whose keys are the circles' ids (text): any other value finds nothing either way, and is refused as not one of the sketch's circles."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof c.point !== \"string\"",
+    "replacement": "false",
+    "why": "A fix's point is looked up in the set of the sketch's point ids (text): any other value is not in it, so it is refused either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof p !== \"string\"",
+    "replacement": "false",
+    "why": "An arc's ends and centre are looked up in the set of point ids (text): any other value is not in it, so it is refused either way (second of this pair in the file)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof id === \"string\"",
+    "replacement": "true",
+    "why": "A Combine's body that isn't text: bodyItem reads it as text, which matches no body id shape, so maker is null either way (second of this pair in the file)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at > byId.get(f.id)!.at",
+    "replacement": "there.at >= byId.get(f.id)!.at",
+    "why": "In checkCombine the two are equal only when the body's maker is the Combine itself, which makes no body, so isBodyOf refuses it either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "i > 0",
+    "replacement": "true",
+    "why": "once.has(id) can't be true for the first body (i = 0): the set is still empty, so the message is never reached there."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "i > 0",
+    "replacement": "i >= 0",
+    "why": "once.has(id) can't be true for the first body (i = 0): the set is still empty, so the message is never reached there."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "maker === null",
+    "replacement": "false",
+    "why": "In isBodyOf: byId has no entry for null, so `at` is undefined and the answer is false either way (third of this kind in the file)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion8Fields' sketches when the data has no list: a text in place of a sketch has no curves or constraints, so nothing version 8 is found either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion8Fields' kept shapes when the data has none: a text in place of a kept shape has no curves, so nothing version 8 is found either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "A sketch's pins when it has none: a text's .point is undefined, and no constraint names undefined (each is checked to name the sketch's points)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "A sketch's projections when it has none: a text's .made is undefined, which names no curve, so only undefined follows, and no constraint names undefined."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The projections a diameter is checked against when the sketch has none: a text's .made is undefined, never a diameter's circle (checked to be one of the sketch's circles)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "s.constraints.length === 0",
+    "replacement": "false",
+    "why": "Only a shortcut: with no constraints the loops below find nothing to refuse."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "c.kind === \"circle\"",
+    "replacement": "false",
+    "why": "A projected circle then takes the arc's list, [start, end, centre]: a circle has no start or end (undefined, which no constraint names), and its centre is still there."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "StringLiteral",
+    "original": "\"circle\"",
+    "replacement": "\"\"",
+    "why": "A projected circle then takes the arc's list, [start, end, centre]: a circle has no start or end (undefined, which no constraint names), and its centre is still there."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "c.kind === \"diameter\"",
+    "replacement": "true",
+    "why": "Only a diameter names a circle: any other constraint's .circle is undefined, which no projection's made is."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "c.kind === \"line\"",
+    "replacement": "false",
+    "why": "A projected line then takes the arc's list, [start, end, centre]: its start and end are still there, and a line has no centre (undefined, which no constraint names)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "StringLiteral",
+    "original": "\"line\"",
+    "replacement": "\"\"",
+    "why": "A projected line then takes the arc's list, [start, end, centre]: its start and end are still there, and a line has no centre (undefined, which no constraint names)."
   },
   {
     "file": "packages/account/src/auth.ts",
