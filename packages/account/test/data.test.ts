@@ -97,6 +97,24 @@ test("a yes ticked before sign-in waits under its own stored name", () => {
   assert.equal(PENDING_EMAIL_KEY, "spindle.account.email-choice");
 });
 
+test("the last email choice seen is kept under its own stored name, apart from the one waiting for sign-in", async () => {
+  // The two names must differ: the pending choice is removed once sign-in reads it, and must not take the seen one with it.
+  assert.equal(SEEN_EMAIL_KEY, "spindle.account.email-seen");
+  assert.notEqual(SEEN_EMAIL_KEY, PENDING_EMAIL_KEY);
+  const { store, data } = await signedIn();
+  await data.setEmailChoice(true);
+  assert.equal(store.getItem("spindle.account.email-seen"), `${USER.id}:yes`);
+});
+
+test("a no saved here shows as no next time, not as the yes before it", async () => {
+  const { store, data } = await signedIn();
+  assert.deepEqual(await data.setEmailChoice(true), { kind: "ok", value: true });
+  assert.equal(data.lastEmailChoice(), true);
+  assert.deepEqual(await data.setEmailChoice(false), { kind: "ok", value: false });
+  assert.equal(data.lastEmailChoice(), false);
+  assert.equal(store.getItem(SEEN_EMAIL_KEY), `${USER.id}:no`);
+});
+
 test("the last email choice seen shows at once, and the service's answer puts it right", async () => {
   const { svc, store, client, data } = await signedIn();
   assert.equal(data.lastEmailChoice(), null); // nothing seen yet: the dialog waits for the service

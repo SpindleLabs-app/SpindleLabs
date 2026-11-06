@@ -659,9 +659,22 @@ let canKeep = true;
  * Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is,
  * stored at `storedAt`: a save after another tab stored it since is refused and says so (app sweep, finding 2).
  */
+/**
+ * Settles once the last replaced project's saves have landed (finish's last one too), or after STORAGE_ANSWER_MS
+ * when the store doesn't answer: a project looked up in the store waits for it (nightly issue #331).
+ */
+let lastWrites: Promise<void> = Promise.resolve();
+/** Finishes the open project's autosave (`Autosave.finish`), noting its last saves in `lastWrites`. */
+function finishAutosave(): string | null {
+  if (autosave === null) return null;
+  const done = autosave;
+  const apart = done.finish();
+  lastWrites = Promise.race([done.settled(), new Promise<void>((settle) => setTimeout(settle, STORAGE_ANSWER_MS))]);
+  return apart;
+}
 function keep(id: string, stored = false, storedAt: Date | null = null, fromKept = false) {
   keepOnChange = null;
-  autosave?.finish();
+  finishAutosave();
   if (!canKeep) return;
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
@@ -672,7 +685,7 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
 function keepOnFirstChange() {
-  autosave?.finish(); // the last project keeps a change made within the quiet moment
+  finishAutosave(); // the last project keeps a change made within the quiet moment
   autosave = null;
   keepOnChange = newId();
 }
@@ -776,15 +789,17 @@ function replaceProject(project: Project) {
  */
 function openProject(text: string, fileName = "") {
   const project = projectFromJson(text, workspaces);
-  // A file already kept here as it is (opened before, unchanged since) goes on under its stored id, not as one more
-  // copy no one can reach (real-use hunt B3). Looked up while it opens; a store that can't answer means a new copy.
-  const copy = canKeep ? storedCopy(store, project).catch(() => undefined) : Promise.resolve(undefined);
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
   tabs?.expect(null);
-  const apart = autosave?.finish() ?? null;
+  const apart = finishAutosave();
   autosave = null;
+  // A file already kept here as it is (opened before, unchanged since) goes on under its stored id, not as one more
+  // copy no one can reach (real-use hunt B3). Looked up while it opens, once the last project's saves have landed
+  // (#331: one still landing, Save's new name stored by New's last save, left the save time read here stale, and
+  // the opened file's first save was refused as another tab's); a store that can't answer means a new copy.
+  const copy = canKeep ? lastWrites.then(() => storedCopy(store, project)).catch(() => undefined) : Promise.resolve(undefined);
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
@@ -819,7 +834,7 @@ async function openStored(id: string, modified: Date | null) {
   const project = kept === null ? await store.open(id) : projectFromJson(kept, workspaces);
   // Changes this tab couldn't store (another tab saved since) are kept as a separate project, and said, as Open does (round 2 hunt A5).
   tabs?.expect(id);
-  const apart = autosave?.finish() ?? null;
+  const apart = finishAutosave();
   autosave = null;
   guard.finished();
   fileStatus(apart === null ? "" : keptApartWords(apart));

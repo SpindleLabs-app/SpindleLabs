@@ -392,13 +392,6 @@
     "why": "weakMatches returns false for any other format, so calling it for them gives the same renamed answer."
   },
   {
-    "file": "packages/core/src/model/files.ts",
-    "mutator": "StringLiteral",
-    "original": "\"\"",
-    "replacement": "\"Stryker was here!\"",
-    "why": "andList is never given an empty list: routeFiles checks opens.length and planned.workspaces.length before calling it."
-  },
-  {
     "file": "packages/core/src/model/graph.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
@@ -1062,13 +1055,6 @@
     "original": "kind === null",
     "replacement": "false",
     "why": "withRuledNames (issue #220): every item read has a kind or is a sketch, Move or extrude of a sketch: a preset's type or profile was checked (shapeWith) before names, so the \"Item\" branch is never reached from readDesignDocument, its only caller."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "StringLiteral",
-    "original": "\"Item\"",
-    "replacement": "\"\"",
-    "why": "withRuledNames (issue #220): the \"Item\" branch is never reached from readDesignDocument, its only caller, since every item read has a kind or is a sketch, Move or extrude of a sketch."
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -2875,5 +2861,103 @@
     "original": "{ return undefined; }",
     "replacement": "{}",
     "why": "parseJson's catch: a function that falls off its end also returns undefined."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "OptionalChaining",
+    "original": "store?.setItem",
+    "replacement": "store.setItem",
+    "why": "With no store the call throws inside remember's try, whose empty catch gives the same result: nothing remembered."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "OptionalChaining",
+    "original": "store?.removeItem",
+    "replacement": "store.removeItem",
+    "why": "With no store the call throws inside forgetSeen's try, whose empty catch gives the same result: nothing to forget."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "OptionalChaining",
+    "original": "store?.getItem",
+    "replacement": "store.getItem",
+    "why": "With no store the call throws inside the try, whose catch returns null, the same answer as no stored value."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return null; }",
+    "replacement": "{}",
+    "why": "kept is still null when getItem throws, so neither stored form matches and lastEmailChoice returns null at its end anyway."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "ConditionalExpression",
+    "original": "state.kind === \"signed-in\"",
+    "replacement": "true",
+    "why": "state is read in the same tick as asPerson reads the same stored session, so a signed-out state always gets a signed-out reply and returns before this line."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < journal.length",
+    "replacement": "i <= journal.length",
+    "why": "asideKeysOf (issue #277): key(journal.length) is null, and the k !== null guard skips it, so one step past the end adds nothing."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry == null",
+    "replacement": "false",
+    "why": "keptEntry (issue #277): with no entry, readJournalEntry(null) throws inside the same try, whose catch returns null, as the guard does."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "MethodExpression",
+    "original": "x.startsWith(ASIDE_PREFIX)",
+    "replacement": "x.endsWith(ASIDE_PREFIX)",
+    "why": "asideKeysOf's sort (issue #277): with x never aside the comparator gives 0 or -1, and an engine's stable insertion sort only asks with x as the later key, so an aside key still moves after every own key; the y.endsWith twin is killed by test/mutation-survivors-11-05.test.ts."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "ownName (issue #275): the fallback when no writer id is given; the app always passes a writer id, and the name is only compared with itself."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ArrowFunction",
+    "original": "() => false",
+    "replacement": "() => undefined",
+    "why": "keepApart's kept (issue #275): only ever read as a truthy test, where undefined and false are the same."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "rebase (issue #275): reached only with journalVersion non-null, which needs a journal; any throw lands in its try's catch anyway."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry == null",
+    "replacement": "false",
+    "why": "rebase (issue #275): with no entry, readJournalEntry(null) throws inside the try, whose catch returns, as the guard does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "owner = false after finish's save (issue #275): the autosave has stopped and nothing reads owner again."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.removeItem",
+    "replacement": "journal.removeItem",
+    "why": "(issue #275) reached only with journalVersion non-null, which needs a journal."
   }
 ]
