@@ -68,7 +68,7 @@
       },
       "tolerance": {
         "is": "1e-5 + 64*2^-52",
-        "why": "LINEAR (10 nm) plus the rounding of the crossing points inside faces: such a point is only known to 64 ulps of the lengths it was worked from (the kernel's facts table gives it the edge's tolerance plus that rounding, by design and by its own hand test), and each of its three lengths in the boolean's frame is at most the diagonal of the box round both bodies, D, so at most 64·2⁻⁵²·max(1, 3D) past LINEAR. Corrected 11-06 when the model was first made: the first expectation, exactly 1e-5, left that rounding out. Here 3D is under 1 µm·10³ here (D ≈ 4.6 µm), so the rounding is 64 ulps of 1: ≈ 1.4e-14."
+        "why": "LINEAR (10 nm) plus the kernel's stated allowance for floating-point rounding on edges a Combine makes inside faces (by design): at most 64·2⁻⁵²·max(1, 3D) past LINEAR, D the diagonal of the box round both bodies. Corrected 11-06 when the model was first made: the first expectation, exactly 1e-5, left that rounding out. Here 3D is under 1 µm·10³ here (D ≈ 4.6 µm), so the rounding is 64 ulps of 1: ≈ 1.4e-14."
       }
     }
   ],

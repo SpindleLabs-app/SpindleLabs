@@ -68,7 +68,7 @@
       },
       "tolerance": {
         "is": "1e-5 + 64*2^-52*3*sqrt(100^2 + 60^2 + 15^2)",
-        "why": "LINEAR (10 nm) plus the rounding of the crossing points inside faces: such a point is only known to 64 ulps of the lengths it was worked from (the kernel's facts table gives it the edge's tolerance plus that rounding, by design and by its own hand test), and each of its three lengths in the boolean's frame is at most the diagonal of the box round both bodies, D, so at most 64·2⁻⁵²·max(1, 3D) past LINEAR. Corrected 11-06 when the model was first made: the first expectation, exactly 1e-5, left that rounding out. Here D = √(100² + 60² + 15²) ≈ 117.6 (x 100 wide, y 0..60, z 0..15; the frame is the overlap's, so the kilometre doesn't count): ≈ 5e-12."
+        "why": "LINEAR (10 nm) plus the kernel's stated allowance for floating-point rounding on edges a Combine makes inside faces (by design): at most 64·2⁻⁵²·max(1, 3D) past LINEAR, D the diagonal of the box round both bodies. Corrected 11-06 when the model was first made: the first expectation, exactly 1e-5, left that rounding out. Here D = √(100² + 60² + 15²) ≈ 117.6 (x 100 wide, y 0..60, z 0..15; the frame is the overlap's, so the kilometre doesn't count): ≈ 5e-12."
       }
     }
   ],
