@@ -5,7 +5,7 @@
 
 import { summaryInUnit, type Feature, type GeometryReference, type Unit } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
-import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "./build-area.ts";
+import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "@fission/slice";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
