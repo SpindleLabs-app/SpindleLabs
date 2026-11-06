@@ -103,6 +103,10 @@ if (!WITH_HOME) {
     assert.deepEqual(await names(page), ["Gear Box", "Bracket", "Untitled"]);
     assert.equal(await page.$$eval("#home-items .home-chip", (c) => c.filter((x) => x.textContent === "Design").length), 3);
     assert.equal(await page.evaluate(() => document.activeElement?.id), "home-carry-on", "keyboard focus starts on the card");
+    for (let i = 0; i < 25; i++) {
+      await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement === document.body || !!document.activeElement?.closest("#home")), true, `Tab ${i + 1} stays on the home screen (or leaves the page, never into the app behind it)`);
+    }
     await page.fill("#home-search", "brack");
     assert.deepEqual(await names(page), ["Bracket"]);
     await page.fill("#home-search", "zzz");

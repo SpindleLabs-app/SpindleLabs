@@ -91,6 +91,8 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}): HTMLElementTagNameMap[K] => Object.assign(doc.createElement(tag), props);
   const root = el("section", { id: "home", className: "home-screen", hidden: true });
   root.setAttribute("aria-labelledby", "home-title");
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
   const title = el("h1", { id: "home-title", className: "home-title", textContent: "SpindleLabs" });
   const card = el("div", { id: "home-card", className: "home-card" });
   const actions = el("div", { className: "home-actions" });
@@ -261,13 +263,23 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
     e.stopPropagation();
   });
 
+  /** What this screen made inert while it is up (the page behind it: Tab and screen readers stay on the screen). */
+  let inerted: Element[] = [];
+  const release = () => {
+    for (const e of inerted) e.removeAttribute("inert");
+    inerted = [];
+  };
   function hide() {
     ticket++; // a list still being read is not put in a hidden screen
     root.hidden = true;
+    release();
   }
   return {
     async show() {
       say("");
+      release(); // shown again while up: take only what is there now
+      inerted = [...doc.body.children].filter((e) => e !== root && !e.hasAttribute("inert"));
+      for (const e of inerted) e.setAttribute("inert", "");
       root.hidden = false;
       search.value = "";
       (root.querySelector<HTMLButtonElement>("#home-carry-on") ?? root.querySelector<HTMLButtonElement>("#home-new"))?.focus();

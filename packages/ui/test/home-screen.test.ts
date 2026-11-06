@@ -179,3 +179,26 @@ test("Escape goes back to the project and the key never reaches the app's shortc
   s.q("#home-search").dispatchEvent(new Event("keydown", { key: "Escape", bubbles: true }));
   assert.equal(s.home.shown, false);
 });
+
+test("while the screen is shown the rest of the page can't be reached by Tab (inert), and is again once it goes", async () => {
+  const s = setup();
+  const app = s.doc.createElement("main");
+  s.doc.body.prepend(app);
+  const dialog = s.doc.createElement("dialog"); // something already inert-free and unrelated stays as it was
+  s.doc.body.append(dialog);
+  await s.home.show();
+  assert.equal(app.hasAttribute("inert"), true, "the app is inert behind the screen");
+  assert.equal(s.home.element.hasAttribute("inert"), false, "the screen itself is not");
+  await s.home.show(); // shown twice (File > Home while it is up): still restores cleanly
+  s.home.hide();
+  assert.equal(app.hasAttribute("inert"), false);
+  assert.equal(dialog.hasAttribute("inert"), false);
+  assert.equal(s.home.element.getAttribute("aria-modal"), "true");
+  // An element that was inert before stays inert after.
+  const already = s.doc.createElement("div");
+  already.setAttribute("inert", "");
+  s.doc.body.append(already);
+  await s.home.show();
+  s.home.hide();
+  assert.equal(already.hasAttribute("inert"), true);
+});
