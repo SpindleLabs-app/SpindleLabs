@@ -153,8 +153,14 @@ export function solveUnits(text: string): number {
  * kernel was still warming up (slower, so the units came out low); against
  * the settled kernel (2026-11-05) the 40-slot grating plate at 0.2 mm needed
  * up to 1.11 times 0.12, so 0.12 × 1.11 × 1.25 = 0.1665, rounded up to 0.17.
+ * On CI's shared machines the same plate then took from 0.85 up to 1.23
+ * times 0.17 (merge queue 2026-11-05 and 06: 1.07, 1.07 and 1.23, the last
+ * 1,499 ms against 1,217), the worst whenever the calibration came out fast
+ * (0.77 to 0.95 ms): slicing is memory-bound and the calibration
+ * compute-bound, so their ratio moves with the machine. So 0.17 × 1.23 ×
+ * 1.25 = 0.261, rounded up to 0.27.
  */
-export const UNITS_PER_TRIANGLE_LAYER = 0.17;
+export const UNITS_PER_TRIANGLE_LAYER = 0.27;
 
 /**
  * Units of slicing per mm² of the part's footprint (its box seen from above)
