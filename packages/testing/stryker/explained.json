@@ -8,13 +8,6 @@
   },
   {
     "file": "packages/core/src/model/history.ts",
-    "mutator": "StringLiteral",
-    "original": "\"\"",
-    "replacement": "\"Stryker was here!\"",
-    "why": "The first entry's label is never shown: undoLabel reads entries[index] only when index > 0, redoLabel entries[index + 1], and a trim shifts the first entry out rather than relabelling it."
-  },
-  {
-    "file": "packages/core/src/model/history.ts",
     "mutator": "BooleanLiteral",
     "original": "false",
     "replacement": "true",
@@ -2784,6 +2777,41 @@
     "original": "[]",
     "replacement": "[\"Stryker was here\"]",
     "why": "The fallback list for a timeline with no features array is filtered by isFeature at once, and a string is no feature: [\"Stryker was here\"] filters to [] as [] does."
+  },
+  {
+    "file": "packages/ai/src/commands.ts",
+    "mutator": "ConditionalExpression",
+    "original": "settled",
+    "replacement": "false",
+    "why": "finish's own guard: every later call is already a no-op. resolve only takes the first answer, onText returns early once settled so no new stall timer starts, clearTimeout on a spent timer does nothing, and a second stop.abort() on an aborted controller does nothing."
+  },
+  {
+    "file": "packages/ai/src/http.ts",
+    "mutator": "ObjectLiteral",
+    "original": "{ once: true }",
+    "replacement": "{}",
+    "why": "A signal fires 'abort' at most once, and the finally block takes the listener off when the request ends, so a listener kept after its first call is never called again."
+  },
+  {
+    "file": "packages/ai/src/http.ts",
+    "mutator": "BooleanLiteral",
+    "original": "true",
+    "replacement": "false",
+    "why": "once: false: a signal fires 'abort' at most once, and the finally block takes the listener off when the request ends."
+  },
+  {
+    "file": "packages/ai/src/local.ts",
+    "mutator": "ObjectLiteral",
+    "original": "{ once: true }",
+    "replacement": "{}",
+    "why": "A signal fires 'abort' at most once, and the finally block takes the listener off when the stream ends, so a listener kept after its first call is never called again."
+  },
+  {
+    "file": "packages/ai/src/local.ts",
+    "mutator": "BooleanLiteral",
+    "original": "true",
+    "replacement": "false",
+    "why": "once: false: a signal fires 'abort' at most once, and the finally block takes the listener off when the stream ends."
   },
   {
     "file": "workspaces/design/src/document.ts",
