@@ -4,7 +4,7 @@
   "from": "35",
   "recipe": [
     {
-      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2. (Since 35e2 a body keeps its number for good, so the deleted box keeps Body 1 and the next bodies are Body 2 and Body 3; and each rectangle adds its four horizontal and vertical constraints, ids 11 to 14 here, so the items after it are numbered 4 later: corrected 11-06 with the step-35 models made.)"
     },
     {
       "do": "Create Sketch on the top plane XY.",
@@ -14,29 +14,29 @@
       "do": "Rectangle tool: click (0, 10), then (40, 40) (points 3, 4, 6, 8; lines 5, 7, 9, 10)."
     },
     {
-      "do": "Extrude the sketch 20 (z 0 to 20): Body 1, the block x 0..40, y 10..40, z 0..20.",
-      "makes": "feature-11"
+      "do": "Extrude the sketch 20 (z 0 to 20): Body 2, the block x 0..40, y 10..40, z 0..20.",
+      "makes": "feature-15"
     },
     {
       "do": "Create Sketch on the front plane XZ (sketch x is X, sketch y is Z, its normal −Y).",
-      "makes": "sketch-12"
+      "makes": "sketch-16"
     },
     {
-      "do": "Rectangle tool: click (10, 5), then (30, 30) (x 10..30, z 5..30; points and lines 13 to 20). Seen along Y the block offers its corners (0 or 40, 0 or 20) and edge middles (20, 0), (20, 20), (0, 10), (40, 10), none here."
+      "do": "Rectangle tool: click (10, 5), then (30, 30) (x 10..30, z 5..30; points and lines 17 to 24). Seen along Y the block offers its corners (0 or 40, 0 or 20) and edge middles (20, 0), (20, 20), (0, 10), (40, 10), none here."
     },
     {
-      "do": "Type the extrude distance 40.0005 and flip it (along +Y, y 0 to 40.0005): Body 2, the tool, whose far wall is 0.0005 mm, 0.5 µm, past the block's back face y = 40.",
-      "makes": "feature-21"
+      "do": "Type the extrude distance 40.0005 and flip it (along +Y, y 0 to 40.0005): Body 3, the tool, whose far wall is 0.0005 mm, 0.5 µm, past the block's back face y = 40.",
+      "makes": "feature-29"
     },
     {
-      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off.",
-      "makes": "feature-22"
+      "do": "Combine: target Body 2, tool Body 3, Cut, Keep tools off.",
+      "makes": "feature-30"
     }
   ],
   "bodies": [
     {
-      "body": "Body 1",
-      "item": "feature-22",
+      "body": "Body 2",
+      "item": "feature-15",
       "volume": {
         "is": "30*(40*20 - 20*15)",
         "why": "a U-shaped prism along Y, 30 long (y 10..40): the block's 40 × 20 end less the slot, 20 wide (x 10..30) and 15 deep (z 5..20)"
@@ -67,8 +67,8 @@
         "why": "the block's: the slot is open at the top, but the strips either side still reach z = 20"
       },
       "tolerance": {
-        "is": "1e-5",
-        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5: a crossing grows an entity only to what it measured)"
+        "is": "1e-5 + 64*2^-52*3*sqrt(40^2 + 40.0005^2 + 30^2)",
+        "why": "LINEAR (10 nm) plus the rounding of the crossing points inside faces: such a point is only known to 64 ulps of the lengths it was worked from (the kernel's facts table gives it the edge's tolerance plus that rounding, by design and by its own hand test), and each of its three lengths in the boolean's frame is at most the diagonal of the box round both bodies, D, so at most 64·2⁻⁵²·max(1, 3D) past LINEAR. Corrected 11-06 when the model was first made: the first expectation, exactly 1e-5, left that rounding out. Here D = √(40² + 40.0005² + 30²) ≈ 64 (x 0..40, y 0..40.0005, z 0..30): ≈ 2.7e-12."
       }
     }
   ],

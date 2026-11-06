@@ -1,74 +1,74 @@
 {
   "model": "small-cube-halved",
-  "what": "A 2.2 µm cube with half of it cut away, leaving a block 1.1 µm thick, 1.1 × MIN_FEATURE, so it builds: micron-cube-halved's pair, at the bottom of the modelling range (kernel/CLAUDE.md).",
+  "what": "micron-cube-halved's pair: the same 1 × 1 µm block, 2.1 µm tall, with its lower 1 µm cut away, leaving a block 1.1 µm thick, 1.1 × MIN_FEATURE, so it builds, at the bottom of the modelling range (kernel/CLAUDE.md). Redesigned 11-06 when the model was first made: a click lands on the 1 µm grid (place_freely never rounds finer than MIN_FEATURE), so the first design's 0.5 µm and 1.1 µm corners could not be clicked; the thin part now comes from a typed extrude distance (any length from 1 µm up), which a user can give.",
   "from": "35",
   "recipe": [
     {
-      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2. (Since 35e2 a body keeps its number for good, so the deleted box keeps Body 1 and the next bodies are Body 2 and Body 3; and each rectangle adds its four horizontal and vertical constraints, so the items after it are numbered 4 later.)"
     },
     {
       "do": "Create Sketch on the top plane XY.",
       "makes": "sketch-2"
     },
     {
-      "do": "Rectangle tool, zoomed in: click (0, 0.0022), then (0.0022, 0.0044) (x 0..2.2 µm, y 2.2..4.4 µm; points 3, 4, 6, 8, lines 5, 7, 9, 10)."
+      "do": "Rectangle tool, zoomed in: click (0, 0.001), then (0.001, 0.002) (x 0..1 µm, y 1..2 µm, on the 1 µm grid; points 3, 4, 6, 8, lines 5, 7, 9, 10, constraints 11 to 14)."
     },
     {
-      "do": "Extrude the sketch 0.0022 (z 0 to 2.2 µm): Body 1, the cube.",
-      "makes": "feature-11"
+      "do": "Extrude the sketch 0.0021 typed (z 0 to 2.1 µm): Body 2, the block.",
+      "makes": "feature-15"
     },
     {
-      "do": "Create Sketch on the front plane XZ.",
-      "makes": "sketch-12"
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-16"
     },
     {
-      "do": "Rectangle tool: click (0.0011, −0.0022), then (0.0066, 0.0044) (x 1.1..6.6 µm, z −2.2..4.4 µm; points and lines 13 to 20). Seen along Y the cube's nearest offered point is its bottom edge's middle (0.0011, 0), 2.2 µm away, so nothing is pinned."
+      "do": "Rectangle tool: click (−0.001, 0), then (0.002, 0.003) (x −1..2 µm, y 0..3 µm; points and lines 17 to 24). The block's nearest corner, (0, 0.001), is 1.4 µm from the first click, past the snap's reach, so nothing is pinned."
     },
     {
-      "do": "Extrude the sketch 0.0088, flipped (along +Y, y 0 to 8.8 µm): Body 2, the tool, through the cube from x = 1.1 µm on.",
-      "makes": "feature-21"
+      "do": "Extrude the sketch 0.001 (z 0 to 1 µm): Body 3, the tool, over the block's whole footprint and its lower 1 µm.",
+      "makes": "feature-29"
     },
     {
-      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off.",
-      "makes": "feature-22"
+      "do": "Combine: target Body 2, tool Body 3, Cut, Keep tools off.",
+      "makes": "feature-30"
     }
   ],
   "bodies": [
     {
-      "body": "Body 1",
-      "item": "feature-22",
+      "body": "Body 2",
+      "item": "feature-15",
       "volume": {
-        "is": "0.0011*0.0022*0.0022",
-        "why": "the cube's half x 0..1.1 µm: 1.1 × 2.2 × 2.2 µm"
+        "is": "0.001*0.001*0.0011",
+        "why": "the block's upper part z 1..2.1 µm: 1 × 1 × 1.1 µm"
       },
       "area": {
-        "is": "2*(0.0011*0.0022 + 0.0011*0.0022 + 0.0022*0.0022)",
-        "why": "a 1.1 × 2.2 × 2.2 µm box: 2(2.42 + 2.42 + 4.84) µm²"
+        "is": "2*(0.001*0.001 + 0.001*0.0011 + 0.001*0.0011)",
+        "why": "a 1 × 1 × 1.1 µm box: 2(1 + 1.1 + 1.1) µm² (the tool's top z = 1 µm closes it)"
       },
       "topology": {
         "faces": 6,
         "edges": 12,
         "vertices": 8,
-        "why": "a box: the tool's wall x = 1.1 µm closes the half; 8 − 12 + 6 = 2"
+        "why": "a box: the tool's top z = 1 µm closes the part left; 8 − 12 + 6 = 2"
       },
       "box": {
         "is": [
           [
             0,
-            0.0022,
-            0
+            0.001,
+            0.001
           ],
           [
-            0.0011,
-            0.0044,
-            0.0022
+            0.001,
+            0.002,
+            0.0021
           ]
         ],
-        "why": "the cube's from x = 0 to the tool's wall"
+        "why": "the block's footprint, from the tool's top z = 1 µm to 2.1 µm"
       },
       "tolerance": {
-        "is": "1e-5",
-        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5: a crossing grows an entity only to what it measured)"
+        "is": "1e-5 + 64*2^-52",
+        "why": "LINEAR (10 nm) plus the rounding of the crossing points inside faces: such a point is only known to 64 ulps of the lengths it was worked from (the kernel's facts table gives it the edge's tolerance plus that rounding, by design and by its own hand test), and each of its three lengths in the boolean's frame is at most the diagonal of the box round both bodies, D, so at most 64·2⁻⁵²·max(1, 3D) past LINEAR. Corrected 11-06 when the model was first made: the first expectation, exactly 1e-5, left that rounding out. Here 3D is under 1 µm·10³ here (D ≈ 4.6 µm), so the rounding is 64 ulps of 1: ≈ 1.4e-14."
       }
     }
   ],

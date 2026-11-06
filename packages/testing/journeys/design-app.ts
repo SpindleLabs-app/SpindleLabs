@@ -275,9 +275,9 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
       viewport.onPick?.({ face: null, shift: false, ...p });
       await settle();
     },
-    /** A click on the view at sketch point (x, y), a pixel 0.1 mm wide (snaps reach 1 mm), over the body's edge or face `under` when given (joined indices: what the Project tool takes, 27d), with Shift held when `shift`, by a finger when `touch`. */
-    async click(x: number, y: number, under: { edge?: number; face?: number } = {}, shift = false, touch = false) {
-      const pointer: SketchPointer = { kind: "click", at: [x, y], pixel: 0.1, ...under, ...(shift ? { shift: true as const } : {}), ...(touch ? { touch: true as const } : {}) };
+    /** A click on the view at sketch point (x, y), a pixel 0.1 mm wide (snaps reach 1 mm; `pixel` smaller when zoomed in), over the body's edge or face `under` when given (joined indices: what the Project tool takes, 27d), with Shift held when `shift`, by a finger when `touch`. */
+    async click(x: number, y: number, under: { edge?: number; face?: number } = {}, shift = false, touch = false, pixel = 0.1) {
+      const pointer: SketchPointer = { kind: "click", at: [x, y], pixel, ...under, ...(shift ? { shift: true as const } : {}), ...(touch ? { touch: true as const } : {}) };
       viewport.onSketchPointer?.(pointer);
       await settle();
     },

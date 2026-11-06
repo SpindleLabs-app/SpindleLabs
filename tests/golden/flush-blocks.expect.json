@@ -12,21 +12,21 @@
       "makes": "sketch-2"
     },
     {
-      "do": "Rectangle tool: click (0, 0), then (40, 12) (points 3, 4, 6, 8; lines 5, 7, 9, 10). Its corners (0, 0) and (40, 0) land on the top's front corners and are pinned there (points 3 and 4); (40, 12) and (0, 12) lie on the side edges but not at their middles (y = 15), so they aren't."
+      "do": "Rectangle tool: click (0, 0), then (40, 12) (points 3, 4, 6, 8; lines 5, 7, 9, 10). Its corners (0, 0) and (40, 0) land on the top's front corners and are pinned there (points 3 and 4); (40, 12) and (0, 12) lie on the side edges but not at their middles (y = 15), so they aren't. The rectangle also adds its four horizontal and vertical constraints, ids 11 to 14, so the items after it are numbered 4 later (corrected 11-06 with the model made)."
     },
     {
       "do": "Extrude the sketch 10 (up, z 10 to 20): Body 2.",
-      "makes": "feature-11"
+      "makes": "feature-15"
     },
     {
       "do": "Combine: target Body 1, tool Body 2, Join, Keep tools off.",
-      "makes": "feature-12"
+      "makes": "feature-16"
     }
   ],
   "bodies": [
     {
       "body": "Body 1",
-      "item": "feature-12",
+      "item": "feature-1",
       "volume": {
         "is": "40*30*10 + 40*12*10",
         "why": "the two blocks, which share only the face between them: 12000 + 4800"

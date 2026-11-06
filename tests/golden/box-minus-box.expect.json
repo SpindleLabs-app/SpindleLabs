@@ -4,7 +4,7 @@
   "from": "35",
   "recipe": [
     {
-      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2. (Since 35e2 a body keeps its number for good, so the deleted box keeps Body 1 and the next bodies are Body 2 and Body 3; and each rectangle adds its four horizontal and vertical constraints, ids 11 to 14 here, so the items after it are numbered 4 later: corrected 11-06 with the step-35 models made.)"
     },
     {
       "do": "Create Sketch on the top plane XY.",
@@ -14,29 +14,29 @@
       "do": "Rectangle tool: click (−20, −15), then (20, 15) (points 3, 4, 6, 8 and lines 5, 7, 9, 10, the tool's order). Nothing is before it, so nothing is pinned."
     },
     {
-      "do": "Extrude the sketch 20 (towards +Z): Body 1, the block x −20..20, y −15..15, z 0..20, across the front and side planes.",
-      "makes": "feature-11"
+      "do": "Extrude the sketch 20 (towards +Z): Body 2, the block x −20..20, y −15..15, z 0..20, across the front and side planes.",
+      "makes": "feature-15"
     },
     {
       "do": "Create Sketch on the front plane XZ (sketch x is X, sketch y is Z, its normal −Y).",
-      "makes": "sketch-12"
+      "makes": "sketch-16"
     },
     {
-      "do": "Rectangle tool: click (10, 10), then (30, 30) (x 10..30, z 10..30; points and lines 13 to 20); seen along Y the block offers its corners (±20, 0 or 20), its edges' middles (0, 0), (0, 20), (±20, 0), (±20, 20), (±20, 10) and nothing else, so no point here is pinned."
+      "do": "Rectangle tool: click (10, 10), then (30, 30) (x 10..30, z 10..30; points and lines 17 to 24); seen along Y the block offers its corners (±20, 0 or 20), its edges' middles (0, 0), (0, 20), (±20, 0), (±20, 20), (±20, 10) and nothing else, so no point here is pinned."
     },
     {
-      "do": "Extrude the sketch 25, not flipped (along −Y, y 0 to −25): Body 2, the tool x 10..30, y −25..0, z 10..30.",
-      "makes": "feature-21"
+      "do": "Extrude the sketch 25, not flipped (along −Y, y 0 to −25): Body 3, the tool x 10..30, y −25..0, z 10..30.",
+      "makes": "feature-29"
     },
     {
-      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off (Fusion's default): Body 1 is the block with the notch, Body 2 is used up.",
-      "makes": "feature-22"
+      "do": "Combine: target Body 2, tool Body 3, Cut, Keep tools off (Fusion's default): Body 2 is the block with the notch, Body 3 is used up.",
+      "makes": "feature-30"
     }
   ],
   "bodies": [
     {
-      "body": "Body 1",
-      "item": "feature-22",
+      "body": "Body 2",
+      "item": "feature-15",
       "volume": {
         "is": "40*30*20 - 10*15*10",
         "why": "the block less where the tool overlaps it: x 10..20 (the block ends at 20), y −15..0 (it begins at −15), z 10..20 (it ends at 20), 10 × 15 × 10: 24000 − 1500"
@@ -67,8 +67,8 @@
         "why": "the block's: the notch takes the corner (20, −15, 20), but (20, 15, 20), (−20, −15, 20) and (20, −15, 0) still reach each side"
       },
       "tolerance": {
-        "is": "1e-5",
-        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5: a crossing grows an entity only to what it measured)"
+        "is": "1e-5 + 64*2^-52*3*sqrt(50^2 + 40^2 + 30^2)",
+        "why": "LINEAR (10 nm) plus the rounding of the crossing points inside faces: such a point is only known to 64 ulps of the lengths it was worked from (the kernel's facts table gives it the edge's tolerance plus that rounding, by design and by its own hand test), and each of its three lengths in the boolean's frame is at most the diagonal of the box round both bodies, D, so at most 64·2⁻⁵²·max(1, 3D) past LINEAR. Corrected 11-06 when the model was first made: the first expectation, exactly 1e-5, left that rounding out. Here D = √(50² + 40² + 30²) ≈ 70.7 (both bodies: x −20..30, y −25..15, z 0..30): ≈ 3e-12."
       }
     }
   ],
