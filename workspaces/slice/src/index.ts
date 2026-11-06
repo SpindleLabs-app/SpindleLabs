@@ -38,9 +38,3 @@ export const sliceWorkspace: WorkspacePlugin = {
 };
 
 export { mountSlicePage, plateMesh, plateWords, readPlate, slicePageWorkspace, type PlateBody } from "./page.ts";
-
-// Moved here from Design (Slice as its own page, step 2): what a print needs that does not depend on the design's own types.
-export * from "./print-cost.ts";
-export * from "./build-area.ts";
-export * from "./overhang.ts";
-export * from "./print-check.ts";

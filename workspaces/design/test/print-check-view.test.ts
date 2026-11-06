@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkShown, keepPrintCheckShown, printCheckOverlays, printCheckShownIn, printCheckSummary, printRulesIn, PRINT_CHECK_IDS, PRINT_CHECK_KEY } from "../src/print-check-view.ts";
-import { P1S_RULES, type PrintCheck } from "@fission/slice";
+import { P1S_RULES, type PrintCheck } from "@fission/print";
 import { PRESET_PICKED_KEY, PRESETS_KEY, PRESETS_VERSION } from "../src/slice-presets.ts";
 import { FILE_DEFAULTS, PRINT_DEFAULTS } from "../src/slice-print.ts";
 

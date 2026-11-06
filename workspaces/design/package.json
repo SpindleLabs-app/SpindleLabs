@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@fission/core": "*",
-    "@fission/slice": "*",
+    "@fission/print": "*",
     "@fission/ui": "*",
     "@fission/viewport": "*"
   },

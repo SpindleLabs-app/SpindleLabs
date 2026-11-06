@@ -83,6 +83,6 @@ Which P pieces each headline substep needs, so a thread starting one of these P 
 
 ## Slice as its own page (Ben, 2026-11-06, so slicer jobs can be design tabs; branch claude/project-thread-kywu7h)
 - [x] SP1. The page itself behind `SPINDLE_SLICE_PAGE=1` (SpindleLabs #405): lists the design's bodies through the registry (`registerLister`/`objectsOf`, Design implements it) and draws them on the plate. `apps/fission/e2e/slice-page.mjs`.
-- [x] SP2. The slicing code Design owns moves into `workspaces/slice/src` in steps, with File ▾ Slice for printing working throughout. First: the files that use no Design types (`print-cost.ts`, `build-area.ts`, `overhang.ts`, `print-check.ts`) with their tests; Design imports them from `@fission/slice`.
+- [x] SP2. The slicing code Design owns moves into the shared `packages/print` (a workspace may not import another) or `workspaces/slice/src` in steps, with File ▾ Slice for printing working throughout. First: the files that use no Design types (`print-cost.ts`, `build-area.ts`, `overhang.ts`, `print-check.ts`) with their tests; both import them from `@fission/print`.
 - [ ] SP3. Next: the choices (`PrintChoices`, options, remembered settings) and presets (`slice-presets.ts`), then `slice-print.ts`'s engine calls on meshes from the registry instead of Design's `DesignDocument`/`Feature` (the part that ties it to Design today: `sliceBodies`, `printFileOf`, `bodyIdOf`, `endStls`).
 - [ ] SP4. The page's print choices, Slice button and preview/time-lapse. [ ] SP5. Switch the page on, drop the dialog.
