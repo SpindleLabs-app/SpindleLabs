@@ -16,7 +16,7 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
@@ -913,6 +913,15 @@ const tabs: ShellTabs | null = !__HOME_SCREEN__
       start: () => startNewProject(true),
       preselect: (id) => {
         if (split?.id !== id && pages.includes(id)) current = id as Page; // the next project shows in the workspace its tab was in
+      },
+      capture: () => ({ history: ctx.history.save(), selection: [...ctx.selection.items], camera: viewer.main.cameraPose() }),
+      apply: (view) => {
+        const v = view as { history: SavedHistory; selection: GeometryReference[]; camera: Parameters<typeof viewer.main.restorePose>[0] };
+        const project = ctx.project;
+        // The steps come back only for the project as it was left; a project that differs starts afresh (already so).
+        if (ctx.history.load(v.history)) ctx.selection.set(v.selection);
+        // The camera once the workspace has shown the project and framed it, unless another tab was chosen meanwhile.
+        void shownOnScreen().then(() => ctx.project === project && viewer.main.restorePose(v.camera));
       },
       unsaved: () => shownStatus.state !== "saved",
       report: fileStatus,

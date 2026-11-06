@@ -30,6 +30,10 @@ export interface ShellTabsParts {
   report(message: string): void;
   /** Ids of the projects kept in this browser. */
   kept(): Promise<string[]>;
+  /** What a tab keeps while it is not on screen besides its project (undo steps, selection, camera): taken when it is left. */
+  capture(): unknown;
+  /** Puts back what `capture` took, once the tab's project is on screen again. */
+  apply(view: unknown): void;
   storage: Pick<Storage, "getItem" | "setItem"> | null;
 }
 
@@ -54,6 +58,8 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
   const isTemporary = (key: string) => key.startsWith("~");
   let expected: { key: string | null; wasKept: boolean } | null = null;
   let busy = false;
+  /** What each tab left behind when it was left (memory only: after a reload a tab starts with no steps to undo). */
+  const views = new Map<string, unknown>();
 
   const strip = designTabs(doc, {
     titles: parts.titles,
@@ -100,6 +106,7 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
     if (!tab) return;
     if (key === state.active && parts.unsaved() && !(await confirmClose(doc, tab.name))) return;
     const before = state;
+    views.delete(key);
     const { state: after, next } = removeTab(state, key);
     set(after);
     if (key !== before.active) return; // another tab: it is kept, and only leaves the strip
@@ -120,6 +127,7 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
     state: () => state,
     expect(key) {
       expected = { key, wasKept: parts.keptId() !== null };
+    if (state.active !== null) views.set(state.active, parts.capture()); // the tab being left
     },
     landed() {
       const was = expected ?? { key: null, wasKept: parts.keptId() !== null };
@@ -132,6 +140,8 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
       const existing = next.tabs.find((t) => t.key === key);
       next = addTab(next, { key, name: parts.projectName(), workspace: existing?.workspace ?? parts.workspace() });
       set(next);
+      const view = views.get(key);
+      if (view !== undefined) parts.apply(view);
     },
     sync() {
       if (state.active === null || expected !== null) return; // a project is being replaced: the tab on screen is not the one that shows yet

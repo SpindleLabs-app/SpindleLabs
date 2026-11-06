@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
-import { startWithBox } from "./start.mjs";
+import { insertPreset, startWithBox } from "./start.mjs";
 
 const DIST = process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : fileURLToPath(new URL("../dist/", import.meta.url));
 if (!existsSync(DIST + "index.html")) throw new Error("build the app first (npm run build, or npm run e2e:tabs)");
@@ -54,7 +54,7 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
   const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch, isMobile: touch, colorScheme: scheme });
   const page = await context.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(url + "#design");
+  await page.goto(url + "?test-hooks#design");
   return { context, page };
 }
 /** Past the home screen, which a build with the tabs also has. */
@@ -134,6 +134,47 @@ if (!WITH_TABS) {
     await page.click(".design-tabs-tab:last-child .design-tabs-close");
     await tabsAre(page, ["Untitled|DESIGN|on"], "the first tab, on screen");
     await volume(page, "24,000 mm³");
+    await context.close();
+  });
+
+  const undoOn = (page) => page.$eval("#undo", (b) => !b.disabled);
+  const camera = (page) => page.evaluate(() => window.fissionTest.camera());
+
+  await check("each tab keeps its own undo steps: undoing in one tab never touches the other", async () => {
+    const { context, page } = await two();
+    assert.equal(await undoOn(page), false, "the new tab starts with nothing to undo");
+    await insertPreset(page, "cylinder");
+    await saved(page);
+    await page.click(".design-tabs-tab:first-child .design-tabs-main");
+    await volume(page, "24,000 mm³");
+    await until(page, () => !document.querySelector("#undo").disabled, null, "Undo in the first tab (its box was inserted there)");
+    await page.click("#undo"); // takes the box back out of the first tab
+    await page.locator("#start-hint").waitFor();
+    await page.click(".design-tabs-tab:last-child .design-tabs-main");
+    await until(page, () => document.querySelector("#volume")?.textContent !== "—" && document.querySelector("#volume")?.textContent !== "24,000 mm³", null, "the cylinder still in the second tab");
+    assert.equal(await undoOn(page), true, "the second tab still has its own step to undo");
+    await page.click(".design-tabs-tab:first-child .design-tabs-main");
+    await page.locator("#start-hint").waitFor(); // the first tab stayed as it was undone
+    assert.equal(await undoOn(page), false, "the undone box has no steps left to undo");
+    await until(page, () => !document.querySelector("#redo").disabled, null, "Redo kept in the first tab");
+    await context.close();
+  });
+
+  await check("each tab keeps its camera: Top in one tab, then back, shows Top again", async () => {
+    const { context, page } = await two();
+    await page.click(".design-tabs-tab:first-child .design-tabs-main");
+    await volume(page, "24,000 mm³");
+    await page.click('.view-controls [aria-label="Top"]');
+    await page.waitForTimeout(800);
+    const top = await camera(page);
+    await page.click(".design-tabs-tab:last-child .design-tabs-main");
+    await page.locator("#start-hint").waitFor();
+    await page.click(".design-tabs-tab:first-child .design-tabs-main");
+    await volume(page, "24,000 mm³");
+    await page.waitForTimeout(1500);
+    const back = await camera(page);
+    const near = (a, b) => a.every((x, i) => Math.abs(x - b[i]) < 1e-6 * Math.max(1, Math.abs(x)));
+    assert.ok(near(back.position, top.position) && near(back.target, top.target), `camera ${JSON.stringify(back.position)} is the Top view ${JSON.stringify(top.position)}`);
     await context.close();
   });
 
