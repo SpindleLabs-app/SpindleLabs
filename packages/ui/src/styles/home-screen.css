@@ -1,0 +1,46 @@
+/* The home screen (home-screen.ts, U6b): a full-window layer over the open project. Colours are tokens only
+   (theme.css); ":not(#none)" lifts a rule over the base layout's button rules. */
+.home-screen { position: fixed; inset: 0; z-index: 60; overflow-y: auto; display: grid; align-content: start; justify-items: center; gap: var(--look-space-3); padding: var(--look-space-4) var(--look-space-4); background: var(--surface); color: var(--text-body); }
+.home-screen[hidden] { display: none; }
+.home-screen > * { width: min(720px, 100%); box-sizing: border-box; }
+.home-screen .home-head { display: flex; justify-content: flex-end; }
+.home-screen .home-title { margin: 0; font-size: 28px; }
+.home-screen .home-card { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-3); padding: var(--look-space-4); background: var(--surface-raised); border: 1px solid var(--look-accent); border-radius: var(--look-radius-l); }
+.home-screen .home-card[hidden] { display: none; }
+.home-screen .home-card-words { display: grid; gap: 2px; min-width: 0; }
+.home-screen .home-card-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.home-screen .home-card-name { font-size: 20px; overflow-wrap: anywhere; }
+.home-screen .home-actions { display: flex; flex-wrap: wrap; gap: var(--look-space-2); }
+.home-screen .home-find { display: flex; flex-wrap: wrap; gap: var(--look-space-2); }
+.home-screen .home-search { flex: 1 1 200px; min-height: var(--look-target); }
+.home-screen .home-filter { min-height: var(--look-target); }
+.home-screen .home-filter[hidden] { display: none; }
+.home-screen .home-search, .home-screen .home-filter, .home-screen .home-rename-box { font: inherit; padding: 0 var(--look-space-3); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.home-screen .home-status { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.home-screen .home-status:empty { display: none; }
+.home-screen .home-status.bad { color: var(--danger); }
+.home-screen .home-items { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--look-space-2); }
+.home-screen .home-row { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-3); padding: var(--look-space-2) var(--look-space-3); background: var(--surface-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); }
+.home-screen .home-row[data-open="true"] { border-color: var(--look-accent); }
+.home-screen .home-row-words { display: grid; gap: 2px; min-width: 0; }
+.home-screen .home-row-name { font-weight: 600; overflow-wrap: anywhere; }
+.home-screen .home-row-when { font-size: 12px; color: var(--text-dim); }
+.home-screen .home-row-works { display: flex; flex-wrap: wrap; gap: 4px; }
+.home-screen .home-chip { font-size: 11px; padding: 1px 8px; color: var(--text-dim); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.home-screen .home-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--look-space-2); }
+.home-screen .home-row-question { flex-basis: 100%; font-size: 13px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.home-screen .home-links { margin: 0; }
+.home-screen .home-button:not(#none) { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
+.home-screen .home-button:not(#none):hover { border-color: var(--look-accent); color: var(--look-accent-text); }
+.home-screen .home-primary:not(#none) { border-color: var(--look-accent); }
+.home-screen .home-link:not(#none) { background: none; border-color: transparent; padding: 0; text-decoration: underline; }
+.home-screen .home-delete-sure:not(#none) { border-color: var(--danger); color: var(--danger); }
+.home-screen[aria-busy="true"] .home-row-actions { opacity: 0.6; pointer-events: none; }
+@media (max-width: 640px) {
+  .home-screen { padding: var(--look-space-3); }
+  .home-screen .home-card { flex-direction: column; align-items: stretch; }
+  .home-screen .home-row { flex-direction: column; align-items: stretch; }
+  .home-screen .home-row-actions { justify-content: flex-start; }
+  .home-screen .home-row-question { text-align: left; }
+  .home-screen .home-button:not(#none) { min-height: var(--look-target-touch); }
+}
