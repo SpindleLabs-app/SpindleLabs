@@ -41,7 +41,7 @@ export const MAX_TYPED = 1e6;
 export type Reading = { value: number } | { error: string };
 
 /** A plain decimal: digits with at most one point, an optional sign; no exponent, no hex, no "Infinity". */
-const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+export const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 
 /** A length typed in a box: a decimal of mm ("12.5", "12.5 mm"), from MIN_TYPED to MAX_TYPED. */
 export function readLength(text: string): Reading {

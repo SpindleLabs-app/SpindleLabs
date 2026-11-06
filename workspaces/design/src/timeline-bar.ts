@@ -51,7 +51,7 @@ const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extr
  * greyed instead (26e, Q3), from the data alone. `warnings` are the
  * rebuild's words for the items built with a warning.
  */
-export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map()): { items: TimelineBarItem[]; marker: number } {
+export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map(), describe: (summary: string) => string = (s) => s): { items: TimelineBarItem[]; marker: number } {
   const { features, marker } = document.timeline;
   let at = features.length;
   if (marker === "start") at = 0;
@@ -70,7 +70,7 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
     return {
       id: f.id,
       label: `${i + 1}. ${itemName(f)}`,
-      description: f.intent.summary,
+      description: describe(f.intent.summary),
       icon: Object.hasOwn(ICON_OF, f.intent.type) ? ICON_OF[f.intent.type] : "feature",
       suppressed: f.suppressed,
       rolledBack: i >= at,
@@ -526,6 +526,8 @@ const lastClicks = new WeakMap<HTMLElement, { id: string; at: number; x: number;
 /** What the bar's items do (step 24f3): `failed` are the rebuild's failed items (drawn red); `picked` is the item whose ⋯ shows. */
 export interface BarWiring {
   failed?: ReadonlySet<string>;
+  /** How an item's summary is said in the bar's tooltips (U2c3: in the unit chosen in Settings); as saved when left out. Passed in so this file holds no import it cannot run alone (the planted-bug tests copy it). */
+  describe?: (summary: string) => string;
   /** 35d4: the failed items that took the kernel too long: "took too long" in their title, and a Retry beside the picked one's ⋯. */
   slow?: ReadonlySet<string>;
   /** Retry pressed on item `id` (35d4). */
@@ -567,7 +569,7 @@ const cardsOff = (page: Document) => (page.defaultView as unknown as { __noToolt
  */
 export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: BarWiring = {}) {
   const document = slot.ownerDocument;
-  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings);
+  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings, wiring.describe);
   // The card of an item on the old bar goes with it; one picked by a finger shows again below.
   hideCard(document);
   const card = (li: HTMLElement, i: number) => {
