@@ -139,12 +139,21 @@ jobs:
           pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >/dev/null 2>&1
       # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
       # slicing engine's oracle (Ubuntu noble ships 2.7.2).
-      # Usually 20 seconds; once a slow mirror held it 57 minutes
-      # (2026-11-06), so each try stops at 5 minutes and it tries three times.
-      - run: |
-          for try in 1 2 3; do
-            sudo timeout 300 apt-get update -qq >/dev/null 2>&1 && sudo timeout 300 apt-get install -y -qq valgrind prusa-slicer >/dev/null 2>&1 && exit 0
+      # Only the parts whose checks use them (baseline: release; the slicer
+      # oracle: rest; a kernel commit from before the parts: all), so three
+      # parts never touch the package mirror; a check that lacks its tool
+      # fails, never skips. Usually 20 seconds, but a slow mirror once held it
+      # 57 minutes and on 2026-11-06 failed three 5-minute tries in a row on
+      # several parts at once: each download now gives up after 60 seconds
+      # without data and is retried by apt itself, and a failed try waits
+      # 1, 2, then 4 minutes before the next of four (up to 10 minutes each).
+      - if: contains(fromJSON('["release","rest","all"]'), matrix.part)
+        run: |
+          apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
+          for try in 1 2 3 4; do
+            sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
             echo "apt-get try $try failed"
+            [ $try = 4 ] || sleep $((60 * 2 ** (try - 1)))
           done
           exit 1
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
@@ -176,6 +185,8 @@ jobs:
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
           OUTCOME: ${{ steps.run.outcome }}
         run: |
+          # skipped: a setup step failed, so no check ran.
+          [ "$OUTCOME" = skipped ] && OUTCOME="setup failed, no check ran"
           .github/scripts/kernel_ci.sh status kernel-ci/checks failure "$PART: $(.github/scripts/kernel_ci.sh describe "$RUNNER_TEMP/results.txt" "$OUTCOME")"
 
   # kernel-ci/checks passes only when every part passed. A part that failed
