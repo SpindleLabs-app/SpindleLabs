@@ -7,6 +7,7 @@ check TypeScript mutants: survivors no test kills in packages/ai/src/http.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/local.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/ollama.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/prompt.ts
+check TypeScript mutants: survivors no test kills in packages/core/src/model/history.ts
 check TypeScript mutants: survivors no test kills in packages/core/src/model/shortcuts.ts
 check TypeScript mutants: survivors no test kills in packages/storage/src/autosave.ts
 check TypeScript mutants: survivors no test kills in packages/storage/src/unsaved.ts
@@ -15,7 +16,11 @@ check TypeScript mutants: survivors no test kills in packages/viewport/src/frami
 check TypeScript mutants: survivors no test kills in packages/viewport/src/pane.ts
 check TypeScript mutants: survivors no test kills in workspaces/design/src/boolean-names.ts
 check TypeScript mutants: survivors no test kills in workspaces/design/src/document.ts
+check soak: cycle #: phone, built [{"w":#,"d":#,"h":#,"z":#},{"w":#,"d":#,"h":#,"z":#}]: the STL's volume is #,# mm³, the model's #,# mm³ (STL bounds [[#,#],[#,#]
+check soak: cycle #: phone: Body # (# × # × #) shows a volume of #,# mm³, the model #,# mm³
+check soak: listeners keeps growing: # by cycle #, # at cycle #, # at cycle #
 check soak: the soak's cycle stopped (seed #): page.waitForFunction: Timeout #ms exceeded.
 check the ts-mutants job failed with nothing more specific reported
+monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
 monkey settles: the page was still changing # s after the action
 monkey the tester itself: locator.click: Timeout #ms exceeded.

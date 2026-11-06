@@ -1,4 +1,4 @@
-tested commit 9a638c6 on main, 2026-11-06 00:56 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42111749151)
-Monkey, seeds 202611050-202611051: 2 session(s) of 2000 actions in Chromium; 0 Combines made of 22 tried; 2 FAILED
-seed 202611050: FAIL: the tester itself: locator.click: Timeout 2000ms exceeded.
-seed 202611051: FAIL: settles: the page was still changing 6 s after the action
+tested commit 3ed44c9 on main, 2026-11-06 23:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42290619467)
+Monkey, seeds 202611060-202611061: 2 session(s) of 2000 actions in Chromium; 8 Combines made of 14 tried; 2 FAILED
+seed 202611060: FAIL: settles: the page was still changing 6 s after the action
+seed 202611061: FAIL: selection agrees: with Body 1 (Box: 13 × 20 × 5 mm) selected the Feature panel says "Box: 0.512 × 0.787 × 0.197 in"; with Body 1 (Box: 13 × 20 × 5 mm) selected the Body panel shows 0.07933086732 in³, but that body is 1300.00 mm³; with Body 3 (Cylinder: ⌀14 × 30 mm) selected the Feature panel says "Cylinder: ⌀0.551 × 1.181 in"; with Body 3 (Cylinder: ⌀14 × 30 mm) selected the Body panel shows 0.2818162668 in³, but that body is 4618.14 mm³; with Body 4 (Cylinder: ⌀15 × 30 mm) selected the Feature panel says "Cylinder: ⌀0.591 × 1.181 in"; with Body 4 (Cylinder: ⌀15 × 30 mm) selected the Body panel shows 0.3235135716 in³, but that body is 5301.44 mm³
