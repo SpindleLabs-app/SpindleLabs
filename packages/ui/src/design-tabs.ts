@@ -140,8 +140,39 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   plus.title = "New design in a new tab";
   plus.textContent = "+";
   plus.addEventListener("click", () => parts.add());
-  element.append(list, plus);
+  // On a phone the strip is one button naming the design on screen (and how many are open); it opens a short list under
+  // the strip, so one tap never covers most of the view (styles/design-tabs.css shows one or the other by width).
+  const switcher = doc.createElement("button");
+  switcher.type = "button";
+  switcher.className = "design-tabs-switch";
+  switcher.id = "design-tabs-switch";
+  switcher.setAttribute("aria-haspopup", "true");
+  switcher.setAttribute("aria-expanded", "false");
+  const menu = doc.createElement("div");
+  menu.className = "design-tabs-menu";
+  menu.id = "design-tabs-menu";
+  menu.hidden = true;
+  element.append(list, switcher, plus, menu);
   let shown: TabsState = NO_TABS;
+  const isOpen = () => !menu.hidden;
+  const fillMenu = () => menu.replaceChildren(...shown.tabs.map((t) => tabRow(t, t.key === shown.active, parts.titles(), true))); // only while open: the strip alone holds the tabs otherwise
+  const openMenu = (open: boolean) => {
+    menu.hidden = !open;
+    if (open) fillMenu();
+    else menu.replaceChildren();
+    switcher.setAttribute("aria-expanded", String(open));
+    element.dataset.open = String(open);
+  };
+  switcher.addEventListener("click", () => openMenu(!isOpen()));
+  doc.addEventListener("pointerdown", (e) => {
+    if (isOpen() && e.target instanceof Node && !element.contains(e.target)) openMenu(false);
+  });
+  doc.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isOpen()) {
+      openMenu(false);
+      switcher.focus();
+    }
+  });
 
   list.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
@@ -152,52 +183,75 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
     all[(at + (e.key === "ArrowRight" ? 1 : all.length - 1)) % all.length].focus();
   });
 
+  /** One tab's two buttons (its name with the workspace chip, and ×), for the strip and for the phone's list. */
+  const tabRow = (t: DesignTab, on: boolean, titles: Record<string, string>, inMenu: boolean): HTMLElement => {
+    const tab = doc.createElement("div");
+    tab.className = "design-tabs-tab";
+    tab.dataset.key = t.key;
+    tab.dataset.workspace = t.workspace;
+    tab.dataset.active = String(on);
+    const main = doc.createElement("button");
+    main.type = "button";
+    main.className = "design-tabs-main";
+    if (!inMenu) {
+      main.setAttribute("role", "tab");
+      main.setAttribute("aria-selected", String(on));
+      main.tabIndex = on ? 0 : -1;
+    } else if (on) main.setAttribute("aria-current", "true");
+    const chip = workspaceChip(t.workspace, titles);
+    main.title = `${tabName(t.name)} (${chip.toLowerCase()})`;
+    const name = doc.createElement("span");
+    name.className = "design-tabs-name";
+    name.textContent = shortName(t.name);
+    const kind = doc.createElement("span");
+    kind.className = "design-tabs-kind";
+    kind.textContent = chip;
+    main.append(name, kind);
+    main.addEventListener("click", () => {
+      openMenu(false);
+      if (t.key !== shown.active) parts.activate(t.key);
+    });
+    const close = doc.createElement("button");
+    close.type = "button";
+    close.className = "design-tabs-close";
+    close.setAttribute("aria-label", `Close ${tabName(t.name)}`);
+    close.title = `Close ${tabName(t.name)}`;
+    close.textContent = "×";
+    close.addEventListener("click", () => {
+      openMenu(false);
+      parts.close(t.key);
+    });
+    tab.append(main, close);
+    return tab;
+  };
+
   return {
     element,
     render(s) {
       shown = s;
       // One tab means nothing to switch between: Fusion shows its strip then too, and so do we, so "+" is always there.
       element.hidden = s.tabs.length === 0;
+      if (s.tabs.length === 0) openMenu(false);
       const titles = parts.titles();
       plus.disabled = !canAdd(s);
       plus.title = canAdd(s) ? "New design in a new tab" : `${MAX_TABS} designs are open: close one to open another`;
-      list.replaceChildren(
-        ...s.tabs.map((t) => {
-          const on = t.key === s.active;
-          const tab = doc.createElement("div");
-          tab.className = "design-tabs-tab";
-          tab.dataset.key = t.key;
-          tab.dataset.workspace = t.workspace;
-          tab.dataset.active = String(on);
-          const main = doc.createElement("button");
-          main.type = "button";
-          main.className = "design-tabs-main";
-          main.setAttribute("role", "tab");
-          main.setAttribute("aria-selected", String(on));
-          main.tabIndex = on ? 0 : -1;
-          const chip = workspaceChip(t.workspace, titles);
-          main.title = `${tabName(t.name)} (${chip.toLowerCase()})`;
-          const name = doc.createElement("span");
-          name.className = "design-tabs-name";
-          name.textContent = shortName(t.name);
-          const kind = doc.createElement("span");
-          kind.className = "design-tabs-kind";
-          kind.textContent = chip;
-          main.append(name, kind);
-          main.addEventListener("click", () => {
-            if (t.key !== shown.active) parts.activate(t.key);
-          });
-          const close = doc.createElement("button");
-          close.type = "button";
-          close.className = "design-tabs-close";
-          close.setAttribute("aria-label", `Close ${tabName(t.name)}`);
-          close.title = `Close ${tabName(t.name)}`;
-          close.textContent = "×";
-          close.addEventListener("click", () => parts.close(t.key));
-          tab.append(main, close);
-          return tab;
-        }),
-      );
+      const active = s.tabs.find((t) => t.key === s.active);
+      switcher.replaceChildren();
+      if (active) {
+        const name = doc.createElement("span");
+        name.className = "design-tabs-name";
+        name.textContent = shortName(active.name);
+        const kind = doc.createElement("span");
+        kind.className = "design-tabs-kind";
+        kind.textContent = workspaceChip(active.workspace, titles);
+        const count = doc.createElement("span");
+        count.className = "design-tabs-count";
+        count.textContent = String(s.tabs.length);
+        switcher.append(name, kind, count);
+      }
+      switcher.setAttribute("aria-label", `${s.tabs.length} designs open, ${active ? tabName(active.name) : "none"} on screen: choose another`);
+      list.replaceChildren(...s.tabs.map((t) => tabRow(t, t.key === s.active, titles, false)));
+      if (isOpen()) fillMenu();
     },
   };
 }
