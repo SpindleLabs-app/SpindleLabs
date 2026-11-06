@@ -95,8 +95,14 @@ export const MOST_PAIRS = 450 * 450;
  */
 export const UNITS_PER_CORNER = 11;
 
-/** Units of a sphere's mesh at the most chords (a 500 mm sphere: 60 ms to show, 2 faces, 65,024 triangles). */
-export const UNITS_PER_SPHERE = 60;
+/**
+ * Units of a sphere's mesh at the most chords (a 500 mm sphere: 2 faces,
+ * 65,024 triangles). Priced at first at 60 against a calibration taken while
+ * the kernel was still warming up; against the settled kernel (2026-11-05,
+ * warm calibration against warm calls) showing it again needed up to 1.20
+ * times 60, so 60 × 1.20 × 1.25 = 90.
+ */
+export const UNITS_PER_SPHERE = 90;
 
 /**
  * Units per face of a body the kernel meshes again (body_view of a hidden
@@ -143,9 +149,18 @@ export function solveUnits(text: string): number {
  * most seen); a 20 mm box 0.06 (12 triangles, 100 layers, 74 ms); a 100 mm
  * cylinder 0.018 (628, 500, 5.5 s); a 120 mm sphere 0.0019 (59,048, 1,200,
  * 138 s). Generous for big meshes, whose layers each cut only a few of
- * their triangles, but never short.
+ * their triangles. Those figures were against a calibration taken while the
+ * kernel was still warming up (slower, so the units came out low); against
+ * the settled kernel (2026-11-05) the 40-slot grating plate at 0.2 mm needed
+ * up to 1.11 times 0.12, so 0.12 × 1.11 × 1.25 = 0.1665, rounded up to 0.17.
+ * On CI's shared machines the same plate then took from 0.85 up to 1.23
+ * times 0.17 (merge queue 2026-11-05 and 06: 1.07, 1.07 and 1.23, the last
+ * 1,499 ms against 1,217), the worst whenever the calibration came out fast
+ * (0.77 to 0.95 ms): slicing is memory-bound and the calibration
+ * compute-bound, so their ratio moves with the machine. So 0.17 × 1.23 ×
+ * 1.25 = 0.261, rounded up to 0.27.
  */
-export const UNITS_PER_TRIANGLE_LAYER = 0.12;
+export const UNITS_PER_TRIANGLE_LAYER = 0.27;
 
 /**
  * Units of slicing per mm² of the part's footprint (its box seen from above)
@@ -159,9 +174,12 @@ export const UNITS_PER_TRIANGLE_LAYER = 0.12;
  * 1.69 ms a unit), in units per mm²-layer before the share: 100 × 100 × 100
  * mm 6.1e-4 (5.2 s), 150 mm cube 3.7e-4 (10.6 s), 200 × 100 × 100 mm
  * 6.7e-4 (11.4 s); the hunt's box needed 2.1e-4. At 15 % they were 6e-5 to
- * 1e-4. 6e-4 times the full share 1.25 is 7.5e-4: above every one.
+ * 1e-4. That calibration was taken while the kernel was still warming up;
+ * against the settled kernel (2026-11-05, warm calibration against warm
+ * calls) the same three boxes needed up to 1.35 times 6e-4 (the 100 mm
+ * cube), so 6e-4 × 1.35 × 1.25 = 1.01e-3, rounded up to 1.1e-3.
  */
-export const UNITS_PER_AREA_LAYER = 6e-4;
+export const UNITS_PER_AREA_LAYER = 1.1e-3;
 
 /**
  * Units of supports, per style, from the faces that look down above the

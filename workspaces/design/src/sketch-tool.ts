@@ -25,7 +25,8 @@ import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type Sketc
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
-import { constraintMarks, isConstraintKind, isConstraintTool, startConstraintTool, type ConstraintTool } from "./constraint-tool.ts";
+import { dashes } from "./construction.ts";
+import { constraintMarks, dimensionLabels, dimensionLine, isConstraintKind, isConstraintTool, startConstraintTool, type ConstraintTool } from "./constraint-tool.ts";
 
 export { pointAt };
 
@@ -169,7 +170,8 @@ export function startTool(kind: ToolKind, sketch: string): SketchTool {
 }
 
 /** Whether the tool is part way through (a chain going, a first corner down, an arc's ends): what Escape ends. */
-export const toolBusy = (tool: SketchTool): boolean => (tool.kind === "line" || tool.kind === "tangent" ? tool.from !== null : pendingClicks(tool).length > 0);
+export const toolBusy = (tool: SketchTool): boolean =>
+  tool.kind === "line" || tool.kind === "tangent" ? tool.from !== null : isConstraintTool(tool) && tool.kind === "dimension" ? tool.first !== null || !!tool.pending : pendingClicks(tool).length > 0;
 
 /** The tool's clicks while they are not yet points of the sketch's own (a chain's first click, a first corner, a centre, an arc's ends). */
 function pendingClicks(tool: SketchTool): SketchXY[] {
@@ -691,11 +693,15 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     const side = s.face?.side === -1 ? ({ side: -1 } as const) : {};
     const made = new Set((s.projected ?? []).map((p) => p.made));
     const segmentsOf = (curves: ReturnType<typeof curvesOf>) => [...curves.lines.map((l) => [l.a, l.b] as const), ...curves.circles.flatMap((c) => circleSegments(c.centre, c.radius)), ...curves.arcs.flatMap(arcSegments)];
-    const lines = segmentsOf(curvesOf(s.points, s.curves.filter((c) => !made.has(c.id))));
+    const lines = segmentsOf(curvesOf(s.points, s.curves.filter((c) => !made.has(c.id) && c.construction !== true)));
+    // Construction curves (47f) dashed: 10 px apart while edited (the pointer's pixel), else a 60th of the sketch's size.
+    const guides = s.curves.filter((c) => c.construction === true && !made.has(c.id));
+    const period = editing?.tool.sketch === s.id && editing.pixel ? CONSTRUCTION_DASH_PIXELS * editing.pixel : sketchSize(s) / 60;
+    const construction = guides.length === 0 ? {} : { construction: dashes(segmentsOf(curvesOf(s.points, guides)), period) };
     const projected =
       made.size === 0 ? {} : { projected: { lines: segmentsOf(curvesOf(s.points, s.curves.filter((c) => made.has(c.id)))), points: s.points.filter((p) => made.has(p.id)).map((p): SketchXY => [p.x, p.y]) } };
     // 26e: a sketch held with its plane lost is drawn red where it stays (the rebuild's plane warnings, `lost`).
-    if (editing?.tool.sketch !== s.id) return lost.has(s.id) ? { plane, ...side, lines, ...projected, lost: true as const } : { plane, ...side, lines, ...projected };
+    if (editing?.tool.sketch !== s.id) return lost.has(s.id) ? { plane, ...side, lines, ...construction, ...projected, lost: true as const } : { plane, ...side, lines, ...construction, ...projected };
     const points: SketchXY[] = s.points.map((p) => [p.x, p.y]);
     const tool = editing.tool;
     for (const at of pendingClicks(tool)) if (!s.points.some((p) => p.x === at[0] && p.y === at[1])) points.push([at[0], at[1]]);
@@ -703,20 +709,35 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     const lit = (ids: readonly string[]) => segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id))));
     // With Select a press on any of its points drags it (47d3, point-drag.ts; one that can't be dragged says why).
     const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}), ...(s.points.length > 0 ? { grab: s.points.map((p): SketchXY => [p.x, p.y]) } : {}) };
-    return { plane, ...side, lines, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit) } };
+    return { plane, ...side, lines, ...construction, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit) } };
   });
 }
 
-/** What the sketch holds, in words for its status: "3 lines", "1 circle", "4 lines and 2 circles", "2 lines, 1 arc and 1 circle", "1 circle and 2 projected edges" (27d), or "Nothing drawn yet" when empty. */
+/** What the sketch holds, in words for its status: "3 lines", "1 circle", "4 lines and 2 circles", "2 lines, 1 arc and 1 circle", "1 circle and 2 projected edges" (27d), "4 lines and 1 construction curve" (47f), or "Nothing drawn yet" when empty. */
 export function curveCount(sketch: Sketch): string {
   const made = new Set((sketch.projected ?? []).map((p) => p.made));
   const count = (kind: string, word: string) => {
-    const n = sketch.curves.filter((c) => c.kind === kind && !made.has(c.id)).length;
+    const n = sketch.curves.filter((c) => c.kind === kind && !made.has(c.id) && c.construction !== true).length;
     return n ? `${n} ${word}${n === 1 ? "" : "s"}` : "";
   };
   const projected = made.size === 0 ? "" : `${made.size} projected edge${made.size === 1 ? "" : "s"}`;
-  const words = [count("line", "line"), count("arc", "arc"), count("circle", "circle"), projected].filter(Boolean);
+  // Construction curves (47f) are counted apart, since the outline leaves them out.
+  const guides = sketch.curves.filter((c) => c.construction === true && !made.has(c.id)).length;
+  const construction = guides === 0 ? "" : `${guides} construction curve${guides === 1 ? "" : "s"}`;
+  const words = [count("line", "line"), count("arc", "arc"), count("circle", "circle"), projected, construction].filter(Boolean);
   return words.length ? [words.slice(0, -1).join(", "), words.at(-1)].filter(Boolean).join(" and ") : "Nothing drawn yet";
+}
+
+/** How far apart a construction curve's dashes are drawn while its sketch is edited, in screen pixels (construction.ts `dashes`). */
+export const CONSTRUCTION_DASH_PIXELS = 10;
+
+/** A sketch's size for drawing: the diagonal of its points' box (1 mm with fewer than two apart). */
+function sketchSize(s: Sketch): number {
+  if (s.points.length === 0) return 1;
+  const xs = s.points.map((p) => p.x);
+  const ys = s.points.map((p) => p.y);
+  const circles = s.curves.flatMap((c) => (c.kind === "circle" ? [c.radius * 2] : []));
+  return Math.max(Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), ...circles, 1);
 }
 
 /** How big a constraint's mark is drawn, in screen pixels (constraint-tool.ts `constraintMarks`). */
@@ -737,7 +758,10 @@ function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefine
     return p ? [p.x, p.y] : null;
   };
   const ring = (p: SketchXY | null): (readonly [SketchXY, SketchXY])[] => (p ? circleSegments(p, size / 2) : []);
-  const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[] } = {};
+  const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[]; labels?: { id: string; at: SketchXY; text: string; fighting?: boolean }[] } = {};
+  // The dimensions' values (47e), red with the marks of the ones that fought.
+  const labels = dimensionLabels(s, size).map((l) => (fighting.has(l.id) ? { ...l, fighting: true } : l));
+  if (labels.length > 0) out.labels = labels;
   // With Select (47d2), a constraint's mark is picked like a curve: lit with the picks, and lighter under the pointer.
   const select = tool.kind === "select" ? tool : null;
   const shownLit = new Set(select ? [...select.picked, ...(select.hover === null ? [] : [select.hover])] : []);
@@ -753,9 +777,12 @@ function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefine
     if (hover.length > 0) out.hover = hover;
   }
   if (isConstraintTool(tool)) {
-    const hover = tool.hover === null ? [] : "point" in tool.hover ? ring(at(tool.hover.point)) : lit([tool.hover.line]);
+    const hover = tool.hover === null ? [] : "point" in tool.hover ? ring(at(tool.hover.point)) : lit(["line" in tool.hover ? tool.hover.line : tool.hover.curve]);
     if (hover.length > 0) out.hover = hover;
     if (tool.first !== null) out.picked = ring(at(tool.first));
+    // A dimension waiting for its value (47e) is drawn lit where it will be, its value in the box.
+    const pending = tool.pending ? dimensionLine(s, tool.pending, size) : null;
+    if (pending) out.picked = [...lit(tool.pending?.kind === "diameter" ? [tool.pending.circle] : []), ...pending.segments];
   }
   return out;
 }

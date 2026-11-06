@@ -1,0 +1,14 @@
+/* A sketch's dimension values (step 47e, the viewport's sketch-labels.ts):
+   small dark tags over the view, each centred on its spot by its own
+   transform, in the constraint marks' blue, red while one fought the size
+   just refused. A tag takes clicks (a double-click, or a tap with the
+   Dimension tool, changes its value); the layer around them takes none, so
+   the sketch under it still hears the pointer. ":not(#none)" lifts a rule
+   over the base layout's "#workspace button". */
+.sketch-labels { position: absolute; inset: 0; z-index: 15; pointer-events: none; overflow: hidden; }
+.sketch-labels .sketch-label:not(#none) { position: absolute; left: 0; top: 0; pointer-events: auto; padding: 1px 5px; font: 12px ui-monospace, monospace; line-height: 16px; white-space: nowrap; color: var(--text-soft); background: var(--fill-22-25-30-092); border: 1px solid var(--accent); border-radius: var(--look-radius-s); cursor: text; touch-action: manipulation; }
+.sketch-labels .sketch-label[hidden] { display: none; }
+.sketch-labels .sketch-label:hover { color: var(--white); }
+.sketch-labels .sketch-label-fighting:not(#none) { border-color: var(--danger); color: var(--text-ff9b9b); }
+/* Phone width: a tag big enough for a finger. */
+@media (max-width: 640px) { .sketch-labels .sketch-label:not(#none) { min-height: 28px; padding: 5px 8px; font-size: 14px; } }

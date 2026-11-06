@@ -6,6 +6,7 @@
 
 import { CUSTOM_NAMES, DEFAULT_CUSTOM, parseHex, toHex, type CustomColours } from "./custom-theme.ts";
 import { boxShown, parseLength, wordsInUnit, type Unit } from "@fission/core";
+import { MOUSE_PRESETS, type MousePreset } from "@fission/core";
 import { THEME_CHOICES, type ThemeChoice } from "./theme-choice.ts";
 import { UNIT_CHOICES } from "./unit-choice.ts";
 
@@ -90,6 +91,11 @@ export interface SettingsParts {
   onSnap?: (on: boolean) => void;
   /** Where the AI assistant's provider settings live: a row with a button that closes Settings and shows them. */
   onAiSettings?: () => void;
+  /** The stored mouse preset and the way to change it (U2d); the Mouse row and its table show only when both are given. */
+  mouse?: MousePreset;
+  onMouse?: (preset: MousePreset) => void;
+  /** Opens Report a bug (bug-report.ts); the About card's row shows only when given. */
+  onReportBug?: () => void;
 }
 
 /** Fill the dialog: a header with Close, then one card per section. */
@@ -176,6 +182,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
         unitRow.append(el("span", undefined, "Units"), group);
         card.append(unitRow);
       }
+      if (parts.mouse !== undefined && parts.onMouse) card.append(mouseBlock(el, parts.mouse, parts.onMouse));
       const row = el("div", "settings-row");
       const label = el("span", undefined, "Keyboard shortcuts");
       const open = el("button", "settings-action", "Show");
@@ -190,6 +197,18 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
       card.append(el("p", undefined, "Your projects are kept in this browser and are never sent to us. An account is optional and never needed to design, slice or save; signing in sends only what the privacy page lists. The optional AI assistant sends only what you ask it, and only once you turn it on."));
     } else if (s.id === "about") {
       card.append(el("p", undefined, parts.version ? `SpindleLabs, ${parts.version}` : "SpindleLabs"));
+      if (parts.onReportBug) {
+        const row = el("div", "settings-row");
+        const report = el("button", "settings-action", "Report a bug");
+        report.type = "button";
+        report.id = "settings-report-bug";
+        report.addEventListener("click", () => {
+          dialog.close();
+          parts.onReportBug?.();
+        });
+        row.append(el("span", undefined, "Something not working?"), report);
+        card.append(row);
+      }
     }
     body.append(card);
   }
@@ -246,6 +265,43 @@ function gridRows(el: El, card: HTMLElement, startMm: number, startUnit: Unit, a
     unit = next;
     show();
   };
+}
+
+/** The Mouse row: a choice of presets, and under it the table of what each button and key does in the one chosen. */
+function mouseBlock(el: El, start: MousePreset, choose: (preset: MousePreset) => void): HTMLElement {
+  const block = el("div", "settings-mouse");
+  const row = el("div", "settings-row settings-mouse-row");
+  const group = el("div", "settings-choices");
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", "Mouse controls");
+  const summary = el("p", "settings-mouse-summary");
+  const table = el("table", "settings-mouse-table");
+  table.setAttribute("aria-label", "What each mouse button and key does");
+  const show = (id: MousePreset) => {
+    const preset = MOUSE_PRESETS.find((p) => p.id === id)!;
+    summary.textContent = preset.summary;
+    table.replaceChildren(...preset.rows.map((r) => {
+      const tr = el("tr");
+      tr.append(el("th", undefined, r.gesture), el("td", undefined, r.does));
+      return tr;
+    }));
+    for (const other of group.children) other.setAttribute("aria-checked", String((other as HTMLElement).dataset.mouse === id));
+  };
+  for (const p of MOUSE_PRESETS) {
+    const b = el("button", "settings-choice", p.label);
+    b.type = "button";
+    b.dataset.mouse = p.id;
+    b.setAttribute("role", "radio");
+    b.addEventListener("click", () => {
+      choose(p.id);
+      show(p.id);
+    });
+    group.append(b);
+  }
+  row.append(el("span", undefined, "Mouse"), group);
+  block.append(row, summary, table);
+  show(start);
+  return block;
 }
 
 type El = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => HTMLElementTagNameMap[K];

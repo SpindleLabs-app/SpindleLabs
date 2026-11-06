@@ -9,6 +9,7 @@ export { SPLIT_MIN_WIDTH_PX, defaultSplit, splitChoices, type SplitEntry } from 
 export { WarmPool, type WarmHooks } from "./warm.ts";
 export { CUSTOM_KEYS, applyCustom, readCustom, THEME_CHOICES, THEME_COLOURS, THEME_SETTING, applyTheme, isThemeChoice, readThemeChoice, resolveTheme, startTheme, type Theme, type ThemeChoice } from "./theme-choice.ts";
 export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type SettingsParts, type SettingsSection, type SettingsStorage, type SettingValue } from "./settings.ts";
+export { BUG_REPORT_EMPTY, ISSUES_NEW, MAX_REPORT_URL, bugReportBody, bugReportDialog, bugReportTitle, bugReportUrl, type BugFacts, type BugReport } from "./bug-report.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
@@ -26,5 +27,6 @@ export { ACCOUNT_NOTE, ACCOUNT_TAG, NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIO
 export { startTooltips, tipWords, quickInfoFor, TIP_SHORT_MAX, type TipWords, type Tooltips } from "./tooltip.ts";
 export { agoWords, historyPanel, stepWords, type HistoryPanel, type HistoryPanelParts } from "./history-panel.ts";
 export { currentDesignDefaults, DEFAULT_GRID_MM, DEFAULT_GRID_SNAP_ON, GRID_SIZE_SETTING, GRID_SNAP_SETTING, readGridSize, readGridSnap, startDesignDefaults, type DesignDefaultChoices, type DesignDefaults } from "./design-defaults.ts";
+export { currentMouse, MOUSE_SETTING, readMouseChoice, startMouse } from "./mouse-choice.ts";
 export { currentUnit, readUnitChoice, startUnits, UNIT_CHOICES, UNIT_EVENT, UNIT_SETTING } from "./unit-choice.ts";
 export { CUSTOM_NAMES, DEFAULT_CUSTOM, contrast, deriveCustom, parseHex, readTokens, toHex, type CustomColours, type CustomResult } from "./custom-theme.ts";
