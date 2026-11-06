@@ -77,7 +77,10 @@ function combineFields(target: string, tools: readonly string[], operation: Comb
  * The design with Combine `id` changed to these bodies and choices, in its
  * place (its id and name kept): refused as `insertCombine` refuses, a body
  * made after the Combine counting as one after the marker does. Choices
- * that change nothing give back the same design.
+ * that change nothing give back the same design. A change forgets the
+ * faces its pieces were numbered with (hunt 11-06), so the next build
+ * records them afresh: editing the Combine is how the person confirms its
+ * pieces as they are, and its warning that they changed goes.
  */
 export function changedCombine(doc: DesignDocument, id: string, target: string, tools: readonly string[], operation: CombineOperation, keepTools: boolean): DesignDocument {
   const at = doc.timeline.features.findIndex((f) => f.id === id);
@@ -96,9 +99,16 @@ export function changedCombine(doc: DesignDocument, id: string, target: string, 
     };
     const [t, ...ts] = [target, ...tools].map(words);
     const intent = { ...old.intent, parameters: { ...old.intent.parameters, operation, keepTools }, summary: combineSummary(t, ts, operation, keepTools) };
-    return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? { ...old, intent } : f)) } };
+    return forgetPieces({ ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? { ...old, intent } : f)) } }, id);
   }
   const items = itemsFor(doc, target, tools, at, `${old.provenance.self.label}, so it`);
   const changed: Feature = { ...old, ...combineFields(target, tools, operation, keepTools, items), provenance: { ...old.provenance, from: fromOf(items) } };
-  return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? changed : f)) } };
+  return forgetPieces({ ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? changed : f)) } }, id);
+}
+
+/** The design with the remembered faces of Combine `id`'s pieces dropped (hunt 11-06), their numbers kept. */
+function forgetPieces(doc: DesignDocument, id: string): DesignDocument {
+  const ours = (b: { id: string; faces?: string[] }) => b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === id;
+  if (!doc.bodies?.some(ours)) return doc;
+  return { ...doc, bodies: doc.bodies.map((b) => (ours(b) ? { id: b.id, number: b.number } : b)) };
 }

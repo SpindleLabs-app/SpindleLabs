@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
-import { insertCombine } from "../src/combine.ts";
+import { changedCombine, insertCombine } from "../src/combine.ts";
 import { insertPreset, numberPieces, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { changedMove, insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, builtPieceFaces, rebuildTimeline } from "../src/rebuild.ts";
@@ -93,13 +93,47 @@ test("a remembered piece no piece matches any more is given by rank order with a
   const third = await built(edited);
   const c1 = third.build.results[s.c1];
   assert.equal(c1.status, "built", JSON.stringify(c1));
-  assert.deepEqual(c1.status === "built" && c1.pieces, { message: "Combine 1's pieces changed since they were numbered, so Body 4 may now be another piece: check the items that use it" });
+  assert.deepEqual(c1.status === "built" && c1.pieces, { message: "Combine 1's pieces changed since they were numbered, so Body 4 may now be another piece: check the items that use it, then edit Combine 1 to keep its pieces as they are now" });
   // The rest: 70 × 20 × 10 − 10 × 15 × 10 = 14,000 − 1,500 = 12,500; joined with Box 3: + 1,000 − 250 = 13,250.
   near(await third.volume(`body:${s.c1}/piece:1`), 13250);
   assert.equal(third.build.bodies[`body:${s.c1}/piece:2`], undefined, "no middle piece any more");
   // What the piece was numbered with stays remembered, so the warning stays while the pieces differ.
   assert.deepEqual(third.doc.bodies, second.doc.bodies);
   await third.cache.close();
+});
+
+test("editing the warned Combine confirms its pieces as they are now: their faces are recorded afresh and the warning goes", async () => {
+  const s = await twoSlots();
+  const second = await built(s.doc);
+  await second.cache.close();
+  // Warned as in the test above: slot B only notches the bar, so piece 1 is the rest by rank order.
+  const third = await built(changedMove(second.doc, s.moveB, { ...NO_MOVE, x: 50, y: 5, z: -5 }));
+  await third.cache.close();
+  const r3 = third.build.results[s.c1];
+  assert.ok(r3.status === "built" && r3.pieces !== undefined, "warned");
+  // Keep tools turned on: the Combine's own edit drops what its pieces were numbered with, numbers kept, in that edit.
+  const edited = changedCombine(third.doc, s.c1, `body:${s.bar}`, [`body:${s.a}`, `body:${s.b}`], "cut", true);
+  const piece = (d: DesignDocument, k: number) => d.bodies!.find((x) => x.id === `body:${s.c1}/piece:${k}`);
+  assert.deepEqual(piece(edited, 1), { id: `body:${s.c1}/piece:1`, number: 4 });
+  assert.deepEqual(piece(edited, 2), { id: `body:${s.c1}/piece:2`, number: 5 });
+  // Built: no warning, and piece 1's faces recorded afresh as the rest's (x 30..100 less the notch): the bar's five but its
+  // left end, slot A's right side (x = 30), and slot B's notch: its left (x = 50), right (x = 60) and front (y = 5) sides.
+  const fourth = await built(edited);
+  const r4 = fourth.build.results[s.c1];
+  assert.ok(r4.status === "built" && r4.pieces === undefined, JSON.stringify(r4.status === "built" && r4.pieces));
+  const rest = [`face:${s.bar}/back`, `face:${s.bar}/bottom`, `face:${s.bar}/front`, `face:${s.bar}/right`, `face:${s.bar}/top`, `face:${s.a}/right`, `face:${s.b}/front`, `face:${s.b}/left`, `face:${s.b}/right`].sort();
+  assert.deepEqual(piece(fourth.doc, 1), { id: `body:${s.c1}/piece:1`, number: 4, faces: rest });
+  // Piece 2 is not built now, so it has nothing to record.
+  assert.deepEqual(piece(fourth.doc, 2), { id: `body:${s.c1}/piece:2`, number: 5 });
+  await fourth.cache.close();
+  // The next build finds piece 1 by those faces: still no warning, nothing changes.
+  const fifth = await built(fourth.doc);
+  const r5 = fifth.build.results[s.c1];
+  assert.ok(r5.status === "built" && r5.pieces === undefined);
+  assert.equal(fifth.doc, fourth.doc);
+  await fifth.cache.close();
+  // A choice that changes nothing is no edit: the faces stay.
+  assert.equal(changedCombine(third.doc, s.c1, `body:${s.bar}`, [`body:${s.a}`, `body:${s.b}`], "cut", false), third.doc);
 });
 
 test("an old version 8 file with pieces opens and gets each piece's faces, as its Combine made it, on its first build", async () => {

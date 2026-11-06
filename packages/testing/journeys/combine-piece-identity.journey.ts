@@ -64,7 +64,7 @@ test("hand-worked: Combine 2 stays on the far piece when a slot moves; a piece n
   assert.equal(a.warning(), null);
   assert.equal(row().classList.contains("kept"), false);
   // Slot B to x 50..60, y 5..45: it only notches the bar, which is in two pieces; no piece has the far piece's faces.
-  const words = "Combine 1's pieces changed since they were numbered, so Body 4 may now be another piece: check the items that use it.";
+  const words = "Combine 1's pieces changed since they were numbered, so Body 4 may now be another piece: check the items that use it, then edit Combine 1 to keep its pieces as they are now.";
   await moveB(50, 5);
   // Near 4,000; the rest x 30..100 less the notch x 50..60, y 5..20: 14,000 − 1,500 = 12,500, which piece 1 is now, so
   // Combine 2 joins Box 3 to it: 12,500 + 1,000 − 250 = 13,250; 4,000 + 13,250 = 17,250.
