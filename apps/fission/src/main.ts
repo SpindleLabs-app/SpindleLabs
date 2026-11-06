@@ -17,6 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
@@ -161,6 +162,7 @@ function projectChanged(label = "Edit", mergeKey?: string) {
   if (keepOnChange !== null && mounting === 0) keep(keepOnChange);
   autosave?.changed();
   if (mounting === 0) ctx.history.record(label, mergeKey);
+  tabs?.sync();
 }
 /** Runs a show or mount; once the last one ends, takes whatever defaults the workspaces filled in into the present undo step. */
 function mountingDone<T>(run: () => T): T {
@@ -366,6 +368,7 @@ function showPage(page: Page) {
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
+  tabs?.sync();
   if (workspace) lastWorkspace = workspace.id;
   if (swap) {
     if (swap === "community") closeSplit();
@@ -663,6 +666,7 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   // started afresh on a reopened project) is not.
   autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
+  tabs?.sync();
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
 function keepOnFirstChange() {
@@ -760,6 +764,7 @@ function replaceProject(project: Project) {
   show(current); // mounts the workspace on the new project
   if (split) mountSplit(split.id); // and the second one
   ctx.history.reset(); // a new start: nothing from the old project to undo
+  tabs?.landed();
 }
 /**
  * Replaces the open project with the one in `text`; throws, leaving the
@@ -775,6 +780,7 @@ function openProject(text: string, fileName = "") {
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
+  tabs?.expect(null);
   const apart = autosave?.finish() ?? null;
   autosave = null;
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
@@ -810,6 +816,7 @@ async function openStored(id: string, modified: Date | null) {
   const kept = keptEntry(local, id);
   const project = kept === null ? await store.open(id) : projectFromJson(kept, workspaces);
   // Changes this tab couldn't store (another tab saved since) are kept as a separate project, and said, as Open does (round 2 hunt A5).
+  tabs?.expect(id);
   const apart = autosave?.finish() ?? null;
   autosave = null;
   guard.finished();
@@ -877,6 +884,41 @@ const projects = listedProjects(document, {
   open: openStored,
 });
 
+/** A new, empty project in place of the open one (the home screen's New, and "+" on the design tabs). */
+async function startNewProject(keepNow = false) {
+  await started;
+  openings++; // a project still opening is never kept or counted as reopened
+  endOffer();
+  guard.finished();
+  tabs?.expect(null);
+  keepOnFirstChange(); // first: the last project's autosave must not store the new one over it
+  replaceProject(emptyProject());
+  // A new tab is kept at once, so it is still there when another tab is chosen and chosen back.
+  if (keepNow && keepOnChange !== null) {
+    keep(keepOnChange);
+    autosave?.changed(); // stored now, not at its first change
+  }
+  fileStatus("");
+}
+/** The design tabs (only when the build has the home screen, which they are part of): one tab for each project open at once. */
+const tabs: ShellTabs | null = !__HOME_SCREEN__
+  ? null
+  : shellTabs(document, {
+      after: $("topbar"),
+      keptId,
+      projectName: () => ctx.project.name,
+      workspace: () => current,
+      titles: () => Object.fromEntries(workspaces.map((w) => [w.id, w.title])),
+      open: async (id) => openStored(id, (await store.list()).find((s) => s.id === id && !s.problem)?.modified ?? null),
+      start: () => startNewProject(true),
+      preselect: (id) => {
+        if (split?.id !== id && pages.includes(id)) current = id as Page; // the next project shows in the workspace its tab was in
+      },
+      unsaved: () => shownStatus.state !== "saved",
+      report: fileStatus,
+      kept: async () => (await store.list()).map((s) => s.id),
+      storage: local,
+    });
 /** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
 const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
   list: () => store.list(),
@@ -891,15 +933,7 @@ const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
     if (id === keptId()) throw new Error("rename the open project in its own name box");
     await renameKept(store, id, name);
   },
-  newProject: async () => {
-    await started;
-    openings++; // a project still opening is never kept or counted as reopened
-    endOffer();
-    guard.finished();
-    keepOnFirstChange(); // first: the last project's autosave must not store the new one over it
-    replaceProject(emptyProject());
-    fileStatus("");
-  },
+  newProject: () => startNewProject(),
   chooseFile: () => $("open-file").click(),
   showGuide: () => $("guide-open").click(),
   workspaceTitle,
@@ -951,6 +985,7 @@ $("opening-fresh").addEventListener("click", () => {
   openings++; // the project being opened is never kept or counted as reopened
   endOffer();
   guard.finished(); // the last project didn't freeze the tab: the next visit opens it as before
+  tabs?.expect(null);
   keepOnFirstChange(); // first: the last project's autosave must not store the new one over it
   replaceProject(emptyProject());
   // The file is never kept: the mark says again what it said for the last project, kept as it was.
@@ -1469,6 +1504,7 @@ async function start() {
 // Save, Open, a drop and a paste wait for this: until the last project is
 // open, ctx.project is the empty one the app starts with.
 const started = start();
+if (tabs) void started.then(() => tabs.restore());
 if (home) void started.then(() => home.show());
 appLoaded(started.then(shownOnScreen), ctx.kernel); // index.html's skeleton goes once the project is shown and the kernel has answered
 ctx.kernel.call("kernel_version").then((v) => {
