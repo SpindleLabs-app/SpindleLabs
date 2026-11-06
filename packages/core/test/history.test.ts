@@ -683,3 +683,52 @@ test("jumpTo is refused inside an undo step, and a failed restore moves nothing"
   fail = false;
   assert.equal(g.jumpTo(0), "");
 });
+
+test("save and load (design tabs): the steps come back when the project is as it was left, and undo works through them", () => {
+  const a = rig();
+  a.edit(50, "Width 50");
+  a.edit(60, "Width 60");
+  // Start 40, steps 50 and 60, present 60 (index 2). Leave this tab:
+  const saved = a.h.save();
+  // Another project is on screen (width 7); its history starts afresh, then the first one is shown again as it was left.
+  a.h.reset();
+  a.doc.w = 7;
+  a.h.reset();
+  assert.equal(a.h.load(saved), false); // 7 is not the saved present (60): nothing changes
+  assert.equal(a.h.canUndo(), false);
+  a.doc.w = 60;
+  assert.equal(a.h.load(saved), true);
+  assert.deepEqual(a.h.steps().map((s) => s.label), ["", "Width 50", "Width 60"]);
+  assert.equal(a.h.undo(), "Width 60");
+  assert.equal(a.doc.w, 50); // one undo from 60 is 50
+  assert.equal(a.h.undo(), "Width 50");
+  assert.equal(a.doc.w, 40);
+  assert.equal(a.h.redo(), "Width 50");
+});
+
+test("save is a copy: steps made after it do not change it, and an undone present is saved where it stood", () => {
+  const { h, doc, edit } = rig();
+  edit(50);
+  const saved = h.save(); // start 40, step 50, present 50
+  edit(70);
+  doc.w = 50; // back to the saved present by hand
+  assert.equal(saved.kept.length, 2); // still two entries: the 70 step is not in it
+  h.reset();
+  assert.equal(h.load(saved), true);
+  assert.deepEqual(h.steps().map((s) => s.label), ["", "Width 50"]);
+  h.undo(); // present 40 (index 0)
+  const atStart = h.save();
+  assert.equal(atStart.index, 0);
+  h.reset();
+  doc.w = 40;
+  assert.equal(h.load(atStart), true);
+  assert.equal(h.canUndo(), false);
+  assert.equal(h.redoLabel(), "Width 50"); // the redo step was kept
+});
+
+test("load is refused inside an undo step and for an empty save", () => {
+  const { h } = rig();
+  const saved = h.save();
+  assert.throws(() => h.step("x", () => h.load(saved)), /can't load steps while an undo step is running/);
+  assert.equal(h.load({ kept: [], index: 0 }), false);
+});

@@ -415,6 +415,18 @@ export class ViewportView {
     return { position: this.camera.position.toArray(), target: this.controls.target.toArray(), up: up.toArray() };
   }
 
+  /**
+   * Puts the camera back at `pose` from `cameraPose()` earlier (a design tab returned to, tabs step 2), the near and far
+   * planes scaled with the change in distance as zooming does. A pose with a number that is not finite is ignored.
+   */
+  restorePose(pose: CameraPose) {
+    if (![...pose.position, ...pose.target, ...pose.up].every(Number.isFinite)) return;
+    const before = this.camera.position.distanceTo(this.controls.target);
+    const after = new THREE.Vector3(...pose.position).distanceTo(new THREE.Vector3(...pose.target));
+    this.camera.up.set(...pose.up);
+    this.setPose(pose, before > 0 && after > 0 ? after / before : 1);
+  }
+
   /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims); `zoom` scales the near and far planes with the distance in 3D, so nothing is clipped close up. */
   private setPose(pose: CameraPose, zoom = 1) {
     this.camera.position.set(...pose.position);

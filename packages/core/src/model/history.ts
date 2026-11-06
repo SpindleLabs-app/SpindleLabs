@@ -44,6 +44,17 @@ export interface History {
   undo(): string | null;
   /** Puts back the step last undone; returns its label, or null when there is nothing to redo. */
   redo(): string | null;
+  /**
+   * The steps kept, to put back later with `load` (a design tab left and returned to, tabs step 2). Opaque: a copy, so
+   * later steps never change it.
+   */
+  save(): SavedHistory;
+  /**
+   * Puts back the steps `save` gave, when the project as it is now is exactly the present they ended at (the same text);
+   * returns false and changes nothing otherwise (a different project, or one changed since: the caller starts afresh).
+   * Refused inside an undo step, like reset.
+   */
+  load(saved: SavedHistory): boolean;
   /** Forgets every step: the project as it is now becomes the start (a project opened or started afresh). */
   reset(): void;
   /**
@@ -91,6 +102,12 @@ export interface History {
   busy(): boolean;
   /** Settles once no held work runs, including work held while waiting; at once when none does. */
   whenIdle(): Promise<void>;
+}
+
+/** The steps of a history, kept by `History.save` (opaque). */
+export interface SavedHistory {
+  readonly kept: readonly { snapshot: string; label: string; mergeKey: string | undefined; at: number }[];
+  readonly index: number;
 }
 
 /** One line of `History.steps()`. */
@@ -224,6 +241,17 @@ export function createHistory(options: HistoryOptions): History {
       if (index === entries.length - 1) return null;
       go(index + 1);
       return entries[index].label;
+    },
+    save: () => ({ kept: entries.map((e) => ({ ...e })), index }),
+    load(saved) {
+      refuseInStep("load steps");
+      const present = saved.kept[saved.index];
+      if (!present || saved.kept.length === 0 || options.capture() !== present.snapshot) return false;
+      entries = saved.kept.map((e) => ({ ...e }));
+      index = saved.index;
+      lastWasRecord = false;
+      changed();
+      return true;
     },
     reset() {
       refuseInStep("start the history afresh");

@@ -68,6 +68,8 @@ export const historyNotBuilt: History = {
   record: notBuilt,
   undo: notBuilt,
   redo: notBuilt,
+  save: notBuilt,
+  load: notBuilt,
   reset: notBuilt,
   amend: notBuilt,
   step: notBuilt,
