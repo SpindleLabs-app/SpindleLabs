@@ -56,7 +56,7 @@ def read(path):
 
 def strip(name):
     """A mutant's name without line:column, which move whenever code above
-    it changes ("src/a.rs:12:5: replace x" -> "src/a.rs: replace x")."""
+    it changes ("FILE:12:5: replace x" -> "FILE: replace x")."""
     return re.sub(r"^([^:]+):\d+:\d+:", r"\1:", name)
 
 
