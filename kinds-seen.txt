@@ -1,0 +1,21 @@
+check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/files.ts
+check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/history.ts
+check TypeScript mutants: explained.json lists mutants that no longer survive in workspaces/design/src/document.ts
+check TypeScript mutants: survivors no test kills in packages/ai/src/commands.ts
+check TypeScript mutants: survivors no test kills in packages/ai/src/hosted.ts
+check TypeScript mutants: survivors no test kills in packages/ai/src/http.ts
+check TypeScript mutants: survivors no test kills in packages/ai/src/local.ts
+check TypeScript mutants: survivors no test kills in packages/ai/src/ollama.ts
+check TypeScript mutants: survivors no test kills in packages/ai/src/prompt.ts
+check TypeScript mutants: survivors no test kills in packages/core/src/model/shortcuts.ts
+check TypeScript mutants: survivors no test kills in packages/storage/src/autosave.ts
+check TypeScript mutants: survivors no test kills in packages/storage/src/unsaved.ts
+check TypeScript mutants: survivors no test kills in packages/testing/src/boolean-naming-model.ts
+check TypeScript mutants: survivors no test kills in packages/viewport/src/framing.ts
+check TypeScript mutants: survivors no test kills in packages/viewport/src/pane.ts
+check TypeScript mutants: survivors no test kills in workspaces/design/src/boolean-names.ts
+check TypeScript mutants: survivors no test kills in workspaces/design/src/document.ts
+check soak: the soak's cycle stopped (seed #): page.waitForFunction: Timeout #ms exceeded.
+check the ts-mutants job failed with nothing more specific reported
+monkey settles: the page was still changing # s after the action
+monkey the tester itself: locator.click: Timeout #ms exceeded.

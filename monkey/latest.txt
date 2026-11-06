@@ -1,4 +1,4 @@
-tested commit f369e4e on main, 2026-11-04 22:41 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/41912723942)
-Monkey, seeds 202611040-202611041: 2 session(s) of 2000 actions in Chromium; 1 FAILED
-seed 202611040: FAIL: the tester itself: page.evaluate: TypeError: Cannot read properties of null (reading 'click')
-seed 202611041: pass (2000 actions)
+tested commit 9a638c6 on main, 2026-11-06 00:56 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42111749151)
+Monkey, seeds 202611050-202611051: 2 session(s) of 2000 actions in Chromium; 0 Combines made of 22 tried; 2 FAILED
+seed 202611050: FAIL: the tester itself: locator.click: Timeout 2000ms exceeded.
+seed 202611051: FAIL: settles: the page was still changing 6 s after the action
