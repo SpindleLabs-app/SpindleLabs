@@ -13,7 +13,7 @@ import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, Ske
 import { XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { counted, curvePoints, insertAt, insertItem, isSketchItem, makesBody, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { constraintPoints, counted, curvePoints, insertAt, insertItem, isSketchItem, makesBody, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
 import { keptConstraints, withoutCurveConstraints } from "./constraints.ts";
@@ -360,7 +360,12 @@ export function pinNewPoints(before: DesignDocument, after: DesignDocument, sket
     const t = targets.find((x) => x.at[0] === p.x && x.at[1] === p.y);
       if (t) pins.push(pinOf(p.id, t, own));
   }
-  return pins.length === (sketch.pins?.length ?? 0) ? after : withRefs(after, sketch, pins);
+  if (pins.length === (sketch.pins?.length ?? 0)) return after;
+  // A constraint can't name a point that follows a body: one the same edit made on a point it pins (a rectangle's own
+  // Horizontal on a corner at the origin, the solver bug hunt 2026-11-06) goes, or the design would not open again.
+  const pinned = new Set(pins.map((p) => p.point));
+  const constraints = sketch.constraints.filter((c) => !constraintPoints(c).some((p) => pinned.has(p)));
+  return withRefs(after, constraints.length === sketch.constraints.length ? sketch : { ...sketch, constraints }, pins);
 }
 
 /** Point `point` pinned to target `t`, its feature named unless it is `own`, the feature whose face the sketch is on (as 0.26 wrote pins). */

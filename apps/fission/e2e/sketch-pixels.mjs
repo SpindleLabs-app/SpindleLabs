@@ -157,9 +157,13 @@ try {
   // Each tool's clicks are waited for before the next key: a key pressed while a click is still being
   // snapped would take that click (see the TC2 finding in docs/progress/cad.md).
   const segments = (n) => page.waitForFunction((k) => document.querySelector("#viewport").dataset.sketchLines === k, String(n), { timeout: 5000 });
-  await page.keyboard.press("r");
-  for (const p of RECT) await clickPlane(page, p);
+  // The rectangle drawn as four lines: the Rectangle tool adds its Horizontal and Vertical marks beside the sides (the solver
+  // bug hunt, 2026-11-06), and these probes and images are of the curves alone. (sketch-tool.mjs checks the Rectangle tool.)
+  await page.keyboard.press("l");
+  const [[x0, y0], [x1, y1]] = RECT;
+  for (const p of [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]) await clickPlane(page, p);
   await segments(4);
+  await page.keyboard.press("Escape");
   await page.keyboard.press("l");
   for (const p of CHAIN) await clickPlane(page, p);
   await segments(6);
