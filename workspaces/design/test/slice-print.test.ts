@@ -13,7 +13,8 @@ import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
 import { fileNameFor } from "@fission/ui";
 import { PRESET_PICKED_KEY, writePresets, type PrintPreset } from "@fission/print";
-import { gcodeName, progressWords, gcodeOfPackage, printMovesOf, refusalWords, SliceDropped, printFileName, printFileOf, printLead, refusalOf, levelNote, levelNoteOf, stopSlices, fileCrawl, FILE_CRAWL_MIN_MS, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type PrintFacts } from "../src/slice-print.ts";
+import { printFileOf, sliceBodies, slicePrint } from "../src/slice-print.ts";
+import { gcodeName, progressWords, gcodeOfPackage, printMovesOf, refusalWords, SliceDropped, printFileName, printLead, refusalOf, levelNote, levelNoteOf, stopSlices, fileCrawl, FILE_CRAWL_MIN_MS, printWords, stackStl, stlLowestZ, timeWords, unprintedWords, type PrintFacts } from "@fission/print";
 import { FILE_DEFAULTS, NOZZLE_KEY, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, PRINT_DEFAULTS, type FileChoices, type PrintChoices } from "@fission/print";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
