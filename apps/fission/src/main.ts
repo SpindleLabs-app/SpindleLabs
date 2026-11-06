@@ -17,10 +17,10 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
@@ -83,6 +83,8 @@ const workspaceTitle = (id: WorkspaceId) => workspaces.find((w) => w.id === id)?
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // Optional accounts (accounts.config.mjs): with the switch off, the build has no account code and contacts no service.
 declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
+/** The home screen (home.config.mjs): the app opens on it over the last project; off in the shipped build until released. */
+declare const __HOME_SCREEN__: boolean;
 /** The account code's hooks once it has started (only with accounts on): My designs. */
 let accountHooks: import("./account.ts").AccountHooks | null = null;
 /**
@@ -726,6 +728,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/.test(navigator.platform));
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
+  ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
@@ -872,6 +875,34 @@ const projects = listedProjects(document, {
   journal: local,
   openId: keptId,
   open: openStored,
+});
+
+/** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
+const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
+  list: () => store.list(),
+  openId: keptId,
+  open: openStored,
+  remove: async (id) => {
+    if (id === keptId()) throw new Error("the open project can't be deleted here");
+    await forget(store, local, id);
+  },
+  // Not the open project (its name is the open one's to change; the screen offers no Rename for it).
+  rename: async (id, name) => {
+    if (id === keptId()) throw new Error("rename the open project in its own name box");
+    await renameKept(store, id, name);
+  },
+  newProject: async () => {
+    await started;
+    openings++; // a project still opening is never kept or counted as reopened
+    endOffer();
+    guard.finished();
+    keepOnFirstChange(); // first: the last project's autosave must not store the new one over it
+    replaceProject(emptyProject());
+    fileStatus("");
+  },
+  chooseFile: () => $("open-file").click(),
+  showGuide: () => $("guide-open").click(),
+  workspaceTitle,
 });
 
 // While a project opens (the last one reopened, or a file), the top bar
@@ -1438,6 +1469,7 @@ async function start() {
 // Save, Open, a drop and a paste wait for this: until the last project is
 // open, ctx.project is the empty one the app starts with.
 const started = start();
+if (home) void started.then(() => home.show());
 appLoaded(started.then(shownOnScreen), ctx.kernel); // index.html's skeleton goes once the project is shown and the kernel has answered
 ctx.kernel.call("kernel_version").then((v) => {
   $("version").textContent = `kernel v${v}`;
