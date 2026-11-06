@@ -12,8 +12,8 @@
 #
 # Environment:
 #   IN              downloaded artifacts: endless-*/ (endless.sh results),
-#                   mutants-*/ (one cargo mutants shard each: its *.txt lists
-#                   and exit-code.txt), golden/ (the golden models' night:
+#                   mutants-*/ (one mutation rotation job each: plan.txt,
+#                   baseline.txt, units/<k>/ and exit-code.txt), golden/ (the golden models' night:
 #                   report.txt, measured.json, baseline.txt and, if a model
 #                   failed, seed-golden-<seed>/golden-report.txt), monkey/
 #                   (monkey_night.py: report.txt and seed-monkey-<seed>/),
@@ -21,7 +21,7 @@
 #                   and ts-mutants-*/; an endless job's markers.txt is its
 #                   state coverage counts (coverage_issue.py files never-
 #                   reached states)
-#   MUTANT_SHARDS   how many mutation shards the run started (0 or unset: none)
+#   MUTANT_SHARDS   how many mutation rotation jobs the run started (0 or unset: none)
 #   JOBS            the workflow's `toJSON(needs)`: a job that went red with
 #                   nothing more specific to report files an issue too
 #   RUN_URL, COMMIT, BRANCH   what this run tested, written next to every row
@@ -32,10 +32,6 @@ set -uo pipefail
 MUTANT_SHARDS="${MUTANT_SHARDS:-0}"
 short=$(echo "$COMMIT" | cut -c1-7)
 today=$(date -u '+%Y-%m-%d %H:%M')
-
-# Mutant names carry line:column, which move whenever code above them changes;
-# "new survivor" compares names without them.
-strip() { sed -E 's/^([^:]+):[0-9]+:[0-9]+:/\1:/' | sort -u; }
 
 add_run() {
   found=0 new_missed=0 new_list=""
@@ -54,35 +50,14 @@ add_run() {
     done
   done
 
+  # The whole-kernel mutation rotation (mutant_rotation.py, next to this
+  # script): the jobs' units into mutants/rotation.json, missed.txt,
+  # rotation-log.csv and summary.txt; it prints the new survivors.
   if [ "$MUTANT_SHARDS" -gt 0 ]; then
-    mkdir -p mutants
-    [ -f mutants/log.csv ] || echo "finished,commit,branch,shards_finished,shards,caught,missed,timeout,unviable,new_missed,run" >mutants/log.csv
-    finished=0 caught=0 timeout=0 unviable=0
-    : >"$IN/missed-all.txt"
-    for d in "$IN"/mutants-*/; do
-      [ -d "$d" ] || continue
-      # cargo mutants exits 0 (all caught), 2 (some missed) or 3 (some timed
-      # out) when it got through its list; anything else (4: the unmutated
-      # tests failed, 124/130: stopped at the deadline) means unfinished.
-      case "$(cat "$d/exit-code.txt" 2>/dev/null)" in 0 | 2 | 3) finished=$((finished + 1)) ;; esac
-      caught=$((caught + $(cat "$d/caught.txt" 2>/dev/null | grep -c .)))
-      timeout=$((timeout + $(cat "$d/timeout.txt" 2>/dev/null | grep -c .)))
-      unviable=$((unviable + $(cat "$d/unviable.txt" 2>/dev/null | grep -c .)))
-      cat "$d/missed.txt" >>"$IN/missed-all.txt" 2>/dev/null
-    done
-    sort -u "$IN/missed-all.txt" -o "$IN/missed-all.txt"
-    missed=$(grep -c . "$IN/missed-all.txt")
-    if [ "$finished" = "$MUTANT_SHARDS" ]; then
-      # Only a complete run replaces the list the next night compares with,
-      # and the first complete run only sets it.
-      if [ -f mutants/missed.txt ]; then
-        new_list=$(comm -13 <(strip <mutants/missed.txt) <(strip <"$IN/missed-all.txt"))
-        new_missed=$(printf '%s' "$new_list" | grep -c .)
-      fi
-      cp "$IN/missed-all.txt" mutants/missed.txt
-      echo "tested commit $COMMIT on branch $BRANCH ($RUN_URL), $today UTC" >mutants/commit.txt
-    fi
-    echo "$today,$short,$BRANCH,$finished,$MUTANT_SHARDS,$caught,$missed,$timeout,$unviable,$new_missed,$RUN_URL" >>mutants/log.csv
+    rotation=$(python3 "$here/mutant_rotation.py" record --dir . --in "$IN" --commit "$COMMIT" --branch "$BRANCH" \
+      --run-url "$RUN_URL" --when "$today") || rotation='{"new": []}'
+    new_list=$(printf '%s' "$rotation" | python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin)["new"]))' 2>/dev/null || true)
+    new_missed=$(printf '%s' "$new_list" | grep -c . || true)
   fi
 
   # The magic-moment journeys against tests/baseline.json: the latest run's
@@ -174,15 +149,8 @@ add_run() {
     }' log.csv >summary.txt
   # The fuzzing section (collect-fuzz.sh) stays at the end.
   [ -f fuzz/summary.txt ] && { echo; cat fuzz/summary.txt; } >>summary.txt.fuzz
-  if [ -f mutants/log.csv ]; then
-    tail -1 mutants/log.csv | awk -F, '{
-      print ""
-      print "Latest mutation run (whole kernel, lib tests), " $1 " UTC, commit " $2 " on " $3 ":"
-      print "  shards finished: " $4 " of " $5 ($4 == $5 ? "" : " (incomplete: survivors list not replaced)")
-      print "  caught " $6 ", missed " $7 ", timed out " $8 ", unviable " $9
-      print "  survivors not in the previous complete run: " $10
-      print "mutants/missed.txt lists every survivor; mutants/log.csv has one line per night."
-    }' >>summary.txt
+  if [ -f mutants/summary.txt ]; then
+    { echo ""; cat mutants/summary.txt; } >>summary.txt
   fi
   if [ -f journeys/latest.txt ]; then
     { echo ""; echo "Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):"; sed 's/^/  /' journeys/latest.txt; echo "journeys/flags.txt lists every FLAG line so far."; } >>summary.txt
@@ -228,6 +196,8 @@ add_run() {
   } >summary.txt.new
   mv summary.txt.new summary.txt
 }
+
+here=$(cd "$(dirname "$0")" && pwd)
 
 # Every kind of problem this run found, as file_issues.py names them (for the new-failures line in add_run).
 kinds_file=$(mktemp)
@@ -280,7 +250,7 @@ if [ -f "$IN/markers-run.txt" ]; then
 fi
 if [ "$new_missed" -gt 0 ]; then
   body="Run: $RUN_URL (commit $short on $BRANCH)"$'\n\n'
-  body="$body$new_missed mutant(s) survived that the previous complete mutation run caught or did not have (new code, or a test that got weaker):"$'\n'"$(printf '%s\n' "$new_list" | head -50 | sed 's/^/- /')"$'\n\n'"Every survivor is in mutants/missed.txt on the test-results branch."$'\n'
+  body="$body$new_missed mutant(s) survived in code the mutation rotation had tested before without them (new code, or a test that got weaker):"$'\n'"$(printf '%s\n' "$new_list" | head -50 | sed 's/^/- /')"$'\n\n'"Every survivor is in mutants/missed.txt on the test-results branch."$'\n'
   title="Mutation testing: $new_missed new survivor(s)"
   if [ -n "${GH_TOKEN:-}" ]; then gh issue create --title "$title" --body "$body"; else printf '%s\n\n%s' "$title" "$body"; fi
 fi
