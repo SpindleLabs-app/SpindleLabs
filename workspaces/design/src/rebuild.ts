@@ -98,8 +98,8 @@ export type FeatureResult =
       holds?: BodyHandle[];
       /** A Combine's pieces (35f1) by id, each with the shown names of its faces as the Combine made them: what the data remembers a piece by when it is first numbered (hunt 11-06). */
       pieceFaces?: Record<string, string[]>;
-      /** A Combine whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why. */
-      pieces?: { message: string };
+      /** A Combine whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
+      pieces?: { message: string; renumbered: string[] };
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -1128,7 +1128,7 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
   const pieceFaces = pieces.length === 0 ? {} : { pieceFaces: Object.fromEntries(pieces.map((nb) => [nb.id, shownFaces(nb.faces)])) };
   // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
   const renumbered = named.renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
-  const warn = renumbered.length === 0 ? {} : { pieces: { message: `${label}'s pieces changed since they were numbered, so ${renumbered.join(" and ")} may now be ${renumbered.length === 1 ? "another piece" : "other pieces"}: check the items that use ${renumbered.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
+  const warn = renumbered.length === 0 ? {} : { pieces: { renumbered: named.renumbered, message: `${label}'s pieces changed since they were numbered, so ${renumbered.join(" and ")} may now be ${renumbered.length === 1 ? "another piece" : "other pieces"}: check the items that use ${renumbered.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
   return { status: "built", bodies: ids, holds: inputs.map((x) => x.handle), ...pieceFaces, ...warn };
 }
 

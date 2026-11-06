@@ -93,7 +93,7 @@ test("a remembered piece no piece matches any more is given by rank order with a
   const third = await built(edited);
   const c1 = third.build.results[s.c1];
   assert.equal(c1.status, "built", JSON.stringify(c1));
-  assert.deepEqual(c1.status === "built" && c1.pieces, { message: "Combine 1's pieces changed since they were numbered, so Body 4 may now be another piece: check the items that use it, then edit Combine 1 to keep its pieces as they are now" });
+  assert.deepEqual(c1.status === "built" && c1.pieces, { renumbered: [`body:${s.c1}/piece:1`], message: "Combine 1's pieces changed since they were numbered, so Body 4 may now be another piece: check the items that use it, then edit Combine 1 to keep its pieces as they are now" });
   // The rest: 70 × 20 × 10 − 10 × 15 × 10 = 14,000 − 1,500 = 12,500; joined with Box 3: + 1,000 − 250 = 13,250.
   near(await third.volume(`body:${s.c1}/piece:1`), 13250);
   assert.equal(third.build.bodies[`body:${s.c1}/piece:2`], undefined, "no middle piece any more");
@@ -111,11 +111,15 @@ test("editing the warned Combine confirms its pieces as they are now: their face
   await third.cache.close();
   const r3 = third.build.results[s.c1];
   assert.ok(r3.status === "built" && r3.pieces !== undefined, "warned");
-  // Keep tools turned on: the Combine's own edit drops what its pieces were numbered with, numbers kept, in that edit.
-  const edited = changedCombine(third.doc, s.c1, `body:${s.bar}`, [`body:${s.a}`, `body:${s.b}`], "cut", true);
+  // The warning names piece 1 (the ids the workspace hands the edit, as the last build reported them).
+  assert.deepEqual(r3.status === "built" && r3.pieces!.renumbered, [`body:${s.c1}/piece:1`]);
+  // Keep tools turned on: the Combine's own edit drops what those pieces were numbered with, numbers kept, in that edit.
+  const edited = changedCombine(third.doc, s.c1, `body:${s.bar}`, [`body:${s.a}`, `body:${s.b}`], "cut", true, r3.status === "built" ? r3.pieces!.renumbered : []);
   const piece = (d: DesignDocument, k: number) => d.bodies!.find((x) => x.id === `body:${s.c1}/piece:${k}`);
   assert.deepEqual(piece(edited, 1), { id: `body:${s.c1}/piece:1`, number: 4 });
-  assert.deepEqual(piece(edited, 2), { id: `body:${s.c1}/piece:2`, number: 5 });
+  // Piece 2 was not warned about: it keeps what it was numbered with (the middle piece's faces).
+  assert.deepEqual(piece(edited, 2), piece(third.doc, 2));
+  assert.ok(piece(edited, 2)!.faces !== undefined);
   // Built: no warning, and piece 1's faces recorded afresh as the rest's (x 30..100 less the notch): the bar's five but its
   // left end, slot A's right side (x = 30), and slot B's notch: its left (x = 50), right (x = 60) and front (y = 5) sides.
   const fourth = await built(edited);
@@ -123,8 +127,7 @@ test("editing the warned Combine confirms its pieces as they are now: their face
   assert.ok(r4.status === "built" && r4.pieces === undefined, JSON.stringify(r4.status === "built" && r4.pieces));
   const rest = [`face:${s.bar}/back`, `face:${s.bar}/bottom`, `face:${s.bar}/front`, `face:${s.bar}/right`, `face:${s.bar}/top`, `face:${s.a}/right`, `face:${s.b}/front`, `face:${s.b}/left`, `face:${s.b}/right`].sort();
   assert.deepEqual(piece(fourth.doc, 1), { id: `body:${s.c1}/piece:1`, number: 4, faces: rest });
-  // Piece 2 is not built now, so it has nothing to record.
-  assert.deepEqual(piece(fourth.doc, 2), { id: `body:${s.c1}/piece:2`, number: 5 });
+  assert.deepEqual(piece(fourth.doc, 2), piece(third.doc, 2));
   await fourth.cache.close();
   // The next build finds piece 1 by those faces: still no warning, nothing changes.
   const fifth = await built(fourth.doc);
@@ -134,6 +137,25 @@ test("editing the warned Combine confirms its pieces as they are now: their face
   await fifth.cache.close();
   // A choice that changes nothing is no edit: the faces stay.
   assert.equal(changedCombine(third.doc, s.c1, `body:${s.bar}`, [`body:${s.a}`, `body:${s.b}`], "cut", false), third.doc);
+});
+
+test("editing a Combine with no warning forgets nothing: pieces matched out of rank order keep their numbers", async () => {
+  const s = await twoSlots();
+  const second = await built(s.doc);
+  await second.cache.close();
+  // Slot B to x 80..90: by rank the middle (10,000) comes first now, but piece 1 stays on the far piece by its faces.
+  const third = await built(changedMove(second.doc, s.moveB, { ...NO_MOVE, x: 80, y: -10, z: -5 }));
+  await third.cache.close();
+  const r3 = third.build.results[s.c1];
+  assert.ok(r3.status === "built" && r3.pieces === undefined, "no warning, so nothing to forget");
+  // Keep tools turned on, as the workspace hands it: no warned pieces, so every piece keeps its faces.
+  const edited = changedCombine(third.doc, s.c1, `body:${s.bar}`, [`body:${s.a}`, `body:${s.b}`], "cut", true, []);
+  assert.deepEqual(edited.bodies, third.doc.bodies);
+  const fourth = await built(edited);
+  // Combine 2 still joins Box 3 to the far piece: 2,000 + 1,000 − 250 = 2,750 (on the middle it would be 10,000).
+  near(await fourth.volume(`body:${s.c1}/piece:1`), 2750);
+  near(await fourth.volume(`body:${s.c1}/piece:2`), 10000);
+  await fourth.cache.close();
 });
 
 test("an old version 8 file with pieces opens and gets each piece's faces, as its Combine made it, on its first build", async () => {

@@ -1117,7 +1117,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
-  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[] }>> = {};
+  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] } }>> = {};
   /**
    * What a pointer on sketch `id` may snap to on its face's edges (26f):
    * their ends, middles and centres in the plane the sketch is drawn in
@@ -2964,7 +2964,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let made: string;
     try {
       if (id === null) ({ doc: next, id: made } = insertCombine(before, combineTarget, combineTools, combineBox.operation, combineBox.keepTools));
-      else [next, made] = [changedCombine(before, id, combineTarget, combineTools, combineBox.operation, combineBox.keepTools), id];
+      else [next, made] = [changedCombine(before, id, combineTarget, combineTools, combineBox.operation, combineBox.keepTools, resultsNow[id]?.pieces?.renumbered ?? []), id];
     } catch (e) {
       return combineBox.showError(e instanceof Error ? e.message : String(e));
     }
