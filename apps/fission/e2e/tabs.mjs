@@ -48,6 +48,11 @@ const tabsAre = (page, want, what) =>
     want,
     what,
   );
+/** Chooses the nth tab (from 0) as a person does: on a phone by the switcher's list, else on the strip. */
+async function tapTab(page, n) {
+  await page.tap("#design-tabs-switch");
+  await page.tap(`#design-tabs-menu .design-tabs-tab:nth-child(${n + 1}) .design-tabs-main`);
+}
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 
 async function newPage(width = 1280, touch = false, scheme = "dark") {
@@ -194,15 +199,53 @@ if (!WITH_TABS) {
   for (const [scheme, width, touch] of [["dark", 1280, false], ["light", 1280, false], ["dark", 393, true], ["light", 393, true]]) {
     await check(`${width} px ${scheme}: the strip fits, targets are big enough${touch ? " (taps)" : ""}`, async () => {
       const { context, page } = await two(width, touch, scheme);
-      await press(page, ".design-tabs-tab:first-child .design-tabs-main", touch);
+      if (touch) await tapTab(page, 0);
+      else await page.click(".design-tabs-tab:first-child .design-tabs-main");
       await volume(page, "24,000 mm³");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, "nothing runs off the side");
-      const small = await page.$$eval(".design-tabs button", (b) => b.map((x) => x.getBoundingClientRect().height).filter((h) => h < (innerWidth <= 640 ? 44 : 30)));
-      assert.deepEqual(small, [], "every strip button is tall enough");
+      const small = await page.$$eval(".design-tabs button", (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.getBoundingClientRect().height).filter((h) => h < (innerWidth <= 640 ? 44 : 30)));
+      assert.deepEqual(small, [], "every shown strip button is tall enough");
       if (shots) await page.screenshot({ path: `${shots}/tabs-${width}-${scheme}.png` });
       await context.close();
     });
   }
+
+  await check("a phone shows one button for the design on screen and a short list; nothing covers most of the view", async () => {
+    const { context, page } = await two(393, true);
+    // The strip is the switcher and +, not the wide row of tabs.
+    assert.equal(await page.isVisible(".design-tabs-list"), false);
+    assert.match(await page.textContent("#design-tabs-switch"), /Untitled\s*DESIGN\s*2/);
+    assert.equal(await page.isHidden("#design-tabs-menu"), true);
+    await page.tap("#design-tabs-switch");
+    await page.locator("#design-tabs-menu").waitFor({ state: "visible" });
+    const rows = await page.$$eval("#design-tabs-menu .design-tabs-tab", (r) => r.map((x) => ({ h: x.getBoundingClientRect().height, on: x.dataset.active })));
+    assert.equal(rows.length, 2);
+    assert.ok(rows.every((r) => r.h >= 44), "every row is 44 px or taller");
+    assert.equal(await page.getAttribute("#design-tabs-switch", "aria-expanded"), "true");
+    const menu = await page.$eval("#design-tabs-menu", (m) => m.getBoundingClientRect().height / innerHeight);
+    assert.ok(menu <= 0.5, `the list takes at most half the screen (${menu})`);
+    if (shots) await page.screenshot({ path: `${shots}/tabs-393-list.png` });
+    // Escape puts it away; choosing a row switches (the box comes back) and puts it away.
+    await page.keyboard.press("Escape");
+    assert.equal(await page.isHidden("#design-tabs-menu"), true);
+    await tapTab(page, 0);
+    await volume(page, "24,000 mm³");
+    assert.equal(await page.isHidden("#design-tabs-menu"), true);
+    await tabsAre(page, ["Untitled|DESIGN|on", "Untitled|DESIGN|"], "the first tab on screen");
+    // × in the list closes that tab.
+    await page.tap("#design-tabs-switch");
+    await page.tap("#design-tabs-menu .design-tabs-tab:nth-child(2) .design-tabs-close");
+    await tabsAre(page, ["Untitled|DESIGN|on"], "one tab left");
+    // Many tabs: the list scrolls inside half the screen.
+    for (let i = 0; i < 9; i++) {
+      await page.tap("#design-tabs-add");
+      await until(page, (n) => document.querySelectorAll(".design-tabs-tab").length === n, i + 2, "another tab");
+    }
+    await page.tap("#design-tabs-switch");
+    const big = await page.$eval("#design-tabs-menu", (m) => ({ h: m.getBoundingClientRect().height / innerHeight, scrolls: m.scrollHeight > m.clientHeight }));
+    assert.ok(big.h <= 0.5 && big.scrolls, `ten tabs: the list stays within half the screen and scrolls (${JSON.stringify(big)})`);
+    await context.close();
+  });
 }
 
 await browser.close();

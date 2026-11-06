@@ -122,3 +122,33 @@ test("the close question names the design, and the dialog answers both ways", as
   assert.equal(await no, false);
   assert.equal(doc.querySelector(".design-tabs-ask"), null);
 });
+
+test("the phone's switcher names the design on screen with the count, and its list is built only while open", () => {
+  const { s, calls, doc } = strip();
+  s.render({ tabs: [t("a", "design", "Bracket"), t("b", "slice", "Lid job"), t("c")], active: "b" });
+  const switcher = doc.getElementById("design-tabs-switch") as HTMLElement;
+  assert.equal(switcher.querySelector(".design-tabs-name")!.textContent, "Lid job");
+  assert.equal(switcher.querySelector(".design-tabs-kind")!.textContent, "SLICE");
+  assert.equal(switcher.querySelector(".design-tabs-count")!.textContent, "3");
+  assert.equal(switcher.getAttribute("aria-label"), "3 designs open, Lid job on screen: choose another");
+  const menu = doc.getElementById("design-tabs-menu") as HTMLElement;
+  assert.equal(menu.hidden, true);
+  assert.equal(menu.children.length, 0); // not built while shut: the strip alone holds the tabs
+  switcher.click();
+  assert.equal(menu.hidden, false);
+  assert.equal(switcher.getAttribute("aria-expanded"), "true");
+  assert.equal(menu.querySelectorAll(".design-tabs-tab").length, 3);
+  assert.equal(menu.querySelector('[data-active="true"] .design-tabs-main')!.getAttribute("aria-current"), "true");
+  // Choosing a row reports it and shuts the list; × in the list reports a close and shuts it.
+  (menu.querySelectorAll(".design-tabs-main")[0] as HTMLElement).click();
+  assert.deepEqual(calls, ["go a"]);
+  assert.equal(menu.hidden, true);
+  switcher.click();
+  (menu.querySelectorAll(".design-tabs-close")[2] as HTMLElement).click();
+  assert.deepEqual(calls, ["go a", "close c"]);
+  assert.equal(menu.hidden, true);
+  // Escape shuts it too.
+  switcher.click();
+  doc.dispatchEvent(new (doc.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent }).KeyboardEvent("keydown", { key: "Escape" }));
+  assert.equal(menu.hidden, true);
+});
