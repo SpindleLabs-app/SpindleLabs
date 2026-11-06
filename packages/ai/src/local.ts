@@ -4,6 +4,7 @@
 // is downloaded once (WebLLM caches it), after its size has been shown.
 
 import { CHECK_TIMEOUT_MS, requestJson, type Fetch } from "./http.ts";
+import { AIError } from "./trouble.ts";
 import type { AIProvider, AIRequest } from "./providers.ts";
 
 /** The default in-browser model until the A10 check picks one. */
@@ -30,7 +31,7 @@ export interface WebLLMModel {
 
 /** A whole WebLLM answer, and one piece of a streamed one (its OpenAI-style chunks). */
 export type WebLLMReply = { choices: { message: { content: string | null } }[] };
-export type WebLLMChunk = { choices: { delta?: { content?: string | null } }[] };
+export type WebLLMChunk = { choices: { delta?: { content?: string | null }; finish_reason?: string | null }[] };
 
 /** The parts of WebLLM used here (the real module is loaded only when the provider is used). */
 export interface WebLLMLike {
@@ -38,7 +39,7 @@ export interface WebLLMLike {
   CreateMLCEngine(
     model: string,
     config?: { initProgressCallback?: (report: { progress: number; text: string }) => void },
-  ): Promise<{ chat: { completions: { create(request: object): Promise<WebLLMReply | AsyncIterable<WebLLMChunk>> } } }>;
+  ): Promise<{ chat: { completions: { create(request: object): Promise<WebLLMReply | AsyncIterable<WebLLMChunk>> } }; interruptGenerate?(): void }>;
 }
 
 /**
@@ -140,13 +141,23 @@ export function inBrowserProvider(o: {
         engine = webllm.CreateMLCEngine(id, { initProgressCallback: (p) => o.onProgress?.(p.progress, p.text) });
         engine.catch(() => (engine = undefined)); // a failed load is tried again next time
       }
-      const reply = await (await engine).chat.completions.create(webllmRequest(request));
+      const running = await engine;
+      const reply = await running.chat.completions.create(webllmRequest(request));
       const onText = request.onText;
       if (onText && Symbol.asyncIterator in reply) {
+        // The panel stopped waiting (AI8a): the model stops writing, so the graphics card is free again.
+        const stop = () => running.interruptGenerate?.();
+        request.signal?.addEventListener("abort", stop, { once: true });
         let text = "";
-        for await (const chunk of reply) {
-          const more = chunk.choices[0]?.delta?.content;
-          if (typeof more === "string" && more !== "") onText((text += more));
+        try {
+          for await (const chunk of reply) {
+            if (request.signal?.aborted) break;
+            if (chunk.choices[0]?.finish_reason === "length") throw new AIError("cut-off", "the in-browser model reached its output limit");
+            const more = chunk.choices[0]?.delta?.content;
+            if (typeof more === "string" && more !== "") onText((text += more));
+          }
+        } finally {
+          request.signal?.removeEventListener("abort", stop);
         }
         if (text === "") throw new Error("the in-browser model gave no answer");
         return text;
@@ -163,9 +174,9 @@ export function inBrowserProvider(o: {
 export interface BuiltInModelLike {
   availability(): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
   create(options: { initialPrompts: { role: "system" | "user" | "assistant"; content: string }[] }): Promise<{
-    prompt(input: string, options?: { responseConstraint?: object }): Promise<string>;
+    prompt(input: string, options?: { responseConstraint?: object; signal?: AbortSignal }): Promise<string>;
     /** The answer piece by piece, each chunk the next piece (where the browser has it). */
-    promptStreaming?(input: string, options?: { responseConstraint?: object }): AsyncIterable<string>;
+    promptStreaming?(input: string, options?: { responseConstraint?: object; signal?: AbortSignal }): AsyncIterable<string>;
     destroy(): void;
   }>;
 }
@@ -197,7 +208,7 @@ export function builtInProvider(o: { api: BuiltInModelLike | undefined }): AIPro
       const last = r.messages.at(-1);
       if (!last || last.role !== "user") throw new Error("a request must end with the user's message");
       const session = await o.api.create({ initialPrompts: [{ role: "system", content: r.system }, ...r.messages.slice(0, -1)] });
-      const options = r.jsonSchema ? { responseConstraint: r.jsonSchema } : undefined;
+      const options = r.jsonSchema || r.signal ? { ...(r.jsonSchema ? { responseConstraint: r.jsonSchema } : {}), ...(r.signal ? { signal: r.signal } : {}) } : undefined;
       try {
         if (!r.onText || !session.promptStreaming) return await session.prompt(last.content, options);
         let text = "";

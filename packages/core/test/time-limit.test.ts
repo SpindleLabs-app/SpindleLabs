@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -19,13 +19,13 @@ test("a build's faces and units by hand", () => {
   assert.equal(buildUnits(lWithHole), 77);
   // Moved, the same body: the moves don't count.
   assert.equal(buildUnits({ moved: { body: lWithHole, moves: [{ move: [1, 2, 3] }] } }), 77);
-  // A box: 6 faces, its 4 profile corners × 11 = 44; a cylinder 3 faces, 11; a sphere 2 faces, 60 (its mesh).
+  // A box: 6 faces, its 4 profile corners × 11 = 44; a cylinder 3 faces, 11; a sphere 2 faces, 90 (its mesh).
   assert.equal(buildFaces({ box: { width: 1, depth: 1, height: 1 } }), 6);
   assert.equal(buildUnits({ box: { width: 1, depth: 1, height: 1 } }), 44);
   assert.equal(buildFaces({ cylinder: { radius: 1, height: 1 } }), 3);
   assert.equal(buildUnits({ cylinder: { radius: 1, height: 1 } }), 11);
   assert.equal(buildFaces({ sphere: { radius: 1 } }), 2);
-  assert.equal(buildUnits({ sphere: { radius: 1 } }), 60);
+  assert.equal(buildUnits({ sphere: { radius: 1 } }), 90);
 });
 
 test("a boolean's units by hand: each tool meets every piece so far, each step capped at the costliest legal boolean", () => {
@@ -70,7 +70,7 @@ test("each call's units: the quick ones none, a body's view its mesh, a build it
   assert.equal(callUnits("body_build", [lWithHole], sizeOf), 77);
   assert.equal(callUnits("export_stl", [lWithHole, "x"], sizeOf), 77);
   assert.equal(callUnits("make_extrude", [lWithHole.extrude.profile, 3], sizeOf), 7 * UNITS_PER_CORNER);
-  assert.equal(callUnits("make_sphere", [5], sizeOf), 60);
+  assert.equal(callUnits("make_sphere", [5], sizeOf), 90);
 });
 
 /** A binary STL of triangles given by their corners' z (x and y anything), with `claimed` triangles in its count. */
@@ -83,19 +83,19 @@ function stl(zs: number[][], claimed = zs.length): Uint8Array {
 }
 
 test("a slice's units by hand: its triangles times its layers, over every file given back to back", () => {
-  // 2 triangles from z 0 to 10 at 0.2 mm: 50 layers, 2 × 50 × 0.12 = 12 units.
+  // 2 triangles from z 0 to 10 at 0.2 mm: 50 layers, 2 × 50 × 0.27 = 27 units.
   const a = stl([
     [0, 0, 10],
     [10, 10, 0],
   ]);
-  assert.ok(Math.abs(sliceUnits(a, 0.2) - 12) < 1e-9);
-  // Another file after it, 1 triangle from z 5 to 20: 3 triangles, z 0 to 20, 100 layers: 36 units.
+  assert.ok(Math.abs(sliceUnits(a, 0.2) - 27) < 1e-9);
+  // Another file after it, 1 triangle from z 5 to 20: 3 triangles, z 0 to 20, 100 layers: 3 × 100 × 0.27 = 81 units.
   const b = stl([[5, 20, 5]]);
   const both = new Uint8Array([...a, ...b]);
-  assert.ok(Math.abs(sliceUnits(both, 0.2) - 36) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(both, 0.2) - 81) < 1e-9);
   // A second file claiming more triangles than it holds: the kernel refuses it at once, only the first counts.
   const short = new Uint8Array([...a, ...stl([[5, 20, 5]], 2)]);
-  assert.ok(Math.abs(sliceUnits(short, 0.2) - 12) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(short, 0.2) - 27) < 1e-9);
   // Nothing readable, a flat file, or no layer height: no units, the floor.
   assert.equal(sliceUnits(new Uint8Array(10), 0.2), 0);
   assert.equal(sliceUnits(stl([[1, 1, 1]]), 0.2), 0);
@@ -103,7 +103,7 @@ test("a slice's units by hand: its triangles times its layers, over every file g
   // Read from a view into a bigger buffer, as the worker gets it.
   const offset = new Uint8Array(4 + a.length);
   offset.set(a, 4);
-  assert.ok(Math.abs(sliceUnits(offset.subarray(4), 0.2) - 12) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(offset.subarray(4), 0.2) - 27) < 1e-9);
   assert.equal(callUnits("slice_stl", [a as Uint8Array<ArrayBuffer>, 0.2, 3, 15, "off"], () => undefined), sliceUnits(a, 0.2));
 });
 
@@ -187,13 +187,13 @@ function boxStl(w: number, d: number, h: number): Uint8Array {
 }
 
 test("a big flat-sided part costs by its area too: a box is 12 triangles however big (slicer hunt M8), worked by hand", () => {
-  // 100 × 100 × 10 mm at 0.2 mm: 50 layers. Triangles: 12 × 50 × 0.12 = 72. Area: 1e4 mm² × 50 layers × 6e-4 = 300, times the fill share.
+  // 100 × 100 × 10 mm at 0.2 mm: 50 layers. Triangles: 12 × 50 × 0.27 = 162. Area: 1e4 mm² × 50 layers × 1.1e-3 = 550, times the fill share.
   const box = boxStl(100, 100, 10);
-  assert.ok(Math.abs(sliceUnits(box, 0.2, 100) - 300 * 1.25) < 1e-6, "100 %: share 0.25 + 1 = 1.25 → 375");
-  assert.ok(Math.abs(sliceUnits(box, 0.2, 15) - 300 * 0.4) < 1e-6, "15 %: share 0.4 → 120, over the triangles' 72");
-  assert.ok(Math.abs(sliceUnits(box, 0.2, 0) - 300 * 0.25) < 1e-6, "no infill: share 0.25 → 75, just over the triangles' 72");
-  // A small part keeps its triangle count: a 20 mm cube at 0.2 mm, 100 layers: 12 × 100 × 0.12 = 144 over 20² × 100 × 6e-4 × 0.4 = 9.6.
-  assert.ok(Math.abs(sliceUnits(boxStl(20, 20, 20), 0.2, 15) - 144) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 100) - 550 * 1.25) < 1e-6, "100 %: share 0.25 + 1 = 1.25 → 687.5");
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 15) - 550 * 0.4) < 1e-6, "15 %: share 0.4 → 220, over the triangles' 162");
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 0) - 162) < 1e-6, "no infill: share 0.25 → 137.5, under the triangles' 162, which count");
+  // A small part keeps its triangle count: a 20 mm cube at 0.2 mm, 100 layers: 12 × 100 × 0.27 = 324 over 20² × 100 × 1.1e-3 × 0.4 = 17.6.
+  assert.ok(Math.abs(sliceUnits(boxStl(20, 20, 20), 0.2, 15) - 324) < 1e-9);
   // The default, when none is given, is the P1S's 15 %.
   assert.equal(sliceUnits(box, 0.2), sliceUnits(box, 0.2, 15));
   // The hunt's box, 246 × 246 × 245 mm at 100 %, was 1,764 units of triangles and needed at least 8.7 times that.
@@ -266,4 +266,15 @@ test("supports cost by the overhangs they hold up, tree supports far more (slice
     const promised = sliceUnits(plateOnColumn(plate, column), layer, 15, style);
     assert.ok(promised >= 2 * needed, `${plate} mm plate on a ${column} mm column at ${layer} mm, ${style}: ${promised.toFixed(0)} units for ${needed} needed`);
   }
+});
+
+test("a sketch solve's units grow with its arcs cubed", () => {
+  // 100 arcs (the most): 6e-4 × 100³ = 600 units, above the 535 ms ÷ 1.76 ms = 304 the costliest took.
+  const arcs = (n: number) => JSON.stringify({ points: [], constraints: Array.from({ length: n }, () => ["arc", 0, 1, 2]) });
+  assert.ok(Math.abs(solveUnits(arcs(100)) - 600) < 1e-9);
+  assert.equal(UNITS_PER_ARC_CUBED * 1e6, 600);
+  // Lines only: no Newton, so the floor alone.
+  assert.equal(solveUnits(JSON.stringify({ points: [[0, 0], [1, 1]], constraints: [["horizontal", 0, 1]] })), 0);
+  assert.equal(callUnits("solve_sketch", [arcs(10)] as never, () => undefined), solveUnits(arcs(10)));
+  assert.equal(callUnits("solve_sketch", [7] as never, () => undefined), 0);
 });

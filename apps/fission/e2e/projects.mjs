@@ -1,7 +1,7 @@
 // Browser check of File > Projects in this browser… (U6a; round 2 hunt A2, A3), in a real Chromium:
 //   A2  after File > Open, the project you had (never saved as a file) is listed and opens again, and a reload then
 //       opens it (it was the one listed first);
-//   A3  a stale tab's change kept "(from another tab)" is listed and opens; A5's too (a refused tab's edits, kept apart
+//   A3  a stale tab's change kept "(kept copy)" is listed and opens; A5's too (a refused tab's edits, kept apart
 //       when another project opens from the list);
 //   Delete asks first, Keep it keeps it, Delete takes it out of the list for good (a reload doesn't bring it back), and
 //       the open project offers no Delete;
@@ -123,7 +123,7 @@ try {
     await context.close();
   });
 
-  await check("A3: a stale tab's change kept '(from another tab)' is listed and opens; the message says where", async () => {
+  await check("A3: a stale tab's change kept '(kept copy)' is listed and opens; the message says where", async () => {
     const { context, page } = await fresh();
     const id = await page.evaluate(() => document.body.dataset.projectId);
     const file = await saveFile(page);
@@ -131,12 +131,12 @@ try {
     // A journal entry from a tab that went before storing it, made from an older stored state (base 1000 ms).
     await page.evaluate(({ id, text }) => localStorage.setItem(`panoshape.unsaved/${id}`, `@${Date.now()}~1000\n${text}`), { id, text: JSON.stringify(file) });
     await page.reload();
-    await until(page, () => /from another tab/.test(document.querySelector("#file-status")?.textContent ?? ""), null, "the message");
-    assert.match(await page.textContent("#file-status"), /"Untitled \(from another tab\)" \(File > Projects in this browser opens it\)/);
+    await until(page, () => /kept copy/.test(document.querySelector("#file-status")?.textContent ?? ""), null, "the message");
+    assert.match(await page.textContent("#file-status"), /"Untitled \(kept copy\)" \(File > Projects in this browser opens it\)/);
     await volume(page, "24,000 mm³"); // the newer work opens, as before
     await showList(page);
-    assert.deepEqual((await listed(page)).map(([n]) => n), ["Untitled", "Untitled (from another tab)"]);
-    await rowButton(page, "Untitled (from another tab)", "project-open").click();
+    assert.deepEqual((await listed(page)).map(([n]) => n), ["Untitled", "Untitled (kept copy)"]);
+    await rowButton(page, "Untitled (kept copy)", "project-open").click();
     await volume(page, "46,200 mm³");
     await saved(page);
     await page.reload();
@@ -196,7 +196,7 @@ try {
     await context.close();
   });
 
-  await check("A5 with the list: a tab whose saves are refused keeps its edits as '(from another tab)' when another project is opened from the list, and lists it", async () => {
+  await check("A5 with the list: a tab whose saves are refused keeps its edits as '(kept copy)' when another project is opened from the list, and lists it", async () => {
     const { context, page } = await openedOver(); // Sixty open (36,000 mm³), the 50-wide Untitled kept
     await showList(page);
     await rowButton(page, "Untitled", "project-open").click();
@@ -215,10 +215,11 @@ try {
     await showList(other);
     await rowButton(other, "Sixty", "project-open").click();
     await volume(other, "36,000 mm³");
-    await until(other, () => /kept in this browser as a separate project, “Untitled \(from another tab\)”/.test(document.querySelector("#file-status").textContent), null, "what was kept apart, said");
+    await until(other, () => /kept in this browser as a separate project, “Untitled \(kept copy\)”/.test(document.querySelector("#file-status").textContent), null, "what was kept apart, said");
     await showList(other);
-    assert.deepEqual((await listed(other)).map(([n]) => n).sort(), ["Sixty", "Untitled", "Untitled (from another tab)"]);
-    await rowButton(other, "Untitled (from another tab)", "project-open").click();
+    await other.screenshot({ path: "e2e/projects-kept-copy.png" });
+    assert.deepEqual((await listed(other)).map(([n]) => n).sort(), ["Sixty", "Untitled", "Untitled (kept copy)"]);
+    await rowButton(other, "Untitled (kept copy)", "project-open").click();
     await volume(other, "42,000 mm³"); // the refused edit, kept
     await context.close();
   });

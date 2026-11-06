@@ -2,6 +2,8 @@
 // referrer, and errors in plain words that never contain the API key. A
 // reply comes whole (requestJson) or streamed line by line (streamLines).
 
+import { AIError, kindOfStatus } from "./trouble.ts";
+
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 /** How long a model may take to answer: small local models on a CPU can take a minute or more. */
@@ -20,6 +22,8 @@ export interface PostOptions {
   who: string;
   /** Removed from every message, in case a provider echoes it back. */
   secret?: string;
+  /** Stops the request when it aborts (the panel stopped waiting, AI8a). */
+  signal?: AbortSignal;
 }
 
 const hide = (text: string, secret?: string) => (secret ? text.split(secret).join("[your key]") : text);
@@ -29,7 +33,10 @@ const hide = (text: string, secret?: string) => (secret ? text.split(secret).joi
  * or a thrown Error in plain words. `read` reads the body while the time
  * limit still runs (timed with setTimeout, so tests can drive the clock);
  * a refused request (not 2xx) is read here and reported with the
- * provider's own message.
+ * provider's own message. Each error is an AIError of its kind (AI8c):
+ * unreachable, timeout, or for a refusal by its status (kindOfStatus); an
+ * AIError the fetch itself throws (the user chose not to send) is passed
+ * on as it is.
  */
 async function send<T>(o: PostOptions, read: (response: Response) => Promise<T>): Promise<T> {
   const abort = new AbortController();
@@ -38,8 +45,12 @@ async function send<T>(o: PostOptions, read: (response: Response) => Promise<T>)
     timedOut = true;
     abort.abort();
   }, o.timeoutMs);
-  const late = () => new Error(`${o.who} didn't answer within ${Math.round(o.timeoutMs / 1000)} s`);
+  const stop = () => abort.abort();
+  o.signal?.addEventListener("abort", stop, { once: true });
+  const late = () => new AIError("timeout", `${o.who} didn't answer within ${Math.round(o.timeoutMs / 1000)} s`);
   try {
+    // Stopped before it started: nothing is sent.
+    if (o.signal?.aborted) throw new AIError("stalled", `the request to ${o.who} was stopped before it was sent`);
     let response: Response;
     try {
       response = await o.fetch(o.url, {
@@ -52,17 +63,23 @@ async function send<T>(o: PostOptions, read: (response: Response) => Promise<T>)
       });
     } catch (e) {
       if (timedOut) throw late();
-      throw new Error(hide(`couldn't reach ${o.who}: ${e instanceof Error ? e.message : String(e)}`, o.secret));
+      if (e instanceof AIError) throw e;
+      throw new AIError("unreachable", hide(`couldn't reach ${o.who}: ${e instanceof Error ? e.message : String(e)}`, o.secret));
     }
     try {
-      if (!response.ok) throw new Error(hide(`${o.who} refused the request (HTTP ${response.status}): ${errorText(await response.text())}`, o.secret));
+      if (!response.ok) {
+        const words = errorText(await response.text());
+        throw new AIError(kindOfStatus(response.status, words), hide(`${o.who} refused the request (HTTP ${response.status}): ${words}`, o.secret));
+      }
       return await read(response);
     } catch (e) {
       if (timedOut) throw late();
+      if (e instanceof AIError) throw new AIError(e.kind, hide(e.message, o.secret));
       throw e instanceof Error ? new Error(hide(e.message, o.secret)) : e;
     }
   } finally {
     clearTimeout(timer);
+    o.signal?.removeEventListener("abort", stop);
   }
 }
 

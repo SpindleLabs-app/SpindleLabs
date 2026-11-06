@@ -7,7 +7,7 @@
 // The bar sits in the dialog's heading line, so the dialog grows no taller (it must fit a 470 px laptop window);
 // naming and deleting happen in the same line. Styles: src/styles/slice-presets.css.
 
-import type { FileChoices, PrintChoices } from "./slice-print.ts";
+import type { FileChoices, PrintChoices } from "./choices.ts";
 
 /** Everything a preset holds: the beginner's choices and the file's. */
 export type PresetSettings = PrintChoices & FileChoices;

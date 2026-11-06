@@ -32,6 +32,12 @@ export interface ViewportPick {
    */
   plane?: string | null;
   shift: boolean;
+  /**
+   * The second click of a double-click, or of a finger's double-tap, on the
+   * view (viewport's double-pick.ts); absent for a single click. Design takes
+   * it as a pick of the whole body under it (Ben's idea, 2026-11-04).
+   */
+  double?: true;
 }
 
 /** A point in a sketch plane's own 2D frame, in mm. */
@@ -59,6 +65,12 @@ export interface SketchDrawing {
    */
   side?: 1 | -1;
   lines: readonly (readonly [SketchXY, SketchXY])[];
+  /**
+   * Its construction curves (step 47f, Design's construction.ts), already
+   * cut into dashes, drawn in a colour of their own while it is edited and
+   * as its lines are otherwise. Not in `lines`; absent when none.
+   */
+  construction?: readonly (readonly [SketchXY, SketchXY])[];
   /**
    * A finished sketch whose plane is lost (step 26e: its face is gone, so
    * it stays where it was): drawn red, as the reference app draws a lost
@@ -88,6 +100,27 @@ export interface SketchDrawing {
     picks?: true;
     picked?: readonly (readonly [SketchXY, SketchXY])[];
     hover?: readonly (readonly [SketchXY, SketchXY])[];
+    /**
+     * The sketch's constraints (step 47d2, Design's constraint-tool.ts): each
+     * one's mark as segments, and `fighting`, the marks and curves of the
+     * constraints and arcs that fought the one just refused, drawn red.
+     * `constraintCount` is how many constraints the sketch holds. Each absent when none.
+     */
+    constraints?: readonly (readonly [SketchXY, SketchXY])[];
+    fighting?: readonly (readonly [SketchXY, SketchXY])[];
+    constraintCount?: number;
+    /**
+     * The sketch's dimensions' values (step 47e): each one's words ("12.5",
+     * "R 4", "⌀ 10") at its spot, by the constraint's id, `fighting` when it
+     * fought the one just refused. Absent when none.
+     */
+    labels?: readonly { id: string; at: SketchXY; text: string; fighting?: boolean }[];
+    /**
+     * The points a press drags (step 47d3, the Select tool): a press within
+     * a pick's reach of one on screen grabs the nearest (SketchPointer
+     * `grab`). Absent when none can be.
+     */
+    grab?: readonly SketchXY[];
   };
 }
 
@@ -129,8 +162,20 @@ export const ORIGIN_AT_FIRST: OriginShown = { axes: [true, true, true], planes: 
  * within a few pixels; absent when the viewport can't tell.
  */
 export interface SketchPointer {
-  kind: "move" | "click";
+  /**
+   * `move` a hover, `click` a click; while the edited sketch offers points
+   * to drag (SketchDrawing editing.grab, step 47d3), a press on one that
+   * moves further than a click is `grab` (with `grab`, which one), then a
+   * `drag` for each move while it is held and a `drop` when it is let go
+   * (`cancelled` when the browser called it off). A press on one let go
+   * without moving is a click as usual. The camera hears none of it.
+   */
+  kind: "move" | "click" | "grab" | "drag" | "drop";
   at: SketchXY | null;
+  /** For a `grab`: the point pressed on, by its place in editing.grab. */
+  grab?: number;
+  /** For a `drop`: the browser called the drag off (pointercancel), so it comes to nothing. */
+  cancelled?: true;
   pixel?: number;
   /**
    * While the edited sketch asks for picks (SketchDrawing editing.picks,
@@ -238,6 +283,8 @@ export interface SharedViewport {
   bodyFraming(): Framing;
   /** Frames the current body; returns what it framed (null if none). */
   fit(): Framing | null;
+  /** A picture of the main view as it is on screen, without the view cube, as a PNG (File > Save picture); null when the browser can't make one. */
+  picture?(): Promise<Blob | null>;
   /** Turns the camera to a standard view framing the current body; returns what it framed (null if none). */
   setView(name: ViewName): Framing | null;
   /** Frames the selection (as last shown) from the current direction; null, camera untouched, when nothing is selected. */
@@ -253,6 +300,8 @@ export interface SharedViewport {
    * sees it, the front at the top).
    */
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
+  /** Escape on the view bar (U7b): Pan or Zoom lit goes back to Orbit, true; Orbit lit, nothing changes, false. Absent on a stand-in view. */
+  leaveNavTool?(): boolean;
   /** The edited sketch's points on screen (pixels from the view's top left), so a box can keep clear of them. */
   editedScreenPoints(): { x: number; y: number }[];
   /** A point of the edited sketch's plane on screen (pixels from the view's top left); null with no sketch edited or the point behind the camera. */

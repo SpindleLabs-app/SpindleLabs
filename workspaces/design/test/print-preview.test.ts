@@ -11,7 +11,8 @@ import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { partDocument } from "../src/document.ts";
 import { chipKinds, defaultSpeed, kindsIn, layerWords, MAX_FRAME_MS, NO_SUPPORTS, openPrintPreview, presetKinds, type PreviewView } from "../src/print-preview.ts";
-import { PRINT_DEFAULTS, sliceBodies } from "../src/slice-print.ts";
+import { sliceBodies } from "../src/slice-print.ts";
+import { PRINT_DEFAULTS } from "@fission/print";
 
 const A = Math.PI * 0.875 * 0.875;
 const line = 0.8 / A;

@@ -239,7 +239,7 @@ test("a save expecting a save time is refused when the store's differs by a mill
 test("a stale tab finishing (another project opened) keeps its change as a separate project, not over the other tab's work", async () => {
   // Stored 40 at t = 0, both tabs knowing save time 0. A stores 45 at t = 1000. B changes to 25 at t = 1100 and opens
   // another project at once (finish): 25 is journalled, then its save after the flight expects 0, finds 1000 and is
-  // refused. Before round 2 hunt A5 the entry just went, and 25 with it; now 25 is stored as "Box (from another tab)",
+  // refused. Before round 2 hunt A5 the entry just went, and 25 with it; now 25 is stored as "Box (kept copy)",
   // behind A's work, and then the entry goes: a next visit reads 45, A's work, and the copy is there for the list.
   const clock = fakeClock();
   const store = projectStore(memoryKeyValue(), [], clock.now);
@@ -263,14 +263,14 @@ test("a stale tab finishing (another project opened) keeps its change as a separ
   assert.deepEqual(await recoverUnsaved(store, journal, []), []);
   assert.equal(widthOf(await store.open("p")), 45);
   assert.equal(widthOf(await store.open("copy-1")), 25, "B's change kept");
-  assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+  assert.equal((await store.open("copy-1")).name, "Box (kept copy)");
   assert.equal((await store.list())[0].id, "p", "A's work is still what a visit opens");
 });
 
 test("a tab whose saves are refused, finished (Open), keeps its unstored change as a separate project and names it (round 2 hunt A5)", async () => {
   // Stored 40 at t = 0, both tabs knowing save time 0. A stores 50 at t = 1000. B changes to 60 at t = 1100; its save
   // at t = 2100 is refused ("changed in another tab"). B then opens a file (finish at t = 2200): its 60 was dropped
-  // without a word. Now finish stores 60 at once as "Box (from another tab)", behind A's 50, and says that name.
+  // without a word. Now finish stores 60 at once as "Box (kept copy)", behind A's 50, and says that name.
   const clock = fakeClock();
   const store = projectStore(memoryKeyValue(), [], clock.now);
   const journal = fakeStorage();
@@ -288,11 +288,11 @@ test("a tab whose saves are refused, finished (Open), keeps its unstored change 
   tabB.changed();
   await clock.advance(1100);
   assert.equal(bSaid.at(-1), "This project was changed in another tab. Reload to see the newer version.");
-  assert.equal(tabB.finish(), "Box (from another tab)");
+  assert.equal(tabB.finish(), "Box (kept copy)");
   await settle();
   assert.equal(widthOf(await store.open("p")), 50, "A's work as it was");
   assert.equal(widthOf(await store.open("copy-1")), 60, "B's refused change kept");
-  assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+  assert.equal((await store.open("copy-1")).name, "Box (kept copy)");
   assert.equal((await store.list())[0].id, "p", "kept behind: A's work is still what a visit opens");
   assert.equal(journal.items.size, 0, "nothing left to be put back over A's work");
 });
@@ -307,7 +307,7 @@ test("a stale tab hidden before its save is refused: the next visit keeps A's wo
   // 1000). B, still on 40, changes to 25 at t = 1100 and is hidden at t = 1300: leaving() journals 25, written at
   // 1300 (newer than 1000) but made from the state saved at 0. Its save expects 0, finds 1000 and is refused. Next
   // visit: the store's 1000 is not the entry's 0, so 25 must not go over 45: "p" keeps 45, and 25 is kept as a new
-  // project "Box (from another tab)", with a message naming it, and the entry goes.
+  // project "Box (kept copy)", with a message naming it, and the entry goes.
   const clock = fakeClock();
   const store = projectStore(memoryKeyValue(), [], clock.now);
   const journal = fakeStorage();
@@ -330,9 +330,9 @@ test("a stale tab hidden before its save is refused: the next visit keeps A's wo
   const problems = await recoverUnsaved(store, journal, [], () => "copy-1");
   assert.equal(widthOf(await store.open("p")), 45, "A's saved edit is not overwritten");
   assert.equal(widthOf(await store.open("copy-1")), 25, "B's change is kept as a separate project");
-  assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+  assert.equal((await store.open("copy-1")).name, "Box (kept copy)");
   assert.equal(problems.length, 1);
-  assert.match(problems[0]!, /"Box \(from another tab\)"/);
+  assert.match(problems[0]!, /"Box \(kept copy\)"/);
   assert.equal(journal.items.size, 0, "the entry goes once its copy is stored");
   // The project the user last saw stored opens next, not the copy: the copy is listed behind every other project.
   assert.deepEqual((await store.list()).map((x) => x.id), ["p", "copy-1"]);
@@ -467,7 +467,7 @@ for (const bStores of [false, true])
     // journals 50 (made from 0) and A's save never lands. B changes to 33 and leaves at t = 200: it journalled 33 under
     // the same key, over A's 50, so A's change was in no entry and no project, and nothing said so. Now A's entry is
     // put aside first. Next visit: one entry goes back over the state it was made from (the store still at 0), and the
-    // other, made from 0 too, finds the store moved on and is kept as "Box (from another tab)". When B's save lands
+    // other, made from 0 too, finds the store moved on and is kept as "Box (kept copy)". When B's save lands
     // first, "p" holds B's 33 and A's 50 is the copy. Either way 50 and 33 are both somewhere, and one message says so.
     const clock = fakeClock();
     const store = projectStore(memoryKeyValue(), [], clock.now);
@@ -492,9 +492,9 @@ for (const bStores of [false, true])
     const kept = await widths(store);
     assert.deepEqual(Object.values(kept).sort((x, y) => x - y), [33, 50], `both changes kept: ${JSON.stringify(kept)}`);
     if (bStores) assert.deepEqual(kept, { p: 33, "copy-1": 50 }, "B's stored work stays the project; A's is the copy");
-    assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+    assert.equal((await store.open("copy-1")).name, "Box (kept copy)");
     assert.equal(problems.length, 1);
-    assert.match(problems[0]!, /"Box \(from another tab\)"/);
+    assert.match(problems[0]!, /"Box \(kept copy\)"/);
     assert.equal(journal.items.size, 0, "nothing left in the journal");
   });
 

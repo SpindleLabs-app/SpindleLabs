@@ -201,6 +201,9 @@ const seen = (c: (typeof CASES)[number], faults: BooleanFault[]) => {
     full: r.bodies.map((b) => b.faces.map((f) => f.full)),
     refs: c.refs.map((ref) => pick(r, ref, faults)),
     edges: c.edges.map((e) => "found" in resolveEdge(r, e)),
+    // 35f1e2: an edge reference with ends now finds its edge by its ends even where the names lost them, so the names
+    // themselves are compared too.
+    edgeNames: r.bodies.map((b) => b.edges.map((e) => e.name)),
   });
 };
 
@@ -208,7 +211,7 @@ test("every planted fault of rules 3 and 5 changes a hand-worked case's answer",
   // The tag listing shared neighbours changes the bar's full names; a
   // silent split drops the bar's warning; largest-first sends the bar's
   // origin (10, 10) to the far piece; guessing picks one of the crossing's
-  // four; edges without their ends lose the U's first foot.
+  // four; edges without their ends give the U's two feet one name.
   const expect: Partial<Record<BooleanFault, string>> = {
     "tag-all-neighbours": "bar",
     "split-silent": "bar",

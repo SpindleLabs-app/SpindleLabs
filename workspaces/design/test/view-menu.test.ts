@@ -95,6 +95,23 @@ test("the menu is Hide, then the body's item menu as its browser row has it", ()
   assert.equal(entries[0].off, null, "Hide is never off");
 });
 
+test("on a body's row, Show only this body and Show all bodies come after Hide; each off with why when it would change nothing (quick wins)", () => {
+  // Two bodies, none hidden: Show only is on, Show all is off (every body is shown).
+  const entries = viewMenuEntries(doc, "feature-4", null, "body-2");
+  assert.deepEqual(entries.slice(0, 3).map((e) => [e.action, e.label, e.off]), [
+    ["hide", "Hide", null],
+    ["show-only", "Show only this body", null],
+    ["show-all", "Show all bodies", "Every body is shown already"],
+  ]);
+  assert.deepEqual(entries.slice(3).map((e) => e.action), ["edit", "marker", "suppress", "rename", "delete"]);
+  // Body 1's eye shut: Show all is on.
+  const hidden: DesignDocument = { ...doc, hidden: ["body:feature-1"] };
+  assert.equal(viewMenuEntries(hidden, "feature-4", null, "body-2")[2].off, null);
+  // One body only: Show only is off.
+  const one: DesignDocument = { ...doc, timeline: { features: [doc.timeline.features[0]] } };
+  assert.equal(viewMenuEntries(one, "feature-1", null, "body-1")[1].off, "It is the only body");
+});
+
 test("regression (found by the view menu's journey, 2026-11-04): a face or edge of a deleted item leaves the selection after the rebuild", () => {
   // Box 1's bottom face (its kernel face 0) and front top edge were selected, then Box 1 was deleted (its menu's
   // Delete, or its row's): the rebuild shows only Body 2, and feature-1 is no longer in the timeline. Like a gone
@@ -104,7 +121,7 @@ test("regression (found by the view menu's journey, 2026-11-04): a face or edge 
   const top = { kind: "face" as const, id: "face:feature-4/top" };
   const after = joinBodies([shown("feature-4", CYLINDER_VIEW, 2)]);
   const inTimeline = (id: string) => id !== "feature-1";
-  assert.deepEqual(survivors([bottom, edge, top], after, [], inTimeline), { kept: [top], dropped: [], shared: [] });
+  assert.deepEqual(survivors([bottom, edge, top], after, [], inTimeline), { kept: [top], dropped: [], shared: [], followed: [] });
   // Still in the timeline (suppressed, say), they are left alone for Unsuppress, as before.
-  assert.deepEqual(survivors([bottom, edge, top], after, [], () => true), { kept: [bottom, edge, top], dropped: [], shared: [] });
+  assert.deepEqual(survivors([bottom, edge, top], after, [], () => true), { kept: [bottom, edge, top], dropped: [], shared: [], followed: [] });
 });

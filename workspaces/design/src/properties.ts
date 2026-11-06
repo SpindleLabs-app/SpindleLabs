@@ -3,8 +3,8 @@
 // with their validation, staleness and STL notes. The workspace drives it;
 // the panel only shows what it is given.
 
-import { describeProvenance, type BodyView, type Feature } from "@fission/core";
-import { downstreamChip, formatQuantity as fmt, type ChipInfo } from "@fission/ui";
+import { areaIn, boxShown, describeProvenance, summaryInUnit, toMm, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
+import { currentUnit, downstreamChip, formatQuantity as fmt, UNIT_EVENT, type ChipInfo } from "@fission/ui";
 import { SHAPES } from "./commands.ts";
 import type { PartKind } from "./document.ts";
 import { SHAPE_LABELS } from "./toolbar.ts";
@@ -63,6 +63,36 @@ export function panelSizeRefused(kind: PartKind, typed: Record<SizeKey, string>)
   }
   if (kind === "slot" && Number(typed.width) - Number(typed.depth) < MIN_TYPED)
     return `A slot's depth must be less than its width, by at least ${MIN_TYPED} mm: its round ends are as wide as it is deep.`;
+  return presetTooSmall(kind, Number(typed.width), Number(typed.depth));
+}
+
+/**
+ * How far a star's nearest two sides are apart, for each mm of its smaller side (profiles.ts: outer radius r = m/2,
+ * inner corners at 0.4·r, ten corners 36° apart): the inner corner at 36° from the side joining the outer corner at
+ * 72° to the inner one at 108°, 0.4442·r = 0.2221·m (test/tiny-presets.test.ts works it by hand).
+ */
+const STAR_GAP = (() => {
+  const at = (deg: number, r: number) => [r * Math.cos((deg * Math.PI) / 180), r * Math.sin((deg * Math.PI) / 180)];
+  const [p, a, b] = [at(36, 0.2), at(72, 0.5), at(108, 0.2)];
+  const v = [b[0] - a[0], b[1] - a[1]];
+  const w = [p[0] - a[0], p[1] - a[1]];
+  return Math.abs(v[0] * w[1] - v[1] * w[0]) / Math.hypot(v[0], v[1]);
+})();
+
+/**
+ * Why an L-bracket, plate or star `w` × `d` mm is too small for the modeller (clumsy-user hunt 2026-11-04: it failed in
+ * the kernel's words and was kept as a broken part), or null. Each piece of its outline (profiles.ts) must be at least
+ * MIN_TYPED long, wide or apart: an L-bracket's arms are 0.3·m thick (m = the smaller side); a plate's holes 0.15·m in
+ * radius and w/4 − 0.15·m from its ends; a star's nearest sides STAR_GAP·m apart. The size suggested is the next one up
+ * that builds.
+ */
+export function presetTooSmall(kind: PartKind, w: number, d: number): string | null {
+  const m = Math.min(w, d);
+  const words = (shape: string, what: string, least: string) =>
+    `${shape} this small has ${what} ${MIN_TYPED} mm, the smallest piece the modeller keeps: make its width and depth at least ${least} mm.`;
+  if (kind === "l-bracket" && 0.3 * m < MIN_TYPED) return words("An L-bracket", "arms thinner than", "0.0034");
+  if (kind === "plate" && (0.15 * m < MIN_TYPED || w / 4 - 0.15 * m < MIN_TYPED)) return words("A plate", "holes, or gaps beside them, under", "0.01");
+  if (kind === "star" && STAR_GAP * m < MIN_TYPED) return words("A star", "points closer together than", "0.0046");
   return null;
 }
 
@@ -89,7 +119,7 @@ export function revertedNote(why: string, typed: string, kept: string, extrude: 
 
 const HTML = `
   <h2>Selection</h2>
-  <p id="selection-empty">Nothing selected: click a face or an edge, or a body in the browser.</p>
+  <p id="selection-empty">Nothing selected: click a face or an edge (double-click or double-tap for its whole body), or a body in the browser.</p>
   <ul id="selection-list" class="selection-list"></ul>
   <p id="selection-note" class="bad" hidden></p>
   <div id="selection-actions" class="verbs" role="group" aria-label="Actions for the selection" hidden></div>
@@ -97,7 +127,7 @@ const HTML = `
   <h2>Parameters</h2>
   <p id="no-part" hidden>${NO_PART}</p>
   <label id="shape-row" title="${SHAPE_TITLE}">Shape <select id="shape" class="dark-select"><option value="" disabled hidden>—</option><option value="sketch-extrude" disabled hidden>${EXTRUDED_SKETCH}</option>${SHAPES.map((k) => `<option value="${k}">${SHAPE_LABELS[k]}</option>`).join("")}</select></label>
-  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="number" value="${DEFAULT_SIZES[k]}" step="any" /> mm</label>`).join("\n  ")}
+  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="number" value="${DEFAULT_SIZES[k]}" step="any" /> <span class="unit-name">mm</span></label>`).join("\n  ")}
   <h2>Feature</h2>
   <dl id="feature-info">
     <dt>Feature</dt><dd id="intent">…</dd>
@@ -129,9 +159,77 @@ export interface Verb {
   title: string;
 }
 
+/**
+ * A size box. The document holds millimetres, so `value` is always millimetres as text, whichever unit the box shows
+ * (U2c2): reading converts what is typed, writing converts what is put in. Nothing else in the Design workspace knows
+ * the box may show inches. In millimetres it is the input's own text, untouched.
+ */
+export interface SizeBox {
+  /** The number box itself, in the unit it shows (the e2e tests and the page see this). */
+  readonly el: HTMLInputElement;
+  /** Millimetres as text; text that is no number (empty, "e") is returned as the input has it, for the refusal to name. */
+  value: string;
+  addEventListener(type: "input" | "change" | "blur", listener: () => void): void;
+  /** The unit changed (Settings): show the same length in the new unit. */
+  reshow(): void;
+}
+
+/**
+ * Calls `onUnit` on each `unitchange` of `doc` while it returns true. The page's listener holds `onUnit` only weakly and
+ * is made here, apart from the panel, so its scope holds none of the panel's elements: a closed view is not kept alive
+ * by it (a closure shares one scope with its siblings, so the listener must not be made beside the panel's own).
+ */
+export function followUnit(doc: Document, onUnit: () => boolean): void {
+  const weak = new WeakRef(onUnit);
+  const listener = () => {
+    if (weak.deref()?.() !== true) doc.removeEventListener(UNIT_EVENT, listener);
+  };
+  doc.addEventListener(UNIT_EVENT, listener);
+}
+
+/** A size box over `el`, showing the unit `unitNow()` gives, now and after each `reshow`. */
+export function sizeBox(el: HTMLInputElement, unitNow: () => Unit): SizeBox {
+  let unit: Unit = unitNow(); // the unit the text in the box is in
+  /** The millimetres last put in, while the box still has the text that was put there: read back exactly, not through a division. */
+  let put: { text: string; mm: string } | null = null;
+  const read = (): string => {
+    if (put !== null && el.value === put.text) return put.mm;
+    const text = el.value;
+    const n = Number(text);
+    if (unit === "mm" || text.trim() === "" || !Number.isFinite(n)) return text;
+    return String(Number(toMm(n, unit).toPrecision(12)));
+  };
+  const write = (mm: string) => {
+    unit = unitNow();
+    const n = Number(mm);
+    if (unit === "mm" || mm.trim() === "" || !Number.isFinite(n)) {
+      el.value = mm;
+      put = null;
+      return;
+    }
+    el.value = boxShown(n, unit);
+    put = { text: el.value, mm };
+  };
+  return {
+    el,
+    get value() {
+      return read();
+    },
+    set value(mm: string) {
+      write(mm);
+    },
+    addEventListener: (type, listener) => el.addEventListener(type, listener),
+    reshow() {
+      write(read());
+    },
+  };
+}
+
 export interface PropertiesPanel {
-  /** The size inputs, in SIZE_KEYS order. */
-  inputs: HTMLInputElement[];
+  /** Shows the unit now chosen (false once the panel was replaced). Held here because the page holds its listener for it only weakly. */
+  onUnit: () => boolean;
+  /** The size boxes, in SIZE_KEYS order. */
+  inputs: SizeBox[];
   /** The Shape choice (U0d), standing for the part's shape as the toolbar's shape buttons did. */
   shapeChoice: HTMLSelectElement;
   /** Labels and shows the size inputs for this shape; the Shape choice shows the part's shape (`pressed`), or "—" for a design with no body. */
@@ -175,8 +273,35 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     if ($("error").textContent !== "" || !$("kept-warning").hidden) slot.dataset.problem = "";
     else delete slot.dataset.problem;
   };
+  const doc = slot.ownerDocument;
+  const boxes = SIZE_KEYS.map((k) => sizeBox($<HTMLInputElement>(k), () => currentUnit(doc)));
+  /** The body numbers last shown, drawn again when the unit changes. */
+  let shownBody: BodyView | null = null;
+  /** The part's feature last shown, its summary said again when the unit changes. */
+  let shownFeature: Feature | null = null;
+  const drawIntent = () => {
+    $("intent").textContent = shownFeature === null ? NO_BODY_FEATURE : summaryInUnit(shownFeature.intent.summary, currentUnit(doc));
+  };
+  const drawBody = () => {
+    if (shownBody === null) return;
+    const unit = currentUnit(doc);
+    $("volume").textContent = `${fmt(volumeIn(shownBody.volume, unit))} ${unit}³`;
+    $("area").textContent = `${fmt(areaIn(shownBody.area, unit))} ${unit}²`;
+  };
+  /** Shows the unit now chosen; false once this panel was filled again (Design mounted anew), and it is no longer wanted. */
+  const onUnit = (): boolean => {
+    if (slot.querySelector("#width") !== boxes[0].el) return false;
+    for (const b of boxes) b.reshow();
+    for (const name of slot.querySelectorAll(".unit-name")) name.textContent = currentUnit(doc);
+    drawBody();
+    drawIntent();
+    return true;
+  };
+  followUnit(doc, onUnit);
+  for (const name of slot.querySelectorAll(".unit-name")) name.textContent = currentUnit(doc);
   return {
-    inputs: SIZE_KEYS.map((k) => $<HTMLInputElement>(k)),
+    onUnit, // kept by the panel, which the page's listener holds only weakly
+    inputs: boxes,
     shapeChoice: $<HTMLSelectElement>("shape"),
     setShape(shape, pressed) {
       const choice = $<HTMLSelectElement>("shape");
@@ -189,7 +314,8 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
       }
     },
     showFeature(feature) {
-      $("intent").textContent = feature === null ? NO_BODY_FEATURE : feature.intent.summary;
+      shownFeature = feature;
+      drawIntent();
       $("provenance").textContent = feature === null ? NONE : describeProvenance(feature.provenance);
       $("no-part").hidden = feature !== null;
     },
@@ -215,8 +341,8 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     },
     showBody(view, name) {
       $("body-heading").textContent = name;
-      $("volume").textContent = `${fmt(view.volume)} mm³`;
-      $("area").textContent = `${fmt(view.area)} mm²`;
+      shownBody = view;
+      drawBody();
       $("topology").textContent = `${view.vertices} V · ${view.edges} E · ${view.faces} F`;
       const status = $("status");
       status.textContent = view.errors.length === 0 ? "valid" : `${view.errors.length} problem(s)`;
@@ -225,6 +351,7 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
       $("body-problems").hidden = view.errors.length === 0;
     },
     showNoBody() {
+      shownBody = null;
       $("body-heading").textContent = "Body";
       for (const id of ["volume", "area", "topology", "status"]) $(id).textContent = NONE;
       $("status").className = "";

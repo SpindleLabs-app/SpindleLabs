@@ -6,7 +6,16 @@
    from here (font: inherit); naming the buttons by id outweighs the bar's
    own "#topbar button" padding, so the pair stays narrow. */
 .undo-redo { display: flex; flex-shrink: 0; font-size: 18px; line-height: 1; }
-.undo-redo button#undo, .undo-redo button#redo { padding-left: 6px; padding-right: 6px; }
+.undo-redo button#undo, .undo-redo button#redo, .undo-redo button#history { padding-left: 6px; padding-right: 6px; }
 .undo-redo button:disabled { opacity: 0.35; cursor: default; }
 .undo-redo.docked { position: absolute; right: 8px; bottom: 8px; z-index: 1; flex-direction: column; gap: 8px; }
-.undo-redo.docked button#undo, .undo-redo.docked button#redo { width: 48px; height: 48px; padding: 0; background: var(--look-float); border-color: var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
+.undo-redo.docked button#undo, .undo-redo.docked button#redo, .undo-redo.docked button#history { width: 48px; height: 48px; padding: 0; background: var(--look-float); border-color: var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
+/* Pressed while an OK is still being worked out, Undo (or Redo) waits for it (clumsy-user hunt 2026-11-04: it looked
+   as if nothing had happened): the shell marks it aria-busy, lit in the accent and pulsing until it has acted; held
+   still for those who ask for less motion. */
+.undo-redo button[aria-busy="true"] { border-color: var(--look-accent); color: var(--look-accent-text); cursor: progress; animation: undo-redo-waiting 0.9s ease-in-out infinite alternate; }
+@keyframes undo-redo-waiting { from { opacity: 1; } to { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .undo-redo button[aria-busy="true"] { animation: none; } }
+.undo-redo .history-button[aria-expanded="true"] { border-color: var(--look-accent); color: var(--look-accent-text); }
+
+.undo-redo .history-button[hidden] { display: none; }

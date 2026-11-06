@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { MODEL_FAULTS, type ModelFault } from "../src/timeline-model.ts";
+import { MODEL_KNOWS } from "../src/landed.ts";
 import { close, failureOf, MATCH_REL, modelSubject, randomSession, runSession, shrinkSession, TimelineFailure, type SessionCounts, type SessionOp, type TimelineSubject } from "../src/timeline-session.ts";
 
 // 24 seeds from 35e2: with Moves drawn too, a reference lost on a built feature first happens at seed 18.
@@ -21,7 +22,7 @@ const STEPS = Number(process.env.FISSION_TIMELINE_STEPS ?? 150);
 
 /** Runs a session; on failure, the message carries the seed and the shrunk steps to save. */
 async function session(make: () => TimelineSubject, seed: bigint): Promise<SessionCounts> {
-  const steps = randomSession(seed, STEPS);
+  const steps = randomSession(seed, STEPS, MODEL_KNOWS);
   try {
     return await runSession(make(), steps);
   } catch (e) {
@@ -76,6 +77,8 @@ test("seeded sessions on the model pass, and reach every kind of outcome", async
     "builds:most",
     // Step 24f4: a design with nothing built saved and opened, like any other.
     "save-open:nothing-built",
+    // 35f1e2: the check needing no model compared sketches whose face did not move.
+    "sketch-still:checked",
   ];
   const missing = wanted.filter((k) => !total[k]);
   assert.deepEqual(missing, [], `never reached: ${missing.join(", ")}`);
@@ -117,13 +120,28 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "move-not-held": "the rebuild differs from the model",
   "sketch-not-carried": "the rebuild differs from the model",
   "move-bodies-kept": "the rebuild differs from the model",
+  "combine-tool-kept": "the rebuild differs from the model",
+  "combine-not-held": "the rebuild differs from the model",
+  "combine-pieces-dropped": "the rebuild differs from the model",
+  "combine-op-ignored": "outcome differs from the model",
+  "combine-refusal-changes": "the rebuild differs from the model",
+  // Pieces of one face left untagged carry one name: the subject's own rebuild shows it.
+  "combine-tags-dropped": "two faces share a name",
+  // The first carrier taken for a split face: the sessions meet one only rarely (a reference held from before a Combine
+  // that splits its face into pieces alike); timeline-combine.test.ts catches it by hand too.
+  "combine-first-piece": "a reference guessed between pieces",
+  "combine-face-moves-with-target": "the rebuild differs from the model",
+  "combine-edge-tags-dropped": "the rebuild differs from the model",
 };
 
+/** Faults the first 24 seeds don't reach, and the seeds that do (found by searching 1 to 200; search again if the sessions change). */
+const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-first-piece": [95n] };
+
 /** The first seed whose session the planted bug fails, and how. */
-async function firstFailure(make: () => TimelineSubject): Promise<{ seed: bigint; failure: TimelineFailure } | null> {
+async function firstFailure(make: () => TimelineSubject, late: readonly bigint[] = []): Promise<{ seed: bigint; failure: TimelineFailure } | null> {
   // 24 seeds from 35e2: the rarest catches (a reference falling back, a lost plane not held) come at seeds 18 and 19.
-  for (const seed of Array.from({ length: 24 }, (_, k) => BigInt(k + 1))) {
-    const failure = await failureOf(make, randomSession(seed, 150));
+  for (const seed of [...Array.from({ length: 24 }, (_, k) => BigInt(k + 1)), ...late]) {
+    const failure = await failureOf(make, randomSession(seed, 150, MODEL_KNOWS));
     if (failure) return { seed, failure };
   }
   return null;
@@ -131,7 +149,7 @@ async function firstFailure(make: () => TimelineSubject): Promise<{ seed: bigint
 
 for (const fault of MODEL_FAULTS)
   test(`planted bug "${fault}" is caught: ${CAUGHT_BY[fault]}`, async () => {
-    const found = await firstFailure(() => modelSubject([fault]));
+    const found = await firstFailure(() => modelSubject([fault]), LATE_SEEDS[fault]);
     assert.ok(found, `no session caught ${fault}`);
     assert.equal(found.failure.check, CAUGHT_BY[fault], found.failure.message);
   });
@@ -153,7 +171,7 @@ test("a failing session shrinks to a list no single step can be dropped from", a
     const make = () => modelSubject([fault]);
     const found = await firstFailure(make);
     assert.ok(found);
-    const steps = randomSession(found.seed, 150);
+    const steps = randomSession(found.seed, 150, MODEL_KNOWS);
     const shrunk = await shrinkSession(make, steps);
     assert.ok(shrunk.length <= found.failure.step + 1);
     assert.equal((await failureOf(make, shrunk))?.check, CAUGHT_BY[fault]);

@@ -45,6 +45,14 @@ export function hb3mzd(p0) {
     }
 }
 
+export function hq3vzt(p0, p1) {
+    const ret = wasm.hq3vzt(p0, p1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0];
+}
+
 export function irk2fy(p0, p1, p2) {
     const ret = wasm.irk2fy(p0, p1, p2);
     if (ret[2]) {
@@ -115,6 +123,27 @@ export function pprlx7(p0) {
     return takeFromExternrefTable0(ret[0]);
 }
 
+export function q4m8zt(p0) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(p0, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.q4m8zt(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
 export function qmdw4c() {
     let deferred1_0;
     let deferred1_1;
@@ -126,6 +155,14 @@ export function qmdw4c() {
     } finally {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
+}
+
+export function r7w2kx(p0, p1, p2) {
+    const ret = wasm.r7w2kx(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
 }
 
 export function rk7wq2(p0, p1, p2) {

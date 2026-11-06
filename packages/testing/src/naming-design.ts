@@ -166,7 +166,7 @@ function edgeMatches(name: string, edge: EdgeName): boolean {
 /** Design on `kernel` as a subject without cuts (the circle extruded as a new body), with bugs planted. */
 export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<NamingDesignFault> = []): NamingDesignSubject {
   const fs = new Set(faults);
-  let state: State = { doc: { version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }, meta: {} };
+  let state: State = { doc: { version: 8, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }, meta: {} };
   let undo: string[] = [];
   let redo: string[] = [];
   let cache = new BodyCache(kernel);
@@ -213,7 +213,7 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
         // As a pick lands: the face found by its name on the scene the app draws, its frame worked out from the kernel's face.
         const plane = planeOfFace(op.face);
         const b = await build(doc);
-        const scene = joinBodies(await shownBodies(doc, b, cache));
+        const scene = joinBodies(await shownBodies(doc, b, cache), b);
         const found = findInScene({ kind: "face", id: plane as StableId }, scene);
         if (found.status !== "found") throw new Error(`harness: no single face ${plane} to sketch on (${found.status})`);
         const hit = sceneHit(scene, "face", found.index)!;
@@ -258,7 +258,7 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
       case "project": {
         // Step 27d: the edge picked on the scene the app draws (by its joined index, as a click on it would give), taken as the Project tool takes it.
         const b = await build(doc);
-        const scene = joinBodies(await shownBodies(doc, b, cache));
+        const scene = joinBodies(await shownBodies(doc, b, cache), b);
         const k = scene.bodies.findIndex((x) => x.feature === op.edge.feature);
         const body = scene.bodies[k];
         const e = body ? Array.from({ length: body.view.edges }, (_, i) => i).find((i) => { const n = edgeName(body.names, i); return n !== null && edgeMatches(n, op.edge); }) : undefined;
@@ -301,7 +301,7 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
   /** What a pointer on sketch `id` may snap to on its face's edges, as the app works it out: on the scene drawn, where the rebuild placed the sketch. */
   async function edgeTargetsOf(doc: DesignDocument, id: string): Promise<EdgeTarget[]> {
     const b = await build(doc);
-    const scene = joinBodies(await shownBodies(doc, b, cache));
+    const scene = joinBodies(await shownBodies(doc, b, cache), b);
     const r = b.results[id];
     return sketchEdgeTargets(doc, id, scene, r?.status === "built" ? r.placement?.plane : undefined);
   }
@@ -330,8 +330,9 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
         const p = r.placement.plane;
         // A pin's warning in the model's terms by its cause (the harness compares no more); "point-ambiguous" never matches the model, which has none.
         // Then (27d) the projections held, by id; "projection-ambiguous" never matches either.
+        // "plane-split" (35f1e) comes only after a Combine, which the naming model's sessions never make: it matches nothing there.
         const warning: NamingWarning | undefined = r.plane
-          ? { cause: r.plane.cause, face: faceNameOf(r.plane.face) }
+          ? ({ cause: r.plane.cause, face: faceNameOf(r.plane.face) } as NamingWarning)
           : r.points
             ? ({ cause: r.points.cause, pin: { at: "middle", line: "" } } as NamingWarning)
             : r.projections

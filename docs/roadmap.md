@@ -16,9 +16,9 @@ Rules for every thread:
 - Order: H1a after Combine (35f); H2 and H3 as soon as the engine's pieces and the app bridge exist (they store nothing in the project, so they need no plate and can come before 52); the plate (P1) and the full Slice workspace stay after 52; H4 after H2a; H5 after 54 and 45. Never ahead of a primary roadmap kernel step for usage or pull request slots.
 
 - [ ] H1. **Print check toggle while you design.** One toggle in Design paints the part: red where supports will be needed, orange where a wall is too thin for the nozzle, and a marker on the weakest spot. It updates live as you model, in the build direction as modelled (Z up) until a plate gives the real orientation (P1).
-  - [ ] H1a. Overhangs that need supports, found by angle on the display mesh (the angle from the printer profile, 45° by default), painted through the shared overlays (I16), with the area in mm² in the properties panel. Needs: Combine (35f) landed; nothing new in the kernel. Hand-worked: a 45° ramp is on the boundary, 0.9× and 1.1× of the angle either side; a T shape's arms are red underneath and nowhere else; a sphere's lower cap below the angle's ring, its height worked out by hand. Design area slot.
-  - [ ] H1b. Walls too thin for the nozzle (narrower than one line width), from the engine's walls (H2a), shown on the faces they come from.
-  - [ ] H1c. The weakest spot, from H4a, shown as a marker with "weakest here (estimate)". With no load given it uses the thinnest cross-section along the build direction.
+  - [x] H1a. Overhangs that need supports, found by angle on the display mesh (the angle from the printer profile, 45° by default), painted through the shared overlays (I16), with the area in mm² in the properties panel. Needs: Combine (35f) landed; nothing new in the kernel. Hand-worked: a 45° ramp is on the boundary, 0.9× and 1.1× of the angle either side; a T shape's arms are red underneath and nowhere else; a sphere's lower cap below the angle's ring, its height worked out by hand. Design area slot.
+  - [x] H1b. Walls too thin for the nozzle (narrower than one line width), from the engine's walls (H2a), shown on the faces they come from.
+  - [x] H1c. The weakest spot, from H4a, shown as a marker with "weakest here (estimate)". With no load given it uses the thinnest cross-section along the build direction. First version done 2026-11-05 (with H1a and H1b, and bridges that may sag): Inspect ▾ Print check, worked from the display mesh (details in `docs/progress/slice.md`).
 - [ ] H2. **Print preview button: watch it print.** One button in Design (and later in Slice) shows the part exactly as it will print: every layer, the walls, infill and supports in their own colours, the print time and filament weight, and a time-lapse of the nozzle laying it down.
   - [ ] H2a. The engine in the app: the slicing engine's release build ships like the kernel's (the kernel's Release workflow, a check like `check_kernel_build.py`), runs in the worker, and slices the selected bodies with the owner's printer's default profile (P1S, 0.4 mm nozzle, PLA). Nothing is saved into the project (choices, not results), so this needs no plate. Needs: the engine's layers, walls, infill and G-code (the engine halves of P2–P4 and P6) and its supports (P5).
   - [ ] H2b. The preview: a layer slider in the shared viewport, colours per kind of line, supports shown, time and weight; the layers drawn from the G-code the printer would get, never from a separate drawing.
@@ -70,6 +70,8 @@ Renumbering of 2026-10-24 (owner's ask: "it makes no sense going 32, 33, 40"; th
 | 51, app half; 52 | 56 | Revolve (with cones and tori in the app) |
 | 53–57 | 57–61 | Error display, cached results, construction planes, sketch on them, patterns |
 | 58–84 | 62–88 | Shell onwards (each + 4) |
+
+Checked against Fusion's Create, Modify, Configure, Construct, Inspect, Sketch and Insert menus (owner's screenshots, 2026-11-06; behaviour copied, never names, icons or looks): everything a maker reaches for is a step below. The additions from that check are 35h (split body), 39d (press pull), 49b (the remaining constraints), 52c–52f (sketch shapes, sketch fillet and patterns, text, tracing a picture or placing an SVG/DXF), 54b (threads), 59a–59c (the kinds of plane, axis and point) and the notes on 61, 66 and 70. What an established CAD has beyond that, left out as not what a beginner or a 3D-printing user needs, is listed with reasons in `docs/future-tools.md`, to come back to later. Emboss is V3; interference 80; mesh bodies X10.
 
 Kernel foundations
 - [x] 1. Testing rules in repo; tolerance module with exact predicates
@@ -153,6 +155,7 @@ Booleans
 - [ ] 33. Inside/outside classification with exact predicates: three-valued IN/OUT/ON, seeded ray retries (B0 decision 7)
 - [ ] 34. Naming rules for booleans (pulled forward from full naming, 40, by the architecture review of 2026-10-22, item 1; testing area, so it can run alongside 31–33, which are kernel; it must land before 35). Today a name belongs to one feature, but Combine mixes features, so a name must be able to say which features' faces made it, and edges between faces of different features must be nameable (fillets need them). Every name valid today stays valid (old names are a subset of the new rules), and 35's history map carries the names through. 40 finishes the rest after 39. Substeps: the kernel repo's `docs/progress/booleans.md` (34a)
 - [ ] 35. Union/subtract/intersect for planar solids + boolean property tests + oracle comparison; add coverage-guided fuzzing over the harness's operation set. Before booleans work on turned bodies, the kernel's volume must stay consistent for them (a 1 km frame with 1 µm walls, turned and baked, gives 4010.3 instead of 4000.0 today; 37231 instead of 40000 at the old 10 km limit; see the step 12 regressions). The basic tools (Move/Rotate, Duplicate, Measure, Mirror) land just before it, as 35e2; Measure (35e2l) comes right after Combine instead (owner's order, 2026-11-03). The Combine tool (from 54) lands with 35, as 35f, the first piece of booleans to try in the app: join, cut or intersect two chosen bodies; a body with curved faces is refused with a message naming the face until 37 and 38 (a tracked compromise, never a wrong answer). With 35, as 35d (architecture review): a kernel watchdog in `kernel-client.ts` (a kernel call that hangs or the worker dies is reported and the worker restarted, never a frozen app), and the body store keeps a display mesh only for bodies on screen, made when asked for
+  - [ ] 35h. Split body (from the Fusion menu check, 2026-11-06): cut one body into two along a plane, a flat face or a sketch line, keeping both halves as bodies in the timeline. A subtract by a half-space on 35's engine for flat-sided bodies; bodies with round faces once 37 lands. Cutting a part in two to fit the plate is part of slice and send (H3). After 35g.
 - [ ] 36. Coplanar faces, touching edges, shared vertices; a result that is not a clean solid refused, decided on the result (B0 decision 2); merging faces and edges, and the history map (decision 6)
 - [ ] T1–T7. Frontier testing (Ben's ask, 2026-10-26; one thread at a time): swarm testing and state-coverage markers (T1), a near-miss generator for the boolean engine (T2), same-answer checks under exact moves and a face-lineage check (T3), an automatic shrinker for failing parts (T4) and fault injection (T6) before Combine (35f); the boolean fuzz target and a 200-cut endurance chain land with 35c (T5); then a cold review proving each one catches planted bugs (T7). Substeps: `docs/progress/frontier-testing.md`
 - [ ] L3. After 35: Manifold as a second outside oracle on cases with nothing touching (`docs/progress/frontier-testing.md`)
@@ -164,6 +167,7 @@ Curved booleans and extrude modes
 - [ ] 38. Cylinder–cylinder and sphere special cases (B0 decision 4), before 39 because a hole cut through a rounded corner meets a parallel cylinder, and every sketch extruded the same way gives parallel cylinders; the general position comes at 41. Before making sphere faces other than hemispheres, make the kernel's measures stable for sphere faces much smaller than their sphere and teach its display general sphere faces.
   - [ ] 38a. Exact special cases: coaxial and parallel cylinders, plane–sphere, sphere–sphere; and one general tessellator working in uv through 37a's surface questions (architecture review item 2), checked against today's tessellation, which also gives general sphere faces
 - [ ] 39. Extrude join, cut, intersect and new body in Design's Extrude; the naming harness's cut cases (Ben's Fusion answers 1–7, Q6 a sketch on a cut's floor, and the split face) then run on Design for real instead of only on the model, and the ambiguous-name path (25a4) gets real split faces. Extrude's other modes (symmetric, to-face, taper) are 53. Substeps: the kernel repo's `docs/progress/booleans.md`
+  - [ ] 39d. Press pull (Fusion's Q, its most used tool; the face half exists as UX1c, `workspaces/design/src/face-extrude.ts`, new body only): with nothing open, dragging a flat face of a body pulls it out as a join or pushes it in as a cut, the mode chosen by the drag's direction and shown in the panel before Finish; the Q key opens it on the face under the pointer. Offset face on a round face waits for 41.
 - [ ] L1. After 39: replay the Fusion 360 Gallery's 8,625 sketch-and-extrude designs through the timeline; the share that rebuilds valid goes in the baseline (`docs/progress/frontier-testing.md`)
 - [ ] Later: an optional "keep as separate bodies" for union/subtract results that only touch along an edge or at a vertex (B0 decision 2)
 
@@ -192,13 +196,19 @@ Constraint solver core (the end of the front-loaded hard block, right after 46; 
 Sketcher, continued (after the hard block; see the build-order note above)
 - [ ] 48. Profile detection (closed regions, nested); an extrude names its region by the ids of the curves around it, never by an index (docs/document-model.md, section 3)
 - [ ] 49. Parallel, perpendicular, equal, tangent
+  - [ ] 49b. The rest of Fusion's constraints (menu check, 2026-11-06): midpoint, concentric, collinear, symmetric about a line, and fix/unfix (a fixed point or curve never moves when the solver runs). Each in the kernel's solver with the SolveSpace cross-check, each with its status colour from 51.
 - [ ] 50. Editable dimensions (length, radius, angle): moved up to 47e, straight after the solver core (owner's order, 2026-11-03); the number is kept so the later numbers keep their meaning
 - [ ] 51. Constraint status colours
 - [ ] 52. Trim, extend, offset, mirror (offsets in K1, shared with Laser kerf and Vector)
+  - [ ] 52c. More sketch shapes (menu check, 2026-11-06; nut traps and screw slots need them; each is lines and arcs the sketch already has, so a side thread can pull this forward when usage allows): polygon (sides, inscribed or circumscribed), slot (centre to centre and overall), rectangle from its centre and from three points, circle through three points and through two points, ellipse (the kernel's Ellipse curve from 37), and a sketch point (a hole centre to dimension to).
+  - [ ] 52d. Sketch fillet and chamfer at a corner (the two curves trimmed and the arc or line added, constrained tangent and coincident so it survives a drag), break a curve at a point, move or copy chosen sketch curves, and rectangular and circular patterns of sketch curves (the same pattern maths as 61, in 2D first).
+  - [ ] 52e. Sketch text: typed text on a sketch plane in a chosen font and height, its outlines as lines, arcs and Béziers (K1's Béziers, X17's biarc fitting) so it extrudes to an embossed or cut label; shares V2's text-to-outlines.
+  - [ ] 52f. Trace and place: a picture put on the sketch plane, scaled by typing one known length, to trace over (and hidden or deleted afterwards); SVG and DXF curves placed straight into a sketch (X6a identifies the files; the readers are shared with L2 and V2).
 
 Extrude modes, holes
 - [ ] 53. Extrude symmetric, to-face and taper (taper makes slanted planes and cones, on 42's cones)
 - [ ] 54. Hole feature (after 40; the Combine tool moved to 35)
+  - [ ] 54b. Threads (menu check, 2026-11-06): a hole or a cylinder marked with a standard thread (M3, M5, 1/4"-20…) in the Hole panel or on its own; drawn as a thread texture, carried as intent (I11) so Slice sizes the hole for a tap or a printed thread and a drawing calls it out. A modelled thread, the real helical surface cut into the part, comes with 70's coil.
 
 Parametric
 - [ ] 55. User parameters and expressions
@@ -210,19 +220,22 @@ Robustness
 
 Modelling tools
 - [ ] 59. Construction planes, axes, points
+  - [ ] 59a. Planes (the kinds Fusion offers, menu check 2026-11-06): offset from a face or plane, at an angle about an edge, tangent to a round face, midway between two faces, through three points, through two edges, perpendicular to a curve at a point.
+  - [ ] 59b. Axes: through a cylinder, cone or torus; perpendicular to a face at a point; where two planes meet; through two points; along an edge.
+  - [ ] 59c. Points: at a corner; where two edges or three planes meet; at the centre of a circle, sphere or torus; where an edge crosses a plane; a distance along a curve.
 - [ ] 60. Sketch on construction planes
-- [ ] 61. Rectangular/circular patterns, mirror
+- [ ] 61. Rectangular/circular patterns, mirror (of features and bodies; the sketch patterns are 52d)
 - [ ] 62. Shell
 - [ ] 63. Draft
 - [ ] 64. Move/copy/align bodies (its basics, Move/Rotate, Duplicate and Mirror, already land earlier as 35e2; this step adds align and the rest)
 - [ ] 65. Section view (Measure moved up to 35e2l, right after Combine; owner's order, 2026-11-03)
-- [ ] 66. Appearances, physical properties
+- [ ] 66. Appearances, physical properties (a material's density gives mass and the centre of mass, shown in Inspect with the volume)
 
 Advanced geometry
 - [ ] 67. NURBS curves (eval, knot insertion)
 - [ ] 68. NURBS surfaces; extend the self-intersection check to general surfaces
 - [ ] 69. Sketch splines
-- [ ] 70. Sweep
+- [ ] 70. Sweep (a profile along a path; with it a pipe along a path and a coil or helix, which brings 54b's modelled thread)
 - [ ] 71. Loft
 - [ ] 72. NURBS surface–surface intersection (marching)
 - [ ] 73. General fillets on curved faces

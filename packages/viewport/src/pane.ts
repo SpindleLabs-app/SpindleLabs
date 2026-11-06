@@ -1,8 +1,8 @@
 // Split view (X3): each workspace on screen gets a SharedViewport of its
 // own over one view of the one viewer. Scene methods (body, selection,
 // overlays) go to the viewer, so every view draws the same thing; camera
-// methods (fit, setView, fitSelection, lookAt) and an image (showImage, clearImage)
-// go to that pane's view only.
+// methods (fit, setView, fitSelection, lookAt), an image (showImage, clearImage)
+// and a picture of the view (picture) go to that pane's view only.
 import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, MoveHandlesShow, MovePointer, OriginPlane, OriginShown, Plane, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
 
 /** What a pane needs of its view: the element it fills and its camera. */
@@ -14,6 +14,9 @@ export interface PaneCamera {
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
   showImage(image: ImageRep | null): void;
   clearImage(): void;
+  leaveNavTool(): boolean;
+  /** A picture of this view as on screen, without the view cube (File > Save picture). */
+  picture?(): Promise<Blob | null>;
 }
 
 type PickHandler = (pick: ViewportPick) => void;
@@ -49,9 +52,12 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       showBody: (mesh: DisplayMesh) => scene.showBody(mesh),
       bodyFraming: () => scene.bodyFraming(),
       fit: () => view.fit(),
+      // The picture is this pane's view, as the camera methods are (split view: the pane the File menu is for).
+      ...(view.picture ? { picture: () => view.picture!() } : {}),
       setView: (name: ViewName) => view.setView(name),
       fitSelection: () => view.fitSelection(),
       lookAt: (plane: Plane, side?: 1 | -1) => view.lookAt(plane, side),
+      leaveNavTool: () => view.leaveNavTool(),
       editedScreenPoints: () => scene.editedScreenPoints(),
       sketchScreenPoint: (at: SketchXY) => scene.sketchScreenPoint(at),
       showImage: (image: ImageRep | null) => view.showImage(image),

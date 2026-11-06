@@ -16,13 +16,14 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { baseNameOf, changeNote, fileMenu, holdSkeleton, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, startTheme, readThemeChoice, withIcon, workspaceSwitcher } from "@fission/ui";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { shellTabs, type ShellTabs } from "./design-tabs.ts";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { bringForward, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
-import { versionList, versionTime } from "@fission/ui";
+import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
@@ -35,7 +36,9 @@ import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
 import { manufactureWorkspace } from "@fission/manufacture";
 import { laserWorkspace } from "@fission/laser";
-import { sliceWorkspace } from "@fission/slice";
+import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
+/** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
+declare const __SLICE_PAGE__: boolean;
 import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
@@ -47,7 +50,7 @@ const workspaces: WorkspacePlugin[] = [
   simulateWorkspace,
   manufactureWorkspace,
   laserWorkspace,
-  sliceWorkspace,
+  __SLICE_PAGE__ ? slicePageWorkspace : sliceWorkspace,
   circuitWorkspace,
   vectorWorkspace,
   imageWorkspace,
@@ -81,6 +84,39 @@ const listed = listedWorkspaces(workspaces, everyWorkspace);
 const workspaceTitle = (id: WorkspaceId) => workspaces.find((w) => w.id === id)?.title ?? id;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+// Optional accounts (accounts.config.mjs): with the switch off, the build has no account code and contacts no service.
+declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
+/** The home screen (home.config.mjs): the app opens on it over the last project; off in the shipped build until released. */
+declare const __HOME_SCREEN__: boolean;
+/** The account code's hooks once it has started (only with accounts on): My designs. */
+let accountHooks: import("./account.ts").AccountHooks | null = null;
+/**
+ * A small picture of the largest 3D view on screen for My designs (192 × 128, WebP, else PNG or JPEG under 32 KiB),
+ * or null when there is none. The views keep their last frame (preserveDrawingBuffer), so this reads what is shown.
+ */
+function pictureOfView(): string | null {
+  try {
+    const shown = [...document.querySelectorAll<HTMLCanvasElement>("canvas")].filter((c) => !c.closest("dialog") && c.width > 0 && c.height > 0 && c.getBoundingClientRect().width > 0);
+    const view = shown.sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    if (!view) return null;
+    const w = 192, h = 128;
+    const out = document.createElement("canvas");
+    Object.assign(out, { width: w, height: h });
+    const g = out.getContext("2d");
+    if (!g) return null;
+    // Cover: the middle of the view, cut to 3:2.
+    const scale = Math.max(w / view.width, h / view.height);
+    const sw = w / scale, sh = h / scale;
+    g.drawImage(view, (view.width - sw) / 2, (view.height - sh) / 2, sw, sh, 0, 0, w, h);
+    for (const [type, q] of [["image/webp", 0.75], ["image/jpeg", 0.7], ["image/png", undefined]] as const) {
+      const url = out.toDataURL(type, q);
+      if (url.startsWith(`data:${type};base64,`) && url.length <= 32 * 1024) return url;
+    }
+    return null;
+  } catch {
+    return null; // a view that can't be read (a lost WebGL context, a tainted canvas): no picture this time
+  }
+}
 // The one viewer (one scene); each workspace on screen sees it through a
 // pane of its own: its own camera, the viewer's body, selection and picks.
 const viewer = new Viewer($("viewport"));
@@ -128,6 +164,7 @@ function projectChanged(label = "Edit", mergeKey?: string) {
   if (keepOnChange !== null && mounting === 0) keep(keepOnChange);
   autosave?.changed();
   if (mounting === 0) ctx.history.record(label, mergeKey);
+  tabs?.sync();
 }
 /** Runs a show or mount; once the last one ends, takes whatever defaults the workspaces filled in into the present undo step. */
 function mountingDone<T>(run: () => T): T {
@@ -291,7 +328,7 @@ const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer
 const markTab = workspaceSwitcher(
   $("workspaces"),
   listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
-  (id) => (id === "slice" ? sliceForPrinting() : show(id as WorkspaceId)),
+  (id) => (id === "slice" && !__SLICE_PAGE__ ? sliceForPrinting() : show(id as WorkspaceId)),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
 /** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */
@@ -333,6 +370,7 @@ function showPage(page: Page) {
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
+  tabs?.sync();
   if (workspace) lastWorkspace = workspace.id;
   if (swap) {
     if (swap === "community") closeSplit();
@@ -603,6 +641,7 @@ const saveStatus = (s: AutosaveStatus) => {
   el.dataset.state = s.state; // read by the e2e test
   el.textContent = s.state === "saving" ? "Saving…" : s.state === "saved" ? "Saved" : `Not saved: ${s.message}`;
   el.title = el.textContent; // the words behind the mark at phone width
+  if (s.state === "saved") accountHooks?.saved(); // My designs: kept in the account a few seconds later, when signed in
   if (s.state === "saved") window.removeEventListener("beforeunload", askBeforeLeaving);
   else window.addEventListener("beforeunload", askBeforeLeaving);
 };
@@ -642,6 +681,7 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   // started afresh on a reopened project) is not.
   autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
+  tabs?.sync();
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
 function keepOnFirstChange() {
@@ -679,6 +719,8 @@ async function save(asNew = false) {
     fileStatus(e instanceof Error ? e.message : String(e));
   }
 }
+// The phone's keyboard opening never hides the box being typed in (clumsy-human hunt 11-04, keep-typing-visible.ts).
+keepTypingVisible(window);
 const SAVE_TITLE = $("save").title;
 withIcon($("save"), "save"); // its word kept as its name, out of sight (styles/app-bar.css)
 // A double-click, a held Enter or a mashed Save is one save, not a file per press (clumsy-user hunt 11-04).
@@ -701,12 +743,16 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 // File ▾ (U0f2a), first on the bar as in Fusion: New and the exports are
 // the workspace's in use (the pane last clicked, as for keys), Open and
 // Save the shell's. Save also stays one click, as the icon beside it.
+/** A shell key as the user reads it here (Ctrl+S, or ⌘S on a Mac), for the File menu. */
+const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/.test(navigator.platform));
 const file = fileMenu(document, {
-  open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
+  open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
+  ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
+  ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
-  save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
-  saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, run: () => void save(true) },
+  save: { id: "file-save", label: "Save", title: SAVE_TITLE, key: fileKey("Mod+S"), run: () => void save() },
+  saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, key: fileKey("Mod+Shift+S"), run: () => void save(true) },
   where: () => {
     const id = panesInUse().map((p) => pool.showing(p))[0];
     return id ? workspaceTitle(id) : "Community";
@@ -721,7 +767,7 @@ const file = fileMenu(document, {
 });
 $("file-bar").prepend(file.element);
 /** What Open says when the last project's changes, refused because another tab saved, were kept as project `name`. */
-const keptApartWords = (name: string) => `Changes made in this tab couldn't be stored, because the project was changed in another tab, so they're kept in this browser as a separate project, “${name}”.`;
+const keptApartWords = (name: string) => `Your changes in this tab couldn't be saved, because the project was changed in another tab meanwhile. Nothing is lost: they're kept in this browser as a separate project, “${name}” (File > Projects in this browser opens it).`;
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
@@ -733,6 +779,7 @@ function replaceProject(project: Project) {
   show(current); // mounts the workspace on the new project
   if (split) mountSplit(split.id); // and the second one
   ctx.history.reset(); // a new start: nothing from the old project to undo
+  tabs?.landed();
 }
 /**
  * Replaces the open project with the one in `text`; throws, leaving the
@@ -745,6 +792,7 @@ function openProject(text: string, fileName = "") {
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
+  tabs?.expect(null);
   const apart = finishAutosave();
   autosave = null;
   // A file already kept here as it is (opened before, unchanged since) goes on under its stored id, not as one more
@@ -785,6 +833,7 @@ async function openStored(id: string, modified: Date | null) {
   const kept = keptEntry(local, id);
   const project = kept === null ? await store.open(id) : projectFromJson(kept, workspaces);
   // Changes this tab couldn't store (another tab saved since) are kept as a separate project, and said, as Open does (round 2 hunt A5).
+  tabs?.expect(id);
   const apart = finishAutosave();
   autosave = null;
   guard.finished();
@@ -811,6 +860,11 @@ async function openStored(id: string, modified: Date | null) {
     );
   });
 }
+/** The account's version of kept project `id` saved `at` (only with accounts on and signed in); throws why not. */
+async function accountVersionText(id: string, at: Date): Promise<string> {
+  if (!accountHooks) throw new Error("this version is kept in your account: sign in to restore it");
+  return accountHooks.versionText(id, at);
+}
 /** The open project's id when it is kept (null while a new one waits for its first change, or a file opens). */
 const keptId = () => (autosave === null ? null : (document.body.dataset.projectId ?? null));
 /**
@@ -818,11 +872,13 @@ const keptId = () => (autosave === null ? null : (document.body.dataset.projectI
  * it is now, as ONE undo step, the way Undo puts a state back: Undo takes it back. Throws, changing nothing, when it
  * can't be read.
  */
-async function restoreVersion(at: Date) {
+async function restoreVersion(at: Date, where: VersionPlace = "browser") {
   await started;
   const id = keptId();
   if (id === null) throw new Error("this project isn't kept in this browser yet, so it has no earlier versions");
-  const text = projectToJson(await store.openVersion(id, at));
+  // A version kept only in the account (account features 2) is read from there, and opened as a file is, so one that
+  // isn't a project, or comes from a newer SpindleLabs, is refused in the same words before anything changes.
+  const text = where === "account" ? projectToJson(projectFromJson(await accountVersionText(id, at), workspaces)) : projectToJson(await store.openVersion(id, at));
   const when = versionTime(at, new Date());
   ctx.selection.clear(); // it named faces of the project as it is now
   // One step: the remount's amend inside it is taken into the step, not into the present (it would leave nothing to undo).
@@ -832,7 +888,9 @@ async function restoreVersion(at: Date) {
 const versions = versionList(document, {
   list: async () => {
     const id = keptId();
-    return id === null ? null : { name: ctx.project.name, times: await store.versions(id) };
+    if (id === null) return null;
+    const [times, account] = await Promise.all([store.versions(id), accountHooks?.versionsOf(id).catch(() => null) ?? null]);
+    return { name: ctx.project.name, times, account };
   },
   restore: restoreVersion,
 });
@@ -841,6 +899,70 @@ const projects = listedProjects(document, {
   journal: local,
   openId: keptId,
   open: openStored,
+});
+
+/** A new, empty project in place of the open one (the home screen's New, and "+" on the design tabs). */
+async function startNewProject(keepNow = false) {
+  await started;
+  openings++; // a project still opening is never kept or counted as reopened
+  endOffer();
+  guard.finished();
+  tabs?.expect(null);
+  keepOnFirstChange(); // first: the last project's autosave must not store the new one over it
+  replaceProject(emptyProject());
+  // A new tab is kept at once, so it is still there when another tab is chosen and chosen back.
+  if (keepNow && keepOnChange !== null) {
+    keep(keepOnChange);
+    autosave?.changed(); // stored now, not at its first change
+  }
+  fileStatus("");
+}
+/** The design tabs (only when the build has the home screen, which they are part of): one tab for each project open at once. */
+const tabs: ShellTabs | null = !__HOME_SCREEN__
+  ? null
+  : shellTabs(document, {
+      after: $("topbar"),
+      keptId,
+      projectName: () => ctx.project.name,
+      workspace: () => current,
+      titles: () => Object.fromEntries(workspaces.map((w) => [w.id, w.title])),
+      open: async (id) => openStored(id, (await store.list()).find((s) => s.id === id && !s.problem)?.modified ?? null),
+      start: () => startNewProject(true),
+      preselect: (id) => {
+        if (split?.id !== id && pages.includes(id)) current = id as Page; // the next project shows in the workspace its tab was in
+      },
+      capture: () => ({ history: ctx.history.save(), selection: [...ctx.selection.items], camera: viewer.main.cameraPose() }),
+      apply: (view) => {
+        const v = view as { history: SavedHistory; selection: GeometryReference[]; camera: Parameters<typeof viewer.main.restorePose>[0] };
+        const project = ctx.project;
+        // The steps come back only for the project as it was left; a project that differs starts afresh (already so).
+        if (ctx.history.load(v.history)) ctx.selection.set(v.selection);
+        // The camera once the workspace has shown the project and framed it, unless another tab was chosen meanwhile.
+        void shownOnScreen().then(() => ctx.project === project && viewer.main.restorePose(v.camera));
+      },
+      unsaved: () => shownStatus.state !== "saved",
+      report: fileStatus,
+      kept: async () => (await store.list()).map((s) => s.id),
+      storage: local,
+    });
+/** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
+const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
+  list: () => store.list(),
+  openId: keptId,
+  open: openStored,
+  remove: async (id) => {
+    if (id === keptId()) throw new Error("the open project can't be deleted here");
+    await forget(store, local, id);
+  },
+  // Not the open project (its name is the open one's to change; the screen offers no Rename for it).
+  rename: async (id, name) => {
+    if (id === keptId()) throw new Error("rename the open project in its own name box");
+    await renameKept(store, id, name);
+  },
+  newProject: () => startNewProject(),
+  chooseFile: () => $("open-file").click(),
+  showGuide: () => $("guide-open").click(),
+  workspaceTitle,
 });
 
 // While a project opens (the last one reopened, or a file), the top bar
@@ -889,6 +1011,7 @@ $("opening-fresh").addEventListener("click", () => {
   openings++; // the project being opened is never kept or counted as reopened
   endOffer();
   guard.finished(); // the last project didn't freeze the tab: the next visit opens it as before
+  tabs?.expect(null);
   keepOnFirstChange(); // first: the last project's autosave must not store the new one over it
   replaceProject(emptyProject());
   // The file is never kept: the mark says again what it said for the last project, kept as it was.
@@ -1006,6 +1129,9 @@ const shellShortcuts: Record<string, (e: Event) => boolean> = {
   undo: () => (undoRedo("undo"), true),
   redo: () => (undoRedo("redo"), true),
   "redo-y": () => (undoRedo("redo"), true),
+  save: () => (void save(), true),
+  "save-as": () => (void save(true), true),
+  open: () => ($("open-file").click(), true),
   "paste-files": (e) => {
     const files = [...((e as ClipboardEvent).clipboardData?.files ?? [])];
     if (files.length === 0) return false; // text pastes as usual
@@ -1057,6 +1183,14 @@ document.body.append(settingsDialog);
 let browserSettings: SettingsStore | null = null;
 const settings = () => (browserSettings ??= new SettingsStore(local));
 // The theme (U1b, U2a): the page already wears it (public/theme-init.js ran before the first paint); this keeps it in step with the Settings choice and the device.
+// The browser checks switch the tooltips off (e2e/browser.mjs) so code that reads a title under the mouse sees it; e2e/tooltip.mjs keeps them on. The live build has no such switch.
+if (!(__TEST_HOOKS__ && (window as unknown as { __noTooltips?: boolean }).__noTooltips)) startTooltips(document);
+// Units (U2c2): the page wears the stored unit (data-unit) and tells the screens when it changes.
+const chooseUnit = startUnits(document, settings());
+// Design's defaults (U2b): the grid size and Snap to grid a new sketch starts with, worn as data-grid-size and data-grid-snap.
+const designDefaults = startDesignDefaults(document, settings());
+// The mouse preset (U2d): the page wears it (data-mouse) and the 3D views follow it.
+const chooseMouse = startMouse(document, settings());
 const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
 $("settings-open").addEventListener("click", () => {
   settings(); // read once now, so the first real setting has its place
@@ -1065,15 +1199,70 @@ $("settings-open").addEventListener("click", () => {
     settingsDialog.showModal();
     settingsDialog.querySelector<HTMLElement>("[data-section=general] .settings-action")?.focus();
   };
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme });
+  fillSettingsNow(backToSettings);
   settingsDialog.showModal();
 });
+/** The AI provider settings live in the assistant panel: open it (the AI button, if closed) and bring them into view. */
+function showAiSettings() {
+  const toggle = $("assistant-toggle");
+  if (toggle.getAttribute("aria-pressed") !== "true") toggle.click();
+  const target = document.querySelector<HTMLElement>(".ai-settings");
+  target?.scrollIntoView({ block: "start" });
+  target?.querySelector<HTMLElement>("select, input, button")?.focus();
+}
+function fillSettingsNow(backToSettings: () => void) {
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings });
+}
+// Report a bug (Ben, 2026-11-04; @fission/ui bug-report.ts): from Settings > About, a form that opens a filled-in
+// GitHub issue in a new tab. The app adds the version, browser, screen and workspace; nothing from the project.
+const bugReport = bugReportDialog(
+  document,
+  () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current }),
+  (url) => void window.open(url, "_blank", "noopener"),
+);
 settingsDialog.addEventListener("click", (e) => {
   if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
 });
-// Optional accounts (accounts.config.mjs): with the switch off, the build has no account code and contacts no service.
-declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
-if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCOUNTS__!));
+// My designs' hooks, once the account code has started (pictureOfView and accountHooks are near the top).
+if (__ACCOUNTS__)
+  void import("./account.ts").then(async (m) => {
+    // My designs (account features 1) reads and keeps projects through the same store as everything else, and opens
+    // them the way File > Projects in this browser does.
+    accountHooks =
+      (await m.startAccounts(__ACCOUNTS__!, {
+        list: () => store.list(),
+        text: async (id) => {
+          try {
+            return projectToJson(await store.open(id));
+          } catch {
+            return null; // gone, or can't be read: not sent
+          }
+        },
+        put: async (id, text, name, savedAt) => {
+          const project = projectFromJson(text, workspaces);
+          project.name = name;
+          const key = id ?? newId();
+          await store.save(key, project, savedAt);
+          return key;
+        },
+        openId: () => (autosave === null ? null : (document.body.dataset.projectId ?? null)),
+        open: openStored,
+        workspace: () => current,
+        picture: pictureOfView,
+      }, {
+        // Settings that follow you (account features 3) were just written to this browser's storage: the Settings
+        // page's are read again and the theme and units put on at once; the slicer's are read when its dialog opens.
+        applied: (keys) => {
+          if (!keys.includes(SETTINGS_KEY)) return;
+          settings().reload();
+          chooseTheme(readThemeChoice(settings()));
+          chooseUnit(readUnitChoice(settings()));
+          chooseMouse(readMouseChoice(settings()));
+          // Open meanwhile: it shows the new choices.
+          if (settingsDialog.open) fillSettingsNow(() => settingsDialog.showModal());
+        },
+      })) ?? null;
+  });
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
@@ -1081,14 +1270,20 @@ if (__ACCOUNTS__) void import("./account.ts").then((m) => m.startAccounts(__ACCO
 // waits for it, in the order pressed, so it takes back that OK and not the step before (clumsy hunt 2026-11-04).
 let pressesWaiting = 0;
 let pressed: Promise<void> = Promise.resolve();
+/** The presses of each button still waiting (clumsy-user hunt 2026-11-04: a waiting Undo looked as if nothing had happened). */
+const waitingOn = { undo: 0, redo: 0 };
 function undoRedo(which: "undo" | "redo") {
   if (pressesWaiting === 0 && !ctx.history.busy()) return undoRedoNow(which);
   pressesWaiting++;
+  waitingOn[which]++;
+  showUndoRedo();
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
+      waitingOn[which]--;
       undoRedoNow(which);
+      showUndoRedo();
     });
 }
 function undoRedoNow(which: "undo" | "redo") {
@@ -1106,8 +1301,13 @@ function showUndoRedo() {
   ] as const;
   for (const [id, verb, label, chord] of buttons) {
     const b = $<HTMLButtonElement>(id);
-    b.disabled = label === null;
-    b.title = label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    // Pressed while an OK is still being worked out, it waits for it (History.whenIdle) and says so: lit and pulsing
+    // (styles/undo-redo.css), its title saying why, until the press has been carried out.
+    const waiting = waitingOn[id] > 0;
+    b.toggleAttribute("aria-busy", waiting);
+    if (waiting) b.setAttribute("aria-busy", "true");
+    b.disabled = label === null && !waiting;
+    b.title = waiting ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
 // At phone width the pair leaves the bar for the main viewport's
@@ -1129,15 +1329,44 @@ $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
 showUndoRedo();
+// History: every step kept, to go back (or forward) to any of them at once. Waits for an OK the kernel still checks
+// like Undo and Redo do, so it goes back from the finished step.
+function jumpHistory(step: number) {
+  const now = () => {
+    try {
+      ctx.history.jumpTo(step);
+    } catch (e) {
+      return fileStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    ctx.history.amend(); // defaults the remounted workspaces filled in
+  };
+  if (pressesWaiting === 0 && !ctx.history.busy()) return now();
+  pressesWaiting++;
+  showUndoRedo();
+  pressed = pressed
+    .then(() => ctx.history.whenIdle())
+    .then(() => {
+      pressesWaiting--;
+      now();
+      showUndoRedo();
+    });
+}
+const historyUi = historyPanel(document, { steps: () => ctx.history.steps(), jump: jumpHistory, now: () => Date.now(), isPhone: () => phone.matches });
+$("redo").after(historyUi.button);
+document.body.append(historyUi.panel);
+ctx.history.onChange(historyUi.refresh);
 // AI, Guide and Community, small at the bar's right (styles/app-bar.css).
 withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
 withIcon($("settings-open"), "settings", 16);
+/** The panel opened last of Files, Properties and the AI panel: the one sheet kept when the window narrows to a phone's. */
+let lastSheet: "browser" | "properties" | "assistant" | null = null;
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
   if (!!panel.hidden !== open) return;
+  if (open) lastSheet = "assistant";
   panel.hidden = !open;
   $("assistant-toggle").setAttribute("aria-pressed", String(open));
   document.body.classList.toggle("assistant-narrow", open); // styles/assistant-narrow.css
@@ -1155,6 +1384,7 @@ $("assistant-toggle").addEventListener("click", () => {
 for (const slot of ["browser", "properties"] as const) {
   const toggle = $(`${slot}-toggle`);
   const set = (open: boolean) => {
+    if (open && toggle.getAttribute("aria-expanded") !== "true") lastSheet = slot;
     toggle.setAttribute("aria-expanded", String(open));
     $("workspace").dataset[slot] = open ? "open" : "closed";
   };
@@ -1168,6 +1398,14 @@ for (const slot of ["browser", "properties"] as const) {
   });
   toggle.addEventListener("sheet-close", () => set(false));
 }
+// Narrowed to a phone's width, the panels open beside the view become sheets over it, and only one may be open (clumsy-user
+// hunt 2026-11-04: Properties opened on a phone, the window widened, the AI panel opened, narrowed again: both sheets open,
+// one over the other). The one opened last stays.
+phone.addEventListener("change", () => {
+  if (!phone.matches) return;
+  for (const slot of ["browser", "properties"] as const) if (slot !== lastSheet) $(`${slot}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+  if (lastSheet !== "assistant") setAssistant(false);
+});
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
 // (Edit feature, Move's boxes once a body is picked, Combine's once its bodies are: without the sheet open they are out of reach; not the plane prompt or
 // Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
@@ -1292,6 +1530,8 @@ async function start() {
 // Save, Open, a drop and a paste wait for this: until the last project is
 // open, ctx.project is the empty one the app starts with.
 const started = start();
+if (tabs) void started.then(() => tabs.restore());
+if (home) void started.then(() => home.show());
 appLoaded(started.then(shownOnScreen), ctx.kernel); // index.html's skeleton goes once the project is shown and the kernel has answered
 ctx.kernel.call("kernel_version").then((v) => {
   $("version").textContent = `kernel v${v}`;

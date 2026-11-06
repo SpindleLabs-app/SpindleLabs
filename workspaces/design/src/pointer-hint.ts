@@ -6,6 +6,7 @@
 // src/styles/pointer-hint.css.
 
 import type { SketchTool } from "./sketch-tool.ts";
+import { constraintHint } from "./constraint-tool.ts";
 
 /** What the tool's next click places, in a few words. */
 export function hintOf(tool: SketchTool): string {
@@ -26,6 +27,12 @@ export function hintOf(tool: SketchTool): string {
       return "Click an edge or a face to project";
     case "select":
       return tool.picked.length === 0 ? "Click a line, circle or arc" : "Delete removes the selection";
+    case "horizontal":
+    case "vertical":
+    case "coincident":
+    case "fix":
+    case "dimension":
+      return constraintHint(tool);
   }
 }
 

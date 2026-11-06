@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -11,6 +11,7 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
+import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { changedCombine, COMBINE_STEP, insertCombine } from "./combine.ts";
@@ -22,30 +23,35 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
+import { currentDesignDefaults, currentUnit, commandSearch, GCODE_KIND, iconSvg, PNG_KIND, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
-import { browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
-import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
-import { DEFAULT_SIZES, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
+import { bodyRows, browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { callOffDrag, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
+import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
+import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
-import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "./build-area.ts";
-import { gcodeName, gcodeOfPackage, rememberedBetterGrip, rememberedWarmUp, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
+import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "@fission/print";
+import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
+import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printMovesOf, printWords, SliceDropped, testPieceFile } from "@fission/print";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
+import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
-import { viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
-import { pickChange } from "./picking.ts";
+import { showEntries, viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
+import { showAllBodies, showOnlyBody } from "./show-only.ts";
+import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
-import { droppedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
+import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
 import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { dragTo, grabProblem } from "./point-drag.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
@@ -54,13 +60,18 @@ import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
-import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
+import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
-import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep, dimensionLine, isConstraintTool, selectAt } from "./constraint-tool.ts";
+import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
+import { toggleConstruction } from "./construction.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
-import type { PrintFacts } from "./slice-print.ts";
+import { rememberedBetterGrip, rememberedWarmUp, type PrintFacts } from "@fission/print";
 import { aiFaces, designAIView } from "./ai-view.ts";
+import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
+import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
 import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -93,6 +104,8 @@ const rebuildsOn = new WeakMap<HTMLElement, number>();
 let editingSketch: { id: string; grid: number; typed: string; tool: ToolKind } | null = null;
 /** Grid snap on or off (sketch feel SF1; off by default: points go where you click), kept for every sketch until the page reloads. */
 let gridSnap = DEFAULT_GRID_SNAP;
+/** The Settings default for Snap to grid last taken (U2b): a new sketch takes a changed default, else keeps the toggle as left. */
+let snapDefaultTaken = DEFAULT_GRID_SNAP;
 /** Each sketch's grid size as typed and taken, kept until the page reloads like Snap to grid: Edit Sketch opens it on the grid it was left on (typed-sizes hunt 2026-11-01). */
 const sketchGrids = new Map<string, { grid: number; typed: string }>();
 /** How long (ms) Ctrl or Cmd is held with no other key before the snap under a still pointer goes: long enough for a shortcut's second key. */
@@ -108,7 +121,22 @@ let fits = 0;
 interface Inspecting {
   facts(): void;
   none(): string | null;
+  /** Turns the print check (H1) on or off. */
+  printCheck(): void;
+  /** Exploded view (explode.ts): turns it on or off. */
+  explode(): void;
+  /** Whether the view is exploded now. */
+  exploded(): boolean;
+  /** Why Exploded view is off (fewer than two bodies shown), else null. */
+  noExplode(): string | null;
 }
+
+/** Exploded view's tooltip. */
+const EXPLODE_TITLE = "Exploded view: draw the bodies pulled apart from the middle, to see how they fit. Only the view changes: the design stays as it is.";
+/** Why Exploded view is off with fewer than two bodies shown. */
+const NO_EXPLODE = "Exploded view pulls bodies apart: it needs two bodies or more on screen.";
+/** Exploded view's spread (explode.ts) while on, null while off; kept until the page reloads, across Undo and switching like Snap to grid. */
+let explodeSpread: number | null = null;
 
 /** Why Body facts is off with nothing built. */
 const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and its volume, area and faces show here.";
@@ -121,7 +149,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; explode: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -164,9 +192,26 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // The body facts (volume, area, faces), from the properties panel, folded since U0b.
   const facts = button("inspect-facts", "Body facts", "Body facts: the volume, area and faces of what is built, in the properties.", () => inspect.facts());
   facts.disabled = true; // until a body is built (workspace: after each build)
-  const inspectSections = (): MenuSection[] => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }];
+  // The print check (H1, Ben 2026-11-05): a switch, lit while on (print-check-view.ts).
+  const printCheckTitle = "Print check: colours what would go wrong printing it as modelled on the P1S. Red needs supports, amber is too thin, violet is a bridge that may sag, and a red ring marks the weakest spot. Updates as you model.";
+  const printCheck = button("inspect-print-check", "Print check", printCheckTitle, () => inspect.printCheck());
+  printCheck.setAttribute("aria-pressed", "false");
+  // Exploded view (explode.ts): the bodies drawn pulled apart, view only; pressed while on.
+  const explode = button("inspect-explode", "Exploded view", EXPLODE_TITLE, () => inspect.explode());
+  explode.setAttribute("aria-pressed", "false");
+  explode.disabled = true; // until two bodies are shown (workspace: after each build)
+  const inspectSections = (): MenuSection[] => [
+    {
+      items: [
+        { id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() },
+        { id: "inspect-menu-print-check", label: printCheck.getAttribute("aria-pressed") === "true" ? "Print check: on" : "Print check", icon: "print-check", title: printCheckTitle, run: () => inspect.printCheck() },
+        { id: "inspect-menu-explode", label: inspect.exploded() ? "Exploded view: off" : "Exploded view", icon: "explode", title: EXPLODE_TITLE, off: (inspect.exploded() ? null : inspect.noExplode()) ?? undefined, run: () => inspect.explode() },
+      ],
+    },
+    { items: comingItems("Inspect") },
+  ];
   const inspecting = toolGroup(document, { name: "Inspect", menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: inspectSections } });
-  inspecting.add([facts, "inspect"]);
+  inspecting.add([facts, "inspect"], [printCheck, "print-check"], [explode, "explode"]);
   inspecting.element.dataset.modelling = "";
   // Groups whose tools are all still to come (coming-soon.ts), greyed: their menus list what is on the way.
   const coming = (name: string, id: string, icon: IconName, title: string) => {
@@ -180,9 +225,11 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const move = button("move", "Move", moveTitle, onMove);
   const rotateTitle = "Rotate: turn bodies about X, Y and Z by angles you drag or type. Pick the bodies, then OK. A Rotate in the timeline, at the marker.";
   const rotate = button("rotate", "Rotate", rotateTitle, onRotate);
-  // Combine (35f1c): in Modify ▾ only with ?combine (combine-flag.ts) until it goes public (35f5); else greyed as coming soon.
+  // Combine (35f1c): in Modify ▾, and (Ben, 2026-11-04) its own button beside Move and Rotate, only with ?combine
+  // (combine-flag.ts) until it goes public (35f5); else greyed as coming soon in the menu, with no button.
   const combineTitle = "Combine: join bodies into one, cut tools from a body, or keep only where they overlap. Pick the target body, then the tools, then OK. A Combine in the timeline, at the marker.";
   const combining = combineShown();
+  const combine = button("combine", "Combine", combineTitle, onCombine);
   const modifySections = (): MenuSection[] => [
     {
       items: [
@@ -194,7 +241,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
     { items: comingItems("Modify").filter((i) => !combining || i.id !== "coming-combine") },
   ];
   const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
-  modifying.add([move, "move"], [rotate, "rotate"]);
+  modifying.add([move, "move"], [rotate, "rotate"], ...(combining ? [[combine, "combine"] as [HTMLButtonElement, IconName]] : []));
   modifying.element.dataset.modelling = "";
   const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
   // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
@@ -223,7 +270,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       ...named.map(([label, el]) => ({ id: el.id, label, off: el.disabled ? `${label} is off now` : undefined, run: () => el.click() })),
     ];
   };
-  return { made, insert: inserting.menu!, facts, commands };
+  return { made, insert: inserting.menu!, facts, printCheck, explode, commands };
 }
 
 /** A browser row's icon (U0f3): 16 px, before its words, hidden from screen readers. */
@@ -395,7 +442,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
   });
   const title = document.createElement("summary");
   title.textContent = "Browser";
-  fold.append(title, list(browserTree(doc, failed, buildAreaShown)));
+  fold.append(title, list(browserTree(doc, failed, buildAreaShown, currentUnit(document))));
   slot.replaceChildren(fold);
 }
 
@@ -446,13 +493,26 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Opens the folded panel until the user moves on (U0b), at the numbers.
     facts() {
       if (inspecting.none()) return;
-      fold?.reveal();
-      ctx.properties?.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a phone opens its Properties sheet (main.ts)
-      ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
+      // A new Move with nothing moved yet (as an inserted preset starts, Ben 2026-11-04) is put away first: a phone's
+      // sheet shows the Move alone (move-panel.css), so the numbers would stay out of sight behind it, and nothing is lost.
+      // A phone's sheet that opened for the Move shuts as it goes (main.ts watches for that in a microtask), so the
+      // numbers are shown in the microtask after it, opening the sheet again for them.
+      const reveal = () => {
+        fold?.reveal();
+        ctx.properties?.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a phone opens its Properties sheet (main.ts)
+        ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
+      };
+      if (!moveUntouched()) return reveal();
+      leaveMove();
+      queueMicrotask(reveal);
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
+    printCheck: () => togglePrintCheck(),
+    explode: () => setExploded(explodeSpread === null ? EXPLODE_DEFAULT : null),
+    exploded: () => explodeSpread !== null,
+    noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -499,6 +559,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       printExtras = extras;
       refreshArea();
     },
+    // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
+    async testPiece(choices, file, alive) {
+      const print = await testPieceFile(kernel, choices, file.plate, file.nozzle);
+      if (!alive()) throw new SliceDropped();
+      const suggestedName = printFileName({ ...choices, supports: "off" }, file.plate, file.nozzle, "fit-test-piece");
+      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind: P1S_KIND, bytes: print.package });
+      if (r.status === "failed") throw new Error(r.message);
+      return { saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
+    },
   });
   const deleting = deleteAsk(ctx.toolbar);
   const renaming = renameBox(ctx.toolbar);
@@ -533,6 +602,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showBuildAreaWords();
   }
 
+  /**
+   * The unit changed (Settings): the browser's and the timeline's words say it (U2c3). Held by `unmount`, since the page's
+   * listener holds it only weakly (followUnit); false once unmounted, and the listener goes.
+   */
+  let unitWatch: (() => boolean) | null = () => {
+    if (putAway || unitWatch === null) return false;
+    const doc = designDoc();
+    drawBrowser(doc);
+    showBar(doc);
+    return true;
+  };
+  followUnit(ctx.properties.ownerDocument, unitWatch);
+
   /** The origin's axes and planes as their eyes say (Ben, 2026-10-29): every axis and no plane until an eye is pressed. */
   function showOrigin(doc: DesignDocument) {
     area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh], P1S_AREA, printExtras ?? { warmUp: rememberedWarmUp(storage), betterGrip: rememberedBetterGrip(storage) }) : null;
@@ -557,6 +639,38 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
   })();
   let buildAreaOn = buildAreaShownIn(storage);
+  /**
+   * The print check (H1, Ben 2026-11-05): Inspect ▾ Print check paints what would go wrong printing the bodies shown
+   * (print-check-view.ts), checked again after every build while on and while Design is on screen. A view setting of
+   * this browser: no undo step, nothing saved in the design.
+   */
+  let printCheckOn = printCheckShownIn(storage);
+  let printCheckRuns = 0;
+  function showPrintCheck() {
+    const run = ++printCheckRuns;
+    printCheckButton.setAttribute("aria-pressed", String(printCheckOn));
+    const scene = lastScene;
+    // Its marks are placed on the bodies where they really are, so none while they are drawn exploded.
+    if (!printCheckOn || !shown || scene === null || explodeSpread !== null) {
+      for (const id of ALL_PRINT_CHECK_IDS) viewport.clearOverlay(id);
+      delete viewport.element.dataset.printCheck;
+      return;
+    }
+    // After the frame that draws the build, so checking a big part never holds the new body back.
+    setTimeout(() => {
+      if (run !== printCheckRuns || !printCheckOn || !shown || lastScene !== scene || explodeSpread !== null) return;
+      const { found, overlays } = checkShown(scene.bodies.map((b) => b.view.mesh), printRulesIn(storage));
+      for (const id of ALL_PRINT_CHECK_IDS) if (!overlays.some((o) => o.id === id)) viewport.clearOverlay(id);
+      for (const o of overlays) viewport.setOverlay(o);
+      viewport.element.dataset.printCheck = printCheckSummary(found); // read by the e2e test
+    }, 0);
+  }
+  function togglePrintCheck() {
+    printCheckOn = !printCheckOn;
+    keepPrintCheckShown(storage, printCheckOn);
+    showPrintCheck();
+  }
+  showPrintCheck(); // lit at once when left on; painted once the first build lands
   refreshArea = () => {
     const doc = designDoc();
     if (buildAreaOn && doc) showOrigin(doc);
@@ -748,11 +862,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     resultsNow = build.results;
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
-    const result = feature && build.results[feature.id];
-    let failure: string | undefined;
-    if (result?.status === "failed") failure = result.message;
-    else if (feature && result && (result.status !== "built" || build.bodies[bodyIdOf(feature.id)] === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
-    return { scene: joinBodies(drawn), warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
+    // A part whose body a later Combine used up did not fail (part-failure.ts).
+    const failure = partFailure(doc.timeline.features, feature, build);
+    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
   }
   /**
    * The rebuild's warnings in timeline order: an extrude built from its kept
@@ -767,13 +879,21 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const r = build.results[f.id];
       if (r?.status !== "built") continue;
       const label = f.provenance.self.label;
-      if (r.plane) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.plane.message}.`, lost: true });
+      if (r.plane) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.plane.message}.`, ...(r.plane.cause !== "plane-split" && { lost: true as const }) });
       if (r.warning) out.push({ item: f.id, rows: [f.id, r.warning.sketch], sketch: r.warning.sketch, words: `${label} keeps its last shape. ${r.warning.message}.` });
       if (r.source) out.push({ item: f.id, rows: [f.id], sketch: r.source.sketch, words: `${r.source.message}.` });
       if (r.points) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.points.message}.` });
       if (r.projections) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.projections.message}.` });
+      if (r.constraints) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.constraints.message}.` });
     }
     return out;
+  }
+  /** Where the last rebuild's refused Combines would touch themselves or be too thin (36d), or null. */
+  let refusalsNow: AnalysisOverlay | null = null;
+  /** Points at them in the view while Design is on screen. */
+  function showRefusals() {
+    if (refusalsNow && shown) viewport.setOverlay(refusalsNow);
+    else viewport.clearOverlay(REFUSAL_OVERLAY);
   }
   /** The last rebuild's warnings: shown on their timeline rows and items and, once the sketch each is about is finished, in the panel. */
   let warningsNow: Warned[] = [];
@@ -878,7 +998,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Why the panel's sizes for `kind` can't be taken (`panelSizeRefused`: the first shown box that isn't from 0.001 mm to 1 km, a round shape's radius, a slot's depth), or null. */
   function refusedSize(kind: PartKind): string | null {
-    return panelSizeRefused(kind, Object.fromEntries(SIZE_KEYS.map((k, i) => [k, inputs[i].value])) as Record<SizeKey, string>);
+    const why = panelSizeRefused(kind, Object.fromEntries(SIZE_KEYS.map((k, i) => [k, inputs[i].value])) as Record<SizeKey, string>);
+    return why === null ? null : wordsInUnit(why, currentUnit(ctx.properties.ownerDocument));
   }
   /** Leaving a size box whose text was refused: the size the design last took comes back, and the words go. */
   function restoreRefused(i: number) {
@@ -887,7 +1008,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const typed = inputs[i].value;
     inputs[i].value = saved.sizes[i];
     // It went back without a word (beginner play-test 2026-10-28): say so, until the next size typed.
-    if (refusedSize(shape) === null) panel.showError(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"));
+    if (refusedSize(shape) === null) panel.showError(wordsInUnit(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"), currentUnit(ctx.properties.ownerDocument)));
   }
 
   /**
@@ -967,9 +1088,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * default sizes, as one undo step, never changing a body already there.
    * The panel then edits it (the boxes take its sizes) and opens to show
    * them; the first body of an empty design is framed, a later one keeps
-   * the camera.
+   * the camera. Once built, the new body starts picked in a Move (Ben,
+   * 2026-11-04), so it can go where it is wanted straight away; not if it
+   * failed, or anything else changed or opened while it was built.
    */
-  function insertBody(kind: ShapeKind) {
+  async function insertBody(kind: ShapeKind) {
     leaveExtrude();
     leaveEdit();
     leaveMove();
@@ -984,7 +1107,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     boxesPart = added.id;
     const made = update(insertStep(kind), undefined, added.doc);
     fold?.reveal();
-    return made;
+    await made;
+    const body = bodyIdOf(added.id);
+    const built = (lastScene?.bodies ?? []).some((b) => b.body === body);
+    if (!built || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
+    ctx.selection.set([bodyReference(body)]);
+    startMove();
+    moveFromInsert = true;
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -1028,11 +1157,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function showBar(doc: DesignDocument) {
     if (!ctx.timeline) return;
     showTimelineBar(ctx.timeline, doc, {
+      describe: (summary) => summaryInUnit(summary, currentUnit(ctx.timeline!.ownerDocument)),
       failed: failedNow,
       slow: slowNow,
       onRetry: retry,
       warnings: warnedRows(),
       picked,
+      scene: () => lastScene,
       onPick: (id) => {
         picked = picked === id ? null : id;
         showBar(designDoc());
@@ -1088,7 +1219,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const itemOfRow = (node: string) => rowItem(node, designDoc(), failedNow) ?? "";
   /** A row's menu (24e4 for sketches, 24f3 for every timeline item, U0a for bodies: their feature's). */
   function openRowMenu(node: string, at: { x: number; y: number }) {
-    openMenu(itemOfRow(node), at);
+    openMenu(itemOfRow(node), at, node.startsWith("body-") ? node : undefined);
+  }
+
+  /**
+   * Show only this body, or Show all bodies (quick wins, Ben 2026-11-04), from Body row `row`'s menu or the view's:
+   * only eyes change, one undo step ("Show only Body 2", "Show all bodies"); nothing is recorded when nothing changes.
+   */
+  function showFrom(action: "show-only" | "show-all", row: string) {
+    const doc = designDoc();
+    const r = bodyRows(doc, failedNow).find((x) => x.id === row);
+    if (!r) return;
+    try {
+      const next = action === "show-only" ? showOnlyBody(doc, r.body, failedNow) : showAllBodies(doc, failedNow);
+      if (next !== doc) void update(action === "show-only" ? TIMELINE_STEPS.showOnly(r.label) : TIMELINE_STEPS.showAll, undefined, next);
+    } catch (err) {
+      panel.showError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /** A double-click on item `id` (25a3): its menu's Edit Sketch or Edit feature, refused with the menu's words when that is off. */
@@ -1099,12 +1246,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /** Item `id`'s menu (timeline-menu.ts): Move the marker here, Suppress or Unsuppress, Delete; an entry that is off says why. */
-  function openMenu(id: string, at: { x: number; y: number }) {
+  function openMenu(id: string, at: { x: number; y: number }, row?: string) {
     const doc = designDoc();
     const item = doc.timeline.features.find((f) => f.id === id);
     if (!item) return;
     const editing = editingId();
-    const entries = menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }));
+    // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
+    const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
+    const entries = [...shows, ...menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
@@ -1124,13 +1273,56 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!ctx.selection.items.some((r) => r.kind === target.item.kind && r.id === target.item.id)) ctx.selection.set([target.item]);
     const editing = editingId();
     const fail = (err: unknown) => panel.showError(err instanceof Error ? err.message : String(err));
-    const entries = viewMenuEntries(doc, target.feature, editing).map((e) => ({
+    const entries = viewMenuEntries(doc, target.feature, editing, target.row, failedNow).map((e) => ({
       ...e,
-      run: e.action === "hide" ? () => toggleHidden(target.row) : () => void chooseEntry(menuHost, target.feature, e.action, editing).catch(fail),
+      run:
+        e.action === "hide"
+          ? () => toggleHidden(target.row)
+          : e.action === "show-only" || e.action === "show-all"
+            ? () => showFrom(e.action as "show-only" | "show-all", target.row)
+            : () => void chooseEntry(menuHost, target.feature, e.action as MenuEntry["action"], editing).catch(fail),
     }));
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
     return true;
+  }
+
+  /**
+   * Delete or Backspace with no sketch open (round 2 hunt E5): asks to delete
+   * the item of the timeline row or bar item that has focus, else the item
+   * whose body everything selected lies on (`deleteKeyTarget`), as the row
+   * menu's Delete does: the are-you-sure box when something is built from
+   * it, one undo step. Not while a panel or box is open, and nothing (the
+   * key does what it would) when there is no one item to ask about.
+   */
+  function deleteKey(): boolean {
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    if (!doc || extruding || moveBox.shown || combineBox.shown || deleting.open !== null) return false;
+    const on = document.activeElement;
+    const barItem = on instanceof HTMLElement ? on.closest<HTMLElement>("[data-item]") : null;
+    const row = on instanceof HTMLElement && ctx.browser.contains(on) ? on.closest<HTMLElement>("[data-node], [data-more]") : null;
+    const focus = barItem?.dataset.item !== undefined ? { item: barItem.dataset.item } : row ? { node: row.dataset.node ?? row.dataset.more! } : null;
+    const target = deleteKeyTarget(doc, lastScene, ctx.selection.items, focus, failedNow);
+    if (target === null) return false;
+    const editing = editingId();
+    void chooseEntry(menuHost, target, "delete", editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)));
+    return true;
+  }
+
+  /**
+   * File > Save picture (PNG) (quick wins, Ben 2026-11-04): the view as it is
+   * on screen, without the view cube, saved under the project's name (the
+   * browser's save picker, or the name box), as Export STL saves.
+   */
+  async function savePicture() {
+    try {
+      const picture = await viewport.picture?.();
+      if (!picture) throw new Error("This browser couldn't make a picture of the view.");
+      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName: ctx.project.name || "Untitled", kind: PNG_KIND, bytes: picture });
+      if (r.status === "failed") throw new Error(r.message);
+    } catch (err) {
+      panel.showError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /**
@@ -1293,7 +1485,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         ctx.graph.markFresh(PART_VIEW);
       }
       markStale(failure !== undefined);
-      viewport.showBody(scene.mesh);
+      showBodies(scene);
+      // 36d: where a refused Combine would touch itself or be too thin, pointed at over everything.
+      refusalsNow = refusalOverlay(doc.timeline.features, value.results);
+      showRefusals();
       // A sketch on a face is drawn where this rebuild placed it (26c).
       drawSketches();
       const empty = scene.bodies.length === 0;
@@ -1316,22 +1511,24 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // note (17e); so do ones whose name now names two (25a4: never a guess);
       // the rest follow their names, however the kernel numbers them now.
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
-      const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
+      const { kept, dropped, shared, followed } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id), (b) => bodyHidden(doc, b));
       lastScene = scene;
       if (buildAreaOn) showOrigin(doc);
+      showPrintCheck();
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
       if (snapping) (snapping.from = null), showMoveHint();
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
       if (picksBodies()) pickBodies();
       else if (moveBox.shown) previewMove();
       factsButton.disabled = inspecting.none() !== null;
+      explodeButton.disabled = explodeSpread === null && inspecting.noExplode() !== null; // on, it can always be turned off
       if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
       // Extrude opened before this build landed (a slow kernel, a file just opened, an Undo) offered the faces of the scene
       // before it, or none: they are offered again from this one, so a face is never missing or where the body was.
       if (extruding && designDoc() === doc) void offerProfiles(doc, [...extruding.usable]);
       const part = partFeature(doc);
       partShown = scene.bodies.find((b) => b.feature === part?.id) ?? (failure === undefined ? null : partShown);
-      note = droppedNote(dropped, shared, selectedSketches);
+      note = [droppedNote(dropped, shared, selectedSketches), followedNote(followed)].filter((x) => x !== "").join(" ");
       if (kept.length < ctx.selection.items.length) {
         settling = true;
         ctx.selection.set(kept);
@@ -1404,7 +1601,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked() });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start(""), remove: () => void deletePicked(), construction: () => void constructPicked() });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -1413,7 +1610,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const typed = typedBoxes(viewport.element, {
     locks: (next) => ((locks = next), drawSketches()),
     enter: () => placeTyped(),
-    escape: () => ((locks = {}), drawSketches()),
+    escape: () => {
+      locks = {};
+      // Escape in a dimension's box (47e) leaves the dimension: nothing is added or changed.
+      if (mode.kind === "edit" && isConstraintTool(mode.tool) && mode.tool.pending) mode.tool = { ...mode.tool, pending: null, changing: undefined };
+      drawSketches();
+    },
   });
   /** What the next click places, by the pointer ("Specify next point"). */
   const hint = pointerHint(viewport.element);
@@ -1430,23 +1632,60 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const designDoc = () => ctx.project.workspaces.design as DesignDocument;
   /** Counts tool changes (a tool chosen, Escape, the sketch entered again): a click the kernel was still snapping across one is dropped. */
   let toolChanges = 0;
+  /** The sketch point being dragged (47d3, onPointDrag), if one is. */
+  let pointDrag: PointDrag | null = null;
+  /** The edited sketch's points a press can grab, by id, in the order last drawn (editing.grab). */
+  let grabbable: string[] = [];
+  /** The drag the pointer is pressing now, until it is let go (it may still wait for its turn). */
+  let liveDrag: PointDrag | null = null;
+  /** Read by the e2e tests: how many drags have ended (recorded or not), and how many steps have been solved. */
+  // Counted on from what the view says: an undo mounts Design again, and the tests wait for the count to go up.
+  let dragsEnded = Number(viewport.element.dataset.pointDrags ?? 0);
+  let dragSolves = Number(viewport.element.dataset.dragSolves ?? 0);
+
+  /** Millimetres a screen pixel on the edited sketch's plane at `at` (its origin when null), from the camera as it is now; undefined when not on screen. */
+  function pixelNow(at: SketchXY | null): number | undefined {
+    const [x, y] = at ?? [0, 0];
+    const a = viewport.sketchScreenPoint([x, y]);
+    const b = viewport.sketchScreenPoint([x + 1, y]);
+    const c = viewport.sketchScreenPoint([x, y + 1]);
+    if (!a || !b || !c) return undefined;
+    const across = Math.max(Math.hypot(b.x - a.x, b.y - a.y), Math.hypot(c.x - a.x, c.y - a.y));
+    return across > 0 && Number.isFinite(across) ? 1 / across : undefined;
+  }
 
   /** Draws every sketch, the edited one with its grid, points and preview. */
   function drawSketches() {
-    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    // A point being dragged (47d3) shows the sketch as its last solved step left it, until it is let go and recorded.
+    const doc = pointDrag && dragStillFor(pointDrag) ? pointDrag.doc : (ctx.project.workspaces.design as DesignDocument | undefined);
     if (!doc) return;
     const editing = mode.kind === "edit" ? mode : null;
+    // The points a press drags, as drawn (sketch-tool.ts editing.grab): a grab names one by its place here, which a delete landing
+    // since may have shifted in the document (47d4 review).
+    grabbable = editing?.tool.kind === "select" ? (doc.sketches.find((s) => s.id === editing.tool.sketch)?.points.map((p) => p.id) ?? []) : [];
     // With a size typed the preview goes where the locks put it, and the snap marks (which the locks overrule) are left out.
     const locked = Object.keys(locks).length > 0;
     const aim = editing && aimOf(doc, editing.tool, editing.pointer, locks);
     // A typed arc angle goes the pointer's way round however little it went (typed-entry.ts withLocks): the preview from the tool the click will use.
-    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
+    // Marks and dimension labels are sized in screen pixels at the camera as it is now, never at the pointer's last move: a camera
+    // that moved since left them sized for the old view, and the next click jumped a label from under the pointer (47e, Firefox).
+    const pixel = editing ? (pixelNow(editing.pointer) ?? editing.pixel) : undefined;
+    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
     sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
     const width = viewport.element.clientWidth;
     sketchBar.showType(typedFields(editing.tool).length > 0);
-    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
+    // A dimension waiting for its value (47e): its box by its label, starting at the size as drawn.
+    const tool = editing.tool;
+    const pending = isConstraintTool(tool) && tool.pending ? tool.pending : null;
+    const sketch = pending ? doc.sketches.find((s) => s.id === tool.sketch) : undefined;
+    const spot = pending && sketch ? dimensionLine(sketch, pending, 10 * (editing.pixel ?? 0.1)) : null;
+    const box = (spot && viewport.sketchScreenPoint(spot.label)) || screen;
+    const live = pending ? { [typedFields(tool)[0]]: pending.value } : anchor && aim ? liveValues(anchor, aim, tool) : {};
+    // A dimension's box stays by its label: the next thing is typing, not a tap on a point, and moving it off the points sent it
+    // to the view's far corner on almost any small sketch (the solver bug hunt, 2026-11-06).
+    typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, pending ? undefined : viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
     else hint.hide();
@@ -1481,6 +1720,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveMove();
     leaveCombine();
     if (mode.kind === "edit") leaveSketch();
+    leaveExplode(); // a tool works on the bodies where they are
     mode = { kind: "pick" };
     showStart();
     viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
@@ -1652,7 +1892,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function startNewSketch(made: { doc: DesignDocument; id: string }) {
     viewport.showPlanes([]);
     applySketchEdit(made.doc, SKETCH_STEPS.create, made.id);
-    editingSketch = { id: made.id, grid: DEFAULT_GRID, typed: String(DEFAULT_GRID), tool: "line" };
+    // A new sketch starts with the grid size and Snap to grid chosen in Settings (U2b), the built-in ones when none is.
+    const start = currentDesignDefaults(ctx.properties.ownerDocument);
+    if (start.snap !== snapDefaultTaken) gridSnap = snapDefaultTaken = start.snap;
+    editingSketch = { id: made.id, grid: start.grid, typed: String(start.grid), tool: "line" };
     enterSketch();
     lookAtSketch();
   }
@@ -1671,7 +1914,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     const kept = sketchGrids.get(id);
-    editingSketch = { id, grid: kept?.grid ?? DEFAULT_GRID, typed: kept?.typed ?? String(DEFAULT_GRID), tool: "line" };
+    editingSketch = { id, grid: kept?.grid ?? currentDesignDefaults(ctx.properties.ownerDocument).grid, typed: kept?.typed ?? String(currentDesignDefaults(ctx.properties.ownerDocument).grid), tool: "line" };
     enterSketch();
     if (mode.kind !== "edit") return;
     showKept();
@@ -1689,6 +1932,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function enterSketch() {
     const doc = designDoc();
     if (!editingSketch || !doc.sketches.some((s) => s.id === editingSketch!.id)) return void (editingSketch = null);
+    leaveExplode(); // a tool works on the bodies where they are
     mode = { kind: "edit", tool: startTool(editingSketch.tool, editingSketch.id), grid: editingSketch.grid, pointer: null, snap: null };
     pointerAt = null;
     toolChanges++;
@@ -1725,6 +1969,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * caller shows a new design straight after.
    */
   function leaveSketch(rebuild = true) {
+    // A point held or waiting its turn (47d4 review: Cancel or an AI step left the sketch mid-drag, and the drag's turn never ended).
+    for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
     const drew = mode.kind === "edit" && rebuild && designDoc() !== shownDoc;
     mode = { kind: "none" };
     unlock();
@@ -1822,6 +2068,275 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /**
+   * A constraint the picks made (47d2): added on the kernel's solver as one
+   * undo step ("Horizontal", "Fix"…), in turn behind the clicks before it,
+   * or refused with the reason in the sketch panel and the constraints and
+   * arcs that fight drawn red. A tool change, undo or Escape while the
+   * solver works drops the answer: it was for a sketch no longer there.
+   */
+  /**
+   * A sketch point being dragged with the Select tool (47d3, point-drag.ts):
+   * the document before the press, the last solved step (`doc`, drawn), the
+   * newest pointer not yet solved toward (`want`), whether it was let go,
+   * and what the press's turn in line waits on.
+   */
+  interface PointDrag {
+    sketch: string;
+    point: string;
+    /** The design when its turn came (after the clicks, deletes and drags before it landed); null until then. */
+    before: DesignDocument | null;
+    doc: DesignDocument | null;
+    want: SketchXY | null;
+    pixel: number | undefined;
+    running: boolean;
+    dropped: "drop" | "cancel" | null;
+    changes: number;
+    ended: boolean;
+    finished: () => void;
+  }
+
+  /** Whether a drag is still for what is shown: its turn has come, the same sketch is open with the same tool, the design not changed under it (Undo). */
+  function dragStillFor(drag: PointDrag): drag is PointDrag & { before: DesignDocument; doc: DesignDocument } {
+    return !drag.ended && drag.before !== null && mode.kind === "edit" && toolChanges === drag.changes && designDoc() === drag.before;
+  }
+
+  /**
+   * The Select tool's press on a point that moved (`grab`), its moves
+   * (`drag`) and its release (`drop`). A point that can't be dragged says
+   * why and nothing moves. The drag takes its turn behind the clicks,
+   * deletes and drags before it (each on the document the last left, so a
+   * second quick drag starts from the first one's result); its moves are
+   * kept meanwhile, and each is solved toward from the last solved step,
+   * the newest winning (pumpDrag); the release records one undo step
+   * ("Move point"). Moves and a release go to the drag the press began
+   * (`liveDrag`), never to one already let go.
+   */
+  function onPointDrag(pointer: SketchPointer) {
+    if (mode.kind !== "edit") return;
+    if (pointer.kind === "grab") {
+      if (mode.tool.kind !== "select") return;
+      if (liveDrag) cancelDrag(liveDrag); // a press whose release never came (the view lost it): it comes to nothing
+      const sketchId = mode.tool.sketch;
+      const sketch = designDoc().sketches.find((s) => s.id === sketchId);
+      const pointId = pointer.grab === undefined ? undefined : grabbable[pointer.grab];
+      const point = pointId === undefined ? undefined : sketch?.points.find((p) => p.id === pointId);
+      // A point a delete has taken since it was drawn: nothing to drag (the delete may still be in line, and then the drag waits for it).
+      const problem = !sketch || pointId === undefined ? "" : point ? grabProblem(sketch, pointId) : null;
+      if (problem === "") return void (viewport.element.dataset.pointDrags = String(++dragsEnded));
+      sketchBox.showError(problem ?? "");
+      // Refused: nothing moves, and the drag counts as ended at once (its moves and release go nowhere).
+      if (problem !== null) return void (viewport.element.dataset.pointDrags = String(++dragsEnded));
+      let finished = () => {};
+      const done = new Promise<void>((resolve) => (finished = resolve));
+      const drag: PointDrag = { sketch: sketchId, point: pointId!, before: null, doc: null, want: null, pixel: pointer.pixel, running: false, dropped: null, changes: toolChanges, ended: false, finished };
+      liveDrag = drag;
+      inTurn(async () => {
+        // Its turn: what came before it has landed. Gone with the sketch, the tool, or the point (a delete before it took it): it comes to nothing.
+        const now = designDoc();
+        const there = now.sketches.find((s) => s.id === sketchId)?.points.some((p) => p.id === pointId);
+        if (drag.ended || mode.kind !== "edit" || toolChanges !== drag.changes || !there || drag.dropped === "cancel") return endDrag(drag);
+        drag.before = drag.doc = now;
+        pointDrag = drag;
+        void pumpDrag(drag);
+        await done;
+      });
+      return;
+    }
+    const drag = liveDrag;
+    if (!drag) return;
+    if (pointer.at) drag.want = pointer.at;
+    if (pointer.pixel !== undefined) drag.pixel = pointer.pixel;
+    if (pointer.kind === "drop") {
+      drag.dropped = pointer.cancelled ? "cancel" : "drop";
+      liveDrag = null;
+    }
+    void pumpDrag(drag);
+  }
+
+  /** A drag called off (Escape, the sketch left, a new press): nothing it did is kept. */
+  function cancelDrag(drag: PointDrag) {
+    drag.dropped = "cancel";
+    if (liveDrag === drag) liveDrag = null;
+    endDrag(drag);
+  }
+
+  /** Solves a drag toward its newest pointer, one at a time, each from the last solved step, and records it once let go. */
+  async function pumpDrag(drag: PointDrag) {
+    if (drag.running || drag.before === null || drag.ended) return;
+    drag.running = true;
+    try {
+      while (!drag.ended) {
+        if (!dragStillFor(drag)) return endDrag(drag);
+        const to = drag.want;
+        if (to === null) return drag.dropped ? await finishDrag(drag) : undefined;
+        drag.want = null;
+        const stale = () => !dragStillFor(drag);
+        try {
+          const got = await dragTo(kernel, drag.doc, drag.sketch, drag.point, to, drag.pixel, () => drag.want !== null || stale(), (doc) => {
+            if (stale()) return;
+            drag.doc = doc;
+            // Counted on the view at once: the drag's end (pointDrags) can be said before this loop's finally runs.
+            viewport.element.dataset.dragSolves = String(++dragSolves);
+            drawSketches();
+          }, drag.before);
+          if (stale()) return endDrag(drag);
+          drag.doc = got.doc;
+          sketchBox.showError(got.refused ?? "");
+        } catch (e) {
+          sketchBox.showError(e instanceof Error ? e.message : String(e));
+        }
+        drawSketches();
+      }
+    } finally {
+      drag.running = false;
+      viewport.element.dataset.dragSolves = String(dragSolves);
+    }
+  }
+
+  /** A drag let go: nothing recorded for one called off or that moved nothing; else settled as a click is (an extrude it breaks keeps its shape) and recorded as one undo step. */
+  async function finishDrag(drag: PointDrag & { before: DesignDocument; doc: DesignDocument }) {
+    if (drag.dropped === "cancel" || drag.doc === drag.before) return endDrag(drag);
+    let next: DesignDocument;
+    try {
+      next = await settleKept(kernel, drag.before, drag.doc, bodies);
+    } catch (e) {
+      sketchBox.showError(e instanceof Error ? e.message : String(e));
+      return endDrag(drag);
+    }
+    if (!dragStillFor(drag)) return endDrag(drag);
+    pointDrag = null;
+    applySketchEdit(next, SKETCH_STEPS.move, drag.sketch);
+    endDrag(drag);
+    await showOutline();
+  }
+
+  /** The drag over (once): what it showed goes unless it was recorded, and its turn in line ends. */
+  function endDrag(drag: PointDrag) {
+    if (drag.ended) return;
+    drag.ended = true;
+    if (pointDrag === drag) pointDrag = null;
+    viewport.element.dataset.pointDrags = String(++dragsEnded);
+    drag.finished();
+    if (!putAway) drawSketches();
+  }
+
+  /**
+   * Enter in a dimension's box (47e): the dimension added with the value
+   * typed (the size as drawn when nothing is), or the double-clicked one
+   * changed to it, as one undo step ("Dimension", "Change dimension"); a
+   * size the solver can't reach, or one that fights the others, is refused
+   * with the reason, the box keeping what was typed.
+   */
+  function placeDimension() {
+    if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || !mode.tool.pending) return;
+    const tool = mode.tool;
+    const pending = tool.pending!;
+    const field = typedFields(tool)[0];
+    const texts = typed.texts();
+    // A box holding text it refused keeps the keys there: its reason shows under it.
+    if ((texts[field] ?? "").trim() !== "" && locks[field] === undefined) return;
+    const value = locks[field] ?? pending.value;
+    const changes = toolChanges;
+    mode.tool = { ...tool, pending: null, changing: undefined };
+    unlock();
+    drawSketches();
+    // Refused: the box opens again with the value typed, so it can be corrected (the solver bug hunt, 2026-11-06: it closed and lost it).
+    const reopen = () => {
+      if (mode.kind === "edit" && isConstraintTool(mode.tool) && !mode.tool.pending) mode.tool = { ...mode.tool, pending: { ...pending, value }, pendingField: tool.pendingField, changing: tool.changing };
+    };
+    if (tool.changing === undefined) return constrain(tool.sketch, { ...pending, value } as NewConstraint, reopen);
+    const id = tool.changing;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || toolChanges !== changes) return;
+      const before = designDoc();
+      let got: Awaited<ReturnType<typeof changeDimension>>;
+      try {
+        got = await changeDimension(kernel, before, tool.sketch, id, value);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
+      if ("refused" in got) {
+        if (isConstraintTool(mode.tool)) mode.tool = { ...mode.tool, fighting: got.fighting };
+        reopen();
+        drawSketches();
+        return sketchBox.showError(got.refused);
+      }
+      applySketchEdit(got.doc, SKETCH_STEPS.redimension, tool.sketch);
+      drawSketches();
+      await showOutline();
+    });
+  }
+
+  /** Gives the keys to the first typed box after the click a tap makes (47e), or after 400 ms when none comes. */
+  function keysAfterTap() {
+    const changes = toolChanges;
+    let done = false;
+    const heard = new AbortController(); // taken off when given, so no click listener outlives the tap (or this workspace)
+    const give = () => {
+      if (done) return;
+      done = true;
+      heard.abort();
+      if (mode.kind === "edit" && toolChanges === changes && typedFields(mode.tool).length > 0) typed.start("");
+    };
+    viewport.element.ownerDocument.addEventListener("click", give, { capture: true, once: true, signal: heard.signal });
+    setTimeout(give, 400);
+  }
+
+  /** A dimension's label double-clicked, or tapped with the Dimension tool (47e): the Dimension tool changing it, its value in the box. */
+  function editDimension(id: string) {
+    if (mode.kind !== "edit" || pointDrag || liveDrag) return;
+    const sketchId = mode.tool.sketch;
+    const sketch = designDoc().sketches.find((s) => s.id === sketchId);
+    const next = sketch && changeDimensionTool(sketch, id);
+    if (!next) return;
+    if (editingSketch) editingSketch.tool = "dimension";
+    toolChanges++;
+    mode.tool = next;
+    mode.snap = null;
+    sketchBox.showTool("dimension");
+    sketchBar.showTool("dimension");
+    sketchBox.showError("");
+    unlock();
+    drawSketches();
+    typed.start("");
+  }
+  // A label's double-click, or its tap with the Dimension tool; heard from `listen` to `sleep` only, since the view's
+  // element outlives this workspace (a listener left on it kept every closed workspace's panels in memory).
+  const onLabelDblclick = (e: MouseEvent) => {
+    const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
+    if (label?.dataset.dimension) editDimension(label.dataset.dimension);
+  };
+  const onLabelClick = (e: MouseEvent) => {
+    const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
+    if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
+  };
+
+  function constrain(sketchId: string, add: NewConstraint, refused: () => void = () => {}) {
+    const changes = toolChanges;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || toolChanges !== changes) return;
+      const before = designDoc();
+      let got: Awaited<ReturnType<typeof addConstraint>>;
+      try {
+        got = await addConstraint(kernel, before, sketchId, add);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || !isConstraintTool(mode.tool) || toolChanges !== changes || designDoc() !== before) return;
+      if ("refused" in got) {
+        mode.tool = { ...mode.tool, fighting: got.fighting };
+        refused();
+        drawSketches();
+        return sketchBox.showError(got.refused);
+      }
+      applySketchEdit(got.doc, constraintStep(add.kind), sketchId);
+      drawSketches();
+      await showOutline();
+    });
+  }
+
+  /**
    * Delete (the key, Backspace or the sketch toolbar's button) with the Select
    * tool's picks: they go from the sketch as one undo step ("Delete line",
    * "Delete 3 curves"), in turn behind the clicks before it, settled as a
@@ -1829,6 +2344,41 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * (the owner's rule, rebuild.ts). False when nothing is picked, so the key
    * does what it would.
    */
+  /**
+   * Construction (47f: X, or the sketch toolbar's button) with the Select
+   * tool's picks: they become construction curves, or ordinary ones again
+   * when every one already is (construction.ts), as one undo step, settled
+   * as a delete is (an extrude whose outline this breaks keeps its last
+   * shape). The picks stay, so a second press turns them back. False when
+   * nothing is picked, so the key does what it would.
+   */
+  function constructPicked(): boolean {
+    if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
+    const sketchId = mode.tool.sketch;
+    if (stillPicked(designDoc().sketches.find((s) => s.id === sketchId), mode.tool.picked).length === 0) return false;
+    const changes = toolChanges;
+    inTurn(async () => {
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes) return;
+      const before = designDoc();
+      const ids = stillPicked(before.sketches.find((s) => s.id === sketchId), mode.tool.picked);
+      if (ids.length === 0) return;
+      const turned = toggleConstruction(before, sketchId, ids);
+      if ("refused" in turned) return sketchBox.showError(turned.refused);
+      let next: DesignDocument;
+      try {
+        next = await settleKept(kernel, before, turned.doc, bodies);
+      } catch (e) {
+        return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      }
+      if (mode.kind !== "edit" || mode.tool.kind !== "select" || toolChanges !== changes || designDoc() !== before) return;
+      sketchBox.showError("");
+      applySketchEdit(next, turned.step, sketchId);
+      drawSketches();
+      await showOutline();
+    });
+    return true;
+  }
+
   function deletePicked(): boolean {
     if (mode.kind !== "edit" || mode.tool.kind !== "select") return false;
     const sketchId = mode.tool.sketch;
@@ -1917,6 +2467,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const editing = mode.kind === "edit" ? mode.tool.sketch : null;
     if (mode.kind !== "none") leaveSketch();
+    // Extrude from inside a sketch: back to the home view, as Finish Sketch does, so the person sees what the extrude makes (Ben 11-05).
+    if (editing !== null) viewport.setView("home");
     // Only sketches an extrude put in at the marker can use: before it, and not suppressed (hunt 2026-10-21).
     const sketches = doc ? doc.timeline.features.filter(isSketchItem) : [];
     const items = doc ? sketches.filter((f) => !f.suppressed && doc.timeline.features.indexOf(f) < insertAt(doc)) : [];
@@ -1925,6 +2477,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const wanted = editing === null && ctx.selection.items.length === 1 && ctx.selection.items[0].kind === "face" ? String(ctx.selection.items[0].id) : null;
     const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? (wanted ? undefined : items.at(-1)?.id) ?? null;
     extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
+    leaveExplode(); // a tool works on the bodies where they are
     extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE));
     // No usable sketch: say why (a body's flat faces are still offered to click, UX1c); with no sketch at all and a body, just how to pick.
     if (items.length > 0 ? !chosen : sketches.length === 0 && (lastScene?.bodies.length ?? 0) > 0) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
@@ -2193,6 +2746,66 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     snap: () => (snapping ? stopSnap() : startSnap()),
     centre: () => void centreOfBodies(),
   });
+  // Exploded view (explode.ts): a bar over the view with the spread and Done, while on.
+  const explodeBar = viewport.element.ownerDocument.createElement("div");
+  explodeBar.id = "explode-bar"; // read by the e2e test
+  explodeBar.className = "explode explode-bar";
+  explodeBar.hidden = true;
+  const spreadLabel = viewport.element.ownerDocument.createElement("label");
+  spreadLabel.className = "explode-bar-label";
+  spreadLabel.textContent = "Spread";
+  const spreadInput = viewport.element.ownerDocument.createElement("input");
+  Object.assign(spreadInput, { id: "explode-spread", type: "range", min: "0", max: "100", step: "1", title: "How far apart the bodies are drawn: 0 where they are, 100 twice as far from the middle" });
+  spreadLabel.append(spreadInput);
+  const explodeDone = viewport.element.ownerDocument.createElement("button");
+  Object.assign(explodeDone, { id: "explode-done", type: "button", textContent: "Done", title: "Back to the bodies where they are" });
+  explodeDone.className = "explode-bar-done";
+  explodeBar.append(spreadLabel, explodeDone);
+  viewport.element.append(explodeBar);
+  spreadInput.addEventListener("input", () => setExploded(readSpread(spreadInput.value)));
+  explodeDone.addEventListener("click", () => setExploded(null));
+
+  /** The bodies' mesh as the view draws it: pulled apart while Exploded view is on. */
+  function bodyMesh(scene: Scene) {
+    return explodeSpread === null ? scene.mesh : explodedMesh(scene, explodeSpread);
+  }
+
+  /**
+   * Draws the bodies (pulled apart while Exploded view is on) and notes the box around them as drawn, in mm to 0.001,
+   * "lo x y z hi x y z" (read by the e2e test: the view's pixels never hold still, so they can't say where the bodies are).
+   */
+  function showBodies(scene: Scene) {
+    const mesh = bodyMesh(scene);
+    viewport.showBody(mesh);
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    const p = mesh.positions;
+    for (let n = 0; n + 2 < p.length; n += 3) {
+      for (let k = 0; k < 3; k++) {
+        if (p[n + k] < lo[k]) lo[k] = p[n + k];
+        if (p[n + k] > hi[k]) hi[k] = p[n + k];
+      }
+    }
+    viewport.element.dataset.drawnBox = p.length < 3 ? "" : [...lo, ...hi].map((v) => v.toFixed(3)).join(" ");
+  }
+
+  /** Exploded view on at `spread`, or off (null): the view only, nothing recorded. */
+  function setExploded(spread: number | null) {
+    explodeSpread = spread;
+    explodeButton.setAttribute("aria-pressed", String(spread !== null));
+    explodeButton.disabled = spread === null && inspecting.noExplode() !== null;
+    explodeBar.hidden = spread === null;
+    if (spread !== null && spreadInput.ownerDocument.activeElement !== spreadInput) spreadInput.value = String(Math.round(spread * 100));
+    viewport.element.dataset.exploded = spread === null ? "" : String(spread); // read by the e2e test
+    if (lastScene) showBodies(lastScene);
+    showPrintCheck();
+  }
+
+  /** Out of Exploded view, if on: a tool opening works on the bodies where they are. */
+  function leaveExplode() {
+    if (explodeSpread !== null) setExploded(null);
+  }
+
   /** The bodies the Move panel moves (body ids, 35eb): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
   let moveBodies: string[] = [];
   /** Whether the Move panel is picking its bodies: a new Move's, or since 35e2i an edited one's (a click adds a body or takes it out). */
@@ -2276,6 +2889,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * edited one shows its bodies, operation and Keep tools.
    */
   function startCombine(id: string | null = null) {
+    leaveExplode(); // a tool works on the bodies where they are
     leaveExtrude();
     leaveEdit();
     leaveMove();
@@ -2402,6 +3016,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveMove();
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
+    leaveExplode(); // a tool works on the bodies where they are
     editBox.show(editableFeature(designDoc(), id));
   }
 
@@ -2458,6 +3073,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * and keeps its bodies.
    */
   function startMove(id: string | null = null, kind: MoveKind = "move") {
+    leaveExplode(); // a tool works on the bodies where they are
+    moveFromInsert = false;
     leaveExtrude();
     leaveEdit();
     leaveCombine();
@@ -2657,19 +3274,34 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Each opening and closing of the Move panel counted: an OK whose check lands after it changed is out of date (bug hunt 11-04, E2). */
   let moveOpenings = 0;
+  /** The open Move is the one an Insert started on its new body (Ben, 2026-11-04): leaving it lets that body go again, as Insert left nothing picked before. */
+  let moveFromInsert = false;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
+  /** A new Move open whose boxes move and turn nothing yet: Cancel would lose nothing. */
+  function moveUntouched(): boolean {
+    if (!moveBox.shown || moveBox.editing !== null) return false;
+    const read = readMoveBoxes(moveBox.typed);
+    return "values" in read && (["x", "y", "z", "turnX", "turnY", "turnZ"] as const).every((k) => read.values[k] === 0);
+  }
+
   function leaveMove() {
     if (!moveBox.shown) return;
     moveOpenings++;
-    const edited = moveBox.editing !== null;
+    // An edited Move's bodies, and the new body an Insert picked for its Move, were picked by the tool, not the user.
+    const edited = moveBox.editing !== null || moveFromInsert;
+    const fromInsert = moveFromInsert;
+    moveFromInsert = false;
     moveBox.hide();
     moveBodies = [];
     dragFrom = null;
     snapping = null;
     showMoveHint();
     viewport.showMoveHandles(null);
-    if (lastScene) viewport.showBody(lastScene.mesh);
+    if (lastScene) showBodies(lastScene);
     if (edited) ctx.selection.clear();
+    // And the panel stays open at the new body's sizes, as Insert left it (U0d): the fold sees the Move's box go in a
+    // microtask (properties-fold.ts), queued as it hid above, so it is opened again in the one after.
+    if (fromInsert) queueMicrotask(() => fold?.reveal());
   }
 
   /** OK's words when the design changed while the kernel checked the Move: nothing was recorded. */
@@ -2785,6 +3417,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "edit") return;
     const at = pointer.at;
     if (at) pointerAt = at;
+    if (pointer.kind === "grab" || pointer.kind === "drag" || pointer.kind === "drop") return onPointDrag(pointer);
     // Step 27d: the Project tool snaps nothing and places nothing; a click projects what the viewport says is under it.
     if (mode.tool.kind === "project") {
       ++moves;
@@ -2802,12 +3435,44 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       mode.pointer = at;
       const tool = mode.tool;
       const sketch = designDoc().sketches.find((s) => s.id === tool.sketch);
-      const hit = at && sketch ? curveAt(sketch, at, PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0)) : null;
+      const reach = PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0);
+      // A constraint's mark (47d2) or a curve, whichever is nearer (constraint-tool.ts selectAt).
+      const hit = at && sketch ? selectAt(sketch, at, reach, CONSTRAINT_MARK_PIXELS * (pointer.pixel ?? 0.1)) : null;
+      mode.pixel = pointer.pixel;
       if (pointer.kind !== "click") mode.tool = { ...tool, hover: hit };
       else {
         mode.tool = { ...tool, picked: pickCurve(stillPicked(sketch, tool.picked), hit, pointer.shift === true), hover: hit };
         sketchBox.showError("");
         showSketchStatus();
+      }
+      return drawSketches();
+    }
+    // The constraint tools (47d2) snap nothing and place nothing either: the point (or, for Horizontal and Vertical, the
+    // line) within reach lights, and a click picks it; once the picks make a constraint it is added on the solver.
+    if (isConstraintTool(mode.tool)) {
+      ++moves;
+      hovered = lastMove = null;
+      mode.snap = null;
+      mode.pointer = at;
+      const tool = mode.tool;
+      const sketch = designDoc().sketches.find((s) => s.id === tool.sketch);
+      const hit = at && sketch ? constraintPickAt(sketch, tool.kind, at, PICK_PIXELS[pointer.touch ? "touch" : "mouse"] * (pointer.pixel ?? 0)) : null;
+      mode.pixel = pointer.pixel;
+      if (pointer.kind !== "click" || !sketch) mode.tool = { ...tool, hover: hit };
+      else {
+        const { tool: next, add } = clickConstraint(tool, sketch, hit);
+        mode.tool = next;
+        sketchBox.showError("");
+        if (add) constrain(tool.sketch, add);
+        // A dimension's picks done (47e): the keys go to its value's box, which starts at the size as drawn.
+        if (next.pending && !tool.pending) {
+          unlock();
+          drawSketches();
+          if (!pointer.touch) return typed.start("");
+          // A tap: the browser's own click comes after it and would take the keys back to the page, so the box takes
+          // them in that click (a tap's gesture, so a phone shows its keyboard), or a moment later when none comes.
+          return keysAfterTap();
+        }
       }
       return drawSketches();
     }
@@ -2940,6 +3605,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function placeTyped() {
     if (mode.kind !== "edit") return;
+    if (isConstraintTool(mode.tool) && mode.tool.pending) return placeDimension();
     // Nothing typed and the pointer still since the last Enter: that Enter placed its point already (enteredStill).
     if (enteredStill && Object.keys(locks).length === 0) return;
     enteredStill = true;
@@ -3006,15 +3672,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.shown && snapping) return snapPick(pick);
     // A Move (35e2b; an edited one too since 35e2i), or a new Combine (35f1c): a click on a body adds it or takes it out; empty space keeps what is picked.
     if (moveBox.shown || combineBox.shown) {
-      const c = pickChange({ ...pick, shift: true }, lastScene);
+      const c = pickChange({ ...pick, shift: true, double: undefined }, lastScene); // every click toggles a body here, a quick second one too
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
       if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
       return;
     }
-    const c = pickChange(pick, lastScene);
-    if (c.change === "set") ctx.selection.set([c.item]);
-    else if (c.change === "toggle") ctx.selection.toggle(c.item);
-    else if (c.change === "clear") ctx.selection.clear();
+    applyChange(ctx.selection, pickChange(pick, lastScene)); // a double-click picks the whole body (picking.ts)
   };
   let stopWatching = () => {};
   // The phone turned or the window resized (a keyboard, a panel): the line's point moved on screen, so the typed
@@ -3037,6 +3700,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showMoveHandles();
     viewport.element.addEventListener("pointermove", onViewportMove);
     viewport.element.addEventListener("pointerdown", onViewportMove); // a tap moves no pointer first
+    viewport.element.addEventListener("dblclick", onLabelDblclick);
+    viewport.element.addEventListener("click", onLabelClick);
     resized?.observe(viewport.element);
     globalThis.addEventListener?.("keydown", onHeldKey);
     globalThis.addEventListener?.("keyup", onHeldKey);
@@ -3058,6 +3723,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sleep() {
     if (!shown) return;
     shown = false;
+    // Design's own overlay goes with it: another workspace's view says nothing about a Combine (36d).
+    viewport.clearOverlay(REFUSAL_OVERLAY);
+    showPrintCheck(); // asleep: cleared
     showBuildAreaWords();
     viewport.onPick = null;
     viewport.onMenu = null;
@@ -3068,6 +3736,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showMoveHandles(null);
     viewport.element.removeEventListener("pointermove", onViewportMove);
     viewport.element.removeEventListener("pointerdown", onViewportMove);
+    viewport.element.removeEventListener("dblclick", onLabelDblclick);
+    viewport.element.removeEventListener("click", onLabelClick);
     resized?.disconnect();
     globalThis.removeEventListener?.("keydown", onHeldKey);
     globalThis.removeEventListener?.("keyup", onHeldKey);
@@ -3126,6 +3796,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         new: fresh.entry(doc, mode.kind !== "none"),
         exports: [
           { id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => run({ op: "export_stl" }) },
+          { id: "file-save-picture", label: "Save picture (PNG)", title: "Save picture: the view as it is on screen, as a PNG file", off: viewport.picture ? undefined : "This browser can't make a picture of the view", run: () => void savePicture() },
           { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => printing.ask() },
         ],
       };
@@ -3145,6 +3816,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (!shown) return false; // the shell only asks while shown; never act asleep
       // Escape during a drag on the timeline bar calls the drag off, and only that (timeline hunt, finding 7).
       if (id === "clear-selection" && callOffDrag()) return true;
+      // Escape with Pan or Zoom lit on the view bar turns it off, back to Orbit, and only that (U7b, as in Fusion).
+      if (id === "clear-selection" && viewport.leaveNavTool?.()) return true;
       // Escape with the Create menu open closes the menu, and only that.
       if (id === "clear-selection" && sketchBar.menuOpen) return sketchBar.closeMenu(), true;
       // Escape in the sketch tool: leaves the plane prompt, or ends the line, rectangle, circle, arc or tangent arc being drawn.
@@ -3194,6 +3867,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         drawSketches();
         return true;
       }
+      // Escape while a sketch point is held (47d3): the drag comes to nothing, the point back where it was pressed.
+      if (id === "clear-selection" && (pointDrag || liveDrag)) {
+        for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
+        return true;
+      }
       // Escape with nothing half drawn (missing basics, 2026-11-04, as in Fusion): the picks go, else the Select tool is chosen.
       if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind === "select" && mode.tool.picked.length > 0) {
         mode.tool = { ...mode.tool, picked: [] };
@@ -3204,12 +3882,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "clear-selection" && mode.kind === "edit" && mode.tool.kind !== "select") return chooseTool("select"), true;
       // Delete or Backspace in a sketch with curves picked takes them out; otherwise the key does what it would.
       if ((id === "delete-selection" || id === "delete-selection-back") && mode.kind === "edit") return deletePicked();
+      // X in a sketch with curves picked turns them into construction curves and back (47f, Fusion's key).
+      if (id === "sketch-construction" && mode.kind === "edit") return constructPicked();
       // L, R, C and A choose the line, rectangle, circle and arc tools while a sketch is edited; otherwise the key does what it would.
       // A digit, point or minus while a line or rectangle is part drawn starts typing its size in the first box (SF4).
       const typedKey = typedSizeKey(id);
       if (typedKey !== null) return mode.kind === "edit" && typedFields(mode.tool).length > 0 ? (typed.start(typedKey), true) : false;
       const kind = sketchToolKey(id);
       if (kind) return mode.kind === "edit" ? (chooseTool(kind), true) : false;
+      // Delete or Backspace outside a sketch (round 2 hunt E5): the focused row's or the selected body's item, the menu's way.
+      if ((id === "delete-selection" || id === "delete-selection-back") && mode.kind === "none") return deleteKey();
       const items = ctx.selection.items;
       const what = designShortcut(id, items);
       if (what === "clear") ctx.selection.clear();
@@ -3222,6 +3904,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       listen();
       showStart();
       showBuildAreaWords();
+      showRefusals();
+      showPrintCheck();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;
@@ -3232,6 +3916,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     unmount() {
       putAway = true;
+      unitWatch = null;
+      for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;
       if (putAwayByRestore === null) editingSketch = null;
       // A click, Enter or hover still waiting on the kernel was for the sketch shown until now; an undo that puts the
@@ -3247,6 +3933,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       typed.element.remove();
       hint.element.remove();
       moveHint.remove();
+      explodeBar.remove();
       combineHint.remove();
       startCard.element.remove();
       if (fold) {

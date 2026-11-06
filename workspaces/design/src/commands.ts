@@ -6,7 +6,7 @@
 // in the sketch open (AI7b), extrude a closed sketch into a body (AI7c), rename
 // an item (AI7d), and export every body shown.
 
-import type { Command, CommandSpec, Feature } from "@fission/core";
+import { boxShown, type Command, type CommandSpec, type Feature, type Unit } from "@fission/core";
 import { insertAt, isSketchExtrude, isSketchItem, SKETCH_PLANES, withPart, type DesignDocument } from "./document.ts";
 import type { ShapeKind } from "./profiles.ts";
 import { extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, ZERO_DISTANCE } from "./extrude.ts";
@@ -160,10 +160,11 @@ export function drawingFor(doc: DesignDocument, sketchId: string, command: Comma
 }
 
 /** A draw command in words, for the preview and its undo step: "circle ⌀20 mm at (5, −3)", "rectangle 30 × 20 mm centred at (0, 0)", "line from (0, 0) to (10, 5)". */
-export function drawWords(command: Command): string {
-  const n = (k: string) => String(command[k] === undefined ? 0 : command[k]).replace("-", "−");
-  if (command.op === "draw_circle") return `circle ⌀${n("diameter")} mm at (${n("x")}, ${n("y")})`;
-  if (command.op === "draw_rectangle") return `rectangle ${n("width")} × ${n("height")} mm centred at (${n("x")}, ${n("y")})`;
+export function drawWords(command: Command, unit: Unit = "mm"): string {
+  // In inches each length (the sketch's x and y too) is shown as the box would show it; in millimetres exactly as the command has it.
+  const n = (k: string) => (unit === "mm" || typeof command[k] !== "number" ? String(command[k] === undefined ? 0 : command[k]) : boxShown(command[k] as number, unit)).replace("-", "−");
+  if (command.op === "draw_circle") return `circle ⌀${n("diameter")} ${unit} at (${n("x")}, ${n("y")})`;
+  if (command.op === "draw_rectangle") return `rectangle ${n("width")} × ${n("height")} ${unit} centred at (${n("x")}, ${n("y")})`;
   if (command.op === "draw_line") return `line from (${n("x1")}, ${n("y1")}) to (${n("x2")}, ${n("y2")})`;
   throw new Error(`${command.op} is not a draw command`);
 }
@@ -223,9 +224,9 @@ export function commandDistance(command: Command): number {
 }
 
 /** An extrude_sketch command in words, for the preview and its undo step: "extrude Sketch 1 by 15 mm", "extrude the sketch by 8 mm the other way". */
-export function extrudeWords(command: Command): string {
+export function extrudeWords(command: Command, unit: Unit = "mm"): string {
   const d = command.distance as number;
-  return `extrude ${command.sketch === undefined ? "the sketch" : String(command.sketch)} by ${Math.abs(d)} mm${d < 0 ? " the other way" : ""}`;
+  return `extrude ${command.sketch === undefined ? "the sketch" : String(command.sketch)} by ${unit === "mm" ? Math.abs(d) : boxShown(Math.abs(d), unit)} ${unit}${d < 0 ? " the other way" : ""}`;
 }
 
 /** The sketch a draw command goes into when only the document is known: the one just before the marker, which create_sketch has just put in (and opened). */

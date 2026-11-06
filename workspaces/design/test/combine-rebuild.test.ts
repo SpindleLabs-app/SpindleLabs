@@ -129,6 +129,22 @@ test("each refusal fails the Combine in words and changes no body", async () => 
   assert.deepEqual(build.results[join.id], { status: "failed", cause: "error", message: "Combine 1 can't be made: the result would touch itself along an edge", touches: [touch] });
   assert.deepEqual(Object.keys(build.bodies).sort(), edge.bodies.slice().sort());
   await cache.close();
+  // 36d: a result the kernel says would be too thin (its "thin-result", 36a's refusal of walls and edges under 0.001
+  // mm) fails the Combine the same way with where (`thin`), instead of breaking the whole rebuild (before 36d the kind
+  // was not caught, so the rebuild threw).
+  const gap = { at: "gap" as const, from: [10, 0, 5] as [number, number, number], to: [10.0005, 0, 5] as [number, number, number] };
+  const thin = {
+    ...kernel,
+    call: ((op: string, ...args: unknown[]) =>
+      op === "body_boolean"
+        ? Promise.reject(new KernelError({ kind: "thin-result", inputs: [], message: "the result would have a gap thinner than 0.001 mm", thin: [gap] }))
+        : (kernel.call as (o: string, ...a: unknown[]) => unknown)(op, ...args)) as typeof kernel.call,
+  };
+  cache = new BodyCache(thin);
+  build = await rebuildTimeline(join.doc, cache, thin);
+  assert.deepEqual(build.results[join.id], { status: "failed", cause: "error", message: "Combine 1 can't be made: the result would have a gap thinner than 0.001 mm", thin: [gap] });
+  assert.deepEqual(Object.keys(build.bodies).sort(), edge.bodies.slice().sort());
+  await cache.close();
   // Suppress the tool: the Combine is greyed by it, and the target stays as it was.
   const off = { ...inter.doc, timeline: { ...inter.doc.timeline, features: inter.doc.timeline.features.map((f) => (`body:${f.id}` === apart.bodies[1] ? { ...f, suppressed: true } : f)) } };
   ({ build, cache } = await built(off));

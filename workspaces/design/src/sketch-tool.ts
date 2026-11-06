@@ -25,6 +25,9 @@ import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type Sketc
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
+import { dashes } from "./construction.ts";
+import { squaredRectangle } from "./constraints.ts";
+import { constraintMarks, dimensionLabels, dimensionLine, isConstraintKind, isConstraintTool, startConstraintTool, type ConstraintTool } from "./constraint-tool.ts";
 
 export { pointAt };
 
@@ -137,7 +140,7 @@ export interface SelectTool {
 }
 
 export type { CentreArcTool };
-export type SketchTool = LineTool | RectangleTool | CircleTool | ArcTool | TangentTool | CentreArcTool | ProjectTool | SelectTool;
+export type SketchTool = LineTool | RectangleTool | CircleTool | ArcTool | TangentTool | CentreArcTool | ProjectTool | SelectTool | ConstraintTool;
 export type ToolKind = SketchTool["kind"];
 
 /**
@@ -163,18 +166,20 @@ export function startTool(kind: ToolKind, sketch: string): SketchTool {
   if (kind === "centre") return { kind, sketch, centre: null, start: null, swept: 0 };
   if (kind === "project") return { kind, sketch };
   if (kind === "select") return { kind, sketch, picked: [], hover: null };
+  if (isConstraintKind(kind)) return startConstraintTool(kind, sketch);
   return kind === "rectangle" ? { kind, sketch, corner: null } : { kind, sketch, centre: null };
 }
 
 /** Whether the tool is part way through (a chain going, a first corner down, an arc's ends): what Escape ends. */
-export const toolBusy = (tool: SketchTool): boolean => (tool.kind === "line" || tool.kind === "tangent" ? tool.from !== null : pendingClicks(tool).length > 0);
+export const toolBusy = (tool: SketchTool): boolean =>
+  tool.kind === "line" || tool.kind === "tangent" ? tool.from !== null : isConstraintTool(tool) && tool.kind === "dimension" ? tool.first !== null || !!tool.pending : pendingClicks(tool).length > 0;
 
 /** The tool's clicks while they are not yet points of the sketch's own (a chain's first click, a first corner, a centre, an arc's ends). */
 function pendingClicks(tool: SketchTool): SketchXY[] {
   if (tool.kind === "line") return tool.from !== null && typeof tool.from !== "string" ? [tool.from] : [];
   if (tool.kind === "arc") return [tool.start, tool.end].filter((p) => p !== null);
   if (tool.kind === "centre") return [tool.centre, tool.start].filter((p) => p !== null);
-  if (tool.kind === "tangent" || tool.kind === "project" || tool.kind === "select") return [];
+  if (tool.kind === "tangent" || tool.kind === "project" || tool.kind === "select" || isConstraintTool(tool)) return [];
   const at = tool.kind === "rectangle" ? tool.corner : tool.centre;
   return at ? [at] : [];
 }
@@ -257,6 +262,8 @@ export function clickAt<T extends SketchTool>(doc: DesignDocument, tool: T, at: 
   if (tool.kind === "project") return { doc, tool, drew: false };
   // Nor does Select: the workspace picks the curve under the pointer (sketch-select.ts).
   if (tool.kind === "select") return { doc, tool, drew: false };
+  // Nor do the constraint tools: the workspace adds the constraint the picks make (constraint-tool.ts).
+  if (isConstraintTool(tool)) return { doc, tool, drew: false };
   return lineClick(doc, tool as LineTool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
 }
 
@@ -294,10 +301,11 @@ function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY):
   // Each side is a line, so each must be MIN_SIZE long, with a line's allowance for rounding (`underMin`), as the kernel judges them.
   const scale = Math.max(Math.abs(tool.corner[0]), Math.abs(tool.corner[1]), Math.abs(at[0]), Math.abs(at[1]));
   if (underMin(Math.abs(at[0] - tool.corner[0]), scale, true) || underMin(Math.abs(at[1] - tool.corner[1]), scale, true)) return { doc, tool, drew: false, note: SMALL_RECTANGLE };
-  const drawn = drawRectangle(doc, tool.sketch, tool.corner, at).doc;
+  const made = drawRectangle(doc, tool.sketch, tool.corner, at);
   // Every side a line already there (the same rectangle twice): nothing drawn, as the line tool says for one side.
-  if (drawn === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
-  return { doc: drawn, tool: { ...tool, corner: null }, drew: true };
+  if (made.doc === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
+  // Level and upright sides kept so (Fusion's rectangle): a size on one side then keeps it a rectangle.
+  return { doc: squaredRectangle(made.doc, tool.sketch, made.ids), tool: { ...tool, corner: null }, drew: true };
 }
 
 /**
@@ -624,7 +632,7 @@ export function previewLine(doc: DesignDocument, tool: LineTool | null, pointer:
  * draws nothing).
  */
 export function previewSegments(doc: DesignDocument, tool: SketchTool | null, pointer: SketchXY | null): (readonly [SketchXY, SketchXY])[] {
-  if (!tool || !pointer || tool.kind === "project" || tool.kind === "select") return [];
+  if (!tool || !pointer || tool.kind === "project" || tool.kind === "select" || isConstraintTool(tool)) return [];
   if (tool.kind === "line") {
     const line = previewLine(doc, tool, pointer);
     return line ? [line] : [];
@@ -666,7 +674,7 @@ export function previewSegments(doc: DesignDocument, tool: SketchTool | null, po
  * the Project tool the viewport is asked which edge or face is under the
  * pointer (`picks`).
  */
-export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool; grid: number; pointer: SketchXY | null; gridSnap?: boolean } | null, placed?: ReadonlyMap<string, Plane>, lost: ReadonlySet<string> = new Set()): SketchDrawing[] {
+export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool; grid: number; pointer: SketchXY | null; gridSnap?: boolean; pixel?: number } | null, placed?: ReadonlyMap<string, Plane>, lost: ReadonlySet<string> = new Set()): SketchDrawing[] {
   // Each sketch's plane from its item, found by id once (security audit S2: a search per sketch took the timeline's length squared).
   const items = new Map<string, Feature>();
   for (const f of doc.timeline.features) if (!items.has(f.id)) items.set(f.id, f);
@@ -687,29 +695,96 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     const side = s.face?.side === -1 ? ({ side: -1 } as const) : {};
     const made = new Set((s.projected ?? []).map((p) => p.made));
     const segmentsOf = (curves: ReturnType<typeof curvesOf>) => [...curves.lines.map((l) => [l.a, l.b] as const), ...curves.circles.flatMap((c) => circleSegments(c.centre, c.radius)), ...curves.arcs.flatMap(arcSegments)];
-    const lines = segmentsOf(curvesOf(s.points, s.curves.filter((c) => !made.has(c.id))));
+    const lines = segmentsOf(curvesOf(s.points, s.curves.filter((c) => !made.has(c.id) && c.construction !== true)));
+    // Construction curves (47f) dashed: 10 px apart while edited (the pointer's pixel), else a 60th of the sketch's size.
+    const guides = s.curves.filter((c) => c.construction === true && !made.has(c.id));
+    const period = editing?.tool.sketch === s.id && editing.pixel ? CONSTRUCTION_DASH_PIXELS * editing.pixel : sketchSize(s) / 60;
+    const construction = guides.length === 0 ? {} : { construction: dashes(segmentsOf(curvesOf(s.points, guides)), period) };
     const projected =
       made.size === 0 ? {} : { projected: { lines: segmentsOf(curvesOf(s.points, s.curves.filter((c) => made.has(c.id)))), points: s.points.filter((p) => made.has(p.id)).map((p): SketchXY => [p.x, p.y]) } };
     // 26e: a sketch held with its plane lost is drawn red where it stays (the rebuild's plane warnings, `lost`).
-    if (editing?.tool.sketch !== s.id) return lost.has(s.id) ? { plane, ...side, lines, ...projected, lost: true as const } : { plane, ...side, lines, ...projected };
+    if (editing?.tool.sketch !== s.id) return lost.has(s.id) ? { plane, ...side, lines, ...construction, ...projected, lost: true as const } : { plane, ...side, lines, ...construction, ...projected };
     const points: SketchXY[] = s.points.map((p) => [p.x, p.y]);
     const tool = editing.tool;
     for (const at of pendingClicks(tool)) if (!s.points.some((p) => p.x === at[0] && p.y === at[1])) points.push([at[0], at[1]]);
     // The Select tool's picks lit, and the curve under the pointer (sketch-select.ts); a pick an undo took out is passed over.
     const lit = (ids: readonly string[]) => segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id))));
-    const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}) };
-    return { plane, ...side, lines, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select } };
+    // With Select a press on any of its points drags it (47d3, point-drag.ts; one that can't be dragged says why).
+    const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}), ...(s.points.length > 0 ? { grab: s.points.map((p): SketchXY => [p.x, p.y]) } : {}) };
+    return { plane, ...side, lines, ...construction, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit) } };
   });
 }
 
-/** What the sketch holds, in words for its status: "3 lines", "1 circle", "4 lines and 2 circles", "2 lines, 1 arc and 1 circle", "1 circle and 2 projected edges" (27d), or "Nothing drawn yet" when empty. */
+/** What the sketch holds, in words for its status: "3 lines", "1 circle", "4 lines and 2 circles", "2 lines, 1 arc and 1 circle", "1 circle and 2 projected edges" (27d), "4 lines and 1 construction curve" (47f), or "Nothing drawn yet" when empty. */
 export function curveCount(sketch: Sketch): string {
   const made = new Set((sketch.projected ?? []).map((p) => p.made));
   const count = (kind: string, word: string) => {
-    const n = sketch.curves.filter((c) => c.kind === kind && !made.has(c.id)).length;
+    const n = sketch.curves.filter((c) => c.kind === kind && !made.has(c.id) && c.construction !== true).length;
     return n ? `${n} ${word}${n === 1 ? "" : "s"}` : "";
   };
   const projected = made.size === 0 ? "" : `${made.size} projected edge${made.size === 1 ? "" : "s"}`;
-  const words = [count("line", "line"), count("arc", "arc"), count("circle", "circle"), projected].filter(Boolean);
+  // Construction curves (47f) are counted apart, since the outline leaves them out.
+  const guides = sketch.curves.filter((c) => c.construction === true && !made.has(c.id)).length;
+  const construction = guides === 0 ? "" : `${guides} construction curve${guides === 1 ? "" : "s"}`;
+  const words = [count("line", "line"), count("arc", "arc"), count("circle", "circle"), projected, construction].filter(Boolean);
   return words.length ? [words.slice(0, -1).join(", "), words.at(-1)].filter(Boolean).join(" and ") : "Nothing drawn yet";
+}
+
+/** How far apart a construction curve's dashes are drawn while its sketch is edited, in screen pixels (construction.ts `dashes`). */
+export const CONSTRUCTION_DASH_PIXELS = 10;
+
+/** A sketch's size for drawing: the diagonal of its points' box (1 mm with fewer than two apart). */
+function sketchSize(s: Sketch): number {
+  if (s.points.length === 0) return 1;
+  const xs = s.points.map((p) => p.x);
+  const ys = s.points.map((p) => p.y);
+  const circles = s.curves.flatMap((c) => (c.kind === "circle" ? [c.radius * 2] : []));
+  return Math.max(Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), ...circles, 1);
+}
+
+/** How big a constraint's mark is drawn, in screen pixels (constraint-tool.ts `constraintMarks`). */
+export const CONSTRAINT_MARK_PIXELS = 10;
+
+/**
+ * The edited sketch's constraint marks (step 47d2), `pixel` mm a screen
+ * pixel (1 mm when not known), and with a constraint tool, the point or line
+ * it is over lit and the first point picked lit as picked; after a refusal
+ * the constraints and arcs that fought red.
+ */
+function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefined, lit: (ids: readonly string[]) => (readonly [SketchXY, SketchXY])[]) {
+  const size = CONSTRAINT_MARK_PIXELS * (pixel !== undefined && pixel > 0 ? pixel : 0.1);
+  const marks = constraintMarks(s, size);
+  const fighting = new Set(isConstraintTool(tool) ? tool.fighting : []);
+  const at = (id: string): SketchXY | null => {
+    const p = s.points.find((q) => q.id === id);
+    return p ? [p.x, p.y] : null;
+  };
+  const ring = (p: SketchXY | null): (readonly [SketchXY, SketchXY])[] => (p ? circleSegments(p, size / 2) : []);
+  const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[]; labels?: { id: string; at: SketchXY; text: string; fighting?: boolean }[] } = {};
+  // The dimensions' values (47e), red with the marks of the ones that fought.
+  const labels = dimensionLabels(s, size).map((l) => (fighting.has(l.id) ? { ...l, fighting: true } : l));
+  if (labels.length > 0) out.labels = labels;
+  // With Select (47d2), a constraint's mark is picked like a curve: lit with the picks, and lighter under the pointer.
+  const select = tool.kind === "select" ? tool : null;
+  const shownLit = new Set(select ? [...select.picked, ...(select.hover === null ? [] : [select.hover])] : []);
+  const calm = [...marks].filter(([id]) => !fighting.has(id) && !shownLit.has(id)).flatMap(([, m]) => m);
+  const red = [...[...marks].filter(([id]) => fighting.has(id)).flatMap(([, m]) => m), ...lit([...fighting].filter((id) => !marks.has(id)))];
+  if (calm.length > 0) out.constraints = calm;
+  if (red.length > 0) out.fighting = red;
+  if (s.constraints.length > 0) out.constraintCount = s.constraints.length;
+  if (select) {
+    const picked = select.picked.flatMap((id) => marks.get(id) ?? []);
+    const hover = select.hover !== null && !select.picked.includes(select.hover) ? (marks.get(select.hover) ?? []) : [];
+    if (picked.length > 0) out.picked = [...lit(select.picked), ...picked];
+    if (hover.length > 0) out.hover = hover;
+  }
+  if (isConstraintTool(tool)) {
+    const hover = tool.hover === null ? [] : "point" in tool.hover ? ring(at(tool.hover.point)) : lit(["line" in tool.hover ? tool.hover.line : tool.hover.curve]);
+    if (hover.length > 0) out.hover = hover;
+    if (tool.first !== null) out.picked = ring(at(tool.first));
+    // A dimension waiting for its value (47e) is drawn lit where it will be, its value in the box.
+    const pending = tool.pending ? dimensionLine(s, tool.pending, size) : null;
+    if (pending) out.picked = [...lit(tool.pending?.kind === "diameter" ? [tool.pending.circle] : []), ...pending.segments];
+  }
+  return out;
 }

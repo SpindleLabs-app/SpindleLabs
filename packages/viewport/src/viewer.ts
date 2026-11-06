@@ -3,21 +3,25 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
-import { clientToNdc, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
+import { NO_HIGHLIGHT, triangleColours, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { clientToNdc, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
-import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
+import { isDoublePick, type ViewClick } from "./double-pick.ts";
+import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
-import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
+import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
+import { MOUSE_ATTRIBUTE, MOUSE_EVENT, leftDragOf, readMousePreset } from "@fission/core";
 import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
 import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, placeHandles, ringAngle, turnBetween, type Placed } from "./move-handles.ts";
+import { PlacesLayer } from "./places-layer.ts";
 import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
+import { SketchLabels, type PlacedLabel } from "./sketch-labels.ts";
 import { BUILD_AREA_COLOURS, GROUND_GRID, SKETCH_COLOURS, onViewTheme } from "./view-theme.ts";
 import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
 
@@ -49,6 +53,8 @@ interface ViewHost {
   sketchPointer(pointer: SketchPointer): void;
   /** Whether the edited sketch asks which body edge or face is under the pointer (step 27d, the Project tool: SketchDrawing editing.picks). */
   sketchPicks(): boolean;
+  /** The edited sketch's points a press drags (SketchDrawing editing.grab, step 47d3), in world coordinates, while a workspace hears the pointer; else null. */
+  sketchGrab(): readonly (readonly number[])[] | null;
   /** The offered origin planes on screen (showPlanes), to be clicked. */
   planeMeshes(): THREE.Mesh[];
   /** While planes are offered (showPlanes), the body's faces that can be picked with them (26d); null when none are offered. */
@@ -104,6 +110,8 @@ export class ViewportView {
   private host: ViewHost;
   /** What a left-button drag does (SF3a): picked on the navigation bar. */
   private mode: NavMode = "orbit";
+  /** What a left drag does with no bar tool lit: orbit, or select (the Fusion-style mouse preset, U2d). */
+  private home: "orbit" | "select" = "orbit";
   private bar: ReturnType<typeof navBar>;
   /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */
   private arrowDrag: { id: number; offset: number; last: number } | null = null;
@@ -114,7 +122,11 @@ export class ViewportView {
    */
   /** The kind of pointer last pressed on the view, whose reach places and grabs the Move handles (a finger's wider); a coarse pointer's at first. */
   private pointerKind: "mouse" | "touch" = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
+  /** The last click that picked on the body (not one of a double-click), to tell a double-click's second (double-pick.ts). */
+  private lastClick: ViewClick | null = null;
   private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
+  /** A sketch point pressed on (47d3): which (editing.grab), where the press was, whether it has moved past a click yet. */
+  private pointDrag: { id: number; grab: number; start: { x: number; y: number }; moved: boolean; touch: boolean } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
     this.host = host;
@@ -136,7 +148,8 @@ export class ViewportView {
     });
     container.appendChild(this.cube.element);
     this.bar = navBar({
-      mode: (mode) => this.setMode(mode),
+      // A lit tool pressed again puts itself away where the left button rests as a picker (Fusion's way).
+      mode: (mode) => this.setMode(mode === this.mode && this.home === "select" ? "select" : mode),
       fit: () => this.fitSelection() ?? this.fit(),
       lookAt: () => {
         const plane = this.host.sketchPlane();
@@ -167,8 +180,10 @@ export class ViewportView {
     this.controls.maxDistance = FARTHEST_VIEW;
     this.dragArrow(); // first, so a press on Extrude's arrow is a drag whatever the navigation mode
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
+    this.dragSketchPoint(); // and a press on a sketch point the Select tool can drag (47d3)
     this.navigate();
-    this.setMode("orbit");
+    this.followMouse();
+    this.setMode(this.home);
 
     // A click picks; a press that moves further is the camera orbiting.
     let down: { x: number; y: number; id: number } | null = null;
@@ -187,6 +202,10 @@ export class ViewportView {
       const edge = this.edgeAt(x, y);
       return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
     };
+    // A press anywhere else (a browser row, a button, the view cube) comes between two clicks: they are no double-click.
+    document.addEventListener("pointerdown", (e) => {
+      if (e.target !== canvas) this.lastClick = null;
+    }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointerdown", (e) => {
       down = e.isPrimary && e.button === 0 ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
       endHold(); // a second finger (a pinch) is no hold
@@ -231,7 +250,11 @@ export class ViewportView {
       // Picking where a sketch goes: the face under the pointer, else the nearest offered plane, never an edge (26d).
       if (this.host.offeredFaces()) return this.host.pick({ ...this.planeTarget(e.clientX, e.clientY), edge: null, shift: e.shiftKey });
       const edge = this.edgeAt(e.clientX, e.clientY);
-      this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey });
+      // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
+      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch: e.pointerType === "touch", shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
+      const double = isDoublePick(this.lastClick, click);
+      this.lastClick = double ? null : click;
+      this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
     });
     // Hover: what a click would pick, looked up at most once a frame, never while a button is held.
     let pointer: { x: number; y: number } | null = null;
@@ -240,6 +263,7 @@ export class ViewportView {
       if (this.queuedHover) return;
       this.queuedHover = requestAnimationFrame(() => {
         this.queuedHover = 0;
+        if (this.pointDrag) return; // a held sketch point hears its drags only (dragSketchPoint)
         // Move's handles (35e2c): one under the pointer lights, and nothing else does; held, it stays lit.
         if (this.host.moving()) {
           if (this.moveDrag) return;
@@ -281,13 +305,27 @@ export class ViewportView {
       this.host.setExtrudeHover(null, false);
       if (!this.moveDrag) this.host.setMoveHot(null);
       this.host.setPlaneHover(null);
-      if (this.host.sketchPlane()) this.host.sketchPointer({ kind: "move", at: null });
+      if (this.host.sketchPlane() && !this.pointDrag) this.host.sketchPointer({ kind: "move", at: null });
     });
 
     this.resizer = new ResizeObserver(() => this.resize());
     this.resizer.observe(container);
     this.resize();
     this.renderer.setAnimationLoop(this.draw);
+  }
+
+  /**
+   * A picture of this view as on screen, without the view cube, as a PNG
+   * (File > Save picture, quick wins): drawn once more and read at once, as
+   * the canvas keeps its drawing buffer until the next frame.
+   */
+  picture(): Promise<Blob | null> {
+    this.controls.update();
+    this.host.frame(this);
+    paintBackdrop(this.renderer);
+    this.renderer.render(this.host.scene, this.camera);
+    const canvas = this.renderer.domElement;
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   }
 
   private draw = () => {
@@ -327,12 +365,35 @@ export class ViewportView {
         const li = document.createElement("li");
         li.textContent = o.label;
         if (o.detail) li.title = o.detail;
+        // In the colour of its worst mark or place, as they are drawn (an error red, not the warnings' amber: 36d).
+        li.dataset.severity = worstSeverity(o);
         return li;
       }),
     );
   }
 
-  /** What a left-button drag does from now on: orbit, pan or zoom (the navigation bar's first three buttons). */
+  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit nothing changes and it says false. */
+  leaveNavTool(): boolean {
+    if (this.mode === this.home) return false;
+    this.setMode(this.home);
+    return true;
+  }
+
+  /**
+   * The mouse preset (U2d): the page wears it as `data-mouse` and sends `mousechange` when Settings changes it; the left
+   * button rests as an orbit or as a picker, and a view resting (no bar tool lit) follows at once.
+   */
+  private followMouse() {
+    const doc = this.element.ownerDocument;
+    const read = () => leftDragOf(readMousePreset(doc.documentElement.dataset[MOUSE_ATTRIBUTE]));
+    this.home = read();
+    doc.addEventListener(MOUSE_EVENT, () => {
+      this.home = read();
+      if (this.mode === "orbit" || this.mode === "select") this.setMode(this.home);
+    }, { signal: this.listening.signal });
+  }
+
+  /** What a left-button drag does from now on: orbit, pan, zoom or nothing (the navigation bar's first three buttons, or none lit). */
   setMode(mode: NavMode) {
     this.mode = mode;
     this.element.dataset.nav = mode; // read by the e2e test
@@ -343,7 +404,8 @@ export class ViewportView {
   /** OrbitControls' share of the buttons for the mode: the left button orbits only in Orbit mode (Pan and Zoom are navigate()'s), and pans in the 2D view; one finger pans in Pan mode and in 2D. */
   private applyButtons() {
     const flat = this.image !== null;
-    this.controls.mouseButtons.LEFT = this.mode !== "orbit" ? null : flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    // A flat (2D image) view keeps its left-drag pan whichever mouse preset rests the left button as a picker in 3D (U2d).
+    this.controls.mouseButtons.LEFT = this.mode === "orbit" || (flat && this.mode === "select") ? (flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE) : null;
     this.controls.touches.ONE = this.mode === "pan" || flat ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
   }
 
@@ -351,6 +413,18 @@ export class ViewportView {
   cameraPose(): CameraPose {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
     return { position: this.camera.position.toArray(), target: this.controls.target.toArray(), up: up.toArray() };
+  }
+
+  /**
+   * Puts the camera back at `pose` from `cameraPose()` earlier (a design tab returned to, tabs step 2), the near and far
+   * planes scaled with the change in distance as zooming does. A pose with a number that is not finite is ignored.
+   */
+  restorePose(pose: CameraPose) {
+    if (![...pose.position, ...pose.target, ...pose.up].every(Number.isFinite)) return;
+    const before = this.camera.position.distanceTo(this.controls.target);
+    const after = new THREE.Vector3(...pose.position).distanceTo(new THREE.Vector3(...pose.target));
+    this.camera.up.set(...pose.up);
+    this.setPose(pose, before > 0 && after > 0 ? after / before : 1);
   }
 
   /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims); `zoom` scales the near and far planes with the distance in 3D, so nothing is clipped close up. */
@@ -394,7 +468,7 @@ export class ViewportView {
     this.element.addEventListener("pointerdown", (e) => {
       if (e.target !== canvas || e.pointerType === "touch" || drag) return;
       const action = dragAction(e.button, e.shiftKey, this.mode);
-      if (action === null || action === "orbit") return; // orbits are OrbitControls'
+      if (action === null || action === "orbit" || action === "select") return; // orbits are OrbitControls', and a picking left button is the click picker's
       e.preventDefault(); // no middle-button autoscroll
       e.stopPropagation(); // neither OrbitControls nor the click picker hears it
       canvas.setPointerCapture(e.pointerId);
@@ -519,6 +593,74 @@ export class ViewportView {
       // The browser called the drag off (a system gesture, an incoming call, the page losing the touch): the handle's
       // box goes back to its number at the press, as Escape on a drag would, rather than keeping wherever it stopped.
       this.host.movePointer({ handle: drag.handle, amount: e.type === "pointercancel" ? 0 : drag.amount, done: true });
+    };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", end);
+  }
+
+  /**
+   * Dragging a sketch point (step 47d3, Fusion's): while the edited sketch
+   * offers points to drag (editing.grab), a press within SKETCH_GRAB_PX of
+   * one on screen (more room for a finger) is held for it, whatever the
+   * navigation mode, and neither the camera nor the click picker hears it.
+   * Let go before it moves past a click, it is a click as usual; once it
+   * has, the workspace hears a `grab` of the nearest point, a `drag` for
+   * each move and a `drop` when it is let go (`cancelled` when the browser
+   * calls it off). A second finger while one is held is heard by nobody.
+   */
+  private dragSketchPoint() {
+    const canvas = this.renderer.domElement;
+    const on = (e: PointerEvent, plane: Plane) => ({ ...this.pointerOn(e.clientX, e.clientY, plane), ...(e.pointerType === "touch" ? { touch: true as const } : {}) });
+    this.element.addEventListener("pointerdown", (e) => {
+      if (this.pointDrag && e.target === canvas && e.pointerId !== this.pointDrag.id) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.target !== canvas || this.pointDrag || !e.isPrimary || e.button !== 0 || this.image) return;
+      const grab = this.host.sketchGrab();
+      if (!grab) return;
+      const rect = canvas.getBoundingClientRect();
+      const at = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const touch = e.pointerType === "touch";
+      const index = nearestWithin(this.screenPoints(grab), at, SKETCH_GRAB_PX[touch ? "touch" : "mouse"]);
+      if (index === null) return;
+      e.preventDefault(); // keeps the focus where it was
+      // Immediate: navigate()'s listener is on this element too, and in Pan or Zoom mode it would move the camera as well (47d4 review).
+      e.stopImmediatePropagation();
+      if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
+      canvas.setPointerCapture(e.pointerId);
+      this.pointDrag = { id: e.pointerId, grab: index, start: { x: e.clientX, y: e.clientY }, moved: false, touch };
+    }, { capture: true, signal: this.listening.signal });
+    canvas.addEventListener("pointermove", (e) => {
+      const drag = this.pointDrag;
+      if (!drag || e.pointerId !== drag.id) return;
+      if (releaseLost(e)) return end(e);
+      const plane = this.host.sketchPlane();
+      if (!plane) return;
+      if (!drag.moved) {
+        if (isClick(drag.start, { x: e.clientX, y: e.clientY })) return;
+        drag.moved = true;
+        const start = this.pointerOn(drag.start.x, drag.start.y, plane);
+        this.host.sketchPointer({ kind: "grab", grab: drag.grab, ...start, ...(drag.touch ? { touch: true as const } : {}) });
+      }
+      this.host.sketchPointer({ kind: "drag", ...on(e, plane) });
+    });
+    const end = (e: PointerEvent) => {
+      const drag = this.pointDrag;
+      if (!drag || drag.id !== e.pointerId) return;
+      this.pointDrag = null;
+      const plane = this.host.sketchPlane();
+      if (!plane) return;
+      // Read by the e2e tests: once a press's end is counted, every move it made has been heard.
+      this.element.dataset.pointPresses = String(Number(this.element.dataset.pointPresses ?? 0) + 1);
+      if (!drag.moved) {
+        // Let go where it was pressed: a click, as the canvas's own would have made it.
+        if (e.type === "pointercancel") return;
+        return this.host.sketchPointer({ kind: "click", ...on(e, plane), ...this.sketchPick(e.clientX, e.clientY), ...(e.shiftKey ? { shift: true as const } : {}) });
+      }
+      if (e.type === "pointercancel") return this.host.sketchPointer({ kind: "drop", at: null, cancelled: true });
+      this.host.sketchPointer({ kind: "drop", ...on(e, plane) });
     };
     canvas.addEventListener("pointerup", end);
     canvas.addEventListener("pointercancel", end);
@@ -1005,6 +1147,8 @@ export class ViewportView {
  * body's dark edges.
  */
 export const GRID_OPACITY = 0.16;
+/** How opaque the tint of the sketch plane is (U7a): enough to see the plane as a surface from any side, light enough to leave the body and the sketch clear. */
+export const PLANE_TINT_OPACITY = 0.07;
 /** How opaque the origin axes are while sketching. */
 export const AXIS_OPACITY = 1;
 /** How opaque an origin plane offered for a sketch is, under the pointer, and one not offered. */
@@ -1086,6 +1230,8 @@ export class Viewer implements SharedViewport {
   private minorMaterial: THREE.LineBasicMaterial | null = null;
   /** The edited sketch's ends in model space, for Look At. */
   private editedWorld: number[][] = [];
+  /** The edited sketch's dimension values (47e), kept over their spots each frame of the main view. */
+  private sketchLabels: SketchLabels;
   /** Every finished sketch's line ends in world space (lost ones too), framed with the body by Fit (fitFraming). */
   private finishedWorld: number[][] = [];
   /** The sketches drawn (showSketches) and the plane of the one being edited. */
@@ -1094,6 +1240,8 @@ export class Viewer implements SharedViewport {
   private editedSide: 1 | -1 = 1;
   /** Whether the edited sketch asks for picks (27d: SketchDrawing editing.picks). */
   private editedPicks = false;
+  /** The edited sketch's points a press drags (editing.grab), in world coordinates; null when none can be. */
+  private editedGrab: number[][] | null = null;
   private sketchHandler: ((pointer: SketchPointer) => void) | null = null;
   /** The origin planes drawn for picking (showPlanes). */
   private planes = new THREE.Group();
@@ -1106,6 +1254,8 @@ export class Viewer implements SharedViewport {
   private extrudeHandler: ((pointer: ExtrudePointer) => void) | null = null;
   /** Move's arrows and rings (35e2c), and who hears their drags. */
   private moveLayer = new MoveLayer();
+  /** The overlays' places in the world (36d: where a refused Combine would touch itself or be too thin). */
+  private placesLayer = new PlacesLayer();
   private moveHandler: ((pointer: MovePointer) => void) | null = null;
   /** The main view first, then any added ones. */
   private views: ViewportView[] = [];
@@ -1132,7 +1282,7 @@ export class Viewer implements SharedViewport {
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, this.originPlanes, this.buildArea, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
+    this.scene.add(grid, this.axes, this.originPlanes, this.buildArea, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group, this.placesLayer.group);
 
     this.host = {
       scene: this.scene,
@@ -1150,6 +1300,7 @@ export class Viewer implements SharedViewport {
       sketchSide: () => this.editedSide,
       sketchPointer: (pointer) => this.sketchHandler?.(pointer),
       sketchPicks: () => this.sketchHandler !== null && this.editedPlane !== null && this.editedPicks,
+      sketchGrab: () => (this.sketchHandler !== null && this.editedPlane !== null ? this.editedGrab : null),
       planeMeshes: () => this.planeHits,
       offeredFaces: () => this.pickFaces,
       setPlaneHover: (plane) => this.setPlaneHover(plane),
@@ -1174,6 +1325,7 @@ export class Viewer implements SharedViewport {
       },
     };
     this.views.push(new ViewportView(this.host, container));
+    this.sketchLabels = new SketchLabels(container);
     this.paint();
   }
 
@@ -1374,12 +1526,15 @@ export class Viewer implements SharedViewport {
     this.editedPlane = null;
     this.editedSide = 1;
     this.editedPicks = false;
+    this.editedGrab = null;
     this.gridFor = null;
     this.editedWorld = [];
     this.finishedWorld = [];
     let lines = 0;
     let lost = 0;
     let projected = 0;
+    let labels: PlacedLabel[] = [];
+    let construction = 0;
     for (const d of drawings) {
       const at = (p: SketchXY) => toWorld(d.plane, p);
       const segments = (pairs: readonly (readonly [SketchXY, SketchXY])[], colour: number, order: number) => {
@@ -1401,30 +1556,37 @@ export class Viewer implements SharedViewport {
         this.sketches.add(dot);
       };
       lines += d.lines.length;
+      construction += d.construction?.length ?? 0;
       const shown = d.projected ?? { lines: [], points: [] };
       projected += shown.lines.length + shown.points.length;
       const projectedWorld = [...shown.lines.flatMap(([a, b]) => [at(a), at(b)]), ...shown.points.map(at)];
       if (!d.editing) {
-        this.finishedWorld.push(...d.lines.flatMap(([a, b]) => [at(a), at(b)]), ...projectedWorld);
+        this.finishedWorld.push(...[...d.lines, ...(d.construction ?? [])].flatMap(([a, b]) => [at(a), at(b)]), ...projectedWorld);
         // 27d: projected edges in their own colour (red with the rest when the sketch is lost).
         segments(shown.lines, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.projectedFinished, d.lost ? LOST_SKETCH_ORDER : FINISHED_SKETCH_ORDER);
         dots(shown.points, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.projectedFinished, FINISHED_SKETCH_ORDER);
         // 26e: a sketch whose plane is lost red, where it stays.
         if (d.lost) segments(d.lines, SKETCH_COLOURS.lost, LOST_SKETCH_ORDER);
         else segments(d.lines, SKETCH_COLOURS.finished, FINISHED_SKETCH_ORDER);
+        if (d.construction) segments(d.construction, d.lost ? SKETCH_COLOURS.lost : SKETCH_COLOURS.finished, d.lost ? LOST_SKETCH_ORDER : FINISHED_SKETCH_ORDER);
         if (d.lost) lost += d.lines.length;
         continue;
       }
       this.editedPlane = d.plane;
       this.editedSide = d.side === -1 ? -1 : 1;
       this.editedPicks = d.editing.picks === true;
+      this.editedGrab = d.editing.grab && d.editing.grab.length > 0 ? d.editing.grab.map(at) : null;
       this.gridFor = { plane: d.plane, step: d.editing.gridSnap ? d.editing.grid : null };
       this.editedWorld = [...d.lines.flatMap(([a, b]) => [at(a), at(b)]), ...d.editing.points.map(at), ...projectedWorld];
+      labels = (d.editing.labels ?? []).map((l) => ({ id: l.id, world: at(l.at), text: l.text, fighting: l.fighting }));
       segments(d.lines, SKETCH_COLOURS.line, 3);
+      if (d.construction) segments(d.construction, SKETCH_COLOURS.construction, 3);
       segments(shown.lines, SKETCH_COLOURS.projected, 3);
       // The Select tool's: the curve under the pointer lighter, the selected ones lit over it.
       if (d.editing.hover && d.editing.hover.length > 0) segments(d.editing.hover, SKETCH_COLOURS.hover, 3.5);
       if (d.editing.picked && d.editing.picked.length > 0) segments(d.editing.picked, SKETCH_COLOURS.picked, 3.6);
+      if (d.editing.constraints && d.editing.constraints.length > 0) segments(d.editing.constraints, SKETCH_COLOURS.constraint, 3.7);
+      if (d.editing.fighting && d.editing.fighting.length > 0) segments(d.editing.fighting, SKETCH_COLOURS.lost, 3.8);
       if (d.editing.preview.length > 0) segments(d.editing.preview, SKETCH_COLOURS.preview, 4);
       if (d.editing.points.length > 0) {
         const g = new THREE.BufferGeometry();
@@ -1443,6 +1605,7 @@ export class Viewer implements SharedViewport {
     const edited = drawings.find((d) => d.editing)?.editing;
     const xy = (p: SketchXY) => `${p[0]},${p[1]}`;
     this.element.dataset.sketchLines = String(lines);
+    this.element.dataset.sketchConstruction = String(construction);
     this.element.dataset.sketchLost = String(lost);
     this.element.dataset.sketchProjected = String(projected);
     this.element.dataset.sketchPicks = String(this.editedPicks);
@@ -1450,6 +1613,10 @@ export class Viewer implements SharedViewport {
     this.element.dataset.sketchPreview = edited ? edited.preview.map((s) => s.map(xy).join(" ")).join(" | ") : "";
     this.element.dataset.sketchSnap = edited?.snap?.label ?? "";
     this.element.dataset.sketchPicked = String(edited?.picked?.length ?? 0);
+    this.element.dataset.sketchConstraints = String(edited?.constraintCount ?? 0);
+    this.element.dataset.sketchFighting = String(edited?.fighting?.length ?? 0);
+    this.sketchLabels.show(labels);
+    this.element.dataset.sketchLabels = labels.map((l) => l.text).join(" | ");
     this.labelSketches();
   }
 
@@ -1460,8 +1627,10 @@ export class Viewer implements SharedViewport {
    * its spacing or reach changed; the minor lines' strength follows the zoom.
    */
   private frame(view: ViewportView) {
-    if (view !== this.main || !this.gridFor) return;
+    if (view !== this.main) return;
     const state = view.cameraState();
+    this.sketchLabels.place(state, (points) => view.screenPoints(points));
+    if (!this.gridFor) return;
     if (state === this.gridCamera) return;
     this.gridCamera = state;
     const look = view.planeLook(this.gridFor.plane);
@@ -1496,6 +1665,14 @@ export class Viewer implements SharedViewport {
       this.sketchGridGroup.add(l);
       return material;
     };
+    // The plane itself, tinted (U7a), under the lines: it shows from the back and edge on too.
+    const sheet = gridSheet(grid.bounds).flatMap((p) => at(p));
+    const tint = new THREE.BufferGeometry();
+    tint.setAttribute("position", new THREE.Float32BufferAttribute(sheet, 3));
+    tint.setIndex([0, 1, 2, 0, 2, 3]);
+    const fill = new THREE.Mesh(tint, new THREE.MeshBasicMaterial({ color: SKETCH_COLOURS.plane, side: THREE.DoubleSide, depthTest: false, depthWrite: false, transparent: true, opacity: PLANE_TINT_OPACITY }));
+    fill.renderOrder = 0.5;
+    this.sketchGridGroup.add(fill);
     this.minorMaterial = segments(grid.lines.filter((l) => !l.major).map((l) => [l.a, l.b]), SKETCH_COLOURS.grid, GRID_OPACITY * grid.strength, 1);
     segments(grid.lines.filter((l) => l.major).map((l) => [l.a, l.b]), SKETCH_COLOURS.grid, GRID_OPACITY, 1);
     if (grid.axes.x) segments([grid.axes.x], SKETCH_COLOURS.axisX, AXIS_OPACITY, 2);
@@ -1517,11 +1694,16 @@ export class Viewer implements SharedViewport {
     this.element.dataset.bodyFaded = String(faded);
   }
 
-  /** What Look At frames (framing.ts lookAtFraming): the body's box corners and the edited sketch's ends, else round the plane's origin. */
+  /**
+   * What Look At frames (framing.ts): the body's box corners and the edited sketch's ends, else round the plane's origin;
+   * when the plane holds a face of the body smaller than the body (a sketch on a small face) that face and the sketch (U7a2).
+   */
   private lookAtFraming(plane: Plane): Framing {
     const box = new THREE.Box3().setFromObject(this.body);
     const corners = box.isEmpty() ? [] : [box.min.toArray(), box.max.toArray()];
-    return lookAtFraming([...corners, ...this.editedWorld], plane.origin);
+    const whole = lookAtFraming([...corners, ...this.editedWorld], plane.origin);
+    const inPlane = this.mesh ? pointsInPlane(this.mesh.positions, plane) : [];
+    return faceFraming(inPlane, this.editedWorld, whole, plane.origin, this.mesh && inPlane.length >= 3 ? pieceCount(this.mesh.positions, this.mesh.indices) : 1);
   }
 
   /** Look At in the main view. */
@@ -1690,6 +1872,10 @@ export class Viewer implements SharedViewport {
   private paint() {
     const overlays = [...this.overlays.values()];
     for (const view of this.views) view.label(overlays, this.highlight, this.hover);
+    this.placesLayer.show(overlays);
+    const { points, lines } = this.placesLayer.counts;
+    if (points + lines > 0) this.element.dataset.overlayPlaces = `points ${points} lines ${lines}`; // read by the e2e test
+    else delete this.element.dataset.overlayPlaces;
     if (!this.mesh || !this.faces) return;
     // Vertices belong to one face each (the kernel's display mesh), so per-vertex colour is per-face colour.
     // Vertex colours are linear; THREE.Color converts from sRGB.
@@ -1739,6 +1925,11 @@ export class Viewer implements SharedViewport {
   /** Frames the current body from the home view in the main view; returns what it framed (null if none). */
   fit(): Framing | null {
     return this.main.fit();
+  }
+
+  /** A picture of the main view as on screen, without the view cube (File > Save picture). */
+  picture(): Promise<Blob | null> {
+    return this.main.picture();
   }
 
   /** Turns the main view's camera to a standard view, framing the current body. */

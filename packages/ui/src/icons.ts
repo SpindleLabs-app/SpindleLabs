@@ -36,6 +36,10 @@ export const ICONS = {
   combine: [tone("M9 9H15V15H9Z"), line("M4 4H15V15H4ZM9 9H20V20H9Z")],
   insert: [tone("M4 4H20V20H4Z"), line("M4 4H20V20H4ZM12 8V16M8 12H16")],
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
+  // The print check (Inspect ▾, H1): a nozzle over printed layers.
+  "print-check": [tone("M4 15H20V20H4Z"), line("M9 3H15V7L13 10H11L9 7ZM12 10V12.5M4 15H20V20H4ZM4 17.5H20")],
+  // Two blocks pushed apart along a diagonal arrow: Inspect ▾ Exploded view.
+  explode: [tone("M3.5 13.5H10.5V20.5H3.5Z"), line("M3.5 13.5H10.5V20.5H3.5ZM13.5 3.5H20.5V10.5H13.5ZM10.5 13.5 13.5 10.5M10.5 10.5H13.5V13.5")],
   // The presets (Insert ▾), one per shape.
   box: CUBE,
   cylinder: [tone("M5 6.5A7 2.5 0 1 0 19 6.5A7 2.5 0 1 0 5 6.5Z"), line("M5 6.5A7 2.5 0 1 0 19 6.5A7 2.5 0 1 0 5 6.5ZM5 6.5V17.5A7 2.5 0 0 0 19 17.5V6.5")],
@@ -80,6 +84,15 @@ export const ICONS = {
   axis: [line("M4 20 20 4M14 4H20V10")],
   profile: [tone("M4 6H14L20 12 14 18H4Z"), line("M4 6H14L20 12 14 18H4Z")],
   "eye-off": [line("M2.5 12C5 7 8.25 5 12 5S19 7 21.5 12C19 17 15.75 19 12 19S5 17 2.5 12ZM4 20 20 4")],
+  // The sketch constraints (step 47d2): a level line with its bar, an upright one, two ends on one point, a pinned point.
+  horizontal: [tone("M3 15A2 2 0 1 0 7 15A2 2 0 1 0 3 15Z"), line("M5 15H19M8 8H16"), tone("M17 15A2 2 0 1 0 21 15A2 2 0 1 0 17 15Z")],
+  vertical: [tone("M7 5A2 2 0 1 0 11 5A2 2 0 1 0 7 5Z"), line("M9 5V19M16 8V16"), tone("M7 19A2 2 0 1 0 11 19A2 2 0 1 0 7 19Z")],
+  coincident: [line("M3 20 12 12M12 12 20 4M4 4 12 12"), tone("M9.5 12A2.5 2.5 0 1 0 14.5 12A2.5 2.5 0 1 0 9.5 12Z")],
+  fix: [tone("M7 11H17V20H7Z"), line("M7 11H17V20H7ZM9 11V8A3 3 0 0 1 15 8V11")],
+  // A construction line (step 47f): a dashed line between two end points.
+  construction: [tone("M3 19A2 2 0 1 0 7 19A2 2 0 1 0 3 19Z"), line("M7 17 9 15M11 13 13 11M15 9 17 7"), tone("M17 5A2 2 0 1 0 21 5A2 2 0 1 0 17 5Z")],
+  // A size (step 47e): a dimension line between two end marks, its arrowheads in, the value's box above.
+  dimension: [tone("M9 4H15V8H9Z"), line("M4 10V20M20 10V20M4 15H20M7 12.5 4 15 7 17.5M17 12.5 20 15 17 17.5")],
   // The menus' own mark.
   chevron: [line("M7 10 12 15 17 10")],
 } satisfies Record<string, readonly IconPart[]>;

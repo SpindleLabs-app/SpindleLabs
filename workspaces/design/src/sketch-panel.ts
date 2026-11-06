@@ -31,7 +31,12 @@ export const TOOL_HELP: Record<ToolKind, string> = {
   arc: "Click the start, then the end, then a point the arc passes through. For the end you can type its length and angle from the start. Escape drops the ends.",
   centre: "Click the centre, then the start, then where the arc ends: it goes round the way you move the pointer, past half a turn if you go that far. You can type the radius and angle for the start, and how far round the arc goes for the end. Escape drops the centre and start.",
   tangent: "Click the end of a line or arc, then where the arc ends: it leaves the line smoothly, and the next click carries on from its end. You can type the end's length and angle from the start. Escape ends it.",
-  select: "Click a line, circle or arc to select it; Shift+click adds or takes one out, a click on empty space clears. Delete or Backspace (or the Delete button) removes what is selected; points only it used go with it. Pick a tool to draw again.",
+  select: "Click a line, circle or arc to select it; Shift+click adds or takes one out, a click on empty space clears. Delete or Backspace (or the Delete button) removes what is selected; points only it used go with it. X (or the Construction button) makes it a construction line, drawn dashed and left out of the outline, or turns it back. Pick a tool to draw again.",
+  horizontal: "Click a line to make it level (its start stays, its end moves), or two points to put the second level with the first. A constraint that fights the others, or already holds, is refused.",
+  vertical: "Click a line to make it upright (its start stays, its end moves), or two points to put the second straight above or below the first. A constraint that fights the others, or already holds, is refused.",
+  coincident: "Click a point to keep still, then the point to move onto it: they stay together from then on.",
+  fix: "Click a point to fix it where it is: no other constraint can move it.",
+  dimension: "Click a line to set its length, an arc for its radius, a circle for its diameter, or two points for the distance between them, then type the size and press Enter. Double-click a size to change it. A size that fights the others, or already holds, is refused.",
   project: "Click an edge of a body before this sketch to bring it in, or a face to bring in all its edges. Projected edges follow the body when it changes; they can be snapped to and extruded, but not moved.",
 };
 

@@ -197,6 +197,90 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
   });
 }
 
+// The supports hint after a slice (overhang.ts): the box hangs nowhere, so with supports on it says they are not
+// needed and one press turns them off. Its row and the buttons are on screen after the slice, at a laptop's 470 px too.
+for (const [width, height, tap] of [[1280, 800, false], [1280, 470, false], [375, 667, true]]) {
+  await check(`${width} × ${height}${tap ? ", taps" : ""}: after a slice the supports hint says whether they are needed, and one press switches them`, async () => {
+    const page = await fresh(width, tap, height);
+    const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+    try {
+      await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      assert.equal(await page.isVisible("#slice-print-supports-hint"), false, "nothing before a slice");
+      await page.selectOption("#slice-print-supports", "normal");
+      await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      await page.waitForSelector("#slice-print-supports-hint", { state: "visible" });
+      assert.equal(await page.textContent("#slice-print-supports-hint-words"), "Supports not needed: nothing hangs out more than 45°.");
+      assert.equal(await page.textContent("#slice-print-supports-flip"), "Turn supports off");
+      const onScreen = (id) =>
+        page.$eval(`#${id}`, (e) => {
+          const r = e.getBoundingClientRect();
+          const d = e.closest("dialog").getBoundingClientRect();
+          return r.height > 0 && r.top >= Math.max(0, d.top) - 0.5 && r.bottom <= Math.min(innerHeight, d.bottom) + 0.5 && r.left >= 0 && r.right <= innerWidth;
+        });
+      await page.$eval("#slice-print-supports-hint", (e) => e.scrollIntoView({ block: "nearest" }));
+      for (const id of ["slice-print-supports-hint", "slice-print-supports-flip", "slice-print-go", "slice-print-close"]) assert.ok(await onScreen(id), `${id} on screen`);
+      // A plain button, not the filled blue one: Slice and download stays the only one.
+      if (!tap) await page.mouse.move(1, 1); // the row can appear under the pointer left on Slice and download, lit as hovered
+      const fill = (sel) => page.$eval(sel, (b) => [getComputedStyle(b).backgroundImage, getComputedStyle(b).backgroundColor]);
+      assert.notEqual((await fill("#slice-print-go"))[0], "none", "Slice and download is filled");
+      assert.deepEqual(await fill("#slice-print-supports-flip"), ["none", "rgba(0, 0, 0, 0)"], "the switch is plain");
+      if (tap) assert.ok((await page.$eval("#slice-print-supports-flip", (b) => b.getBoundingClientRect().height)) >= 44, "44 px to tap");
+      if (shots) await page.screenshot({ path: `${shots}/supports-hint-${width}x${height}.png` });
+      await press("#slice-print-supports-flip");
+      assert.equal(await page.$eval("#slice-print-supports", (s) => s.value), "off");
+      assert.equal(await page.isVisible("#slice-print-supports-hint"), false, "the old result's hint goes");
+      assert.equal(await page.textContent("#slice-print-status"), "Supports turned off. Slice again to make the file without them.");
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+
+// The weight and cost badge after a slice (print-cost.ts): plastic, money and time in one line, the price per kg the
+// user's own (A$25 until changed, remembered); on screen with the supports hint and the buttons, at 470 px high too.
+for (const [width, height, tap] of [[1280, 800, false], [1280, 470, false], [375, 667, true]]) {
+  await check(`${width} × ${height}${tap ? ", taps" : ""}: after a slice the badge says the grams, cost and time; the price per kg changes the cost and is remembered`, async () => {
+    const page = await fresh(width, tap, height);
+    const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+    try {
+      await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      assert.equal(await page.isVisible("#slice-print-cost"), false, "no badge before a slice");
+      assert.equal(await page.inputValue("#slice-print-price"), "25", "A$25 a kg until changed");
+      await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      await page.waitForSelector("#slice-print-cost", { state: "visible" });
+      const words = await page.textContent("#slice-print-cost-words");
+      const m = /^About (\d+(?:\.\d)?) g of PLA, A\$(\d+\.\d\d), (?:under a minute|\d+ min|\d+ h(?: \d+ min)?) of printing$/.exec(words);
+      assert.ok(m, `the badge reads "${words}"`);
+      // The cost is the grams the badge gives at A$25 a kg, to the cent (the grams rounded: within half a gram's cost, plus half a cent).
+      const g = Number(m[1]);
+      assert.ok(Math.abs(Number(m[2]) - (g / 1000) * 25) <= 0.0125 + 0.005, `A$${m[2]} for ${g} g at A$25/kg`);
+      const onScreen = (id) =>
+        page.$eval(`#${id}`, (e) => {
+          const r = e.getBoundingClientRect();
+          const d = e.closest("dialog").getBoundingClientRect();
+          return r.height > 0 && r.top >= Math.max(0, d.top) - 0.5 && r.bottom <= Math.min(innerHeight, d.bottom) + 0.5 && r.left >= 0 && r.right <= innerWidth;
+        });
+      await page.$eval("#slice-print-supports-hint", (e) => e.scrollIntoView({ block: "nearest" }));
+      for (const id of ["slice-print-cost", "slice-print-price", "slice-print-supports-hint", "slice-print-go", "slice-print-close"]) assert.ok(await onScreen(id), `${id} on screen`);
+      if (tap) assert.ok((await page.$eval("#slice-print-price", (b) => b.getBoundingClientRect().height)) >= 44, "44 px to tap");
+      if (shots) await page.screenshot({ path: `${shots}/cost-badge-${width}x${height}.png` });
+      // Twice the price, twice the cost, at once; a price that doesn't read is marked and changes nothing.
+      await page.fill("#slice-print-price", "50");
+      const doubled = /A\$(\d+\.\d\d)/.exec(await page.textContent("#slice-print-cost-words"))[1];
+      assert.ok(Math.abs(Number(doubled) - (g / 1000) * 50) <= 0.025 + 0.005, `A$${doubled} for ${g} g at A$50/kg`);
+      await page.fill("#slice-print-price", "lots");
+      assert.equal(await page.getAttribute("#slice-print-price", "aria-invalid"), "true");
+      assert.ok((await page.textContent("#slice-print-cost-words")).includes(`A$${doubled},`), "a bad price keeps the last cost");
+      // Remembered in the browser, where the next dialog reads it (print-cost.test.ts: rememberedPrice).
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindle-filament-price")), "50", "the price is remembered");
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+
 // The dialog fits (Ben 10-31: on a laptop Supports was cut off and could not be reached; 470 px high, where the
 // old one-column dialog cut it, is the regression case). On a laptop-height
 // window every choice and button is on screen without scrolling; on a phone the buttons stay in view and

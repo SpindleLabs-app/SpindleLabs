@@ -12,8 +12,10 @@ import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
 import { fileNameFor } from "@fission/ui";
-import { PRESET_PICKED_KEY, writePresets, type PrintPreset } from "../src/slice-presets.ts";
-import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, printLead, refusalOf, levelNote, levelNoteOf, stopSlices, fileCrawl, FILE_CRAWL_MIN_MS, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { PRESET_PICKED_KEY, writePresets, type PrintPreset } from "@fission/print";
+import { printFileOf, sliceBodies, slicePrint } from "../src/slice-print.ts";
+import { gcodeName, progressWords, gcodeOfPackage, printMovesOf, refusalWords, SliceDropped, printFileName, printLead, refusalOf, levelNote, levelNoteOf, stopSlices, fileCrawl, FILE_CRAWL_MIN_MS, printWords, stackStl, stlLowestZ, timeWords, unprintedWords, type PrintFacts } from "@fission/print";
+import { FILE_DEFAULTS, NOZZLE_KEY, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, PRINT_DEFAULTS, type FileChoices, type PrintChoices } from "@fission/print";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -666,6 +668,68 @@ test("the cube's P1S print file on the shipped build: a package the printer chec
 });
 
 // ---- Slicer hunt 2026-10-31: the dialog's follow-ups ----
+
+test("the supports hint: recommended after a slice that hangs, with one tap to turn supports on; not needed, with one to turn them off", async () => {
+  let hang = 900;
+  const t = dialog(async () => ({ print: print({ overhangMm2: hang } as Partial<SlicedPrint>), saved: true }));
+  t.d.ask();
+  const hint = t.$("slice-print-supports-hint");
+  const flip = t.$<HTMLButtonElement>("slice-print-supports-flip");
+  const supports = t.$<HTMLSelectElement>("slice-print-supports");
+  assert.equal(hint.hidden, true, "nothing before a slice");
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(hint.hidden, false);
+  assert.equal(hint.dataset.recommended, "true");
+  assert.equal(t.$("slice-print-supports-hint-words").textContent, "Supports recommended: part of it hangs out more than 45° with nothing under it.");
+  assert.equal(flip.hidden, false);
+  assert.equal(flip.textContent, "Turn supports on");
+  // One tap: Supports is Normal, the last result (made without them) is cleared, and the words say to slice again.
+  flip.click();
+  assert.equal(supports.value, "normal");
+  assert.equal(hint.hidden, true);
+  assert.equal(t.$("slice-print-status").textContent, "Supports turned on (Normal). Slice again to make the file with them.");
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(t.asked.at(-1)!.supports, "normal", "the next slice has them");
+  assert.equal(flip.hidden, true, "already on: nothing to switch");
+  assert.equal(hint.hidden, false);
+  // Nothing hangs, supports on: offer to turn them off.
+  hang = 0;
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(hint.dataset.recommended, "false");
+  assert.equal(t.$("slice-print-supports-hint-words").textContent, "Supports not needed: nothing hangs out more than 45°.");
+  assert.equal(flip.textContent, "Turn supports off");
+  flip.click();
+  assert.equal(supports.value, "off");
+  assert.equal(t.$("slice-print-status").textContent, "Supports turned off. Slice again to make the file without them.");
+  // A slice that knows nothing of overhangs (no figure) shows no hint; any change of choice hides one.
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(hint.hidden, false);
+  t.$<HTMLSelectElement>("slice-print-walls").value = "3";
+  t.$<HTMLSelectElement>("slice-print-walls").dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(hint.hidden, true, "a change hides it");
+  await t.window.happyDOM.close();
+  const u = dialog(async () => ({ print: print(), saved: true }));
+  u.d.ask();
+  u.$("slice-print-go").click();
+  await u.settle();
+  assert.equal(u.$("slice-print-supports-hint").hidden, true, "no figure, no hint");
+  await u.window.happyDOM.close();
+});
+
+test("the overhang figure on the shipped build: the plate on its column hangs by its underside, 900 mm²; the cube by nothing", async () => {
+  const kernel = nodeKernel();
+  const plate = insertPreset(partDocument("box", 10, 10, 10), "box", 30, 30, 2);
+  const doc = insertMove(plate.doc, [bodyIdOf(plate.id)], { ...NO_MOVE, z: 10 }).doc;
+  // The plate's bottom face, 30 × 30 = 900 mm², 10 mm up and facing straight down (it rests on the column, a separate body).
+  const hung = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
+  assert.ok(Math.abs(hung.overhangMm2 - 900) < 0.01, String(hung.overhangMm2));
+  const cube = partDocument("box", 20, 20, 20);
+  assert.equal((await sliceBodies(kernel, cube, bodyFeatures(cube), PRINT_DEFAULTS)).overhangMm2, 0);
+});
 
 test("a refusal is put in words a beginner can act on, worked by hand", () => {
   // Runs from x = -22 to 278: 278 - (-22) = 300 mm; y 118 to 138: 20 mm. The wider is 300, along x: "wide".

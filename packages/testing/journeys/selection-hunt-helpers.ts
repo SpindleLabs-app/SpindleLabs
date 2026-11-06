@@ -2,13 +2,20 @@
 import assert from "node:assert/strict";
 import { app } from "./design-app.ts";
 import type { DesignDocument } from "@fission/design";
-export const empty = (): DesignDocument => ({ version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }) as never;
+export const empty = (): DesignDocument => ({ version: 8, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }) as never;
 type A = Awaited<ReturnType<typeof app>>;
 export async function insert(a: A, kind: string) {
   (a.$("#insert") as HTMLButtonElement).click();
   await a.settle();
   (a.$(`#insert-${kind}`) as HTMLButtonElement).click();
   await a.settle();
+  // An inserted preset starts in Move with it picked (Ben, 2026-11-04); these journeys model the size boxes and the
+  // selection, so they leave the Move as a person does before picking another body: Cancel, nothing moved.
+  const move = a.$("#move-panel");
+  if (move && !move.hidden) {
+    (a.$("#move-cancel") as HTMLButtonElement).click();
+    await a.settle();
+  }
 }
 export async function type(a: A, key: string, v: string, leave = false) {
   const el = a.$(`#${key}`) as HTMLInputElement;

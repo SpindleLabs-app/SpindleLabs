@@ -192,6 +192,7 @@
   --text-f0b4b4: #f0b4b4;
   --line-d05a5a: #d05a5a;
   --text-ffd0d0: #ffd0d0;
+  --text-info: #b18cf5;
 }
 /* The light theme (U1b): the same names with light values (picked by data-theme="light" on the root, which the page sets before it first paints: Settings, Theme). Text on a text-coloured fill stays at least 4.5 : 1 and icons and lines 3 : 1 (packages/ui/test/light.test.ts works the pairs out). The bright blue fill and its dark words, and white words on a coloured fill, are the same in both themes. */
 :root[data-theme="light"] {
@@ -328,6 +329,7 @@
   --text-f0b4b4: #cd2e2e;
   --line-d05a5a: #7d2424;
   --text-ffd0d0: #d90606;
+  --text-info: #6a32c9;
 }
 /* end of the colour tokens */
 html, body { margin: 0; height: 100%; background: var(--page); color: var(--text-body); font: 14px system-ui, sans-serif; }
@@ -403,7 +405,10 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
 #viewport, #split-viewport { min-width: 0; position: relative; }
 #workspace #split-bar button { padding: 5px 8px; background: var(--fill-29-37-51-09); font-size: 13px; }
 .view-cube { position: absolute; top: 8px; right: 8px; width: 96px; height: 96px; touch-action: none; }
-.overlay-legend { position: absolute; top: 112px; right: 8px; margin: 0; padding: 6px 10px; list-style: none; background: var(--fill-15-20-28-085); color: var(--warn); border-radius: var(--look-radius-s); font-size: 13px; }
+/* Top centre: the top right holds the view cube and Design's Properties toggle, which covered it (36d). */
+.overlay-legend { position: absolute; top: 112px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 16px); box-sizing: border-box; margin: 0; padding: 6px 10px; list-style: none; background: var(--fill-15-20-28-085); color: var(--warn); border-radius: var(--look-radius-s); font-size: 13px; }
+.overlay-legend li[data-severity="error"] { color: var(--danger); }
+.overlay-legend li[data-severity="info"] { color: var(--text-info); }
 #workspace button { padding: 7px 10px; background: var(--surface-raised); border: 1px solid var(--line-strong); color: inherit; border-radius: var(--look-radius-s); font: inherit; cursor: pointer; }
 #workspace button:hover { background: var(--fill-263142); }
 .tool-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }

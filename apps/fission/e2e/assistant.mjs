@@ -28,6 +28,9 @@
 // not one closed outline is refused before any preview. AI7d: it renames
 // an item (the sketch just started, or one by its name) as the timeline's
 // Rename does, and a name another item has is refused before any preview.
+// AI8a and AI8c: an answer that stalls is given up after 30 s in plain
+// words, a provider's own error never reaches the panel, and Try again
+// asks again.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -361,6 +364,68 @@ try {
     }
   });
 
+  await check("a provider's raw error never reaches the panel: Ben's output-limit error is asked again shorter once, then said in plain words with Try again, which asks again (AI8c, 1280 and 375 px)", async () => {
+    const BEN = "The response exceeded output limits and was truncated.";
+    const cut = [JSON.stringify({ message: { role: "assistant", content: '{"commands":[{"op":"set_part",' }, done: false }) + "\n", JSON.stringify({ error: BEN }) + "\n"];
+    const pieces = [setPart("box", 50, 30, 20).slice(0, -1), ',"explanation":"The box becomes 50 mm wide."}'];
+    const good = [...pieces.map((content) => JSON.stringify({ message: { role: "assistant", content }, done: false }) + "\n"), '{"message":{"role":"assistant","content":""},"done":true}\n'];
+    for (const width of [1280, 375]) {
+      const { page } = await fresh([], { open: false, held: true });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        await page.evaluate((l) => Object.assign(globalThis, { heldLines: l, allowLines: l.length }), cut);
+        await ask(page, "Make it 50 mm wide.");
+        await page.waitForSelector("#ai-result .ai-error", { timeout: 10_000 });
+        const said = await page.textContent("#ai-result");
+        assert.match(said, /The AI's answer ran too long and was cut off before it finished, even when it was asked again for a shorter one\. Try asking for one thing at a time\. Nothing was changed\./);
+        assert.doesNotMatch(said, /exceeded|truncated|Ollama at/, "none of the provider's own words");
+        const asked = await page.evaluate(() => globalThis.heldAsked.map((b) => b.messages[0].content));
+        assert.equal(asked.length, 2, "asked once more, no more");
+        assert.ok(!asked[0].includes("was cut off") && asked[1].endsWith("Your last answer was cut off because it was too long. Send only the commands for what the user asked, and keep the explanation to one short sentence."), "the second time it is asked to be short");
+        await volume(page, "24,000 mm³");
+        // Try again asks the same words again; this time the answer comes whole.
+        await page.evaluate((l) => Object.assign(globalThis, { heldLines: l, allowLines: l.length }), good);
+        const again = await page.$("#ai-try-again");
+        assert.ok(again && (await again.isVisible()), "Try again is shown");
+        const box = await again.boundingBox();
+        assert.ok(box.height >= (width === 375 ? 44 : 24), `Try again is big enough to press (${box.height} px)`);
+        await page.click("#ai-try-again");
+        await page.waitForSelector("#ai-preview");
+        assert.equal(await page.evaluate(() => globalThis.heldAsked.at(-1).messages.at(-1).content), "Make it 50 mm wide.");
+        await page.click("#ai-accept");
+        await volume(page, "30,000 mm³"); // 50 · 30 · 20
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("an answer that stops part way is given up after 30 s with nothing new, in plain words, with Try again (AI8a)", async () => {
+    const lines = [JSON.stringify({ message: { role: "assistant", content: '{"commands":[{"op":"set_part","shape":"box","width":50}],"explanation":"The box' }, done: false }) + "\n", '{"message":{"role":"assistant","content":""},"done":true}\n'];
+    const { page } = await fresh([], { held: true });
+    try {
+      await useOllama(page);
+      await page.evaluate((l) => Object.assign(globalThis, { heldLines: l, allowLines: 1 }), lines);
+      await ask(page, "Make it 50 mm wide.");
+      await page.waitForFunction(() => /Writing its working out/.test(document.querySelector("#ai-progress .ai-progress-stage")?.textContent ?? ""));
+      const since = Date.now();
+      await page.waitForTimeout(25_000); // 0.83× of the wait: still waiting
+      assert.ok(await page.$("#ai-progress"), "still waiting before 30 s");
+      await page.waitForSelector("#ai-result .ai-error", { timeout: 15_000 });
+      const waited = (Date.now() - since) / 1000;
+      assert.ok(waited >= 25 && waited < 40, `stopped after about 30 s (${waited.toFixed(1)} s)`);
+      assert.equal(await page.textContent("#ai-result .ai-error"), "The AI stopped partway through its answer: nothing new arrived for 30 s, so SpindleLabs stopped waiting. Nothing was changed.");
+      assert.ok(await page.isVisible("#ai-try-again"));
+      assert.equal(await page.evaluate(() => globalThis.heldAsked.length), 1, "a stall is not asked again by itself");
+      await volume(page, "24,000 mm³");
+    } finally {
+      await page.close();
+    }
+  });
+
   await check("a request no command can do: the AI's reason is shown, nothing to accept, nothing changed (AI5c, 1280 and 375 px)", async () => {
     // Ben's request (2026-10-26) once came back as a 20 × 0.01 mm cylinder; the honest answer is no commands and why.
     const why = "There is no command for drawing a sketch yet, so this can't be done and nothing was made. What can be done now is making or resizing a whole ready-made shape: a box, cylinder, sphere, plate, L bracket, slot or star.";
@@ -492,7 +557,9 @@ try {
         // The new box is the part now: 50 · 30 · 10 = 15,000 mm³; Extrude 1 is still item 3.
         await volume(page, "15,000 mm³");
         assert.equal(await undoTitle(page), `Undo AI: new box 50 × 30 × 10 mm (Ctrl+Z)`);
-        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2 feature-11 feature-12");
+        // Ids: sketch-2, its 4 corners and 4 lines 3 to 10, the rectangle's Horizontal and Vertical 11 to 14 (the two
+        // through the origin's corner dropped once it follows the origin, their ids not reused), Extrude 1 feature-15, the box 16.
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2 feature-15 feature-16");
         await page.click("#undo");
         await volume(page, "12,000 mm³");
         assert.equal(await undoTitle(page), steps, "one step, taken back whole");
