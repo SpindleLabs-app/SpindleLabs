@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import { ACCOUNT_SERVICE, ACCOUNTS } from "./accounts.config.mjs";
 import { HOME_SCREEN } from "./home.config.mjs";
+import { SLICE_PAGE } from "./slice-page.config.mjs";
 import { licencesPlugin } from "./licences.mjs";
 import { OFFLINE_MODE } from "./offline.config.mjs";
 import { offlinePlugin } from "./offline.mjs";
@@ -23,7 +24,7 @@ export default defineConfig({
   // default so the browser tests can reach it; the live Pages build sets
   // FISSION_NO_TEST_HOOKS=1, which makes this false so the surface is dead code and
   // dropped from the shipped bundle (audit S12).
-  define: { __OFFLINE_MODE__: JSON.stringify(OFFLINE_MODE), __HOME_SCREEN__: JSON.stringify(HOME_SCREEN), __ACCOUNTS__: JSON.stringify(ACCOUNTS ? ACCOUNT_SERVICE : null), __TEST_HOOKS__: JSON.stringify(process.env.FISSION_NO_TEST_HOOKS !== "1") },
+  define: { __OFFLINE_MODE__: JSON.stringify(OFFLINE_MODE), __HOME_SCREEN__: JSON.stringify(HOME_SCREEN), __SLICE_PAGE__: JSON.stringify(SLICE_PAGE), __ACCOUNTS__: JSON.stringify(ACCOUNTS ? ACCOUNT_SERVICE : null), __TEST_HOOKS__: JSON.stringify(process.env.FISSION_NO_TEST_HOOKS !== "1") },
   // The kernel worker imports the wasm-bindgen ES module.
   worker: { format: "es", plugins: () => [licencesPlugin({ emit: false })] },
   // third-party-licences.txt beside the app, checked against what is bundled (audit L2).

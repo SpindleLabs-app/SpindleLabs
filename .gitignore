@@ -20,3 +20,4 @@ training/data/
 .env
 .env.*
 apps/fission/dist-home/
+apps/fission/dist-slice/

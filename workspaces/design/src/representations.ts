@@ -7,8 +7,8 @@
 // this same producer, so there is no sketch-only path.
 
 import type { KernelCalls, Outline, Plane, Producible, Producer, RepresentationRegistry, SourceLookup } from "@fission/core";
-import { bodyFeatures } from "./browser.ts";
-import type { DesignDocument } from "./document.ts";
+import { bodyFeatures, designBodies } from "./browser.ts";
+import { bodyHidden, bodyNumbers, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 import { outline } from "./profiles.ts";
 import { readDesignReference, readProfileReference } from "./references.ts";
@@ -103,6 +103,22 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
     // An extrude of a sketch asks the kernel for the outline, now.
     return endSpec(kernel, document, feature); // where the timeline puts it: moved by any Move (35e2b)
   };
+  // What Slice (and any workspace that takes bodies) can list: every body shown (not hidden by its eye), by its browser name.
+  registry.registerLister("design", (project) => {
+    let doc: DesignDocument;
+    try {
+      doc = readDesignDocument(project.workspaces.design);
+    } catch {
+      return []; // no Design data yet, or data that does not read: nothing to offer
+    }
+    const numbers = bodyNumbers(doc);
+    const seen = new Set<string>();
+    return designBodies(doc).flatMap(({ body, feature }) => {
+      if (bodyHidden(doc, body) || seen.has(feature.id)) return [];
+      seen.add(feature.id);
+      return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}` }];
+    });
+  });
   registry.registerProducer("design.feature", "solid", async (o) => ({ kind: "solid", spec: await spec(o) }));
   registry.registerProducer("design.feature", "mesh", async (o) => {
     const view = await buildSpec(kernel, await spec(o));
