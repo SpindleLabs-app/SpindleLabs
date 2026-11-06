@@ -57,7 +57,9 @@ WRITES = {
 ENVIRONMENTS = {
     ("auto-merge.yml", "merge"): "merge",
     ("fuzz.yml", "sessions-oracle"): "kernel",
+    ("kernel-ci.yml", "checks-plan"): "kernel",
     ("kernel-ci.yml", "checks"): "kernel",
+    ("kernel-ci.yml", "checks-report"): "kernel",
     ("kernel-ci.yml", "coverage"): "kernel",
     ("kernel-ci.yml", "mutants-plan"): "kernel",
     ("kernel-ci.yml", "mutants-shard"): "kernel",
