@@ -3,10 +3,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
+import { nodeKernel } from "../../testing/src/node-kernel.ts";
 import { FIT_CELL, FIT_CELLS, FIT_PEG, FIT_THICK, fitPieceStl, fitPieceTriangles } from "../src/fit-piece.ts";
 import { PIECE } from "../src/fits.ts";
-import { PRINT_DEFAULTS } from "../src/slice-print.ts";
+import { PRINT_DEFAULTS } from "../src/choices.ts";
 
 type V = readonly [number, number, number];
 const key = (v: V) => v.join(",");

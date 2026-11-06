@@ -9,7 +9,7 @@
 
 import { FIT_CELL, FIT_CELLS } from "./fit-piece.ts";
 import { fitSizes, forgetMeasures, keepMeasures, keptMeasures, PIECE, profileFor, profileOf, profileWords, sizesWords, type Fit, type FitMeasures, type FitProfile } from "./fits.ts";
-import type { NozzleType } from "./slice-print.ts";
+import type { NozzleType } from "./choices.ts";
 
 export interface FitCalibrationEvents {
   /** The nozzle the fits are for: Slice for printing's choice. */

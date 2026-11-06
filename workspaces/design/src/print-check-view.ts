@@ -9,9 +9,7 @@
 // Nothing is saved in the design: it is a view of it.
 
 import type { AnalysisOverlay, OverlayPlace } from "@fission/core";
-import { printCheck, P1S_RULES, type CheckMesh, type PrintCheck, type PrintRules } from "@fission/print";
-import { PRESET_PICKED_KEY, readPresets } from "./slice-presets.ts";
-import { presetSettingsOf } from "./slice-print.ts";
+import { printCheck, P1S_RULES, PRESET_PICKED_KEY, presetSettingsOf, readPresets, type CheckMesh, type PrintCheck, type PrintRules } from "@fission/print";
 
 /** Where the on/off choice is kept (this browser only). */
 export const PRINT_CHECK_KEY = "spindlelabs.design.print-check";
