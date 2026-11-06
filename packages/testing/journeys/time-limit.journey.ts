@@ -93,7 +93,8 @@ test("legal calls of each size take less than their units × the calibration, wi
   }
   // The STL of the plate, sliced at 0.2 mm (10 layers).
   const stl = entry.body_stl(a, "plate").bytes;
-  check("the plate sliced", callUnits("slice_stl", [stl, 0.2, 3, 15, "off"], () => undefined), () => timed(() => entry.slice_stl(stl, 0.2, 3, 15, "off"))[0]);
+  // Five runs, not three: on CI's shared machines this slice once ran 18 % slower for all three (2026-11-05).
+  check("the plate sliced", callUnits("slice_stl", [stl, 0.2, 3, 15, "off"], () => undefined), () => timed(() => entry.slice_stl(stl, 0.2, 3, 15, "off"))[0], 5);
   entry.body_free(a);
   entry.body_free(b);
   // Big flat-sided parts at full infill: 12 triangles each, so only their area tells (slicer hunt M8; the limit gave
@@ -112,7 +113,7 @@ test("legal calls of each size take less than their units × the calibration, wi
   // A 500 mm sphere hidden, then shown: its mesh at the most chords.
   const sphere: BodySpec = { sphere: { radius: 500 } };
   const ball = entry.body_build(sphere);
-  check("a 500 mm sphere shown again", builtSize(sphere).mesh, () => (entry.body_hide(ball), timed(() => entry.body_view(ball))[0]));
+  check("a 500 mm sphere shown again", builtSize(sphere).mesh, () => (entry.body_hide(ball), timed(() => entry.body_view(ball))[0]), 5);
   entry.body_free(ball);
   // A sketch of 1,000 lines round a circle.
   const lines = Array.from({ length: 1000 }, (_, k) => {

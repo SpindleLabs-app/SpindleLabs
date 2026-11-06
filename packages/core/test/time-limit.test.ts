@@ -83,19 +83,19 @@ function stl(zs: number[][], claimed = zs.length): Uint8Array {
 }
 
 test("a slice's units by hand: its triangles times its layers, over every file given back to back", () => {
-  // 2 triangles from z 0 to 10 at 0.2 mm: 50 layers, 2 × 50 × 0.17 = 17 units.
+  // 2 triangles from z 0 to 10 at 0.2 mm: 50 layers, 2 × 50 × 0.27 = 27 units.
   const a = stl([
     [0, 0, 10],
     [10, 10, 0],
   ]);
-  assert.ok(Math.abs(sliceUnits(a, 0.2) - 17) < 1e-9);
-  // Another file after it, 1 triangle from z 5 to 20: 3 triangles, z 0 to 20, 100 layers: 3 × 100 × 0.17 = 51 units.
+  assert.ok(Math.abs(sliceUnits(a, 0.2) - 27) < 1e-9);
+  // Another file after it, 1 triangle from z 5 to 20: 3 triangles, z 0 to 20, 100 layers: 3 × 100 × 0.27 = 81 units.
   const b = stl([[5, 20, 5]]);
   const both = new Uint8Array([...a, ...b]);
-  assert.ok(Math.abs(sliceUnits(both, 0.2) - 51) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(both, 0.2) - 81) < 1e-9);
   // A second file claiming more triangles than it holds: the kernel refuses it at once, only the first counts.
   const short = new Uint8Array([...a, ...stl([[5, 20, 5]], 2)]);
-  assert.ok(Math.abs(sliceUnits(short, 0.2) - 17) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(short, 0.2) - 27) < 1e-9);
   // Nothing readable, a flat file, or no layer height: no units, the floor.
   assert.equal(sliceUnits(new Uint8Array(10), 0.2), 0);
   assert.equal(sliceUnits(stl([[1, 1, 1]]), 0.2), 0);
@@ -103,7 +103,7 @@ test("a slice's units by hand: its triangles times its layers, over every file g
   // Read from a view into a bigger buffer, as the worker gets it.
   const offset = new Uint8Array(4 + a.length);
   offset.set(a, 4);
-  assert.ok(Math.abs(sliceUnits(offset.subarray(4), 0.2) - 17) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(offset.subarray(4), 0.2) - 27) < 1e-9);
   assert.equal(callUnits("slice_stl", [a as Uint8Array<ArrayBuffer>, 0.2, 3, 15, "off"], () => undefined), sliceUnits(a, 0.2));
 });
 
@@ -187,13 +187,13 @@ function boxStl(w: number, d: number, h: number): Uint8Array {
 }
 
 test("a big flat-sided part costs by its area too: a box is 12 triangles however big (slicer hunt M8), worked by hand", () => {
-  // 100 × 100 × 10 mm at 0.2 mm: 50 layers. Triangles: 12 × 50 × 0.17 = 102. Area: 1e4 mm² × 50 layers × 1.1e-3 = 550, times the fill share.
+  // 100 × 100 × 10 mm at 0.2 mm: 50 layers. Triangles: 12 × 50 × 0.27 = 162. Area: 1e4 mm² × 50 layers × 1.1e-3 = 550, times the fill share.
   const box = boxStl(100, 100, 10);
   assert.ok(Math.abs(sliceUnits(box, 0.2, 100) - 550 * 1.25) < 1e-6, "100 %: share 0.25 + 1 = 1.25 → 687.5");
-  assert.ok(Math.abs(sliceUnits(box, 0.2, 15) - 550 * 0.4) < 1e-6, "15 %: share 0.4 → 220, over the triangles' 102");
-  assert.ok(Math.abs(sliceUnits(box, 0.2, 0) - 550 * 0.25) < 1e-6, "no infill: share 0.25 → 137.5, over the triangles' 102");
-  // A small part keeps its triangle count: a 20 mm cube at 0.2 mm, 100 layers: 12 × 100 × 0.17 = 204 over 20² × 100 × 1.1e-3 × 0.4 = 17.6.
-  assert.ok(Math.abs(sliceUnits(boxStl(20, 20, 20), 0.2, 15) - 204) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 15) - 550 * 0.4) < 1e-6, "15 %: share 0.4 → 220, over the triangles' 162");
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 0) - 162) < 1e-6, "no infill: share 0.25 → 137.5, under the triangles' 162, which count");
+  // A small part keeps its triangle count: a 20 mm cube at 0.2 mm, 100 layers: 12 × 100 × 0.27 = 324 over 20² × 100 × 1.1e-3 × 0.4 = 17.6.
+  assert.ok(Math.abs(sliceUnits(boxStl(20, 20, 20), 0.2, 15) - 324) < 1e-9);
   // The default, when none is given, is the P1S's 15 %.
   assert.equal(sliceUnits(box, 0.2), sliceUnits(box, 0.2, 15));
   // The hunt's box, 246 × 246 × 245 mm at 100 %, was 1,764 units of triangles and needed at least 8.7 times that.
