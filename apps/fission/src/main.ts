@@ -36,7 +36,9 @@ import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
 import { manufactureWorkspace } from "@fission/manufacture";
 import { laserWorkspace } from "@fission/laser";
-import { sliceWorkspace } from "@fission/slice";
+import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
+/** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
+declare const __SLICE_PAGE__: boolean;
 import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
@@ -48,7 +50,7 @@ const workspaces: WorkspacePlugin[] = [
   simulateWorkspace,
   manufactureWorkspace,
   laserWorkspace,
-  sliceWorkspace,
+  __SLICE_PAGE__ ? slicePageWorkspace : sliceWorkspace,
   circuitWorkspace,
   vectorWorkspace,
   imageWorkspace,
@@ -326,7 +328,7 @@ const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer
 const markTab = workspaceSwitcher(
   $("workspaces"),
   listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
-  (id) => (id === "slice" ? sliceForPrinting() : show(id as WorkspaceId)),
+  (id) => (id === "slice" && !__SLICE_PAGE__ ? sliceForPrinting() : show(id as WorkspaceId)),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
 /** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */

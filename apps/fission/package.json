@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "e2e:tabs": "SPINDLE_HOME=1 vite build --outDir dist-home && E2E_DIST=$PWD/dist-home node e2e/tabs.mjs",
+    "e2e:slice-page": "SPINDLE_SLICE_PAGE=1 vite build --outDir dist-slice && E2E_DIST=$PWD/dist-slice node e2e/slice-page.mjs",
     "e2e:home": "SPINDLE_HOME=1 vite build --outDir dist-home && E2E_DIST=$PWD/dist-home node e2e/home.mjs",
     "e2e:offline": "SPINDLE_OFFLINE=1 vite build --outDir dist-offline && E2E_DIST=$PWD/dist-offline node e2e/offline.mjs",
     "test": "node --experimental-strip-types --no-warnings --test e2e/*.test.mjs",
