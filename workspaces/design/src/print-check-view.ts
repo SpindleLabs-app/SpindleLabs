@@ -9,7 +9,7 @@
 // Nothing is saved in the design: it is a view of it.
 
 import type { AnalysisOverlay, OverlayPlace } from "@fission/core";
-import { printCheck, P1S_RULES, type CheckMesh, type PrintCheck, type PrintRules } from "./print-check.ts";
+import { printCheck, P1S_RULES, type CheckMesh, type PrintCheck, type PrintRules } from "@fission/print";
 import { PRESET_PICKED_KEY, readPresets } from "./slice-presets.ts";
 import { presetSettingsOf } from "./slice-print.ts";
 

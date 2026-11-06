@@ -14,11 +14,11 @@ import { repeatGuard, type SaveKind } from "@fission/ui";
 import { bodyIdOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
 import { presetBar, type PresetSettings } from "./slice-presets.ts";
-import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "./build-area.ts";
-import { overhangArea, supportsHint } from "./overhang.ts";
+import { firstLayerReach, NO_EXTRAS, P1S_AREA, type FirstLayerExtras } from "@fission/print";
+import { overhangArea, supportsHint } from "@fission/print";
 import { fitCalibration, fitsLine } from "./fit-calibration.ts";
 import { FIT_PEG, FIT_THICK, fitPieceStl } from "./fit-piece.ts";
-import { costWords, grams, PRICE_KEY, readPrice, rememberedPrice, timeWords } from "./print-cost.ts";
+import { costWords, grams, PRICE_KEY, readPrice, rememberedPrice, timeWords } from "@fission/print";
 
 /**
  * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
