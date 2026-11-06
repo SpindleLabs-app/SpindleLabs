@@ -756,6 +756,20 @@
     "why": "sign returns only -1 or 1, never 0, so < 0 and <= 0 agree."
   },
   {
+    "file": "packages/viewport/src/framing.ts",
+    "mutator": "EqualityOperator",
+    "original": "i + 2 < positions.length",
+    "replacement": "i + 2 <= positions.length",
+    "why": "pointsInPlane's loop end: a step past the last whole vertex reads undefined coordinates, whose distance is NaN, and NaN <= tolerance is false, so the vertex is skipped either way."
+  },
+  {
+    "file": "packages/viewport/src/framing.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "i + 2",
+    "replacement": "i - 2",
+    "why": "pointsInPlane's loop end: a step past the last whole vertex reads undefined coordinates, whose distance is NaN, and NaN <= tolerance is false, so the vertex is skipped either way. (i - 2 runs two steps past the end, each read as NaN and skipped)."
+  },
+  {
     "file": "packages/ai/src/commands.ts",
     "mutator": "StringLiteral",
     "original": "\"\"",
