@@ -1473,9 +1473,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // followed them already, so this takes in a file opened with its points elsewhere (or an edit whose settling
       // failed). Not while an undo or redo is putting a snapshot back (it was taken in when that step was made), nor
       // once the design has changed again.
-      if (value.followed !== doc && designDoc() === doc && !ctx.history.restoring()) takeIn(doc, value.followed);
-      // The rows were drawn before the rebuild said what failed: a failed item has no Body row.
-      if (!sameIds(rowsFailed, failedNow)) drawBrowser(doc);
+      const taken = value.followed !== doc && designDoc() === doc && !ctx.history.restoring();
+      if (taken) takeIn(doc, value.followed);
+      // The rows were drawn before the rebuild said what failed: a failed item has no Body row. Nor had a Combine's new
+      // piece its number then (numberPieces, in what was just taken in): 35f4, Fusion check F2's Body 3 had no row.
+      if (taken || !sameIds(rowsFailed, failedNow)) drawBrowser(taken ? value.followed : doc);
       warningsNow = value.warnings;
       showKept();
       showFailed(doc);

@@ -1,49 +1,52 @@
 {
   "model": "micron-cube-halved",
-  "what": "A 1 µm cube, the smallest legal feature (MIN_FEATURE), with half of it cut away: the half left would be 0.5 µm thick, narrower than MIN_FEATURE, so the cut is refused with words and both bodies are kept as they were (booleans.md rule 1 and decision 6; Fusion check F3: a refused Combine keeps its bodies). Its pair, small-cube-halved, is left 1.1 µm thick and builds.",
+  "what": "A 1 × 1 µm block 1.5 µm tall (1 µm is the smallest legal feature, MIN_FEATURE) with its lower 1 µm cut away (the Combine made while the block was 2.1 µm tall, then the block edited down): what is left would be 0.5 µm thick, narrower than MIN_FEATURE, so the cut is refused with words and both bodies are kept as they were (booleans.md rule 1 and decision 6; Fusion check F3: a refused Combine keeps its bodies). Its pair, small-cube-halved, is left 1.1 µm thick and builds. Redesigned 11-06 when the model was first made: a click lands on the 1 µm grid (place_freely never rounds finer than MIN_FEATURE), so the first design's 0.5 µm and 1.1 µm corners could not be clicked; the thin part now comes from a typed extrude distance (any length from 1 µm up), which a user can give.",
   "from": "35",
   "recipe": [
     {
-      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2. (Since 35e2 a body keeps its number for good, so the deleted box keeps Body 1 and the next bodies are Body 2 and Body 3; and each rectangle adds its four horizontal and vertical constraints, so the items after it are numbered 4 later.)"
     },
     {
       "do": "Create Sketch on the top plane XY.",
       "makes": "sketch-2"
     },
     {
-      "do": "Rectangle tool, zoomed in: click (0, 0.001), then (0.001, 0.002) (x 0..1 µm, y 1..2 µm; points 3, 4, 6, 8, lines 5, 7, 9, 10)."
+      "do": "Rectangle tool, zoomed in: click (0, 0.001), then (0.001, 0.002) (x 0..1 µm, y 1..2 µm, on the 1 µm grid; points 3, 4, 6, 8, lines 5, 7, 9, 10, constraints 11 to 14)."
     },
     {
-      "do": "Extrude the sketch 0.001 (z 0 to 1 µm): Body 1, the cube.",
-      "makes": "feature-11"
+      "do": "Extrude the sketch 0.0021 typed (z 0 to 2.1 µm): Body 2, the block.",
+      "makes": "feature-15"
     },
     {
-      "do": "Create Sketch on the front plane XZ.",
-      "makes": "sketch-12"
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-16"
     },
     {
-      "do": "Rectangle tool: click (0.0005, −0.001), then (0.003, 0.002) (x 0.5..3 µm, z −1..2 µm; points and lines 13 to 20). Seen along Y the cube's nearest offered point is its bottom edge's middle (0.0005, 0), 1 µm from the first click, so nothing is pinned."
+      "do": "Rectangle tool: click (−0.001, 0), then (0.002, 0.003) (x −1..2 µm, y 0..3 µm; points and lines 17 to 24). The block's nearest corner, (0, 0.001), is 1.4 µm from the first click, past the snap's reach, so nothing is pinned."
     },
     {
-      "do": "Extrude the sketch 0.004, flipped (along +Y, y 0 to 4 µm): Body 2, the tool, through the cube from x = 0.5 µm on.",
-      "makes": "feature-21"
+      "do": "Extrude the sketch 0.001 (z 0 to 1 µm): Body 3, the tool, over the block's whole footprint and its lower 1 µm.",
+      "makes": "feature-29"
     },
     {
-      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off: refused.",
-      "makes": "feature-22"
+      "do": "Combine: target Body 2, tool Body 3, Cut, Keep tools off: it builds, the block's upper 1.1 µm left (small-cube-halved).",
+      "makes": "feature-30"
+    },
+    {
+      "do": "Edit feature on the block's extrude (feature-15): height 0.0015 typed, OK. The block is now 1.5 µm tall, so the Combine under it would leave 0.5 µm and is refused on its row, both bodies shown as they are. (A Combine refused in its own box is never added, as in Fusion, so this is how a refused one comes to be on the timeline.)"
     }
   ],
   "bodies": [
     {
-      "body": "Body 1",
-      "item": "feature-11",
+      "body": "Body 2",
+      "item": "feature-15",
       "volume": {
-        "is": "0.001^3",
-        "why": "the 1 µm cube, kept as it was: 1e-9 mm³"
+        "is": "0.001*0.001*0.0015",
+        "why": "the block, kept as it was: 1 × 1 × 1.5 µm = 1.5e-9 mm³"
       },
       "area": {
-        "is": "6*0.001^2",
-        "why": "six faces 1 µm square"
+        "is": "2*(0.001*0.001 + 0.001*0.0015 + 0.001*0.0015)",
+        "why": "a 1 × 1 × 1.5 µm box: 2(1 + 1.5 + 1.5) µm² = 8e-6 mm²"
       },
       "topology": {
         "faces": 6,
@@ -61,10 +64,10 @@
           [
             0.001,
             0.002,
-            0.001
+            0.0015
           ]
         ],
-        "why": "the rectangle x 0..0.001, y 0.001..0.002, up 0.001"
+        "why": "the rectangle x 0..1 µm, y 1..2 µm, up 1.5 µm"
       },
       "tolerance": {
         "is": "1e-5",
@@ -72,15 +75,15 @@
       }
     },
     {
-      "body": "Body 2",
-      "item": "feature-21",
+      "body": "Body 3",
+      "item": "feature-29",
       "volume": {
-        "is": "0.0025*0.004*0.003",
-        "why": "the tool kept too: 2.5 × 4 × 3 µm"
+        "is": "0.003*0.003*0.001",
+        "why": "the tool kept too: 3 × 3 × 1 µm"
       },
       "area": {
-        "is": "2*(0.0025*0.004 + 0.0025*0.003 + 0.004*0.003)",
-        "why": "a 2.5 × 4 × 3 µm box: 2(10 + 7.5 + 12) µm²"
+        "is": "2*(0.003*0.003 + 0.003*0.001 + 0.003*0.001)",
+        "why": "a 3 × 3 × 1 µm box: 2(9 + 3 + 3) µm²"
       },
       "topology": {
         "faces": 6,
@@ -91,17 +94,17 @@
       "box": {
         "is": [
           [
-            0.0005,
+            -0.001,
             0,
-            -0.001
+            0
           ],
           [
+            0.002,
             0.003,
-            0.004,
-            0.002
+            0.001
           ]
         ],
-        "why": "the rectangle x 0.0005..0.003, z −0.001..0.002, swept y 0 to 0.004"
+        "why": "the rectangle x −1..2 µm, y 0..3 µm, up 1 µm"
       },
       "tolerance": {
         "is": "1e-5",
@@ -113,11 +116,11 @@
   "pins": [],
   "refused": [
     {
-      "item": "feature-22",
+      "item": "feature-30",
       "says": [
         "1 µm"
       ],
-      "why": "what would be left, x 0..0.5 µm, is a block whose faces are 0.5 µm across: the middle band, between the tolerance and MIN_FEATURE, judged on the result, which is an error naming where with a message to make it at least 1 µm (booleans.md rule 1), never a 0.5 µm sliver"
+      "why": "what would be left, z 1..1.5 µm over the 1 × 1 µm footprint, is a block 0.5 µm thick: the middle band, between the tolerance and MIN_FEATURE, judged on the result, which is an error naming where with a message to make it at least 1 µm (booleans.md rule 1), never a 0.5 µm sliver"
     }
   ]
 }
