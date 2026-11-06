@@ -1039,7 +1039,7 @@ export interface FaceReference {
 }
 
 export type FaceFound =
-  | { found: DescribedFace; body: string; warning: "split" | null }
+  | { found: DescribedFace; body: string; warning: "split" | "whole" | null }
   | { lost: true }
   | { ambiguous: number };
 
@@ -1056,7 +1056,12 @@ export function resolveFace(r: BooleanRebuild, ref: FaceReference, faults: Itera
   const fs = new Set(faults);
   const pieces = r.bodies.flatMap((b) => b.faces.filter((f) => f.names.includes(ref.name)).map((f) => ({ f, body: b.id })));
   if (pieces.length === 0) return { lost: true };
-  if (pieces.length === 1) return { found: pieces[0].f, body: pieces[0].body, warning: null };
+  // A tagged reference finding one face without its tag that doesn't hold its origin: its piece is gone and another face
+  // carries the name (a kept tool's own face), so found with a warning, never silently (hunt 11-06); whole again holds it.
+  if (pieces.length === 1) {
+    const same = ref.tag === undefined || r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") || ref.origin === undefined || holds(pieces[0].f, ref.origin);
+    return { found: pieces[0].f, body: pieces[0].body, warning: same ? null : "whole" };
+  }
   if (ref.tag !== undefined) {
     const want = ref.tag.join(",");
     const match = pieces.filter((p) => r.tagFor(p.f, ref.name).join(",") === want);

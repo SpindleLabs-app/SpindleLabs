@@ -1456,9 +1456,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // followed them already, so this takes in a file opened with its points elsewhere (or an edit whose settling
       // failed). Not while an undo or redo is putting a snapshot back (it was taken in when that step was made), nor
       // once the design has changed again.
-      if (value.followed !== doc && designDoc() === doc && !ctx.history.restoring()) takeIn(doc, value.followed);
-      // The rows were drawn before the rebuild said what failed: a failed item has no Body row.
-      if (!sameIds(rowsFailed, failedNow)) drawBrowser(doc);
+      const took = value.followed !== doc && designDoc() === doc && !ctx.history.restoring();
+      if (took) takeIn(doc, value.followed);
+      // The rows were drawn before the rebuild said what failed: a failed item has no Body row. Nor were a Combine's
+      // pieces numbered yet (`numberPieces`, in what was taken in): drawn again from it, or a piece has no row (hunt 11-06).
+      if (took || !sameIds(rowsFailed, failedNow)) drawBrowser(took ? value.followed : doc);
       warningsNow = value.warnings;
       showKept();
       showFailed(doc);
@@ -2939,6 +2941,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** OK's words when the design changed while the kernel checked the Combine: nothing was recorded. */
   const COMBINE_CHANGED = "The design changed while the Combine was checked: nothing was changed. Press OK again.";
+  const COMBINE_PICKS_CHANGED = "The bodies or choices changed while the Combine was checked: nothing was changed. Press OK again.";
 
   /**
    * OK: the Combine made (`insertCombine` at the marker, or
@@ -2948,6 +2951,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * step, "Combine bodies" or "Edit Combine 1". An edit that changes
    * nothing closes the panel and records nothing.
    */
+  /** The panel's choices as one string: target, tools in order, operation, Keep tools. */
+  const combineAsked = () => JSON.stringify([combineTarget, combineTools, combineBox.operation, combineBox.keepTools]);
   async function finishCombine() {
     if (!combineBox.shown || !combineBox.ready || combineTarget === null) return;
     const id = combineBox.editing;
@@ -2962,6 +2967,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     if (next === before) return leaveCombine();
     const opened = combineOpenings;
+    // What OK was pressed on: a pick, operation or Keep tools changed while the kernel looked is not recorded unseen (hunt 11-06).
+    const asked = combineAsked();
     combineBox.busy(true);
     let refused: string | null;
     try {
@@ -2973,6 +2980,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (combineOpenings !== opened) return;
     combineBox.busy(false);
     if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
+    if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
     if (refused !== null) return combineBox.showError(refused);
     if (id === null) ctx.selection.clear();
     menuHost.record(id === null ? COMBINE_STEP : editStep(before, id), next);

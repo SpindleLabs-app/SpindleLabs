@@ -369,8 +369,12 @@ export interface FaceNameReference {
 }
 
 /** What a reference finds on the design's bodies: a face or edge by body and kernel index; two or more, never guessed between; or none. */
-/** "split": a face reference made whole found a piece (rule 3); "ends": an edge reference whose ends no longer fit found the only edge between its two faces (rule 5). */
-export type NameFound = { body: number; index: number; warning: "split" | "ends" | null } | { ambiguous: number } | { lost: true };
+/**
+ * "split": a face reference made whole found a piece (rule 3); "whole": a reference made on a piece found the one face
+ * left carrying its name, which is not that piece (rule 3, hunt 11-06: never silently); "ends": an edge reference whose
+ * ends no longer fit found the only edge between its two faces (rule 5).
+ */
+export type NameFound = { body: number; index: number; warning: "split" | "whole" | "ends" | null } | { ambiguous: number } | { lost: true };
 
 /**
  * Whether face `f` of `view` holds point `p`: within SAME_CORNER of one of
@@ -419,7 +423,10 @@ export function faceHolds(view: BodyView, f: number, p: readonly number[]): bool
 
 /**
  * Rule 3's references on the design's bodies: one face carrying the name
- * is it (a tagged reference too: the face is whole again); among pieces a
+ * is it (a tagged reference too: the face is whole again, or the piece it
+ * was drawn on is gone and another face carries the name, so it is found
+ * with the warning "whole" unless that face has its tag or holds the
+ * reference's origin); among pieces a
  * tagged reference takes the one piece with its tag; one made on the whole
  * face takes the piece holding its origin, else the largest, with a
  * warning. Two pieces with the same tag, or two largest (within TIE), are
@@ -428,9 +435,13 @@ export function faceHolds(view: BodyView, f: number, p: readonly number[]): bool
 export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames, ref: FaceNameReference): NameFound {
   const pieces = bodies.flatMap((b, body) => b.faces.flatMap((f, index) => (f.names.includes(ref.name) ? [{ body, index }] : [])));
   if (pieces.length === 0) return { lost: true };
-  if (pieces.length === 1) return { ...pieces[0], warning: null };
-  if (ref.tag !== undefined) {
-    const want = [...ref.tag].sort().join(","); // tags are kept sorted (tagAmong); one written in another order is the same set
+  const want = ref.tag === undefined ? undefined : [...ref.tag].sort().join(","); // tags are kept sorted (tagAmong); one written in another order is the same set
+  if (pieces.length === 1) {
+    const [one] = pieces;
+    const same = want === undefined || names.tagFor(one.body, one.index, ref.name).join(",") === want || ref.origin === undefined || faceHolds(bodies[one.body].view, one.index, ref.origin);
+    return { ...one, warning: same ? null : "whole" };
+  }
+  if (want !== undefined) {
     const match = pieces.filter((p) => names.tagFor(p.body, p.index, ref.name).join(",") === want);
     if (match.length === 0) return { lost: true };
     if (match.length > 1) return { ambiguous: match.length };
