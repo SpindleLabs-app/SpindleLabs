@@ -47,9 +47,9 @@ import {
   type Progress,
   type ProviderSettings,
 } from "@fission/ai";
-import { projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type WorkspaceId } from "@fission/core";
+import { boxShown, projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type Unit, type WorkspaceId } from "@fission/core";
 import { DESIGN_COMMANDS, DRAW_OPS, drawWords, EXTRUDE_OP, extrudeWords, partOf, RENAME_OP, renameWords, type DesignDocument } from "@fission/design";
-import { skeleton } from "@fission/ui";
+import { currentUnit, skeleton } from "@fission/ui";
 
 export interface AssistantHost {
   history: History;
@@ -131,6 +131,11 @@ export function previewRows(before: Record<string, unknown>, after: Record<strin
   return usedBy(after.shape).flatMap((parameter) => (before[parameter] === after[parameter] ? [] : [{ parameter, before: before[parameter], after: after[parameter] }]));
 }
 
+/** A preview row's value as shown: a size (always millimetres in the commands) in the unit chosen in Settings, anything else as it is. */
+export function sizeShownIn(parameter: string, value: unknown, unit: Unit): string {
+  return unit === "in" && typeof value === "number" && (SIZES as readonly string[]).includes(parameter) ? boxShown(value, unit) : String(value);
+}
+
 /** A row of the preview: a size before and after, or a sketch started ("sketch", nothing before). */
 export type PreviewRow = { parameter: string; before: unknown; after: unknown };
 
@@ -152,7 +157,7 @@ const SIZES = ["width", "depth", "height"] as const;
  * so it is "at the timeline marker". `before` and `after` are the part
  * before the first set_part and after the last.
  */
-export function previewOf(view: AIView, commands: readonly Command[]): { before: Record<string, unknown>; after: Record<string, unknown>; rows: PreviewRow[]; label: string; adds: string | null } {
+export function previewOf(view: AIView, commands: readonly Command[], unit: Unit = "mm"): { before: Record<string, unknown>; after: Record<string, unknown>; rows: PreviewRow[]; label: string; adds: string | null } {
   const setup: Record<string, unknown> = { ...(view.setup[0] ?? {}) };
   delete setup.op;
   // The part as the run finds it: a preset's sizes, "other" (an extruded sketch, or no body: a set_part adds one), or none at all (a fresh design).
@@ -172,21 +177,21 @@ export function previewOf(view: AIView, commands: readonly Command[]): { before:
       before ??= was;
       const changed = previewRows(was, after);
       rows.push(...changed);
-      if (changed.length > 0) labels.push(`${part === "other" ? "new " : ""}${describePart(after)}`);
+      if (changed.length > 0) labels.push(`${part === "other" ? "new " : ""}${describePart(after, unit)}`);
       if (part === "other") adds ??= putIn || view.adds === null ? "a new body at the timeline marker" : view.adds;
       part = after;
       continue;
     }
     // A drawing (AI7b): its own row, in the order sent, after the sketch it goes in.
     if (DRAW_OPS.includes(c.op)) {
-      rows.push({ parameter: c.op.replace("draw_", ""), before: undefined, after: drawWords(c) });
-      labels.push(drawWords(c));
+      rows.push({ parameter: c.op.replace("draw_", ""), before: undefined, after: drawWords(c, unit) });
+      labels.push(drawWords(c, unit));
       continue;
     }
     // An extrude (AI7c): a row for the body it adds, which is the part after it.
     if (c.op === EXTRUDE_OP) {
-      rows.push({ parameter: "extrude", before: undefined, after: extrudeWords(c).replace(/^extrude /, "") });
-      labels.push(extrudeWords(c));
+      rows.push({ parameter: "extrude", before: undefined, after: extrudeWords(c, unit).replace(/^extrude /, "") });
+      labels.push(extrudeWords(c, unit));
       part = "other";
       putIn = true;
       if (typeof c.distance === "number") panel.height = Math.abs(c.distance);
@@ -206,15 +211,15 @@ export function previewOf(view: AIView, commands: readonly Command[]): { before:
     putIn = true;
   }
   // With no change at all, the part's own name, as before AI7a ("No change" is shown and Accept is off).
-  return { before: before ?? { ...setup }, after, rows, label: labels.length > 0 ? labels.join(", then ") : describePart(after), adds };
+  return { before: before ?? { ...setup }, after, rows, label: labels.length > 0 ? labels.join(", then ") : describePart(after, unit), adds };
 }
 
 /** "box 50 × 30 × 20 mm", "cylinder ⌀25 × 60 mm", "sphere ⌀30 mm": the undo step's name. */
-export function describePart(c: Record<string, unknown>): string {
-  const n = (k: string) => String(c[k]);
-  if (c.shape === "sphere") return `sphere ⌀${n("width")} mm`;
-  if (c.shape === "cylinder") return `cylinder ⌀${n("width")} × ${n("height")} mm`;
-  return `${String(c.shape).replace("-", " ")} ${n("width")} × ${n("depth")} × ${n("height")} mm`;
+export function describePart(c: Record<string, unknown>, unit: Unit = "mm"): string {
+  const n = (k: string) => (unit === "mm" || typeof c[k] !== "number" ? String(c[k]) : boxShown(c[k] as number, unit));
+  if (c.shape === "sphere") return `sphere ⌀${n("width")} ${unit}`;
+  if (c.shape === "cylinder") return `cylinder ⌀${n("width")} × ${n("height")} ${unit}`;
+  return `${String(c.shape).replace("-", " ")} ${n("width")} × ${n("depth")} × ${n("height")} ${unit}`;
 }
 
 /** The panel, built once; `show` points it at the active workspace. */
@@ -668,7 +673,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       const problem = await design.check?.(answer.commands);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);
       if (problem) return say(`That can't be done: ${problem} Nothing was changed.`, true);
-      const shown = previewOf(view, answer.commands);
+      const shown = previewOf(view, answer.commands, currentUnit(document));
       const { before } = shown;
       const action = proposeAction(answer.commands, {
         label: shown.label,
@@ -757,8 +762,9 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     const box = document.createElement("div");
     box.id = "ai-preview";
     box.className = "ai-preview";
+    const sizeShown = (parameter: string, value: unknown) => sizeShownIn(parameter, value, currentUnit(document));
     box.innerHTML = `<p class="ai-label"></p>
-      <table>${rows.map((c) => `<tr data-param="${escape(c.parameter)}"><th>${escape(c.parameter)}</th><td>${escape(String(c.before ?? "—"))}</td><td>→</td><td>${escape(String(c.after))}</td></tr>`).join("")}</table>
+      <table>${rows.map((c) => `<tr data-param="${escape(c.parameter)}"><th>${escape(c.parameter)}</th><td>${escape(sizeShown(c.parameter, c.before ?? "—"))}</td><td>→</td><td>${escape(sizeShown(c.parameter, c.after))}</td></tr>`).join("")}</table>
       <p class="ai-note"></p>
       <details><summary>Commands</summary><pre></pre></details>
       <button id="ai-accept" type="button">Accept</button> <button id="ai-reject" type="button">Reject</button>`;

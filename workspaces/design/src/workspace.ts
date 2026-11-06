@@ -23,7 +23,7 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { currentUnit, commandSearch, GCODE_KIND, iconSvg, PNG_KIND, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
+import { currentDesignDefaults, currentUnit, commandSearch, GCODE_KIND, iconSvg, PNG_KIND, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
@@ -59,7 +59,7 @@ import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
-import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
+import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import { curveAt, PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
@@ -103,6 +103,8 @@ const rebuildsOn = new WeakMap<HTMLElement, number>();
 let editingSketch: { id: string; grid: number; typed: string; tool: ToolKind } | null = null;
 /** Grid snap on or off (sketch feel SF1; off by default: points go where you click), kept for every sketch until the page reloads. */
 let gridSnap = DEFAULT_GRID_SNAP;
+/** The Settings default for Snap to grid last taken (U2b): a new sketch takes a changed default, else keeps the toggle as left. */
+let snapDefaultTaken = DEFAULT_GRID_SNAP;
 /** Each sketch's grid size as typed and taken, kept until the page reloads like Snap to grid: Edit Sketch opens it on the grid it was left on (typed-sizes hunt 2026-11-01). */
 const sketchGrids = new Map<string, { grid: number; typed: string }>();
 /** How long (ms) Ctrl or Cmd is held with no other key before the snap under a still pointer goes: long enough for a shortcut's second key. */
@@ -1889,7 +1891,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function startNewSketch(made: { doc: DesignDocument; id: string }) {
     viewport.showPlanes([]);
     applySketchEdit(made.doc, SKETCH_STEPS.create, made.id);
-    editingSketch = { id: made.id, grid: DEFAULT_GRID, typed: String(DEFAULT_GRID), tool: "line" };
+    // A new sketch starts with the grid size and Snap to grid chosen in Settings (U2b), the built-in ones when none is.
+    const start = currentDesignDefaults(ctx.properties.ownerDocument);
+    if (start.snap !== snapDefaultTaken) gridSnap = snapDefaultTaken = start.snap;
+    editingSketch = { id: made.id, grid: start.grid, typed: String(start.grid), tool: "line" };
     enterSketch();
     lookAtSketch();
   }
@@ -1908,7 +1913,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     const kept = sketchGrids.get(id);
-    editingSketch = { id, grid: kept?.grid ?? DEFAULT_GRID, typed: kept?.typed ?? String(DEFAULT_GRID), tool: "line" };
+    editingSketch = { id, grid: kept?.grid ?? currentDesignDefaults(ctx.properties.ownerDocument).grid, typed: kept?.typed ?? String(currentDesignDefaults(ctx.properties.ownerDocument).grid), tool: "line" };
     enterSketch();
     if (mode.kind !== "edit") return;
     showKept();

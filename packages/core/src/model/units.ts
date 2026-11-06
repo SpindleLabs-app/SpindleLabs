@@ -78,6 +78,21 @@ export function wordsInUnit(text: string, unit: Unit): string {
     .replace(/(\d+(?:\.\d+)?(?:e[+-]?\d+)?) mm(?![²³\w])/gi, (_, n: string) => `${plain(fromMm(Number(n), unit))} in`);
 }
 
+/** The shortest and longest length the kernel works with, in millimetres: 1 µm to 1 km (a typed length, a grid size). */
+export const MIN_LENGTH_MM = 1e-3;
+export const MAX_LENGTH_MM = 1e6;
+
+/**
+ * Why a length of `mm` millimetres is refused (not more than 0, under 1 µm, over 1 km), in the words the sketch's typed
+ * boxes use ("A length must be more than 0 mm."), or null. Design's `lengthRefused` is the same rule (tested equal).
+ */
+export function lengthLimitRefusal(mm: number): string | null {
+  if (!(mm > 0)) return "A length must be more than 0 mm.";
+  if (mm < MIN_LENGTH_MM) return `A length must be at least ${MIN_LENGTH_MM} mm, the smallest piece the modeller keeps.`;
+  if (mm > MAX_LENGTH_MM) return `A length can be at most ${MAX_LENGTH_MM} mm (1 km), the largest size the modeller works at.`;
+  return null;
+}
+
 /** One length in a summary's own text ("40", "-2.5", "1e-7"), shown in `unit` as `plain` shows a length. */
 const inUnit = (n: string, unit: Unit): string => plain(fromMm(Number(n), unit));
 const NUM = String.raw`-?\d+(?:\.\d+)?(?:e[+-]?\d+)?`;

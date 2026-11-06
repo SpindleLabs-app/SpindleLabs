@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { historyPanel, baseNameOf, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -1126,6 +1126,8 @@ const settings = () => (browserSettings ??= new SettingsStore(local));
 if (!(__TEST_HOOKS__ && (window as unknown as { __noTooltips?: boolean }).__noTooltips)) startTooltips(document);
 // Units (U2c2): the page wears the stored unit (data-unit) and tells the screens when it changes.
 const chooseUnit = startUnits(document, settings());
+// Design's defaults (U2b): the grid size and Snap to grid a new sketch starts with, worn as data-grid-size and data-grid-snap.
+const designDefaults = startDesignDefaults(document, settings());
 // The mouse preset (U2d): the page wears it (data-mouse) and the 3D views follow it.
 const chooseMouse = startMouse(document, settings());
 const chooseTheme = startTheme(document, settings(), typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null);
@@ -1139,8 +1141,16 @@ $("settings-open").addEventListener("click", () => {
   fillSettingsNow(backToSettings);
   settingsDialog.showModal();
 });
+/** The AI provider settings live in the assistant panel: open it (the AI button, if closed) and bring them into view. */
+function showAiSettings() {
+  const toggle = $("assistant-toggle");
+  if (toggle.getAttribute("aria-pressed") !== "true") toggle.click();
+  const target = document.querySelector<HTMLElement>(".ai-settings");
+  target?.scrollIntoView({ block: "start" });
+  target?.querySelector<HTMLElement>("select, input, button")?.focus();
+}
 function fillSettingsNow(backToSettings: () => void) {
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings });
 }
 // Report a bug (Ben, 2026-11-04; @fission/ui bug-report.ts): from Settings > About, a form that opens a filled-in
 // GitHub issue in a new tab. The app adds the version, browser, screen and workspace; nothing from the project.
