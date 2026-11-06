@@ -303,6 +303,37 @@ export function keptConstraints(sketch: Pick<Sketch, "points" | "constraints" | 
   return kept.length === sketch.constraints.length ? sketch.constraints : kept;
 }
 
+/**
+ * The document with Horizontal on each level side of a rectangle just
+ * drawn (`sides`, line ids) and Vertical on each upright one, as Fusion
+ * gives a rectangle (the beginner check, 2026-11-06: without them a size
+ * on one side made a trapezoid). Only where it holds exactly as drawn, so
+ * the sketch stays solved without a solve and nothing can fight; a side
+ * through a point that follows a body, or already level or upright by its
+ * own constraint, gets none. The ids from the one counter.
+ */
+export function squaredRectangle(doc: DesignDocument, sketchId: string, sides: readonly string[]): DesignDocument {
+  const sketch = doc.sketches.find((s) => s.id === sketchId);
+  if (!sketch) throw new Error(`there is no sketch ${sketchId} in the design`);
+  const at = new Map(sketch.points.map((p) => [p.id, p]));
+  const follows = followingPoints(sketch);
+  let nextId = doc.nextId;
+  const added: SketchConstraint[] = [];
+  for (const id of sides) {
+    const line = sketch.curves.find((c) => c.id === id);
+    if (line?.kind !== "line" || follows.has(line.start) || follows.has(line.end)) continue;
+    const [a, b] = [at.get(line.start)!, at.get(line.end)!];
+    const kind = a.y === b.y ? "horizontal" : a.x === b.x ? "vertical" : null;
+    if (kind === null) continue;
+    const same = (c: SketchConstraint) => c.kind === kind && ((c.a === line.start && c.b === line.end) || (c.a === line.end && c.b === line.start));
+    if ([...sketch.constraints, ...added].some(same)) continue;
+    added.push({ id: `constraint-${nextId}`, kind, a: line.start, b: line.end });
+    nextId = counted(nextId + 1);
+  }
+  if (added.length === 0) return doc;
+  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, constraints: [...s.constraints, ...added] } : s)) };
+}
+
 /** The points a line picked gives a horizontal or vertical constraint: its start, held, then its end. */
 export function lineEnds(sketch: Sketch, curveId: string): [string, string] | null {
   const c = sketch.curves.find((x) => x.id === curveId);
