@@ -3113,5 +3113,40 @@
     "original": "journal?.removeItem",
     "replacement": "journal.removeItem",
     "why": "(issue #275) reached only with journalVersion non-null, which needs a journal."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The default fault list of resolveFace: a fault name no rule looks for changes nothing, so a list holding one acts like the empty one."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 0, 0]",
+    "replacement": "[]",
+    "why": "An edge run's centroid: its three entries, at the run's axis and the two others (three different axes), are all written straight after, so it starts as three zeros or as nothing to the same end."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < 3",
+    "replacement": "i <= 3",
+    "why": "centroidOf's sum: a fourth pass adds to sum[3] (from lo[3] and hi[3], which do not exist), and only sum[0] to sum[2] are ever read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ends !== undefined",
+    "replacement": "true",
+    "why": "resolveEdge with no ends in the name: no edge's ends joined make undefined, so nothing is pushed to same either way, and same is read only when ends is given."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "same.length > 1",
+    "replacement": "same.length >= 1",
+    "why": "resolveEdge: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
   }
 ]

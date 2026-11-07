@@ -335,6 +335,19 @@ test("a block's given faces are listed in their given made order, and two given 
   assert.deepEqual([...twice.failed], [["t1", "the rectangle or the heights are not valid"]]);
 });
 
+test("an invalid block's given faces never set the made order of a valid block's faces of the same names", () => {
+  // t1 is valid and lists its faces in its given order (as above). t2 has an empty rectangle (x 5 to 5), so it is
+  // refused and builds nothing, but it gives the same six names in the reverse order. Only a valid block's given
+  // faces count, so t1's faces still come in t1's order; taking t2's would list them reversed.
+  const order: Facing[] = ["+z", "-z", "+y", "-y", "+x", "-x"];
+  const r = rebuildBooleans([
+    { ...block("t1", [0, 0, 10, 10], [0, 5]), faces: given("a", (d) => [order.indexOf(d)]) },
+    { ...block("t2", [5, 0, 5, 10], [0, 5]), faces: given("a", (d) => [5 - order.indexOf(d)]) },
+  ]);
+  assert.deepEqual([...r.failed], [["t2", "the rectangle or the heights are not valid"]]);
+  assert.deepEqual(r.bodies[0].faces.map((f) => f.facing), order);
+});
+
 test("a face's centroid weighs its pieces of surface by area, and an edge's is its middle", () => {
   // A block x 0–30, y 0–10, z 0–5, with a far block whose side at x = 10 splits the grid there. Its top (z = 5) is
   // two rects, x 0–10 (area 100, middle x 5) and x 10–30 (area 200, middle x 20): x = (100·5 + 200·20)/300 = 15,
