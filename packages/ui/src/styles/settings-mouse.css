@@ -1,0 +1,8 @@
+/* U2d: Settings > Mouse: the preset choice, its one-line summary and the table of what each button and key does. */
+.settings-mouse { display: flex; flex-direction: column; gap: var(--look-space-2); }
+.settings-mouse p { margin: 0; font-size: 13px; color: var(--text-dim); }
+.settings-mouse table { border-collapse: collapse; font-size: 13px; width: 100%; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.settings-mouse th, .settings-mouse td { text-align: left; padding: var(--look-space-1) var(--look-space-2); vertical-align: top; border-bottom: 1px solid var(--look-edge); }
+.settings-mouse th { font-weight: 600; white-space: nowrap; }
+.settings-mouse tr:last-child th, .settings-mouse tr:last-child td { border-bottom: 0; }
+@media (max-width: 640px) { .settings-mouse th { white-space: normal; } .settings-mouse .settings-row { flex-wrap: wrap; } }

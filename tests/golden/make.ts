@@ -9,7 +9,7 @@
 //   node --experimental-strip-types --no-warnings tests/golden/make.ts [name …]
 import { writeFileSync } from "node:fs";
 import { emptyProject, projectToJson, type DisplayMesh } from "@fission/core";
-import { addSketch, designWorkspace, drawArc, drawLine, extrudeSketch, partDocument, type DesignDocument } from "@fission/design";
+import { addSketch, designWorkspace, drawArc, drawLine, extrudeSketch, insertMove, insertPreset, NO_MOVE, partDocument, setCombineShown, type DesignDocument } from "@fission/design";
 import { app, close } from "../../packages/testing/journeys/design-app.ts";
 
 const DIR = new URL("./", import.meta.url);
@@ -52,10 +52,15 @@ async function sketchOnFace(a: App, on: (p: number[]) => boolean, reach: number[
   await a.pick({ face: faceWhere(a.mesh()!, on, reach) });
 }
 
-async function extrude(a: App, distance: number) {
+async function extrude(a: App, distance: number, flip = false) {
   a.$("#sketch-extrude")!.click();
   await a.settle();
   (a.$("#extrude-distance") as HTMLInputElement).value = String(distance);
+  // Flip turns the typed distance the other way from the sketch's plane.
+  if (flip) {
+    a.$("#extrude-flip")!.click();
+    await a.settle();
+  }
   (a.$("#extrude-ok") as HTMLButtonElement).click();
   await a.settle();
   if (a.sketching()) await a.finish();
@@ -67,113 +72,109 @@ async function circle(a: App, centre: [number, number], radius: number) {
   await a.click(centre[0] + radius, centre[1]);
 }
 
-async function rectangle(a: App, from: [number, number], to: [number, number]) {
+async function rectangle(a: App, from: [number, number], to: [number, number], pixel = 0.1) {
   await a.key("sketch-rectangle");
-  await a.click(...from);
-  await a.click(...to);
+  await a.click(...from, {}, false, false, pixel);
+  await a.click(...to, {}, false, false, pixel);
+}
+
+/** A new part with its ready-made box deleted from the timeline, as a user starting from nothing would (the counter goes on from 2). */
+async function emptyPart(): Promise<App> {
+  const a = await app(partDocument("box", 40, 30, 20), designWorkspace);
+  const [box] = a.doc().timeline.features.map((f) => f.id);
+  await a.menu(box, "delete");
+  a.$("#delete-ask-confirm")?.click();
+  await a.settle();
+  return a;
+}
+
+/** Create Sketch on an origin plane, then a rectangle from `from` to `to` (sketch coordinates). */
+async function planeRectangle(a: App, plane: "XY" | "XZ", from: [number, number], to: [number, number], pixel = 0.1) {
+  a.$("#create-sketch")!.click();
+  await a.settle();
+  await a.pick({ plane });
+  await rectangle(a, from, to, pixel);
+  await a.key("clear-selection");
+}
+
+// Combine is behind ?combine until it goes public (35f5): on here, as a tester's tab has it.
+setCombineShown(true);
+
+/** Modify ▾ Combine: the body with a face wholly where `target` holds as the target, the one with a face where `tool` holds as the tool, `op`, Keep tools off, OK. */
+async function combine(a: App, target: (p: number[]) => boolean, tool: (p: number[]) => boolean, op: "join" | "cut" | "intersect") {
+  a.$("#modify-menu")!.click();
+  await a.settle();
+  a.$("#modify-menu-combine")!.click();
+  await a.settle();
+  await a.pick({ face: faceWhere(a.mesh()!, target) });
+  await a.pick({ face: faceWhere(a.mesh()!, tool) });
+  const picked = `${a.$("#combine-target-names")!.textContent} | ${a.$("#combine-tools-names")!.textContent}`;
+  if (!/^Body \d+ \| Body \d+$/.test(picked)) throw new Error(`Combine picked ${picked}; items ${a.doc().timeline.features.map((f) => f.id)}; error ${a.error()}`);
+  const select = a.$("#combine-operation") as HTMLSelectElement;
+  select.value = op;
+  select.dispatchEvent(new a.window.Event("change") as never);
+  if ((a.$("#combine-keep") as HTMLInputElement).checked) throw new Error("Keep tools is on");
+  (a.$("#combine-ok") as HTMLButtonElement).click();
+  await a.settle();
+  const refused = a.$("#combine-error");
+  if (refused && !refused.hidden) throw new Error(`Combine refused: ${refused.textContent}`);
+}
+
+/** The six step-35 models: a block, a second body sketched and extruded, then Combine (their recipes in each .expect.json). */
+async function blockAndTool(file: string, title: string, block: { plane: "XY" | "XZ"; from: [number, number]; to: [number, number]; d: number; flip?: boolean }, tool: { plane: "XY" | "XZ"; from: [number, number]; to: [number, number]; d: number; flip?: boolean }, pick: [(p: number[]) => boolean, (p: number[]) => boolean], pixel = 0.1, then?: (a: App) => Promise<void>) {
+  const a = await emptyPart();
+  for (const b of [block, tool]) {
+    await planeRectangle(a, b.plane, b.from, b.to, pixel);
+    await extrude(a, b.d, b.flip);
+  }
+  await combine(a, ...pick, "cut");
+  if (then) await then(a);
+  save(file, title, a.doc());
+  await close(a);
 }
 
 const MODELS: Record<string, () => Promise<void>> = {
-  // A 60 × 40 × 10 plate, a boss r 10 tall 8 on its top round (30, 20), a step r 5 tall 6 on the boss's top.
-  async "stepped-boss"() {
-    const a = await app(partDocument("box", 60, 40, 10), designWorkspace);
-    await sketchOnFace(a, (p) => near(p[2], 10));
-    await circle(a, [30, 20], 10);
-    await extrude(a, 8);
-    await sketchOnFace(a, (p) => near(p[2], 18));
-    await circle(a, [30, 20], 5);
-    await extrude(a, 6);
-    save("stepped-boss", "Stepped boss", a.doc());
+  // Step 36's: the ready-made box 40 × 30 × 10, a 40 × 12 × 10 block on its top flush with its front and sides, joined.
+  async "flush-blocks"() {
+    const a = await app(partDocument("box", 40, 30, 10), designWorkspace);
+    await sketchOnFace(a, (p) => near(p[2], 10), [[0, 0, 10], [40, 30, 10]]);
+    await rectangle(a, [0, 0], [40, 12]);
+    await extrude(a, 10);
+    await combine(a, (p) => near(p[2], 0), (p) => near(p[2], 20), "join");
+    save("flush-blocks", "Flush blocks", a.doc());
     await close(a);
   },
-  // An L drawn on the front plane XZ, 60 along and 40 up, 6 thick, extruded 30.
-  async "l-bracket"() {
-    const a = await app(partDocument("box", 40, 30, 20), designWorkspace);
-    // Start from an empty timeline: the starting box deleted first, as a user would.
-    const [box] = a.doc().timeline.features.map((f) => f.id);
-    await a.menu(box, "delete");
-    a.$("#delete-ask-confirm")?.click();
-    await a.settle();
-    a.$("#create-sketch")!.click();
-    await a.settle();
-    await a.pick({ plane: "XZ" });
-    for (const [x, y] of [[0, 0], [60, 0], [60, 6], [6, 6], [6, 40], [0, 40], [0, 0]]) await a.click(x, y);
-    await a.key("clear-selection");
-    await extrude(a, 30);
-    save("l-bracket", "L bracket", a.doc());
+  // Fusion check F2 (35f4): two 10 mm cubes 10 mm apart (Box 2 moved 20 along x), joined: Body 1 and a new Body 3.
+  async "f2-gap-join"() {
+    const made = insertPreset(partDocument("box", 10, 10, 10), "box", 10, 10, 10);
+    const a = await app(insertMove(made.doc, [`body:${made.id}`], { ...NO_MOVE, x: 20 }).doc, designWorkspace);
+    await combine(a, (p) => near(p[0], 0), (p) => near(p[0], 30), "join");
+    save("f2-gap-join", "Fusion F2: a gap joined", a.doc());
     await close(a);
   },
-  // The ready-made plate, 80 × 40 × 6: two holes through it as holes in its profile.
-  async "bracket-two-holes"() {
-    const a = await app(partDocument("plate", 80, 40, 6), designWorkspace);
-    save("bracket-two-holes", "Bracket with two holes", a.doc());
-    await close(a);
-  },
-  // A gear-like outline, 10 thick: 24 teeth, each tip an arc on r 50 over half a pitch (π/24), each root an arc on r 44 over the other
-  // half, joined by radial lines; every arc round the origin.
-  async gear() {
-    const N = 24;
-    const [R, r] = [50, 44];
-    let doc = partDocument("box", 40, 30, 20);
-    doc = { ...doc, timeline: { ...doc.timeline, features: [] } };
-    const made = addSketch(doc, "XY");
-    doc = made.doc;
-    const at = (radius: number, k: number): [number, number] => [radius * Math.cos((Math.PI * k) / N), radius * Math.sin((Math.PI * k) / N)];
-    // Corners round the circle in half-pitch steps k = 0 … 2N − 1: out at even k's tip start, then tip arc, down, root arc, up.
-    let first: string | null = null;
-    let last: string | null = null;
-    for (let k = 0; k < 2 * N; k += 2) {
-      const tipStart: [number, number] | string = last ?? at(R, k);
-      const tip = drawArc(doc, made.id, tipStart, at(R, k + 1), [0, 0]);
-      doc = tip.doc;
-      const arc = doc.sketches.find((s) => s.id === made.id)!.curves.find((c) => c.id === tip.id)! as { start: string; end: string; centre: string };
-      first ??= arc.start;
-      const down = drawLine(doc, made.id, arc.end, at(r, k + 1));
-      doc = down.doc;
-      const line = doc.sketches.find((s) => s.id === made.id)!.curves.find((c) => c.id === down.id)! as { end: string };
-      const rootEnd = k + 2 === 2 * N ? null : at(r, k + 2);
-      const root = drawArc(doc, made.id, line.end, rootEnd ?? at(r, 0), [0, 0]);
-      doc = root.doc;
-      const rootArc = doc.sketches.find((s) => s.id === made.id)!.curves.find((c) => c.id === root.id)! as { end: string };
-      const up = drawLine(doc, made.id, rootArc.end, k + 2 === 2 * N ? first : at(R, k + 2));
-      doc = up.doc;
-      const upLine = doc.sketches.find((s) => s.id === made.id)!.curves.find((c) => c.id === up.id)! as { end: string };
-      last = upLine.end;
-    }
-    doc = extrudeSketch(doc, made.id, 10).doc;
-    // Opened in the app and saved from there, so the file is what the app writes after its own rebuild.
-    const a = await app(doc, designWorkspace);
-    save("gear", "Gear", a.doc());
-    await close(a);
-  },
-  // An open box: an 80 × 60 × 3 floor and four walls 3 thick and 40 tall, each a rectangle sketched on the floor's top.
-  async enclosure() {
-    const a = await app(partDocument("box", 80, 60, 3), designWorkspace);
-    const walls: [[number, number], [number, number]][] = [[[0, 0], [80, 3]], [[0, 57], [80, 60]], [[0, 3], [3, 57]], [[77, 3], [80, 57]]];
-    for (const [from, to] of walls) {
-      await sketchOnFace(a, (p) => near(p[2], 3), [[0, 0, 3], [80, 60, 3]]);
-      await rectangle(a, from, to);
-      await extrude(a, 40);
-    }
-    save("enclosure", "Enclosure", a.doc());
-    await close(a);
-  },
-  // About 30 features (31 items): a 200 × 150 × 10 base, 14 blocks and posts on its top, one more post on the first block.
-  async "thirty-features"() {
-    const a = await app(partDocument("box", 200, 150, 10), designWorkspace);
-    for (let i = 0; i < 14; i++) {
-      const [cx, cy] = [20 + 40 * (i % 5), 25 + 50 * Math.floor(i / 5)];
-      await sketchOnFace(a, (p) => near(p[2], 10), [[0, 0, 10], [200, 150, 10]]);
-      if (i % 2 === 0) await rectangle(a, [cx - 10, cy - 10], [cx + 10, cy + 10]);
-      else await circle(a, [cx, cy], 8);
-      await extrude(a, 5 + i);
-    }
-    await sketchOnFace(a, (p) => near(p[2], 15));
-    await circle(a, [20, 25], 5);
-    await extrude(a, 3);
-    save("thirty-features", "Thirty features", a.doc());
-    await close(a);
-  },
+  // Step 35's models (35f1f): each a Cut of Body 2 from Body 1, Keep tools off.
+  "box-minus-box": () =>
+    blockAndTool("box-minus-box", "Box minus box", { plane: "XY", from: [-20, -15], to: [20, 15], d: 20 }, { plane: "XZ", from: [10, 10], to: [30, 30], d: 25 }, [(p) => near(p[2], 0), (p) => near(p[1], -25)]),
+  "far-wall-outside": () =>
+    blockAndTool("far-wall-outside", "Far wall outside", { plane: "XY", from: [0, 10], to: [40, 40], d: 20 }, { plane: "XZ", from: [10, 5], to: [30, 30], d: 40.0005, flip: true }, [(p) => near(p[2], 0), (p) => near(p[1], 0)]),
+  "hollow-box": () =>
+    blockAndTool("hollow-box", "Hollow box", { plane: "XY", from: [-20, -15], to: [20, 15], d: 20 }, { plane: "XZ", from: [-10, 5], to: [10, 15], d: 5 }, [(p) => near(p[2], 0), (p) => near(p[1], -5) && Math.abs(p[0]) <= 10 + 1e-9]),
+  "km-plate": () =>
+    blockAndTool("km-plate", "Plate a kilometre out", { plane: "XZ", from: [1000000, 5], to: [1000100, 15], d: 60, flip: true }, { plane: "XY", from: [1000020, 20], to: [1000050, 40], d: 10 }, [(p) => near(p[1], 60), (p) => near(p[2], 0)]),
+  // A click lands on the 1 µm grid, so the thin part comes from a typed extrude distance: the block 1.5 µm (refused) or 2.1 µm (builds) tall, its lower 1 µm cut.
+  // A Combine that can't be made is refused in its box and never added (as Fusion's), so the refused Combine on the
+  // timeline comes as a user's would: made at 2.1 µm, then the block edited down to 1.5 µm under it.
+  "micron-cube-halved": () =>
+    blockAndTool("micron-cube-halved", "Micron block halved", { plane: "XY", from: [0, 0.001], to: [0.001, 0.002], d: 0.0021 }, { plane: "XY", from: [-0.001, 0], to: [0.002, 0.003], d: 0.001 }, [(p) => Math.abs(p[2] - 0.0021) < 1e-9, (p) => Math.abs(p[0] + 0.001) < 1e-9], 1e-5, async (a) => {
+      const off = await a.menu("feature-15", "edit");
+      if (off !== null) throw new Error(`Edit feature is off: ${off}`);
+      (a.$("#edit-height") as HTMLInputElement).value = "0.0015";
+      a.$("#feature-edit-ok")!.click();
+      await a.settle();
+      if (a.$('.timeline-bar-item[data-item="feature-30"]')?.dataset.failed !== "true") throw new Error("the Combine still builds");
+    }),
+  "small-cube-halved": () =>
+    blockAndTool("small-cube-halved", "Small block halved", { plane: "XY", from: [0, 0.001], to: [0.001, 0.002], d: 0.0021 }, { plane: "XY", from: [-0.001, 0], to: [0.002, 0.003], d: 0.001 }, [(p) => Math.abs(p[2] - 0.0021) < 1e-9, (p) => Math.abs(p[0] + 0.001) < 1e-9], 1e-5),
 };
 
 const wanted = process.argv.slice(2);

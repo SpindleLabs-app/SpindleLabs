@@ -1,0 +1,5 @@
+/* Settings > Design: the grid size and Snap to grid new sketches start with (design-defaults.ts, settings.ts gridRows). */
+.settings-grid .grid-field { display: inline-flex; align-items: center; gap: var(--look-space-1); }
+.settings-grid .grid-size { width: 6em; }
+.settings-grid.grid-note { margin: 0; color: var(--text-dim); font-size: 0.9em; }
+.settings-grid.grid-note:empty { display: none; }

@@ -70,6 +70,11 @@ export function toCurve(sketch: Sketch, curve: SketchCurve, p: SketchXY): number
  * drawn on top), or null when none is that close.
  */
 export function curveAt(sketch: Sketch, p: SketchXY, reach: number): string | null {
+  return curveNear(sketch, p, reach)?.id ?? null;
+}
+
+/** `curveAt`'s curve with how far it is from `p`, or null. */
+export function curveNear(sketch: Sketch, p: SketchXY, reach: number): { id: string; d: number } | null {
   let best: string | null = null;
   let nearest = Infinity;
   for (const c of sketch.curves) {
@@ -79,7 +84,7 @@ export function curveAt(sketch: Sketch, p: SketchXY, reach: number): string | nu
       nearest = d;
     }
   }
-  return best;
+  return best === null ? null : { id: best, d: nearest };
 }
 
 /**

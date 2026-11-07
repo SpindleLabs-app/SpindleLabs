@@ -205,3 +205,29 @@ test("Move's handles (35e2c) go to the scene, and their drags to the pane that s
   a.onMovePointer = null;
   assert.equal(scene.onMovePointer, null);
 });
+
+test("issue #219: the view's menu on a body goes to the pane that set it most recently and still has one", () => {
+  // Three panes, so "the newest" (the last of three) differs from "the second" a wrong index would give.
+  const { scene, calls } = fakeScene();
+  const make = paneViewports(scene);
+  const [a, b, c] = [make(fakeView("a", calls)), make(fakeView("b", calls)), make(fakeView("c", calls))];
+  assert.equal(a.onMenu, null, "nothing set: null, not undefined");
+  assert.equal(scene.onMenu, undefined, "untouched until a pane sets one");
+  const [menuA, menuB, menuC] = [() => true, () => false, () => true];
+  a.onMenu = menuA;
+  assert.equal(scene.onMenu, menuA);
+  b.onMenu = menuB;
+  c.onMenu = menuC;
+  assert.equal(scene.onMenu, menuC, "the newest of three wins");
+  assert.deepEqual([a.onMenu, b.onMenu, c.onMenu], [menuA, menuB, menuC], "each pane keeps its own");
+  c.onMenu = null;
+  assert.equal(scene.onMenu, menuB, "c cleared: the next newest, b");
+  assert.equal(c.onMenu, null);
+  b.onMenu = undefined;
+  assert.equal(scene.onMenu, menuA, "b cleared with undefined too");
+  a.onMenu = menuA; // set again: still the only one
+  assert.equal(scene.onMenu, menuA);
+  a.onMenu = null;
+  assert.equal(scene.onMenu, null, "none left: null");
+  assert.equal(scene.onPick, null, "picking is separate");
+});

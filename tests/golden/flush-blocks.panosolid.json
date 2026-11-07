@@ -1,0 +1,262 @@
+{
+  "formatVersion": 2,
+  "links": [],
+  "materials": [],
+  "name": "Flush blocks",
+  "units": {
+    "length": "mm"
+  },
+  "workspaces": {
+    "design": {
+      "bodies": [
+        {
+          "id": "body:feature-1",
+          "number": 1
+        },
+        {
+          "id": "body:feature-15",
+          "number": 2
+        }
+      ],
+      "hidden": [
+        "sketch-2"
+      ],
+      "nextBody": 3,
+      "nextId": 17,
+      "profiles": [],
+      "sketches": [
+        {
+          "constraints": [
+            {
+              "a": "point-6",
+              "b": "point-8",
+              "id": "constraint-13",
+              "kind": "horizontal"
+            }
+          ],
+          "curves": [
+            {
+              "end": "point-4",
+              "id": "line-5",
+              "kind": "line",
+              "start": "point-3"
+            },
+            {
+              "end": "point-6",
+              "id": "line-7",
+              "kind": "line",
+              "start": "point-4"
+            },
+            {
+              "end": "point-8",
+              "id": "line-9",
+              "kind": "line",
+              "start": "point-6"
+            },
+            {
+              "end": "point-3",
+              "id": "line-10",
+              "kind": "line",
+              "start": "point-8"
+            }
+          ],
+          "face": {
+            "body": {
+              "normal": [
+                0,
+                0,
+                1
+              ],
+              "origin": [
+                0,
+                0,
+                0
+              ],
+              "xAxis": [
+                1,
+                0,
+                0
+              ]
+            },
+            "frame": {
+              "normal": [
+                0,
+                0,
+                1
+              ],
+              "origin": [
+                0,
+                0,
+                10
+              ],
+              "xAxis": [
+                1,
+                0,
+                0
+              ]
+            },
+            "side": 1
+          },
+          "id": "sketch-2",
+          "pins": [
+            {
+              "kind": "endpoint",
+              "name": "front+left&front+top&left+top",
+              "point": "point-3"
+            },
+            {
+              "kind": "endpoint",
+              "name": "front+right&front+top&right+top",
+              "point": "point-4"
+            }
+          ],
+          "points": [
+            {
+              "id": "point-3",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "id": "point-4",
+              "x": 40,
+              "y": 0
+            },
+            {
+              "id": "point-6",
+              "x": 40,
+              "y": 12
+            },
+            {
+              "id": "point-8",
+              "x": 0,
+              "y": 12
+            }
+          ]
+        }
+      ],
+      "timeline": {
+        "features": [
+          {
+            "dependsOn": [],
+            "id": "feature-1",
+            "intent": {
+              "parameters": {
+                "depth": 30,
+                "height": 10,
+                "width": 40
+              },
+              "summary": "Box: 40 × 30 × 10 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-1",
+                "label": "Box 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-1"
+            ],
+            "id": "sketch-2",
+            "intent": {
+              "parameters": {
+                "plane": "face:feature-1/top"
+              },
+              "summary": "Sketch 1 on a face of Box 1",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-1",
+                  "label": "Box 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "sketch-2",
+                "label": "Sketch 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-2"
+            ],
+            "id": "feature-15",
+            "intent": {
+              "parameters": {
+                "distance": 10,
+                "sketch": "sketch-2"
+              },
+              "summary": "Extrude Sketch 1 by 10 mm",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-2",
+                  "label": "Sketch 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-15",
+                "label": "Extrude 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-1",
+              "feature-15"
+            ],
+            "id": "feature-16",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "join",
+                "target": "body:feature-1",
+                "tools": [
+                  "body:feature-15"
+                ]
+              },
+              "summary": "Join Extrude 1 to Box 1",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-1",
+                  "label": "Box 1",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-15",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-16",
+                "label": "Combine 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          }
+        ]
+      },
+      "version": 8
+    }
+  }
+}

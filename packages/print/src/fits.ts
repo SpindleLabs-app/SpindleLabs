@@ -29,7 +29,7 @@
 // and then each peg's e_i = (M_i − s·d_i) / 2 and each hole's
 // c_i = (s·d_i − H_i) / 2.
 
-import type { NozzleType } from "./slice-print.ts";
+import type { NozzleType } from "./choices.ts";
 
 /** The test piece's sizes in mm: the plate's length, and the three sizes of hole and peg on it. */
 export const PIECE = { length: 120, sizes: [5, 10, 15] as const } as const;

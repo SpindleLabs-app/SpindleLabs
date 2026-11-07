@@ -11,12 +11,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { addConstraint, solverRequest, type Added } from "../src/constraints.ts";
-import { clickConstraint, constraintPickAt, dimensionWord, startConstraintTool } from "../src/constraint-tool.ts";
-import { partDocument, type DesignDocument, type Sketch } from "../src/document.ts";
+import { clickConstraint, constraintMarks, constraintPickAt, dimensionWord, selectAt, startConstraintTool } from "../src/constraint-tool.ts";
+import { partDocument, readDesignDocument, type DesignDocument, type Sketch } from "../src/document.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { editFeature } from "../src/feature-edit.ts";
 import { dragStep, dragTo, HELD } from "../src/point-drag.ts";
 import { BodyCache, followedDoc, rebuildTimeline } from "../src/rebuild.ts";
+import { clickAt, startTool } from "../src/sketch-tool.ts";
 import { addFaceSketch, addSketch, deleteCurve, drawArc, drawCircle, drawLine, drawRectangle, pinNewPoints } from "../src/sketch.ts";
 
 const kernel = nodeKernel();
@@ -246,4 +247,70 @@ test("a tap on the middle of a side shorter than the finger's reach picks the si
   assert.deepEqual(constraintPickAt(s, "horizontal", [0.5, 0.1], 5), { point: bottom.start });
   // Coincident and Fix take points only: the corner still.
   assert.ok("point" in constraintPickAt(s, "coincident", [3, 0.2], 5)!);
+});
+
+test("a rectangle drawn with the tool comes level and upright: a size on one side keeps it a rectangle", async () => {
+  // The beginner check (2026-11-06): a 30 × 20 rectangle had no constraints, so its bottom made 40 moved one corner and made a
+  // trapezoid. Drawn with the tool it now has Horizontal on its bottom and top and Vertical on its sides, as in Fusion.
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const one = clickAt(s0.doc, startTool("rectangle", s0.id), [0, 0]);
+  const two = clickAt(one.doc, one.tool, [30, 20]);
+  assert.ok(two.drew);
+  const s = sketchOf(two.doc, s0.id);
+  const sides = s.curves as { id: string; start: string; end: string }[];
+  assert.deepEqual(s.constraints.map((c) => c.kind), ["horizontal", "vertical", "horizontal", "vertical"]);
+  assert.deepEqual(s.constraints.map((c) => (c.kind === "horizontal" || c.kind === "vertical" ? [c.a, c.b] : [])), sides.map((l) => [l.start, l.end]));
+  // The bottom made 40, its start (0, 0) held: its end to (40, 0); the right side stays upright, so its top corner goes to (40, 20);
+  // the top stays level with it, so the rectangle is 40 × 20 with the left side where it was.
+  const d = ok(await addConstraint(kernel, two.doc, s0.id, { kind: "distance", a: sides[0].start, b: sides[0].end, value: 40 }));
+  const after = sketchOf(d.doc, s0.id);
+  assert.deepEqual(sides.map((l) => xy(after, l.start)), [[0, 0], [40, 0], [40, 20], [0, 20]]);
+  // The ids come from the one counter, each once.
+  assert.equal(new Set(s.constraints.map((c) => c.id)).size, 4);
+  assert.equal(two.doc.nextId, one.doc.nextId + 4 + 4 + 4);
+});
+
+test("a rectangle drawn onto a corner that follows a body leaves that side unconstrained; one over an existing rectangle adds nothing twice", () => {
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const one = clickAt(s0.doc, startTool("rectangle", s0.id), [0, 0]);
+  const two = clickAt(one.doc, one.tool, [30, 20]);
+  // The same rectangle again: every side a line already there, nothing drawn and no constraint twice.
+  const again = clickAt(clickAt(two.doc, startTool("rectangle", s0.id), [0, 0]).doc, clickAt(two.doc, startTool("rectangle", s0.id), [0, 0]).tool, [30, 20]);
+  assert.equal(sketchOf(again.doc, s0.id).constraints.length, 4);
+  // A pinned corner: the two sides through it get none (constraints can't name a point that follows a body).
+  const pinned = { ...two.doc, sketches: two.doc.sketches.map((s) => (s.id === s0.id ? { ...s, constraints: [], pins: [{ point: (s.curves[0] as { start: string }).start, kind: "endpoint" as const, name: "x", feature: "feature-1" }] } : s)) };
+  const over = clickAt(clickAt(pinned, startTool("rectangle", s0.id), [0, 0]).doc, clickAt(pinned, startTool("rectangle", s0.id), [0, 0]).tool, [10, 5]);
+  const s = sketchOf(over.doc, s0.id);
+  const corner = (s.curves[0] as { start: string }).start;
+  assert.ok(s.constraints.length === 2 && s.constraints.every((c) => c.kind !== "fix" && c.kind !== "diameter" && c.a !== corner && c.b !== corner), JSON.stringify(s.constraints));
+});
+
+test("a rectangle drawn from a point that gets pinned to a body keeps no constraint on that corner, so the design still opens", async () => {
+  // Found by the browser check: a rectangle from the origin had its corner pinned there after its Horizontal and Vertical
+  // were made, and the design then refused to open ("names point-3, which follows a body's edge"), so Undo and Redo failed.
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const one = clickAt(s0.doc, startTool("rectangle", s0.id), [0, 0]);
+  const two = clickAt(one.doc, one.tool, [30, 20]);
+  const pinned = pinNewPoints(s0.doc, two.doc, s0.id, [{ at: [0, 0], kind: "endpoint", name: "origin", feature: "feature-1" }]);
+  const s = sketchOf(pinned, s0.id);
+  const corner = s.pins![0].point;
+  // The bottom (corner to (30, 0)) and the left side ((0, 20) to the corner) lose theirs; the right side and the top keep theirs.
+  assert.deepEqual(s.constraints.map((c) => c.kind), ["vertical", "horizontal"]);
+  assert.ok(s.constraints.every((c) => c.kind !== "fix" && c.kind !== "diameter" && c.a !== corner && c.b !== corner));
+  assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(pinned))), pinned, "it saves and opens as it is");
+});
+
+test("Select picks a diagonal right under the pointer over a rectangle's own mark beside it; the mark when it is nearer", () => {
+  // A 20 × 10 rectangle with its Horizontal and Vertical, and its diagonal (0, 0)–(20, 10). Marks 4 mm across (a phone's zoom):
+  // the bottom's Horizontal bar is drawn above its middle (10, 0). At (10, 5) the diagonal is 0 away: it wins.
+  const s0 = addSketch(partDocument("box", 40, 30, 20));
+  const one = clickAt(s0.doc, startTool("rectangle", s0.id), [0, 0]);
+  const two = clickAt(one.doc, one.tool, [20, 10]);
+  const d = drawLine(two.doc, s0.id, (sketchOf(two.doc, s0.id).curves[0] as { start: string }).start, [20, 10]);
+  const s = sketchOf(d.doc, s0.id);
+  assert.equal(selectAt(s, [10, 5], 6, 4), d.id);
+  // Right on a mark's bar, away from every curve, the mark.
+  const [bar] = constraintMarks(s, 4).get(s.constraints[0].id)!;
+  const onBar: [number, number] = [(bar[0][0] + bar[1][0]) / 2, (bar[0][1] + bar[1][1]) / 2];
+  assert.equal(selectAt(s, onBar, 6, 4), s.constraints[0].id, `the bar's middle ${onBar}`);
 });

@@ -97,3 +97,25 @@ test("hand-worked: what a number box shows in inches", () => {
   assert.equal(boxShown(0.001, "in"), "0.0000394", "the smallest length, never in 1e-5 notation");
   assert.equal(boxShown(40, "mm"), "40", "millimetres are the whole value");
 });
+
+// U2c3: an item's summary said in inches for the browser, the timeline and the Feature line.
+test("summaryInUnit: each summary's lengths in inches, worked by hand (mm / 25.4)", async () => {
+  const { summaryInUnit } = await import("../src/model/units.ts");
+  // 40 / 25.4 = 1.5748 -> 1.575, 30 / 25.4 = 1.1811 -> 1.181, 20 / 25.4 = 0.7874 -> 0.787.
+  assert.equal(summaryInUnit("Box: 40 × 30 × 20 mm", "in"), "Box: 1.575 × 1.181 × 0.787 in");
+  assert.equal(summaryInUnit("Cylinder: ⌀20 × 30 mm", "in"), "Cylinder: ⌀0.787 × 1.181 in");
+  assert.equal(summaryInUnit("Sphere: ⌀25.4 mm", "in"), "Sphere: ⌀1 in");
+  assert.equal(summaryInUnit("Extrude Sketch 1 by 10 mm", "in"), "Extrude Sketch 1 by 0.394 in"); // 10 / 25.4 = 0.3937
+  assert.equal(summaryInUnit("Extrude Sketch 1 by 25.4 mm, flipped", "in"), "Extrude Sketch 1 by 1 in, flipped");
+  assert.equal(summaryInUnit("Extrude: Plate 60 × 20 mm, by 4 mm", "in"), "Extrude: Plate 2.362 × 0.787 in, by 0.157 in"); // 60 / 25.4 = 2.3622, 4 / 25.4 = 0.1575
+  assert.equal(summaryInUnit("Move Box 1 by (25.4, 0, -50.8) mm, turned 90° about Z", "in"), "Move Box 1 by (1, 0, -2) in, turned 90° about Z");
+});
+
+test("summaryInUnit: millimetres give the text back as it was, and nothing but the summary's own length places change", async () => {
+  const { summaryInUnit } = await import("../src/model/units.ts");
+  for (const text of ["Box: 40 × 30 × 20 mm", "Extrude Sketch 1 by 10 mm", "Sketch 1 on the XY plane", "Combine Box 1 and Box 2"]) assert.equal(summaryInUnit(text, "mm"), text);
+  // A name that holds a number and "mm" is not a length: only the places the summaries put one are changed.
+  assert.equal(summaryInUnit("Sketch 5 mm on the XY plane", "in"), "Sketch 5 mm on the XY plane");
+  assert.equal(summaryInUnit("Extrude Washer 5 mm by 25.4 mm", "in"), "Extrude Washer 5 mm by 1 in");
+  assert.equal(summaryInUnit("Combine Box 1 and Box 2", "in"), "Combine Box 1 and Box 2");
+});

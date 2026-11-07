@@ -54,7 +54,7 @@ export interface PrintRules {
 export const P1S_RULES: PrintRules = { overhangAngle: 45, lineWidth: 0.42, layerHeight: 0.2, bridgeLimit: 10, weakRatio: 0.5 };
 
 /** How close to the lowest point (mm) a triangle counts as lying on the plate: overhang.ts's ON_PLATE_MM. */
-export const ON_PLATE_MM = 0.01;
+const ON_PLATE_MM = 0.01;
 /** How far (mm) under a face material counts as holding it up, and over it as the part above. */
 export const TOUCH_MM = 0.05;
 /** How far from level (degrees) an underside may lean and still be bridged. */

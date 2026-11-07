@@ -157,6 +157,14 @@ export function qmdw4c() {
     }
 }
 
+export function r7w2kx(p0, p1, p2) {
+    const ret = wasm.r7w2kx(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function rk7wq2(p0, p1, p2) {
     const ret = wasm.rk7wq2(p0, p1, p2);
     if (ret[2]) {
