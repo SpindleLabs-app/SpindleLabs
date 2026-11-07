@@ -13,7 +13,7 @@ import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { closePanels, pickPlane, sheetsClearFor } from "./start.mjs";
+import { closePanels, openPanel, pickPlane, sheetsClearFor } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4293, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4293/?test-hooks";
@@ -96,6 +96,21 @@ async function sketchOnXY(page, tap) {
   await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on XY");
   await settle(page);
+  if (tap) await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
+  await halfMillimetreGrid(page, tap);
+}
+
+/**
+ * Grid snap on a 0.5 mm grid, so a click lands exactly on the point it aims at in every engine: WebKit and Firefox send
+ * the pointer on whole pixels, which put the hole's edge 0.2 mm off without it (WebKit CI: the plate 11285.70 mm³, not
+ * 11214.60). Every point these checks draw is on the 0.5 mm grid; the clicks that pick a region are not snapped.
+ */
+async function halfMillimetreGrid(page, tap) {
+  await openPanel(page, "properties", tap);
+  await page.fill("#sketch-grid", "0.5");
+  await page.press("#sketch-grid", "Enter");
+  await page.check("#sketch-grid-snap");
+  await closePanels(page, tap);
   if (tap) await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
 }
 
