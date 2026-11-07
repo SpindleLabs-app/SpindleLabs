@@ -1,0 +1,41 @@
+/* The export badge (solid-badge.ts): a small card at the top middle of the
+   3D view after Download STL, its round mark green (solid), red (not solid)
+   or grey (unfinished), its heading beside the mark, ✕ in its corner, a
+   line of detail and, when not solid, each problem with what it means.
+   Narrow on purpose, so it never covers the model; ":not(#none)" lifts a
+   rule over the base layout's "#workspace button" while every selector
+   still starts with .solid-badge. Taps and clicks go through the card to
+   the model under it (only ✕ takes them): a card left open after an export
+   never stops the next pick, on a phone above all. */
+.solid-badge { position: absolute; z-index: 3; left: 50%; top: 12px; transform: translateX(-50%); width: 420px; max-width: calc(100% - 32px); box-sizing: border-box; padding: 12px 44px 12px 52px; background: var(--look-float); color: var(--text); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); font-size: 13px; pointer-events: none; }
+.solid-badge[hidden] { display: none; }
+.solid-badge .solid-badge-mark { position: absolute; left: 12px; top: 12px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 700; color: var(--on-accent); background: var(--text-dim); }
+.solid-badge[data-state="solid"] .solid-badge-mark { background: var(--ok); }
+.solid-badge[data-state="problems"] .solid-badge-mark { background: var(--danger); }
+.solid-badge h2 { margin: 4px 0 6px; font-size: 15px; font-weight: 600; }
+.solid-badge[data-state="solid"] h2 { color: var(--ok); }
+.solid-badge[data-state="problems"] h2 { color: var(--danger); }
+.solid-badge .solid-badge-detail { margin: 0; color: var(--text-soft); line-height: 1.4; }
+.solid-badge .solid-badge-list { margin: 8px 0 0; padding-left: 18px; color: var(--text-soft); line-height: 1.4; }
+.solid-badge .solid-badge-list[hidden] { display: none; }
+.solid-badge .solid-badge-list strong { color: var(--text); font-weight: 600; }
+.solid-badge .solid-badge-close:not(#none) { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0; background: none; border: 1px solid transparent; border-radius: var(--look-radius-pill); color: var(--text-dim); font-size: 14px; line-height: 1; cursor: pointer; pointer-events: auto; }
+.solid-badge .solid-badge-close:not(#none):hover, .solid-badge .solid-badge-close:not(#none):focus-visible { color: var(--text); background: var(--fill-263142); border-color: var(--line-strong); }
+/* Phone width: the view's top holds the floating Browser and Properties
+   pills (left, 50 px tall) and the view cube (right, 8 + 96 px), so the
+   card sits under the cube across the view (as the start hint does,
+   e2e/phone-start.mjs), with a 44 px ✕, kept short: a solid card says
+   only its numbers, and a problem card leaves out its list (the heading
+   names the problems; their meanings stay in the overlay's legend). */
+@media (max-width: 640px) {
+  .solid-badge:not(#none) { top: 112px; left: 8px; right: 8px; transform: none; width: auto; max-width: none; padding: 10px 48px 10px 48px; }
+  .solid-badge .solid-badge-mark { left: 10px; top: 10px; }
+  .solid-badge .solid-badge-close:not(#none) { width: 44px; height: 44px; top: 2px; right: 2px; }
+  .solid-badge .solid-badge-list:not(#none) { display: none; }
+  .solid-badge[data-state="solid"] .solid-badge-why { display: none; }
+}
+/* Sideways phone (a short view): under the pills, left of the cube. */
+@media (max-width: 640px) and (max-height: 480px) {
+  .solid-badge:not(#none) { top: 56px; right: 112px; }
+  .solid-badge .solid-badge-detail { display: none; }
+}

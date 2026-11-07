@@ -19,6 +19,7 @@ export const entry = {
   solve_sketch: k.q4m8zt,
   sketch_regions: k.r7w2kx,
   export_stl: k.f5l94l,
+  check_solid: k.qz3hmr,
   body_build: k.guf4qz,
   body_view: k.p6rou1,
   body_stl: k.jgu9kn,
