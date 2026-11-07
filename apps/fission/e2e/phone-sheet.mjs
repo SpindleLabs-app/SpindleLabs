@@ -552,6 +552,15 @@ if (browserName === "chromium") {
     ...["browser", "properties"].filter((s) => document.getElementById("workspace").dataset[s] === "open"),
     ...(document.getElementById("assistant").hidden ? [] : ["assistant"]),
   ]);
+  // The app puts the other sheet away in its own resize handler, which can run just after the media query matches
+  // (merge-queue flake 2026-11-07: Properties still open at the first read): the open sheets once they equal `want`,
+  // or as they are after 5 s, for the same check.
+  const settled = async (page, want) => {
+    for (let end = Date.now() + 5000; ; await page.waitForTimeout(100)) {
+      const got = await sheets(page);
+      if (JSON.stringify(got) === JSON.stringify(want) || Date.now() > end) return got;
+    }
+  };
   const { page, context } = await open(375, 667);
   await page.tap("#properties-toggle");
   assert.deepEqual(await sheets(page), ["properties"]);
@@ -561,7 +570,7 @@ if (browserName === "chromium") {
   if (shots) await page.screenshot({ path: `${shots}/sheets-resize-1280.png` });
   await page.setViewportSize({ width: 375, height: 667 });
   await page.waitForFunction(() => matchMedia("(max-width: 640px)").matches);
-  assert.deepEqual(await sheets(page), ["assistant"], "narrowed again: only the AI sheet, opened last");
+  assert.deepEqual(await settled(page, ["assistant"]), ["assistant"], "narrowed again: only the AI sheet, opened last");
   if (shots) await page.screenshot({ path: `${shots}/sheets-resize-375.png` });
   // The other way: the AI panel opened wide, Files opened on the phone, widened and narrowed again: Files alone.
   await page.tap("#browser-toggle");
@@ -573,7 +582,7 @@ if (browserName === "chromium") {
   await page.click("#assistant-toggle"); // closed and opened again: still the last opened
   await page.setViewportSize({ width: 375, height: 667 });
   await page.waitForFunction(() => matchMedia("(max-width: 640px)").matches);
-  assert.deepEqual(await sheets(page), ["assistant"]);
+  assert.deepEqual(await settled(page, ["assistant"]), ["assistant"]);
   await context.close();
 }
 
