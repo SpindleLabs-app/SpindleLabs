@@ -1,0 +1,10 @@
+{
+  "seed": "11",
+  "check": "an edit rebuilt bodies that didn't change",
+  "what": "Design on the real kernel, from planted/run.ts's unplanted sessions (seed 11, shrunk; 2026-11-07, SL #360): the box duplicated, the box cut by its copy (refused: nothing would be left), then the box joined with the copy. The refused Cut had built the second kernel body it needs for an equal tool, then let it go, so the Join built it again although nothing changed. Fixed in rebuild.ts combineRun: a refused Combine holds the bodies it made, as a built one does.",
+  "steps": [
+    { "op": "add-duplicate", "pick": 0.859760857382397 },
+    { "op": "add-combine", "target": 0.31206964202261545, "tool": 0.8049962085230324, "operation": "cut", "keep": false },
+    { "op": "add-combine", "target": 0.3674647807430351, "tool": 0.8253991905120489, "operation": "join", "keep": false }
+  ]
+}

@@ -118,6 +118,8 @@ export type FeatureResult =
       touches?: KernelTouch[];
       /** A Combine whose result would be too thin (36d, the kernel's "thin-result"): where, in the world, for the same overlay. */
       thin?: KernelThin[];
+      /** A Combine refused: the bodies it made for a body picked twice (equal bodies), kept so the next rebuild needn't build them again. */
+      holds?: BodyHandle[];
     }
 
 /**
@@ -706,7 +708,7 @@ export async function rebuildTimeline(doc: DesignDocument, cache: BodyCache, cal
 /** The bodies a rebuild holds: each body as built, and those the Moves hold as they were before them. */
 const handlesOf = (build: TimelineBuild): BodyHandle[] => [
   ...Object.values(build.bodies).map((b) => b.handle),
-  ...Object.values(build.results).flatMap((r) => (r.status === "built" ? (r.holds ?? []) : [])),
+  ...Object.values(build.results).flatMap((r) => (r.status === "built" || r.status === "failed" ? (r.holds ?? []) : [])),
 ];
 
 /** `rebuildTimeline` without freeing anything: every result, its bodies in `cache` with whatever else is there. */
@@ -1126,6 +1128,7 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
   const places = new Map(doc.timeline.features.map((x, i) => [x.id, i] as const));
   const inputs: NamedBody[] = [];
   const built = new Map<BodyHandle, BuiltBody>();
+  const made: BodyHandle[] = []; // the bodies of its own an equal pick needed (below)
   for (const body of [target, ...tools]) {
     const maker = bodyItem(body)!;
     const r = done[maker];
@@ -1137,6 +1140,7 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
     // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
     const copies = inputs.filter((x) => x.handle === b.handle).length;
     const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+    if (own !== b) made.push(own.handle);
     built.set(own.handle, own);
     inputs.push(await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!));
   }
@@ -1152,13 +1156,15 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
   } catch (e) {
     if (timedOut(e)) throw e;
     if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) {
-      return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}) };
+      // Refused, it still holds the bodies it made for an equal pick, so the next rebuild needn't build them again
+      // (a body cut by its own Duplicate, then joined with it: SL #360's seed 11).
+      return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}), ...(made.length > 0 ? { holds: made } : {}) };
     }
     throw e;
   }
   const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
   const named = combineNames(f.id, op, t, ts, result, views);
-  if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}` };
+  if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
   const targetFeature = bodies[target].feature;
   for (const tool of keepTools ? [] : tools) delete bodies[tool];
   delete bodies[target];
