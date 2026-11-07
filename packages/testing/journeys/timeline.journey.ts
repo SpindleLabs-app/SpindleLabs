@@ -656,9 +656,10 @@ test("an edit rebuilds only what it changed, counted on the real kernel (24e): s
 /** The check each bug planted in Design's side must be caught by. */
 const DESIGN_CAUGHT_BY: Record<Exclude<DesignFault, "leak-bodies">, string> = {
   "no-settle": "the rebuild differs from the model",
-  // From 35 landing (11-06: Design's sessions make Combines) the first catch comes before any save: a session's
-  // model holds a kept shape the rebuild has dropped. Save and open still catches it in later seeds.
-  "save-drops-kept": "the rebuild differs from the model",
+  // From 35 landing (11-06: Design's sessions make Combines) the first catch came before any save: a session's
+  // model holds a kept shape the rebuild has dropped. With Duplicate drawn too (35e2m, 11-07) the sessions changed
+  // again and save and open catches it first once more (step 138 of the first seed that catches it).
+  "save-drops-kept": "save and open changed the rebuild",
   "cache-by-feature": "the rebuild differs from a rebuild from scratch",
   "scene-drops-body": "the rebuild differs from the model",
   "full-replay": "an edit rebuilt bodies that didn't change",
@@ -670,6 +671,8 @@ const DESIGN_CAUGHT_BY: Record<Exclude<DesignFault, "leak-bodies">, string> = {
   // From 26e's sessions (face sketches drawn too) the first catch is the marker moved to the start with no marker
   // already there: Design reads "start" as none, so it changes nothing where the model changes the document.
   "marker-start-ignored": "outcome differs from the model",
+  // 35e2: a copy put in past the marker is in another place in the timeline than the model's.
+  "duplicate-at-end": "the rebuild differs from the model",
 };
 
 /**

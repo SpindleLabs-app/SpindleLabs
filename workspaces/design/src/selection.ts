@@ -3,7 +3,7 @@
 // are unit-tested; workspace.ts applies them on every selection change.
 
 import type { Feature, GeometryReference, ViewportHighlight } from "@fission/core";
-import { bodyIdOf, bodyItem, builds, makesBody, partFeature, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, builds, ownShape, partFeature, type DesignDocument } from "./document.ts";
 import { readDesignReference, readProfileReference } from "./references.ts";
 import { bodyOf, findInScene, resolveInScene, sceneHit, type Scene, type ShownBody } from "./scene.ts";
 import { outlineSourceOf } from "./sketch.ts";
@@ -149,7 +149,7 @@ export function panelFocus(items: readonly GeometryReference[], scene: Scene | n
  */
 export function panelPart(items: readonly GeometryReference[], scene: Scene | null, doc: DesignDocument): Feature | null {
   const f = panelFocus(items, scene, doc)?.feature ?? null;
-  return f !== null && makesBody(f) && builds(doc, f) ? f : partFeature(doc);
+  return f !== null && ownShape(f) && builds(doc, f) ? f : partFeature(doc);
 }
 
 /**

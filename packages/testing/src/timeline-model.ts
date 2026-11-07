@@ -71,7 +71,7 @@
 // `faults` plants the bugs the session tests use to prove the harness
 // catches them (timeline-session.ts); real code never passes any.
 
-import { boxForm, combinable, combineBodies, curvedBody, faceMotion, findFace, formOf, isCurved, movedForm, sameKind, tagDesign, UnmodelledCombine, type CombineOperation } from "./timeline-combine.ts";
+import { boxForm, combinable, combineBodies, curvedBody, faceMotion, findFace, formOf, isCurved, copiedForm, movedForm, sameKind, tagDesign, UnmodelledCombine, type CombineOperation } from "./timeline-combine.ts";
 
 export { UnmodelledCombine, type CombineOperation };
 
@@ -141,10 +141,13 @@ export type ModelItem =
   /** A Move (35e2): `bodies` turned `turnZ` degrees about the upright line through `pivot`, then shifted by `shift` (mm); it makes no body. */
   | { id: string; kind: "move"; bodies: string[]; shift: Vec3; turnZ: number; pivot: Point; suppressed: boolean }
   /** A Combine (35f1d2): `target`'s body with `tool`'s (the bodies of those items), the tool used up unless `keep` (timeline-combine.ts). */
-  | { id: string; kind: "combine"; target: string; tool: string; operation: CombineOperation; keep: boolean; suppressed: boolean };
+  | { id: string; kind: "combine"; target: string; tool: string; operation: CombineOperation; keep: boolean; suppressed: boolean }
+  /** A Duplicate (35e2): a copy of `body` (an item's body) where it is at the Duplicate, a body of its own named by the Duplicate. */
+  | { id: string; kind: "duplicate"; body: string; suppressed: boolean };
 
 type MoveItem = Extract<ModelItem, { kind: "move" }>;
 type CombineItem = Extract<ModelItem, { kind: "combine" }>;
+type DuplicateItem = Extract<ModelItem, { kind: "duplicate" }>;
 
 /** An extrude's last shape: its sketch's shape and curve ids just before the sketch was lost, and the height it lay at when that was a face sketch (26e). */
 export interface Kept {
@@ -299,6 +302,8 @@ export type ConcreteOp =
   /** 35f1d2: a Combine of two items' bodies before where it goes in, and a Combine's operation changed. */
   | { op: "add-combine"; target: string; tool: string; operation: CombineOperation; keep: boolean }
   | { op: "set-combine"; item: string; operation: CombineOperation }
+  /** 35e2: a Duplicate of a built body before where it goes in. */
+  | { op: "add-duplicate"; body: string }
   | { op: "undo" }
   | { op: "redo" };
 
@@ -349,7 +354,9 @@ export type ModelFault =
   | "combine-tags-dropped"
   | "combine-first-piece"
   | "combine-face-moves-with-target"
-  | "combine-edge-tags-dropped";
+  | "combine-edge-tags-dropped"
+  | "duplicate-no-body"
+  | "duplicate-source-names";
 
 export const MODEL_FAULTS: readonly ModelFault[] = [
   "reorder-past-dependency",
@@ -393,6 +400,8 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "combine-first-piece",
   "combine-face-moves-with-target",
   "combine-edge-tags-dropped",
+  "duplicate-no-body",
+  "duplicate-source-names",
 ];
 
 /** The faults only a session with Combines (step 35, `LANDED`) can catch. */
@@ -424,7 +433,9 @@ export const dependsOn = (item: ModelItem): string[] =>
         ? [...item.bodies]
         : item.kind === "combine"
           ? [...new Set([item.target, item.tool])]
-          : [];
+          : item.kind === "duplicate"
+            ? [item.body]
+            : [];
 
 export const emptyDoc = (): ModelDoc => ({ nextId: 1, items: [], marker: null });
 
@@ -696,6 +707,7 @@ function build(item: ModelItem, byId: Map<string, ModelItem>, done: Record<strin
   if (item.kind === "sketch") return placeSketch(item, done, faults);
   if (item.kind === "move") return moveBodies(item, done, faults, place);
   if (item.kind === "combine") return combineRun(item, done, faults, place);
+  if (item.kind === "duplicate") return copyBody(item, done, faults, place);
   if (item.kind === "box") return { status: "built", body: boxForm(presetBody(item, faults), item.id, item.width, item.depth, item.height, place) };
   if (item.kind !== "extrude") return { status: "built", body: curvedBody(presetBody(item, faults)) };
   const sketch = byId.get(item.sketch);
@@ -759,6 +771,35 @@ function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: Re
       done[id] = { ...r, body: movedForm(r.body!, moved(r.body!, item, faults), item, place) };
     }
   return { status: "built" };
+}
+
+/**
+ * A Duplicate's result (35e2): greyed while its body's item is suppressed
+ * or greyed (Q3); failed naming that item when it is deleted, not built,
+ * or has no body (used up by a Combine); failed in words for a Combine's
+ * result (Design can't name a copy of one yet); else its own body, the
+ * source as it is here with every face and edge named by the Duplicate
+ * instead, so its volume, areas, lengths and centroids are the source's.
+ * What is done to the source after it never reaches it.
+ */
+function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
+  const by = greyedBy(done[item.body], item.body);
+  if (by !== null) return { status: "greyed", by };
+  const r = done[item.body];
+  if (r === undefined) return { status: "failed", cause: "deleted-input", input: item.body };
+  if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: item.body };
+  if (r.body.combined) return { status: "failed", cause: "error" };
+  // Planted bug ("duplicate-source-names"): the copy keeps its source's names.
+  const owner = faults.has("duplicate-source-names") ? null : item.id;
+  const name = (n: FaceName): FaceName => ({ ...n, feature: owner ?? n.feature, ...(n.tag ? { tag: n.tag.map(name) } : {}) });
+  const copy: ModelBody = {
+    ...r.body,
+    faces: r.body.faces.map((f) => ({ ...f, name: name(f.name) })),
+    edges: r.body.edges.map((e) => ({ ...e, name: { ...e.name, feature: owner ?? e.name.feature, faces: [name(e.name.faces[0]), name(e.name.faces[1])] } })),
+  };
+  // Planted bug ("duplicate-no-body"): the Duplicate builds but makes no body, as a Move.
+  if (faults.has("duplicate-no-body")) return { status: "built" };
+  return { status: "built", body: copiedForm(r.body, copy, item.id, place) };
 }
 
 /**
@@ -990,6 +1031,12 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
       }
       continue;
     }
+    if (item?.kind === "duplicate") {
+      // 35e2: a copy is no build of its own, the source's kernel body as it is here (rebuild.ts `copyBody`), its own from then on.
+      const from = chain.get(item.body);
+      if (res.status === "built" && from !== undefined) chain.set(id, from);
+      continue;
+    }
     if (item?.kind === "move" && res.status === "built") {
       // Each body it moves is built moved, under a key of its own; the body before is still held by the Move.
       for (const b of item.bodies) {
@@ -1070,6 +1117,7 @@ export function sizeKeys(item: ModelItem): SizeKey[] {
       return ["diameter"];
     case "move":
     case "combine":
+    case "duplicate":
       return [];
     case "sketch":
       return item.shape.kind === "circle" ? ["radius"] : item.shape.kind === "slot" ? ["length", "radius"] : [];
@@ -1263,6 +1311,11 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
     case "add-combine": {
       const id = newId(doc, "item", faults);
       insert(doc, { id, kind: "combine", target: op.target, tool: op.tool, operation: op.operation, keep: op.keep, suppressed: false });
+      return { kind: "done", ids: [id] };
+    }
+    case "add-duplicate": {
+      const id = newId(doc, "item", faults);
+      insert(doc, { id, kind: "duplicate", body: op.body, suppressed: false });
       return { kind: "done", ids: [id] };
     }
     case "set-combine": {

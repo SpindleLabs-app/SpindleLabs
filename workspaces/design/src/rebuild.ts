@@ -35,7 +35,7 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, combineBodies, extrudeOperation, isCombineItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, buildingItems, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -118,6 +118,8 @@ export type FeatureResult =
       touches?: KernelTouch[];
       /** A Combine whose result would be too thin (36d, the kernel's "thin-result"): where, in the world, for the same overlay. */
       thin?: KernelThin[];
+      /** A Combine refused: the bodies it made for a body picked twice (equal bodies), kept so the next rebuild needn't build them again. */
+      holds?: BodyHandle[];
     }
 
 /**
@@ -706,7 +708,7 @@ export async function rebuildTimeline(doc: DesignDocument, cache: BodyCache, cal
 /** The bodies a rebuild holds: each body as built, and those the Moves hold as they were before them. */
 const handlesOf = (build: TimelineBuild): BodyHandle[] => [
   ...Object.values(build.bodies).map((b) => b.handle),
-  ...Object.values(build.results).flatMap((r) => (r.status === "built" ? (r.holds ?? []) : [])),
+  ...Object.values(build.results).flatMap((r) => (r.status === "built" || r.status === "failed" ? (r.holds ?? []) : [])),
 ];
 
 /** `rebuildTimeline` without freeing anything: every result, its bodies in `cache` with whatever else is there. */
@@ -757,7 +759,7 @@ function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls
   const slow = new Set<Feature>();
   const building = buildingItems(doc);
   for (const f of doc.timeline.features) {
-    if (!makesBody(f) || !building.has(f) || skipped.has(f)) continue;
+    if (!ownShape(f) || !building.has(f) || skipped.has(f)) continue;
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
     if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
@@ -994,6 +996,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index, kernel);
     if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
+    if (isDuplicateItem(f)) return copyBody(f, done, bodies);
     if (!isSketchExtrude(f)) {
       const spec = specOf(doc, f);
       return made({ handle: await cache.body(spec), spec });
@@ -1068,6 +1071,34 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   return { status: "built", holds };
 }
 
+/**
+ * A Duplicate's result (step 35e2): greyed while the item that made its
+ * body is suppressed or greyed (Q3); failed naming it when it was deleted
+ * or isn't built, or when an earlier Combine used the body up; else its
+ * copy, the body as it is here (moved by the Moves before, sized as its
+ * item is now), held under the Duplicate's own body id with the Duplicate
+ * as its feature, so its faces are named by the Duplicate. The kernel body
+ * is the source's own (a body is never changed, only built anew), so a copy
+ * costs nothing to build. A Combine's result has no spec to name a copy's
+ * faces from, so it can't be copied yet.
+ */
+function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies): FeatureResult {
+  const [maker] = f.dependsOn;
+  const r = done[maker];
+  if (r?.status === "suppressed") return { status: "greyed", by: maker };
+  if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  const label = f.provenance.self.label;
+  const name = f.provenance.from.find((x) => x.id === maker)?.label ?? maker;
+  if (r === undefined) return { status: "failed", cause: "deleted-input", input: maker, message: `${name} was deleted, so ${label} has nothing to copy` };
+  if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${name} is not built, so ${label} can't copy it` };
+  const b = bodies[duplicatedBody(f)];
+  if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't copy ${name}: an earlier Combine used it up or left no such piece` };
+  if (b.spec === null) return { status: "failed", cause: "error", message: `${label} can't copy a Combine's result yet: that comes with the next kernel release` };
+  const id = bodyIdOf(f.id);
+  bodies[id] = { feature: f.id, handle: b.handle, spec: b.spec, ...(b.curves ? { curves: b.curves } : {}) };
+  return { status: "built", bodies: [id] };
+}
+
 /** Combine's operations as the kernel names them. */
 const KERNEL_OP: Record<string, BooleanOp> = { join: "union", cut: "subtract", intersect: "intersect" };
 
@@ -1120,6 +1151,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // Worked on a copy, so a step refused leaves every body as it was.
   const work: Bodies = Object.assign(Object.create(null), bodies);
   const holds: BodyHandle[] = [];
+  const made: BodyHandle[] = []; // the bodies of its own an equal pick needed (below)
   const ids: string[] = [];
   let firstPiece = 1;
   for (const step of steps) {
@@ -1139,6 +1171,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
       const copies = inputs.filter((x) => x.handle === b.handle).length;
       const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+      if (own !== b) made.push(own.handle);
       built.set(own.handle, own);
       inputs.push(await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!));
     }
@@ -1154,13 +1187,15 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     } catch (e) {
       if (timedOut(e)) throw e;
       if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) {
-        return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}) };
+        // Refused, it still holds the bodies it made for an equal pick, so the next rebuild needn't build them again
+        // (a body cut by its own Duplicate, then joined with it: SL #360's seed 11).
+        return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}), ...(made.length > 0 ? { holds: made } : {}) };
       }
       throw e;
     }
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
     const named = combineNames(f.id, op, t, ts, result, views, firstPiece);
-    if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}` };
+    if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];

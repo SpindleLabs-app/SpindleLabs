@@ -276,8 +276,8 @@ export function settledText(text) {
   try {
     const file = JSON.parse(text);
     const design = file?.workspaces?.design;
-    // Design data as the app saves it (version 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
-    if (!design || ![7, 8, 9, 10].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
+    // Design data as the app saves it (version 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
+    if (!design || ![7, 8, 9, 10, 11].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
     Object.assign(design, expectedView(design).numbered);
     return JSON.stringify(file);
   } catch {

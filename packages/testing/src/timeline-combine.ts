@@ -144,6 +144,26 @@ export function movedForm(from: ModelBody, to: ModelBody, move: { id: string; tu
   return to;
 }
 
+/**
+ * What a Duplicate does to a body's form (35e2): `to`, the copy, is the
+ * same block where `from` is now, its faces named by the Duplicate `id`
+ * (each keeping its role and its place in the box's own order) and made at
+ * the Duplicate's place `place`, as Design names a copy's faces by the
+ * Duplicate. A curved body's copy is curved; one the model has no single
+ * block for is left with no form (a Combine with it is not modelled).
+ */
+export function copiedForm(from: ModelBody, to: ModelBody, id: string, place: number): ModelBody {
+  const k = kinds.get(from);
+  if (k === "curved") return curvedBody(to);
+  if (k === undefined || k.steps.length !== 1 || k.steps[0].feature.kind !== "block") return to;
+  const b = k.steps[0].feature;
+  const faces = Object.fromEntries(FACINGS.map((f) => [f, { name: fullName({ feature: id, role: parseName(b.faces![f].name).role }), made: [place, b.faces![f].made[1]] }])) as unknown as BlockFeature["faces"];
+  const feature: BlockFeature = { kind: "block", id, rect: [...b.rect], z: [...b.z], operation: "new", faces };
+  kinds.set(to, { steps: [{ at: place, feature }], body: bodyName(id) });
+  for (const f of to.faces) regions.set(f, boxRegion(feature, f.name.role));
+  return to;
+}
+
 /** Where a block's face named by `role` lies (a box's faces, found by their name's role among the block's six). */
 function boxRegion(b: BlockFeature, role: FaceRole): readonly Rect3[] {
   const d = FACINGS.find((f) => parseName(b.faces![f].name).role === role);

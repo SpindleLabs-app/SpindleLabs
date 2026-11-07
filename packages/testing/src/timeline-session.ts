@@ -109,7 +109,9 @@ export type WaitingOp =
   /** 35e2: a Move of the `pick`th built body before where it goes in, and, when `other` is a number, the `other`th of the rest too; turned `turnZ` degrees about the upright through `pivot`, then shifted. */
   | { op: "add-move"; pick: number; other: number | null; shift: Vec3; turnZ: number; pivot: Point }
   /** 35e2: the `pick`th Move's numbers changed; 35e2i: its bodies too when `swap` is a number (one or two of the built bodies before it). */
-  | { op: "set-move"; pick: number; shift: Vec3; turnZ: number; pivot: Point; swap: number | null };
+  | { op: "set-move"; pick: number; shift: Vec3; turnZ: number; pivot: Point; swap: number | null }
+  /** 35e2: a Duplicate of the `pick`th built body before where it goes in. */
+  | { op: "add-duplicate"; pick: number };
 
 /** One waiting move: when it turns on, how often it is drawn, and what the model and Design must answer once it does. */
 export interface WaitingMove {
@@ -164,6 +166,15 @@ export const WAITING_MOVES: readonly WaitingMove[] = [
       const s = r.next();
       return { op: "set-move", pick: s, ...moveNumbers(r), swap: s < 2 / 3 ? null : 3 * s - 2 };
     },
+  },
+  {
+    op: "add-duplicate",
+    from: "35e2",
+    weight: 3,
+    does: "Duplicate (35e2): pick a body shown before where the new item goes; Modify ▾ Duplicate makes a copy of it there, a new timeline item and a body of its own.",
+    model:
+      "The copy is the body as it is at the Duplicate (moved by the Moves before), every face and edge named by the Duplicate; it follows its source's sizes but no Move after it. Greyed while the source's item is suppressed or greyed, failed naming it when deleted, not built or used up (timeline-model.ts `copyBody`).",
+    draw: (r) => ({ op: "add-duplicate", pick: r.next() }),
   },
   {
     op: "add-combine",
@@ -482,6 +493,16 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
       const picked = k < bodies.length || bodies.length === 1 ? [bodies[k % bodies.length]] : [bodies[k - bodies.length], bodies[(k + 1) % bodies.length]];
       return edit({ op: "set-move", item: m.id, shift: step.shift, turnZ: step.turnZ, pivot: step.pivot, bodies: picked });
     }
+    case "add-duplicate": {
+      // As in the app: a body shown, built before where the new item goes.
+      const built = rebuild(doc);
+      const before = new Set(doc.items.slice(0, insertAt(doc)).map((i) => i.id));
+      const body = choose(
+        built.order.filter((id) => before.has(id) && built.results[id].status === "built" && (built.results[id] as { body?: unknown }).body !== undefined),
+        step.pick,
+      );
+      return body === undefined ? null : edit({ op: "add-duplicate", body });
+    }
     case "add-combine": {
       // As in the app: two bodies shown, built before where the new item goes; of those, the ones the model answers
       // exactly or a curved one (refused in words), never a flat one it has no boolean for (timeline-combine.ts).
@@ -667,6 +688,8 @@ function translateOp(op: ConcreteOp, to: (id: string) => string): ConcreteOp {
       return { ...op, target: to(op.target), tool: to(op.tool) };
     case "set-combine":
       return { ...op, item: to(op.item) };
+    case "add-duplicate":
+      return { ...op, body: to(op.body) };
     default:
       return op;
   }

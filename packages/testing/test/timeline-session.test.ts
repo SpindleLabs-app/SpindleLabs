@@ -54,7 +54,7 @@ test("seeded sessions on the model pass, and reach every kind of outcome", async
   for (const seed of SEEDS) for (const [k, v] of Object.entries(await session(() => modelSubject(), seed))) total[k] = (total[k] ?? 0) + v;
   if (process.env.FISSION_SEED) return; // one seed alone needn't reach everything
   const wanted = [
-    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref", "add-move", "set-move"].map((o) => `op:${o}`),
+    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref", "add-move", "set-move", "add-duplicate"].map((o) => `op:${o}`),
     "unchanged:undo",
     "unchanged:redo",
     "refused:before-dependency",
@@ -127,15 +127,19 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "combine-refusal-changes": "the rebuild differs from the model",
   // Pieces of one face left untagged carry one name: the subject's own rebuild shows it.
   "combine-tags-dropped": "two faces share a name",
-  // The first carrier taken for a split face: the sessions meet one only rarely (a reference held from before a Combine
-  // that splits its face into pieces alike); timeline-combine.test.ts catches it by hand too.
-  "combine-first-piece": "a reference guessed between pieces",
+  // The first carrier taken for a split face: from 35e2's Duplicate the sessions' first catch (seed 6) is a held reference
+  // sent to the wrong piece; a guess between pieces alike is caught by hand in timeline-combine.test.ts.
+  "combine-first-piece": "a reference was lost",
   "combine-face-moves-with-target": "the rebuild differs from the model",
-  "combine-edge-tags-dropped": "the rebuild differs from the model",
+  // From 35e2's Duplicate the first catch (seed 6) is the untagged edges sharing a name; seed 15's is the model's.
+  "combine-edge-tags-dropped": "two edges share a name",
+  // 35e2: a copy keeping its source's names shares every one of them with it.
+  "duplicate-source-names": "two faces share a name",
+  "duplicate-no-body": "the rebuild differs from the model",
 };
 
 /** Faults the first 24 seeds don't reach, and the seeds that do (found by searching 1 to 200; search again if the sessions change). */
-const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-first-piece": [95n] };
+const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-face-moves-with-target": [77n] };
 
 /** The first seed whose session the planted bug fails, and how. */
 async function firstFailure(make: () => TimelineSubject, late: readonly bigint[] = []): Promise<{ seed: bigint; failure: TimelineFailure } | null> {
@@ -154,10 +158,11 @@ for (const fault of MODEL_FAULTS)
     assert.equal(found.failure.check, CAUGHT_BY[fault], found.failure.message);
   });
 
-// Seed 3 until 35 and 36 landed (11-06): Design's sessions then make Combines, so the sessions changed; 65 is the first seed (of 1 to 400)
-// whose session the model catches this way, every one before it caught on save and open first.
-test("dropped kept shapes are caught by the model too, when the save changes nothing shown (seed 65)", async () => {
-  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(65n, 150)))?.check, "the rebuild differs from the model");
+// Seed 3 until 35 and 36 landed (11-06): Design's sessions then make Combines, so the sessions changed (65 then); with Duplicate's
+// add-duplicate drawn too (35e2m) they changed again: 9 is the first seed (of 1 to 400) whose session the model catches this way,
+// every one before it caught on save and open first.
+test("dropped kept shapes are caught by the model too, when the save changes nothing shown (seed 9)", async () => {
+  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(9n, 150)))?.check, "the rebuild differs from the model");
 });
 
 test("without a rebuild from scratch, a stale cache is still caught by the model", async () => {
