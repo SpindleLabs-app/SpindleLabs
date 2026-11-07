@@ -9,9 +9,9 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle, StlFile } from "@fission/core";
-import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, makesPieces, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
+import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, makesPieces, MOVE_PARAMS, type DesignDocument } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
-import { madeAfter, movedBodies, moveValues, type MoveValues } from "./move.ts";
+import { factorOf, madeAfter, movedBodies, moveValues, type MoveBox, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { bodyOf, type Scene } from "./scene.ts";
 import { itemName } from "./timeline-edits.ts";
@@ -85,8 +85,10 @@ function turned(q: number[], k: 0 | 1 | 2, deg: number) {
 /**
  * `p` turned and shifted as a Move of `v` turns and shifts a body
  * (moveMotions, rebuild.ts): about the line through the pivot along X, then
- * Y, then Z, each counter-clockwise looking down its axis, then shifted.
- * With `vector` a direction (a normal) is only turned.
+ * Y, then Z, each counter-clockwise looking down its axis, then (Scale,
+ * step 35e2) sized by its factor about the pivot, then shifted. With
+ * `vector` a direction (a normal) is only turned: a scale above 0 sizes
+ * every way alike, so it turns no direction.
  */
 export function movedPoint(p: readonly number[], v: MoveValues, vector = false): Point {
   const pivot = vector ? [0, 0, 0] : [v.pivotX, v.pivotY, v.pivotZ];
@@ -95,14 +97,16 @@ export function movedPoint(p: readonly number[], v: MoveValues, vector = false):
   turned(q, 1, v.turnY);
   turned(q, 2, v.turnZ);
   if (vector) return q as Point;
-  return [q[0] + pivot[0] + v.x, q[1] + pivot[1] + v.y, q[2] + pivot[2] + v.z];
+  const f = factorOf(v);
+  return [f * q[0] + pivot[0] + v.x, f * q[1] + pivot[1] + v.y, f * q[2] + pivot[2] + v.z];
 }
 
-/** `p` put back where it was before a Move of `v` (movedPoint undone): shifted back, then turned back about Z, Y, then X. */
+/** `p` put back where it was before a Move of `v` (movedPoint undone): shifted back, sized back about the pivot, then turned back about Z, Y, then X. */
 export function unmovedPoint(p: readonly number[], v: MoveValues, vector = false): Point {
   const pivot = vector ? [0, 0, 0] : [v.pivotX, v.pivotY, v.pivotZ];
   const shift = vector ? [0, 0, 0] : [v.x, v.y, v.z];
-  const q = [0, 1, 2].map((k) => p[k] - shift[k] - pivot[k]);
+  const f = vector ? 1 : factorOf(v);
+  const q = [0, 1, 2].map((k) => (p[k] - shift[k] - pivot[k]) / f);
   turned(q, 2, -v.turnZ);
   turned(q, 1, -v.turnY);
   turned(q, 0, -v.turnX);
@@ -253,7 +257,8 @@ export function draggedValues(start: MoveValues, handle: MoveHandle, amount: num
 }
 
 /** What each box is called when it isn't a number: "Type the X distance in mm." */
-export const MOVE_BOX_WORDS: Record<MoveParam, string> = {
+export const MOVE_BOX_WORDS: Record<MoveBox, string> = {
+  scale: "scale factor, a number above 0",
   x: "X distance in mm",
   y: "Y distance in mm",
   z: "Z distance in mm",
@@ -270,7 +275,7 @@ export const MOVE_BOX_WORDS: Record<MoveParam, string> = {
  * number. An empty box counts as 0 (Ben, 2026-10-28: as Extrude does, so the
  * preview and the handles stay up while a box is cleared to type in it).
  */
-export function readMoveBoxes(typed: Partial<Record<MoveParam, string>>): { values: MoveValues } | { bad: MoveParam } {
+export function readMoveBoxes(typed: Partial<Record<MoveBox, string>>): { values: MoveValues } | { bad: MoveBox } {
   const values = {} as MoveValues;
   for (const k of MOVE_PARAMS) {
     const text = (typed[k] ?? "").trim();
@@ -278,7 +283,11 @@ export function readMoveBoxes(typed: Partial<Record<MoveParam, string>>): { valu
     if (!Number.isFinite(n)) return { bad: k };
     values[k] = n;
   }
-  return { values };
+  // The scale factor (step 35e2): an empty or missing box scales by 1 (no scaling), as an empty distance moves by 0; 0 or less is no factor.
+  const text = (typed.scale ?? "").trim();
+  const f = text === "" ? 1 : Number(text);
+  if (!Number.isFinite(f) || f <= 0) return { bad: "scale" };
+  return { values: f === 1 ? values : { ...values, scale: f } };
 }
 
 /**
@@ -286,11 +295,13 @@ export function readMoveBoxes(typed: Partial<Record<MoveParam, string>>): { valu
  * ten times the kernel's model space (1e8 mm, which OK checks). Past that
  * the moved points overflow what the view can draw (a 1e308 mm Move gave
  * the view NaN sizes and the body vanished, weak-spot hunt 10-29), so the
- * body is drawn unmoved, as for a box half typed.
+ * body is drawn unmoved, as for a box half typed. A scale factor (step 35e2)
+ * past a billion times either way is drawn unmoved too: the kernel refuses
+ * it all told (kernel 0.33.40), so OK says why.
  */
 export const MOVE_PREVIEW_LIMIT = 1e9;
 export const previewable = (v: MoveValues): boolean =>
-  (["x", "y", "z", "pivotX", "pivotY", "pivotZ"] as const).every((k) => Math.abs(v[k]) <= MOVE_PREVIEW_LIMIT);
+  (["x", "y", "z", "pivotX", "pivotY", "pivotZ"] as const).every((k) => Math.abs(v[k]) <= MOVE_PREVIEW_LIMIT) && factorOf(v) <= MOVE_PREVIEW_LIMIT && factorOf(v) >= 1 / MOVE_PREVIEW_LIMIT;
 
 /** A number as a box shows it: rounded to a nanometre (the kernel's 10 nm tolerance is far coarser), with no "-0". */
 export const boxText = (n: number): string => String(Math.round(n * 1e6) / 1e6 + 0);

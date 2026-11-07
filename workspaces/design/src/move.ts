@@ -13,10 +13,16 @@
 // `moveMotions` what the kernel is asked to do.
 
 import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
-import { bodyItem, counted, freshName, isPiece, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
+import { bodyItem, counted, freshName, isPiece, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, MOVE_SCALE, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
 
-/** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm). */
-export type MoveValues = Record<MoveParam, number>;
+/** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm), and (Scale, step 35e2) the scale factor about the pivot, 1 when left out. */
+export type MoveValues = Record<MoveParam, number> & { scale?: number };
+
+/** A box of the Move panel: one of a Move's numbers, or the Scale tool's factor. */
+export type MoveBox = MoveParam | typeof MOVE_SCALE;
+
+/** A Move's scale factor: 1 (no scaling) when it has none. */
+export const factorOf = (v: MoveValues): number => v.scale ?? 1;
 
 /** No move: nothing shifted or turned, about the origin. */
 export const NO_MOVE: MoveValues = { x: 0, y: 0, z: 0, turnX: 0, turnY: 0, turnZ: 0, pivotX: 0, pivotY: 0, pivotZ: 0 };
@@ -27,13 +33,30 @@ export const MOVE_STEP = "Move bodies";
 /** The undo step a new Rotate is recorded as. */
 export const ROTATE_STEP = "Rotate bodies";
 
-/** The words a Move's summary and the timeline row say: "Move Box 1 by (10, 0, 0) mm, turned 90° about Z"; a Rotate's start "Rotate". */
-export function moveSummary(labels: readonly string[], v: MoveValues, verb: "Move" | "Rotate" = "Move"): string {
+/** The undo step a new Scale is recorded as. */
+export const SCALE_STEP = "Scale bodies";
+
+/** The word a Move item of each tool's summary and name start with. */
+export const MOVE_VERBS = { move: "Move", rotate: "Rotate", scale: "Scale" } as const satisfies Record<MoveKind, string>;
+type MoveVerb = (typeof MOVE_VERBS)[MoveKind];
+
+/** The tool whose word `words` (a summary or a name) start with ("Scale 2", "Rotate Box 1 …"), else Move's. */
+const verbIn = (words: string): MoveVerb => (words.startsWith("Rotate ") ? "Rotate" : words.startsWith("Scale ") ? "Scale" : "Move");
+
+/**
+ * The words a Move's summary and the timeline row say: "Move Box 1 by (10, 0, 0) mm, turned 90° about Z"; a Rotate's start "Rotate", a
+ * Scale's "Scale" ("Scale Box 1 by 2× about (0, 0, 0) mm").
+ */
+export function moveSummary(labels: readonly string[], v: MoveValues, verb: MoveVerb = "Move"): string {
   const what = labels.length === 1 ? labels[0] : `${labels.length} bodies`;
   const shift = v.x !== 0 || v.y !== 0 || v.z !== 0 ? ` by (${v.x}, ${v.y}, ${v.z}) mm` : "";
   const turns = (["X", "Y", "Z"] as const).flatMap((a) => (v[`turn${a}`] !== 0 ? [`${v[`turn${a}`]}° about ${a}`] : []));
   const turned = turns.length > 0 ? `${shift ? "," : ""} turned ${turns.join(", then ")}` : "";
-  return `${verb} ${what}${shift}${turned}${shift || turned ? "" : verb === "Move" ? " (not moved yet)" : " (not turned yet)"}`;
+  const f = factorOf(v);
+  const about = `about (${v.pivotX}, ${v.pivotY}, ${v.pivotZ}) mm`;
+  if (verb === "Scale") return `Scale ${what}${f !== 1 ? ` by ${f}× ${about}` : " (not scaled yet)"}${turned ? `,${turned.replace(/^,/, "")}` : ""}${shift ? `, moved${shift}` : ""}`;
+  const scaled = f !== 1 ? `${shift || turned ? "," : ""} scaled ${f}× ${about}` : "";
+  return `${verb} ${what}${shift}${turned}${scaled}${shift || turned || scaled ? "" : verb === "Move" ? " (not moved yet)" : " (not turned yet)"}`;
 }
 
 /**
@@ -47,14 +70,18 @@ export function moveKindOf(f: Feature): MoveKind {
   const v = moveValues(f);
   const shifts = v.x !== 0 || v.y !== 0 || v.z !== 0;
   const turns = v.turnX !== 0 || v.turnY !== 0 || v.turnZ !== 0;
+  // Scale (step 35e2): one that scales and doesn't shift, or one made by Scale that does nothing yet; its panel shows any turns too.
   if (shifts) return "move";
+  if (factorOf(v) !== 1 || f.intent.summary.startsWith("Scale ")) return "scale";
   return turns || f.intent.summary.startsWith("Rotate ") ? "rotate" : "move";
 }
 
 /** A Move's numbers, read from its intent (checked when the file was read). */
 export function moveValues(f: Feature): MoveValues {
   if (!isMoveItem(f)) throw new Error(`${f.provenance.self.label} is not a move`);
-  return Object.fromEntries(MOVE_PARAMS.map((k) => [k, f.intent.parameters[k] as number])) as MoveValues;
+  const v = Object.fromEntries(MOVE_PARAMS.map((k) => [k, f.intent.parameters[k] as number])) as MoveValues;
+  const scale = f.intent.parameters[MOVE_SCALE];
+  return scale === undefined ? v : { ...v, scale: scale as number };
 }
 
 const DEGREES = Math.PI / 180;
@@ -65,13 +92,17 @@ const DEGREES = Math.PI / 180;
  * when there is one. Nothing turned or shifted is left out, so a Move of
  * nothing asks for nothing. Whole turns come off an angle before it becomes
  * radians (`%` on doubles is exact): 1e20° times π/180 had lost the digits
- * saying where in the turn it was (clumsy hunt 2026-11-04).
+ * saying where in the turn it was (clumsy hunt 2026-11-04). A scale (step
+ * 35e2) comes after the turns, about the same pivot, so it sizes the
+ * bodies where the turns left them; the shift is last.
  */
 export function moveMotions(v: MoveValues): Motion[] {
   const pivot: [number, number, number] = [v.pivotX, v.pivotY, v.pivotZ];
   const axes = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] } as const;
   const turns: Motion[] = (["X", "Y", "Z"] as const).flatMap((a) => (v[`turn${a}`] === 0 ? [] : [{ turn: { pivot, axis: [...axes[a]], angle: (v[`turn${a}`] % 360) * DEGREES } }]));
-  return v.x === 0 && v.y === 0 && v.z === 0 ? turns : [...turns, { move: [v.x, v.y, v.z] }];
+  const f = factorOf(v);
+  const sized: Motion[] = f === 1 ? turns : [...turns, { scale: { about: [...pivot], factor: f } }];
+  return v.x === 0 && v.y === 0 && v.z === 0 ? sized : [...sized, { move: [v.x, v.y, v.z] }];
 }
 
 /** `spec` moved by `motions` too: a moved body's list grows (the kernel takes a shape inside one `moved` only); nothing to do gives `spec` itself. */
@@ -81,10 +112,14 @@ export function movedSpec(spec: BodySpec, motions: readonly Motion[]): BodySpec 
   return { moved: { body: spec, moves: [...motions] } };
 }
 
-/** `values` checked: every one a finite number. */
+/** `values` checked: every one a finite number, the scale (when given) above 0; a scale of 1 is left out, as the file leaves it out. */
 function checked(values: MoveValues): MoveValues {
   for (const k of MOVE_PARAMS) if (typeof values[k] !== "number" || !Number.isFinite(values[k])) throw new Error(`a move needs ${k} as a number, not ${shown(values[k])}`);
-  return Object.fromEntries(MOVE_PARAMS.map((k) => [k, values[k]])) as MoveValues;
+  const v = Object.fromEntries(MOVE_PARAMS.map((k) => [k, values[k]])) as MoveValues;
+  const f = values.scale;
+  if (f === undefined || f === 1) return v;
+  if (typeof f !== "number" || !Number.isFinite(f) || f <= 0) throw new Error(`a scale needs a factor above 0, not ${shown(f)}`);
+  return { ...v, scale: f };
 }
 
 /** The bodies Move `move` moves, by body id (35eb), as the file lists them (its `bodies`, version 6), in its order. */
@@ -124,10 +159,9 @@ export function insertMove(doc: DesignDocument, bodies: readonly string[], value
   const items = bodiesFor(doc, bodies);
   const v = checked(values);
   const id = `feature-${doc.nextId}`;
-  const verb = kind === "rotate" ? "Rotate" : "Move";
-  // Counted as before for a Move (every Move item but the Rotates); a Rotate counts the Rotates.
-  const rotates = (f: Feature) => f.provenance.self.label.startsWith("Rotate ");
-  const label = freshName(verb, doc.timeline.features.filter((f) => isMoveItem(f) && rotates(f) === (kind === "rotate")).length, takenNames(doc));
+  const verb = MOVE_VERBS[kind];
+  // Counted as before for a Move (every Move item but the Rotates and Scales); a Rotate counts the Rotates, a Scale the Scales.
+  const label = freshName(verb, doc.timeline.features.filter((f) => isMoveItem(f) && verbIn(f.provenance.self.label) === verb).length, takenNames(doc));
   const labels = items.map((f) => f.provenance.self.label);
   const feature: Feature = {
     id,
@@ -176,10 +210,10 @@ export function changedMove(doc: DesignDocument, id: string, values: MoveValues,
   const items = bodies === undefined ? null : bodiesBefore(doc, old, bodies);
   const held = movedBodies(old);
   const sameBodies = items === null || (bodies!.length === held.length && bodies!.every((b) => held.includes(b)));
-  if (sameBodies && MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k])) return doc;
+  if (sameBodies && MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k]) && old.intent.parameters[MOVE_SCALE] === v.scale) return doc;
   const kept = sameBodies ? null : items!;
   const labels = kept ? kept.map((b) => b.label) : held.map((b) => bodyItem(b)!).map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
-  const verb = old.intent.summary.startsWith("Rotate ") ? "Rotate" : "Move";
+  const verb = verbIn(old.intent.summary);
   const intent = { ...old.intent, parameters: { ...v, bodies: kept ? [...bodies!] : held }, summary: moveSummary(labels, v, verb) };
   const feature: Feature = kept
     ? { ...old, intent, dependsOn: makersOf(bodies!), provenance: { ...old.provenance, from: kept.map((b) => ({ workspace: "design", id: b.id, label: b.label })) } }

@@ -11,8 +11,8 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { bodyChoices, operationNote, tickedBodies, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, pastedBodies } from "./duplicate.ts";
-import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
+import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, pastedBodies } from "./duplicate.ts";
+import { changedMove, factorOf, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, SCALE_STEP, type MoveBox, type MoveValues } from "./move.ts";
 import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
@@ -139,12 +139,19 @@ interface Inspecting {
   noExplode(): string | null;
 }
 
-/** Duplicate in Modify ▾ (step 35e2): what it does, and why it is off. */
+/** Duplicate, Mirror body and Scale in Modify ▾ (step 35e2): what they do, and why Duplicate and Mirror are off. */
 interface Duplicating {
   run(): void;
-  /** Why it can't be chosen now (nothing picked), or null. */
+  /** Why it can't be chosen now (nothing picked), or null: Mirror body's too. */
   off(): string | null;
+  /** Mirror body: a mirrored copy of each picked body across origin plane `plane`. */
+  mirror(plane: SketchPlane): void;
+  /** Scale: opens the Move panel as Scale. */
+  scale(): void;
 }
+
+const SCALE_TITLE = "Scale: make bodies bigger or smaller by a factor you type (2 doubles every size), about a pivot. Pick the bodies, then OK. A Scale in the timeline, at the marker.";
+const mirrorTitle = (plane: SketchPlane) => `Mirror body: a mirror image of the picked bodies across the ${plane} plane, as new bodies. A Mirror in the timeline, at the marker.`;
 
 const DUPLICATE_TITLE = "Duplicate: copy the picked bodies where they are, then move the copies. A copy follows its body's sizes. A Duplicate in the timeline, at the marker.";
 
@@ -257,10 +264,13 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       items: [
         { id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove },
         { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate },
+        { id: "modify-menu-scale", label: "Scale", icon: "scale", title: SCALE_TITLE, run: duplicate.scale },
         { id: "modify-menu-duplicate", label: "Duplicate", icon: "duplicate", title: DUPLICATE_TITLE, off: duplicate.off() ?? undefined, run: duplicate.run },
         ...(combining ? [{ id: "modify-menu-combine", label: "Combine", icon: "combine" as const, title: combineTitle, run: onCombine }] : []),
       ],
     },
+    // Mirror body (step 35e2): across an origin plane for now; a face of the body as the plane comes with construction planes.
+    { heading: "Mirror body", items: SKETCH_PLANES.map((plane) => ({ id: `modify-menu-mirror-${plane.toLowerCase()}`, label: `Across ${plane}`, icon: "mirror" as const, title: mirrorTitle(plane), off: duplicate.off()?.replace("Duplicate", "Mirror") ?? undefined, run: () => duplicate.mirror(plane) })) },
     { items: comingItems("Modify").filter((i) => !combining || i.id !== "coming-combine") },
   ];
   const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
@@ -539,7 +549,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     exploded: () => explodeSpread !== null,
     noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff });
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -1168,8 +1178,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * at the marker (`insertDuplicates`), one undo step, then, as Insert does,
    * the Move panel opens on the copies so they can be slid off their bodies
    * straight away (Fusion's copy and paste); Cancel leaves them where they are.
+   * With `mirror` (Mirror body) each copy is mirrored across that origin
+   * plane, already away from its body, so the copies are only picked.
    */
-  async function duplicateBodies(bodies?: readonly string[]) {
+  async function duplicateBodies(bodies?: readonly string[], mirror?: SketchPlane) {
     const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
     if (picked.length === 0) return;
     leaveExtrude();
@@ -1179,17 +1191,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch(false);
     let added: ReturnType<typeof insertDuplicates>;
     try {
-      added = insertDuplicates(designDoc(), picked);
+      added = insertDuplicates(designDoc(), picked, mirror);
     } catch (err) {
       return panel.showError(err instanceof Error ? err.message : String(err));
     }
     ctx.selection.clear();
-    await update(DUPLICATE_STEP, undefined, added.doc);
+    await update(mirror === undefined ? DUPLICATE_STEP : MIRROR_STEP, undefined, added.doc);
     const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
     const copies = copiesOf(added.ids).filter((b) => shownNow.has(b));
     if (copies.length === 0 || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
     ctx.selection.set(copies.map(bodyReference));
-    startMove();
+    if (mirror === undefined) startMove();
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -3111,7 +3123,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Snap (35e2d) while it picks: null when off, else the face or edge to snap once picked (on body `body`, as the scene shows it). */
   let snapping: { from: { body: string; part: SnapPart } | null } | null = null;
   function showMoveHint() {
-    moveHint.textContent = snapping ? (snapping.from === null ? SNAP_FROM : SNAP_TO) : moveBox.kind === "rotate" ? "Rotate: click or tap the bodies to turn" : "Move: click or tap the bodies to move";
+    moveHint.textContent = snapping ? (snapping.from === null ? SNAP_FROM : SNAP_TO) : moveBox.kind === "rotate" ? "Rotate: click or tap the bodies to turn" : moveBox.kind === "scale" ? "Scale: click or tap the bodies to scale" : "Move: click or tap the bodies to move";
     if (moveBox.shown) moveBox.snapping(snapping && moveHint.textContent);
     moveHint.hidden = !(shown && moveBox.shown && (snapping !== null || (picksBodies() && moveBodies.length === 0)));
     viewport.element.dataset.moveSnap = snapping ? (snapping.from === null ? "from" : "to") : ""; // read by the e2e test
@@ -3505,7 +3517,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     moveBodies = pickedBodies(ctx.selection.items, lastScene);
     const [pivotX, pivotY, pivotZ] = startPivot(moveBodies, lastScene);
-    moveBox.show({ id: null, kind, name: kind === "rotate" ? "Rotate" : "Move", bodies: bodyLabels(moveBodies), values: { ...NO_MOVE, pivotX, pivotY, pivotZ } });
+    moveBox.show({ id: null, kind, name: MOVE_VERBS[kind], bodies: bodyLabels(moveBodies), values: { ...NO_MOVE, pivotX, pivotY, pivotZ } });
     pickMoveBodies();
   }
 
@@ -3724,10 +3736,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * (`insertMove` at the marker, or `changedMove`), checked by building the
    * design on the kernel (`refusedMove`: a body moved out past model space
    * is refused with the kernel's words) and recorded as one undo step,
-   * "Move bodies" or "Edit Move 1". A new Move that moves nothing, or an
+   * "Move bodies" or "Edit Move 1". A new Move that moves, turns and scales nothing, or an
    * edit that changes nothing, closes the panel and records nothing.
    */
-  async function finishMove(typed: Record<MoveParam, string>) {
+  async function finishMove(typed: Record<MoveBox, string>) {
     if (!moveBox.shown) return;
     const id = moveBox.editing;
     const before = designDoc();
@@ -3738,7 +3750,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let moved: string;
     try {
       if (id === null) {
-        if (v.x === 0 && v.y === 0 && v.z === 0 && v.turnX === 0 && v.turnY === 0 && v.turnZ === 0 && moveBodies.length > 0) return leaveMove();
+        // A Scale of 2 moves nothing yet changes everything (the browser check found it closing as if nothing was asked).
+        if (v.x === 0 && v.y === 0 && v.z === 0 && v.turnX === 0 && v.turnY === 0 && v.turnZ === 0 && factorOf(v) === 1 && moveBodies.length > 0) return leaveMove();
         ({ doc: next, id: moved } = insertMove(before, moveBodies, v, moveBox.kind));
       } else [next, moved] = [changedMove(before, id, v, moveBodies), id];
     } catch (e) {
@@ -3759,7 +3772,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (designDoc() !== before) return moveBox.showError(MOVE_CHANGED);
     if (refused !== null) return moveBox.showError(refused);
     if (id === null) ctx.selection.clear();
-    menuHost.record(id === null ? (moveBox.kind === "rotate" ? ROTATE_STEP : MOVE_STEP) : editStep(before, id), next);
+    menuHost.record(id === null ? { move: MOVE_STEP, rotate: ROTATE_STEP, scale: SCALE_STEP }[moveBox.kind] : editStep(before, id), next);
   }
 
   /** The pointer rounded by the kernel: onto the grid with grid snap on, else where it is to within half a pixel (snap.ts `rounding`). */

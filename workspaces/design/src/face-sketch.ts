@@ -197,7 +197,13 @@ function spun(v: readonly number[], k: readonly number[], angle: number): Vec3 {
 /**
  * Where a body's moves (its spec's, in order: kernel-types.ts `Motion`) put
  * the body's own frame, the world's: its origin shifted and turned about
- * each pivot line, its axes turned. Null when nothing moved it (no moves,
+ * each pivot line, its axes turned. A scale (step 35e2) takes the origin
+ * nearer to or further from its centre and leaves the axes; a mirror
+ * reflects the origin and both axes in its plane, so the frame stays the
+ * body's own though its handedness turned over: a point's parts along x,
+ * y = normal × x and normal are those of its mirror image with y's sign
+ * changed, the same on both sides of `carried`, so a sketch on a mirrored
+ * copy still lands on its face. Null when nothing moved it (no moves,
  * or a spec that is not moved), so a sketch on a body never moved keeps no
  * `body` and is placed exactly as before 35e2h.
  */
@@ -210,6 +216,20 @@ export function bodyFrame(spec: BodySpec): Plane | null {
   for (const m of moves) {
     if ("move" in m) {
       o = add(o, m.move);
+      continue;
+    }
+    if ("scale" in m) {
+      const c = m.scale.about;
+      o = add(scale([o[0] - c[0], o[1] - c[1], o[2] - c[2]], m.scale.factor), c);
+      continue;
+    }
+    if ("mirror" in m) {
+      const k = unit(m.mirror.normal);
+      const q = m.mirror.point;
+      const flip = (v: Vec3, off: number) => add(v, scale(k, -2 * off));
+      o = flip(o, dot([o[0] - q[0], o[1] - q[1], o[2] - q[2]], k));
+      x = flip(x, dot(x, k));
+      n = flip(n, dot(n, k));
       continue;
     }
     const k = unit(m.turn.axis);

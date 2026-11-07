@@ -9,13 +9,16 @@
 // 24e edit with its undo step's name, or refused with the message shown
 // (`barEdit`). Behaviour copied from the reference app's timeline.
 
-import { buildingItems, greyedBy, greyedItems, isSketchItem, type DesignDocument } from "./document.ts";
+import type { Feature } from "@fission/core";
+import { buildingItems, greyedBy, greyedItems, isDuplicateItem, isMoveItem, isSketchItem, type DesignDocument } from "./document.ts";
+import { moveKindOf } from "./move.ts";
+import { mirrorOf } from "./duplicate.ts";
 import { deleteItem, itemName, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS } from "./timeline-edits.ts";
 import { dragItem } from "./timeline-reorder.ts";
 import { hideCard, showCard } from "./timeline-card.ts";
 import type { Scene } from "./scene.ts";
 
-export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "feature";
+export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "scale" | "mirror" | "feature";
 
 export interface TimelineBarItem {
   id: string;
@@ -40,6 +43,13 @@ export interface TimelineBarItem {
 }
 
 const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine", duplicate: "duplicate" };
+
+/** An item's icon by its type; a Scale (a Move that opens as Scale) and a Mirror (a Duplicate across a plane) get their own (step 35e2). */
+function iconOf(f: Feature): TimelineIcon {
+  if (isMoveItem(f) && moveKindOf(f) === "scale") return "scale";
+  if (isDuplicateItem(f) && mirrorOf(f) !== undefined) return "mirror";
+  return Object.hasOwn(ICON_OF, f.intent.type) ? ICON_OF[f.intent.type] : "feature";
+}
 
 /**
  * The bar's items and where the marker stands: `marker` items come before
@@ -71,7 +81,7 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
       id: f.id,
       label: `${i + 1}. ${itemName(f)}`,
       description: describe(f.intent.summary),
-      icon: Object.hasOwn(ICON_OF, f.intent.type) ? ICON_OF[f.intent.type] : "feature",
+      icon: iconOf(f),
       suppressed: f.suppressed,
       rolledBack: i >= at,
       greyed: by === undefined ? null : (label.get(by) ?? by),
@@ -350,6 +360,10 @@ const ICONS: Record<TimelineIcon, string> = {
   combine: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>',
   // A Duplicate (35e2): a square in front, its copy behind it and up to the right.
   duplicate: '<rect x="3" y="9" width="12" height="12" rx="1"/><path d="M9 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-5"/>',
+  // A Scale (35e2): a small square in the corner of a bigger one, an arrow out along the diagonal.
+  scale: '<rect x="3" y="13" width="8" height="8" rx="1"/><path d="M3 9V4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-5M13 11l6-6M15 5h4v4"/>',
+  // A Mirror (35e2): a triangle and its mirror image either side of an upright line.
+  mirror: '<path d="M3 19l6-14v14zM21 19l-6-14v14zM12 2v20"/>',
   feature: '<circle cx="12" cy="12" r="7"/>',
 };
 

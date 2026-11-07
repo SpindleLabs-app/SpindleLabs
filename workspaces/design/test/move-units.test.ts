@@ -36,12 +36,13 @@ test("millimetres: the boxes are as before and the legends say mm and °", () =>
   assert.equal(panel.typed.x, "12.5");
   assert.equal(box("x").value, "12.5");
   const legends = [...slot.querySelectorAll(".move-panel-legend")].map((e) => e.textContent);
-  assert.deepEqual(legends, ["Distance (mm)", "Angle (°)", "Pivot (mm)"]);
+  // Scale's factor (step 35e2) has no unit: "×" in either.
+  assert.deepEqual(legends, ["Distance (mm)", "Angle (°)", "Scale (×)", "Pivot (mm)"]);
 });
 
 test("inches: a typed 1 is 25.4 mm outside the box; setValue, the pivot and the legends follow the unit; angles stay degrees", () => {
   const { panel, slot, box, typeIn } = setup("in");
-  assert.deepEqual([...slot.querySelectorAll(".move-panel-legend")].map((e) => e.textContent), ["Distance (in)", "Angle (°)", "Pivot (in)"]);
+  assert.deepEqual([...slot.querySelectorAll(".move-panel-legend")].map((e) => e.textContent), ["Distance (in)", "Angle (°)", "Scale (×)", "Pivot (in)"]);
   typeIn("x", "1");
   assert.equal(panel.typed.x, "25.4", "1 in x 25.4 = 25.4 mm");
   panel.setValue("y", 50.8); // a handle drag, in millimetres

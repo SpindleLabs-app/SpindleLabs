@@ -150,7 +150,7 @@ test("a Move read from a file is checked: its numbers and its bodies", () => {
   assert.throws(() => readDesignDocument(file({}, { ...NO_MOVE, x: "5" })), { message: "Design move feature-3: x 5 is not a number" });
   const { turnZ: _, ...noTurn } = NO_MOVE;
   assert.throws(() => readDesignDocument(file({}, noTurn)), { message: "Design move feature-3: turnZ undefined is not a number" });
-  assert.throws(() => readDesignDocument(file({}, { ...NO_MOVE, scale: 2 })), { message: 'Design move feature-3 has a number "scale" a move doesn\'t have' });
+  assert.throws(() => readDesignDocument(file({}, { ...NO_MOVE, squash: 2 } as never)), { message: 'Design move feature-3 has a number "squash" a move doesn\'t have' });
   assert.throws(() => readDesignDocument(file({ dependsOn: [] })), { message: "Design move feature-3 moves no body" });
   assert.throws(() => readDesignDocument(file({ dependsOn: ["feature-1", "feature-1"] })), { message: "Design move feature-3 moves body:feature-1 twice" });
   // A body deleted since reads (the rebuild fails the move naming it), but only under the counter, so no new body takes its id.
@@ -168,7 +168,7 @@ test("a Move read from a file is checked: its numbers and its bodies", () => {
 test("hand-worked: version 6 lists a Move's bodies by body id, and the reader checks the list against dependsOn", () => {
   // The version 3 file above, read: its Move of feature-1 gains bodies ["body:feature-1"] (version 6, 35ec), dependsOn kept.
   const read = readDesignDocument(file({}));
-  assert.equal(read.version, 11);
+  assert.equal(read.version, 12);
   assert.deepEqual(read.timeline.features[1].intent.parameters.bodies, ["body:feature-1"]);
   assert.deepEqual(read.timeline.features[1].dependsOn, ["feature-1"]);
   // Saved and opened again: the same.

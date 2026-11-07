@@ -7,15 +7,35 @@
 // Duplicate. Picking several bodies makes one Duplicate each, in one undo
 // step. The document change is `insertDuplicates`, a pure function; the
 // rebuild builds the copy (rebuild.ts `copyBody`).
+//
+// Mirror body (step 35e2) is a Duplicate whose `mirror` names an origin
+// plane ("XY", "XZ" or "YZ"): the copy is the body's mirror image across it
+// (a mirrored body, kernel 0.33.40, inside out never: the kernel turns its
+// faces round). Its faces keep the names they had ("side:line-2" is the
+// same side, now on the other hand), so what was sketched on the source is
+// found on the copy the same way. A face of the body as the plane comes
+// later (with step 59's construction planes).
 
-import type { Feature } from "@fission/core";
-import { bodyIdOf, bodyItem, counted, freshName, insertAt, insertItem, isDuplicateItem, isPiece, makesBody, numberBodies, shown, takenNames, type DesignDocument } from "./document.ts";
+import type { Feature, Motion } from "@fission/core";
+import { bodyIdOf, bodyItem, counted, freshName, insertAt, insertItem, isDuplicateItem, isPiece, makesBody, numberBodies, shown, SKETCH_PLANES, takenNames, type DesignDocument, type SketchPlane } from "./document.ts";
 
 /** The undo step new Duplicates are recorded as. */
 export const DUPLICATE_STEP = "Duplicate bodies";
 
-/** What a Duplicate's summary and the timeline row say: "Copy of Box 1". */
-export const duplicateSummary = (source: string): string => `Copy of ${source}`;
+/** The undo step new mirrored copies are recorded as. */
+export const MIRROR_STEP = "Mirror bodies";
+
+/** What a Duplicate's summary and the timeline row say: "Copy of Box 1", or a Mirror's "Mirror of Box 1 across the XY plane". */
+export const duplicateSummary = (source: string, mirror?: SketchPlane): string => (mirror === undefined ? `Copy of ${source}` : `Mirror of ${source} across the ${mirror} plane`);
+
+/** The origin plane Duplicate `f` mirrors its copy across (Mirror body), or undefined for a plain copy. */
+export const mirrorOf = (f: Feature): SketchPlane | undefined => f.intent.parameters.mirror as SketchPlane | undefined;
+
+/** The unit normal of each origin plane: the axis it doesn't hold. */
+const PLANE_NORMALS: Record<SketchPlane, [number, number, number]> = { XY: [0, 0, 1], XZ: [0, 1, 0], YZ: [1, 0, 0] };
+
+/** What the kernel is asked to do to a copy mirrored across origin plane `plane`: reflect it in the plane through the origin square to the axis the plane doesn't hold. */
+export const mirrorMotion = (plane: SketchPlane): Motion => ({ mirror: { point: [0, 0, 0], normal: [...PLANE_NORMALS[plane]] } });
 
 /** Whether the design numbers body `id` (a Combine's piece is a body once `bodies` lists it). */
 const numbered = (doc: DesignDocument, id: string): boolean => (doc.bodies ?? []).some((b) => b.id === id);
@@ -27,8 +47,9 @@ const numbered = (doc: DesignDocument, id: string): boolean => (doc.bodies ?? []
  * changing nothing, unless each is a body made before the marker, each
  * picked once, at least one.
  */
-export function insertDuplicates(doc: DesignDocument, bodies: readonly string[]): { doc: DesignDocument; ids: string[] } {
-  if (bodies.length === 0) throw new Error("pick at least one body to duplicate");
+export function insertDuplicates(doc: DesignDocument, bodies: readonly string[], mirror?: SketchPlane): { doc: DesignDocument; ids: string[] } {
+  if (mirror !== undefined && !SKETCH_PLANES.includes(mirror)) throw new Error(`${shown(mirror)} is not an origin plane (XY, XZ or YZ)`);
+  if (bodies.length === 0) throw new Error(mirror === undefined ? "pick at least one body to duplicate" : "pick at least one body to mirror");
   const end = insertAt(doc);
   const sources = bodies.map((b, i) => {
     const item = bodyItem(b);
@@ -44,11 +65,12 @@ export function insertDuplicates(doc: DesignDocument, bodies: readonly string[])
   const ids: string[] = [];
   for (const [i, source] of sources.entries()) {
     const id = `feature-${next.nextId}`;
-    const label = freshName("Copy", next.timeline.features.filter(isDuplicateItem).length, takenNames(next));
+    // Copies count the copies, Mirrors the Mirrors.
+    const label = freshName(mirror === undefined ? "Copy" : "Mirror", next.timeline.features.filter((f) => isDuplicateItem(f) && (mirrorOf(f) === undefined) === (mirror === undefined)).length, takenNames(next));
     const name = isPiece(bodies[i]) ? `a piece of ${source.provenance.self.label}` : source.provenance.self.label;
     const feature: Feature = {
       id,
-      intent: { type: "duplicate", parameters: { body: bodies[i] }, summary: duplicateSummary(name) },
+      intent: { type: "duplicate", parameters: mirror === undefined ? { body: bodies[i] } : { body: bodies[i], mirror }, summary: duplicateSummary(name, mirror) },
       provenance: { self: { workspace: "design", id, label }, from: [{ workspace: "design", id: source.id, label: source.provenance.self.label }] },
       dependsOn: [source.id],
       suppressed: false,

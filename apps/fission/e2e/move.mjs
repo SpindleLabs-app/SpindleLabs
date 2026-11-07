@@ -132,8 +132,8 @@ try {
         let p = await panel(page);
         assert.deepEqual([p.title, p.bodies, p.pick, p.pivot, p.error], ["Move", null, true, "Pivot: centre of the bodies", null], "nothing picked yet: it says how");
         assert.equal(await page.isVisible("#move-hint"), true, "and over the view");
-        // Nothing picked: the pivot is the origin, every box 0.
-        assert.deepEqual(p.boxes, { x: "0", y: "0", z: "0", turnX: "0", turnY: "0", turnZ: "0", pivotX: "0", pivotY: "0", pivotZ: "0" });
+        // Nothing picked: the pivot is the origin, every box 0, and Scale's factor (step 35e2, hidden in Move) 1.
+        assert.deepEqual(p.boxes, { x: "0", y: "0", z: "0", turnX: "0", turnY: "0", turnZ: "0", pivotX: "0", pivotY: "0", pivotZ: "0", scale: "1" });
         // The middle of the box's top, (20, 15, 20): a click there picks the body, not its top face.
         await pressAt(page, [20, 15, 20], tap);
         await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked as a body");
