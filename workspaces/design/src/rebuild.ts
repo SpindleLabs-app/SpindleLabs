@@ -35,11 +35,11 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
-import { combineNames, designNames, resolveFaceName, type NamedBody } from "./boolean-names.ts";
+import { combineNames, designNames, resolveFaceName, shownFaces, type NamedBody } from "./boolean-names.ts";
 import { frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
@@ -98,6 +98,10 @@ export type FeatureResult =
       constraints?: { message: string };
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
+      /** A Combine's or an operation extrude's pieces (35f1) by id, each with the shown names of its faces as the item made them: what the data remembers a piece by when it is first numbered (hunt 11-06). */
+      pieceFaces?: Record<string, string[]>;
+      /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
+      pieces?: { message: string; renumbered: string[] };
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -1159,6 +1163,12 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const made: BodyHandle[] = []; // the bodies of its own an equal pick needed (below)
   const ids: string[] = [];
   let firstPiece = 1;
+  // Each Combine piece the data numbered with its faces (hunt 11-06): it stays on the piece with those faces. An operation
+  // extrude's pieces are numbered by its own order of them, as before (editing an extrude has no way yet to confirm them).
+  const remembers = isCombineItem(f);
+  const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
+  const pieceFaces: Record<string, string[]> = {};
+  const renumbered: string[] = [];
   for (const step of steps) {
     const inputs: NamedBody[] = [];
     const built = new Map<BodyHandle, BuiltBody>();
@@ -1199,7 +1209,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       throw e;
     }
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
-    const named = combineNames(f.id, op, t, ts, result, views, firstPiece);
+    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
@@ -1208,13 +1218,27 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
       work[nb.id] = { feature: nb.id === step.target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, ...(frames && { frames }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
-      if (nb.id !== step.target) firstPiece++;
+      if (nb.id !== step.target) {
+        firstPiece++;
+        if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
+      }
     }
+    for (const id of named.renumbered) if (!renumbered.includes(id)) renumbered.push(id);
     holds.push(...inputs.map((x) => x.handle));
   }
   for (const id of Object.keys(bodies)) if (!(id in work)) delete bodies[id];
   Object.assign(bodies, work);
-  return { status: "built", bodies: ids.filter((id) => id in work), holds };
+  const kept = ids.filter((id) => id in work);
+  const faces = Object.fromEntries(Object.entries(pieceFaces).filter(([id]) => id in work));
+  // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
+  const shown = renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
+  const warn = shown.length === 0 ? {} : { pieces: { renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
+  return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn };
+}
+
+/** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */
+export function builtPieceFaces(build: Pick<TimelineBuild, "results">): Map<string, string[]> {
+  return new Map(Object.values(build.results).flatMap((r) => (r.status === "built" && r.pieceFaces ? Object.entries(r.pieceFaces) : [])));
 }
 
 /**

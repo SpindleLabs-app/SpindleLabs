@@ -77,9 +77,14 @@ function combineFields(target: string, tools: readonly string[], operation: Comb
  * The design with Combine `id` changed to these bodies and choices, in its
  * place (its id and name kept): refused as `insertCombine` refuses, a body
  * made after the Combine counting as one after the marker does. Choices
- * that change nothing give back the same design.
+ * that change nothing give back the same design. A change forgets the
+ * faces `forget` (the pieces the last build warned had changed, hunt
+ * 11-06) were numbered with, so the next build records them afresh:
+ * editing the Combine is how the person confirms those pieces as they are,
+ * and its warning goes. Every other piece keeps its faces, so none whose
+ * faces still match moves to another number.
  */
-export function changedCombine(doc: DesignDocument, id: string, target: string, tools: readonly string[], operation: CombineOperation, keepTools: boolean): DesignDocument {
+export function changedCombine(doc: DesignDocument, id: string, target: string, tools: readonly string[], operation: CombineOperation, keepTools: boolean, forget: readonly string[] = []): DesignDocument {
   const at = doc.timeline.features.findIndex((f) => f.id === id);
   const old = doc.timeline.features[at];
   if (old === undefined || !isCombineItem(old)) throw new Error(`there is no Combine ${shown(id)} in the design`);
@@ -96,9 +101,16 @@ export function changedCombine(doc: DesignDocument, id: string, target: string, 
     };
     const [t, ...ts] = [target, ...tools].map(words);
     const intent = { ...old.intent, parameters: { ...old.intent.parameters, operation, keepTools }, summary: combineSummary(t, ts, operation, keepTools) };
-    return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? { ...old, intent } : f)) } };
+    return forgetPieces({ ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? { ...old, intent } : f)) } }, id, forget);
   }
   const items = itemsFor(doc, target, tools, at, `${old.provenance.self.label}, so it`);
   const changed: Feature = { ...old, ...combineFields(target, tools, operation, keepTools, items), provenance: { ...old.provenance, from: fromOf(items) } };
-  return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? changed : f)) } };
+  return forgetPieces({ ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? changed : f)) } }, id, forget);
+}
+
+/** The design with the remembered faces of Combine `id`'s pieces in `forget` dropped (hunt 11-06), their numbers kept. */
+function forgetPieces(doc: DesignDocument, id: string, forget: readonly string[]): DesignDocument {
+  const ours = (b: { id: string; faces?: string[] }) => b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === id && forget.includes(b.id);
+  if (!doc.bodies?.some(ours)) return doc;
+  return { ...doc, bodies: doc.bodies.map((b) => (ours(b) ? { id: b.id, number: b.number } : b)) };
 }
