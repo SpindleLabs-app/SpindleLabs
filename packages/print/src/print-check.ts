@@ -494,6 +494,9 @@ export function shoelace(segments: readonly [Point, Point][]): { area: number; c
   return { area, centre: area === 0 ? [0, 0] : [cx / (6 * area), cy / (6 * area)] };
 }
 
+/** How many segment pairs the union has tried to cut, counted so a test can see it skips the pairs far apart. */
+export const unionWork = { pairs: 0 };
+
 /**
  * The union of the bodies' sections at z: each body's segments, split where another body's cross them, kept where
  * their middle is not inside another body. Bodies not yet combined that overlap are counted once.
@@ -502,12 +505,27 @@ function unionSection(solids: readonly Solid[], z: number, only?: readonly (read
   const each = solids.map((s, i) => (s.box.lo[2] <= z && s.box.hi[2] >= z ? sectionSegments(s, z, only?.[i]) : []));
   const live = each.map((segs, i) => (segs.length > 0 ? i : -1)).filter((i) => i >= 0);
   if (live.length <= 1) return live.length === 1 ? each[live[0]] : [];
+  // Each segment's box and each body's section box, so a segment skips the bodies and segments it cannot cut (a
+  // piece of a big scene would otherwise try every segment of every other body: seconds a layer stack).
+  const boxes = each.map((segs) => segs.map(([p, q]) => segmentBox(p, q)));
+  const whole = boxes.map((bs) => {
+    const b: Box2 = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const c of bs) [b[0], b[1], b[2], b[3]] = [Math.min(b[0], c[0]), Math.min(b[1], c[1]), Math.max(b[2], c[2]), Math.max(b[3], c[3])];
+    return b;
+  });
   const out: [Point, Point][] = [];
   for (const i of live)
-    for (const [p, q] of each[i]) {
+    for (let n = 0; n < each[i].length; n++) {
+      const [p, q] = each[i][n];
+      const a = boxes[i][n];
       const cuts = [0, 1];
-      for (const j of live) if (j !== i) for (const [r, s] of each[j]) {
-        cuts.push(...crossAt(p, q, r, s));
+      for (const j of live) if (j !== i && !apart(a, whole[j])) {
+        const segs = each[j];
+        for (let m = 0; m < segs.length; m++)
+          if (!apart(a, boxes[j][m])) {
+            unionWork.pairs++;
+            cuts.push(...crossAt(p, q, segs[m][0], segs[m][1]));
+          }
       }
       cuts.sort((a, b) => a - b);
       for (let k = 0; k + 1 < cuts.length; k++) {
@@ -521,8 +539,9 @@ function unionSection(solids: readonly Solid[], z: number, only?: readonly (read
         const right: Point = [((q[1] - p[1]) / len) * NUDGE, (-(q[0] - p[0]) / len) * NUDGE, 0];
         const outside: Point = [mid[0] + right[0], mid[1] + right[1], z];
         const within: Point = [mid[0] - right[0], mid[1] - right[1], z];
-        if (live.some((j) => j !== i && solids[j].inside(outside))) continue;
-        if (live.some((j) => j < i && solids[j].inside(within))) continue;
+        // A point beyond a body's (widened) section box is not in it at this height, so its ray is not cast.
+        if (live.some((j) => j !== i && inBox(whole[j], outside) && solids[j].inside(outside))) continue;
+        if (live.some((j) => j < i && inBox(whole[j], within) && solids[j].inside(within))) continue;
         out.push([at(f0), at(f1)]);
       }
     }
@@ -533,6 +552,25 @@ function unionSection(solids: readonly Solid[], z: number, only?: readonly (read
 export function sectionArea(meshes: readonly CheckMesh[], z: number): number {
   return shoelace(unionSection(meshes.map((m) => new Solid(m)), z)).area;
 }
+
+/** A segment's box in the plane, [lo x, lo y, hi x, hi y], widened by more than `crossAt` can ever reach past it. */
+type Box2 = [number, number, number, number];
+
+/**
+ * Widened by 1e-6 mm and a thousandth of the segment's own span: a cut `crossAt` finds lies on both segments up to
+ * rounding (far below that) or, along one line, within 1e-9 mm of it, so skipping the segments whose boxes are apart
+ * changes no cut.
+ */
+function segmentBox(p: Point, q: Point): Box2 {
+  const pad = 1e-6 + 1e-3 * (Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]));
+  return [Math.min(p[0], q[0]) - pad, Math.min(p[1], q[1]) - pad, Math.max(p[0], q[0]) + pad, Math.max(p[1], q[1]) + pad];
+}
+
+/** Whether a point is in (or on) a box. */
+const inBox = (b: Box2, o: Point) => o[0] >= b[0] && o[0] <= b[2] && o[1] >= b[1] && o[1] <= b[3];
+
+/** Whether two boxes are apart (not touching). */
+const apart = (a: Box2, b: Box2) => a[0] > b[2] || b[0] > a[2] || a[1] > b[3] || b[1] > a[3];
 
 /** How far (mm) beside a section's piece the union looks for other bodies. */
 const NUDGE = 1e-6;

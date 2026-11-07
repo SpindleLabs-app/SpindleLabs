@@ -114,6 +114,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     onExtrudePointer: null,
     showMoveHandles: (show) => void (moveHandlesShown = show),
     showOrigin: (shown) => void (originShown = shown),
+    showCorners() {},
     onMovePointer: null,
   };
   let view: MountedWorkspace;

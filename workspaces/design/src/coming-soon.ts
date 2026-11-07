@@ -32,7 +32,6 @@ export const COMING_SOON: readonly ComingTool[] = [
   { id: "pattern", label: "Pattern", group: "Create", step: "61", does: "repeat a body or feature in rows or round a circle" },
   { id: "sweep", label: "Sweep", group: "Create", step: "70", does: "move a sketch along a path to make a solid" },
   { id: "loft", label: "Loft", group: "Create", step: "71", does: "blend between two or more sketches to make a solid" },
-  { id: "duplicate", label: "Duplicate body", group: "Modify", step: "35e2", does: "make a copy of a body" },
   { id: "mirror", label: "Mirror body", group: "Modify", step: "35e2", does: "make a mirror image of a body across a plane" },
   { id: "combine", label: "Combine", group: "Modify", step: "35f", does: "join two bodies into one, cut one from another, or keep only where they overlap" },
   { id: "chamfer", label: "Chamfer", group: "Modify", step: "44", does: "cut a sloped face along the edges you pick" },
@@ -42,7 +41,6 @@ export const COMING_SOON: readonly ComingTool[] = [
   { id: "plane", label: "Construction plane", group: "Construct", step: "59", does: "make a plane to sketch on: offset from a face, at an angle, or midway between two" },
   { id: "axis", label: "Construction axis", group: "Construct", step: "59", does: "make an axis to revolve round or mirror across" },
   { id: "point", label: "Construction point", group: "Construct", step: "59", does: "make a point to measure from or build on" },
-  { id: "measure", label: "Measure", group: "Inspect", step: "35e2", does: "measure the distance between two points, edges or faces" },
   { id: "section", label: "Section view", group: "Inspect", step: "65", does: "cut the view open to see inside the part" },
 ];
 

@@ -23,6 +23,7 @@ function fakeScene() {
     showPlanes: (p, faces) => void calls.push(`showPlanes ${p.map((x) => x.id).join(",")}${faces ? ` faces ${faces.join(",")}` : ""}`),
     showExtrude: (show) => void calls.push(`showExtrude ${show ? show.profiles.map((p) => p.id).join(",") : "none"}`),
     showOrigin: (shown) => void calls.push(`showOrigin ${shown.axes.join(",")} ${shown.planes.length}`),
+    showCorners: (c) => void calls.push(`showCorners ${c ? c.length : "none"}`),
     showMoveHandles: (show) => void calls.push(`showMoveHandles ${show ? show.centre.join(",") : "none"}`),
     editedScreenPoints: () => (calls.push("editedScreenPoints"), [{ x: 7, y: 8 }]),
     sketchScreenPoint: (at) => (calls.push(`sketchScreenPoint ${at.join(",")}`), { x: at[0] * 2, y: at[1] * 2 }),
@@ -138,7 +139,10 @@ test("sketches and planes reach the one viewer; the sketch pointer follows the s
   a.showSketches([]);
   b.showPlanes([{ id: "XY", plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, offered: true }]);
   a.showPlanes([{ id: "XY", plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, offered: true }], [0, 4]); // the faces offered with them (26d)
-  assert.deepEqual(calls, ["showSketches 0", "showPlanes XY", "showPlanes XY faces 0,4"]);
+  // Measure's corners (35e2l3) go to the one scene from either pane.
+  b.showCorners([[0, 0, 0], [1, 0, 0]]);
+  a.showCorners(null);
+  assert.deepEqual(calls, ["showSketches 0", "showPlanes XY", "showPlanes XY faces 0,4", "showCorners 2", "showCorners none"]);
   const handlerA = () => {};
   const handlerB = () => {};
   a.onSketchPointer = handlerA;

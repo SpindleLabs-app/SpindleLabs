@@ -572,6 +572,55 @@ test("35e2i by hand: an edited Move's bodies changed; the one taken out goes bac
   nearAll(face(bodyOf(rebuild(kept.doc).results["item-1"]), "item-1/top").centroid, [25, 15, 20], "kept under the fault");
 });
 
+test("a Duplicate (35e2) by hand: the body where it is at the Duplicate, named by the Duplicate; no Move after it reaches it", () => {
+  const m = createModel();
+  // Box 1 (item-1) 40 × 30 × 20, shifted 10 along x by Move item-2, copied by item-3, then shifted 100 more by item-4.
+  run(
+    m,
+    { op: "add-preset", kind: "box", sizes: [40, 30, 20] },
+    { op: "add-move", bodies: ["item-1"], shift: [10, 0, 0], turnZ: 0, pivot: [0, 0] },
+    { op: "add-duplicate", body: "item-1" },
+    { op: "add-move", bodies: ["item-1"], shift: [100, 0, 0], turnZ: 0, pivot: [0, 0] },
+  );
+  let r = results(m);
+  const copy = bodyOf(r["item-3"]);
+  // The box's top centre as made is (20, 15, 20); at the copy it had moved 10: (30, 15, 20); the box itself goes on to (130, 15, 20).
+  assert.ok([30, 15, 20].every((x, k) => near(face(copy, "item-3/top").centroid[k], x)), `${face(copy, "item-3/top").centroid}`);
+  assert.ok([130, 15, 20].every((x, k) => near(face(bodyOf(r["item-1"]), "item-1/top").centroid[k], x)));
+  // Its own names, every one: no face or edge of the copy carries the box's.
+  assert.equal(copy.volume, 40 * 30 * 20);
+  assert.ok(copy.faces.every((f) => f.name.feature === "item-3") && copy.edges.every((e) => e.name.feature === "item-3" && e.name.faces.every((n) => n.feature === "item-3")));
+  assert.deepEqual(copy.faces.map((f) => f.name.role).sort(), ["back", "bottom", "front", "left", "right", "top"]);
+  // The box made 60 wide: the copy follows, its top centre (30 + 10, 15, 20) = (40, 15, 20).
+  run(m, { op: "set-size", item: "item-1", key: "width", value: 60 });
+  assert.ok([40, 15, 20].every((x, k) => near(face(bodyOf(results(m)["item-3"]), "item-3/top").centroid[k], x)));
+  // Suppressing the box greys the copy (Q3); deleting it fails the copy naming it; the box can't go after its copy.
+  run(m, { op: "suppress", item: "item-1", on: true });
+  assert.deepEqual(results(m)["item-3"], { status: "greyed", by: "item-1" });
+  run(m, { op: "suppress", item: "item-1", on: false });
+  assert.deepEqual(run(m, { op: "reorder", item: "item-1", to: 2 }), [{ kind: "refused", cause: "after-dependent" }]);
+  run(m, { op: "delete-item", item: "item-1" });
+  r = results(m);
+  assert.deepEqual(r["item-3"], { status: "failed", cause: "deleted-input", input: "item-1" });
+  // Planted: "duplicate-source-names" leaves the copy's faces the box's; "duplicate-no-body" makes no body at all.
+  run(m, { op: "undo" });
+  assert.equal(bodyOf(rebuild(m.doc, new Set(["duplicate-source-names"])).results["item-3"]).faces[0].name.feature, "item-1");
+  assert.deepEqual(rebuild(m.doc, new Set(["duplicate-no-body"])).results["item-3"], { status: "built" });
+});
+
+test("what a Duplicate must rebuild: nothing (the copy is its body's kernel body), and its copy moved is one body", () => {
+  const m = createModel();
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] });
+  const keys = () => [...bodyKeys(m.doc, rebuild(m.doc)).values()];
+  const step = (op: ConcreteOp) => {
+    const before = keys();
+    run(m, op);
+    return buildBounds(before, keys());
+  };
+  assert.deepEqual(step({ op: "add-duplicate", body: "item-1" }), { least: 0, most: 0 });
+  assert.deepEqual(step({ op: "add-move", bodies: ["item-2"], shift: [50, 0, 0], turnZ: 0, pivot: [0, 0] }), { least: 1, most: 1 });
+});
+
 test("what a Move must rebuild: one body per body it moves, nothing when it's taken away, and moves of moves in one list", () => {
   const m = createModel();
   run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "sphere", sizes: [10] });

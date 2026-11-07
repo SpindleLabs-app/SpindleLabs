@@ -25,6 +25,12 @@ export interface ViewportPick {
   /** Absent or null when no edge was picked. */
   edge?: number | null;
   /**
+   * The offered corner picked (showCorners, Measure's 35e2l3), by its place
+   * in the list offered; absent when none was. A corner wins over the
+   * edges and faces at it, so with it set `edge` and `face` are null.
+   */
+  vertex?: number;
+  /**
    * The offered origin plane clicked (showPlanes), by id; absent or null
    * when none was. While planes are offered a click picks the body's face
    * under the pointer whenever there is one (never an edge), else the
@@ -197,6 +203,8 @@ export interface OfferedProfile {
   outline: Outline;
   /** A flat face of a body (UX1c), drawn only under the pointer or chosen: the body shows it already. */
   face?: boolean;
+  /** A sketch region that can't be extruded (step 48), drawn marked, and why in plain words (shown on hover, and said when it is clicked). */
+  refused?: string;
 }
 
 /**
@@ -219,6 +227,8 @@ export interface ExtrudeShow {
   /** The extrude as OK would make it, drawn see-through; null while there is none (nothing chosen yet, or the kernel refused it). */
   preview: DisplayMesh | null;
   arrow: ExtrudeArrow | null;
+  /** The preview is a Cut (Extrude's Operation): drawn red, as Fusion draws what a cut takes away. */
+  cut?: boolean;
 }
 
 /**
@@ -337,6 +347,14 @@ export interface SharedViewport {
    * offered plane or one of these faces, never an edge.
    */
   showPlanes(planes: readonly OriginPlane[], faces?: readonly number[]): void;
+  /**
+   * Offers these points (world mm, the body's exact corners) to be picked
+   * (Measure, 35e2l3): while offered, a click or hover within a few pixels
+   * of one in sight (CORNER_PICK_PX, wider for a finger) picks it ahead of
+   * an edge or face, the one under the pointer drawn as a dot; null offers
+   * none.
+   */
+  showCorners(corners: readonly (readonly [number, number, number])[] | null): void;
   /**
    * Which of the origin's axes and planes the browser's eyes show
    * (Ben, 2026-10-29: an eye on everything): `axes` X, Y and Z, each drawn

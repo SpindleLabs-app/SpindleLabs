@@ -230,10 +230,8 @@ export function expectedView(design, failed = new Set()) {
   const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id) || combines.has(pieceOf(b.id))).map((b) => [b.id.slice(5), b.number]));
   let next = Math.max(design.nextBody ?? 1, ...[...given.values()].map((n) => n + 1));
   for (const f of [...solids, ...made.filter((f) => !solids.includes(f))]) if (!given.has(f.id)) given.set(f.id, next++);
-  // The numbers as the app keeps them: the file's (gone items' dropped) in its order, then each new one as given; a
-  // piece's remembered faces (version 9, hunt 11-06) kept as the file gives them.
-  const faces = new Map((design.bodies ?? []).filter((b) => Array.isArray(b.faces)).map((b) => [b.id, b.faces]));
-  const numbered = { bodies: [...given].map(([id, number]) => ({ id: `body:${id}`, number, ...(faces.has(`body:${id}`) && { faces: faces.get(`body:${id}`) }) })), nextBody: next };
+  // The numbers as the app keeps them: the file's (gone items' dropped) in its order, then each new one as given.
+  const numbered = { bodies: [...given].map(([id, number]) => ({ id: `body:${id}`, number })), nextBody: next };
   // The bodies in timeline order: each solid that built adds its body; a Combine that built (all its bodies there before
   // it, not failed) takes its tools away unless it keeps them, changes its target in place (so the target's volume is no
   // longer its item's: `combined`), and adds its numbered pieces after the rest, in number order. Whether a piece exists
@@ -278,7 +276,8 @@ export function settledText(text) {
   try {
     const file = JSON.parse(text);
     const design = file?.workspaces?.design;
-    if (!design || (design.version !== 7 && design.version !== 8 && design.version !== 9) || !Array.isArray(design.timeline?.features)) return text;
+    // Design data as the app saves it (version 12 since pieces remember their faces; 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
+    if (!design || ![7, 8, 9, 10, 11, 12].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
     Object.assign(design, expectedView(design).numbered);
     return JSON.stringify(file);
   } catch {

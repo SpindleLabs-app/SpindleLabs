@@ -2,7 +2,10 @@
 // edit-past-features hunt saved (2026-11-07, SL #430 and #431). Both failed on the model's name order for a Combine of
 // a body with one that already holds a copy of its faces' names (a kept tool joined in, then used again); no shape
 // was wrong. Each replays step for step and must pass every check. The rule itself is hand-worked in
-// test/boolean-naming-origin.test.ts.
+// test/boolean-naming-origin.test.ts. The folder also holds sessions shrunk for planted bugs the seeds reach too late
+// (plant-*.json, replayed by planted/session.ts); unplanted, they must pass here too.
+// Also SL #360's seed 11: a refused Combine of a body with its own Duplicate must hold the second kernel body it
+// made, so the next rebuild builds nothing new (rebuild.ts combineRun).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";

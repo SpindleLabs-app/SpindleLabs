@@ -8,11 +8,16 @@
 // reason it doesn't; and OK or Cancel. OK stays off until the kernel says
 // the outline is closed. The workspace drives it; the panel only shows what
 // it is given and reports what was typed and clicked.
+// With Combine shown (`?combine`, combine-flag.ts), an Operation row as
+// Fusion's: New body (the default), Join, Cut or Intersect, and for the
+// last three the bodies the extrude reaches, each to tick or untick
+// (extrude-operation.ts); OK stays off until one is ticked.
 // Styles: src/styles/extrude.css.
 
 import { wordsInUnit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
 import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
+import { EXTRUDE_OPERATION_WORDS, EXTRUDE_OPERATIONS, type BodyChoice, type ExtrudeOperation } from "./extrude-operation.ts";
 
 export interface ExtrudePanelEvents {
   /** The distance box changed as typed (every keystroke), so the preview and arrow follow it. */
@@ -24,11 +29,19 @@ export interface ExtrudePanelEvents {
   /** OK (or Enter in the distance box), with the distance as typed. */
   ok(typed: string): void;
   cancel(): void;
+  /** The Operation row changed (only shown with Combine). */
+  operation?(operation: ExtrudeOperation): void;
+  /** A body in the list ticked or unticked. */
+  tick?(body: string, on: boolean): void;
 }
 
 export interface ExtrudePanel {
-  /** Opens the panel with the profile chosen (its name; null for none yet) and the distance as typed. */
-  show(chosen: string | null, distance: string): void;
+  /** Opens the panel with the profile chosen (its name; null for none yet) and the distance as typed; `operations` adds the Operation row (New body chosen). */
+  show(chosen: string | null, distance: string, operations?: boolean): void;
+  /** The bodies Join, Cut or Intersect would work on, and the words under them; `ready` says whether OK can work on them. */
+  showBodies(list: readonly BodyChoice[], note: string, ready: boolean): void;
+  /** The operation chosen now: "new" unless the Operation row says otherwise. */
+  readonly operation: ExtrudeOperation;
   /** The profile chosen now (its name; null for none), as a click in the view or ✕ left it. */
   showProfile(chosen: string | null): void;
   /** The distance box set to `typed` (an arrow drag); the caret and focus are left alone. */
@@ -46,6 +59,9 @@ export interface ExtrudePanel {
   /** The distance as typed now. */
   readonly typed: string;
 }
+
+/** What the panel says an extrude makes with New body chosen (or no Operation row). */
+export const NEW_BODY_NOTE = "The extrude is a new body, put in the timeline at the marker.";
 
 /** What the profile row says while none is chosen. */
 export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
@@ -66,9 +82,16 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     return e;
   };
   /** The distance is millimetres everywhere outside the box (`field.value`); the box shows the unit chosen in Settings (U2c3). */
-  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; field: SizeBox; profile: HTMLElement; clear: HTMLButtonElement; onUnit: () => boolean } | null = null;
+  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; field: SizeBox; profile: HTMLElement; clear: HTMLButtonElement; onUnit: () => boolean; note: HTMLElement; select: HTMLSelectElement | null; bodies: HTMLElement } | null = null;
+  // OK needs both: the kernel's closed outline, and (Join, Cut, Intersect) a body ticked.
+  let closed = false;
+  let bodiesReady = true;
+  const operationOf = () => (parts?.select?.value as ExtrudeOperation | undefined) ?? "new";
+  const okNow = () => {
+    if (parts) parts.ok.disabled = !(closed && (operationOf() === "new" || bodiesReady));
+  };
   return {
-    show(chosen, distance) {
+    show(chosen, distance, operations = false) {
       const profile = el("span", "extrude-profile", "extrude-profile");
       const clear = el("button", "extrude-clear", "extrude-clear", "✕");
       clear.type = "button";
@@ -112,16 +135,45 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       cancel.addEventListener("click", () => on.cancel());
       const buttons = el("div", "", "extrude-buttons");
       buttons.append(ok, cancel);
+      const note = el("p", "extrude-what", "extrude-note", NEW_BODY_NOTE);
+      // The Operation row (Fusion's), only while Combine is shown: hidden, an extrude is always a new body, as before.
+      let select: HTMLSelectElement | null = null;
+      const rows: HTMLElement[] = [];
+      const bodies = el("fieldset", "extrude-bodies", "extrude-bodies");
+      bodies.hidden = true;
+      if (operations) {
+        select = el("select", "extrude-operation", "extrude-operation");
+        select.setAttribute("aria-label", "Operation");
+        for (const op of EXTRUDE_OPERATIONS) {
+          const option = el("option", "", "", EXTRUDE_OPERATION_WORDS[op]);
+          option.value = op;
+          select.append(option);
+        }
+        select.value = "new";
+        select.addEventListener("change", () => {
+          const op = select!.value as ExtrudeOperation;
+          bodies.hidden = op === "new";
+          if (op === "new") note.textContent = NEW_BODY_NOTE;
+          okNow();
+          on.operation?.(op);
+        });
+        const operationRow = el("label", "", "extrude-row");
+        operationRow.append(el("span", "", "extrude-label", "Operation"), select);
+        rows.push(operationRow, bodies);
+      }
       box.replaceChildren(
         el("h2", "", "", "Extrude"),
         profileRow,
         distanceRow,
         el("p", "", "extrude-note", "Drag the arrow in the view or type the distance; a negative one goes the other way."),
+        ...rows,
         status,
         error,
-        el("p", "", "extrude-note", "The extrude is a new body, put in the timeline at the marker."),
+        note,
         buttons,
       );
+      closed = false;
+      bodiesReady = true;
       /** Shows the unit now chosen; false once this panel was closed or opened again, and it is no longer wanted. */
       const onUnit = (): boolean => {
         if (parts?.input !== input) return false;
@@ -130,7 +182,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
         input.setAttribute("aria-label", `Distance in ${currentUnit(document)}`);
         return true;
       };
-      parts = { status, error, ok, input, field, profile, clear, onUnit }; // `onUnit` is held here: the page's listener holds it only weakly
+      parts = { status, error, ok, input, field, profile, clear, onUnit, note, select, bodies }; // `onUnit` is held here: the page's listener holds it only weakly
       followUnit(document, onUnit);
       this.showProfile(chosen);
       box.hidden = false;
@@ -147,10 +199,33 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     showDistance(typed) {
       if (parts) parts.field.value = typed;
     },
-    showStatus(text, closed) {
+    showStatus(text, isClosed) {
       if (!parts) return;
       parts.status.textContent = text;
-      parts.ok.disabled = !closed;
+      closed = isClosed;
+      okNow();
+    },
+    showBodies(list, words, ready) {
+      if (!parts) return;
+      const document = box.ownerDocument;
+      const legend = el("legend", "", "extrude-label", "Bodies");
+      const items = list.map((b) => {
+        const row = el("label", "", "extrude-body");
+        const tick = document.createElement("input");
+        tick.type = "checkbox";
+        tick.checked = b.ticked;
+        tick.dataset.body = b.body; // read by the e2e test
+        tick.addEventListener("change", () => on.tick?.(b.body, tick.checked));
+        row.append(tick, " ", b.label);
+        return row;
+      });
+      parts.bodies.replaceChildren(legend, ...items);
+      if (operationOf() !== "new") parts.note.textContent = words;
+      bodiesReady = ready;
+      okNow();
+    },
+    get operation() {
+      return operationOf();
     },
     showError(message) {
       if (!parts) return;

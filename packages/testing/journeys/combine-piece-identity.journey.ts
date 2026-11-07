@@ -17,7 +17,7 @@ const kernel = nodeKernel();
 
 /**
  * Bar 100 × 20 × 10; slots A and B 10 × 40 × 20 at x 20 and 50 (Move 2 places B); Combine 1 cuts, built once so its
- * pieces are numbered (as a version 8 SpindleLabs did: no faces, which the app's first build gives them); Box 3 at
+ * pieces are numbered (as a version 11 SpindleLabs did: no faces, which the app's first build gives them); Box 3 at
  * (95, 5, 5) joined to piece 1 by Combine 2.
  */
 async function bar(): Promise<{ doc: DesignDocument; moveId: string; c1: string }> {

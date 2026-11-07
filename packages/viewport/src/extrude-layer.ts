@@ -15,8 +15,8 @@ import { rayOnPlane, toWorld, yAxisOf } from "./sketch-view.ts";
 
 type Vec3 = [number, number, number];
 
-/** The fills' and the preview's blue (the sketch lines' own), and the arrow's, orange while the pointer is on it. */
-export const EXTRUDE_COLOURS = { fill: 0x6cc4ff, preview: 0x4aa3ff, arrow: 0x4aa3ff, arrowHot: 0xffb454 };
+/** The fills' and the preview's blue (the sketch lines' own), a region that can't be extruded red (step 48), and a Cut's preview red too, and the arrow's, orange while the pointer is on it. */
+export const EXTRUDE_COLOURS = { fill: 0x6cc4ff, refused: 0xff6b6b, preview: 0x4aa3ff, arrow: 0x4aa3ff, arrowHot: 0xffb454 };
 /** How see-through an outline's fill is: offered, under the pointer, chosen; a flat face offered (UX1c) is not drawn until the pointer is on it, since the body shows it already. */
 export const FILL_OPACITY = { offered: 0.16, faceOffered: 0, hover: 0.36, chosen: 0.5 };
 /** How see-through the preview's faces are (its edges are drawn solid). */
@@ -77,7 +77,7 @@ export class ExtrudeLayer {
     const before = this.shown;
     this.shown = show;
     if (show?.profiles !== before?.profiles) this.drawFills(show?.profiles ?? []);
-    if (show?.preview !== before?.preview) this.drawPreview(show?.preview ?? null);
+    if (show?.preview !== before?.preview || !!show?.cut !== !!before?.cut) this.drawPreview(show?.preview ?? null, !!show?.cut);
     if (!show?.profiles.some((p) => p.id === this.hover)) this.hover = null;
     if (!show?.arrow) this.arrowHot = false;
     this.arrow.visible = !!show?.arrow;
@@ -97,7 +97,7 @@ export class ExtrudeLayer {
       const [x, y, n] = [p.plane.xAxis, yAxisOf(p.plane), p.plane.normal];
       geometry.applyMatrix4(new THREE.Matrix4().set(x[0], y[0], n[0], p.plane.origin[0], x[1], y[1], n[1], p.plane.origin[1], x[2], y[2], n[2], p.plane.origin[2], 0, 0, 0, 1));
       // Pulled towards the camera past the body's faces (their offset is +1), so a sketch on a face shows on it, never speckled.
-      const material = new THREE.MeshBasicMaterial({ color: EXTRUDE_COLOURS.fill, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+      const material = new THREE.MeshBasicMaterial({ color: p.refused === undefined ? EXTRUDE_COLOURS.fill : EXTRUDE_COLOURS.refused, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.renderOrder = FILL_ORDER;
       this.fills.add(mesh);
@@ -105,18 +105,19 @@ export class ExtrudeLayer {
     }
   }
 
-  private drawPreview(mesh: DisplayMesh | null) {
+  private drawPreview(mesh: DisplayMesh | null, cut: boolean) {
+    const colour = cut ? EXTRUDE_COLOURS.refused : EXTRUDE_COLOURS.preview;
     dispose(this.preview);
     if (!mesh) return;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.positions, 3));
     geometry.setAttribute("normal", new THREE.Float32BufferAttribute(mesh.normals, 3));
     geometry.setIndex(mesh.indices);
-    const faces = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: EXTRUDE_COLOURS.preview, transparent: true, opacity: PREVIEW_OPACITY, depthWrite: false, metalness: 0.1, roughness: 0.6 }));
+    const faces = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: colour, transparent: true, opacity: PREVIEW_OPACITY, depthWrite: false, metalness: 0.1, roughness: 0.6 }));
     faces.renderOrder = PREVIEW_ORDER;
     const edges = new LineSegmentsGeometry();
     edges.setPositions(mesh.edge_lines);
-    const edgeMaterial = new LineMaterial({ color: EXTRUDE_COLOURS.preview, linewidth: 2, depthWrite: false });
+    const edgeMaterial = new LineMaterial({ color: colour, linewidth: 2, depthWrite: false });
     const lines = new LineSegments2(edges, edgeMaterial);
     lines.onBeforeRender = (renderer) => renderer.getSize(edgeMaterial.resolution);
     lines.renderOrder = PREVIEW_ORDER;
@@ -134,6 +135,11 @@ export class ExtrudeLayer {
 
   get hovered(): string | null {
     return this.hover;
+  }
+
+  /** Why the offered outline `id` can't be extruded (step 48), or null when it can or isn't offered. */
+  refusal(id: string | null): string | null {
+    return this.shown?.profiles.find((p) => p.id === id)?.refused ?? null;
   }
 
   private paint() {

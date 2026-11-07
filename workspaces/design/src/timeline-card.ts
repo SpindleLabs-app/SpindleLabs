@@ -89,6 +89,9 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
   } else if (type === "move") {
     kind = moveKindOf(f) === "rotate" ? "Rotate" : "Move";
     details = [summary];
+  } else if (type === "duplicate") {
+    kind = "Duplicate";
+    details = [summary, "A new body, following its source's sizes"];
   } else if (type === "combine") {
     const op = p.operation;
     kind = op === "cut" ? "Combine: cut" : op === "join" ? "Combine: join" : op === "intersect" ? "Combine: intersect" : "Combine";

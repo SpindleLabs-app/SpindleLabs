@@ -15,7 +15,7 @@ import { dragItem } from "./timeline-reorder.ts";
 import { hideCard, showCard } from "./timeline-card.ts";
 import type { Scene } from "./scene.ts";
 
-export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "feature";
+export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "feature";
 
 export interface TimelineBarItem {
   id: string;
@@ -39,7 +39,7 @@ export interface TimelineBarItem {
   warning: string | null;
 }
 
-const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine" };
+const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine", duplicate: "duplicate" };
 
 /**
  * The bar's items and where the marker stands: `marker` items come before
@@ -348,6 +348,8 @@ const ICONS: Record<TimelineIcon, string> = {
   // Our own drawings (timeline card, 2026-11-05): a Move is a cross of arrows, a Combine two overlapping squares, so neither is a plain circle.
   move: '<path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
   combine: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>',
+  // A Duplicate (35e2): a square in front, its copy behind it and up to the right.
+  duplicate: '<rect x="3" y="9" width="12" height="12" rx="1"/><path d="M9 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-5"/>',
   feature: '<circle cx="12" cy="12" r="7"/>',
 };
 

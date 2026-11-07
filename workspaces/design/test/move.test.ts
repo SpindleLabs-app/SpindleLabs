@@ -168,7 +168,7 @@ test("a Move read from a file is checked: its numbers and its bodies", () => {
 test("hand-worked: version 6 lists a Move's bodies by body id, and the reader checks the list against dependsOn", () => {
   // The version 3 file above, read: its Move of feature-1 gains bodies ["body:feature-1"] (version 6, 35ec), dependsOn kept.
   const read = readDesignDocument(file({}));
-  assert.equal(read.version, 9);
+  assert.equal(read.version, 12);
   assert.deepEqual(read.timeline.features[1].intent.parameters.bodies, ["body:feature-1"]);
   assert.deepEqual(read.timeline.features[1].dependsOn, ["feature-1"]);
   // Saved and opened again: the same.
@@ -236,7 +236,7 @@ function stack(layers: number): DesignDocument {
     features.push({ id: e, intent: { type: "extrude", parameters: { sketch: s, distance: 5 }, summary: `Extrude ${k}` }, dependsOn: [s], suppressed: false, provenance: stackProv(e, `Extrude ${k + 1}`) });
     solids.push(e);
   }
-  return readDesignDocument({ version: 8, nextId: n, profiles: [], sketches, timeline: { features } });
+  return readDesignDocument({ version: 9, nextId: n, profiles: [], sketches, timeline: { features } });
 }
 
 test("a 57-item pinned stack: the part, and whether the top item builds, are answered in well under a frame's worth of work each", () => {

@@ -71,7 +71,7 @@ test("also issue #220: an unnamed item with no shape to name it by is an Item; a
   assert.equal(withRuledNames(unnamed).timeline.features[0].provenance.self.label, "Item 1");
   // Version 0 and -1 are whole numbers, but no SpindleLabs wrote them: a plain error, never "from a newer SpindleLabs".
   for (const version of [0, -1])
-    assert.throws(() => readDesignDocument({ ...d, version }), (e: unknown) => e instanceof Error && !(e instanceof NewerFormatError) && (e as Error).message === `Design data version ${version} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8 or 9)`);
+    assert.throws(() => readDesignDocument({ ...d, version }), (e: unknown) => e instanceof Error && !(e instanceof NewerFormatError) && (e as Error).message === `Design data version ${version} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 or 12)`);
   // Version 10 is newer.
-  assert.throws(() => readDesignDocument({ ...d, version: 10 }), NewerFormatError);
+  assert.throws(() => readDesignDocument({ ...d, version: 13 }), NewerFormatError);
 });

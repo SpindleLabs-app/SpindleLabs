@@ -45,6 +45,7 @@ import {
   isFaceSketch,
   insertPreset,
   insertMove,
+  insertDuplicates,
   changedMove,
   insertCombine,
   changedCombine,
@@ -54,6 +55,7 @@ import {
   movePoint,
   nameBody,
   outlineCurves,
+  type CurveOf,
   partDocument,
   readDesignDocument,
   joinBodies,
@@ -145,7 +147,9 @@ export type DesignFault =
   /** Unsuppressing does nothing. */
   | "unsuppress-ignored"
   /** The marker at the start is read as no marker. */
-  | "marker-start-ignored";
+  | "marker-start-ignored"
+  /** 35e2: a Duplicate goes in at the end of the timeline, not at the marker. */
+  | "duplicate-at-end";
 
 export const DESIGN_FAULTS: readonly DesignFault[] = [
   "no-settle",
@@ -158,6 +162,7 @@ export const DESIGN_FAULTS: readonly DesignFault[] = [
   "reorder-unchecked",
   "unsuppress-ignored",
   "marker-start-ignored",
+  "duplicate-at-end",
 ];
 
 const DESIGN = [{ id: "design" as const, readData: readDesignDocument }];
@@ -383,6 +388,13 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         // 35f1d2: Design's Combine, as its panel's OK puts it in: the model names bodies by item, Design by body id.
         const c = insertCombine(doc, bodyIdOf(op.target), [bodyIdOf(op.tool)], op.operation, op.keep);
         return { state: { doc: c.doc, meta }, made: [c.id] };
+      }
+      case "add-duplicate": {
+        // 35e2: Design's Duplicate, as Modify ▾'s Duplicate puts it in (the model names a body by its item, Design by body id).
+        // Planted bug ("duplicate-at-end"): the copy goes in at the end of the timeline, past the marker.
+        const at = fs.has("duplicate-at-end") ? { ...doc, timeline: { ...doc.timeline, marker: undefined } } : doc;
+        const d = insertDuplicates(at, [bodyIdOf(op.body)]);
+        return { state: { doc: fs.has("duplicate-at-end") ? { ...d.doc, timeline: { ...d.doc.timeline, marker: doc.timeline.marker } } : d.doc, meta }, made: d.ids };
       }
       case "set-combine": {
         const was = combineBodies(doc.timeline.features.find((f) => f.id === op.item)!);
@@ -652,7 +664,7 @@ function measureCombined(view: BodyView, names: readonly { names: readonly strin
 }
 
 /** A body's volume, faces and edges in the model's terms, named as Design names them. */
-function measure(feature: string, view: BodyView, curveOf: (boundary: number, piece: number) => string | null): ModelBody {
+function measure(feature: string, view: BodyView, curveOf: CurveOf): ModelBody {
   const names = nameBody(feature, view, curveOf);
   const edges = edgeGeometry(view);
   return {

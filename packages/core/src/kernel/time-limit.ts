@@ -17,7 +17,7 @@
 // size. So the limit of any legal call is at least HEADROOM times what it
 // needs, on any device whose calibration is as slow as its other calls.
 import type { KernelOps } from "./kernel-client.ts";
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, Loop, Outline, ShapeSpec, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, Loop, MeasurePick, Outline, ShapeSpec, SupportStyle } from "./kernel-types.ts";
 
 /** The calibration boolean's bodies: two 10 mm cubes, the second moved 5 mm along each axis, so they overlap in a 5 mm cube (36 face pairs). */
 export const CALIBRATION_TARGET: BodySpec = { box: { width: 10, depth: 10, height: 10 } };
@@ -122,6 +122,24 @@ export const UNITS_PER_CURVE_PAIR = 1.2e-4;
 /** The units of finding the outline of a sketch of `curves` lines, circles and arcs. */
 export function sketchUnits(curves: number): number {
   return UNITS_PER_CURVE * curves + UNITS_PER_CURVE_PAIR * curves * curves;
+}
+
+/**
+ * Units of a sketch's regions (step 48) per point where its curves meet,
+ * on top of the outline's: a 300 × 300 grid of lines (90,000 points,
+ * 89,401 squares) took 1,968 ms at a 1.72 ms unit and 1,863 at 1.16
+ * (0.013 and 0.018 a point), 223 circles each crossing all the others
+ * (49,506 points) 1,143 ms at 1.72 (0.013). How many points there will be
+ * is only known once the kernel looks, so each pair of curves is counted
+ * as meeting twice (no two lines, circles or arcs meet more often unless
+ * they overlap), up to the most a sketch may have (the kernel's limit).
+ */
+export const UNITS_PER_MEETING = 0.03;
+export const MAX_MEETING_POINTS = 100_000;
+
+/** The units of finding the regions of a sketch of `curves` lines, circles and arcs. */
+export function regionsUnits(curves: number): number {
+  return sketchUnits(curves) + UNITS_PER_MEETING * Math.min(MAX_MEETING_POINTS, curves * (curves - 1));
 }
 
 /**
@@ -408,8 +426,17 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       const tools = (a[1] as BodyHandle[]).map(sizeOf);
       return target && tools.every((t) => t) ? booleanUnits(target, tools as BodySize[]) : 0;
     }
+    case "body_measure": {
+      // Two picks cost at most what joining their bodies would (every edge of one against every face of the other).
+      const [first, second] = a as [MeasurePick, MeasurePick | null];
+      const one = sizeOf(first.body);
+      const other = second === null ? one : sizeOf(second.body);
+      return one && other ? booleanUnits(one, [other]) : 0;
+    }
     case "sketch_outline":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
+    case "sketch_regions":
+      return regionsUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
     case "solve_sketch":
       return typeof a[0] === "string" ? solveUnits(a[0]) : 0;
     case "slice_stl":

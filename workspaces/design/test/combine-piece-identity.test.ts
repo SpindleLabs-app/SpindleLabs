@@ -1,7 +1,7 @@
 // A Combine's numbered pieces keep their ids by their faces (hunt 11-06): an
 // earlier edit that changes the pieces' sizes (and so their rank order)
 // never moves a piece's id to another piece silently. The data remembers
-// each piece's faces when it is first numbered (version 9, `faces` in the
+// each piece's faces when it is first numbered (version 12, `faces` in the
 // bodies list); a rebuild gives the id to the piece with those faces, and
 // when none has them, gives it by rank order with a warning on the Combine.
 // Volumes worked out by hand in the comments.
@@ -158,25 +158,25 @@ test("editing a Combine with no warning forgets nothing: pieces matched out of r
   await fourth.cache.close();
 });
 
-test("an old version 8 file with pieces opens and gets each piece's faces, as its Combine made it, on its first build", async () => {
+test("an old version 11 file with pieces opens and gets each piece's faces, as its Combine made it, on its first build", async () => {
   const s = await twoSlots();
   const second = await built(s.doc);
   await second.cache.close();
-  // As a version 8 SpindleLabs saved it: the same numbers, no faces.
-  const v8 = { ...JSON.parse(JSON.stringify(second.doc)), version: 8 };
-  for (const b of v8.bodies) delete b.faces;
-  const opened = readDesignDocument(v8);
-  assert.equal(opened.version, 9);
+  // As a version 11 SpindleLabs saved it: the same numbers, no faces.
+  const v11 = { ...JSON.parse(JSON.stringify(second.doc)), version: 11 };
+  for (const b of v11.bodies) delete b.faces;
+  const opened = readDesignDocument(v11);
+  assert.equal(opened.version, 12);
   assert.ok(opened.bodies!.every((b) => b.faces === undefined));
   const first = await built(opened);
   await first.cache.close();
   // Piece 1's faces as Combine 1 made it (the far piece), not as Combine 2 left it (Box 3 joined on): the same as the
-  // version 9 file remembers. Nothing else changes.
+  // version 12 file remembers. Nothing else changes.
   assert.deepEqual(first.doc.bodies, second.doc.bodies);
   assert.equal(first.doc.nextBody, second.doc.nextBody);
-  // A version 8 file holding faces is refused: version 9 brought them.
-  assert.throws(() => readDesignDocument({ ...JSON.parse(JSON.stringify(second.doc)), version: 8 }), { message: "Design data says version 8 but has pieces' faces, which version 9 brought" });
-  assert.throws(() => readDesignDocument({ ...JSON.parse(JSON.stringify(second.doc)), version: 6 }), { message: "Design data says version 6 but has pieces' faces, which version 9 brought" });
+  // A version 11 file holding faces is refused: version 12 brought them.
+  assert.throws(() => readDesignDocument({ ...JSON.parse(JSON.stringify(second.doc)), version: 11 }), { message: "Design data says version 11 but has pieces' faces, which version 12 brought" });
+  assert.throws(() => readDesignDocument({ ...JSON.parse(JSON.stringify(second.doc)), version: 6 }), { message: "Design data says version 6 but has pieces' faces, which version 12 brought" });
 });
 
 test("a piece's faces are saved and read back, and a later build never changes them", async () => {
