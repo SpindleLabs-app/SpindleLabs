@@ -25,6 +25,8 @@ export interface FileMenuParts {
   open: FileMenuEntry;
   /** Projects in this browser…, listed after Open when given (U6a): every project kept here, to open or delete. */
   projects?: FileMenuEntry;
+  /** Home (U6b): back to the home screen, when the build has one. */
+  home?: FileMenuEntry;
   /** Earlier versions…, listed after it when given (missing basics 3b): the open project's versions kept here, to restore. */
   versions?: FileMenuEntry;
   /** My designs…, listed after them when given (account features 1): the designs kept in the person's account. */
@@ -71,7 +73,7 @@ export function fileSections(parts: FileMenuParts): MenuSection[] {
   });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  return [{ items: [item(newEntry, "new"), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
+  return [{ items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
 }
 
 /** File ▾ in `doc`: a menu button with the id `file-menu`. */

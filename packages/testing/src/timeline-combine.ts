@@ -352,7 +352,9 @@ export function findFace(bodies: readonly ModelBody[], ref: FaceName, origin?: r
   const pieces = carrying.get(key) ?? [];
   const hit = (k: number, split: boolean) => ({ body: all[k].body, face: all[k].face, split });
   if (pieces.length === 0) return null;
-  if (pieces.length === 1) return hit(pieces[0], false);
+  // A tagged reference finding one face without its tag that doesn't hold its origin: its piece is gone and another face
+  // carries the name (a kept tool's own face), so found with a warning, never silently (hunt 11-06); whole again holds it.
+  if (pieces.length === 1) return hit(pieces[0], ref.tag !== undefined && tagOf(pieces[0], key).join(",") !== ref.tag.map(plainKey).sort().join(",") && origin !== undefined && !faceHolds(all[pieces[0]].f, origin));
   // Planted bug ("combine-first-piece"): the first face carrying the name, never a tag, an origin or a tie.
   if (faults.firstPiece) return hit(pieces[0], false);
   if (ref.tag !== undefined) {

@@ -276,7 +276,7 @@ export function settledText(text) {
   try {
     const file = JSON.parse(text);
     const design = file?.workspaces?.design;
-    if (!design || design.version !== 7 || !Array.isArray(design.timeline?.features)) return text;
+    if (!design || ![7, 8, 9].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
     Object.assign(design, expectedView(design).numbered);
     return JSON.stringify(file);
   } catch {

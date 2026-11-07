@@ -30,6 +30,8 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   // Missing basics (2026-11-04): in a sketch, the Select tool's picked lines, circles and arcs; otherwise the key does what it would.
   { id: "delete-selection", keys: "Delete", label: "Delete the selected sketch curves, body or timeline item" },
   { id: "delete-selection-back", keys: "Backspace", label: "Delete the selected sketch curves, body or timeline item" },
+  // Step 47f (Fusion's key): the Select tool's picked curves become construction lines, or back; otherwise the key does what it would.
+  { id: "sketch-construction", keys: "X", label: "Turn the selected sketch curves into construction lines, or back (in a sketch)" },
   // Sketch feel SF4: while a line or rectangle is part drawn, a digit, point or minus starts typing its size; otherwise the key does what it would.
   ...[..."0123456789.-"].map((k) => ({ id: `type-size-${k}`, keys: k, label: "Type a length or width (while drawing a line or rectangle)" })),
 ];

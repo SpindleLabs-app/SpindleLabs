@@ -16,7 +16,8 @@
 // Works offline: nothing here asks the network. Styles:
 // styles/timeline-card.css.
 
-import type { Feature } from "@fission/core";
+import { boxShown, summaryInUnit, type Feature, type Unit } from "@fission/core";
+import { currentUnit } from "@fission/ui";
 import { bodyIdOf, isSketchExtrude, type DesignDocument, type Sketch, type SketchPoint } from "./document.ts";
 import { isFlipped } from "./extrude.ts";
 import { moveKindOf } from "./move.ts";
@@ -54,22 +55,26 @@ export function sketchContent(sketch: Sketch | undefined): string {
  * (`timelineBarItems`), at place `index` (from 0). `slow` holds the items
  * that failed by taking the kernel too long.
  */
-export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem, index: number, slow: ReadonlySet<string> = new Set()): CardFacts {
+export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem, index: number, slow: ReadonlySet<string> = new Set(), unit: Unit = "mm"): CardFacts {
   const p = f.intent.parameters;
   const name = itemName(f);
-  const summary = f.intent.summary;
+  const summary = summaryInUnit(f.intent.summary, unit);
+  /** A length in millimetres as the card says it: "40 mm", or "1.575 in". */
+  const len = (v: unknown) => (typeof v === "number" && unit === "in" ? `${boxShown(v, unit)} in` : `${num(v)} mm`);
+  /** The same without its unit, for a row of sizes that ends with one. */
+  const bare = (v: unknown) => (typeof v === "number" && unit === "in" ? boxShown(v, unit) : num(v));
   let kind = "Feature";
   let details: string[] = [summary];
   const type = f.intent.type;
   if (type === "box") {
     kind = "Box";
-    details = [`${num(p.width)} × ${num(p.depth)} × ${num(p.height)} mm`, "width × depth × height"];
+    details = [`${bare(p.width)} × ${bare(p.depth)} × ${bare(p.height)} ${unit}`, "width × depth × height"];
   } else if (type === "cylinder") {
     kind = "Cylinder";
-    details = [`⌀${num(p.diameter)} mm, ${num(p.height)} mm high`];
+    details = [`⌀${len(p.diameter)}, ${len(p.height)} high`];
   } else if (type === "sphere") {
     kind = "Sphere";
-    details = [`⌀${num(p.diameter)} mm`];
+    details = [`⌀${len(p.diameter)}`];
   } else if (type === "sketch") {
     kind = "Sketch";
     // "Sketch 1 on the XY plane" / "Sketch 2 on a face of Box 1": the place, from its summary (renames follow there).
@@ -79,7 +84,7 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
     kind = "Extrude";
     if (isSketchExtrude(f)) {
       const from = doc.timeline.features.find((g) => g.id === p.sketch);
-      details = [`${num(p.distance)} mm from ${from ? itemName(from) : "a sketch that is gone"}${isFlipped(f) ? ", flipped" : ""}`, "A new body"];
+      details = [`${len(p.distance)} from ${from ? itemName(from) : "a sketch that is gone"}${isFlipped(f) ? ", flipped" : ""}`, "A new body"];
     } else details = [summary.replace(/^Extrude: /, "")];
   } else if (type === "move") {
     kind = moveKindOf(f) === "rotate" ? "Rotate" : "Move";
@@ -481,7 +486,7 @@ export function cardElement(doc: Document): HTMLElement {
 export function showCard(anchor: HTMLElement, doc: DesignDocument, at: CardItem, scene: Scene | null, slow?: ReadonlySet<string>): HTMLElement {
   const page = anchor.ownerDocument;
   const card = cardElement(page);
-  const facts = cardFacts(doc, at.feature, at.item, at.index, slow);
+  const facts = cardFacts(doc, at.feature, at.item, at.index, slow, currentUnit(page));
   card.replaceChildren();
   card.dataset.item = at.feature.id;
   const head = page.createElement("div");

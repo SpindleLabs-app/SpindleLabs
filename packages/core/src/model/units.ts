@@ -77,3 +77,40 @@ export function wordsInUnit(text: string, unit: Unit): string {
     .replace(/\bin mm\b/g, "in inches")
     .replace(/(\d+(?:\.\d+)?(?:e[+-]?\d+)?) mm(?![²³\w])/gi, (_, n: string) => `${plain(fromMm(Number(n), unit))} in`);
 }
+
+/** The shortest and longest length the kernel works with, in millimetres: 1 µm to 1 km (a typed length, a grid size). */
+export const MIN_LENGTH_MM = 1e-3;
+export const MAX_LENGTH_MM = 1e6;
+
+/**
+ * Why a length of `mm` millimetres is refused (not more than 0, under 1 µm, over 1 km), in the words the sketch's typed
+ * boxes use ("A length must be more than 0 mm."), or null. Design's `lengthRefused` is the same rule (tested equal).
+ */
+export function lengthLimitRefusal(mm: number): string | null {
+  if (!(mm > 0)) return "A length must be more than 0 mm.";
+  if (mm < MIN_LENGTH_MM) return `A length must be at least ${MIN_LENGTH_MM} mm, the smallest piece the modeller keeps.`;
+  if (mm > MAX_LENGTH_MM) return `A length can be at most ${MAX_LENGTH_MM} mm (1 km), the largest size the modeller works at.`;
+  return null;
+}
+
+/** One length in a summary's own text ("40", "-2.5", "1e-7"), shown in `unit` as `plain` shows a length. */
+const inUnit = (n: string, unit: Unit): string => plain(fromMm(Number(n), unit));
+const NUM = String.raw`-?\d+(?:\.\d+)?(?:e[+-]?\d+)?`;
+/** "40 × 30 × 20" or "⌀20 × 30": numbers joined by × (a diameter sign allowed), as a part's summary writes its sizes. */
+const RUN = String.raw`⌀?${NUM}(?: × ⌀?${NUM})*`;
+const convertRun = (run: string, unit: Unit): string => run.replace(new RegExp(NUM, "g"), (n) => inUnit(n, unit));
+
+/**
+ * An item's summary (the intent's words, always saved in millimetres: "Box: 40 × 30 × 20 mm", "Extrude Sketch 1 by 10 mm",
+ * "Move Box 1 by (10, 0, 0) mm, turned 90° about Z") said in `unit` for the browser, the timeline and the Feature line
+ * (U2c3). Only the places the summaries put a length are touched (a part's sizes at the start, ` by N mm`, ` by (a, b, c) mm`),
+ * never a name that happens to hold a number and "mm"; the angle (°) is left alone. Millimetres give the text back as it was.
+ */
+export function summaryInUnit(text: string, unit: Unit): string {
+  if (unit === "mm") return text;
+  return text
+    .replace(new RegExp(String.raw`^(Box|Cylinder|Sphere): (${RUN}) mm`), (_, kind: string, run: string) => `${kind}: ${convertRun(run, unit)} in`)
+    .replace(new RegExp(String.raw`^(Extrude: .*?) (${RUN}) mm, by (${NUM}) mm$`), (_, head: string, run: string, by: string) => `${head} ${convertRun(run, unit)} in, by ${inUnit(by, unit)} in`)
+    .replace(new RegExp(String.raw` by \((${NUM}), (${NUM}), (${NUM})\) mm`), (_, x: string, y: string, z: string) => ` by (${inUnit(x, unit)}, ${inUnit(y, unit)}, ${inUnit(z, unit)}) in`)
+    .replace(new RegExp(String.raw`^(Extrude .*) by (${NUM}) mm(, flipped)?$`), (_, head: string, by: string, flip: string | undefined) => `${head} by ${inUnit(by, unit)} in${flip ?? ""}`);
+}

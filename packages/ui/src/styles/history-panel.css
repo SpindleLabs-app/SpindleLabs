@@ -1,0 +1,20 @@
+/* The History panel (history-panel.ts): a card under the History button on a wide screen; at phone width a bottom sheet
+   of at most 45 % of the screen, Close always at its top, so one tap never covers most of the view (Ben, 2026-10-28). */
+.history-panel { position: fixed; top: 44px; right: var(--look-space-3); z-index: 30; width: min(340px, calc(100vw - 16px)); max-height: min(60vh, 520px); display: flex; flex-direction: column; background: var(--look-float); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); overflow: hidden; }
+.history-panel[hidden] { display: none; }
+.history-panel header { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-2) var(--look-space-3); border-bottom: 1px solid var(--look-edge); }
+.history-panel h2 { margin: 0; font-size: 14px; }
+.history-panel .history-close { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-3); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
+.history-panel .history-hint, .history-panel .history-empty { margin: 0; padding: var(--look-space-2) var(--look-space-3); font-size: 12px; line-height: 1.4; color: var(--text-dim); }
+.history-panel .history-list { list-style: none; margin: 0; padding: 0 var(--look-space-1) var(--look-space-2); overflow-y: auto; }
+.history-panel .history-list button { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: var(--look-space-3); min-height: var(--look-target); padding: var(--look-space-1) var(--look-space-3); font: inherit; text-align: left; color: inherit; background: transparent; border: 0; border-radius: var(--look-radius-s); cursor: pointer; }
+.history-panel .history-list button:hover { background: var(--look-field); }
+.history-panel .history-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.history-panel .history-when { flex: 0 0 auto; font-size: 12px; color: var(--text-dim); }
+.history-panel li[data-state="current"] button { background: var(--look-active-fill); color: var(--look-accent-text); box-shadow: inset 0 0 0 1px var(--look-accent); }
+.history-panel li[data-state="undone"] .history-name { opacity: 0.55; font-style: italic; }
+@media (max-width: 640px) {
+  .history-panel { top: auto; right: 0; bottom: 0; left: 0; width: auto; max-height: 45vh; max-height: 45dvh; border-radius: var(--look-radius-l) var(--look-radius-l) 0 0; border-width: 1px 0 0; }
+  .history-panel .history-close { min-height: var(--look-target-touch); }
+  .history-panel .history-list button { min-height: var(--look-target-touch); }
+}

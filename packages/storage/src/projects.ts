@@ -4,6 +4,8 @@
 //   bringForward  a project opened from the list becomes the one a reload opens: it is stored again as it is, with the
 //                 same save time and a new save number (store.ts `order`), so nothing else about it changes, and only
 //                 when the store still holds the state it was opened as (another tab's newer save is left alone).
+//   rename        gives a stored project a new name (the home screen's rename), refusing an empty name or one longer
+//                 than the name box takes, and not overwriting another tab's newer save.
 //   forget        deletes a project and its journal entries (unsaved.ts): an entry left behind would be put back by
 //                 the next visit's recovery, bringing the deleted project back.
 
@@ -47,4 +49,22 @@ export async function forget(store: ProjectStore, journal: JournalStorage | null
       // storage off: nothing was kept there to come back
     }
   }
+}
+
+/** The longest project name, as the name box takes it (its `maxlength`). */
+export const MAX_PROJECT_NAME = 100;
+
+/**
+ * Renames stored project `id` to `name` (trimmed). It is stored again with the rename's own time as its save time and
+ * a new save number, so it lists first. Throws when the name is empty or over `MAX_PROJECT_NAME` characters, or the id
+ * is not stored; throws `ProjectChangedError` when another save changed it since it was read here (nothing written).
+ */
+export async function rename(store: ProjectStore, id: string, name: string, at: Date = new Date()): Promise<void> {
+  const trimmed = name.trim();
+  if (trimmed === "") throw new Error("a project needs a name");
+  if (trimmed.length > MAX_PROJECT_NAME) throw new Error(`a project name can be at most ${MAX_PROJECT_NAME} characters`);
+  const summary = (await store.list()).find((s) => s.id === id);
+  if (summary === undefined || summary.problem !== undefined) throw new Error(`there is no stored project "${id}" in this browser`);
+  const project = await store.open(id);
+  await store.save(id, { ...project, name: trimmed }, at, summary.modified);
 }

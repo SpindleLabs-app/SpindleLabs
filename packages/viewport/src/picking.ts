@@ -31,6 +31,25 @@ export function nearestWithin(points: readonly ({ x: number; y: number } | null)
   return best;
 }
 
+/**
+ * How near on screen (CSS pixels) a click must come to an offered corner to
+ * pick it (Measure, 35e2l3): a corner wins over the edges meeting at it, so
+ * the reach is a little wider than an edge's and wider again for a finger.
+ * Exactly this far is a miss, as for an edge.
+ */
+export const CORNER_PICK_PX = { mouse: 8, touch: 16 };
+
+/** The points on screen nearer than `reach` to `at`, by index, nearest first (ties keep index order); null points are skipped. */
+export function pointsNear(points: readonly ({ x: number; y: number } | null)[], at: { x: number; y: number }, reach: number): number[] {
+  const near: { i: number; d: number }[] = [];
+  points.forEach((p, i) => {
+    if (!p) return;
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    if (d < reach) near.push({ i, d });
+  });
+  return near.sort((a, b) => a.d - b.d || a.i - b.i).map((n) => n.i);
+}
+
 /** A rectangle on screen in client (CSS) pixels, as getBoundingClientRect gives. */
 export interface ClientRect {
   left: number;

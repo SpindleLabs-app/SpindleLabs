@@ -255,3 +255,12 @@ test(`seeded (${SEED}): 2,000 orbits keep the target and distance, and turning b
     if (phi + dPhi > 0.01 && phi + dPhi < Math.PI - 0.01) near(orbitBy(o, -dTheta, -dPhi).position, pose.position, 1e-9 * (dist + 1000), `case ${i}: back`);
   }
 });
+
+// U2d: the Fusion-style preset rests the left button as a picker.
+test("hand-worked: with no tool lit (select) the left button starts no camera move, the other buttons are as before", () => {
+  assert.equal(dragAction(0, false, "select"), "select", "left: nothing for the camera (the click picker's)");
+  assert.equal(dragAction(0, true, "select"), "select", "Shift does not turn it into an orbit");
+  assert.equal(dragAction(1, false, "select"), "pan");
+  assert.equal(dragAction(1, true, "select"), "orbit");
+  assert.equal(dragAction(2, false, "select"), null);
+});

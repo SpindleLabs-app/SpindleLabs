@@ -30,7 +30,7 @@ test("hand-checked: Modify ▾ lists Mirror, Combine, Chamfer, Fillet, Shell and
   assert.equal(fillet.note, "Coming soon");
   assert.deepEqual(fillet.data, { step: "45" });
   assert.deepEqual(comingItems("Construct").map((i) => i.label), ["Construction plane", "Construction axis", "Construction point"]);
-  assert.deepEqual(comingItems("Inspect").map((i) => i.label), ["Measure", "Section view"]);
+  assert.deepEqual(comingItems("Inspect").map((i) => i.label), ["Section view"]);
   assert.deepEqual(comingItems("Create").map((i) => i.label), ["Revolve", "Hole", "Pattern", "Sweep", "Loft"]);
 });
 

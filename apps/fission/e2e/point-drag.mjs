@@ -182,6 +182,12 @@ async function drag(page, from, to, { moves = 1, finger = false } = {}) {
     window.dragWatch?.disconnect();
     window.dragWatch = new MutationObserver(() => window.dragFrames.push(view.dataset.sketchPoints));
     window.dragWatch.observe(view, { attributes: true, attributeFilter: ["data-sketch-points"] });
+    // The solved steps as they stand the moment the drag is said to have ended, as a check waiting on
+    // that sees them (an end said before its steps are counted read as "0 solved steps" now and then, SL #380).
+    window.solvesAtEnd = null;
+    window.endWatch?.disconnect();
+    window.endWatch = new MutationObserver(() => (window.solvesAtEnd = view.dataset.dragSolves ?? "0"));
+    window.endWatch.observe(view, { attributes: true, attributeFilter: ["data-point-drags"] });
   });
   // A few pixels first, past a click's slop, so the press is a drag; then the jump.
   const path = [[a.x + 6, a.y], ...Array.from({ length: moves }, (_, k) => [a.x + 6 + ((b.x - a.x - 6) * (k + 1)) / moves, a.y + ((b.y - a.y) * (k + 1)) / moves])];
@@ -198,8 +204,8 @@ async function drag(page, from, to, { moves = 1, finger = false } = {}) {
     await page.mouse.up();
   }
   await until(page, (n) => Number(document.querySelector("#viewport").dataset.pointDrags ?? 0) >= n, ended, "the drag's end heard by the workspace");
-  const frames = await page.evaluate(() => (window.dragWatch.disconnect(), window.dragFrames));
-  return { frames: frames.map(pointsOf), steps: Number((await data(page, "dragSolves")) || 0) - solvesBefore, aim };
+  const [frames, solvesAtEnd] = await page.evaluate(() => (window.dragWatch.disconnect(), window.endWatch.disconnect(), [window.dragFrames, window.solvesAtEnd]));
+  return { frames: frames.map(pointsOf), steps: Number(solvesAtEnd || 0) - solvesBefore, aim };
 }
 
 /** Twice the signed area of the triangle a, b, c. */
@@ -233,11 +239,8 @@ try {
     await at(page, [20, 15]);
     await shown(page, "sketchPoints", "0,0 20,0 20,15 0,15");
     await page.keyboard.press("Escape");
-    // Level bottom and top, upright sides (a click on each side's middle), and (0, 0) fixed.
-    await constrain(page, "horizontal", [[10, 0]]);
-    await constrain(page, "horizontal", [[10, 15]]);
-    await constrain(page, "vertical", [[20, 7.5]]);
-    await constrain(page, "vertical", [[0, 7.5]]);
+    // The rectangle comes with its bottom and top level and its sides upright (the solver bug hunt, 2026-11-06); then (0, 0) fixed.
+    await shown(page, "sketchConstraints", "4");
     await constrain(page, "fix", [[0, 0]]);
     await page.click("#sketch-tool-select");
     const cam = await camera(page);

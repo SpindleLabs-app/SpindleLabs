@@ -13,7 +13,7 @@ import { EDGE_COLOUR, type Rgb } from "./highlight.ts";
 export type ViewTheme = "dark" | "light";
 
 /** The sketch colours (sRGB): the edited sketch's lines bright, finished ones quieter, the grid faint, the axes red (x) and green (y). */
-export const SKETCH_COLOURS = { picked: 0xffe14d, hover: 0xb8e4ff, line: 0x6cc4ff, finished: 0x8b95a3, projected: 0xc77dff, projectedFinished: 0x9d6fc4, lost: 0xff6b6b, preview: 0xffb454, snap: 0x4dff88, constraint: 0x5eead4, point: 0xffffff, grid: 0xaab4c3, axisX: 0xe5534b, axisY: 0x57ab5a, plane: 0x6cc4ff, planeOff: 0x8b95a3 };
+export const SKETCH_COLOURS = { picked: 0xffe14d, hover: 0xb8e4ff, line: 0x6cc4ff, finished: 0x8b95a3, projected: 0xc77dff, projectedFinished: 0x9d6fc4, lost: 0xff6b6b, preview: 0xffb454, snap: 0x4dff88, constraint: 0x5eead4, construction: 0xe08a4f, point: 0xffffff, grid: 0xaab4c3, axisX: 0xe5534b, axisY: 0x57ab5a, plane: 0x6cc4ff, planeOff: 0x8b95a3 };
 /** The build area's colours: a quiet blue when the bodies fit, red when they go outside, grey for the floor kept clear. */
 export const BUILD_AREA_COLOURS = { fits: 0x6fa8ff, outside: 0xff4d4d, keptClear: 0x9aa3b2 };
 /** The ground grid's centre lines and the other lines (three.js GridHelper colours). */
@@ -47,11 +47,11 @@ const dark: Palette = {
 const light: Palette = {
   backdrop: { top: [234, 244, 255], bottom: [176, 208, 244] },
   edge: [0x28 / 255, 0x2b / 255, 0x31 / 255],
-  sketch: { picked: 0xb45309, hover: 0x3b9ae8, line: 0x0b6fcf, finished: 0x5d6978, projected: 0x8e3fd1, projectedFinished: 0x7a52a8, lost: 0xd32f2f, preview: 0xb05c00, snap: 0x0a7f3a, constraint: 0x0f766e, point: 0x1b2330, grid: 0x6b7a8f, axisX: 0xd0372d, axisY: 0x2f8a3a, plane: 0x0b6fcf, planeOff: 0x5d6978 },
+  sketch: { picked: 0xb45309, hover: 0x3b9ae8, line: 0x0b6fcf, finished: 0x5d6978, projected: 0x8e3fd1, projectedFinished: 0x7a52a8, lost: 0xd32f2f, preview: 0xb05c00, snap: 0x0a7f3a, constraint: 0x0f766e, construction: 0xb4531f, point: 0x1b2330, grid: 0x6b7a8f, axisX: 0xd0372d, axisY: 0x2f8a3a, plane: 0x0b6fcf, planeOff: 0x5d6978 },
   buildArea: { fits: 0x2f6fd0, outside: 0xd32f2f, keptClear: 0x667283 },
   ground: { centre: 0x7d9cc4, lines: 0xa9c0de },
   cube: { face: "#e9eef6", corner: "#d6deea", label: "#1d2735", outline: 0x5c6b80 },
-  extrude: { fill: 0x2f8fe0, preview: 0x1f7ad6, arrow: 0x1f7ad6, arrowHot: 0xe08a00 },
+  extrude: { fill: 0x2f8fe0, refused: 0xd32f2f, preview: 0x1f7ad6, arrow: 0x1f7ad6, arrowHot: 0xe08a00 },
 };
 
 export const PALETTES: Record<ViewTheme, Palette> = { dark, light };

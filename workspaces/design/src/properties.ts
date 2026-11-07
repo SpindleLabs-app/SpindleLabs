@@ -3,7 +3,7 @@
 // with their validation, staleness and STL notes. The workspace drives it;
 // the panel only shows what it is given.
 
-import { areaIn, boxShown, describeProvenance, toMm, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
+import { areaIn, boxShown, describeProvenance, summaryInUnit, toMm, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
 import { currentUnit, downstreamChip, formatQuantity as fmt, UNIT_EVENT, type ChipInfo } from "@fission/ui";
 import { SHAPES } from "./commands.ts";
 import type { PartKind } from "./document.ts";
@@ -179,7 +179,7 @@ export interface SizeBox {
  * is made here, apart from the panel, so its scope holds none of the panel's elements: a closed view is not kept alive
  * by it (a closure shares one scope with its siblings, so the listener must not be made beside the panel's own).
  */
-function followUnit(doc: Document, onUnit: () => boolean): void {
+export function followUnit(doc: Document, onUnit: () => boolean): void {
   const weak = new WeakRef(onUnit);
   const listener = () => {
     if (weak.deref()?.() !== true) doc.removeEventListener(UNIT_EVENT, listener);
@@ -277,6 +277,11 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
   const boxes = SIZE_KEYS.map((k) => sizeBox($<HTMLInputElement>(k), () => currentUnit(doc)));
   /** The body numbers last shown, drawn again when the unit changes. */
   let shownBody: BodyView | null = null;
+  /** The part's feature last shown, its summary said again when the unit changes. */
+  let shownFeature: Feature | null = null;
+  const drawIntent = () => {
+    $("intent").textContent = shownFeature === null ? NO_BODY_FEATURE : summaryInUnit(shownFeature.intent.summary, currentUnit(doc));
+  };
   const drawBody = () => {
     if (shownBody === null) return;
     const unit = currentUnit(doc);
@@ -289,6 +294,7 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     for (const b of boxes) b.reshow();
     for (const name of slot.querySelectorAll(".unit-name")) name.textContent = currentUnit(doc);
     drawBody();
+    drawIntent();
     return true;
   };
   followUnit(doc, onUnit);
@@ -308,7 +314,8 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
       }
     },
     showFeature(feature) {
-      $("intent").textContent = feature === null ? NO_BODY_FEATURE : feature.intent.summary;
+      shownFeature = feature;
+      drawIntent();
       $("provenance").textContent = feature === null ? NONE : describeProvenance(feature.provenance);
       $("no-part").hidden = feature !== null;
     },

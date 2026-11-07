@@ -6,7 +6,7 @@ import { DESIGN_SHORTCUTS, designShortcut } from "../src/shortcuts.ts";
 const profile: Selected = { kind: "outline", id: "outline:feature-1/profile-1" };
 const face: Selected = { kind: "face", id: "face:feature-1/1" };
 
-test("Design's keys: Escape clears (also in a size field), Enter is Extrude's OK, M is Move, Shift+R is Rotate, Copy is Mod+C, Duplicate is Mod+D, L, R, C, A, T and P choose sketch tools, Delete and Backspace delete sketch curves, all but Escape only in the page", () => {
+test("Design's keys: Escape clears (also in a size field), Enter is Extrude's OK, M is Move, Shift+R is Rotate, Copy is Mod+C, Duplicate is Mod+D, L, R, C, A, T and P choose sketch tools, Delete and Backspace delete sketch curves, X makes them construction lines, all but Escape only in the page", () => {
   assert.deepEqual(DESIGN_SHORTCUTS.map((s) => [s.id, parseChord(s.keys), s.inText ?? false]), [
     ["clear-selection", "Escape", true],
     // UX1b: in the distance box Enter is the box's own OK; never twice.
@@ -30,6 +30,8 @@ test("Design's keys: Escape clears (also in a size field), Enter is Extrude's OK
     // Missing basics (2026-11-04): the Select tool's picks, never inside a text box (there the keys edit the text).
     ["delete-selection", "Delete", false],
     ["delete-selection-back", "Backspace", false],
+    // 47f: X turns the picks into construction lines, never inside a text box.
+    ["sketch-construction", "X", false],
     // SF4: the keys that start typing a size, never inside a text box (there they type).
     ...[..."0123456789.-"].map((k) => [`type-size-${k}`, k, false]),
   ]);

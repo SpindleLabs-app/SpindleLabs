@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseCommand } from "@fission/core";
-import { commandDistance, DESIGN_COMMANDS, documentFor, drawRefused, extrudable, EXTRUDE_OP, extrudeTarget, extrudeWords, RENAME_OP, renameTarget, renameWords, SKETCH_REACH } from "../src/index.ts";
+import { commandDistance, DESIGN_COMMANDS, documentFor, drawRefused, drawWords, extrudable, EXTRUDE_OP, extrudeTarget, extrudeWords, RENAME_OP, renameTarget, renameWords, SKETCH_REACH } from "../src/index.ts";
 import { addSketch } from "../src/sketch.ts";
 import { moveMarker, NAME_LIMIT, suppressItem } from "../src/timeline-edits.ts";
 
@@ -219,4 +219,11 @@ test("a name is refused the way the timeline's own Rename refuses it: empty, ove
 test("a rename in words, for the preview and its undo step", () => {
   assert.equal(renameWords({ op: RENAME_OP, name: "base" }), "rename the newest item to base");
   assert.equal(renameWords({ op: RENAME_OP, item: "Sketch 2", name: "lid" }), "rename Sketch 2 to lid");
+});
+
+test("hand-worked: the preview words in inches (25.4 mm is 1 in, 12.7 mm is 0.5 in); millimetres are as before", () => {
+  assert.equal(drawWords({ op: "draw_circle", diameter: 25.4, x: 12.7, y: -12.7 }, "in"), "circle ⌀1 in at (0.5, −0.5)");
+  assert.equal(drawWords({ op: "draw_rectangle", width: 50.8, height: 25.4 }, "in"), "rectangle 2 × 1 in centred at (0, 0)");
+  assert.equal(drawWords({ op: "draw_circle", diameter: 25.4 }), "circle ⌀25.4 mm at (0, 0)");
+  assert.equal(extrudeWords({ op: EXTRUDE_OP, distance: -50.8, sketch: "Sketch 2" }, "in"), "extrude Sketch 2 by 2 in the other way");
 });
