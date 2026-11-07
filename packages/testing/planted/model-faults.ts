@@ -173,22 +173,22 @@ export const PLANTS: Record<ModelFault, Plant> = {
   // recorded on that kernel built locally with the sessions given MODEL_KNOWS, 2026-11-04.
   "combine-tool-kept": {
     what: "a Combine leaves its tools in the design though Keep tools is off",
-    edits: [{ file: REBUILD, find: "  for (const tool of keepTools ? [] : tools) delete bodies[tool];", replace: "  for (const tool of keepTools ? [] : tools.slice(0, 0)) delete bodies[tool];" }],
+    edits: [{ file: REBUILD, find: "    for (const tool of step.keepTools ? [] : step.tools) delete work[tool];", replace: "    for (const tool of step.keepTools ? [] : step.tools.slice(0, 0)) delete work[tool];" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
   "combine-not-held": {
     what: "a Combine's target keeps its body as it was",
     edits: [
-      { file: REBUILD, find: "  delete bodies[target];\n", replace: "" },
-      { file: REBUILD, find: "    bodies[nb.id] = { feature: nb.id === target", replace: "    if (nb.id !== target) bodies[nb.id] = { feature: nb.id === target" },
+      { file: REBUILD, find: "    delete work[step.target];\n", replace: "" },
+      { file: REBUILD, find: "      work[nb.id] = { feature: nb.id === step.target", replace: "      if (nb.id !== step.target) work[nb.id] = { feature: nb.id === step.target" },
     ],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
   "combine-pieces-dropped": {
     what: "a Combine's pieces apart from its target are left out",
-    edits: [{ file: REBUILD, find: "    bodies[nb.id] = { feature: nb.id === target", replace: "    if (nb.id === target) bodies[nb.id] = { feature: nb.id === target" }],
+    edits: [{ file: REBUILD, find: "      work[nb.id] = { feature: nb.id === step.target", replace: "      if (nb.id === step.target) work[nb.id] = { feature: nb.id === step.target" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
@@ -204,8 +204,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "      return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
-        replace: "      for (const tool of keepTools ? [] : tools) delete bodies[tool];\n      return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+        find: "        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+        replace: "        for (const tool of step.keepTools ? [] : step.tools) delete bodies[tool];\n        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
       },
     ],
     run: ["timeline"],
@@ -489,7 +489,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "source-lost-silent": {
     fault: "source-lost-silent",
     what: "an extrude of a held face sketch says nothing",
-    edits: [{ file: REBUILD, find: "...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) });", replace: "...(spec.warning ? { warning: spec.warning } : {}) });" }],
+    edits: [{ file: REBUILD, find: "...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) };", replace: "...(spec.warning ? { warning: spec.warning } : {}) };" }],
     run: ["naming"],
     caught: "hand-worked: a sketch on a cylinder's flat top",
     why: "the hand-worked file naming a cylinder's side comes before the Fusion answers",

@@ -28,3 +28,14 @@
 /* The distance box glows softly while the view's arrow is dragged, and fades as it ends (Ben, 2026-10-28), as Move's do. */
 .extrude .extrude-row input { transition: box-shadow 0.3s, border-color 0.3s, background-color 0.3s; }
 .extrude .extrude-row input.extrude-dragged { border-color: var(--look-accent, var(--accent)); background-color: color-mix(in srgb, var(--look-accent, var(--accent)) 12%, var(--look-field, var(--page))); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, var(--accent)) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, var(--accent)) 45%, transparent); }
+/* The Operation row (Fusion's New body, Join, Cut, Intersect; only with ?combine) and, for the last three, the bodies the extrude reaches, each ticked or not. */
+.extrude .extrude-operation { min-width: 8em; }
+.extrude .extrude-bodies { border: 1px solid var(--line-6cc4ff); border-radius: 4px; margin: 6px 0; padding: 4px 8px; }
+.extrude .extrude-bodies legend { padding: 0 4px; min-width: 0; }
+.extrude .extrude-body { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 2px 0; cursor: pointer; }
+.extrude .extrude-body input { flex: none; width: 16px; height: 16px; min-height: 0; margin: 0; }
+@media (max-width: 700px) {
+  .extrude .extrude-operation { min-height: 44px; }
+  .extrude .extrude-body { min-height: 44px; }
+  .extrude .extrude-body input { width: 22px; height: 22px; min-height: 0; }
+}

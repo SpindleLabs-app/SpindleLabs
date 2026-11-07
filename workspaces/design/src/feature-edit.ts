@@ -11,8 +11,9 @@
 // These are pure document functions; workspace.ts drives the panel.
 
 import { KernelError, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
-import { changePreset, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
-import { featureSpec, isFlipped, setExtrudeDistance, setExtrudeFlip } from "./extrude.ts";
+import { changePreset, isOperationExtrude, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
+import { featureSpec, isFlipped, setExtrudeDistance, setExtrudeFlip, setExtrudeRegion } from "./extrude.ts";
+import type { RegionRef } from "./regions.ts";
 import type { Outline } from "./profiles.ts";
 import { parameterRows, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { buildSpec } from "./spec.ts";
@@ -36,7 +37,7 @@ function featureIn(doc: DesignDocument, id: string): Feature {
 }
 
 /** Whether item `id` has sizes to edit: every solid feature (a preset or an extrude of a sketch); a sketch is edited with Edit Sketch (25a3), a Move with its own panel (35e2b). */
-export const canEditFeature = (f: Feature) => ownShape(f);
+export const canEditFeature = (f: Feature) => ownShape(f) || isOperationExtrude(f);
 
 /** Item `id`'s sizes as the panel shows them: the boxes its shape uses (parameterRows), with the values it has now. */
 export function editableFeature(doc: DesignDocument, id: string): EditableFeature {
@@ -58,12 +59,19 @@ export const editStep = (doc: DesignDocument, id: string) => TIMELINE_STEPS.edit
  * its id, its place, its suppressed flag and what it is built from; only
  * the sizes its shape uses are read (a size left out keeps its value). An
  * extrude of a sketch takes its distance from `height`, and its Flip from
- * `flip` (left out keeps it; a preset has none to set). The document
+ * `flip` (left out keeps it; a preset has none to set), and its region
+ * from `region` (48d4; left out keeps it). The document
  * itself comes back when nothing changes, so nothing is recorded. Every
  * other item is left as it was (the "edit-leaks" plant breaks this).
  */
-export function editFeature(doc: DesignDocument, id: string, typed: PartSizes, flip?: boolean): DesignDocument {
+export function editFeature(doc: DesignDocument, id: string, typed: PartSizes, flip?: boolean, region?: RegionRef): DesignDocument {
   const now = editableFeature(doc, id);
+  // Another region of its sketch (48d4): set first, then the sizes and Flip as before.
+  if (region !== undefined) {
+    if (now.shape !== "sketch-extrude") throw new Error(`${now.name} has no region: only an extrude of a sketch extrudes one`);
+    const picked = setExtrudeRegion(doc, region, id);
+    if (picked !== doc) return editFeature(picked, id, typed, flip);
+  }
   if (flip !== undefined && now.flip === undefined) throw new Error(`${now.name} has no Flip: only an extrude of a sketch goes either way`);
   if (flip !== undefined && typeof flip !== "boolean") throw new Error(`${now.name}: Flip must be true or false, not ${shown(flip)}`);
   const flipped = flip === undefined || flip === now.flip ? doc : setExtrudeFlip(doc, flip, id);

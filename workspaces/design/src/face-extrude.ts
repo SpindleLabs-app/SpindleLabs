@@ -14,7 +14,7 @@ import type { KernelCalls, Outline, Plane } from "@fission/core";
 import type { DesignDocument, Sketch } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import { projectPick } from "./projection.ts";
-import { regionOutline, regionRef, sketchRegions, type RegionRef } from "./regions.ts";
+import { refusalReason, regionOutline, regionRef, sketchRegions, type RegionRef } from "./regions.ts";
 import { sceneHit, type Scene } from "./scene.ts";
 import { addFaceSketch, projectEdges, sketchPlane } from "./sketch.ts";
 
@@ -80,7 +80,7 @@ export async function faceRegion(kernel: KernelCalls, face: Pick<FaceProfile, "a
   if (matched.length === 0) return { refused: faceOpen(found.why ?? "no region of its edges is the face") };
   if (matched.length > 1) return { refused: faceOpen(FACE_TWO_REGIONS) };
   const r = matched[0];
-  if (!r.extrudes) return { refused: faceOpen(r.refused ?? "its region can't be extruded") };
+  if (!r.extrudes) return { refused: faceOpen(r.refused === undefined ? "its region can't be extruded" : refusalReason(r.refused)) };
   return { outline: regionOutline(r), ref: regionRef(r, found.ids) };
 }
 

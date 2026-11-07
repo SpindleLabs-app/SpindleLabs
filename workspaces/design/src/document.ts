@@ -208,7 +208,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 9;
+  version: 11;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -400,7 +400,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 9, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 11, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -516,8 +516,38 @@ export const COMBINE_PARAMS = ["target", "tools", "operation", "keepTools"] as c
 /** Whether an item works on bodies other items made (a Move, a Combine), depending on those items, rather than making one of its own. */
 export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f);
 
-/** Whether an item makes a body of its own: anything but a sketch, a Move or a Combine (a Duplicate's copy is its own body). */
-export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f);
+/**
+ * An extrude of a sketch with an operation (Fusion's Join, Cut and
+ * Intersect in Extrude's panel; Design data version 10): `operation` and
+ * `bodies`, the bodies it works on (body ids, each made before it, in the
+ * order picked). Its own body never stays a body: Join puts it and every
+ * other body picked into the first one picked (which keeps its id), Cut
+ * takes it out of each body picked, Intersect keeps only what each body
+ * picked shares with it. Every body picked keeps its id; any other piece
+ * is `body:<the extrude>/piece:<k>`, as a Combine's. It depends on its
+ * sketch, then on the items that made its bodies. Without `operation` an
+ * extrude is a new body, as before version 10.
+ */
+export const isOperationExtrude = (f: Feature) => isSketchExtrude(f) && Object.hasOwn(f.intent.parameters, "operation");
+
+/** An extrude's operation and the bodies it works on (body ids, in the order picked); null for an extrude that is a new body (or any other item). */
+export function extrudeOperation(f: Feature): { operation: CombineOperation; bodies: string[] } | null {
+  if (!isOperationExtrude(f)) return null;
+  const p = f.intent.parameters;
+  return { operation: p.operation as CombineOperation, bodies: [...(p.bodies as string[])] };
+}
+
+/** The items that made an operation extrude's bodies, each once, in the order picked. */
+export const operationMakers = (f: Feature): string[] => [...new Set((extrudeOperation(f)?.bodies ?? []).map((b) => bodyItem(b)!))];
+
+/** Whether an item can leave pieces (`body:<it>/piece:<k>`): a Combine, or an extrude with an operation. */
+export const makesPieces = (f: Feature) => isCombineItem(f) || isOperationExtrude(f);
+
+/** Whether an item makes a body of its own: anything but a sketch, a Move, a Combine or an extrude with an operation (a Duplicate's copy is its own body). */
+export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f) && !isOperationExtrude(f);
+
+/** Whether an item's own faces can be named in the design (sketched on, pinned to, projected): one that makes a body, or an extrude with an operation (its faces carried onto the bodies it joined or cut). */
+export const hasOwnFaces = (f: Feature) => makesBody(f) || isOperationExtrude(f);
 
 /**
  * A Duplicate (step 35e2): a copy of one body made before it (its `body`,
@@ -591,7 +621,7 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
   const made = doc.timeline.features.filter(makesBody);
   const live = new Set(made.map((f) => bodyIdOf(f.id)));
   // A Combine's pieces (35f1) keep their numbers while the Combine is there; `numberPieces` gives them theirs.
-  const combines = new Set(doc.timeline.features.filter(isCombineItem).map((f) => f.id));
+  const combines = new Set(doc.timeline.features.filter(makesPieces).map((f) => f.id));
   const old = doc.bodies ?? [];
   const kept = old.filter((b) => live.has(b.id) || (isPiece(b.id) && combines.has(bodyItem(b.id)!)));
   const have = new Set(kept.map((b) => b.id));
@@ -605,8 +635,8 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
 }
 
 /**
- * The document with each of `pieces` (Combine pieces a rebuild made,
- * "body:<combine>/piece:<k>", 35f1) that has no number yet numbered, in
+ * The document with each of `pieces` (the pieces a rebuild made of a
+ * Combine or an extrude with an operation, "body:<item>/piece:<k>", 35f1) that has no number yet numbered, in
  * the order given, the counter going up; the same document when all have
  * one. Called once a rebuild shows which pieces there are, so a piece is
  * numbered when it first appears and keeps that number from then on.
@@ -614,7 +644,7 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
 export function numberPieces(doc: DesignDocument, pieces: readonly string[]): DesignDocument {
   const numbered = numberBodies(doc);
   const have = new Set(numbered.bodies!.map((b) => b.id));
-  const combines = new Set(doc.timeline.features.filter(isCombineItem).map((f) => f.id));
+  const combines = new Set(doc.timeline.features.filter(makesPieces).map((f) => f.id));
   const fresh = [...new Set(pieces)].filter((id) => isPiece(id) && combines.has(bodyItem(id)!) && !have.has(id));
   if (fresh.length === 0) return numbered;
   let next = numbered.nextBody!;
@@ -980,7 +1010,7 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   if (Object.hasOwn(face, "held")) checkPlane(face.held, `${at}'s held plane`);
   if (Object.hasOwn(face, "body")) checkPlane(face.body, `${at}'s body frame`);
   const there = byId.get(feature);
-  if (there !== undefined && (there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${at} is on a face of ${shown(feature)}, which is not a solid item before it in the timeline`);
+  if (there !== undefined && (there.at > byId.get(f.id)!.at || !hasOwnFaces(there.item))) throw new Error(`${at} is on a face of ${shown(feature)}, which is not a solid item before it in the timeline`);
   if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} is on a face of ${feature} but does not depend on it`);
 }
 
@@ -1015,7 +1045,7 @@ function checkPins(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item
     const feature = pin.feature;
     if (typeof feature !== "string" || feature.length === 0) throw new Error(`${at}'s pin on ${pin.point} names no feature`);
     const there = byId.get(feature);
-    if (there !== undefined && (there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${at}'s pin on ${pin.point} is on ${shown(feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && (there.at > byId.get(f.id)!.at || !hasOwnFaces(there.item))) throw new Error(`${at}'s pin on ${pin.point} is on ${shown(feature)}, which is not a solid item before it in the timeline`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} has a point pinned to ${feature} but does not depend on it`);
   }
 }
@@ -1044,7 +1074,7 @@ function checkProjections(f: Feature, content: Sketch, byId: ReadonlyMap<string,
     const name = `${at}'s projection ${p.id}`;
     if (typeof p.feature !== "string" || p.feature.length === 0) throw new Error(`${name} names no feature`);
     const there = byId.get(p.feature);
-    if (there !== undefined && (there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${name} is of ${shown(p.feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && (there.at > byId.get(f.id)!.at || !hasOwnFaces(there.item))) throw new Error(`${name} is of ${shown(p.feature)}, which is not a solid item before it in the timeline`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.feature)) throw new Error(`${at} projects an edge of ${p.feature} but does not depend on it`);
     if (typeof p.edge !== "string" || p.edge.length === 0 || p.edge.includes("/")) throw new Error(`${name} has no edge name`);
     if (edges.has(`${p.feature}/${p.edge}`)) throw new Error(`${at} projects the edge ${p.edge} of ${p.feature} twice`);
@@ -1281,6 +1311,34 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
 }
 
 /**
+ * An extrude's operation, checked (version 10): `operation` join, cut or
+ * intersect, always with `bodies`, a list of one or more bodies made
+ * before it (an item's own, or a numbered piece), none twice; or neither.
+ * A body whose item was deleted is kept (the extrude then fails, naming
+ * it, as a Combine does). It depends on its sketch, then exactly on the
+ * items that made its bodies, in their order.
+ */
+function checkOperation(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design extrude ${f.id}`;
+  const p = f.intent.parameters;
+  if (!(COMBINE_OPERATIONS as readonly unknown[]).includes(p.operation)) throw new Error(`${at}'s operation ${shown(p.operation)} is not join, cut or intersect`);
+  if (!Array.isArray(p.bodies) || p.bodies.length === 0) throw new Error(`${at} ${p.operation}s but names no bodies to ${p.operation === "join" ? "join to" : p.operation}`);
+  notTooMany(p.bodies.length, DESIGN_LIMITS.items, `${at} names`, "bodies");
+  const once = new Set<unknown>();
+  for (const id of p.bodies as unknown[]) {
+    const maker = typeof id === "string" ? bodyItem(id) : null;
+    const there = maker === null ? undefined : byId.get(maker);
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || maker === f.id || !isBodyOf(d, byId, id as string))) throw new Error(`${at}: ${shown(id)} is not a body made before it in the timeline`);
+    if (once.has(id)) throw new Error(`${at} picks ${id} twice`);
+    once.add(id);
+  }
+  const want = [p.sketch as string, ...operationMakers(f).filter((m) => m !== p.sketch)];
+  if (!Array.isArray(f.dependsOn) || f.dependsOn.length !== want.length || want.some((m, i) => f.dependsOn[i] !== m))
+    throw new Error(`${at} must depend on its sketch, then exactly on the items that made the bodies it ${p.operation}s, in their order (${want.join(", ")})`);
+}
+
+/**
  * Whether `id` is a body of the design by its body id (version 6): an
  * item's own ("body:feature-3", the item making a body), or a piece
  * ("body:feature-5/piece:1") the data's bodies list numbers (35ec).
@@ -1307,7 +1365,7 @@ function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: 
   if (maker === null) return false;
   const at = byId.get(maker);
   if (!isPiece(id)) return at !== undefined && makesBody(at.item);
-  return at !== undefined && isCombineItem(at.item) && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id);
+  return at !== undefined && makesPieces(at.item) && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id);
 }
 
 /**
@@ -1332,8 +1390,8 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
     const item = m ? byId.get(m[1])?.item : undefined;
     // A piece (35f1): "body:<a Combine>/piece:<k>"; one whose Combine is gone is dropped by `numberBodies`, as a body whose item is.
     const maker = isPiece(b.id) ? byId.get(bodyItem(b.id)!)?.item : undefined;
-    if (isPiece(b.id) ? maker !== undefined && !isCombineItem(maker) : !m || (item && !makesBody(item)))
-      throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body, or a piece of a Combine`);
+    if (isPiece(b.id) ? maker !== undefined && !makesPieces(maker) : !m || (item && !makesBody(item)))
+      throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body, or a piece of a Combine or of an extrude that joins, cuts or intersects`);
     if (ids.has(b.id)) throw new Error(`Design body ${b.id} is listed twice`);
     ids.add(b.id);
     if (!Number.isSafeInteger(b.number) || b.number < 1) throw new Error(`Design body ${b.id}'s number ${typeof b.number === "string" ? JSON.stringify(b.number) : shown(b.number)} is not a counting number`);
@@ -1356,6 +1414,18 @@ function hasVersion8Fields(d: Record<string, unknown>): boolean {
 function hasVersion9Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
   return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "region"));
+}
+
+/** Whether version 9 data holds what only version 10 brought: an extrude with an operation (Join, Cut or Intersect) or the bodies it works on. */
+function hasVersion10Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "extrude" && isRecord(f.intent.parameters) && (Object.hasOwn(f.intent.parameters, "operation") || Object.hasOwn(f.intent.parameters, "bodies")));
+}
+
+/** Whether version 10 data holds what only version 11 brought (step 35e2m): a Duplicate. */
+function hasVersion11Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "duplicate");
 }
 
 /**
@@ -1394,7 +1464,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
@@ -1406,10 +1476,16 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const v8 = v7.version === 7 ? { ...v7, version: 8 } : v7;
   // Version 9 (48) adds an extrude's region, which version 8 never held; its fields are read as they are.
   if (v8.version === 8 && hasVersion9Fields(v8)) throw new Error(`Design data says version ${shown(given)} but has an extrude naming its sketch region, which version 9 brought`);
-  const d = (v8.version === 8 ? { ...v8, version: 9 } : v8) as Partial<DesignDocument>;
+  const v9 = v8.version === 8 ? { ...v8, version: 9 } : v8;
+  // Version 10 adds an extrude's operation (Join, Cut, Intersect) and its bodies, which version 9 never held; its fields are read as they are.
+  if (v9.version === 9 && hasVersion10Fields(v9)) throw new Error(`Design data says version ${shown(given)} but has an extrude that joins, cuts or intersects, which version 10 brought`);
+  const v10 = v9.version === 9 ? { ...v9, version: 10 } : v9;
+  // Version 11 (35e2m) adds the Duplicate item, which version 10 never held; its fields are read as they are.
+  if (v10.version === 10 && hasVersion11Fields(v10)) throw new Error(`Design data says version ${shown(given)} but has a Duplicate, which version 11 brought`);
+  const d = (v10.version === 10 ? { ...v10, version: 11 } : v10) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 9 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 9) throw new (Number.isSafeInteger(d.version) && d.version! > 9 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8 or 9)`);
+  // A whole number above 11 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 11) throw new (Number.isSafeInteger(d.version) && d.version! > 11 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10 or 11)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1474,14 +1550,18 @@ export function readDesignDocument(data: unknown): DesignDocument {
     // Only an extrude of a sketch has a region: one anywhere else is refused, never kept unread (48d hunt).
     if (!isSketchExtrude(f) && isRecord(f.intent?.parameters) && Object.hasOwn(f.intent.parameters, "region"))
       throw new Error(`Design feature ${f.id} has a region, which only an extrude of a sketch has`);
+    // Only an extrude of a sketch has an operation (version 10), always with its bodies, and bodies only with one.
+    if (!isSketchExtrude(f) && !actsOnBodies(f) && isRecord(f.intent?.parameters) && (Object.hasOwn(f.intent.parameters, "operation") || Object.hasOwn(f.intent.parameters, "bodies")))
+      throw new Error(`Design feature ${f.id} has an operation, which only an extrude of a sketch has`);
     if (!isSketchExtrude(f)) continue;
     const p = f.intent.parameters;
+    if (Object.hasOwn(p, "bodies") && !Object.hasOwn(p, "operation")) throw new Error(`Design extrude ${f.id} names bodies but no operation (join, cut or intersect) to use them in`);
     if (Object.hasOwn(p, "profile")) throw new Error(`Design feature ${f.id} extrudes both a sketch and a profile`);
     // Its sketch may be gone (deleted: the extrude keeps its last shape, or fails naming it), but never another item or a later one.
     const there = byId.get(p.sketch as string)?.at ?? -1;
     if (typeof p.sketch !== "string" || (there >= 0 && (there > i || !isSketchItem(d.timeline.features[there]))))
       throw new Error(`Design feature ${f.id} extrudes ${shown(p.sketch)}, which is not a sketch before it in the timeline`);
-    if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.sketch as string)) throw new Error(`Design feature ${f.id} extrudes ${p.sketch} but does not depend on it`);
+    if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.sketch as string) || (!Object.hasOwn(p, "operation") && f.dependsOn.length !== 1)) throw new Error(`Design feature ${f.id} extrudes ${p.sketch} but does not depend on it`);
     if (!isFiniteNumber(p.distance)) throw new Error(`Design feature ${f.id}: distance ${shown(p.distance)} is not a number of mm`);
     if (Object.hasOwn(p, "flip") && p.flip !== true) throw new Error(`Design feature ${f.id}: flip must be true or left out, not ${shown(p.flip)}`);
     if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
@@ -1528,7 +1608,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   ];
   // A kept shape holds a sketch's old ids (some may still be in the sketch): never repeated by a new id, so the counter is above them too.
   // So does a move's deleted body, so no new body takes its id and is moved by it.
-  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter(actsOnBodies).flatMap((f) => f.dependsOn)];
+  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter((f) => actsOnBodies(f) || isOperationExtrude(f)).flatMap((f) => f.dependsOn)];
   for (const id of kept) {
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
@@ -1558,13 +1638,15 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
-  for (const f of d.timeline.features) if (ownShape(f)) shapeWith(f, (id) => profiles.get(id));
+  for (const f of d.timeline.features) if (ownShape(f) || isOperationExtrude(f)) shapeWith(f, (id) => profiles.get(id));
   // A Move's numbers and bodies (step 35e2).
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
   // A Combine's bodies and operation (step 35f1).
   for (const f of d.timeline.features) if (isCombineItem(f)) checkCombine(d, f, byId);
   // A Duplicate's body (step 35e2).
   for (const f of d.timeline.features) if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
+  // An extrude's operation and its bodies (Design data version 10).
+  for (const f of d.timeline.features) if (isOperationExtrude(f)) checkOperation(d, f, byId);
   // Each dependency an id (after the Move's own check, which says what a move's should be).
   for (const f of d.timeline.features)
     for (const id of f.dependsOn as unknown[]) {
@@ -1624,13 +1706,16 @@ function asking(document: DesignDocument): Asked {
   return { document, byId, sketches, contents, marker: end, greyed: new Map(), builds: new Map() };
 }
 
-/** What an item is built on, of the items in the timeline: a sketch's (`sketchInputs`); an extrude of a sketch, the sketch; else nothing. */
+/** What an item is built on, of the items in the timeline: a sketch's (`sketchInputs`); an extrude of a sketch, the sketch, then (with an operation) the items that made its bodies; else nothing. */
 function inputsOf(a: Asked, f: Feature): Feature[] {
   if (isSketchItem(f)) return sketchInputs(f, a.contents.get(f.id)).flatMap((id) => a.byId.get(id) ?? []);
   if (onBodies(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
   const sketch = isSketchExtrude(f) ? a.sketches.get(f.intent.parameters.sketch) : undefined;
-  return sketch === undefined ? [] : [sketch];
+  return [...(sketch === undefined ? [] : [sketch]), ...makersOf(a.byId, f)];
 }
+
+/** The items that made an operation extrude's bodies, those still in the timeline (none for any other item). */
+const makersOf = (byId: ReadonlyMap<unknown, Feature>, f: Feature): Feature[] => operationMakers(f).flatMap((id) => byId.get(id) ?? []);
 
 function greyedIn(a: Asked, f: Feature): string | null {
   const known = a.greyed.get(f);
@@ -1661,7 +1746,9 @@ function buildsNow(a: Asked, f: Feature): boolean {
   // A Move builds when every body it moves does; a Combine when its target and tools do; a Duplicate when its body does.
   if (onBodies(f)) return inputsOf(a, f).every((x) => buildsIn(a, x));
   if (isSketchItem(f) || !isSketchExtrude(f)) return true;
-  const [sketch] = inputsOf(a, f);
+  // An extrude with an operation also needs every body it works on (version 10).
+  if (!makersOf(a.byId, f).every((x) => buildsIn(a, x))) return false;
+  const sketch = a.sketches.get(f.intent.parameters.sketch);
   // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2).
   if (sketch === undefined) return keptOf(document, f) !== undefined;
   return buildsIn(a, sketch);
@@ -1710,15 +1797,17 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
   for (const f of open) {
     // A sketch: its face's feature, then each feature a pin (27c) or a projection (27d) names, as `inputsOf` (one lookup each, audit S2).
     const sketch = isSketchExtrude(f) ? sketches.get(f.intent.parameters.sketch) : undefined;
-    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : sketch === undefined ? [] : [sketch];
-    const input = inputs[0];
+    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...(sketch === undefined ? [] : [sketch]), ...makersOf(byId, f)];
+    const input = sketch;
+    // An extrude with an operation builds only when every body it works on does (version 10).
+    const bodiesBuild = makersOf(byId, f).every((x) => building.has(x));
     let by: string | null = null;
     for (const x of inputs) if ((by = x.suppressed ? x.id : (greyed.get(x) ?? null)) !== null) break;
     if (by !== null) greyed.set(f, by);
     // A sketch builds, on a face followed or held (26c); an extrude when its sketch does (a sketch on an origin plane
     // whenever it is in range and on, wherever it is), or from its kept shape when it is gone.
     // A Move when every body it moves builds (step 35e2), a Combine when its target and tools do (35f1), a Duplicate when its body does.
-    else if (onBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input)))) building.add(f);
+    else if (onBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (bodiesBuild && (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input))))) building.add(f);
   }
   return { building, greyed };
 }
