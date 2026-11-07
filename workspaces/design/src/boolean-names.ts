@@ -17,7 +17,11 @@
 //   its lowest corner (smaller x, then y, then z); with no face wholly in
 //   one piece the first by rank keeps the id. A join: the piece holding the
 //   target keeps it, whatever its faces. Every other piece is
-//   `body:<feature>/piece:<k>`, k counting on from `firstPiece`.
+//   `body:<feature>/piece:<k>`, k counting on from `firstPiece`; a piece
+//   the data already numbered (`remembered`, by the shown names of its
+//   faces when it was first numbered) keeps its id on the one piece with
+//   those faces, and an id no piece matches is given in rank order and
+//   reported (`renumbered`), never switched silently (hunt 11-06).
 // - Rule 3: two or more faces carrying one name (anywhere in the design)
 //   each add a tag: the sorted shown names of the faces bordering it that
 //   border none of the others (`fullNames`).
@@ -123,15 +127,36 @@ export function faceLow(view: BodyView, f: number): readonly number[] {
 /** The body's lowest corner (a solid bounded by flat faces has its lowest point at a corner). */
 export const bodyLow = (view: BodyView): readonly number[] => lowest(view.vertex_points);
 
-/** What `combineNames` gives: the result bodies named, the keeper first then the new pieces in rank order, and the next piece number; or why it failed. */
-export type CombineNames = { bodies: NamedBody[]; nextPiece: number } | { failed: string };
+/**
+ * What `combineNames` gives: the result bodies named, the keeper first then
+ * the pieces in rank order, the next piece number, and the remembered
+ * piece ids given to a piece whose faces are not the ones remembered; or
+ * why it failed.
+ */
+export type CombineNames = { bodies: NamedBody[]; nextPiece: number; renumbered: string[] } | { failed: string };
+
+/** A body's faces by their shown (first) names, sorted, each once: what the data remembers a Combine's piece by. */
+export const shownFaces = (faces: readonly FaceNames[]): string[] => [...new Set(faces.flatMap((f) => (f.names.length > 0 ? [f.names[0]] : [])))].sort();
 
 /**
  * Names the result of `body_boolean(target, tools, op)` run by `feature`
  * (a Combine): `result` the kernel's answer, `views` each result body's
- * view in the same order. New pieces count from `firstPiece`.
+ * view in the same order. New pieces count from `firstPiece`. `remembered`
+ * holds the pieces the data numbered, each by its id and the shown names
+ * of its faces when first numbered: each goes to the one piece (not the
+ * keeper) with exactly those faces, the only remembered piece with them;
+ * the rest take the lowest free numbers in rank order.
  */
-export function combineNames(feature: string, op: BooleanOp, target: NamedBody, tools: readonly NamedBody[], result: BooleanResult, views: readonly BodyView[], firstPiece = 1): CombineNames {
+export function combineNames(
+  feature: string,
+  op: BooleanOp,
+  target: NamedBody,
+  tools: readonly NamedBody[],
+  result: BooleanResult,
+  views: readonly BodyView[],
+  firstPiece = 1,
+  remembered: ReadonlyMap<string, readonly string[]> = new Map(),
+): CombineNames {
   if (result.bodies.length === 0) return { failed: `it would leave nothing of ${target.id}` };
   if (views.length !== result.bodies.length || result.history.length !== result.bodies.length) throw new Error("each result body needs its view and its history");
   const inputs = new Map<BodyHandle, { body: NamedBody; order: number }>();
@@ -185,10 +210,31 @@ export function combineNames(feature: string, op: BooleanOp, target: NamedBody, 
   );
   if (keeper < 0) keeper = order[0];
   const rest = order.filter((p) => p !== keeper);
+  // Each remembered piece of this Combine to the one piece with its faces, when no other remembered piece has them too.
+  const prefix = `body:${feature}/piece:`;
+  const numberOf = (id: string) => (id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) ? Number(id.slice(prefix.length)) : null);
+  const key = (names: readonly string[]) => JSON.stringify([...new Set(names)].sort());
+  const keys = rest.map((p) => key(shownFaces(named[p])));
+  const ours = [...remembered].filter(([id]) => numberOf(id) !== null).map(([id, names]) => ({ id, k: numberOf(id)!, key: key(names) }));
+  const given = new Map<number, number>(); // piece → its number
+  for (const r of ours) {
+    const at = keys.flatMap((k, i) => (k === r.key ? [i] : []));
+    if (at.length === 1 && ours.filter((o) => o.key === r.key).length === 1) given.set(rest[at[0]], r.k);
+  }
+  const taken = new Set(given.values());
+  let free = firstPiece;
+  for (const p of rest) {
+    if (given.has(p)) continue;
+    while (taken.has(free)) free++;
+    given.set(p, free);
+    taken.add(free);
+  }
+  const renumbered = ours.filter((r) => rest.some((p) => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key)).map((r) => r.id);
   const body = (p: number, id: string): NamedBody => ({ id, handle: result.bodies[p], view: views[p], faces: named[p], made });
   return {
-    bodies: [body(keeper, target.id), ...rest.map((p, i) => body(p, `body:${feature}/piece:${firstPiece + i}`))],
-    nextPiece: firstPiece + rest.length,
+    bodies: [body(keeper, target.id), ...rest.map((p) => body(p, `${prefix}${given.get(p)}`))],
+    nextPiece: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1)),
+    renumbered,
   };
 }
 

@@ -35,7 +35,7 @@ function content(n: number, take: () => number): { points: Sketch["points"]; cur
 function bigDesign({ pairs, content: per = 6, lone = 0, loneContent = 6, kept = [] }: Shape): DesignDocument {
   let next = 1;
   const take = () => next++;
-  const doc: DesignDocument = { version: 12, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  const doc: DesignDocument = { version: 13, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const extrudes: string[] = [];
   const sketch = (n: number) => {
     const id = `sketch-${take()}`;
@@ -63,8 +63,9 @@ const refused = (d: unknown, message: string) => assert.throws(() => readDesignD
 test("the limits, worked from what they must hold", () => {
   // A sketch holds ten times the kernel's 2,000-corner outline: 20,000 points and curves.
   // The whole design 25 such sketches: 25 × 20,000 = 500,000. Timeline items and
-  // profiles 5,000 each, far past any real part's few hundred.
-  assert.deepEqual(DESIGN_LIMITS, { items: 5_000, profiles: 5_000, sketch: 20_000, content: 500_000 });
+  // profiles 5,000 each, far past any real part's few hundred. The pieces' remembered face names (hunt 11-06)
+  // as many as the points and curves: each curve makes at most one side face, so 500,000 names hold any design's faces.
+  assert.deepEqual(DESIGN_LIMITS, { items: 5_000, profiles: 5_000, sketch: 20_000, content: 500_000, faces: 500_000 });
 });
 
 test("bigDesign makes what it says: 2 pairs of 6 are 4 items and 12 points and curves, ids counted from 1", () => {

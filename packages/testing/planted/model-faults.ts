@@ -794,4 +794,11 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
     run: ["naming"],
     caught: "projection-hunt: A:",
   },
+  // Hunt 11-06: a Combine's numbered pieces kept by their faces.
+  "pieces-by-rank": {
+    what: "a Combine's pieces are numbered by rank order on every rebuild, the faces the data remembers ignored, so an earlier edit that changes their sizes moves a number to another piece silently",
+    edits: [{ file: REBUILD, find: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered);", replace: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, new Map());" }],
+    run: ["naming"],
+    caught: "combine-piece-identity: hand-worked: Combine 2 stays on the far piece when a slot moves",
+  },
 };
