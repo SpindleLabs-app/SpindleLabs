@@ -72,22 +72,49 @@ export function sameLoop(a: readonly RegionPiece[], b: readonly RegionPiece[]): 
   return false;
 }
 
+/** The same loop run the other way: the pieces in reverse order, each flipped (a region turned over by a drag keeps its curves, but the kernel names it counter-clockwise, so the other way round). */
+export function mirroredLoop(a: readonly RegionPiece[], b: readonly RegionPiece[]): boolean {
+  return sameLoop(a, [...b].reverse().map((p) => ({ curve: p.curve, reversed: !p.reversed })));
+}
+
 /**
- * The region `ref` names among `regions` (the kernel's answer for curves
- * `ids`): the one with the same name, or of several with it, the one whose
- * centroid is nearest the saved one (the first listed of equally near
- * ones); undefined when no region has the name (the sketch changed round it).
+ * How far (sketch mm) a region's centroid may be from the one saved for it
+ * to be the same region found by its shape, when the curves round it are no
+ * longer the ones named (a side deleted and drawn again between the same
+ * corners): the kernel's 10 nm, so only the very same shape, never one moved.
  */
-export function findRegion(regions: readonly SketchRegion[], ids: CurveIds, ref: RegionRef): SketchRegion | undefined {
-  let best: SketchRegion | undefined;
-  let bestD = Infinity;
-  for (const r of regions) {
-    const name = regionName(r, ids);
-    if (name === null || !sameLoop(name, ref.outer)) continue;
-    const d = Math.hypot(r.centroid[0] - ref.centroid[0], r.centroid[1] - ref.centroid[1]);
-    if (best === undefined || d < bestD) [best, bestD] = [r, d];
+export const REDRAWN_CENTROID = 1e-5;
+
+/**
+ * The item among `items` that is region `ref`, best first: one with the
+ * same name (the same loop of curves, from any start); else the same loop
+ * turned over (a corner dragged through the far side); of several, the one
+ * whose centroid is nearest the saved one (the first listed of equally near
+ * ones). Else the one region with the saved centroid within
+ * REDRAWN_CENTROID that still has a curve of the old name (a side drawn
+ * again); two such are not told apart. Undefined when none is.
+ */
+export function pickRegion<T>(items: readonly T[], nameOf: (t: T) => readonly RegionPiece[] | null, centroidOf: (t: T) => readonly [number, number], ref: RegionRef): T | undefined {
+  const from = (t: T) => Math.hypot(centroidOf(t)[0] - ref.centroid[0], centroidOf(t)[1] - ref.centroid[1]);
+  for (const same of [sameLoop, mirroredLoop]) {
+    let best: T | undefined;
+    let bestD = Infinity;
+    for (const t of items) {
+      const name = nameOf(t);
+      if (name === null || !same(name, ref.outer)) continue;
+      const d = from(t);
+      if (best === undefined || d < bestD) [best, bestD] = [t, d];
+    }
+    if (best !== undefined) return best;
   }
-  return best;
+  const old = new Set(ref.outer.map((p) => p.curve));
+  const shaped = items.filter((t) => from(t) <= REDRAWN_CENTROID && (nameOf(t) ?? []).some((p) => old.has(p.curve)));
+  return shaped.length === 1 ? shaped[0] : undefined;
+}
+
+/** The region `ref` names among `regions` (the kernel's answer for curves `ids`), by `pickRegion`'s rule; undefined when none is (the sketch changed round it). */
+export function findRegion(regions: readonly SketchRegion[], ids: CurveIds, ref: RegionRef): SketchRegion | undefined {
+  return pickRegion(regions, (r) => regionName(r, ids), (r) => r.centroid, ref);
 }
 
 /** A region's profile as an extrude's outline: what make_extrude takes, with its holes' pieces kept for the side faces' names. */
