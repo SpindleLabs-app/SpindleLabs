@@ -114,6 +114,22 @@ export function setExtrudeFlip(doc: DesignDocument, on: boolean, id?: string): D
 }
 
 /**
+ * The document with extrude `id` of a sketch extruding region `region` of
+ * its sketch (step 48d4, Edit feature picking another region): the same
+ * item, its id, distance, Flip and place kept. The same document back when
+ * it already names that region (the same curves, the same way round, the
+ * same centroid).
+ */
+export function setExtrudeRegion(doc: DesignDocument, region: RegionRef, id: string): DesignDocument {
+  const old = doc.timeline.features.find((f) => f.id === id);
+  if (!old) throw new Error(`there is no feature ${shown(id)} in the design`);
+  if (!isSketchExtrude(old)) throw new Error(`${old.intent.summary} is not an extrude of a sketch, so it has no region to pick`);
+  if (JSON.stringify(old.intent.parameters.region) === JSON.stringify({ outer: region.outer, centroid: region.centroid })) return doc;
+  const feature: Feature = { ...old, intent: { ...old.intent, parameters: { ...old.intent.parameters, region: { outer: region.outer.map((p) => ({ curve: p.curve, reversed: p.reversed })), centroid: [region.centroid[0], region.centroid[1]] } } } };
+  return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
+}
+
+/**
  * The body a feature builds, as the kernel's BodySpec. An extrude of a
  * sketch asks the kernel for the sketch's outline now (never stored), or
  * uses its kept shape (`extrudeSpec`); every other feature is read from

@@ -130,6 +130,12 @@ export function regionCurveIds(content: Pick<Sketch, "points" | "curves" | "proj
   };
 }
 
+/** How the kernel starts the words of a region it can't extrude (kernel #143: then the reason, naming the curves). */
+export const REFUSED_PREFIX = "this region can't be extruded: ";
+
+/** A refused region's reason without the kernel's opening words, for words that say "can't be extruded" themselves; other words as they are. */
+export const refusalReason = (why: string): string => (why.startsWith(REFUSED_PREFIX) ? why.slice(REFUSED_PREFIX.length) : why);
+
 /** Every region of a sketch's points and curves, from the kernel, with the ids its pieces name (`ids`). A curve the kernel refuses outright is its error. */
 export async function sketchRegions(kernel: KernelCalls, content: Pick<Sketch, "points" | "curves" | "projected">): Promise<SketchRegions & { ids: CurveIds }> {
   const c = curvesOf(content.points, profileCurves(content));
