@@ -10,6 +10,8 @@ Each pull request's entry in `changelog.d/` ends with a `public:` part: the `- `
 - If the region an extrude uses is cut apart or loses a line, the extrude keeps its last shape and says why.
 - A flat face with holes in it can be extruded straight from the face, and the holes go through the new part too.
 - A region keeps its extrude when a corner is dragged across so the shape turns over, or when a side is deleted and drawn again in the same place.
+- Edit feature on an extrude can pick a different region of its sketch.
+- A region that can't be extruded says why in plain words, naming the lines that cause it.
 - Measure (Inspect menu): click a face, edge or corner to read its size, then a second to get the distance between them, along X, Y and Z, and the angle.
 - With Print check on, finishing a sketch in a scene of several rounded bodies no longer freezes the app for a few seconds.
 
