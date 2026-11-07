@@ -210,7 +210,7 @@ test("hand-worked (48d3): a region's extrude keeps its faces' names while the sk
   // is z 10..13: middle (5, 5, 11.5). Then a second hole (radius 2 round (32, 22)) and a triangle off to the right
   // are drawn in the plate's sketch, then the second hole or the loose line drawn first deleted: every face is found by its name each time, so
   // both cylinders stay where they were; only the plate's volume changes, (1200 − 25π − 4π) × 10 and back to (1200 − 25π) × 10.
-  const empty: DesignDocument = { version: 11, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
+  const empty: DesignDocument = { version: 12, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
   const s = addSketch(empty, "XY");
   // A loose line drawn first, off to the left, so deleting it later moves every other line one place down the sketch's list.
   const loose = drawLine(s.doc, s.id, [-20, 0], [-10, 5]);
