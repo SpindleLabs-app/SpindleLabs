@@ -5,8 +5,10 @@
 // rebuild solves it again with the followed points where the body put
 // them: what the solve moves is taken into the document like the followed
 // points themselves. A sketch whose constraints can't hold there keeps
-// the followed points unsolved, with a warning in words. A sketch with no
-// constraints is left as before 47d (the kernel says when its arc is off).
+// the followed points unsolved, with a warning in words. A sketch with
+// arcs but no constraints is solved too (the solver bug hunt, 2026-11-06:
+// its arc was left off its circle, unsaid; constraint-hunt.test.ts); one
+// with neither is left as before 47d.
 // On the real kernel's solver and build.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +18,7 @@ import { addConstraint } from "../src/constraints.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { editFeature } from "../src/feature-edit.ts";
 import { BodyCache, followedDoc, rebuildTimeline, settleKept } from "../src/rebuild.ts";
-import { addFaceSketch, drawArc, pinNewPoints } from "../src/sketch.ts";
+import { addFaceSketch, drawArc, drawLine, pinNewPoints } from "../src/sketch.ts";
 
 const kernel = nodeKernel();
 const sketchOf = (doc: DesignDocument, id: string): Sketch => doc.sketches.find((s) => s.id === id)!;
@@ -94,11 +96,15 @@ test("constraints that can't hold where the body put the point: the followed poi
   assert.match(r.status === "built" ? (r.constraints?.message ?? "") : "", /^Sketch 1's constraints can't all hold where its points on the body are now/);
 });
 
-test("a sketch with no constraints is left as before: its followed point moves alone", async () => {
-  const { doc, id, arc } = await quarterArc([]);
+test("a sketch with no constraints and no arcs is left as before: its followed point moves alone, nothing solved", async () => {
+  // A line from the top's back right corner (40, 30), pinned there, to (30, 40). Lines don't tie their ends, so nothing needs solving.
+  const { doc: onTop, id } = addFaceSketch(partDocument("box", 40, 30, 20), { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
+  const line = drawLine(onTop, id, [40, 30], [30, 40]);
+  const l = sketchOf(line.doc, id).curves.find((c) => c.id === line.id) as { start: string; end: string };
+  const doc = pinNewPoints(onTop, line.doc, id, [{ at: [40, 30], kind: "endpoint", name: "back+right&back+top&right+top", feature: "feature-1" }]);
   const { build, doc: drawn } = await rebuilt(editFeature(doc, "feature-1", { width: 60 }));
-  near(xy(drawn, id, arc.start), [60, 30], "the start");
-  near(xy(drawn, id, arc.end), [30, 40], "the end, not solved");
+  near(xy(drawn, id, l.start), [60, 30], "the start");
+  near(xy(drawn, id, l.end), [30, 40], "the end, not moved");
   const r = build.results[id];
   assert.ok(r.status === "built" && r.solved === undefined && r.constraints === undefined);
 });

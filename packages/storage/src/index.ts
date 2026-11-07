@@ -25,5 +25,5 @@ export function localStore(readers: readonly DataReader[]): VersionedStore {
   const kv = indexedDbKeyValue();
   return versionedStore(projectStore(kv, readers), kv, readers);
 }
-export { bringForward, forget } from "./projects.ts";
+export { bringForward, forget, MAX_PROJECT_NAME, rename } from "./projects.ts";
 export { storageFull, versionedStore, VERSION_GAP_MS, VERSION_LIMIT, type VersionedStore } from "./versions.ts";

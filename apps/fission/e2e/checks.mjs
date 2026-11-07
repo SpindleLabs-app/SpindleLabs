@@ -14,6 +14,7 @@ export const HELPERS = [
   "kernel-cap.mjs",
   "live-site.mjs",
   "monkey-core.mjs",
+  "monkey-units.mjs",
   "png.mjs",
   "properties.mjs",
   "sketch-screen.mjs",

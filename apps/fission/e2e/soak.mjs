@@ -84,11 +84,17 @@ const until = (p, fn, arg) => p.waitForFunction(fn, arg);
 const saveFile = join(tmpdir(), `soak-${process.pid}.spindle`);
 const resaved = join(tmpdir(), `soak-${process.pid}-fresh.spindle`);
 
-/** A sketch on the ground plane: Create Sketch, then the XY plane (on a phone, from the bar over the view). */
+/**
+ * A sketch on the ground plane: Create Sketch, then the XY plane (on a phone, from the bar over the view). Returns the
+ * canvas the sketch's view was fitted at: on a phone the sketch's tool rows then take ~90 px off the view's height, and
+ * the viewport keeps its camera through a change of height only (viewer.ts `resize`), so clicks map by that canvas.
+ */
 async function sketchOnGround(p) {
+  const fitted = await p.locator("#viewport canvas").boundingBox();
   await p.click("#create-sketch");
   await pickPlane(p, "XY", false);
   await until(p, () => document.querySelector("#viewport").dataset.sketching === "true");
+  return fitted;
 }
 
 /** Body `n`'s row in the Browser pressed (on a phone, in its sheet). */
@@ -138,9 +144,14 @@ async function emptyDesign(p) {
 let problems = [];
 const fail = (cycleNo, list) => list.length && problems.push(...list.map((x) => `cycle ${cycleNo}: ${x}`));
 
-/** Another workspace shown, then Design again. */
+/**
+ * Another workspace shown, then Design again. DESIGN ▾'s Slice item runs Design's Slice for printing instead of showing
+ * the Slice workspace (src/main.ts, sliceForPrinting, since 2026-11-04), so Slice's own screen is opened by its link, as
+ * an unlisted workspace is: the soak still visits all nine, and the seed draws the same cycles.
+ */
 async function visit(id) {
-  await switchTo(page, id);
+  if (id === "slice") await page.evaluate((hash) => (location.hash = hash), `#${id}`);
+  else await switchTo(page, id);
   await until(page, (w) => document.body.dataset.activeWorkspace === w, id);
   await switchTo(page, "design");
   await until(page, () => document.body.dataset.activeWorkspace === "design");
@@ -160,9 +171,9 @@ async function cycle(i, random) {
 
   // A w × d rectangle on the ground (grid snap, at the empty sketch's zoom on 10 mm marks), extruded h.
   const [w, d, h] = [between(10, 40, 10), between(10, 30, 10), between(4, 18)];
-  await sketchOnGround(page);
+  const fitted = await sketchOnGround(page);
   await page.click("#sketch-tool-rectangle");
-  for (const corner of [[0, 0], [w, d]]) await clickPlane(page, corner, EMPTY_TOP);
+  for (const corner of [[0, 0], [w, d]]) await clickPlane(page, corner, EMPTY_TOP, false, fitted);
   await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.");
   await page.click("#sketch-extrude");
   await until(page, () => document.querySelector("#extrude-status")?.textContent.startsWith("Sketch 1 makes a closed outline."));

@@ -17,12 +17,12 @@ export { edgeName, edgeNamed, edgeShape, madeKind, madePoints, MIN_LENGTH, profi
 export { faceEdgeTargets, inSketch, pinNow, pointWords, sketchEdgeTargets, vertexNames, type EdgeKind, type EdgeTarget, type PinNow, type PointWarning, type SketchPin } from "./face-edges.ts";
 export { CURVED_FACE, sketchableFaces, sketchSpot, UNNAMED_FACE, type SketchSpot } from "./face-pick.ts";
 export { clickAt, hoverTool, SAME_LINE, SKETCH_TOOLS, startTool, switchTool, toolBusy, type LineTool, type RectangleTool, type SketchTool, type ToolKind } from "./sketch-tool.ts";
-export { CURVED_EXTRUDE, FACE_NEW_BODY, FACE_WITH_HOLES, faceLabel, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
+export { CURVED_EXTRUDE, FACE_MATCH, FACE_NEW_BODY, FACE_TWO_REGIONS, faceLabel, faceOpen, faceProfile, faceRegion, matchesFace, onPlane, type FaceProfile } from "./face-extrude.ts";
 export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, featureBuild, featureSpec, isFlipped, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, previewSpec, setExtrudeDistance, setExtrudeFlip, signedDistance, ZERO_DISTANCE, ZERO_OK } from "./extrude.ts";
 export { PART_VIEW, syncGraph } from "./graph.ts";
 export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
 export { bodyReference, designReference, NAME_NOTE, profileReference, readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
-export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type PieceWays } from "./naming.ts";
+export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type CurveOf, type PieceWays, type SideOf } from "./naming.ts";
 export { applyChange, pickChange, type SelectionChange } from "./picking.ts";
 export { droppedNote, highlightOf, NAME_SHARED, panelFocus, panelPart, referenceLabel, selectionRows, survivors, type PanelFocus } from "./selection.ts";
 export { designNames, featureBody, resolveFaceName, type DesignNames, type NamedBody } from "./boolean-names.ts";

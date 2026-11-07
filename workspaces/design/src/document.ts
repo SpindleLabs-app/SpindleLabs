@@ -41,6 +41,8 @@ export interface SketchLineCurve {
   kind: "line";
   start: string;
   end: string;
+  /** A construction curve (47f): drawn dashed, left out of the outline, held by constraints and dimensions like any other. Absent for an ordinary curve. */
+  construction?: true;
 }
 
 /** A sketch circle round one of its sketch's points, named by id, with its radius in mm (step 22b). */
@@ -49,6 +51,8 @@ export interface SketchCircleCurve {
   kind: "circle";
   centre: string;
   radius: number;
+  /** A construction curve (47f): drawn dashed, left out of the outline, held by constraints and dimensions like any other. Absent for an ordinary curve. */
+  construction?: true;
 }
 
 /**
@@ -62,6 +66,8 @@ export interface SketchArcCurve {
   start: string;
   end: string;
   centre: string;
+  /** A construction curve (47f): drawn dashed, left out of the outline, held by constraints and dimensions like any other. Absent for an ordinary curve. */
+  construction?: true;
 }
 
 /**
@@ -72,10 +78,38 @@ export interface SketchArcCurve {
  * (constraints.ts), so a fix needs no value of its own. Kept in the order
  * they were made, oldest first (the solver blames the oldest that fights).
  */
-export type SketchConstraint = { id: string; kind: "horizontal" | "vertical" | "coincident"; a: string; b: string } | { id: string; kind: "fix"; point: string };
+export type SketchConstraint =
+  | { id: string; kind: "horizontal" | "vertical" | "coincident"; a: string; b: string }
+  | { id: string; kind: "fix"; point: string }
+  | SketchDistance
+  | SketchDiameter;
 
-/** The points a constraint names: two, or one for a fix. */
-export const constraintPoints = (c: SketchConstraint): string[] => (c.kind === "fix" ? [c.point] : [c.a, c.b]);
+/**
+ * A dimension (step 47e): two points `value` mm apart, a line's length
+ * (its start and end), the distance between two points, or an arc's
+ * radius (its centre and start). Solved by the kernel with the others.
+ */
+export interface SketchDistance {
+  id: string;
+  kind: "distance";
+  a: string;
+  b: string;
+  value: number;
+}
+
+/** A circle's diameter dimension (step 47e): the circle's radius is `value` / 2, and the solver counts one freedom fewer. */
+export interface SketchDiameter {
+  id: string;
+  kind: "diameter";
+  circle: string;
+  value: number;
+}
+
+/** The smallest and largest dimension (mm): the kernel's MIN_FEATURE and the modelling range's width, as the solver takes them. */
+export const DIMENSION_LIMITS = { min: 1e-3, max: 2e8 } as const;
+
+/** The points a constraint names: two, one for a fix, none for a diameter (it names its circle). */
+export const constraintPoints = (c: SketchConstraint): string[] => (c.kind === "fix" ? [c.point] : c.kind === "diameter" ? [] : [c.a, c.b]);
 
 /** The most constraints one sketch may hold: the solver's own limit (four a point at its 2,000 points). */
 export const MAX_SKETCH_CONSTRAINTS = 8000;
@@ -174,7 +208,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 7;
+  version: 9;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -366,7 +400,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 7, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 9, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -811,7 +845,8 @@ function checkSketch(s: unknown, i: number): void {
   notTooMany(s.points.length + s.curves.length, DESIGN_LIMITS.sketch, `${at} has`, "points and curves");
   notTooMany(s.constraints.length, MAX_SKETCH_CONSTRAINTS, `${at} has`, "constraints");
   checkContent(s.points, s.curves, at);
-  checkConstraints(s.constraints, new Set(s.points.map((p) => (p as SketchPoint).id)), at);
+  const circles = new Map(s.curves.filter((c) => isRecord(c) && c.kind === "circle").map((c) => [(c as SketchCircleCurve).id, c as SketchCircleCurve]));
+  checkConstraints(s.constraints, new Set(s.points.map((p) => (p as SketchPoint).id)), at, circles);
 }
 
 /**
@@ -820,17 +855,33 @@ function checkSketch(s: unknown, i: number): void {
  * different ones, or one for a fix). Whether they hold is the solver's,
  * the next time one is added.
  */
-function checkConstraints(list: unknown[], points: ReadonlySet<string>, at: string): void {
+function checkConstraints(list: unknown[], points: ReadonlySet<string>, at: string, circles: ReadonlyMap<string, SketchCircleCurve> = new Map()): void {
   const ids = new Set<string>();
+  const sized = new Set<string>();
+  const dimension = (c: Record<string, unknown>) => {
+    const v = c.value;
+    if (!isFiniteNumber(v) || v < DIMENSION_LIMITS.min || v > DIMENSION_LIMITS.max) throw new Error(`${at}: dimension ${c.id} needs a value from 0.001 to 200000000 mm, not ${shown(v)}`);
+  };
   for (const [j, c] of list.entries()) {
     if (!isRecord(c) || typeof c.id !== "string") throw new Error(`${at}: constraint ${j + 1} has no id`);
     if (ids.has(c.id)) throw new Error(`${at}: two constraints are called ${shown(c.id)}`);
     ids.add(c.id);
+    if (c.kind === "diameter") {
+      // 47e: the circle's radius is stored as the dimension says (the sketch is always stored solved).
+      dimension(c);
+      const circle = typeof c.circle === "string" ? circles.get(c.circle) : undefined;
+      if (!circle) throw new Error(`${at}: dimension ${c.id} sizes ${shown(c.circle)}, which is not one of the sketch's circles`);
+      if (sized.has(circle.id)) throw new Error(`${at}: circle ${circle.id} has two diameter dimensions`);
+      sized.add(circle.id);
+      if (circle.radius !== (c.value as number) / 2) throw new Error(`${at}: circle ${circle.id} has radius ${shown(circle.radius)}, but dimension ${c.id} says its diameter is ${shown(c.value)}`);
+      continue;
+    }
+    if (c.kind === "distance") dimension(c);
     if (c.kind === "fix") {
       if (typeof c.point !== "string" || !points.has(c.point)) throw new Error(`${at}: constraint ${c.id} fixes ${shown(c.point)}, which is not one of the sketch's points`);
       continue;
     }
-    if (c.kind !== "horizontal" && c.kind !== "vertical" && c.kind !== "coincident") throw new Error(`${at}: constraint ${c.id} is a ${shown(c.kind)}, which this SpindleLabs can't read yet`);
+    if (c.kind !== "horizontal" && c.kind !== "vertical" && c.kind !== "coincident" && c.kind !== "distance") throw new Error(`${at}: constraint ${c.id} is a ${shown(c.kind)}, which this SpindleLabs can't read yet`);
     for (const p of [c.a, c.b]) if (typeof p !== "string" || !points.has(p)) throw new Error(`${at}: constraint ${c.id} names ${shown(p)}, which is not one of the sketch's points`);
     if (c.a === c.b) throw new Error(`${at}: constraint ${c.id} joins point ${c.a} to itself`);
   }
@@ -852,6 +903,8 @@ function checkContent(pointList: unknown[], curves: unknown[], at: string): void
   }
   for (const [j, c] of s.curves.entries()) {
     if (!isRecord(c) || typeof c.id !== "string") throw new Error(`${at}: curve ${j + 1} has no id`);
+    // 47f: true or left out, so a file never says false where an ordinary curve says nothing.
+    if (Object.hasOwn(c, "construction") && c.construction !== true) throw new Error(`${at}: curve ${c.id} has construction ${shown(c.construction)}, which must be true or left out`);
     if (c.kind === "circle") {
       if (typeof c.centre !== "string" || !points.has(c.centre)) throw new Error(`${at}: circle ${c.id} is round ${shown(c.centre)}, which is not one of the sketch's points`);
       if (!isFiniteNumber(c.radius) || c.radius <= 0) throw new Error(`${at}: circle ${c.id} needs a radius in mm above 0, not ${shown(c.radius)}`);
@@ -1162,7 +1215,8 @@ function checkMove(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<str
     const maker = typeof id === "string" ? bodyItem(id) : null;
     const there = maker === null ? undefined : byId.get(maker);
     // A body deleted since is allowed, as an extrude's deleted sketch is: the rebuild fails the move naming it (the id's counter check is below).
-    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    // So is a piece of a Combine deleted since (hunt 11-06: deleting the Combine left a file that would not open again, and broke redo).
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
     if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} moves ${shown(id)}, which is not a body made before it in the timeline`);
     if (once.has(id)) throw new Error(`${at} moves ${id} twice`);
     once.add(id);
@@ -1192,7 +1246,7 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   for (const [i, id] of bodies.entries()) {
     const maker = typeof id === "string" ? bodyItem(id) : null;
     const there = maker === null ? undefined : byId.get(maker);
-    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
     const what = i === 0 ? "its target" : `tool ${shown(id)}`;
     if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at}: ${what === "its target" ? `its target ${shown(id)}` : what} is not a body made before it in the timeline`);
     if (once.has(id)) throw new Error(i > 0 && id === p.target ? `${at}'s target ${id} is also a tool` : `${at} picks ${id} twice`);
@@ -1249,11 +1303,49 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
   }
 }
 
+/** Whether version 7 data holds what only version 8 brought (47e, 47f): a construction curve, or a distance or diameter dimension, in a sketch or a kept shape. */
+function hasVersion8Fields(d: Record<string, unknown>): boolean {
+  const curves = (list: unknown) => Array.isArray(list) && list.some((c) => isRecord(c) && Object.hasOwn(c, "construction"));
+  const dims = (list: unknown) => Array.isArray(list) && list.some((c) => isRecord(c) && (c.kind === "distance" || c.kind === "diameter"));
+  const sketches = Array.isArray(d.sketches) ? d.sketches.filter(isRecord) : [];
+  const kept = isRecord(d.kept) ? Object.values(d.kept).filter(isRecord) : [];
+  return sketches.some((s) => curves(s.curves) || dims(s.constraints)) || kept.some((k) => curves(k.curves));
+}
+
+/** Whether version 8 data holds what only version 9 brought (step 48): an extrude of a sketch naming its region. */
+function hasVersion9Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "region"));
+}
+
+/**
+ * Checks an extrude's `region` (step 48): `{ outer, centroid }`, `outer`
+ * the curves round the region's outside as `{ curve, reversed }` (a curve
+ * id and true or false), one at least and at most a sketch's limit, and
+ * `centroid` two finite numbers (mm). The ids need not be curves of the
+ * sketch now: a region whose curves were deleted is lost, not wrong.
+ */
+function checkRegion(region: unknown, id: string): void {
+  const where = `Design feature ${id}'s region`;
+  if (!isRecord(region)) throw new Error(`${where} is not an object with outer and centroid`);
+  for (const key of Object.keys(region)) if (key !== "outer" && key !== "centroid") throw new Error(`${where} has ${shown(key)}, which a region never holds`);
+  const { outer, centroid } = region;
+  if (!Array.isArray(outer) || outer.length === 0) throw new Error(`${where}'s outer is not a list of the curves round it`);
+  notTooMany(outer.length, DESIGN_LIMITS.sketch, `${where} names`, "curves");
+  for (const [k, p] of outer.entries()) {
+    if (!isRecord(p) || typeof p.curve !== "string" || typeof p.reversed !== "boolean" || Object.keys(p).length !== 2)
+      throw new Error(`${where}'s curve ${k + 1} is not { curve: an id, reversed: true or false }`);
+  }
+  if (!Array.isArray(centroid) || centroid.length !== 2 || !centroid.every(isFiniteNumber)) throw new Error(`${where}'s centroid ${shown(centroid)} is not two numbers of mm`);
+}
+
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
   // Counted before migrating, which spreads every id of a version 1 file.
   for (const [list, limit, what] of [[data.profiles, DESIGN_LIMITS.profiles, "profiles"], [isRecord(data.timeline) ? data.timeline.features : undefined, DESIGN_LIMITS.items, "timeline items"], [data.sketches, DESIGN_LIMITS.items, "sketches"]] as const)
     if (Array.isArray(list)) notTooMany(list.length, limit, "Design data has", what);
+  // The version the file says, for words about it: the steps below raise older data's version as they migrate it (48d hunt).
+  const given = data.version;
   const v2 = data.version === 1 ? migrateDesignV1(data) : data;
   const v3 = v2.version === 2 ? migrateDesignV2(v2) : v2;
   // Version 4 has version 3's fields; only data saved before it can hold the old preset names, renamed once checked (below).
@@ -1262,16 +1354,22 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
   // Version 7 names a ready-made profile's pieces with its shape (face hunt 11-01): version 6 and older names are read so, once checked (below).
   const pieceNames = v6.version === 6;
-  const d = (pieceNames ? { ...v6, version: 7 } : v6) as Partial<DesignDocument>;
+  const v7 = pieceNames ? { ...v6, version: 7 } : v6;
+  // Version 8 (47f) adds construction curves and dimensions, which version 7 never held; its fields are read as they are.
+  if (v7.version === 7 && hasVersion8Fields(v7)) throw new Error(`Design data says version ${shown(given)} but has construction curves or dimensions, which version 8 brought`);
+  const v8 = v7.version === 7 ? { ...v7, version: 8 } : v7;
+  // Version 9 (48) adds an extrude's region, which version 8 never held; its fields are read as they are.
+  if (v8.version === 8 && hasVersion9Fields(v8)) throw new Error(`Design data says version ${shown(given)} but has an extrude naming its sketch region, which version 9 brought`);
+  const d = (v8.version === 8 ? { ...v8, version: 9 } : v8) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 7 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 7) throw new (Number.isSafeInteger(d.version) && d.version! > 7 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6 or 7)`);
+  // A whole number above 9 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 9) throw new (Number.isSafeInteger(d.version) && d.version! > 9 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8 or 9)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1333,6 +1431,9 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const s of d.sketches) if (!sketchItemIds.has(s.id)) throw new Error(`Design sketch ${s.id} has no place in the timeline`);
   // An extrude of a sketch comes after its sketch and depends on it, so a rebuild in order always has the outline.
   for (const [i, f] of d.timeline.features.entries()) {
+    // Only an extrude of a sketch has a region: one anywhere else is refused, never kept unread (48d hunt).
+    if (!isSketchExtrude(f) && isRecord(f.intent?.parameters) && Object.hasOwn(f.intent.parameters, "region"))
+      throw new Error(`Design feature ${f.id} has a region, which only an extrude of a sketch has`);
     if (!isSketchExtrude(f)) continue;
     const p = f.intent.parameters;
     if (Object.hasOwn(p, "profile")) throw new Error(`Design feature ${f.id} extrudes both a sketch and a profile`);
@@ -1343,6 +1444,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.sketch as string)) throw new Error(`Design feature ${f.id} extrudes ${p.sketch} but does not depend on it`);
     if (!isFiniteNumber(p.distance)) throw new Error(`Design feature ${f.id}: distance ${shown(p.distance)} is not a number of mm`);
     if (Object.hasOwn(p, "flip") && p.flip !== true) throw new Error(`Design feature ${f.id}: flip must be true or left out, not ${shown(p.flip)}`);
+    if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
   }
   if (Object.hasOwn(d, "kept")) {
     if (!isRecord(d.kept)) throw new Error("Design data's kept shapes are not an object of extrude ids");
@@ -1409,6 +1511,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
       for (const q of c === undefined ? [p.made] : c.kind === "line" ? [c.start, c.end] : c.kind === "circle" ? [c.centre] : [c.start, c.end, c.centre]) follows.add(q);
     }
     for (const c of s.constraints) for (const q of constraintPoints(c)) if (follows.has(q)) throw new Error(`Design sketch ${s.id}: constraint ${c.id} names ${q}, which follows a body's edge, so a constraint can't hold it`);
+    // A projected circle's size is the body's (47e).
+    for (const c of s.constraints) if (c.kind === "diameter" && (s.projected ?? []).some((p) => p.made === c.circle)) throw new Error(`Design sketch ${s.id}: dimension ${c.id} sizes ${c.circle}, which is projected from a body, so the body says its size`);
   }
   // Every solid feature is its own body (24d1), so each one's sizes or profile are checked, not only the part's.
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).

@@ -31,6 +31,8 @@ export function q4m8zt(p0: string): string;
 
 export function qmdw4c(): string;
 
+export function r7w2kx(p0: any, p1: any, p2: any): any;
+
 export function rk7wq2(p0: number, p1: any, p2: any): any;
 
 export function u3qr1f(p0: number, p1: number, p2: number): any;
@@ -44,6 +46,8 @@ export function uxyfpl(p0: number, p1: number, p2: number): any;
 export function vicdld(p0: number): void;
 
 export function xqg0dt(p0: number, p1: number): any;
+
+export function zt5kqw(p0: any, p1: any): any;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -65,6 +69,7 @@ export interface InitOutput {
     readonly pprlx7: (a: number) => [number, number, number];
     readonly q4m8zt: (a: number, b: number) => [number, number, number, number];
     readonly qmdw4c: () => [number, number];
+    readonly r7w2kx: (a: any, b: any, c: any) => [number, number, number];
     readonly rk7wq2: (a: number, b: any, c: any) => [number, number, number];
     readonly u3qr1f: (a: number, b: number, c: number) => [number, number, number];
     readonly uq4cun: (a: number, b: number, c: number, d: number, e: number, f: any, g: any, h: any, i: number) => [number, number, number];
@@ -72,6 +77,7 @@ export interface InitOutput {
     readonly uxyfpl: (a: number, b: number, c: number) => [number, number, number];
     readonly vicdld: (a: number) => [number, number];
     readonly xqg0dt: (a: number, b: number) => [number, number, number];
+    readonly zt5kqw: (a: any, b: any) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

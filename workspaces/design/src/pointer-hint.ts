@@ -31,6 +31,7 @@ export function hintOf(tool: SketchTool): string {
     case "vertical":
     case "coincident":
     case "fix":
+    case "dimension":
       return constraintHint(tool);
   }
 }

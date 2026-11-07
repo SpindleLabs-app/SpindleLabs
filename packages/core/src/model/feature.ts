@@ -15,12 +15,18 @@ import type { WorkspaceId } from "./project.ts";
 
 export type ParameterValue = number | string | boolean;
 
+/** A sketch region an extrude names (Design, step 48): the curves round its outside by id, and its centroid (mm) to tell two of one name apart. */
+export interface RegionParameter {
+  outer: readonly { curve: string; reversed: boolean }[];
+  centroid: readonly [number, number];
+}
+
 /** What a feature is for, in words and numbers. */
 export interface Intent {
   /** e.g. "box", "extrude", later "hole", "pocket", "engrave". */
   type: string;
-  /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies). */
-  parameters: Record<string, ParameterValue | readonly string[]>;
+  /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies); a Design extrude's sketch region. */
+  parameters: Record<string, ParameterValue | readonly string[] | RegionParameter>;
   /** One line for people, e.g. "Box: 40 × 30 × 20 mm". */
   summary: string;
   /** Optional: why it is there, e.g. "mounting hole for an M3 screw". */

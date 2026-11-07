@@ -4,10 +4,10 @@
 // icon buttons of our own drawing, each named for screen readers and with a
 // tooltip saying how to do the same with the mouse.
 import type { ViewName } from "./views.ts";
-import type { NavMode } from "./navigation.ts";
+import type { BarNavMode, NavMode } from "./navigation.ts";
 
 export interface NavBarActions {
-  mode(mode: NavMode): void;
+  mode(mode: BarNavMode): void;
   fit(): void;
   lookAt(): void;
   view(name: ViewName): void;
@@ -26,7 +26,7 @@ const ICONS: Record<string, string> = {
 };
 const svg = (name: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
-const MODES: readonly [NavMode, string, string][] = [
+const MODES: readonly [BarNavMode, string, string][] = [
   ["orbit", "Orbit", "Orbit: left-drag turns the view (Shift+middle-drag any time)"],
   ["pan", "Pan", "Pan: left-drag slides the view (middle-drag any time)"],
   ["zoom", "Zoom", "Zoom: drag up to zoom in toward where you pressed (scroll wheel any time)"],
@@ -59,12 +59,13 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
   modes.classList.add("nav-slider");
   const slider = modes.appendChild(Object.assign(document.createElement("span"), { className: "nav-slider-mark" }));
   slider.setAttribute("aria-hidden", "true");
-  const modeButtons = new Map<NavMode, HTMLButtonElement>();
+  const modeButtons = new Map<BarNavMode, HTMLButtonElement>();
   let shown: NavMode = "orbit";
   /** Puts the highlight on `shown`'s button: where it sits in the group, as laid out now. */
   const place = () => {
-    const b = modeButtons.get(shown)!;
-    if (!b.offsetWidth) return; // not laid out (asleep, hidden): placed when it is
+    const b = modeButtons.get(shown as BarNavMode);
+    slider.hidden = b === undefined; // no tool lit (the Fusion-style preset at rest): no highlight
+    if (!b || !b.offsetWidth) return; // not laid out (asleep, hidden): placed when it is
     slider.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
     slider.style.width = `${b.offsetWidth}px`;
     slider.style.height = `${b.offsetHeight}px`;

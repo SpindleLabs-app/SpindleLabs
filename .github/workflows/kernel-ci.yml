@@ -55,12 +55,16 @@ env:
   LABEL: ${{ inputs.label }}
 
 jobs:
-  checks:
+  # The kernel's checks run in parts at once, one runner each (the kernel's
+  # ci/parts.sh names them): one after another they took 65 to 115 minutes
+  # (2026-11-06), in parts about as long as the slowest part. A kernel commit
+  # from before the parts runs them all in one part, "all".
+  checks-plan:
     runs-on: ubuntu-latest
     environment: kernel
-    # The checks now take about 80 minutes (2026-11-05), and one run on a
-    # slow runner was cancelled at 90; 150, as for a mutants shard.
-    timeout-minutes: 150
+    timeout-minutes: 10
+    outputs:
+      parts: ${{ steps.plan.outputs.parts }}
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
@@ -73,6 +77,45 @@ jobs:
         env:
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
         run: .github/scripts/kernel_ci.sh status kernel-ci/checks pending "Running on SpindleLabs' runners"
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ inputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
+      - name: The parts
+        id: plan
+        run: |
+          if [ -x k/ci/parts.sh ]; then
+            parts=$(k/ci/parts.sh list 2>/dev/null | sed -n 's/^parts \(\[[a-z,]*\]\)$/\1/p')
+          else
+            parts='[all]'
+          fi
+          [ -n "$parts" ] || { echo "the parts list failed"; exit 1; }
+          echo "parts $parts"
+          echo "parts=$(echo "$parts" | sed 's/\([a-z][a-z]*\)/"\1"/g')" >>"$GITHUB_OUTPUT"
+
+  checks:
+    needs: checks-plan
+    runs-on: ubuntu-latest
+    environment: kernel
+    # The slowest part takes about 25 minutes; the whole checks once took 80
+    # and one run on a slow runner was cancelled at 90 (2026-11-05). 150,
+    # as for a mutants shard, so a kernel commit from before the parts still fits.
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(needs.checks-plan.outputs.parts) }}
+    env:
+      PART: ${{ matrix.part }}
+    steps:
+      - name: Inputs are commit ids, a label and a part, nothing else
+        run: |
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
@@ -96,7 +139,23 @@ jobs:
           pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >/dev/null 2>&1
       # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
       # slicing engine's oracle (Ubuntu noble ships 2.7.2).
-      - run: sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq valgrind prusa-slicer >/dev/null 2>&1
+      # Only the parts whose checks use them (baseline: release; the slicer
+      # oracle: rest; a kernel commit from before the parts: all), so three
+      # parts never touch the package mirror; a check that lacks its tool
+      # fails, never skips. Usually 20 seconds, but a slow mirror once held it
+      # 57 minutes and on 2026-11-06 failed three 5-minute tries in a row on
+      # several parts at once: each download now gives up after 60 seconds
+      # without data and is retried by apt itself, and a failed try waits
+      # 1, 2, then 4 minutes before the next of four (up to 10 minutes each).
+      - if: contains(fromJSON('["release","rest","all"]'), matrix.part)
+        run: |
+          apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
+          for try in 1 2 3 4; do
+            sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
+            echo "apt-get try $try failed"
+            [ $try = 4 ] || sleep $((60 * 2 ** (try - 1)))
+          done
+          exit 1
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: wasm-pack
@@ -106,6 +165,7 @@ jobs:
           # The oracle's report is read by this repo's file_issues.py.
           SPINDLELABS_SCRIPTS: ${{ github.workspace }}/.github/scripts
         run: |
+          if [ "$PART" != all ]; then export CHECKS_PART=$PART; fi
           k/ci/checks.sh full "$RUNNER_TEMP/logs" 2>/dev/null | .github/scripts/kernel_ci.sh filter | tee "$RUNNER_TEMP/results.txt"
           grep -qx "RESULT all PASS [0-9]*" "$RUNNER_TEMP/results.txt"
       - name: Save the logs to kernel-results
@@ -115,15 +175,48 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/logs"
           cp "$RUNNER_TEMP/results.txt" "$RUNNER_TEMP/logs/" 2>/dev/null || true
-          .github/scripts/kernel_ci.sh save checks "$RUNNER_TEMP/logs"
-      - name: Report to the kernel commit
-        if: always()
+          name=checks; [ "$PART" = all ] || name=checks-$PART
+          .github/scripts/kernel_ci.sh save "$name" "$RUNNER_TEMP/logs"
+      # A failing part reports at once, naming its failed checks; success
+      # waits for every part (checks-report below).
+      - name: Report a failure to the kernel commit
+        if: always() && steps.run.outcome != 'success'
         env:
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
           OUTCOME: ${{ steps.run.outcome }}
         run: |
-          if [ "$OUTCOME" = success ]; then state=success; else state=failure; fi
-          .github/scripts/kernel_ci.sh status kernel-ci/checks $state "$(.github/scripts/kernel_ci.sh describe "$RUNNER_TEMP/results.txt" "$OUTCOME")"
+          # skipped: a setup step failed, so no check ran.
+          [ "$OUTCOME" = skipped ] && OUTCOME="setup failed, no check ran"
+          .github/scripts/kernel_ci.sh status kernel-ci/checks failure "$PART: $(.github/scripts/kernel_ci.sh describe "$RUNNER_TEMP/results.txt" "$OUTCOME")"
+
+  # kernel-ci/checks passes only when every part passed. A part that failed
+  # has already reported; a plan or part that never got to report (cancelled,
+  # timed out) is reported here.
+  checks-report:
+    needs: [checks-plan, checks]
+    if: always()
+    runs-on: ubuntu-latest
+    environment: kernel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Report to the kernel commit
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          PLAN: ${{ needs.checks-plan.result }}
+          PARTS: ${{ needs.checks.result }}
+        run: |
+          if [ "$PLAN" = success ] && [ "$PARTS" = success ]; then
+            .github/scripts/kernel_ci.sh status kernel-ci/checks success "Every part passed"
+          elif [ "$PARTS" != failure ]; then
+            .github/scripts/kernel_ci.sh status kernel-ci/checks failure "plan $PLAN, parts $PARTS"
+            exit 1
+          else
+            exit 1
+          fi
 
   # Which kernel code no test runs at all (the kernel's ci/coverage.sh): a
   # per-file table and an lcov file, in kernel-results only. Report only: no

@@ -30,7 +30,8 @@ test("save then list shows the name and the save time (worked by hand)", async (
   // One save, at the clock's only time: 2026-10-16 12:00 UTC is
   // Date.UTC(2026, 9, 16, 12) ms (months count from 0, so October is 9).
   // The first save in an empty store is save number 1 (B5's count starts at 0, each save adds one).
-  assert.deepEqual(list, [{ id: "p1", name: "Bracket", modified: new Date(Date.UTC(2026, 9, 16, 12)), order: 1 }]);
+  // The save was made at that same time (touched), and `part` keeps no sketch or step, so no workspace holds work.
+  assert.deepEqual(list, [{ id: "p1", name: "Bracket", modified: new Date(Date.UTC(2026, 9, 16, 12)), order: 1, touched: new Date(Date.UTC(2026, 9, 16, 12)), works: [] }]);
 });
 
 test("the list is newest first, and saving again moves a project to the top", async () => {

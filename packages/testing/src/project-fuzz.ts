@@ -612,12 +612,12 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   // Version 4 to 5 numbers the bodies as the file showed them, and version 5 is settled as an edit would settle it:
   // a body with no number gets the next, a gone item's number goes (35e).
   const v4 = upgraded.workspaces.design;
-  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6 || v4.version === 7)) {
+  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9)) {
     // Version 5 to 6 lists bodies by body id (35ec): the eyes' and each Move's.
-    const v5 = v4.version === 6 || v4.version === 7 ? v4 : migrateDesignV5({ ...v4, version: 5 });
-    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01).
-    const v6 = v5.version === 7 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
-    upgraded.workspaces.design = numberBodies(v6 as unknown as DesignDocument);
+    const v5 = v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 ? v4 : migrateDesignV5({ ...v4, version: 5 });
+    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01); 7 to 8 (47f) and 8 to 9 (48) change no field.
+    const v6 = v5.version === 7 || v5.version === 8 || v5.version === 9 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
+    upgraded.workspaces.design = numberBodies({ ...v6, version: 9 } as unknown as DesignDocument);
   }
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;

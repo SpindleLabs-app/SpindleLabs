@@ -92,3 +92,31 @@ test("hand-worked: a size an extrude's set_part leaves out keeps the panel's, wh
   const shown = previewOf(designAIView(box(), new Set(), sizes), [...EXTRUDE_THEN_SET.slice(0, 3), { op: "set_part", shape: "box", width: 50, depth: 30 }]);
   assert.deepEqual(shown.rows.at(-1), { parameter: "height", before: undefined, after: 5 });
 });
+
+// U2c3: the preview's words in the unit chosen in Settings. The commands (what Accept does) are always millimetres; only
+// the words about them change. Worked by hand: 25.4 mm is 1 in, 12.7 mm is 0.5 in, 50.8 mm is 2 in.
+import { sizeShownIn, describePart } from "../src/assistant.ts";
+
+test("hand-worked: the preview words say lengths in inches, and millimetres are as before", () => {
+  const commands = [
+    { op: "create_sketch", on: "XY" },
+    { op: "draw_circle", diameter: 25.4, x: 12.7, y: -12.7 },
+    { op: "extrude_sketch", distance: 50.8 },
+  ];
+  const view = designAIView(partDocument("box", 40, 30, 20), new Set(), sizes);
+  const mm = previewOf(view, commands);
+  assert.deepEqual(mm.label.split(", then ").slice(1), ["circle ⌀25.4 mm at (12.7, −12.7)", "extrude the sketch by 50.8 mm"]);
+  const inches = previewOf(view, commands, "in");
+  assert.deepEqual(inches.label.split(", then ").slice(1), ["circle ⌀1 in at (0.5, −0.5)", "extrude the sketch by 2 in"]);
+  assert.deepEqual(inches.rows.map((r) => r.after).slice(1), ["circle ⌀1 in at (0.5, −0.5)", "the sketch by 2 in"]);
+  assert.equal(describePart({ shape: "box", width: 25.4, depth: 50.8, height: 12.7 }, "in"), "box 1 × 2 × 0.5 in");
+  assert.equal(describePart({ shape: "box", width: 25.4, depth: 50.8, height: 12.7 }), "box 25.4 × 50.8 × 12.7 mm");
+});
+
+test("a preview row's size is shown in inches, anything else is left as it is", () => {
+  assert.equal(sizeShownIn("width", 50.8, "in"), "2");
+  assert.equal(sizeShownIn("width", 50.8, "mm"), "50.8");
+  assert.equal(sizeShownIn("shape", "box", "in"), "box");
+  assert.equal(sizeShownIn("height", "—", "in"), "—");
+  assert.equal(sizeShownIn("extrude", 5, "in"), "5", "only the part's sizes are lengths");
+});

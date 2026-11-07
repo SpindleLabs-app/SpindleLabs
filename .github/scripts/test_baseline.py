@@ -282,11 +282,20 @@ class TheRealBaseline(unittest.TestCase):
         # model's expect.json and project file: bracket-two-holes 1 body (one
         # extrude of a profile the part holds itself, no sketch): 2; enclosure 5 bodies (the floor is
         # the starting box), 4 sketches: 14; gear 1 and 1: 3; l-bracket 1 and
-        # 1: 3; stepped-boss 3 and 2: 8; thirty-features 16 and 15: 47.
+        # 1: 3; stepped-boss 3 and 2: 8; thirty-features 16 and 15: 47. A Combine
+        # (35f1f, 11-06) is one boolean and a view of each body it hands back, none
+        # when refused: box-minus-box, far-wall-outside, hollow-box, km-plate and
+        # small-cube-halved, 2 sketches, 2 extrudes and a Cut leaving one body:
+        # 2 + 2 x 2 + 1 + 1 = 8; micron-cube-halved the same, its Cut refused: 7;
+        # flush-blocks, a box, a sketch and its extrude joined into one: 1 + 4 + 1 + 1 = 7;
+        # f2-gap-join, two boxes joined into two pieces: 2 x 2 + 1 + 2 = 7.
         with open(baseline.BASELINE) as f:
             b = json.load(f)
         calls = {m[len("app.golden_"):-len(".kernel_calls")]: v for m, v in b["metrics"].items() if m.startswith("app.golden_") and m.endswith(".kernel_calls")}
-        self.assertEqual(calls, {"bracket_two_holes": 2 * 1 + 0, "enclosure": 2 * 5 + 4, "gear": 2 * 1 + 1, "l_bracket": 2 * 1 + 1, "stepped_boss": 2 * 3 + 2, "thirty_features": 2 * 16 + 15})
+        self.assertEqual(calls, {"bracket_two_holes": 2 * 1 + 0, "enclosure": 2 * 5 + 4, "gear": 2 * 1 + 1, "l_bracket": 2 * 1 + 1, "stepped_boss": 2 * 3 + 2, "thirty_features": 2 * 16 + 15,
+                                 "box_minus_box": 2 + 2 * 2 + 1 + 1, "far_wall_outside": 2 + 2 * 2 + 1 + 1, "hollow_box": 2 + 2 * 2 + 1 + 1,
+                                 "km_plate": 2 + 2 * 2 + 1 + 1, "small_cube_halved": 2 + 2 * 2 + 1 + 1, "micron_cube_halved": 2 + 2 * 2 + 1,
+                                 "flush_blocks": 1 + 2 * 2 + 1 + 1, "f2_gap_join": 2 * 2 + 1 + 2})
         m = "app.golden_models.failed_percent"
         self.assertEqual(b["metrics"][m], 0)
         self.assertEqual(b["margins"]["failed_percent"]["fail"], 0)

@@ -251,7 +251,7 @@ try {
           "create-menu": ["revolve", "hole", "pattern", "sweep", "loft"],
           "modify-menu": ["duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
           "construct-menu": ["plane", "axis", "point"],
-          "inspect-menu": ["measure", "section"],
+          "inspect-menu": ["section"],
         });
         await press(page, "#modify-menu", tap);
         await until(page, () => !document.getElementById("modify-menu-menu").hidden, null, "Modify ▾ opens");
@@ -331,11 +331,14 @@ try {
           // Select and Delete end the row (missing basics, 2026-11-04).
           ["sketch-tool-select", "select"],
           ["sketch-delete", "delete"],
-          // Then the constraint tools (step 47d2).
+          // Construction (step 47f) turns the picked curves.
+          ["sketch-construction", "construction"],
+          // Then the constraint tools (step 47d2), and Dimension (47e).
           ["sketch-tool-horizontal", "horizontal"],
           ["sketch-tool-vertical", "vertical"],
           ["sketch-tool-coincident", "coincident"],
           ["sketch-tool-fix", "fix"],
+          ["sketch-tool-dimension", "dimension"],
         ]);
         assert.deepEqual(await groupNames(page), ["Create ▾", "Solid"], "the modelling Create ▾ steps aside; Extrude stays, named Solid");
         assert.equal(await page.$eval("#finish-sketch", (b) => b.querySelector("svg.icon")?.dataset.icon), "finish");

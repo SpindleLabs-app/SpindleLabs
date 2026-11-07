@@ -693,6 +693,32 @@ test("body_boolean with the app's handles: the kernel's numbers sent, the result
     assert.equal(worker.posted.length, sent);
   }));
 
+test("body_measure with the app's handles: the kernel's numbers sent for each pick, the answer as it came; an unknown body refused before sending", () =>
+  withFakeWorker(async (client, worker) => {
+    // Regression (35e2l2, found by the browser check): Measure sent the app's handles, which the kernel has never heard of.
+    worker.ready(1);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    const b = client.call("body_build", CUBE_MOVED);
+    worker.answer(2, 12);
+    assert.deepEqual([await a, await b], [1, 2]);
+    const two = client.call("body_measure", { body: 1, face: 3 }, { body: 2, edge: 5 });
+    assert.deepEqual(worker.posted.at(-1), { id: 3, op: "body_measure", args: [{ body: 11, face: 3 }, { body: 12, edge: 5 }] });
+    const answer = { first: { kind: "plane", area: 100 }, second: { kind: "line", length: 10 }, distance: { distance: 5, from: [10, 5, 5], to: [15, 5, 5] } };
+    worker.answer(3, answer);
+    assert.deepEqual(await two, answer);
+    // One pick: the second stays null.
+    const one = client.call("body_measure", { body: 2 }, null);
+    assert.deepEqual(worker.posted.at(-1), { id: 4, op: "body_measure", args: [{ body: 12 }, null] });
+    worker.answer(4, { first: { kind: "body", volume: 1000, area: 600 } });
+    await one;
+    // An unknown body, first or second, is refused in the kernel's words before anything is sent.
+    const sent = worker.posted.length;
+    await assert.rejects(client.call("body_measure", { body: 9, face: 0 }, null), (e: KernelError) => e.kind === "unknown-body" && /body 9 /.test(e.message));
+    await assert.rejects(client.call("body_measure", { body: 1, face: 0 }, { body: 8 }), (e: KernelError) => e.kind === "unknown-body" && /body 8 /.test(e.message));
+    assert.equal(worker.posted.length, sent);
+  }));
+
 const CUBE_MOVED: BodySpec = { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [5, 5, 5] }] } };
 
 test("a boolean's limit grows with its inputs' faces; its result's view with the result's faces", (t) =>

@@ -4,9 +4,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FIT_BOXES, fitCalibration, fitsLine, typedMm } from "../src/fit-calibration.ts";
-import { fitKey, keptMeasures, profileFor, TYPICAL_PROFILE } from "../src/fits.ts";
-import { slicePrint, type FileChoices, type PrintChoices } from "../src/slice-print.ts";
+import { FIT_BOXES, fitCalibration, fitsLine, typedMm } from "@fission/print";
+import { fitKey, keptMeasures, profileFor, TYPICAL_PROFILE } from "@fission/print";
+import type { FileChoices, PrintChoices } from "@fission/print";
+import { slicePrint } from "../src/slice-print.ts";
 
 const { Window } = await import("happy-dom");
 

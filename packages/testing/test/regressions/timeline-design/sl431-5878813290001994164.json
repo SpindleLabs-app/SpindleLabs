@@ -1,0 +1,165 @@
+{
+ "seed": "5878813290001994164",
+ "check": "two edges share a name",
+ "steps": [
+  {
+   "op": "add-face-sketch",
+   "pick": 0.06407503711195528,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -18,
+     -25
+    ],
+    "radius": 15
+   }
+  },
+  {
+   "op": "delete-item",
+   "pick": 0.8443717377962001
+  },
+  {
+   "op": "add-move",
+   "pick": 0.08169756995607713,
+   "other": null,
+   "shift": [
+    -18,
+    -7,
+    -36
+   ],
+   "turnZ": 90,
+   "pivot": [
+    8,
+    26
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.6906965088218032,
+   "shape": {
+    "kind": "slot",
+    "at": [
+     7,
+     -2
+    ],
+    "length": 3,
+    "radius": 10
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.9274740485948355,
+   "distance": 38
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.4524000272018883,
+   "distance": 15
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      24,
+      -18
+     ],
+     [
+      -25,
+      -3
+     ],
+     [
+      -15,
+      5
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-combine",
+   "target": 0.21025104676027562,
+   "tool": 0.2540605702316382,
+   "operation": "cut",
+   "keep": true
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.4491326686433543,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -34,
+      9
+     ],
+     [
+      -12,
+      -2
+     ],
+     [
+      6,
+      4
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.9315481982300619,
+   "distance": 19
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    56,
+    15,
+    41
+   ]
+  },
+  {
+   "op": "suppress",
+   "pick": 0.10439157903558482
+  },
+  {
+   "op": "set-size",
+   "pick": 0.12538922265235175,
+   "value": 22
+  },
+  {
+   "op": "add-combine",
+   "target": 0.557992450656732,
+   "tool": 0.858004221896579,
+   "operation": "join",
+   "keep": true
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.8567158220688272,
+   "distance": 46
+  },
+  {
+   "op": "add-move",
+   "pick": 0.9838298864292289,
+   "other": 0.134764711887419,
+   "shift": [
+    -32,
+    32,
+    0
+   ],
+   "turnZ": 180,
+   "pivot": [
+    29,
+    -2
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.1746866202542725,
+   "tool": 0.4610133207577559,
+   "operation": "intersect",
+   "keep": false
+  }
+ ]
+}

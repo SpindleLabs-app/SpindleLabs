@@ -193,8 +193,10 @@ async function clickModel(page, [x, y], tap) {
 }
 
 /**
- * Sketches the layout's 10 × 10 square by the rectangle tool and extrudes it: Sketch 1 (sketch-2) and Extrude 1
+ * Sketches the layout's 10 × 10 square as four lines and extrudes it: Sketch 1 (sketch-2) and Extrude 1
  * (feature-11) on the starting box's design. `live`: click through the app's camera (clickModel), not clickPlane's.
+ * (Four lines, not the Rectangle tool, whose Horizontal and Vertical take four ids more since the solver bug hunt,
+ * 2026-11-06: the timeline's ids below stay as they were; sketch-tool.mjs checks the Rectangle tool.)
  */
 async function addSquare(page, tap, layout, live = false) {
   await press(page, "#create-sketch", tap);
@@ -205,10 +207,19 @@ async function addSquare(page, tap, layout, live = false) {
   await gridSnapOn(page);
   await closePanels(page, tap); // and it covers the view's lower part, so closed again to draw
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
-  await press(page, "#sketch-tool-rectangle", tap);
+  await press(page, "#sketch-tool-line", tap);
   // The sketch's panel floats over the square's corners on a wide screen (U0b).
+  const [[x0, y0], [x1, y1]] = layout.corners;
   await withPropertiesFolded(page, async () => {
-    for (const p of layout.corners) await (live ? clickModel(page, p, tap) : clickPlane(page, p, TOP, tap));
+    // On a phone the bar of floating buttons (Finish and the rest) lies over the square's top-left corner,
+    // which the Rectangle tool's two clicks never needed: it is hidden while the four lines are clicked, and
+    // shown again after (what is checked here is the timeline, not drawing beside that bar).
+    await page.evaluate(() => document.getElementById("phone-float")?.style.setProperty("visibility", "hidden"));
+    try {
+      for (const p of [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]) await (live ? clickModel(page, p, tap) : clickPlane(page, p, TOP, tap));
+    } finally {
+      await page.evaluate(() => document.getElementById("phone-float")?.style.removeProperty("visibility"));
+    }
   });
   await until(page, (w) => document.querySelector("#viewport").dataset.sketchPoints?.startsWith(w), layout.corners[0].join(","), "the square's first corner where it was clicked");
   await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "the square closed");
@@ -1183,19 +1194,20 @@ try {
       assert.equal(await undoTitle(page), lastStep, "opening records nothing");
       assert.equal(await page.isVisible("#finish-sketch"), true);
 
-      // 2. A line apart from the square (5 mm beyond its far side, upward from 2 mm above its bottom to 2 mm below its top; upward, so the
-      // typed-length boxes that float under the pointer after the first click are not on the second): a loose end. No question, no
-      // warning while open, the body as it was.
-      const [[, y0], [x1, y1]] = layout.corners;
+      // 2. A line across the square (upright through its middle, from 2 mm below it to 2 mm above it; upward, so the typed-length
+      // boxes that float under the pointer after the first click are not on the second): it cuts the square Extrude 1 extrudes
+      // in two, so that region is gone (step 48: a line apart from the square would leave it whole, as in Fusion). No question,
+      // no warning while open, the body as it was.
+      const [[x0, y0], [x1, y1]] = layout.corners;
       // addSquare drew on the grid; this line goes where it is tapped (Snap to grid off, as a new page has it).
       await page.uncheck("#sketch-grid-snap");
       await top();
-      await clickModel(page, [x1 + 5, y0 + 2], tap);
-      await clickModel(page, [x1 + 5, y1 - 2], tap);
+      await clickModel(page, [(x0 + x1) / 2, y0 - 2], tap);
+      await clickModel(page, [(x0 + x1) / 2, y1 + 2], tap);
       // Escape only once the line is drawn: one pressed while the kernel still places the click drops it (snap.mjs).
       await undoIs(page, "Draw line");
       await page.keyboard.press("Escape");
-      await status("5 lines, not closed");
+      await status("5 lines");
       assert.equal(await page.evaluate(() => !!document.querySelector("dialog[open]")), false, "nothing asks");
       assert.equal(await warning(), null, "no warning while Sketch 1 is open");
       assert.equal(await page.textContent("#volume"), layout.volume);
@@ -1205,7 +1217,7 @@ try {
       await press(page, "#finish-sketch", tap);
       await finished();
       await until(page, () => !document.querySelector("#kept-warning").hidden, null, "the warning after Finish Sketch");
-      assert.match(await warning(), /^Extrude 1 keeps its last shape\. Sketch 1 has no closed outline: .*not joined/);
+      assert.match(await warning(), /^Extrude 1 keeps its last shape\. Sketch 1 no longer has the region this extrude uses/);
       assert.equal(await page.textContent("#volume"), layout.volume);
       await browserOpen();
       assert.deepEqual(await red(), ["feature-11", "sketch-2"]);
@@ -1277,6 +1289,10 @@ try {
       const sketch = design.sketches.find((k) => k.id === "sketch-2");
       const extrude = design.timeline.features.find((f) => f.intent.parameters?.sketch === "sketch-2");
       design.kept = { [extrude.id]: { points: structuredClone(sketch.points), curves: structuredClone(sketch.curves) } };
+      // Saved as an extrude from before regions (step 48: no `region`), which takes whatever one outline its sketch makes, so the
+      // side drawn again below closes it into the 20 × 10 it builds. One naming its region would keep the square: the region
+      // round the old left side is gone, and Edit feature picks the new one (48d4, e2e/extrude-regions.mjs).
+      delete extrude.intent.parameters.region;
       const at = new Map(sketch.points.map((p) => [p.id, p]));
       const left = sketch.curves.find((c) => at.get(c.start).x === x0 && at.get(c.end).x === x0);
       sketch.curves = sketch.curves.filter((c) => c !== left);

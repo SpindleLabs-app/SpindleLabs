@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AuthClient } from "../src/auth.ts";
 import { readFileSync } from "node:fs";
+import { repoFile } from "./repo-file.ts";
 import { designsApi, isSource, LIMITS, rowFrom, saveAnswerFrom, SOURCES } from "../src/designs.ts";
 import { fakeAccount } from "./fake-designs.ts";
 
@@ -138,11 +139,11 @@ test("hand-worked: earlier versions in the account, listed newest first and read
 });
 
 test("the workspace tags and limits match the database's", () => {
-  const sql = readFileSync(new URL("../../../supabase/migrations/20261105120000_my_designs.sql", import.meta.url), "utf8");
+  const sql = readFileSync(repoFile("supabase/migrations/20261105120000_my_designs.sql"), "utf8");
   const list = /source in \(([^)]*)\)/.exec(sql)![1]!.split(",").map((t) => t.trim().replace(/'/g, ""));
   assert.deepEqual([...SOURCES], list);
   // The newest limits are the versions migration's (it replaces design_limits()), which keeps the first four as they were.
-  const latest = readFileSync(new URL("../../../supabase/migrations/20261105180000_design_versions.sql", import.meta.url), "utf8");
+  const latest = readFileSync(repoFile("supabase/migrations/20261105180000_design_versions.sql"), "utf8");
   for (const s of [sql, latest]) assert.match(s, new RegExp(`'max_designs', ${LIMITS.maxDesigns}, 'max_bytes', ${LIMITS.maxBytes}, 'max_design_bytes', ${LIMITS.maxDesignBytes}, 'max_picture_bytes', ${LIMITS.maxPictureBytes}[,)]`));
   assert.match(latest, new RegExp(`'versions_kept', ${LIMITS.versionsKept}, 'version_gap_seconds', ${LIMITS.versionGapMinutes * 60}\\)`));
   assert.equal(isSource("slice"), true);

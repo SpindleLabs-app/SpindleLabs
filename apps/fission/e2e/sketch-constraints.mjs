@@ -157,7 +157,8 @@ try {
     // Vertical on the same line: both ends would be one point.
     await page.click("#sketch-tool-vertical");
     await at(page, [10, 0]);
-    await until(page, () => /shrink line-\d+ to almost nothing/.test(document.querySelector("#sketch-grid-error")?.textContent ?? ""), null, "the vertical refused");
+    await until(page, () => /shrink the line shown in red to almost nothing/.test(document.querySelector("#sketch-grid-error")?.textContent ?? ""), null, "the vertical refused");
+    assert.ok(Number(await data(page, "sketchFighting")) > 0, "the line drawn red");
     assert.equal(await points(page), "0,0 20,0", "nothing moved");
     assert.equal(await data(page, "sketchConstraints"), "1");
     await shot(page, "constraints-refused-1280");
