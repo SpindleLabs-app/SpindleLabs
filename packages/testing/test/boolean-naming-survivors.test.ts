@@ -196,17 +196,18 @@ test("rule 4: a name on the target and on a tool ranks as the target's", () => {
   assert.deepEqual(faceOn(r, "body:feature-1", "+z", 10).names, ["face:feature-1/end", "face:feature-3/end"]);
 });
 
-test("rule 4: a name on the target and on a tool takes its earliest place among the face's lists", () => {
+test("rule 4: a name on the target and on a tool takes its place in the list of the input face it lies on", () => {
   // N x 10–20 (made first) inside M x 10–30 (made second), all y 0–10, z
   // 0–10. Combine M with N, Keep tools: M's top lists M's end cap, then N's
   // (the target's first) where N's top lies in it. N then grows by a join
   // x 0–10 (P): N's top lists N's end cap, then P's. Combine M with N again:
-  // one top x 0–30. M's names (from the target) rank first, P's after; of
-  // M's two, N's end cap stands first in the lists over x 0–10 (N's own)
-  // while M's never does better than first: tied on place, made order puts
-  // N's (made first) before M's. Rule 4 does not yet say how a name both
-  // inputs carry ranks (left for 35f, with Keep tools); this is what the
-  // model and the unit-cell count both do.
+  // one top x 0–30. Rule 4 ranks each name by the input face it lies on,
+  // the target's first, and by its place in that face's list (SL #430,
+  // #431): M's top over x 10–30 lists [M's, N's], so M's end cap is (target,
+  // 0) and N's (target, 1), though N's stands first on the tool's top over
+  // x 0–10; P's is on the tool's face alone, (tool, 1). So [M's, N's, P's].
+  // (Before, a name took its earliest place in any input's list, which put
+  // N's, made first, before M's.)
   const r = rebuildBooleans([
     block("feature-1", [10, 0, 20, 10], [0, 10]),
     block("feature-2", [10, 0, 30, 10], [0, 10]),
@@ -216,7 +217,7 @@ test("rule 4: a name on the target and on a tool takes its earliest place among 
   ]);
   // 30 × 10 × 10 = 3000.
   assert.deepEqual(bodies(r), ["body:feature-2 3000 0,0,0"]);
-  assert.deepEqual(faceOn(r, "body:feature-2", "+z", 10).names, ["face:feature-1/end", "face:feature-2/end", "face:feature-4/end"]);
+  assert.deepEqual(faceOn(r, "body:feature-2", "+z", 10).names, ["face:feature-2/end", "face:feature-1/end", "face:feature-4/end"]);
 });
 
 test("rule 5: one line of edges changes faces part way along it: two edges", () => {

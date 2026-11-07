@@ -281,11 +281,13 @@ export class BodyCache {
    * kernel keeps a body as it is, so the same handles and operation give
    * the same answer): its result bodies are kept like built ones, freed by
    * `keepOnly` when no rebuild holds them. Asked again once any of them is
-   * gone. A refusal is not kept: asked again, it is asked again.
+   * gone. A refusal is not kept: asked again, it is asked again. `copy`
+   * n > 0 is its own n-th answer of the same shape, as `body`'s copies are
+   * (hunt 11-06: two Combines of equal inputs must not hand out one body).
    */
-  async boolean(target: BodyHandle, tools: readonly BodyHandle[], op: BooleanOp): Promise<BooleanResult> {
+  async boolean(target: BodyHandle, tools: readonly BodyHandle[], op: BooleanOp, copy = 0): Promise<BooleanResult> {
     if (this.closed) throw new Error(CLOSED);
-    const key = JSON.stringify(["boolean", target, tools, op]);
+    const key = JSON.stringify(copy === 0 ? ["boolean", target, tools, op] : ["boolean", target, tools, op, copy]);
     const hit = this.booleans.get(key);
     if (hit && hit.bodies.every((h) => this.keys.has(h))) return hit;
     const result = await this.kernel.call("body_boolean", target, [...tools], op);
@@ -782,12 +784,12 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const plane = f.intent.parameters.plane as string;
   const p = content.face!;
   let cause: PlaneWarning["cause"] = "plane-lost";
-  const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean): Promise<FeatureResult> => {
+  const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false): Promise<FeatureResult> => {
     // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
     const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined);
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
-    const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label) } } : {};
+    const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
     return { status: "built", placement, ...warn, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
   };
   if (Object.values(bodies).some((b) => b.named !== undefined)) {
@@ -798,7 +800,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const list = await Promise.all(ids.map((id) => namedOf(id, bodies[id], cache, 0)));
     const r = readDesignReference(faceReference(plane))!;
     const found = resolveFaceName(list, designNames(list), { name: `face:${r.featureId}/${r.part}`, ...(r.tag && { tag: r.tag }), origin: p.frame.origin });
-    if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split");
+    if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split" || found.warning === "whole", found.warning === "whole");
     if ("ambiguous" in found) cause = "plane-ambiguous";
     // A name two faces of its own plain body would share carries on neither (naming.ts): ambiguous, as before a Combine.
     const own = bodies[bodyIdOf(featureId)];
@@ -1023,7 +1025,9 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
     const r = done[id];
     const b = r?.status === "built" ? bodies[body] : undefined;
     if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
-    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
+    if (r?.status !== "built") return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
+    // Built, but gone from here on: an earlier Combine used it up, or left no such piece (as `combineRun` says it; hunt 11-06).
+    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${f.provenance.self.label} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine used it up or left no such piece` };
     from.push([body, b]);
   }
   // Built only once every body is there, so a Move that fails builds nothing.
@@ -1091,6 +1095,10 @@ async function combineRun(doc: DesignDocument, f: Feature, done: Record<string, 
   let result: BooleanResult;
   try {
     result = await cache.boolean(t.handle, ts.map((x) => x.handle), op);
+    // Equal inputs give the cached answer: when an earlier Combine already holds it (two equal boxes each cut by
+    // one kept tool), this one asks for a body of its own, so no two bodies share one kernel body (hunt 11-06).
+    const taken = new Set(Object.values(bodies).map((b) => b.handle));
+    for (let copy = 1; result.bodies.some((h) => taken.has(h)); copy++) result = await cache.boolean(t.handle, ts.map((x) => x.handle), op, copy);
   } catch (e) {
     if (timedOut(e)) throw e;
     if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) {
