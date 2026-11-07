@@ -101,7 +101,7 @@
     "app.history_200_edits.retained_bytes": 112672,
     "app.kernel_extrude_star.relative_time": 0.0263,
     "app.kernel_extrude_star.retained_bytes": 35616,
-    "app.kernel_memory.wasm_bytes": 4390912,
+    "app.kernel_memory.wasm_bytes": 10158080,
     "app.kernel_sphere.relative_time": 0.4964,
     "app.kernel_sphere.retained_bytes": 1451256,
     "app.kernel_stl_sphere.relative_time": 0.2394,
