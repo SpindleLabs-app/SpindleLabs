@@ -218,11 +218,23 @@ export function xqg0dt(p0, p1) {
     }
     return takeFromExternrefTable0(ret[0]);
 }
+
+export function zt5kqw(p0, p1) {
+    const ret = wasm.zt5kqw(p0, p1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
         __wbg_Error_30c8987f7c2ed4e2: function(arg0, arg1) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
+            return ret;
+        },
+        __wbg_Number_14af1003b8dd5ead: function(arg0) {
+            const ret = Number(arg0);
             return ret;
         },
         __wbg_String_8564e559799eccda: function(arg0, arg1) {
@@ -231,6 +243,12 @@ function __wbg_get_imports() {
             const len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
+        __wbg___wbindgen_bigint_get_as_i64_a2383202b9353e4c: function(arg0, arg1) {
+            const v = arg1;
+            const ret = typeof(v) === 'bigint' ? v : undefined;
+            getDataViewMemory0().setBigInt64(arg0 + 8 * 1, isLikeNone(ret) ? BigInt(0) : ret, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
         },
         __wbg___wbindgen_boolean_get_5b446f51afd21013: function(arg0) {
             const v = arg0;
@@ -246,6 +264,10 @@ function __wbg_get_imports() {
         },
         __wbg___wbindgen_in_92f62ee1427d9e49: function(arg0, arg1) {
             const ret = arg0 in arg1;
+            return ret;
+        },
+        __wbg___wbindgen_is_bigint_b123553bed3bb382: function(arg0) {
+            const ret = typeof(arg0) === 'bigint';
             return ret;
         },
         __wbg___wbindgen_is_function_1f9d30630b8b1d3d: function(arg0) {
@@ -267,6 +289,10 @@ function __wbg_get_imports() {
         },
         __wbg___wbindgen_is_undefined_8865fb403f8fe9d8: function(arg0) {
             const ret = arg0 === undefined;
+            return ret;
+        },
+        __wbg___wbindgen_jsval_eq_02babf21faa37971: function(arg0, arg1) {
+            const ret = arg0 === arg1;
             return ret;
         },
         __wbg___wbindgen_jsval_loose_eq_677f21e468d6b461: function(arg0, arg1) {
@@ -348,6 +374,10 @@ function __wbg_get_imports() {
         },
         __wbg_isArray_e15a2ff68ffdbef2: function(arg0) {
             const ret = Array.isArray(arg0);
+            return ret;
+        },
+        __wbg_isSafeInteger_717808ad6a54bd9e: function(arg0) {
+            const ret = Number.isSafeInteger(arg0);
             return ret;
         },
         __wbg_iterator_e3c31c892080e444: function() {

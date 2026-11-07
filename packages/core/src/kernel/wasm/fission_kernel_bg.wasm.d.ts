@@ -23,6 +23,7 @@ export const urxw0w: () => number;
 export const uxyfpl: (a: number, b: number, c: number) => [number, number, number];
 export const vicdld: (a: number) => [number, number];
 export const xqg0dt: (a: number, b: number) => [number, number, number];
+export const zt5kqw: (a: any, b: any) => [number, number, number];
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_exn_store: (a: number) => void;

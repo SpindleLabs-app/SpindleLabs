@@ -47,6 +47,8 @@ export function vicdld(p0: number): void;
 
 export function xqg0dt(p0: number, p1: number): any;
 
+export function zt5kqw(p0: any, p1: any): any;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -75,6 +77,7 @@ export interface InitOutput {
     readonly uxyfpl: (a: number, b: number, c: number) => [number, number, number];
     readonly vicdld: (a: number) => [number, number];
     readonly xqg0dt: (a: number, b: number) => [number, number, number];
+    readonly zt5kqw: (a: any, b: any) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
