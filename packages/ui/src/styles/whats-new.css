@@ -1,0 +1,23 @@
+/* What's new (whats-new.ts), from Settings > About: a card dialog of the public changes, newest first. Its header (title, note, Close) stays put while the list scrolls; at phone width it is a full-width sheet with Close a 44 px target at the top, as Settings is. */
+.whats-new { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.whats-new[open] { display: flex; }
+.whats-new::backdrop { background: var(--fill-5-8-14-06); }
+.whats-new .whats-new-head { padding: var(--look-space-3) var(--look-space-4); border-bottom: 1px solid var(--look-edge); }
+.whats-new .whats-new-title { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); }
+.whats-new .whats-new-title h2 { margin: 0; font-size: 16px; }
+.whats-new .whats-new-note { margin: var(--look-space-2) 0 0; font-size: 12px; line-height: 1.4; color: var(--text-dim); }
+.whats-new .close { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
+.whats-new .close:hover { border-color: var(--look-accent); color: var(--look-accent-text); }
+.whats-new .whats-new-body { overflow-y: auto; padding: 0 var(--look-space-4) var(--look-space-4); overscroll-behavior: contain; }
+.whats-new section { padding: var(--look-space-3) 0; border-bottom: 1px solid var(--look-edge); }
+.whats-new section:last-child { border-bottom: 0; }
+.whats-new h3 { display: flex; align-items: baseline; gap: var(--look-space-2); margin: 0 0 var(--look-space-2); font-size: 14px; }
+.whats-new time { font-size: 12px; font-weight: normal; color: var(--text-dim); }
+.whats-new ul { margin: 0; padding-left: 18px; }
+.whats-new li { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.whats-new li + li { margin-top: 4px; }
+.whats-new .whats-new-empty { margin: var(--look-space-3) 0 0; font-size: 13px; }
+@media (max-width: 640px) {
+  .whats-new { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; border-width: 0; }
+  .whats-new .close { min-height: var(--look-target-touch); }
+}

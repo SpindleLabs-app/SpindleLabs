@@ -222,7 +222,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [{ file: NAMES, find: "  if (pieces.length === 1) {\n    const [one] = pieces;", replace: "  if (pieces.length >= 1) {\n    const [one] = pieces;" }],
     run: ["timeline"],
     caught: "a reference was lost",
-    why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails within seeds 1 to 30, as a reference lost",
+    why: "found at seed 95 only, beyond planted/session.ts's seeds 1 to 30; its 3 steps shrunk from seed 95 are saved in test/regressions/timeline-design/plant-combine-first-piece-95.json, which session.ts replays after the seeds (2026-11-07); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) a session within seeds 1 to 30 meets it first, as a reference lost",
   },
   // 35f1e2: recorded on the #132 kernel built locally with the sessions given MODEL_KNOWS, 2026-11-05.
   "combine-face-moves-with-target": {
@@ -236,7 +236,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
     ],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
-    why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions; planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught); workspaces/design/test/combine-scene.test.ts catches it by hand",
+    why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions); its 16 steps shrunk from seed 140 are saved in test/regressions/timeline-design/plant-combine-face-moves-140.json, which planted/session.ts replays after its seeds 1 to 30 (2026-11-07); workspaces/design/test/combine-scene.test.ts catches it by hand",
   },
   "combine-edge-tags-dropped": {
     what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
@@ -689,7 +689,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "own-face-targets-only": {
     what: "a sketch is offered only its own face's edges, as in 26f, so a centre can't be snapped onto another body or another face",
-    edits: [{ file: EDGES, find: "  const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));", replace: "  const own = isFacePlane(facePlane) ? findInScene(faceReference(facePlane), scene) : null;\n  const all = own?.status === \"found\" ? scene.bodies.flatMap((b, k) => (k === sceneHit(scene, \"face\", own.index)!.body ? placedTargets(b.view, b.names, plane, sceneHit(scene, \"face\", own.index)!.index) : [])) : [];" }, { file: EDGES, find: 'import { findInScene, type Scene } from "./scene.ts";', replace: 'import { findInScene, sceneHit, type Scene } from "./scene.ts";' }],
+    edits: [{ file: EDGES, find: "  const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));", replace: "  const facePlane = features[at].intent.parameters.plane;\n  const own = isFacePlane(facePlane) ? findInScene(faceReference(facePlane), scene) : null;\n  const all = own?.status === \"found\" ? scene.bodies.flatMap((b, k) => (k === sceneHit(scene, \"face\", own.index)!.body ? placedTargets(b.view, b.names, plane, sceneHit(scene, \"face\", own.index)!.index) : [])) : [];" }, { file: EDGES, find: 'import { findInScene, type Scene } from "./scene.ts";', replace: 'import { findInScene, sceneHit, type Scene } from "./scene.ts";' }],
     run: ["naming"],
     caught: "Design offers no",
     why: "the naming harness snaps onto the target the model names, and finds none to snap onto before any check runs",
