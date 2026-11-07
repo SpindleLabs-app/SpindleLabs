@@ -77,7 +77,7 @@ try {
     await page.click("#move");
     await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the Move panel");
     await pickBox(page);
-    assert.deepEqual(await legends(page), ["Distance (mm)", "Angle (°)", "Pivot (mm)"]);
+    assert.deepEqual(await legends(page), ["Distance (mm)", "Angle (°)", "Scale (×)", "Pivot (mm)"]);
     const b = await boxes(page);
     assert.deepEqual([b.pivotX, b.pivotY, b.pivotZ], ["20", "15", "10"]);
     await page.context().close();
@@ -89,7 +89,7 @@ try {
     await page.click("#move");
     await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the Move panel");
     await pickBox(page);
-    assert.deepEqual(await legends(page), ["Distance (in)", "Angle (°)", "Pivot (in)"]);
+    assert.deepEqual(await legends(page), ["Distance (in)", "Angle (°)", "Scale (×)", "Pivot (in)"]);
     const b = await boxes(page);
     // 20 / 25.4 = 0.7874, 15 / 25.4 = 0.5906, 10 / 25.4 = 0.3937 (inches to 3 decimals).
     assert.deepEqual([b.pivotX, b.pivotY, b.pivotZ], ["0.787", "0.591", "0.394"]);

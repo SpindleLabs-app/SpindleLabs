@@ -22,9 +22,9 @@ function stale(tool: ComingTool): string | null {
   return null;
 }
 
-test("hand-checked: Modify ▾ lists Mirror, Combine, Chamfer, Fillet, Shell and Draft, each off, saying what it will do", () => {
+test("hand-checked: Modify ▾ lists Combine, Chamfer, Fillet, Shell and Draft, each off, saying what it will do (Mirror body is real since step 35e2)", () => {
   const items = comingItems("Modify");
-  assert.deepEqual(items.map((i) => i.label), ["Mirror body", "Combine", "Chamfer", "Fillet", "Shell", "Draft"]);
+  assert.deepEqual(items.map((i) => i.label), ["Combine", "Chamfer", "Fillet", "Shell", "Draft"]);
   const fillet = items.find((i) => i.id === "coming-fillet")!;
   assert.equal(fillet.off, "Fillet is coming soon: it will round the edges you pick.");
   assert.equal(fillet.note, "Coming soon");

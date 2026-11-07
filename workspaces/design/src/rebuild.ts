@@ -43,6 +43,7 @@ import { combineNames, designNames, resolveFaceName, shownFaces, type NamedBody 
 import { frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
+import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
@@ -1000,7 +1001,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index, kernel);
     if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
-    if (isDuplicateItem(f)) return copyBody(f, done, bodies);
+    if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
       const spec = specOf(doc, f);
       return made({ handle: await cache.body(spec), spec });
@@ -1084,9 +1085,11 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
  * as its feature, so its faces are named by the Duplicate. The kernel body
  * is the source's own (a body is never changed, only built anew), so a copy
  * costs nothing to build. A Combine's result has no spec to name a copy's
- * faces from, so it can't be copied yet.
+ * faces from, so it can't be copied yet. A Mirror (Mirror body) is built
+ * anew, the source's spec mirrored across its plane (duplicate.ts
+ * `mirrorMotion`), its faces named as the source's.
  */
-function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies): FeatureResult {
+async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   const [maker] = f.dependsOn;
   const r = done[maker];
   if (r?.status === "suppressed") return { status: "greyed", by: maker };
@@ -1097,9 +1100,11 @@ function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies: Bodie
   if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${name} is not built, so ${label} can't copy it` };
   const b = bodies[duplicatedBody(f)];
   if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't copy ${name}: an earlier Combine used it up or left no such piece` };
-  if (b.spec === null) return { status: "failed", cause: "error", message: `${label} can't copy a Combine's result yet: that comes with the next kernel release` };
+  if (b.spec === null) return { status: "failed", cause: "error", message: `${label} can't ${mirrorOf(f) === undefined ? "copy" : "mirror"} a Combine's result yet: that comes with the next kernel release` };
   const id = bodyIdOf(f.id);
-  bodies[id] = { feature: f.id, handle: b.handle, spec: b.spec, ...(b.curves ? { curves: b.curves } : {}) };
+  const plane = mirrorOf(f);
+  const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane)]);
+  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };
   return { status: "built", bodies: [id] };
 }
 

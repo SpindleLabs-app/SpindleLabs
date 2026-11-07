@@ -208,7 +208,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 12;
+  version: 13;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -400,7 +400,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 12, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 13, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -587,7 +587,7 @@ export interface BodyRecord {
   id: string;
   number: number;
   /**
-   * A piece only (hunt 11-06, version 12): the shown names of its faces as
+   * A piece only (hunt 11-06, version 13): the shown names of its faces as
    * the item that made it made it when it was first numbered, sorted, each
    * once. A rebuild keeps the piece's id on the piece with these faces, so
    * an earlier edit never moves the number to another piece silently.
@@ -649,7 +649,7 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
  * numbered when it first appears and keeps that number from then on.
  * `faces` (rebuild.ts `builtPieceFaces`: the shown names of each piece's
  * faces as its item made it) is remembered with a piece numbered now,
- * and with a numbered piece that has none yet (one numbered by a version 11
+ * and with a numbered piece that has none yet (one numbered by a version 12
  * file); a piece's remembered faces never change after (hunt 11-06).
  */
 export function numberPieces(doc: DesignDocument, pieces: readonly string[], faces: ReadonlyMap<string, readonly string[]> = new Map()): DesignDocument {
@@ -677,6 +677,14 @@ export function bodyNumbers(doc: DesignDocument): ReadonlyMap<string, number> {
 /** A Move's numbers, all in every Move: the shift (mm), the turns about X, Y and Z (degrees, in that order) and the point they turn about (mm). */
 export const MOVE_PARAMS = ["x", "y", "z", "turnX", "turnY", "turnZ", "pivotX", "pivotY", "pivotZ"] as const;
 export type MoveParam = (typeof MOVE_PARAMS)[number];
+
+/**
+ * A Move's scale factor (step 35e2, Scale): a number above 0 that sizes its
+ * bodies about the pivot, after the turns and before the shift. Only in a
+ * Move that scales: a Move without one scales by 1, so every older Move
+ * reads (and writes) as it did.
+ */
+export const MOVE_SCALE = "scale";
 
 /**
  * A value from a file, for a message: text as it is, anything else by
@@ -1277,7 +1285,9 @@ function checkMove(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<str
   const at = `Design move ${f.id}`;
   const p = f.intent.parameters;
   for (const key of MOVE_PARAMS) if (!isFiniteNumber(p[key])) throw new Error(`${at}: ${key} ${shown(p[key])} is not a number`);
-  for (const key of Object.keys(p)) if (key !== "bodies" && !(MOVE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a number ${JSON.stringify(key)} a move doesn't have`);
+  for (const key of Object.keys(p)) if (key !== "bodies" && key !== MOVE_SCALE && !(MOVE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a number ${JSON.stringify(key)} a move doesn't have`);
+  // Scale (step 35e2): only when it scales, so never 1, and above 0 (0 would squash the bodies flat, a minus turn them inside out).
+  if (Object.hasOwn(p, MOVE_SCALE) && !(isFiniteNumber(p[MOVE_SCALE]) && p[MOVE_SCALE] > 0 && p[MOVE_SCALE] !== 1)) throw new Error(`${at}: scale ${typeof p[MOVE_SCALE] === "string" ? JSON.stringify(p[MOVE_SCALE]) : shown(p[MOVE_SCALE])} is not a number above 0 other than 1`);
   // Version 6: the bodies by body id, and `dependsOn` the items that made them, in the same order, each once (35ec).
   const bodies: unknown = p.bodies;
   if (!Array.isArray(bodies) || bodies.length === 0) throw new Error(`${at} moves no body`);
@@ -1369,7 +1379,9 @@ function checkOperation(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMa
 function checkDuplicate(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
   const at = `Design duplicate ${f.id}`;
   const p = f.intent.parameters;
-  for (const key of Object.keys(p)) if (key !== "body") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a duplicate doesn't have`);
+  for (const key of Object.keys(p)) if (key !== "body" && key !== "mirror") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a duplicate doesn't have`);
+  // Mirror body (step 35e2): the origin plane its copy is mirrored across, when it is a Mirror.
+  if (Object.hasOwn(p, "mirror") && !(SKETCH_PLANES as readonly unknown[]).includes(p.mirror)) throw new Error(`${at} mirrors across ${typeof p.mirror === "string" ? JSON.stringify(p.mirror) : shown(p.mirror)}, which is not an origin plane (XY, XZ or YZ)`);
   const id: unknown = p.body;
   const maker = typeof id === "string" ? bodyItem(id) : null;
   const there = maker === null ? undefined : byId.get(maker);
@@ -1421,7 +1433,7 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
   }
 }
 
-/** A piece's remembered faces (version 12, hunt 11-06): only on a piece, a list of its faces' names, each once; how many it holds. `before` counts the earlier pieces' names, so the limit is on them all. */
+/** A piece's remembered faces (version 13, hunt 11-06): only on a piece, a list of its faces' names, each once; how many it holds. `before` counts the earlier pieces' names, so the limit is on them all. */
 function checkPieceFaces(b: Record<string, unknown> & { id: string }, before: number): number {
   const { faces } = b;
   if (!isPiece(b.id)) throw new Error(`Design body ${b.id} has faces, which only a Combine's piece remembers`);
@@ -1463,8 +1475,14 @@ function hasVersion11Fields(d: Record<string, unknown>): boolean {
   return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "duplicate");
 }
 
-/** Whether version 11 data holds what only version 12 brought (hunt 11-06): a piece's remembered faces. */
-const hasVersion12Fields = (d: Record<string, unknown>): boolean => Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && Object.hasOwn(b, "faces"));
+/** Whether version 11 data holds what only version 12 brought (step 35e2n): a Move's scale factor (Scale) or a Duplicate's mirror plane (Mirror body). */
+function hasVersion12Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && ((f.intent.type === "move" && Object.hasOwn(f.intent.parameters, MOVE_SCALE)) || (f.intent.type === "duplicate" && Object.hasOwn(f.intent.parameters, "mirror"))));
+}
+
+/** Whether version 12 data holds what only version 13 brought (hunt 11-06): a Combine piece's remembered faces. */
+const hasVersion13Fields = (d: Record<string, unknown>): boolean => Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && Object.hasOwn(b, "faces"));
 
 /**
  * Checks an extrude's `region` (step 48): `{ outer, centroid }`, `outer`
@@ -1502,7 +1520,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
@@ -1521,13 +1539,16 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 11 (35e2m) adds the Duplicate item, which version 10 never held; its fields are read as they are.
   if (v10.version === 10 && hasVersion11Fields(v10)) throw new Error(`Design data says version ${shown(given)} but has a Duplicate, which version 11 brought`);
   const v11 = v10.version === 10 ? { ...v10, version: 11 } : v10;
-  // Version 12 (hunt 11-06) remembers each piece's faces, which version 11 never held; other version 11 data is read as it
-  // is, its pieces given their faces on their next build (`numberPieces`).
-  if (v11.version === 11 && hasVersion12Fields(v11)) throw new Error(`Design data says version ${shown(given)} but has pieces' faces, which version 12 brought`);
-  const d = (v11.version === 11 ? { ...v11, version: 12 } : v11) as Partial<DesignDocument>;
+  // Version 12 (35e2n) adds a Move's scale factor and a Duplicate's mirror plane, which version 11 never held; its fields are read as they are.
+  if (v11.version === 11 && hasVersion12Fields(v11)) throw new Error(`Design data says version ${shown(given)} but has a Scale or a Mirror, which version 12 brought`);
+  const v12 = v11.version === 11 ? { ...v11, version: 12 } : v11;
+  // Version 13 (hunt 11-06) remembers each Combine piece's faces, which version 12 never held; other version 12 data is
+  // read as it is, its pieces given their faces on their next build (`numberPieces`).
+  if (v12.version === 12 && hasVersion13Fields(v12)) throw new Error(`Design data says version ${shown(given)} but has pieces' faces, which version 13 brought`);
+  const d = (v12.version === 12 ? { ...v12, version: 13 } : v12) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 12 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 12) throw new (Number.isSafeInteger(d.version) && d.version! > 12 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 or 12)`);
+  // A whole number above 13 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 13) throw new (Number.isSafeInteger(d.version) && d.version! > 13 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 or 13)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");

@@ -3,7 +3,7 @@
 // end of the toolbar's sideways scroll, out of sight, so a beginner could not
 // find how to finish a sketch or an extrude. While a tool is open this bar
 // sits along the top of the view with what ends it: a big green Finish
-// (Finish Sketch, Finish Extrude, Finish Move, Finish Rotate, Finish Edit) and Cancel where the tool has
+// (Finish Sketch, Finish Extrude, Finish Move, Finish Rotate, Finish Scale, Finish Edit) and Cancel where the tool has
 // one; while a sketch's plane is being picked, the words "Tap a plane or
 // face" with the three planes and Cancel, so the plane prompt no longer needs
 // the sheet that covered the view. Every button only presses the tool's own
@@ -35,6 +35,8 @@ export const ENDERS: readonly Ender[] = [
   { kind: "extrude", panel: "#extrude-panel", ok: "#extrude-ok", cancel: "#extrude-cancel", label: "Finish Extrude", errors: ["#extrude-error"], status: "#extrude-status" },
   // Rotate is Move's panel opened as Rotate (Ben, 2026-10-29: two tools), so it is looked for first.
   { kind: "rotate", panel: '#move-panel[data-kind="rotate"]', ok: "#move-ok", cancel: "#move-cancel", label: "Finish Rotate", errors: ["#move-error"], status: null },
+  // Scale (step 35e2) is Move's panel opened as Scale, likewise.
+  { kind: "scale", panel: '#move-panel[data-kind="scale"]', ok: "#move-ok", cancel: "#move-cancel", label: "Finish Scale", errors: ["#move-error"], status: null },
   { kind: "move", panel: "#move-panel", ok: "#move-ok", cancel: "#move-cancel", label: "Finish Move", errors: ["#move-error"], status: null },
   { kind: "edit", panel: "#feature-edit", ok: "#feature-edit-ok", cancel: "#feature-edit-cancel", label: "Finish Edit", errors: ["#feature-edit-error"], status: null },
   { kind: "sketch", panel: ".sketchbar-finish", ok: "#finish-sketch", cancel: null, label: "Finish Sketch", errors: [], status: null },
