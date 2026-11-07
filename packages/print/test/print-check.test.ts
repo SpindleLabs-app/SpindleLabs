@@ -3,7 +3,7 @@
 // boundary at 0.9× and 1.1×, and bad input marking nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { printCheck, sectionArea, P1S_RULES, MAX_TRIANGLES, type CheckMesh, type PrintRules } from "../src/print-check.ts";
+import { printCheck, sectionArea, unionWork, P1S_RULES, MAX_TRIANGLES, type CheckMesh, type PrintRules } from "../src/print-check.ts";
 
 type P = [number, number, number];
 
@@ -302,4 +302,30 @@ test(`seeded (${SEED}): 120 bridges moved about, fine to 10 mm, sagging to 30 mm
     const want = gap <= 10 ? { supports: [], sag: [] } : gap <= 30 ? { supports: [], sag: [24, 25] } : { supports: [24, 25], sag: [] };
     assert.deepEqual({ supports: got.supports, sag: got.sag }, want, `case ${c}: a ${gap} mm bridge moved by (${dx}, ${dy})`);
   }
+});
+
+// ---------------------------------------------------------------- big scenes stay quick (SpindleLabs#398)
+
+test("nine cubes standing apart: the union tries no pair of their outlines, and still counts each cube once", () => {
+  // Nine 10 mm cubes in a row, 20 mm apart (x from 20i to 20i + 10). Cut at z = 5, each cube's section is a square
+  // of 8 segments (each side is two triangles, each cut once). The nearest two squares are 10 mm apart, far more than
+  // the 1e-6 mm + 1e-3 × span a segment's box is widened by, so no segment can cut another: 0 pairs tried, where trying
+  // every pair was 9 × 8 × 8 × 8 = 4608 (and seconds a frame for a scene of rounded bodies). Area: 9 × 10 × 10 = 900.
+  const cubes = Array.from({ length: 9 }, (_, i) => box(20 * i, 0, 0, 20 * i + 10, 10, 10));
+  unionWork.pairs = 0;
+  near(sectionArea(cubes, 5), 900);
+  assert.equal(unionWork.pairs, 0);
+});
+
+test("two cubes overlapping: only the halves meeting near the overlap's corners are tried, and the area is the union's", () => {
+  // A is [0, 10]², B is [5, 15]² (both z 0 to 10), cut at z = 5. Each side is two triangles split along a diagonal,
+  // which the level cut meets at the side's middle, so each square is eight 5 mm halves. The outlines cross at
+  // (10, 5) and (5, 10). A's halves whose (hair-widened) boxes meet a B half: top x 0–5 and x 5–10 at y 10 each meet
+  // B's left halves y 5–10 and y 10–15 at x 5 (touching at (5, 10)), and right y 0–5 and y 5–10 at x 10 each meet
+  // B's bottom halves x 5–10 and x 10–15 at y 5 (touching at (10, 5)): 4 × 2 = 8. A's bottom and left halves are
+  // 5 mm from every B half. By symmetry B's halves try 8 of A's: 16 pairs, where every pair was 2 × 8 × 8 = 128.
+  // Area: 100 + 100 − 25 (the [5, 10]² overlap) = 175.
+  unionWork.pairs = 0;
+  near(sectionArea([box(0, 0, 0, 10, 10, 10), box(5, 5, 0, 15, 15, 10)], 5), 175);
+  assert.equal(unionWork.pairs, 16);
 });
