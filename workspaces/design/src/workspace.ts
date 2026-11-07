@@ -46,7 +46,7 @@ import { showEntries, viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
 import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
-import { BodyCache, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
@@ -864,14 +864,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
     // A part whose body a later Combine used up did not fail (part-failure.ts).
     const failure = partFailure(doc.timeline.features, feature, build);
-    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies)) };
+    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies), builtPieceFaces(build)) };
   }
   /**
    * The rebuild's warnings in timeline order: an extrude built from its kept
    * shape (the owner's rule: on its row and its sketch's), and from 26e a
    * sketch whose plane is lost (Q1, Q6: it stays where it was, drawn red)
    * and an extrude built from one (its source is lost); from 26f a
-   * sketch's points whose edges are lost, and from 27d its projections.
+   * sketch's points whose edges are lost, and from 27d its projections;
+   * a Combine whose numbered pieces changed (hunt 11-06).
    */
   function warningsOf(doc: DesignDocument, build: TimelineBuild): Warned[] {
     const out: Warned[] = [];
@@ -885,6 +886,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.points) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.points.message}.` });
       if (r.projections) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.projections.message}.` });
       if (r.constraints) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.constraints.message}.` });
+      // A Combine whose numbered pieces changed with an earlier edit (hunt 11-06): on its row, never a silent switch.
+      if (r.pieces) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.pieces.message}.` });
     }
     return out;
   }
@@ -1130,7 +1133,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
-  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[] }>> = {};
+  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] } }>> = {};
   /**
    * What a pointer on sketch `id` may snap to on its face's edges (26f):
    * their ends, middles and centres in the plane the sketch is drawn in
@@ -2982,7 +2985,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let made: string;
     try {
       if (id === null) ({ doc: next, id: made } = insertCombine(before, combineTarget, combineTools, combineBox.operation, combineBox.keepTools));
-      else [next, made] = [changedCombine(before, id, combineTarget, combineTools, combineBox.operation, combineBox.keepTools), id];
+      else [next, made] = [changedCombine(before, id, combineTarget, combineTools, combineBox.operation, combineBox.keepTools, resultsNow[id]?.pieces?.renumbered ?? []), id];
     } catch (e) {
       return combineBox.showError(e instanceof Error ? e.message : String(e));
     }
