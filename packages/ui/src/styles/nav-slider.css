@@ -14,3 +14,5 @@
 @media (prefers-reduced-motion: reduce) {
   .nav-slider .nav-slider-mark { transition: none; }
 }
+/* U2d: with no navigation tool lit (the Fusion-style mouse preset at rest) the highlight is put away. */
+.nav-slider .nav-slider-mark[hidden] { display: none; }

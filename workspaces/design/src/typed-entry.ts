@@ -20,6 +20,7 @@ import type { SketchXY } from "@fission/core";
 import type { DesignDocument } from "./document.ts";
 import type { CentreArcTool, SketchTool } from "./sketch-tool.ts";
 import { sweep } from "./centre-arc.ts";
+import { isConstraintTool } from "./constraint-tool.ts";
 
 /** The boxes a tool shows: a line's length and angle, a rectangle's width and height, a centre arc's radius and angle, then its arc angle (`sweep`), a circle's diameter. */
 export type TypedField = "length" | "angle" | "width" | "height" | "radius" | "sweep" | "diameter";
@@ -40,7 +41,7 @@ export const MAX_TYPED = 1e6;
 export type Reading = { value: number } | { error: string };
 
 /** A plain decimal: digits with at most one point, an optional sign; no exponent, no hex, no "Infinity". */
-const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+export const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 
 /** A length typed in a box: a decimal of mm ("12.5", "12.5 mm"), from MIN_TYPED to MAX_TYPED. */
 export function readLength(text: string): Reading {
@@ -193,6 +194,8 @@ export function typedFields(tool: SketchTool): TypedField[] {
   if (tool.kind === "arc" && tool.start !== null && tool.end === null) return ["length", "angle"];
   if (tool.kind === "centre" && tool.centre !== null) return tool.start === null ? ["radius", "angle"] : ["sweep"];
   if (tool.kind === "circle" && tool.centre !== null) return ["diameter"];
+  // A dimension waiting for its value (47e): one box, a diameter's or a length's (a radius's for an arc).
+  if (isConstraintTool(tool) && tool.pending) return [tool.pending.kind === "diameter" ? "diameter" : (tool.pendingField ?? "length")];
   return [];
 }
 
@@ -208,7 +211,7 @@ export function anchorOf(doc: DesignDocument, tool: SketchTool): SketchXY | null
   if (tool.kind === "arc") return tool.end === null ? tool.start : null;
   if (tool.kind === "centre") return tool.centre;
   if (tool.kind === "circle") return tool.centre;
-  if (tool.kind === "project" || tool.kind === "select" || tool.from === null) return null;
+  if (tool.kind === "project" || tool.kind === "select" || isConstraintTool(tool) || tool.from === null) return null;
   return typeof tool.from === "string" ? pointOf(doc, tool.sketch, tool.from) : tool.from;
 }
 

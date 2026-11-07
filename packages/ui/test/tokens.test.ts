@@ -12,7 +12,7 @@ const repo = resolve(import.meta.dirname, "../../..");
 
 function cssFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
-    if (name === "node_modules" || name === "dist" || name === "target" || name.startsWith(".")) continue;
+    if (name === "node_modules" || name === "dist" || name.startsWith("dist-") || name === "target" || name.startsWith(".")) continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) cssFiles(p, out);
     else if (name.endsWith(".css")) out.push(p);

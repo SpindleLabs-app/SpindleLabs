@@ -28,7 +28,7 @@ export const MONKEY_PLANTS = {
     what: "a length box left empty throws instead of saying what to type",
     expect: "no errors",
     // 25a5: on the box's own reading of its text (typed-boxes.ts `mark`), since readLength never sees an empty box: `mark` and `locks` skip one first, so the plant in readLength was dead.
-    edits: [{ file: "workspaces/design/src/typed-boxes.ts", find: '    const r = text === "" ? null : read(f, text);', replace: '    if (text === "") throw new Error("planted: an empty length");\n    const r = read(f, text);' }],
+    edits: [{ file: "workspaces/design/src/typed-boxes.ts", find: '    const r = text === "" ? null : read(f, text, unitNow());', replace: '    if (text === "") throw new Error("planted: an empty length");\n    const r = read(f, text, unitNow());' }],
   },
   "bar-forgets-suppressed": {
     what: "the timeline bar draws a suppressed item as if it were built",

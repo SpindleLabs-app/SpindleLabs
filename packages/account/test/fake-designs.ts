@@ -1,5 +1,7 @@
 // An in-memory account for My designs, answering the data API's requests the way
-// supabase/migrations/20261105120000_my_designs.sql does (the same statuses, revisions and limits; the SQL itself is
+// supabase/migrations/20261105120000_my_designs.sql and 20261105180000_design_versions.sql do (versions: the copy a
+// save replaces, when it differs and the newest is versionGapMinutes older, the newest versionsKept; the oldest-first
+// room-making is the database's alone, checked by test_design_versions.py) (the same statuses, revisions and limits; the SQL itself is
 // checked on a real PostgreSQL by supabase/test/test_designs.py). Byte sizes here are string lengths, which equal
 // PostgreSQL's octet_length for the plain ASCII text the tests use.
 
@@ -20,6 +22,8 @@ export interface Row {
 
 export interface FakeAccount {
   rows: Row[];
+  /** Each design's kept versions, oldest first. */
+  versions: Map<string, { savedAt: string; body: string }[]>;
   keep: Map<string, boolean>;
   /** "up" answers; "down" fails as with no network; a function replaces the next answer's body. */
   mode: "up" | "down";
@@ -36,6 +40,7 @@ export function fakeAccount(seed = 1): FakeAccount {
   const bytes = (r: Row) => r.body.length + (r.picture?.length ?? 0);
   const acc: FakeAccount = {
     rows: [],
+    versions: new Map(),
     keep: new Map(),
     mode: "up",
     calls: [],
@@ -67,6 +72,12 @@ export function fakeAccount(seed = 1): FakeAccount {
               const r = mine.find((x) => x.id === a.p_id);
               return answer(r ? { id: r.id, name: r.name, source: r.source, body: r.body, saved_at: r.savedAt, updated_at: r.updatedAt, revision: r.revision } : null);
             }
+            case "POST rpc/design_versions":
+              return answer(mine.some((x) => x.id === a.p_id) ? [...(acc.versions.get(String(a.p_id)) ?? [])].reverse().map((v) => ({ saved_at: v.savedAt, bytes: v.body.length })) : []);
+            case "POST rpc/get_design_version": {
+              const v = mine.some((x) => x.id === a.p_id) ? acc.versions.get(String(a.p_id))?.find((x) => Date.parse(x.savedAt) === Date.parse(String(a.p_saved_at))) : undefined;
+              return answer(v ? { saved_at: v.savedAt, body: v.body } : null);
+            }
             case "POST rpc/delete_design": {
               const before = acc.rows.length;
               acc.rows = acc.rows.filter((x) => !(x.user === user && x.id === a.p_id));
@@ -94,6 +105,12 @@ export function fakeAccount(seed = 1): FakeAccount {
                 if (r.revision !== a.p_expected) return answer({ status: "changed", revision: r.revision });
                 const after = { ...r, body: text, picture: picture ?? r.picture };
                 if (used - bytes(r) + bytes(after) > LIMITS.maxBytes) return answer({ status: "full" });
+                if (r.body !== text) {
+                  const kept = acc.versions.get(r.id) ?? [];
+                  const newest = kept.at(-1);
+                  if (!newest || Date.parse(r.savedAt) - Date.parse(newest.savedAt) >= LIMITS.versionGapMinutes * 60_000) kept.push({ savedAt: r.savedAt, body: r.body });
+                  acc.versions.set(r.id, kept.slice(-LIMITS.versionsKept));
+                }
                 Object.assign(r, { name: a.p_name, source: a.p_source, body: text, picture: picture ?? r.picture, savedAt: a.p_saved_at, updatedAt: now, revision: r.revision + 1 });
                 return answer({ status: "saved", id: r.id, revision: r.revision, updated_at: now });
               }

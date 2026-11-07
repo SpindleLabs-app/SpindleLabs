@@ -1,0 +1,101 @@
+{
+  "model": "f2-gap-join",
+  "what": "Ben's Fusion check F2 (35f4): a Combine Join of two 10 mm cubes 10 mm apart. Fusion gives no error or warning; the target stays Body1 and the tool's cube becomes a new body, Body3 (booleans.md, 'Fusion checks' and 'Behaviour questions': one body per separate piece, the target's piece keeping its id). The same must hold here: Body 1 and Body 3.",
+  "from": "35",
+  "recipe": [
+    {
+      "do": "Start a new part with its ready-made box, 10 × 10 × 10 from the origin: Body 1.",
+      "makes": "feature-1"
+    },
+    {
+      "do": "Add a second ready-made box, 10 × 10 × 10: Body 2.",
+      "makes": "feature-2"
+    },
+    {
+      "do": "Move Body 2 20 along x (x 20..30): 10 mm clear of Body 1.",
+      "makes": "feature-3"
+    },
+    {
+      "do": "Combine: target Body 1, tool Body 2, Join, Keep tools off. No error, no warning: Body 1 stays, the tool's cube is a new body numbered after the last, Body 3 (Body 2 is used up and its number never comes back).",
+      "makes": "feature-4"
+    }
+  ],
+  "bodies": [
+    {
+      "body": "Body 1",
+      "item": "feature-1",
+      "volume": {
+        "is": "10^3",
+        "why": "the target's cube, where it was: a 10 mm cube, 1000 mm³"
+      },
+      "area": {
+        "is": "6*10^2",
+        "why": "six faces 10 × 10: 600 mm²"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 6 faces, 12 edges, 8 corners (8 − 12 + 6 = 2)"
+      },
+      "box": {
+        "is": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            10,
+            10,
+            10
+          ]
+        ],
+        "why": "the target's cube, where it was"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): the two cubes never meet, so the Join makes no crossing and nothing grows (B0 decision 5)"
+      }
+    },
+    {
+      "body": "Body 3",
+      "item": "feature-4",
+      "volume": {
+        "is": "10^3",
+        "why": "the tool's cube, moved 20 along x: a 10 mm cube, 1000 mm³"
+      },
+      "area": {
+        "is": "6*10^2",
+        "why": "six faces 10 × 10: 600 mm²"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 6 faces, 12 edges, 8 corners (8 − 12 + 6 = 2)"
+      },
+      "box": {
+        "is": [
+          [
+            20,
+            0,
+            0
+          ],
+          [
+            30,
+            10,
+            10
+          ]
+        ],
+        "why": "the tool's cube, moved 20 along x"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): the two cubes never meet, so the Join makes no crossing and nothing grows (B0 decision 5)"
+      }
+    }
+  ],
+  "sketches": [],
+  "pins": []
+}

@@ -4,7 +4,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { billing, returnAddress, signatureOk, SIGNATURE_TOLERANCE_S, stripeSignature } from "../../../supabase/functions/billing/index.ts";
+import { repoFile } from "./repo-file.ts";
+
+const { billing, returnAddress, signatureOk, SIGNATURE_TOLERANCE_S, stripeSignature } = (await import(repoFile("supabase/functions/billing/index.ts").href)) as typeof import("../../../supabase/functions/billing/index.ts");
 
 const ADA = "11111111-1111-4111-8111-111111111111";
 const WHSEC = "whsec_test_secret";

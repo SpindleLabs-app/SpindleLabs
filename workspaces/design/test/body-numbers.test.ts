@@ -109,7 +109,7 @@ test("hand-worked: a version 4 file gets the numbers it showed: the bodies that 
   ]);
   assert.equal(read.nextBody, 5);
   assert.deepEqual(labels(read), ["Body 1", "Body 2"]);
-  assert.equal(read.version, 7);
+  assert.equal(read.version, 8);
   // Unsuppressed and rolled forward, A and D come back as Body 3 and Body 4.
   assert.deepEqual(labels(moveMarker(suppressItem(read, "feature-1", false), null)), ["Body 3", "Body 1", "Body 2", "Body 4"]);
 });
@@ -139,6 +139,7 @@ test("every saved project in the repo opens with each body row named as before 3
   // alone and compared with what the stored numbers say.
   let files = 0;
   let rows = 0;
+  let newer = 0;
   for (const dir of SAVED)
     for (const u of walk(new URL(dir, ROOT))) {
       let doc: DesignDocument;
@@ -153,12 +154,18 @@ test("every saved project in the repo opens with each body row named as before 3
         continue; // not a project, or one refused on purpose (the fuzz regressions)
       }
       const where = u.pathname.slice(ROOT.pathname.length);
-      assert.ok(typeof version === "number" && version <= 4, `${where} is version ${version}: a saved file from before 35e`);
-      assert.deepEqual(labels(doc), bodyFeatures(doc).map((_, i) => `Body ${i + 1}`), where);
+      assert.ok(typeof version === "number" && version >= 1, `${where} has no Design data version`);
+      // A file saved before 35e has its rows named as then. One saved since (the Combine golden projects, 11-06) keeps
+      // the numbers it was saved with, which a deleted body leaves a gap in, so only the checks below apply to it.
+      if (version <= 4) assert.deepEqual(labels(doc), bodyFeatures(doc).map((_, i) => `Body ${i + 1}`), where);
+      else newer++;
       // Every body has a number, none twice, the counter above them all.
       const numbers = doc.bodies!.map((b) => b.number);
       assert.equal(new Set(numbers).size, numbers.length, where);
-      assert.equal(doc.bodies!.length, doc.timeline.features.filter(makesBody).length, where);
+      // One body for each feature that makes one, besides a Combine's new pieces (35f, "body:<combine>/piece:<n>").
+      const own = doc.bodies!.filter((b) => !b.id.includes("/piece:"));
+      assert.equal(own.length, doc.timeline.features.filter(makesBody).length, where);
+      if (version <= 4) assert.equal(own.length, doc.bodies!.length, where);
       assert.ok(numbers.every((n) => n < doc.nextBody!), where);
       // Saved again it is version 5, and reads back the same.
       assert.deepEqual(reopen(doc), doc, where);
@@ -168,6 +175,8 @@ test("every saved project in the repo opens with each body row named as before 3
   // The repo holds dozens of saved projects (golden models, old files, the e2e's); none skipped by a wrong path.
   assert.ok(files >= 20, `${files} files`);
   assert.ok(rows >= 30, `${rows} rows`);
+  // The old files still outnumber the new ones: the before-35e check above did not go quiet.
+  assert.ok(files - newer >= 20, `${files - newer} files from before 35e`);
 });
 
 test("the reader refuses bodies' numbers broken in each way, with a message naming what is wrong", () => {

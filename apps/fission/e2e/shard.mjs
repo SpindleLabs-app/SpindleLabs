@@ -68,6 +68,7 @@ export const SECONDS = {
   "framing.mjs": 10,
   "offline.mjs": 0,
   "offline-off.mjs": 4,
+  "home.mjs": 6,
   "leave-save.mjs": 33,
   "monkey.mjs": 89,
 };

@@ -198,11 +198,11 @@ test("a real version 1 file (saved by the SpindleLabs before 21b) opens as versi
   const p = projectFromJson(REAL_V1, DESIGN);
   const doc = p.workspaces.design as DesignDocument;
   v1.timeline.features[0].provenance.self.label = "L-bracket 1";
-  assert.deepEqual(doc, { ...v1, version: 7, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
+  assert.deepEqual(doc, { ...v1, version: 8, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
   assert.deepEqual(partOf(doc), { shape: "l-bracket", sizes: { width: 40, depth: 30, height: 20 } });
   // Saved, it is version 6; opened and saved again, byte-identical.
   const saved = projectToJson(p);
-  assert.equal(JSON.parse(saved).workspaces.design.version, 7);
+  assert.equal(JSON.parse(saved).workspaces.design.version, 8);
   assert.equal(projectToJson(projectFromJson(saved, DESIGN)), saved);
 });
 
@@ -231,7 +231,7 @@ test("a file with sketches that breaks a rule is refused when it is opened, each
     [(d) => (d.nextId = 7), /^Error: Design data's nextId 7 is not above line-7, so a new id could repeat it$/],
     [(d) => ((d.sketches[0] as { id: unknown }).id = 3), /^Error: Design sketch 1 has no id$/],
     [(d) => delete (d.sketches[0] as Partial<DesignDocument["sketches"][0]>).curves, /sketch-2 needs points, curves and constraints lists/],
-    [(d) => ((d.sketches[0].constraints as unknown[]) = [{ kind: "horizontal" }]), /sketch-2 has constraints, which this SpindleLabs can't read yet/],
+    [(d) => ((d.sketches[0].constraints as unknown[]) = [{ kind: "horizontal" }]), /^Error: Design sketch sketch-2: constraint 1 has no id$/],
     [(d) => ((d.sketches[0].points[0] as { x: unknown }).x = "0"), /^Error: Design sketch sketch-2: point point-3 needs x and y in mm$/],
     [(d) => ((d.sketches[0].points[1] as { id: unknown }).id = null), /^Error: Design sketch sketch-2: point 2 has no id$/],
     [(d) => ((d.sketches[0].curves[0] as { kind: string }).kind = "spline"), /curve line-5 is a spline, which this SpindleLabs can't read yet \(only lines, circles and arcs\)/],

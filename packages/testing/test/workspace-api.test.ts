@@ -22,7 +22,7 @@ function importsOf(dir: string): { file: string; spec: string }[] {
 
 // Shared packages by entry point only (no "@fission/core/src/…"), and
 // never another workspace: they meet through the core API.
-const allowed = new Set(["@fission/core", "@fission/ui", "@fission/viewport"]);
+const allowed = new Set(["@fission/core", "@fission/ui", "@fission/viewport", "@fission/print"]);
 const offending = (imports: { file: string; spec: string }[]) => imports.filter(({ spec }) => !spec.startsWith("./") && !allowed.has(spec));
 
 test("workspaces import only the public packages and their own files", () => {
@@ -512,7 +512,7 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   const file = view.fileEntries!();
   assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);
   const none = "There is no body to download: nothing in the timeline builds.";
-  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", none], ["file-slice-print", "Slice for printing", none]]);
+  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", none], ["file-save-picture", "Save picture (PNG)", "This browser can't make a picture of the view"], ["file-slice-print", "Slice for printing", none]]);
   assert.match(file.exports![0].title, /^Export STL: Download every body shown/);
   // The part's shape is the panel's Shape choice now: the box.
   assert.equal(ctx.properties.querySelector<HTMLSelectElement>("#shape")!.value, "box");
@@ -749,7 +749,7 @@ test("Design says the project changed when it writes the part; placeholders neve
     } else {
       // Mounting on an empty project writes the empty design a new project starts with (U0c): one change, no body.
       assert.equal(changes.get(ctx), 1);
-      assert.deepEqual(ctx.project.workspaces.design, { version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
+      assert.deepEqual(ctx.project.workspaces.design, { version: 8, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
       const before = ctx.project.workspaces.design;
       const width = ctx.properties.querySelector("#width") as HTMLInputElement; // the width box (the tool panels above it have boxes of their own)
       width.value = "50";

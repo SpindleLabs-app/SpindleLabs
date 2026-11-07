@@ -34,6 +34,7 @@ export function nodeKernel(): KernelCalls {
     snap_to_grid: (x, y, s) => entry.snap_to_grid(x, y, s),
     place_freely: (x, y, pixel) => entry.place_freely(x, y, pixel),
     sketch_outline: (lines, circles, arcs) => entry.sketch_outline(lines, circles, arcs),
+    solve_sketch: (sketch) => entry.solve_sketch(sketch),
     body_build: (spec) => entry.body_build(spec),
     body_view: (body) => entry.body_view(body),
     body_stl: (body, name) => entry.body_stl(body, name),
