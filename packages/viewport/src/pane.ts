@@ -67,6 +67,7 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       showSelection: (highlight: ViewportHighlight) => scene.showSelection(highlight),
       showSketches: (drawings: readonly SketchDrawing[]) => scene.showSketches(drawings),
       showPlanes: (planes: readonly OriginPlane[], faces?: readonly number[]) => scene.showPlanes(planes, faces),
+      showCorners: (corners: readonly (readonly [number, number, number])[] | null) => scene.showCorners(corners),
       showOrigin: (shown: OriginShown) => scene.showOrigin(shown),
       showExtrude: (show: ExtrudeShow | null) => scene.showExtrude(show),
       get onExtrudePointer() {

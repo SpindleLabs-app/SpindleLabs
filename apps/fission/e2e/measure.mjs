@@ -10,6 +10,10 @@
 // in inches 20 / 25.4 = 0.7874 → 0.787 in. At 1280 px with a mouse and at
 // 375 px with taps, where the Properties sheet stays shut while picking
 // (the view clear) and opens on the distance, covering under half the view.
+// Corners (35e2l3): from the top view each top corner hides the bottom one
+// under it; Box 1's top corner (20, 20, 10) to Box 2's (40, 0, 10) is
+// √(20² + 20²) = √800 = 28.284 mm (along X 20, Y −20, Z 0), by mouse with
+// the corner lit as a dot under the pointer, and by tap.
 // Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after
 // `npm run build`).
 import assert from "node:assert/strict";
@@ -49,11 +53,12 @@ function toScreen(cam, box, p) {
   return { x: box.x + ((nx + 1) / 2) * box.width, y: box.y + ((1 - ny) / 2) * box.height };
 }
 /** Clicks (or taps) the world point `p` as the camera sees it now; fails if something is over the canvas there. */
-async function at(page, p, tap) {
+async function at(page, p, tap, hover = false) {
   const s = toScreen(await camera(page), await canvasBox(page), p);
   const on = await page.evaluate(([x, y]) => (document.elementFromPoint(x, y)?.closest("#viewport canvas") ? "canvas" : document.elementFromPoint(x, y)?.id || "other"), [s.x, s.y]);
   if (on !== "canvas") throw new Error(`[${p}] is under ${on} on screen, not the canvas`);
   if (tap) await page.touchscreen.tap(s.x, s.y);
+  else if (hover) await page.mouse.move(s.x, s.y);
   else await page.mouse.click(s.x, s.y);
 }
 async function settle(page) {
@@ -139,7 +144,7 @@ try {
         await measureTool(page, tap);
         await until(page, () => document.getElementById("measure-panel")?.hidden === false, null, "the panel open");
         assert.equal(await page.getAttribute("#inspect-measure", "aria-pressed"), "true");
-        assert.equal(await text(page, "measure-view-hint"), "Measure: click or tap a face, edge or body");
+        assert.equal(await text(page, "measure-view-hint"), "Measure: click or tap a face, edge, corner or body");
         if (tap) {
           assert.equal(await sheetOpen(page), false, "a phone's sheet stays shut while picking");
           await closePanels(page, tap);
@@ -186,6 +191,63 @@ try {
         await until(page, () => document.getElementById("measure-panel")?.hidden === true, null, "the panel closed");
         assert.deepEqual(await legend(page), []);
         assert.equal(await page.getAttribute("#inspect-measure", "aria-pressed"), "false");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+  for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
+    await check(`${width} px${tap ? ", taps" : ""}: corner to corner is √800 = 28.284 mm, the top corner picked over the hidden one under it`, async () => {
+      const page = await fresh(width, height, tap);
+      try {
+        await closePanels(page, tap);
+        await press(page, '[data-view="top"]', tap);
+        await settle(page);
+        await page.evaluate(() => document.activeElement?.blur());
+        await measureTool(page, tap);
+        await until(page, () => document.getElementById("measure-panel")?.hidden === false, null, "the panel open");
+        // Both boxes' corners are offered: 8 + 8.
+        assert.equal(await page.evaluate(() => document.querySelector("#viewport").dataset.corners), "16");
+        if (tap) await closePanels(page, tap);
+        // A few pixels off the corner still picks it: (20.3, 19.7) is about 0.42 mm away, a few pixels at this zoom.
+        const A = [20, 20, 10];
+        if (!tap) {
+          await at(page, [20.3, 19.7, 10], false, true);
+          await until(page, () => /^corner \d+$/.test(document.querySelector("#viewport").dataset.hover ?? ""), null, "the corner lit under the pointer");
+          if (shots) await page.screenshot({ path: `${shots}/measure-corner-hover-${width}.png` });
+        }
+        // Clicked between Box 1's top corner (0, 20, 10) and where the bottom one under it (0, 20, 0) shows, nearer the
+        // bottom one when they are close enough on screen (on the phone): from the camera, above the middle of the two
+        // boxes, the bottom one is hidden under Box 1's top (its −x side faces away), so the top corner picks.
+        {
+          const [cam, view] = [await camera(page), await canvasBox(page)];
+          const [top, bottom] = [toScreen(cam, view, [0, 20, 10]), toScreen(cam, view, [0, 20, 0])];
+          const sep = Math.hypot(top.x - bottom.x, top.y - bottom.y);
+          const reach = tap ? 16 : 8; // CORNER_PICK_PX
+          const k = Math.min(0.6, (reach - 2) / sep); // within reach of the top corner, and past halfway to the bottom one when it can be
+          const q = { x: top.x + (bottom.x - top.x) * k, y: top.y + (bottom.y - top.y) * k };
+          if (tap) assert.ok(k > 0.5, `on the phone the hidden corner is the nearer one on screen (${sep.toFixed(1)} px apart)`);
+          const click = () => (tap ? page.touchscreen.tap(q.x, q.y) : page.mouse.click(q.x, q.y));
+          await click();
+          await until(page, () => document.getElementById("measure-first-name")?.textContent === "Corner of Body 1", null, "Box 1's corner picked");
+          assert.equal(await text(page, "measure-first-point"), "0, 20, 10 mm", "the top corner, not the bottom one hidden under it");
+          await page.waitForTimeout(700); // past a double-click (DOUBLE_PICK_MS), which would pick the whole body
+          await click(); // the same corner again lets it go
+          await until(page, () => document.getElementById("measure-first-name")?.textContent === "Nothing picked", null, "the corner let go");
+          await nextFrame(page);
+        }
+        await at(page, A, tap);
+        await until(page, () => document.getElementById("measure-first-name")?.textContent === "Corner of Body 1", null, "Box 1's corner picked");
+        assert.equal(await text(page, "measure-first-point"), "20, 20, 10 mm");
+        await at(page, [40, 0, 10], tap);
+        await until(page, () => document.getElementById("measure-distance")?.textContent === "28.284 mm", null, "√800 = 28.284 mm");
+        assert.equal(await picks(page), "Corner of Body 1 | Corner of Body 2");
+        if (!tap) assert.deepEqual([await text(page, "measure-dx"), await text(page, "measure-dy"), await text(page, "measure-dz")], ["20 mm", "-20 mm", "0 mm"]);
+        if (shots) await page.screenshot({ path: `${shots}/measure-corners-${width}.png` });
+        if (tap) await closePanels(page, tap);
+        await page.keyboard.press("Escape");
+        await until(page, () => document.getElementById("measure-panel")?.hidden === true, null, "the panel closed");
+        assert.equal(await page.evaluate(() => document.querySelector("#viewport").dataset.corners ?? null), null, "no corners offered once closed");
       } finally {
         await page.context().close();
       }
