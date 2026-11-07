@@ -234,6 +234,33 @@ export interface StlFile {
   warning: string | null;
 }
 
+/** The "this is solid" check of an exported STL file (check_solid): its answer. */
+export type SolidVerdict = "solid" | "problems" | "unfinished";
+
+/** A kind of problem the check finds, in the order it lists them. */
+export type SolidProblemKind = "empty" | "gap" | "flipped" | "branching" | "collapsed" | "pinched" | "crossing" | "inside-out" | "inside";
+
+/** Where a problem is in the file (mm): a point, or an edge from one point to another. */
+export type SolidPlace = { point: [number, number, number] } | { from: [number, number, number]; to: [number, number, number] };
+
+/** Every problem of one kind: how many, and where the first ones are (the kernel lists at most 40). */
+export interface SolidProblem {
+  kind: SolidProblemKind;
+  count: number;
+  places: SolidPlace[];
+}
+
+/** The check of an exported file's own bytes (check_solid). */
+export interface SolidReport {
+  verdict: SolidVerdict;
+  triangles: number;
+  /** Separate closed pieces (triangles joined through shared edges). */
+  shells: number;
+  /** The enclosed volume (mm³). */
+  volume: number;
+  problems: SolidProblem[];
+}
+
 /** What one path of a slice prints ("skirt": the warm-up loop round the first layer, printed before the part; "brim": Better grip's brim, printed next). */
 export type PrintRole = "outer-wall" | "inner-wall" | "solid-infill" | "sparse-infill" | "support" | "skirt" | "brim";
 

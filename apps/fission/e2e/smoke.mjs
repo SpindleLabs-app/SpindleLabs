@@ -846,7 +846,7 @@ try {
       const p = (k) => [0, 1, 2].map((i) => bytes.readFloatLE(at + 12 * k + 4 * i));
       tris.push([p(0), p(1), p(2)]);
     }
-    return { name: dl.suggestedFilename(), size: bytes.length, header: bytes.subarray(0, 16).toString("latin1"), tris };
+    return { name: dl.suggestedFilename(), size: bytes.length, header: bytes.subarray(0, 80).toString("latin1").trimEnd(), tris };
   };
   /** Volume enclosed by triangles (divergence theorem: Σ a·(b×c)/6). */
   const stlVolume = (tris) =>
@@ -863,11 +863,12 @@ try {
     // 12 triangles: 84 + 12 × 50 = 684 bytes. Corners 0/40, 0/30, 0/20 are
     // exact in single precision, so the volume is exactly 40 × 30 × 20.
     assert.equal(f.name, "spindlelabs-box.stl");
-    assert.equal(f.header, "SpindleLabs STL:");
+    // The header says the kernel checked the file solid (the export badge), then what it holds.
+    assert.equal(f.header, "SpindleLabs STL, checked solid: box");
     assert.equal(f.size, 684);
     assert.equal(f.tris.length, 12);
     assert.equal(stlVolume(f.tris), 24000);
-    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl. Checked solid.");
   });
 
   await check("a selected body offers Download STL from the action registry, and it saves the same file", async () => {
@@ -883,7 +884,7 @@ try {
     assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.size, 684);
     assert.equal(stlVolume(f.tris), 24000); // 40 × 30 × 20, exact in single precision
-    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl. Checked solid.");
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.body.dataset.selection === "");
     assert.deepEqual(await verbs(), []);
@@ -947,7 +948,7 @@ try {
     // Only the red X axis line is left (a few dozen pixels).
     assert.ok((await amber()) < 1000, `nothing amber once the overlay is cleared (${await amber()} px)`);
     await downloadStl();
-    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl."); // the warning goes once the part fits again
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl. Checked solid."); // the warning goes once the part fits again
   });
 
   await check("DESIGN ▾ names Design and lists Design and Slice only (the public app's, src/listed-workspaces.ts), Design marked, neither greyed", async () => {

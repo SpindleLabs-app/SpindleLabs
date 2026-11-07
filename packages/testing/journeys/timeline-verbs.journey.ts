@@ -83,7 +83,12 @@ test("hand-worked: a box and an extruded rectangle download as one STL of 24 tri
   // The toolbar's STL: every body shown, Body 1 then Body 2.
   const bodies = shownBodyRefs(doc);
   assert.deepEqual(bodies.map((b) => b.id), ["body:feature-1", `body:${extrude}`]);
-  assert.deepEqual(await a.run(DOWNLOAD_STL, bodies), { message: "Exported spindlelabs-2-bodies.stl. The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.", bad: false });
+  // Both from z = 0, the extrude inside the box: the file's surfaces cross, so the export badge says not solid
+  // (the file is still saved, its header unstamped).
+  const out = await a.run(DOWNLOAD_STL, bodies);
+  assert.match(out.message, /^Exported spindlelabs-2-bodies\.stl\. Not solid: [^.]*crossings\. The 2 bodies are separate shells in one STL file\. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe\.$/);
+  assert.equal(out.bad, true);
+  assert.equal(out.solid?.verdict, "problems");
   assert.equal(a.saved.length, 1);
   const [file] = a.saved;
   assert.equal(file.name, "spindlelabs-2-bodies.stl");
@@ -145,7 +150,9 @@ test("seeded: on random timelines, the verbs, the toolbar's STL, the copies and 
     // The toolbar's STL: one file holding each shown body's own file's triangles, in order.
     if (shown.length > 0) {
       const all = await a.run(DOWNLOAD_STL, shownBodyRefs(doc, failed));
-      assert.equal(all.bad, false, `${where}: ${all.message}`);
+      // The export badge checks the file: bad exactly when it is not checked solid (bodies shown may overlap).
+      assert.ok(all.solid, `${where}: ${all.message}`);
+      assert.equal(all.bad, all.solid.verdict !== "solid", `${where}: ${all.message}`);
       const alone = [];
       for (const id of shown) {
         await a.run(DOWNLOAD_STL, [bodyReference(bodyIdOf(id))]);

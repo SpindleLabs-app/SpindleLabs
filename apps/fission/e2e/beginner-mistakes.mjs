@@ -292,7 +292,7 @@ try {
     await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-export-stl")]);
     await until(page, () => /hidden/.test(document.getElementById("action-note")?.textContent ?? ""), null, "the note");
     // After the export's own words (the file it saved).
-    assert.equal(await text(page, "#action-note"), "Exported spindlelabs-box.stl. Body 2 is hidden, so it is not in the STL: show it with its eye in the browser to include it.");
+    assert.equal(await text(page, "#action-note"), "Exported spindlelabs-box.stl. Checked solid. Body 2 is hidden, so it is not in the STL: show it with its eye in the browser to include it.");
     await page.context().close();
   });
 } finally {
