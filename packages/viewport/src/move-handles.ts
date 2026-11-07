@@ -22,7 +22,7 @@ export const handleAxis = (h: MoveHandle): 0 | 1 | 2 => (h === "x" || h === "tur
 export const isRing = (h: MoveHandle) => h.startsWith("turn");
 
 /** The handles each tool shows. */
-export const KIND_HANDLES: Record<MoveKind, readonly MoveHandle[]> = { move: ["x", "y", "z"], rotate: ["turnX", "turnY", "turnZ"] };
+export const KIND_HANDLES: Record<MoveKind, readonly MoveHandle[]> = { move: ["x", "y", "z"], rotate: ["turnX", "turnY", "turnZ"], scale: [] };
 
 /**
  * The sizes on screen (CSS px): each arrow from ARROW_FROM to ARROW_TO

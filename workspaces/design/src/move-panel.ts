@@ -7,7 +7,8 @@
 // refusal, OK, Cancel, and Snap (35e2d: a face or edge of the bodies
 // laid on another body's, move-snap.ts, which sets the boxes). Since Ben's
 // ask (2026-10-29) it is two tools: Move shows the distances and Snap,
-// Rotate the angles and the pivot; a row the tool doesn't show comes up
+// Rotate the angles and the pivot, and (step 35e2) Scale its factor and the
+// pivot it sizes about; a row the tool doesn't show comes up
 // when it holds something (an old file's Move that shifts and turns, or a
 // snap that turns), so nothing the Move does is ever out of sight. Enter in a box is OK; Escape is Cancel
 // (workspace.ts `shortcut`). A new Move picks its bodies in the view or the
@@ -17,16 +18,16 @@
 
 import { wordsInUnit, type MoveKind, type Unit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
-import { MOVE_PARAMS, type MoveParam } from "./document.ts";
+import { MOVE_PARAMS, MOVE_SCALE, type MoveParam } from "./document.ts";
 import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
-import type { MoveValues } from "./move.ts";
+import { MOVE_VERBS, type MoveBox, type MoveValues } from "./move.ts";
 import { boxText } from "./move-tool.ts";
 
 export interface MoveEvents {
   /** A box typed in: the preview follows (every box as typed). */
-  typed(typed: Record<MoveParam, string>): void;
+  typed(typed: Record<MoveBox, string>): void;
   /** OK (or Enter in a box). */
-  ok(typed: Record<MoveParam, string>): void;
+  ok(typed: Record<MoveBox, string>): void;
   cancel(): void;
   /** "Centre of the bodies": the pivot follows the picked bodies again. */
   centre(): void;
@@ -79,19 +80,21 @@ export interface MovePanel {
   readonly shown: boolean;
   /** The Move being edited, or null for a new one (or none open). */
   readonly editing: string | null;
-  /** Which tool the panel is: Move or Rotate. */
+  /** Which tool the panel is: Move, Rotate or Scale. */
   readonly kind: MoveKind;
   /** Whether a pivot box was typed in, so the pivot no longer follows the bodies. */
   readonly pivotTyped: boolean;
   /** Every box as it is now. */
-  readonly typed: Record<MoveParam, string>;
+  readonly typed: Record<MoveBox, string>;
 }
 
 /** The three rows of boxes: their legend, the boxes' keys, and the unit after them. */
-const ROWS: readonly { legend: string; keys: readonly MoveParam[]; unit: string; id: string }[] = [
+const ROWS: readonly { legend: string; keys: readonly MoveBox[]; unit: string; id: string }[] = [
   { legend: "Distance", keys: ["x", "y", "z"], unit: "mm", id: "move-distance" },
   { legend: "Angle", keys: ["turnX", "turnY", "turnZ"], unit: "°", id: "move-angle" },
   { legend: "Pivot", keys: ["pivotX", "pivotY", "pivotZ"], unit: "mm", id: "move-pivot" },
+  // Scale (step 35e2): one box, the factor (2 doubles every size, 0.5 halves it), about the pivot.
+  { legend: "Scale", keys: [MOVE_SCALE], unit: "×", id: "move-scale" },
 ];
 
 /** What the folded pivot's summary says: where the Move turns about (`p` as the boxes show it, in `unit`). */
@@ -100,7 +103,7 @@ export const pivotWords = (typed: boolean, p: readonly string[], unit: Unit = "m
 /** The unit a row's legend names: lengths follow Settings (U2c3), angles are degrees. */
 const rowUnit = (row: { unit: string }, length: Unit): string => (row.unit === "mm" ? length : row.unit);
 /** Whether a box holds a length (the distances and the pivot), shown in the chosen unit; the angles are degrees. */
-const isLength = (k: MoveParam): boolean => !k.startsWith("turn");
+const isLength = (k: MoveBox): boolean => k !== MOVE_SCALE && !k.startsWith("turn");
 
 export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const document = slot.ownerDocument;
@@ -121,13 +124,13 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const pick = el("p", "move-pick", "move-panel-note", "Click the bodies to move in the view, or their rows in the browser.");
   const snapNote = el("p", "move-snap-note", "move-panel-bodies");
   snapNote.hidden = true;
-  const inputs = new Map<MoveParam, HTMLInputElement>();
+  const inputs = new Map<MoveBox, HTMLInputElement>();
   // The length boxes (distances, pivot) show the unit chosen in Settings; everything outside them, `typed` included, is
   // millimetres (U2c3). The angle boxes are degrees as before.
-  const fields = new Map<MoveParam, SizeBox>();
+  const fields = new Map<MoveBox, SizeBox>();
   const unitNow = (): Unit => currentUnit(document);
   /** Puts `mm` (text in millimetres) in a length box. In millimetres the box shows it rounded (boxText) and the number behind is kept (`exact`); in inches the length box keeps it itself. */
-  const setLength = (k: MoveParam, mm: string) => {
+  const setLength = (k: MoveBox, mm: string) => {
     const n = Number(mm);
     if (mm.trim() === "" || !Number.isFinite(n)) {
       fields.get(k)!.value = mm;
@@ -143,8 +146,8 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   };
   // What the panel itself put in a box, rounded for show (boxText), with the exact number behind it: a box still showing
   // it reads as that number, so OK on an unchanged Move of 1e-7 mm records no change (weak-spot hunt 10-29).
-  const exact = new Map<MoveParam, { text: string; value: number }>();
-  const put = (k: MoveParam, value: number) => {
+  const exact = new Map<MoveBox, { text: string; value: number }>();
+  const put = (k: MoveBox, value: number) => {
     if (fields.has(k)) return setLength(k, String(value));
     const text = boxText(value);
     inputs.get(k)!.value = text;
@@ -152,7 +155,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   };
   // A box holding text it can't read as a number ("1e", "1.2.3") has the value "" (badInput): read it as not a number,
   // never as an empty box's 0 (weak-spot hunt 10-29).
-  const read = (k: MoveParam) => {
+  const read = (k: MoveBox) => {
     const input = inputs.get(k)!;
     if (input.validity?.badInput) return "?";
     const field = fields.get(k);
@@ -160,7 +163,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     const shown = exact.get(k);
     return shown && shown.text === text ? String(shown.value) : text;
   };
-  const typed = () => Object.fromEntries(MOVE_PARAMS.map((k) => [k, read(k)])) as Record<MoveParam, string>;
+  const typed = () => Object.fromEntries([...MOVE_PARAMS, MOVE_SCALE].map((k) => [k, read(k as MoveBox)])) as Record<MoveBox, string>;
   let pivotTyped = false;
   let editing: string | null = null;
   let kind: MoveKind = "move";
@@ -180,8 +183,8 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     for (const key of row.keys) {
       const input = el("input", `move-${key}`);
       Object.assign(input, { type: "number", step: "any", inputMode: "decimal" });
-      const axis = key.slice(-1).toUpperCase();
-      input.setAttribute("aria-label", `${row.legend} ${axis}`);
+      const axis = key === MOVE_SCALE ? "factor" : key.slice(-1).toUpperCase();
+      input.setAttribute("aria-label", key === MOVE_SCALE ? "Scale factor" : `${row.legend} ${axis}`);
       if (isLength(key)) fields.set(key, sizeBox(input, unitNow));
       input.addEventListener("input", () => {
         if (row.id === "move-pivot") (pivotTyped = true), showSummary();
@@ -191,7 +194,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       input.addEventListener("blur", () => {
         if (input.value.trim() !== "" || input.validity?.badInput || !open) return;
         if (isLength(key)) setLength(key, "0");
-        else input.value = "0";
+        else input.value = key === MOVE_SCALE ? "1" : "0"; // an empty factor scales by 1, as readMoveBoxes reads it
         if (row.id === "move-pivot") showSummary();
         on.typed(typed());
       });
@@ -248,17 +251,23 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const buttons = el("div", "", "move-panel-buttons");
   buttons.append(ok, cancel, snap);
   const note = el("p", "move-note", "move-panel-note");
-  box.append(title, bodies, snapNote, pick, rows[0], rows[1], pivot, error, note, buttons);
+  box.append(title, bodies, snapNote, pick, rows[0], rows[1], rows[3], pivot, error, note, buttons);
   /** The rows this tool shows, and any other that holds something; the note says what OK does with what is shown. */
   const showRows = () => {
-    const holds = (keys: readonly MoveParam[]) => keys.some((k) => Number(inputs.get(k)!.value) !== 0);
+    const holds = (keys: readonly MoveBox[]) => keys.some((k) => Number(inputs.get(k)!.value) !== 0);
     const distances = kind === "move" || holds(ROWS[0].keys);
     const angles = kind === "rotate" || holds(ROWS[1].keys);
+    const scaled = kind === "scale" || Number(inputs.get(MOVE_SCALE)!.value) !== 1;
     rows[0].hidden = !distances;
     rows[1].hidden = !angles;
-    pivot.hidden = !angles;
+    rows[3].hidden = !scaled;
+    pivot.hidden = !angles && !scaled;
     snap.hidden = kind !== "move";
-    note.textContent = angles && distances ? "Turned about X, then Y, then Z through the pivot, then moved." : angles ? "Turned about X, then Y, then Z through the pivot." : "Moved along X, Y and Z.";
+    // In the order the kernel is asked (moveMotions): the turns, the scale, the shift.
+    const turned = angles ? "Turned about X, then Y, then Z through the pivot" : "";
+    const sized = scaled ? (turned ? ", then sized about it" : "Sized about the pivot") : "";
+    const moved = distances ? (turned || sized ? ", then moved" : "Moved along X, Y and Z") : "";
+    note.textContent = `${turned}${sized}${moved}.`;
   };
   const setBodies = (names: readonly string[]) => {
     bodies.textContent = names.length === 0 ? "" : `${names.length === 1 ? "Body" : "Bodies"}: ${names.join(", ")}`;
@@ -275,11 +284,12 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       // An edited Move keeps its pivot; a new one follows its bodies.
       pivotTyped = m.id !== null;
       title.textContent = m.id === null ? m.name : `Edit ${m.name}`;
-      box.setAttribute("aria-label", kind === "rotate" ? "Rotate" : "Move");
+      box.setAttribute("aria-label", MOVE_VERBS[kind]);
       box.dataset.kind = kind; // read by the e2e test
       this.dragging(null);
       exact.clear();
       for (const k of MOVE_PARAMS) put(k, m.values[k]);
+      put(MOVE_SCALE, m.values.scale ?? 1);
       showRows();
       pivot.open = false;
       showSummary();
@@ -287,7 +297,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       error.hidden = true;
       ok.disabled = false;
       box.hidden = false;
-      const first = inputs.get(kind === "rotate" ? "turnX" : "x")!;
+      const first = inputs.get(kind === "rotate" ? "turnX" : kind === "scale" ? MOVE_SCALE : "x")!;
       // Not on a touch screen: the focus there pops the on-screen keyboard up over the view before the
       // person has asked to type (phone hunt 11-01); they tap a box when they want one.
       if (!document.defaultView?.matchMedia?.("(pointer: coarse)").matches) {

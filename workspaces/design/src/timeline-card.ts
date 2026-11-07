@@ -20,7 +20,8 @@ import { boxShown, summaryInUnit, type Feature, type Unit } from "@fission/core"
 import { currentUnit } from "@fission/ui";
 import { bodyIdOf, isSketchExtrude, type DesignDocument, type Sketch, type SketchPoint } from "./document.ts";
 import { isFlipped } from "./extrude.ts";
-import { moveKindOf } from "./move.ts";
+import { moveKindOf, MOVE_VERBS } from "./move.ts";
+import { mirrorOf } from "./duplicate.ts";
 import type { Scene } from "./scene.ts";
 import { itemName } from "./timeline-edits.ts";
 import type { TimelineBarItem } from "./timeline-bar.ts";
@@ -87,10 +88,11 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
       details = [`${len(p.distance)} from ${from ? itemName(from) : "a sketch that is gone"}${isFlipped(f) ? ", flipped" : ""}`, "A new body"];
     } else details = [summary.replace(/^Extrude: /, "")];
   } else if (type === "move") {
-    kind = moveKindOf(f) === "rotate" ? "Rotate" : "Move";
+    kind = MOVE_VERBS[moveKindOf(f)];
     details = [summary];
   } else if (type === "duplicate") {
-    kind = "Duplicate";
+    // Mirror body (35e2) is a Duplicate across a plane.
+    kind = mirrorOf(f) === undefined ? "Duplicate" : "Mirror body";
     details = [summary, "A new body, following its source's sizes"];
   } else if (type === "combine") {
     const op = p.operation;

@@ -631,6 +631,14 @@ export const MOVE_PARAMS = ["x", "y", "z", "turnX", "turnY", "turnZ", "pivotX", 
 export type MoveParam = (typeof MOVE_PARAMS)[number];
 
 /**
+ * A Move's scale factor (step 35e2, Scale): a number above 0 that sizes its
+ * bodies about the pivot, after the turns and before the shift. Only in a
+ * Move that scales: a Move without one scales by 1, so every older Move
+ * reads (and writes) as it did.
+ */
+export const MOVE_SCALE = "scale";
+
+/**
  * A value from a file, for a message: text as it is, anything else by
  * kind. String() would run a file's own "toString" and can throw
  * (found by fuzzing the loader).
@@ -1229,7 +1237,9 @@ function checkMove(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<str
   const at = `Design move ${f.id}`;
   const p = f.intent.parameters;
   for (const key of MOVE_PARAMS) if (!isFiniteNumber(p[key])) throw new Error(`${at}: ${key} ${shown(p[key])} is not a number`);
-  for (const key of Object.keys(p)) if (key !== "bodies" && !(MOVE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a number ${JSON.stringify(key)} a move doesn't have`);
+  for (const key of Object.keys(p)) if (key !== "bodies" && key !== MOVE_SCALE && !(MOVE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a number ${JSON.stringify(key)} a move doesn't have`);
+  // Scale (step 35e2): only when it scales, so never 1, and above 0 (0 would squash the bodies flat, a minus turn them inside out).
+  if (Object.hasOwn(p, MOVE_SCALE) && !(isFiniteNumber(p[MOVE_SCALE]) && p[MOVE_SCALE] > 0 && p[MOVE_SCALE] !== 1)) throw new Error(`${at}: scale ${typeof p[MOVE_SCALE] === "string" ? JSON.stringify(p[MOVE_SCALE]) : shown(p[MOVE_SCALE])} is not a number above 0 other than 1`);
   // Version 6: the bodies by body id, and `dependsOn` the items that made them, in the same order, each once (35ec).
   const bodies: unknown = p.bodies;
   if (!Array.isArray(bodies) || bodies.length === 0) throw new Error(`${at} moves no body`);
@@ -1293,7 +1303,9 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
 function checkDuplicate(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
   const at = `Design duplicate ${f.id}`;
   const p = f.intent.parameters;
-  for (const key of Object.keys(p)) if (key !== "body") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a duplicate doesn't have`);
+  for (const key of Object.keys(p)) if (key !== "body" && key !== "mirror") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a duplicate doesn't have`);
+  // Mirror body (step 35e2): the origin plane its copy is mirrored across, when it is a Mirror.
+  if (Object.hasOwn(p, "mirror") && !(SKETCH_PLANES as readonly unknown[]).includes(p.mirror)) throw new Error(`${at} mirrors across ${typeof p.mirror === "string" ? JSON.stringify(p.mirror) : shown(p.mirror)}, which is not an origin plane (XY, XZ or YZ)`);
   const id: unknown = p.body;
   const maker = typeof id === "string" ? bodyItem(id) : null;
   const there = maker === null ? undefined : byId.get(maker);

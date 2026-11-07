@@ -36,6 +36,10 @@ export const ICONS = {
   combine: [tone("M9 9H15V15H9Z"), line("M4 4H15V15H4ZM9 9H20V20H9Z")],
   // A block in front, its copy behind it and up to the right in outline only: Duplicate body (step 35e2).
   duplicate: [tone("M4 9H15V20H4Z"), line("M4 9H15V20H4ZM9 9V4H20V15H15")],
+  // A small block in the corner of a bigger one in outline, an arrow out along the diagonal: Scale (step 35e2).
+  scale: [tone("M4 13H11V20H4Z"), line("M4 13H11V20H4ZM4 9V4H20V20H15M13 11 19 5M15 5H19V9")],
+  // A triangle and its mirror image either side of an upright line: Mirror body (step 35e2).
+  mirror: [tone("M4 18 10 6V18Z"), line("M4 18 10 6V18ZM20 18 14 6V18ZM12 3V21")],
   insert: [tone("M4 4H20V20H4Z"), line("M4 4H20V20H4ZM12 8V16M8 12H16")],
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
   // The print check (Inspect ▾, H1): a nozzle over printed layers.
