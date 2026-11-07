@@ -6,3 +6,4 @@ fix
 - Combine: the pieces a Combine leaves are listed in Bodies straight away, not only after Undo and Redo.
 - Combine: changing the bodies or choices while OK is still checking is no longer silently ignored; nothing is recorded and the panel asks to press OK again.
 - Move: a Move of a body a Combine used up now says so, instead of saying the body isn't built.
+- Combine tests: the checker that replays editing sessions now agrees with Design on the order of a face's names after combining a body with one that already holds a copy of its names (the app itself was right; no shape changes).
