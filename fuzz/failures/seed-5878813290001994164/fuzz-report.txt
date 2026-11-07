@@ -1,0 +1,20 @@
+Timeline sessions, seed 5878813290001994164, 500 steps: 1 kind(s) of failure
+failure: two edges share a name | step 85 {"op":"add-combine","target":0.1746866202542725,"tool":0.4610133207577559,"operation":"intersect","keep":false}: two edges share a name: edge:feature-1/back#+feature-76/left | replay: cd packages/testing && FISSION_SEED=5878813290001994164 FISSION_TIMELINE_STEPS=500 node --experimental-strip-types --no-warnings --test journeys/timeline.journey.ts
+shrunk to 17 step(s) (1-minimal):
+  0. {"op":"add-face-sketch","pick":0.06407503711195528,"shape":{"kind":"circle","centre":[-18,-25],"radius":15}}
+  1. {"op":"delete-item","pick":0.8443717377962001}
+  2. {"op":"add-move","pick":0.08169756995607713,"other":null,"shift":[-18,-7,-36],"turnZ":90,"pivot":[8,26]}
+  3. {"op":"add-face-sketch","pick":0.6906965088218032,"shape":{"kind":"slot","at":[7,-2],"length":3,"radius":10}}
+  4. {"op":"add-extrude","pick":0.9274740485948355,"distance":38}
+  5. {"op":"add-extrude","pick":0.4524000272018883,"distance":15}
+  6. {"op":"add-sketch","shape":{"kind":"polygon","corners":[[24,-18],[-25,-3],[-15,5]]}}
+  7. {"op":"add-combine","target":0.21025104676027562,"tool":0.2540605702316382,"operation":"cut","keep":true}
+  8. {"op":"add-face-sketch","pick":0.4491326686433543,"shape":{"kind":"polygon","corners":[[-34,9],[-12,-2],[6,4]]}}
+  9. {"op":"add-extrude","pick":0.9315481982300619,"distance":19}
+  10. {"op":"add-preset","kind":"box","sizes":[56,15,41]}
+  11. {"op":"suppress","pick":0.10439157903558482}
+  12. {"op":"set-size","pick":0.12538922265235175,"value":22}
+  13. {"op":"add-combine","target":0.557992450656732,"tool":0.858004221896579,"operation":"join","keep":true}
+  14. {"op":"add-extrude","pick":0.8567158220688272,"distance":46}
+  15. {"op":"add-move","pick":0.9838298864292289,"other":0.134764711887419,"shift":[-32,32,0],"turnZ":180,"pivot":[29,-2]}
+  16. {"op":"add-combine","target":0.1746866202542725,"tool":0.4610133207577559,"operation":"intersect","keep":false}
