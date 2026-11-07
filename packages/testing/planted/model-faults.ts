@@ -154,8 +154,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
       },
     ],
     run: ["timeline"],
-    caught: "the rebuild differs from a rebuild from scratch",
-    why: "the drifted volume is off against both the model and a rebuild from scratch; with 26e's random steps the first session to meet it fails the from-scratch check first (recorded from planted/run.ts, 2026-10-22)",
+    caught: "the rebuild differs from the model",
+    why: "the drifted volume is off against both the model and a rebuild from scratch; with 26e's random steps the first session to meet it fails the from-scratch check first (recorded from planted/run.ts, 2026-10-22); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the model check first (already so on main before Duplicate)",
   },
   "resolve-last-body-only": {
     what: "a reference is looked for only on the last body shown, as while there was one body",
@@ -196,8 +196,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     what: "changing a Combine's operation keeps the old one",
     edits: [{ file: COMBINE, find: "parameters: { ...old.intent.parameters, operation, keepTools }", replace: "parameters: { ...old.intent.parameters, keepTools }" }],
     run: ["timeline"],
-    caught: "the rebuild differs from the model",
-    why: "Design's summary words change with the operation, so its data changes and the edit counts as done; the model's planted bug leaves its data as it was (no change)",
+    caught: "outcome differs from the model",
+    why: "Design's summary words change with the operation, so its data changes and the edit counts as done; the model's planted bug leaves its data as it was (no change); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the edit's outcome check first",
   },
   "combine-refusal-changes": {
     what: "a Combine the kernel refuses still uses its tools up",
@@ -221,8 +221,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     what: "a name on a split face goes to its first piece, never by tag, origin or size",
     edits: [{ file: NAMES, find: "  if (pieces.length === 1) {\n    const [one] = pieces;", replace: "  if (pieces.length >= 1) {\n    const [one] = pieces;" }],
     run: ["timeline"],
-    caught: "a reference guessed between pieces",
-    why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner)",
+    caught: "a reference was lost",
+    why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails within seeds 1 to 30, as a reference lost",
   },
   // 35f1e2: recorded on the #132 kernel built locally with the sessions given MODEL_KNOWS, 2026-11-05.
   "combine-face-moves-with-target": {
@@ -248,8 +248,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
       },
     ],
     run: ["timeline"],
-    caught: "the rebuild differs from the model",
-    why: "recorded on the #132 kernel built locally with MODEL_KNOWS, 2026-11-05 (seed 3); before 35f1e2 the sessions named a combined body's edges themselves from its faces' full names, so this mistake in the app was never compared: they now read the names the app writes",
+    caught: "two edges share a name",
+    why: "recorded on the #132 kernel built locally with MODEL_KNOWS, 2026-11-05 (seed 3); before 35f1e2 the sessions named a combined body's edges themselves from its faces' full names, so this mistake in the app was never compared: they now read the names the app writes; from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the edge-name check first",
   },
   "save-stamps": {
     what: "each save writes a counter into the file",
@@ -341,8 +341,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
       },
     ],
     run: ["timeline"],
-    caught: "rebuilding twice differs",
-    why: "the reused body is wrong; since 35eb the plant also puts the old item's bodies back under their body ids, so the second rebuild of the same document differs from the first before the comparison with a rebuild from scratch is reached",
+    caught: "the rebuild differs from a rebuild from scratch",
+    why: "the reused body is wrong; since 35eb the plant also puts the old item's bodies back under their body ids, so the second rebuild of the same document differs from the first before the comparison with a rebuild from scratch is reached; from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the from-scratch check first (already so on main before Duplicate)",
   },
   // 26e: the timeline's rules on a face sketch, and the greying unified.
   "suppress-fails-dependents": {
