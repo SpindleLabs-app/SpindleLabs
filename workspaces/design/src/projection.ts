@@ -291,7 +291,9 @@ export function placesOf(sketch: Pick<Sketch, "points" | "curves">, p: SketchPro
  * sketch with no curves of its own (it has no ends to join by). In the
  * sketch's order. The sketch's own curves when it has no projections.
  */
-export function profileCurves(sketch: { points: readonly SketchPoint[]; curves: readonly SketchCurve[]; projected?: readonly SketchProjection[] }): SketchCurve[] {
+export function profileCurves(whole: { points: readonly SketchPoint[]; curves: readonly SketchCurve[]; projected?: readonly SketchProjection[] }): SketchCurve[] {
+  // Construction curves (47f) are never in the outline.
+  const sketch = { ...whole, curves: whole.curves.filter((c) => c.construction !== true) };
   if (!sketch.projected || sketch.projected.length === 0) return [...sketch.curves];
   const projected = new Set(sketch.projected.map((p) => p.made));
   const where = new Map(sketch.points.map((p) => [p.id, [p.x, p.y] as const]));
@@ -420,8 +422,12 @@ export const PROJECTED_OPEN = "its projected edges don't close an outline (a pro
 
 /** The words for a sketch whose curves are all projected and none joins the outline (`profileCurves` empty), else null: the kernel judges. */
 export function projectedOpen(sketch: { points: readonly SketchPoint[]; curves: readonly SketchCurve[]; projected?: readonly SketchProjection[] }): string | null {
-  return sketch.curves.length > 0 && profileCurves(sketch).length === 0 ? PROJECTED_OPEN : null;
+  if (sketch.curves.length === 0 || profileCurves(sketch).length > 0) return null;
+  return sketch.curves.every((c) => c.construction === true) ? CONSTRUCTION_ONLY : PROJECTED_OPEN;
 }
+
+/** Why a sketch whose curves are all construction curves (47f) has no outline. */
+export const CONSTRUCTION_ONLY = "all its curves are construction lines, which are left out of the outline: draw an ordinary curve, or turn one back with Construction";
 
 /** Why a projection is held where it was: its edge is gone, now seen as something else (or slanted), or its name is now two edges'. */
 export type HeldCause = "projection-lost" | "projection-changed" | "projection-ambiguous";

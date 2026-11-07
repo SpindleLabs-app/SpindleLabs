@@ -25,6 +25,12 @@ export interface ViewportPick {
   /** Absent or null when no edge was picked. */
   edge?: number | null;
   /**
+   * The offered corner picked (showCorners, Measure's 35e2l3), by its place
+   * in the list offered; absent when none was. A corner wins over the
+   * edges and faces at it, so with it set `edge` and `face` are null.
+   */
+  vertex?: number;
+  /**
    * The offered origin plane clicked (showPlanes), by id; absent or null
    * when none was. While planes are offered a click picks the body's face
    * under the pointer whenever there is one (never an edge), else the
@@ -66,6 +72,12 @@ export interface SketchDrawing {
   side?: 1 | -1;
   lines: readonly (readonly [SketchXY, SketchXY])[];
   /**
+   * Its construction curves (step 47f, Design's construction.ts), already
+   * cut into dashes, drawn in a colour of their own while it is edited and
+   * as its lines are otherwise. Not in `lines`; absent when none.
+   */
+  construction?: readonly (readonly [SketchXY, SketchXY])[];
+  /**
    * A finished sketch whose plane is lost (step 26e: its face is gone, so
    * it stays where it was): drawn red, as the reference app draws a lost
    * profile. Absent means drawn as usual.
@@ -103,6 +115,12 @@ export interface SketchDrawing {
     constraints?: readonly (readonly [SketchXY, SketchXY])[];
     fighting?: readonly (readonly [SketchXY, SketchXY])[];
     constraintCount?: number;
+    /**
+     * The sketch's dimensions' values (step 47e): each one's words ("12.5",
+     * "R 4", "⌀ 10") at its spot, by the constraint's id, `fighting` when it
+     * fought the one just refused. Absent when none.
+     */
+    labels?: readonly { id: string; at: SketchXY; text: string; fighting?: boolean }[];
     /**
      * The points a press drags (step 47d3, the Select tool): a press within
      * a pick's reach of one on screen grabs the nearest (SketchPointer
@@ -185,6 +203,8 @@ export interface OfferedProfile {
   outline: Outline;
   /** A flat face of a body (UX1c), drawn only under the pointer or chosen: the body shows it already. */
   face?: boolean;
+  /** A sketch region that can't be extruded (step 48), drawn marked, and why in plain words (shown on hover, and said when it is clicked). */
+  refused?: string;
 }
 
 /**
@@ -325,6 +345,14 @@ export interface SharedViewport {
    * offered plane or one of these faces, never an edge.
    */
   showPlanes(planes: readonly OriginPlane[], faces?: readonly number[]): void;
+  /**
+   * Offers these points (world mm, the body's exact corners) to be picked
+   * (Measure, 35e2l3): while offered, a click or hover within a few pixels
+   * of one in sight (CORNER_PICK_PX, wider for a finger) picks it ahead of
+   * an edge or face, the one under the pointer drawn as a dot; null offers
+   * none.
+   */
+  showCorners(corners: readonly (readonly [number, number, number])[] | null): void;
   /**
    * Which of the origin's axes and planes the browser's eyes show
    * (Ben, 2026-10-29: an eye on everything): `axes` X, Y and Z, each drawn

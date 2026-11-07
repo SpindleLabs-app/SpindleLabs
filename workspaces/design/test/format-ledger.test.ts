@@ -23,13 +23,23 @@ export function propertyNames(source: string, name: string): string[] {
   return [...body.matchAll(/^ {2}([A-Za-z_]\w*)\??:/gm)].map((m) => m[1]);
 }
 
-// Design data version 7 (no new fields: the names of a ready-made profile's sides changed). Changing any list: see the top of this file.
-const LEDGER_VERSION = 7;
+// Design data version 9 (48): an extrude of a sketch may name its region (`region`, held to its fields below), which
+// a version 8 reader would build as the sketch's one outline. Version 8 (47e, 47f): construction curves
+// (`construction` on each curve kind) and dimensions (two new constraint kinds), which a version 7 reader would build
+// without. Changing any list: see the top of this file.
+const LEDGER_VERSION = 9;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
   { file: "workspaces/design/src/document.ts", type: "KeptShape", names: ["points", "curves", "placement"] },
+  { file: "workspaces/design/src/document.ts", type: "SketchLineCurve", names: ["id", "kind", "start", "end", "construction"] },
+  { file: "workspaces/design/src/document.ts", type: "SketchCircleCurve", names: ["id", "kind", "centre", "radius", "construction"] },
+  { file: "workspaces/design/src/document.ts", type: "SketchArcCurve", names: ["id", "kind", "start", "end", "centre", "construction"] },
+  { file: "workspaces/design/src/document.ts", type: "SketchDistance", names: ["id", "kind", "a", "b", "value"] },
+  { file: "workspaces/design/src/document.ts", type: "SketchDiameter", names: ["id", "kind", "circle", "value"] },
   { file: "workspaces/design/src/face-sketch.ts", type: "SketchFace", names: ["frame", "side", "held", "body"] },
+  { file: "workspaces/design/src/regions.ts", type: "RegionRef", names: ["outer", "centroid"] },
+  { file: "workspaces/design/src/regions.ts", type: "RegionPiece", names: ["curve", "reversed"] },
 ];
 
 test("the saved types' fields are exactly the ledger of the current data version", () => {

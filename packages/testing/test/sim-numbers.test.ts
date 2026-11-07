@@ -97,8 +97,9 @@ test("the kernel counter sorts every body_build answer and passes each on unchan
 test("the waiting moves: one list of landed steps, each move its own op, drawn as itself", () => {
   // Golden models and session moves read the same list (landed.ts), so a step turns both on at once.
   assert.equal(GOLDEN_LANDED, LANDED);
-  // 35e2 landed (Move): the model and Design answer its moves. A step landing turns its moves on here too.
-  assert.deepEqual([...LANDED], ["35e2"], "a step landed: its waiting moves now need the model (see WAITING_MOVES)");
+  // 35e2 landed (Move), then 35 and 36 (Combine, faces on faces: 35f1f, 11-06): the model and Design answer their moves.
+  // A step landing turns its moves on here too.
+  assert.deepEqual([...LANDED], ["35e2", "35", "36"], "a step landed: its waiting moves now need the model (see WAITING_MOVES)");
   assert.deepEqual(WAITING_MOVES.map((m) => [m.op, m.from]), [["add-move", "35e2"], ["set-move", "35e2"], ["add-duplicate", "35e2"], ["add-combine", "35"], ["set-combine", "35"], ["add-extrude-into", "39"], ["set-extrude-operation", "39"]]);
   const r = seeded(5n);
   for (const m of WAITING_MOVES) {

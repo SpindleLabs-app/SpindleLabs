@@ -158,8 +158,11 @@ for (const fault of MODEL_FAULTS)
     assert.equal(found.failure.check, CAUGHT_BY[fault], found.failure.message);
   });
 
-test("dropped kept shapes are caught by the model too, when the save changes nothing shown (seed 23 from 35e2's Duplicate)", async () => {
-  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(23n, 150)))?.check, "the rebuild differs from the model");
+// Seed 3 until 35 and 36 landed (11-06): Design's sessions then make Combines, so the sessions changed (65 then); with Duplicate's
+// add-duplicate drawn too (35e2m) they changed again: 9 is the first seed (of 1 to 400) whose session the model catches this way,
+// every one before it caught on save and open first.
+test("dropped kept shapes are caught by the model too, when the save changes nothing shown (seed 9)", async () => {
+  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(9n, 150)))?.check, "the rebuild differs from the model");
 });
 
 test("without a rebuild from scratch, a stale cache is still caught by the model", async () => {

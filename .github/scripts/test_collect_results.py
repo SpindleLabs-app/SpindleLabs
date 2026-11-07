@@ -25,7 +25,7 @@ def git(cwd, *args):
 
 
 class CollectGolden(unittest.TestCase):
-    def collect(self, report, failing, extra=None, jobs=None):
+    def collect(self, report, failing, extra=None, jobs=None, mutant_shards=None):
         """Runs collect-results.sh on one golden night (plus `extra`, {path in the incoming folder: text}); returns (stdout, the test-results branch's files)."""
         with tempfile.TemporaryDirectory() as d:
             origin, work, incoming = (os.path.join(d, x) for x in ("origin.git", "work", "in"))
@@ -48,10 +48,13 @@ class CollectGolden(unittest.TestCase):
             env.pop("JOBS", None)
             if jobs is not None:
                 env["JOBS"] = jobs
+            env.pop("MUTANT_SHARDS", None)
+            if mutant_shards is not None:
+                env["MUTANT_SHARDS"] = mutant_shards
             env.update(IN=incoming, RUN_URL="https://example.invalid/runs/1", COMMIT="abcdef1234567", BRANCH="main",
                        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
             # The workflow copies the scripts out first; so does this.
-            for s in ("collect-results.sh", "file_issues.py", "coverage_issue.py"):
+            for s in ("collect-results.sh", "file_issues.py", "coverage_issue.py", "mutant_rotation.py"):
                 shutil.copy(os.path.join(HERE, s), d)
             out = subprocess.run(["bash", os.path.join(d, "collect-results.sh")], cwd=work, env=env, capture_output=True, text=True)
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
@@ -76,6 +79,26 @@ class CollectGolden(unittest.TestCase):
         self.assertRegex(files["golden/log.txt"], r"^\d{4}-\d\d-\d\d \d\d:\d\d,abcdef1,main,seed 7, 20 rounds of 6 models; 1 FAILED\n$")
         # No GH_TOKEN: file_issues.py says what it would file. "-15" goes with its sign, so "feature#".
         self.assertIn("create  golden model l-bracket: Body # (feature#): volume # is not #", stdout)
+
+    def test_the_mutation_rotation_is_recorded_and_summed_up(self):
+        # One rotation job that tested one unit of 3 (the whole kernel 3 units,
+        # 90 mutants): 30 caught, 1 missed. A first cycle has nothing to
+        # compare with, so no new survivors and no issue.
+        unit = "mutants-0/units/0/"
+        extra = {"mutants-0/plan.txt": "cycle 1\nunits 3\nmutants 90\nleft 3\nsrc/a.rs#0/1\n",
+                 "mutants-0/units-all.txt": "src/a.rs#0/1\nsrc/b.rs#0/1\nsrc/c.rs#0/1\n",
+                 "mutants-0/baseline.txt": "0\n", "mutants-0/exit-code.txt": "0\n",
+                 unit + "unit.txt": "src/a.rs#0/1\n", unit + "exit-code.txt": "2\n", unit + "cycle.txt": "1\n",
+                 unit + "caught.txt": "".join(f"src/a.rs:{i}:1: m{i}\n" for i in range(30)),
+                 unit + "missed.txt": "src/a.rs:99:1: survivor\n", unit + "timeout.txt": "", unit + "unviable.txt": ""}
+        stdout, files = self.collect("seed 7, 20 rounds of 6 models; all passed\n", None, extra, mutant_shards="4")
+        self.assertIn("Mutation testing of the whole kernel, a slice a run", files["summary.txt"])
+        self.assertIn("cycle 1: 1 of 3 units tested", files["summary.txt"])
+        self.assertIn("at this pace a whole cycle takes about 3 run(s)", files["summary.txt"])
+        self.assertEqual(files["mutants/missed.txt"], "src/a.rs:99:1: survivor\n")
+        self.assertIn(",abcdef1,main,1,1,1,31,30,1,0,0,0,https://example.invalid/runs/1", files["mutants/rotation-log.csv"])
+        self.assertNotIn("new survivor", stdout)
+        self.assertNotIn("whole-kernel mutants", stdout)
 
     def test_a_clean_night_files_nothing(self):
         stdout, files = self.collect("seed 8, 20 rounds of 6 models; every answer right and the same every round\n", None)

@@ -60,7 +60,20 @@ export interface BodyNames {
  * profile loop `boundary` was swept from, as an id; null when it can't be
  * told (the side then has no name).
  */
-export type CurveOf = (boundary: number, piece: number) => string | null;
+export type CurveOf = (boundary: number, piece: number) => string | SideOf | null;
+
+/**
+ * A side swept from one run of a curve that a region's loop passes more
+ * than once (step 48: a band across a circle meets the circle on both
+ * sides): named "side:<curve>#<run>", the run counted from 1 in the order
+ * the region's name lists that loop (which starts at its smallest entry,
+ * so the same region always counts the same way). "#" is never in an
+ * escaped id, so no curve's own name can read the same.
+ */
+export interface SideOf {
+  curve: string;
+  run: number;
+}
 
 /**
  * An outline's outer loop as step 27b names its corners: how many pieces,
@@ -110,7 +123,7 @@ export function nameBody(feature: string, view: BodyView, curveOf: CurveOf, ways
     if (r === null) return null;
     if (r.role !== "side" || r.piece === undefined) return r.role;
     const curve = curveOf(r.boundary ?? 0, r.piece);
-    return curve === null ? null : `side:${esc(curve)}`;
+    return curve === null ? null : typeof curve === "string" ? `side:${esc(curve)}` : `side:${esc(curve.curve)}#${curve.run}`;
   });
   const faces = onlyOnce(given);
   // Two sides of an extrude (each with a piece) meet in order; everything else is a set.
@@ -204,10 +217,30 @@ export function readyKind(outline: Outline): ProfileKind | null {
  */
 export function outlineCurves(outline: Outline, curves?: { line: readonly string[]; arc: readonly string[]; circle: readonly string[] }): CurveOf {
   const kind = outline.pieces === undefined ? readyKind(outline) : null;
+  if (outline.holePieces !== undefined && outline.pieces !== undefined) return regionCurves([outline.pieces, ...outline.holePieces], curves);
   return (boundary, piece) => {
     if (outline.pieces === undefined) return kind === null ? null : boundary === 0 ? `${kind}-piece-${piece}` : `${kind}-hole-${boundary}-piece-${piece}`;
     const p = boundary === 0 ? outline.pieces[piece] : undefined;
     return p === undefined || curves === undefined ? null : (curves[p.curve][p.index] ?? null);
+  };
+}
+
+/**
+ * `CurveOf` for a sketch region's profile (step 48): each loop's pieces
+ * (`loops[0]` the outside, then each hole's) name the curve they came from;
+ * a curve the loop passes more than once names each run (`SideOf`). A
+ * curve is only ever in one loop of a region (its loops are separate
+ * pieces of the sketch), so runs are counted within the loop.
+ */
+function regionCurves(loops: readonly (readonly { curve: "line" | "arc" | "circle"; index: number }[])[], curves?: { line: readonly string[]; arc: readonly string[]; circle: readonly string[] }): CurveOf {
+  return (boundary, piece) => {
+    const loop = loops[boundary];
+    const p = loop?.[piece];
+    const id = p === undefined || curves === undefined ? undefined : curves[p.curve][p.index];
+    if (id === undefined) return null;
+    const same = (q: { curve: string; index: number }) => q.curve === p!.curve && q.index === p!.index;
+    if (loop!.filter(same).length === 1) return id;
+    return { curve: id, run: loop!.slice(0, piece + 1).filter(same).length };
   };
 }
 

@@ -272,7 +272,11 @@ try {
       assert.equal(await undoTitle(page), "Undo Insert Star (Ctrl+Z)");
       await page.click("#insert");
       assert.equal(await page.isVisible("#insert-menu"), true);
-      await page.mouse.click(640, 400);
+      // A press in the view below the menu: worked out from where the menu is, since its place moves as the toolbar grows.
+      const menu = await page.locator("#insert-menu").boundingBox();
+      const outside = { x: menu.x + menu.width / 2, y: menu.y + menu.height + 120 };
+      assert.equal(await page.evaluate(({ x, y }) => document.getElementById("insert-menu").contains(document.elementFromPoint(x, y)), outside), false, "the press is outside the menu");
+      await page.mouse.click(outside.x, outside.y);
       assert.equal(await page.isVisible("#insert-menu"), false, "a press outside closes it");
       // Escape in the menu never also clears the selection (its keys are its own): Move on the new star left first.
       await cancelMove(page, false);

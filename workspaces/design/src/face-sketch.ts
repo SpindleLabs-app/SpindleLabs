@@ -300,7 +300,8 @@ export const facePlane = (escapedFeature: string, part: string): string => `face
 export const frameOf = (p: Plane): { origin: Vec3; x: Vec3; normal: Vec3 } => ({ origin: [...p.origin], x: [...p.xAxis], normal: [...p.normal] });
 
 /** The words for a face sketch's plane warning, naming the sketch and the face it held. */
-export function planeWords(cause: PlaneCause, sketchLabel: string): string {
+export function planeWords(cause: PlaneCause, sketchLabel: string, whole = false): string {
+  if (cause === "plane-split" && whole) return `${sketchLabel}'s piece of its face is gone, so it now lies on the one face left with that face's name: check it is the one you want`;
   if (cause === "plane-split") return `${sketchLabel}'s face was split into pieces, so it now lies on the piece it was drawn on (or the largest): check it is the one you want`;
   return cause === "plane-lost"
     ? `${sketchLabel}'s face is gone, so its plane is lost: it stays where it was`
