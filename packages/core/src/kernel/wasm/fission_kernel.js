@@ -157,6 +157,16 @@ export function qmdw4c() {
     }
 }
 
+export function qz3hmr(p0) {
+    const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.qz3hmr(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function r7w2kx(p0, p1, p2) {
     const ret = wasm.r7w2kx(p0, p1, p2);
     if (ret[2]) {
