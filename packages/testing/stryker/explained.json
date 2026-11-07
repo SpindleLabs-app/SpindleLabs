@@ -3148,5 +3148,26 @@
     "original": "same.length > 1",
     "replacement": "same.length >= 1",
     "why": "resolveEdge: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "x.k - y.k",
+    "replacement": "x.k + y.k",
+    "why": "combineNames' last tie-break, the order merged: names tied on place among the inputs, place in their face's list and made order come in the list in merge order already (origins are listed in merge order), and Array.sort is stable, so this term only confirms an order the sort keeps anyway. A positive answer both ways reads the same to the engine: 15,800 random lists of up to 80 such names (seeded, made orders with ties) sorted alike under both."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ends !== undefined",
+    "replacement": "true",
+    "why": "resolveEdgeName with no ends in the name: no edge's ends joined make undefined, so nothing is pushed to same either way, and same is read only when ends is given."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "same.length > 1",
+    "replacement": "same.length >= 1",
+    "why": "resolveEdgeName: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
   }
 ]

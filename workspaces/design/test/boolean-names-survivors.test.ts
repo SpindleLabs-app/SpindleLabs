@@ -316,6 +316,16 @@ test("combineNames: a merged face's names, the target's first, then by place in 
   assert.deepEqual(r.bodies[0].faces[0].names, ["face:t/b", "face:t/a", "face:t/u1", "face:t/u2", "face:s/x", "face:s/y"]);
 });
 
+test("combineNames: a name second in its face's list comes after the names first in theirs, whichever face was merged first", () => {
+  // The result's face lies on target faces 0 (names p then q) and 1 (name r), none with a made order. All three are
+  // the target's (place 0); p and r are first in their faces' lists (place 0), q second (place 1). By place first: p,
+  // then r, then q, though q's face was merged before r's.
+  const t = body("body:t", 1, view(), [["face:t/p", "face:t/q"], ["face:t/r"]]);
+  const history = [{ faces: [{ body: 1, face: 0 }], also: [[{ body: 1, face: 1 }]] }];
+  const r = combineNames("feature-9", "union", t, [], { bodies: [100], history }, [view({ volume: 10, face_areas: [5] })]);
+  assert.deepEqual(r.bodies[0].faces[0].names, ["face:t/p", "face:t/r", "face:t/q"]);
+});
+
 test("resolveFaceName: a tag written in another order is the same set (`[...ref.tag].sort()` → unsorted)", () => {
   // Two pieces carry face:a, tagged [p, q] and [r] (tags are kept sorted). A reference tagged [q, p] is the first.
   const b = body("body:x", 1, view(), [["face:a"], ["face:a"]]);
