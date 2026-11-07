@@ -293,7 +293,7 @@ Phone layout rules (the phone rule: one tap never covers most of the view):
 - The step card is a strip along the bottom: two short lines, Help and Back, at most a fifth of the screen's height at 375 × 667, and it folds to a small pill with one tap.
 - The card never covers the thing it points at: when the target is under it, the card moves to the top. It never covers a typed-value box or the point being placed (the typed-box bug of 2026-10-28 is the lesson).
 - Highlights are rings and arrows, never a dark sheet over the whole screen, so the part stays visible; every tap target is at least 44 px.
-- Every lesson is checked at 375 px and 1280 px.
+- Every lesson is checked at 375 px, at 393 × 852 (the owner's iPhone) and at 1280 px.
 
 Testing:
 - LC-tests in `npm test` (Node, no browser): every lesson file is valid (each expected command is a real command, each target name exists, every typed value is in range); the reference part builds on the Node kernel; the final check passes for the reference and fails for a part with the hole 0.5 mm off, a missing fillet and one extra body; the shape-compare tolerance has 0.9× (passes) and 1.1× (fails) boundary tests; the hand-worked volume of every project's part (like the tag's 2808 + 29.25π mm³) matches the kernel's.
