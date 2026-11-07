@@ -57,6 +57,8 @@ import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./p
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
+import { offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
+import type { RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
@@ -2448,8 +2450,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     /** The design the chosen sketch's outline was last checked in: a newer one checks and previews it again (`offerProfiles`). */
     checked: DesignDocument | null;
     offered: OfferedProfile[];
+    /** Step 48: every sketch region offered, by its id in the view (extrude-regions.ts `offerId`). */
+    regions: ReadonlyMap<string, RegionOffer>;
+    /** The region of the chosen sketch picked (its id in the view, drawn chosen) and what its extrude saves; null while none is. */
+    offer: string | null;
+    region: RegionRef | null;
     distance: number | null;
-    base: { doc: DesignDocument; sketch: string; spec: BodySpec } | null;
+    base: { doc: DesignDocument; sketch: string; region: RegionRef | null; spec: BodySpec } | null;
     preview: BodyView | null;
     arrow: ExtrudeArrow | null;
   } | null = null;
@@ -2491,7 +2498,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A flat face selected first is chosen once it is offered (UX1c); meanwhile nothing is.
     const wanted = editing === null && ctx.selection.items.length === 1 && ctx.selection.items[0].kind === "face" ? String(ctx.selection.items[0].id) : null;
     const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? (wanted ? undefined : items.at(-1)?.id) ?? null;
-    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
+    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], regions: new Map(), offer: null, region: null, distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
     leaveExplode(); // a tool works on the bodies where they are
     extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE));
     // No usable sketch: say why (a body's flat faces are still offered to click, UX1c); with no sketch at all and a body, just how to pick.
@@ -2518,10 +2525,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const e = extruding;
     if (!e) return viewport.showExtrude(null);
     const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
-    viewport.showExtrude({ profiles: e.offered, chosen: e.sketch, preview: e.preview?.mesh ?? null, arrow });
-    // Read by the tests: the sketches it can use, the one chosen, and the volume of the body OK would make, as the kernel worked it out.
+    viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, preview: e.preview?.mesh ?? null, arrow });
+    // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
-    if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), faces: [...e.faces.keys()].join(" "), chosen: e.sketch ?? "", previewVolume: e.preview ? String(e.preview.volume) : "" });
+    if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), faces: [...e.faces.keys()].join(" "), chosen: e.sketch ?? "", region: e.offer ?? "", previewVolume: e.preview ? String(e.preview.volume) : "" });
   }
 
   /**
@@ -2549,19 +2556,24 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       }
       return null;
     }));
-    const offered = await Promise.all(ids.map(async (id): Promise<OfferedProfile | null> => {
-      const sketch = doc.sketches.find((s) => s.id === id);
-      if (!sketch || sketch.curves.length === 0 || projectedOpen(sketch) !== null) return null;
-      try {
-        const out = await askOutline(kernel, sketchCurves(sketch));
-        return "closed" in out ? { id, plane: sketchPlane(doc, id, placedNow), outline: out.closed } : null;
-      } catch {
-        return null; // a sketch the kernel refuses is not offered; its status says why when it is chosen
-      }
-    }));
+    // Every region of every usable sketch (step 48), each shaded to click; the ones that can't be extruded marked.
+    const offered = (
+      await Promise.all(ids.map(async (id): Promise<RegionOffer[]> => {
+        const sketch = doc.sketches.find((s) => s.id === id);
+        if (!sketch) return [];
+        try {
+          return (await regionOffers(kernel, sketch, sketchPlane(doc, id, placedNow))).offers;
+        } catch {
+          return []; // a sketch the kernel refuses is not offered; its status says why when it is chosen
+        }
+      }))
+    ).flat();
     const facesOffered = (await faceOffers).filter((p) => p !== null);
     if (!extruding || designDoc() !== doc) return;
-    extruding.offered = [...offered.filter((p) => p !== null), ...facesOffered];
+    extruding.offered = [...offered, ...facesOffered];
+    extruding.regions = new Map(offered.map((o) => [o.id, o]));
+    // The region picked keeps its place in the view by its curves (an id in the view can move when a region comes or goes).
+    if (extruding.sketch !== null && extruding.region !== null) extruding.offer = offerOf(offered, extruding.sketch, extruding.region)?.id ?? null;
     const before = extruding.faces;
     extruding.faces = new Map(facesOffered.map((p) => [p.id, faces.get(p.id)!]));
     extruding.refusedFaces = refusedFaces;
@@ -2587,8 +2599,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Another sketch chosen (a click in the view, its row in the browser, or ✕ for none): its preview and arrow start again. */
   function chooseProfile(id: string | null) {
     const e = extruding;
-    if (!e || e.sketch === id || (id !== null && !e.usable.has(id) && !e.faces.has(id))) return;
-    Object.assign(e, { sketch: id, closed: false, checked: null, base: null, preview: null, arrow: null });
+    // A sketch region (step 48): its sketch is chosen with it; one that can't be extruded says why and changes nothing.
+    const offer = id === null ? undefined : e?.regions.get(id);
+    if (e && offer?.refused !== undefined) return void extrudeBox.showError(regionRefusedWords(sketchLabel(offer.sketch), offer.refused));
+    const sketch = offer?.sketch ?? id;
+    if (!e || (e.sketch === sketch && (offer === undefined || e.offer === offer.id)) || (sketch !== null && !e.usable.has(sketch) && !e.faces.has(sketch))) return;
+    Object.assign(e, { sketch, offer: offer?.id ?? null, region: offer?.ref ?? null, closed: false, checked: null, base: null, preview: null, arrow: null });
+    id = sketch;
     extrudeBox.showProfile(id ? sourceOf(id).label : null);
     extrudeBox.showError("");
     if (id) void checkExtrude(id);
@@ -2656,18 +2673,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!e || !id || !e.closed || d === null || d === undefined || distanceRefused(d) !== null) return;
     // A face's sketch lives in the design it was offered in (UX1c), a sketch in the design now.
     const { doc, sketch } = sourceOf(id);
+    const region = e.region;
     try {
-      if (e.base?.doc !== doc || e.base.sketch !== id) {
-        const made = extrudeSketch(doc, sketch, 1);
+      if (e.base?.doc !== doc || e.base.sketch !== id || e.base.region !== region) {
+        const made = extrudeSketch(doc, sketch, 1, false, region ?? undefined);
         const spec = await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!);
-        if (extruding !== e || e.sketch !== id) return;
-        e.base = { doc, sketch: id, spec };
+        if (extruding !== e || e.sketch !== id || e.region !== region) return;
+        e.base = { doc, sketch: id, region, spec };
       }
       // At 0 mm (where Extrude starts) nothing is drawn, but the arrow still stands on the profile: it is found from a 1 mm build.
       const handle = await kernel.call("body_build", previewSpec(e.base.spec, d === 0 ? 1 : d));
       const view = await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
-      // Out of date: another sketch chosen or the panel closed. A newer distance only means another build follows.
-      if (extruding !== e || e.sketch !== id) return;
+      // Out of date: another sketch or region chosen or the panel closed. A newer distance only means another build follows.
+      if (extruding !== e || e.sketch !== id || e.region !== region) return;
       // A distance refused since this build began (extrudeDistance said why) shows no preview under the words.
       e.preview = e.distance === null || d === 0 || distanceRefused(e.distance) !== null ? null : view;
       e.arrow = arrowOf(view, d === 0 ? 1 : d) ?? e.arrow;
@@ -2694,17 +2712,44 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const projectedOnly = projectedOpen(sketch);
     if (projectedOnly !== null) return extrudeBox.showStatus(`${name} can't be extruded: ${projectedOnly}.`, false);
     try {
+      if (!source.face) return await checkRegions(id, sketch, name);
       const { current, value } = await onceMoreAfterRestart(() => extrudeOutline(sketchCurves(sketch)));
       if (!current || extruding?.sketch !== id) return;
       if ("closed" in value) {
         // A face's extrude is a new body until Combine (35f): said plainly (UX1c).
-        extrudeBox.showStatus(source.face ? `${name} makes a closed outline. ${FACE_NEW_BODY}` : `${name} makes a closed outline.`, true);
+        extrudeBox.showStatus(`${name} makes a closed outline. ${FACE_NEW_BODY}`, true);
         extruding.closed = true;
         refreshPreview();
       } else extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${value.open}).`, false);
     } catch (e) {
       if (extruding?.sketch === id) extrudeBox.showStatus(`${name} can't be extruded: ${e instanceof Error ? e.message : String(e)}`, false);
     }
+  }
+
+  /**
+   * A sketch chosen (step 48): its region picked, found again by its curves
+   * (OK on, and its preview built); else its only region, picked for it (as
+   * a sketch of one outline always was); else how many it has, to click
+   * one; or the kernel's reason it has none (OK off). A region that can't
+   * be extruded says why.
+   */
+  const extrudeRegions = latestOnly((sketch: Sketch, plane: Plane) => regionOffers(kernel, sketch, plane));
+  async function checkRegions(id: string, sketch: Sketch, name: string) {
+    const { current, value } = await onceMoreAfterRestart(() => extrudeRegions(sketch, sketchPlane(designDoc(), id, placedNow)));
+    const e = extruding;
+    if (!current || !e || e.sketch !== id) return;
+    const { offers, why } = value;
+    let offer = e.region === null ? undefined : offerOf(offers, id, e.region);
+    if (offer === undefined && offers.length === 1) offer = offers[0];
+    if (offer === undefined || offer.refused !== undefined) Object.assign(e, { offer: null, region: null });
+    if (offer?.refused !== undefined) extrudeBox.showStatus(regionRefusedWords(name, offer.refused), false);
+    else if (offer !== undefined) {
+      Object.assign(e, { offer: offer.id, region: offer.ref, closed: true });
+      extrudeBox.showStatus(offers.length === 1 ? `${name} makes a closed outline.` : regionChosenWords(name), true);
+      refreshPreview();
+    } else if (offers.length === 0) extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${why ?? "it has no closed region"}).`, false);
+    else extrudeBox.showStatus(pickRegionWords(name, offers.length), false);
+    showExtrudeView();
   }
 
   /**
@@ -2731,7 +2776,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (source.face && source.face.from !== before) return;
     let made: ReturnType<typeof extrudeSketch>;
     try {
-      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0);
+      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, source.face ? undefined : (extruding?.region ?? undefined));
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
     } catch (e) {
       if (extrudeOpenings === opened && extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));

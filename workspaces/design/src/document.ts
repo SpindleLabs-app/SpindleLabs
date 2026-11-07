@@ -208,7 +208,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 8;
+  version: 9;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -400,7 +400,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 8, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 9, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -1312,6 +1312,33 @@ function hasVersion8Fields(d: Record<string, unknown>): boolean {
   return sketches.some((s) => curves(s.curves) || dims(s.constraints)) || kept.some((k) => curves(k.curves));
 }
 
+/** Whether version 8 data holds what only version 9 brought (step 48): an extrude of a sketch naming its region. */
+function hasVersion9Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "region"));
+}
+
+/**
+ * Checks an extrude's `region` (step 48): `{ outer, centroid }`, `outer`
+ * the curves round the region's outside as `{ curve, reversed }` (a curve
+ * id and true or false), one at least and at most a sketch's limit, and
+ * `centroid` two finite numbers (mm). The ids need not be curves of the
+ * sketch now: a region whose curves were deleted is lost, not wrong.
+ */
+function checkRegion(region: unknown, id: string): void {
+  const where = `Design feature ${id}'s region`;
+  if (!isRecord(region)) throw new Error(`${where} is not an object with outer and centroid`);
+  for (const key of Object.keys(region)) if (key !== "outer" && key !== "centroid") throw new Error(`${where} has ${shown(key)}, which a region never holds`);
+  const { outer, centroid } = region;
+  if (!Array.isArray(outer) || outer.length === 0) throw new Error(`${where}'s outer is not a list of the curves round it`);
+  notTooMany(outer.length, DESIGN_LIMITS.sketch, `${where} names`, "curves");
+  for (const [k, p] of outer.entries()) {
+    if (!isRecord(p) || typeof p.curve !== "string" || typeof p.reversed !== "boolean" || Object.keys(p).length !== 2)
+      throw new Error(`${where}'s curve ${k + 1} is not { curve: an id, reversed: true or false }`);
+  }
+  if (!Array.isArray(centroid) || centroid.length !== 2 || !centroid.every(isFiniteNumber)) throw new Error(`${where}'s centroid ${shown(centroid)} is not two numbers of mm`);
+}
+
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
   // Counted before migrating, which spreads every id of a version 1 file.
@@ -1325,7 +1352,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
@@ -1334,10 +1361,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const v7 = pieceNames ? { ...v6, version: 7 } : v6;
   // Version 8 (47f) adds construction curves and dimensions, which version 7 never held; its fields are read as they are.
   if (v7.version === 7 && hasVersion8Fields(v7)) throw new Error("Design data says version 7 but has construction curves or dimensions, which version 8 brought");
-  const d = (v7.version === 7 ? { ...v7, version: 8 } : v7) as Partial<DesignDocument>;
+  const v8 = v7.version === 7 ? { ...v7, version: 8 } : v7;
+  // Version 9 (48) adds an extrude's region, which version 8 never held; its fields are read as they are.
+  if (v8.version === 8 && hasVersion9Fields(v8)) throw new Error("Design data says version 8 but has an extrude naming its sketch region, which version 9 brought");
+  const d = (v8.version === 8 ? { ...v8, version: 9 } : v8) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 8 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 8) throw new (Number.isSafeInteger(d.version) && d.version! > 8 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7 or 8)`);
+  // A whole number above 9 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 9) throw new (Number.isSafeInteger(d.version) && d.version! > 9 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8 or 9)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1409,6 +1439,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.sketch as string)) throw new Error(`Design feature ${f.id} extrudes ${p.sketch} but does not depend on it`);
     if (!isFiniteNumber(p.distance)) throw new Error(`Design feature ${f.id}: distance ${shown(p.distance)} is not a number of mm`);
     if (Object.hasOwn(p, "flip") && p.flip !== true) throw new Error(`Design feature ${f.id}: flip must be true or left out, not ${shown(p.flip)}`);
+    if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
   }
   if (Object.hasOwn(d, "kept")) {
     if (!isRecord(d.kept)) throw new Error("Design data's kept shapes are not an object of extrude ids");

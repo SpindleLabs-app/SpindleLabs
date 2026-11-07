@@ -22,7 +22,7 @@ export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, f
 export { PART_VIEW, syncGraph } from "./graph.ts";
 export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
 export { bodyReference, designReference, NAME_NOTE, profileReference, readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
-export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type PieceWays } from "./naming.ts";
+export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type CurveOf, type PieceWays, type SideOf } from "./naming.ts";
 export { applyChange, pickChange, type SelectionChange } from "./picking.ts";
 export { droppedNote, highlightOf, NAME_SHARED, panelFocus, panelPart, referenceLabel, selectionRows, survivors, type PanelFocus } from "./selection.ts";
 export { designNames, featureBody, resolveFaceName, type DesignNames, type NamedBody } from "./boolean-names.ts";

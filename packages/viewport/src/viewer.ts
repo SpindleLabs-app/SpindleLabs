@@ -1353,6 +1353,10 @@ export class Viewer implements SharedViewport {
         if (!this.extrude.setHover(profile, arrow)) return;
         if (profile) this.element.dataset.extrudeHover = profile;
         else delete this.element.dataset.extrudeHover;
+        // A region that can't be extruded says why under the pointer (step 48); a tap says it in the panel.
+        const why = arrow ? null : this.extrude.refusal(profile);
+        if (why) this.element.title = why;
+        else this.element.removeAttribute("title");
         this.element.dataset.arrowHot = String(arrow);
       },
       move: this.moveLayer,
@@ -1520,7 +1524,10 @@ export class Viewer implements SharedViewport {
       if (value === undefined) delete this.element.dataset[key];
       else this.element.dataset[key] = value;
     }
-    if (!show) delete this.element.dataset.extrudeHover;
+    if (!show) {
+      delete this.element.dataset.extrudeHover;
+      this.element.removeAttribute("title");
+    }
   }
 
   get onMovePointer() {

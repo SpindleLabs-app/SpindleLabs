@@ -416,6 +416,7 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       return one && other ? booleanUnits(one, [other]) : 0;
     }
     case "sketch_outline":
+    case "sketch_regions":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
     case "solve_sketch":
       return typeof a[0] === "string" ? solveUnits(a[0]) : 0;

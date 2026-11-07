@@ -203,6 +203,8 @@ export interface OfferedProfile {
   outline: Outline;
   /** A flat face of a body (UX1c), drawn only under the pointer or chosen: the body shows it already. */
   face?: boolean;
+  /** A sketch region that can't be extruded (step 48), drawn marked, and why in plain words (shown on hover, and said when it is clicked). */
+  refused?: string;
 }
 
 /**

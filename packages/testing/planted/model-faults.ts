@@ -285,19 +285,19 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "lost-sketch-fails": {
     what: "settleKept never keeps a lost sketch's shape (the rule before 24d2)",
-    edits: [{ file: REBUILD, find: "    else if (was !== undefined && (await makesOutline(kernel, before, sketch)))", replace: "    else if (false && was !== undefined && (await makesOutline(kernel, before, sketch)))" }],
+    edits: [{ file: REBUILD, find: "    else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f))))", replace: "    else if (false && was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f))))" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
   "kept-not-forgotten": {
     what: "settleKept never forgets a kept shape and extrudeSpec builds from it even when the sketch is whole again",
     edits: [
-      { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch)) continue;", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch))) continue;" },
+      { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch, regionOf(f)))) continue;" },
       {
         file: REBUILD,
-        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel);",
+        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);",
         replace:
-          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
+          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
       },
     ],
     run: ["timeline"],
