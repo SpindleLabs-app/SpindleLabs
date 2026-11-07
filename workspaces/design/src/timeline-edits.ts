@@ -27,6 +27,8 @@ export const TIMELINE_STEPS = {
   rename: (name: string) => `Rename ${name}`,
   hide: (name: string) => `Hide ${name}`,
   show: (name: string) => `Show ${name}`,
+  showOnly: (name: string) => `Show only ${name}`,
+  showAll: "Show all bodies",
 } as const;
 
 /** Why a reorder is refused: the item would come before an item it is built from, or after one built from it. */
@@ -73,7 +75,9 @@ function deletedItem(doc: DesignDocument, id: string): DesignDocument {
   const used = new Set(features.flatMap((f) => f.dependsOn));
   const profiles = doc.profiles.filter((p) => !item.dependsOn.includes(p.id) || used.has(p.id));
   const sketches = isSketchItem(item) ? doc.sketches.filter((s) => s.id !== id) : doc.sketches;
-  const left = withoutHidden(next, id, bodyIdOf(id));
+  // A Combine's pieces ("body:<combine>/piece:k") go from the eyes with it, as its own body id does (hunt 11-06).
+  const pieces = (doc.hidden ?? []).filter((h) => isPiece(h) && bodyItem(h) === id);
+  const left = withoutHidden(next, id, bodyIdOf(id), ...pieces);
   const { kept: old, ...rest } = left;
   if (old === undefined || !Object.hasOwn(old, id)) return { ...left, profiles, sketches };
   const { [id]: _, ...kept } = old;

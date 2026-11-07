@@ -8,7 +8,7 @@
 // Run with `npm run journeys`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { KernelError, type BodySpec, type Outline } from "@fission/core";
+import { KernelError, type BodySpec, type BooleanResult, type Outline } from "@fission/core";
 import { calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, callUnits, facesSize, builtSize, HEADROOM, MAX_MEETING_POINTS, type BodySize } from "../../core/src/kernel/time-limit.ts";
 import { entry } from "../../core/src/kernel/entry-points.ts";
 import { loadKernel, nodeKernel } from "../src/node-kernel.ts";
@@ -39,36 +39,62 @@ test("the calibration times the cubes' boolean on this machine and keeps nothing
   assert.equal(entry.body_count(), before);
 });
 
+/**
+ * Passes of the calibration run first, untimed: just after the kernel loads, V8 is still compiling and optimising it,
+ * so the first pass took 3 to 4.6 ms a unit on the measuring machine and only settled near 1.1 ms by the sixth (five
+ * fresh processes, 2026-11-05), and on CI the first came out anywhere from 1.2 to 7.9 ms. The units are priced against
+ * the settled kernel, so they are checked against it: warm calls against a warm calibration.
+ */
+const SETTLING_PASSES = 6;
+
 test("legal calls of each size take less than their units × the calibration, with no headroom", () => {
-  // The calibration taken twice, the faster kept: what a device that isn't busy measures.
-  const unitMs = Math.min(calibrate(calls), calibrate(calls));
-  const check = (what: string, units: number, ms: number) => {
+  for (let k = 0; k < SETTLING_PASSES; k++) calibrate(calls);
+  // Each call is judged against the calibration taken right before and right after it (each the faster of two
+  // passes: what a device that isn't busy measures), the slower of the two kept, since a shared CI machine's speed
+  // swings during a run; and timed like the calibration, the fastest of `runs` (its first run may meet code still
+  // being optimised, or a garbage collection). One cold calibration at the start against one cold run half a minute
+  // later, with no headroom, failed whenever they came out unevenly (2026-11-05: the 500 mm sphere, 128 ms against 113).
+  const unitNow = () => Math.min(calibrate(calls), calibrate(calls));
+  const check = (what: string, units: number, run: () => number, runs = 3) => {
+    const before = unitNow();
+    let ms = Infinity;
+    for (let k = 0; k < runs; k++) ms = Math.min(ms, run());
+    const unitMs = Math.max(before, unitNow());
     assert.ok(ms < units * unitMs, `${what}: ${ms.toFixed(0)} ms, ${units.toFixed(0)} units × ${unitMs.toFixed(3)} ms = ${(units * unitMs).toFixed(0)} ms`);
-    console.log(`${what}: ${ms.toFixed(0)} ms of ${(units * unitMs).toFixed(0)} (limit ${(units * unitMs * HEADROOM).toFixed(0)})`);
+    console.log(`${what}: ${ms.toFixed(0)} ms of ${(units * unitMs).toFixed(0)}, ${(ms / (units * unitMs)).toFixed(2)} (limit ${(units * unitMs * HEADROOM).toFixed(0)})`);
   };
   // A boolean: 40-slot gratings crossed (166 faces each, 27,556 pairs).
   const plate = grating(40);
   const crossed: BodySpec = { moved: { body: plate, moves: [{ turn: { pivot: [0, 0, 0], axis: [0, 0, 1], angle: Math.PI / 2 } }, { move: [100.05, 0.05, 1] }] } };
   const sizes = new Map<number, BodySize>();
-  const [buildMs, a] = timed(() => entry.body_build(plate));
-  check("a 162-corner plate built", callUnits("body_build", [plate], () => undefined), buildMs);
+  const built: number[] = [];
+  check("a 162-corner plate built", callUnits("body_build", [plate], () => undefined), () => {
+    const [ms, body] = timed(() => entry.body_build(plate));
+    built.push(body);
+    return ms;
+  });
+  const [a, ...spare] = built;
+  spare.forEach((body) => entry.body_free(body));
   const b = entry.body_build(crossed);
   sizes.set(a, builtSize(plate));
   sizes.set(b, builtSize(crossed));
   for (const op of ["union", "subtract", "intersect"] as const) {
-    const [ms, out] = timed(() => entry.body_boolean(a, [b], op));
-    check(`gratings ${op}`, callUnits("body_boolean", [a, [b], op], (h) => sizes.get(h)), ms);
+    const made: BooleanResult[] = [];
+    check(`gratings ${op}`, callUnits("body_boolean", [a, [b], op], (h) => sizes.get(h)), () => {
+      const [ms, result] = timed(() => entry.body_boolean(a, [b], op));
+      made.push(result);
+      return ms;
+    }, 1);
+    const out = made[0];
     // Each result shown again after hiding: its mesh made anew, timed by its faces.
     const piece = out.bodies[0];
-    entry.body_hide(piece);
-    const [viewMs] = timed(() => entry.body_view(piece));
-    check(`gratings ${op}, its first piece shown again`, facesSize(out.history[0].faces.length).mesh, viewMs);
+    check(`gratings ${op}, its first piece shown again`, facesSize(out.history[0].faces.length).mesh, () => (entry.body_hide(piece), timed(() => entry.body_view(piece))[0]));
     out.bodies.forEach((p) => entry.body_free(p));
   }
   // The STL of the plate, sliced at 0.2 mm (10 layers).
   const stl = entry.body_stl(a, "plate").bytes;
-  const [sliceMs] = timed(() => entry.slice_stl(stl, 0.2, 3, 15, "off"));
-  check("the plate sliced", callUnits("slice_stl", [stl, 0.2, 3, 15, "off"], () => undefined), sliceMs);
+  // Five runs, not three: on CI's shared machines this slice once ran 18 % slower for all three (2026-11-05).
+  check("the plate sliced", callUnits("slice_stl", [stl, 0.2, 3, 15, "off"], () => undefined), () => timed(() => entry.slice_stl(stl, 0.2, 3, 15, "off"))[0], 5);
   entry.body_free(a);
   entry.body_free(b);
   // Big flat-sided parts at full infill: 12 triangles each, so only their area tells (slicer hunt M8; the limit gave
@@ -76,30 +102,25 @@ test("legal calls of each size take less than their units × the calibration, wi
   for (const [w, d, h] of [[100, 100, 100], [150, 150, 150], [200, 100, 100]]) {
     const big = entry.body_build({ box: { width: w, depth: d, height: h } });
     const bigStl = entry.body_stl(big, "box").bytes;
-    const [bigMs] = timed(() => entry.slice_stl(bigStl, 0.2, 2, 100, "off"));
-    check(`a ${w} × ${d} × ${h} mm box sliced at 100 % infill`, callUnits("slice_stl", [bigStl, 0.2, 2, 100, "off"], () => undefined), bigMs);
+    check(`a ${w} × ${d} × ${h} mm box sliced at 100 % infill`, callUnits("slice_stl", [bigStl, 0.2, 2, 100, "off"], () => undefined), () => timed(() => entry.slice_stl(bigStl, 0.2, 2, 100, "off"))[0], 2);
     entry.body_free(big);
   }
   // A 300-hole plate (304 corners), built with its view: make_extrude.
   const side = 18;
   const holes = Array.from({ length: 300 }, (_, k) => ({ circle: { center: [((k % side) + 0.5) * 5000, (Math.floor(k / side) + 0.5) * 5000] as [number, number], radius: 1500 } }));
   const profile: Outline = { outer: rect(0, 0, 90_000, 90_000), holes };
-  const [extrudeMs] = timed(() => entry.make_extrude(profile, 1000));
-  check("a 300-hole plate extruded", callUnits("make_extrude", [profile, 1000], () => undefined), extrudeMs);
+  check("a 300-hole plate extruded", callUnits("make_extrude", [profile, 1000], () => undefined), () => timed(() => entry.make_extrude(profile, 1000))[0]);
   // A 500 mm sphere hidden, then shown: its mesh at the most chords.
   const sphere: BodySpec = { sphere: { radius: 500 } };
   const ball = entry.body_build(sphere);
-  entry.body_hide(ball);
-  const [ballMs] = timed(() => entry.body_view(ball));
-  check("a 500 mm sphere shown again", builtSize(sphere).mesh, ballMs);
+  check("a 500 mm sphere shown again", builtSize(sphere).mesh, () => (entry.body_hide(ball), timed(() => entry.body_view(ball))[0]), 5);
   entry.body_free(ball);
   // A sketch of 1,000 lines round a circle.
   const lines = Array.from({ length: 1000 }, (_, k) => {
     const at = (j: number): [number, number] => [100 * Math.cos((2 * Math.PI * j) / 1000), 100 * Math.sin((2 * Math.PI * j) / 1000)];
     return { a: at(k), b: at(k + 1) };
   });
-  const [sketchMs] = timed(() => entry.sketch_outline(lines, [], []));
-  check("a 1,000-line sketch", callUnits("sketch_outline", [lines, [], []], () => undefined), sketchMs);
+  check("a 1,000-line sketch", callUnits("sketch_outline", [lines, [], []], () => undefined), () => timed(() => entry.sketch_outline(lines, [], []))[0]);
   // Its regions (step 48), and the costliest legal sketches for regions: ones whose curves meet at nearly the most points
   // a sketch may have (100,000). A 300 × 300 grid of lines meets at 90,000 points and makes 299² = 89,401 squares; 223
   // circles of radius 50 with centres 10 mm from the origin all cross each other, 2 × 223 × 222 / 2 = 49,506 points.
@@ -107,9 +128,11 @@ test("legal calls of each size take less than their units × the calibration, wi
   // it took 1,968 (the 10 s floor hid it on a fast machine; a device five times slower would have been stopped).
   const regions = (what: string, lines: unknown[], circles: unknown[], expected: number) => {
     const args = [lines, circles, []] as Parameters<typeof entry.sketch_regions>;
-    const [ms, out] = timed(() => entry.sketch_regions(...args));
-    assert.equal(out.regions.length, expected, what);
-    check(what, callUnits("sketch_regions", args, () => undefined), ms);
+    check(what, callUnits("sketch_regions", args, () => undefined), () => {
+      const [ms, out] = timed(() => entry.sketch_regions(...args));
+      assert.equal(out.regions.length, expected, what);
+      return ms;
+    });
   };
   regions("a 1,000-line sketch's regions", lines, [], 1);
   const grid = Array.from({ length: 300 }, (_, i) => [{ a: [0, i + 1], b: [301, i + 1] }, { a: [i + 1, 0], b: [i + 1, 301] }]).flat();

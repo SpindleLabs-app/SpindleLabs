@@ -3,9 +3,9 @@
 // bodies they make, and the origin's planes and axes. A pure function of the document, so step 24's
 // longer timeline only adds rows here.
 
-import type { Feature, GeometryReference } from "@fission/core";
+import { summaryInUnit, type Feature, type GeometryReference, type Unit } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
-import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "./build-area.ts";
+import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "@fission/print";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
@@ -133,7 +133,7 @@ export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> =
  * sketch is a timeline row by its id and a row in Sketches by
  * "sketches/<id>", so no two rows share an id.
  */
-export function browserTree(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, buildAreaShown = false): BrowserNode[] {
+export function browserTree(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, buildAreaShown = false, unit: Unit = "mm"): BrowserNode[] {
   const features = document.timeline.features;
   // Each sketch's item by its id, looked up once (S2: a search per sketch took the timeline's length squared).
   const items = new Map<string, Feature>();
@@ -155,7 +155,7 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       startsFolded: true,
       children: features.map((f) => {
         const off = f.suppressed ? " (suppressed)" : "";
-        return { id: f.id, label: `${f.provenance.self.label}${off}`, title: `${f.provenance.self.label}${off}\n${f.intent.summary}`, icon: iconOf(f) };
+        return { id: f.id, label: `${f.provenance.self.label}${off}`, title: `${f.provenance.self.label}${off}\n${summaryInUnit(f.intent.summary, unit)}`, icon: iconOf(f) };
       }),
     },
     {
@@ -165,7 +165,7 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       ...eye(EYE_FOLDERS.sketches),
       children: document.sketches.map((s) => {
         const item = sketchItemOf(s.id);
-        return { id: `sketches/${s.id}`, label: item.provenance.self.label, title: `${item.provenance.self.label}\n${item.intent.summary}`, icon: "sketch", ...eye(s.id, EYE_FOLDERS.sketches) };
+        return { id: `sketches/${s.id}`, label: item.provenance.self.label, title: `${item.provenance.self.label}\n${summaryInUnit(item.intent.summary, unit)}`, icon: "sketch", ...eye(s.id, EYE_FOLDERS.sketches) };
       }),
     },
     { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },

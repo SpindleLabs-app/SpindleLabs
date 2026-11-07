@@ -97,6 +97,23 @@ async function sketchOnXY(page, tap) {
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on XY");
   await settle(page);
   if (tap) await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
+  await millimetreGrid(page, tap);
+}
+
+/**
+ * Grid snap on a 1 mm grid, so a click lands exactly on the point it aims at in every engine: WebKit and Firefox send
+ * the pointer on whole pixels, which put the hole's edge 0.2 mm off without it (WebKit CI: the plate 11285.70 mm³, not
+ * 11214.60). Not 0.5 mm: at 393 × 852 a millimetre is about 3.3 px, so a whole pixel is 0.3 mm, past half of 0.5 mm, and
+ * the plate's far corner landed at (39.5, 30) (both engines' CI: the plate 11213.83 mm³). Every point these checks
+ * draw is on the 1 mm grid; the clicks that pick a region are not snapped.
+ */
+async function millimetreGrid(page, tap) {
+  await openPanel(page, "properties", tap);
+  await page.fill("#sketch-grid", "1");
+  await page.press("#sketch-grid", "Enter");
+  await page.check("#sketch-grid-snap");
+  await closePanels(page, tap);
+  if (tap) await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
 }
 
 

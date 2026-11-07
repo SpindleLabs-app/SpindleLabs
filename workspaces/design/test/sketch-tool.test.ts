@@ -137,7 +137,12 @@ test("hand-worked: two rectangle clicks make exactly what five line clicks make"
   // (0, 30) → (0, 0), drawn as the line tool draws them. The counter is at 3
   // after feature-1 and sketch-2: point-3, point-4, line-5; point-6, line-7;
   // point-8, line-9; line-10 back to point-3. Counter at 11, the same
-  // document as the hand-worked five-click chain above.
+  // curves as the hand-worked five-click chain above. Then, as Fusion's
+  // rectangle (the solver bug hunt, 2026-11-06), each side kept level or
+  // upright: constraint-11 Horizontal on line-5 (point-3, point-4),
+  // constraint-12 Vertical on line-7 (point-4, point-6), constraint-13
+  // Horizontal on line-9 (point-6, point-8), constraint-14 Vertical on
+  // line-10 (point-8, point-3). Counter at 15.
   const f = freshRectangle();
   const first = clickAt(f.doc, f.tool, [0, 0]);
   assert.equal(first.drew, false);
@@ -147,29 +152,43 @@ test("hand-worked: two rectangle clicks make exactly what five line clicks make"
   assert.equal(second.drew, true);
   assert.equal(second.tool.corner, null, "ready for the next rectangle");
   const byLines = clicks(fresh().doc, fresh().tool, [[0, 0], [40, 0], [40, 30], [0, 30], [0, 0]]).doc;
-  assert.deepEqual(second.doc, byLines);
-  assert.equal(second.doc.nextId, 11);
+  const squared = [
+    { id: "constraint-11", kind: "horizontal", a: "point-3", b: "point-4" },
+    { id: "constraint-12", kind: "vertical", a: "point-4", b: "point-6" },
+    { id: "constraint-13", kind: "horizontal", a: "point-6", b: "point-8" },
+    { id: "constraint-14", kind: "vertical", a: "point-8", b: "point-3" },
+  ];
+  assert.deepEqual(second.doc, { ...byLines, nextId: 15, sketches: byLines.sketches.map((s) => ({ ...s, constraints: squared })) });
+  assert.equal(second.doc.nextId, 15);
   assert.equal(drawStep(second.tool), "Draw rectangle", "one undo step, named for the tool");
   assert.equal(drawStep(fresh().tool), SKETCH_STEPS.draw);
 });
 
 test("hand-worked: a second rectangle beside the first shares the two corners it lands on, and the side between them (app sweep 2026-10-28, item 12)", () => {
-  // After the first (counter 11), corners (40, 0) and (70, 30): (40, 0) is
-  // point-4 and (40, 30) is point-6, both shared. Sides: point-4 → (70, 0)
-  // new point-11, line-12; → (70, 30) new point-13, line-14; → point-6
-  // line-15; point-6 → point-4 is line-7 of the first rectangle already, so
-  // it is shared, not drawn a second time on top (as the line tool's
-  // SAME_LINE refuses: three ends would meet at both corners and break the
-  // outline). Six points, seven lines, counter 16.
+  // After the first (counter 15, its four constraints 11 to 14), corners
+  // (40, 0) and (70, 30): (40, 0) is point-4 and (40, 30) is point-6, both
+  // shared. Sides: point-4 → (70, 0) new point-15, line-16; → (70, 30) new
+  // point-17, line-18; → point-6 line-19; point-6 → point-4 is line-7 of the
+  // first rectangle already, so it is shared, not drawn a second time on top
+  // (as the line tool's SAME_LINE refuses: three ends would meet at both
+  // corners and break the outline). Six points, seven lines. The new sides
+  // are kept level and upright: constraint-20 Horizontal on line-16,
+  // constraint-21 Vertical on line-18, constraint-22 Horizontal on line-19;
+  // line-7 already has its Vertical (constraint-12), so none twice. Counter 23.
   const f = freshRectangle();
   let r = clicks(f.doc, f.tool, [[0, 0], [40, 30], [40, 0], [70, 30]]);
   const sketch = r.doc.sketches[0];
   assert.equal(r.drew, 2);
-  assert.equal(r.doc.nextId, 16);
-  assert.deepEqual(sketch.points.map((p) => [p.id, p.x, p.y]).slice(4), [["point-11", 70, 0], ["point-13", 70, 30]]);
-  assert.deepEqual(sketch.curves.slice(4).map((c) => [c.id, c.start, c.end]), [["line-12", "point-4", "point-11"], ["line-14", "point-11", "point-13"], ["line-15", "point-13", "point-6"]]);
+  assert.equal(r.doc.nextId, 23);
+  assert.deepEqual(sketch.points.map((p) => [p.id, p.x, p.y]).slice(4), [["point-15", 70, 0], ["point-17", 70, 30]]);
+  assert.deepEqual(sketch.curves.slice(4).map((c) => [c.id, c.start, c.end]), [["line-16", "point-4", "point-15"], ["line-18", "point-15", "point-17"], ["line-19", "point-17", "point-6"]]);
+  assert.deepEqual(sketch.constraints.slice(4), [
+    { id: "constraint-20", kind: "horizontal", a: "point-4", b: "point-15" },
+    { id: "constraint-21", kind: "vertical", a: "point-15", b: "point-17" },
+    { id: "constraint-22", kind: "horizontal", a: "point-17", b: "point-6" },
+  ]);
   const first = clicks(f.doc, f.tool, [[0, 0], [40, 30]]).doc;
-  assert.deepEqual(drawRectangle(first, f.tool.sketch, [40, 0], [70, 30]).ids, ["line-12", "line-14", "line-15", "line-7"], "the four sides, the shared one by its own id");
+  assert.deepEqual(drawRectangle(first, f.tool.sketch, [40, 0], [70, 30]).ids, ["line-16", "line-18", "line-19", "line-7"], "the four sides, the shared one by its own id");
   // The same rectangle again joins only points already joined: nothing is drawn, and the tool says why.
   const again = clicks(first, f.tool, [[0, 0]]);
   const same = clickAt(again.doc, again.tool, [40, 30]);
@@ -262,7 +281,7 @@ test("hand-worked: a circle centred on a rectangle's corner shares that point; a
   // through (40, 40) the radius is 10 and the circle takes 11. A circle
   // round (100, 0) through (100, 5): new point-12, circle-13, radius 5.
   const f = freshCircle();
-  const rect = clicks(f.doc, { kind: "rectangle", sketch: f.tool.sketch, corner: null } as RectangleTool, [[0, 0], [40, 30]]).doc;
+  const rect = drawRectangle(f.doc, f.tool.sketch, [0, 0], [40, 30]).doc; // as the tool draws it, without its constraints (below)
   assert.equal(rect.nextId, 11);
   const r = clicks(rect, f.tool, [[40, 30], [40, 40], [100, 0], [100, 5]]);
   const sketch = r.doc.sketches[0];

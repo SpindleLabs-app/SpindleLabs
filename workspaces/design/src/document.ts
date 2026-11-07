@@ -1245,7 +1245,8 @@ function checkMove(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<str
     const maker = typeof id === "string" ? bodyItem(id) : null;
     const there = maker === null ? undefined : byId.get(maker);
     // A body deleted since is allowed, as an extrude's deleted sketch is: the rebuild fails the move naming it (the id's counter check is below).
-    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    // So is a piece of a Combine deleted since (hunt 11-06: deleting the Combine left a file that would not open again, and broke redo).
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
     if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} moves ${shown(id)}, which is not a body made before it in the timeline`);
     if (once.has(id)) throw new Error(`${at} moves ${id} twice`);
     once.add(id);
@@ -1275,7 +1276,7 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   for (const [i, id] of bodies.entries()) {
     const maker = typeof id === "string" ? bodyItem(id) : null;
     const there = maker === null ? undefined : byId.get(maker);
-    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
     const what = i === 0 ? "its target" : `tool ${shown(id)}`;
     if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at}: ${what === "its target" ? `its target ${shown(id)}` : what} is not a body made before it in the timeline`);
     if (once.has(id)) throw new Error(i > 0 && id === p.target ? `${at}'s target ${id} is also a tool` : `${at} picks ${id} twice`);

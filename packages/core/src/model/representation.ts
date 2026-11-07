@@ -10,6 +10,7 @@
 
 import type { BodySpec, Outline } from "../kernel/kernel-types.ts";
 import type { FileFormat, FileImporter } from "./files.ts";
+import type { Project } from "./project.ts";
 
 export type RepresentationKind = "solid" | "outline" | "mesh" | "image" | "data";
 
@@ -78,6 +79,14 @@ export interface Producible {
   id: string;
 }
 
+/** An object a workspace offers the others, with the name its owner shows it by ("Body 1"). */
+export interface ListedObject extends Producible {
+  label: string;
+}
+
+/** Lists what a workspace offers the others in `project` (read from the project's data, never from the workspace's screen). */
+export type Lister = (project: Project) => ListedObject[];
+
 /** Describes one type of object in one representation. */
 export type Producer = (object: Producible) => Representation | Promise<Representation>;
 
@@ -112,6 +121,7 @@ const nouns: Record<RepresentationKind, string> = {
 export class RepresentationRegistry {
   private producers = new Map<string, Map<RepresentationKind, Producer>>();
   private converters: Converter[] = [];
+  private listers = new Map<string, Lister>();
   private importers = new Map<FileFormat, FileImporter>();
 
   /** Says that objects of `type` can describe themselves as `kind`. */
@@ -120,6 +130,17 @@ export class RepresentationRegistry {
     if (!byKind) this.producers.set(type, (byKind = new Map()));
     if (byKind.has(kind)) throw new Error(`${type} already has a ${kind} producer`);
     byKind.set(kind, producer);
+  }
+
+  /** Says how to list what workspace `workspace` offers (its bodies, for Slice): one lister per workspace. */
+  registerLister(workspace: string, lister: Lister): void {
+    if (this.listers.has(workspace)) throw new Error(`${workspace} already has a lister`);
+    this.listers.set(workspace, lister);
+  }
+
+  /** What workspace `workspace` offers in `project`, in its own order; none when it lists nothing (or the project holds nothing of it). */
+  objectsOf(workspace: string, project: Project): ListedObject[] {
+    return this.listers.get(workspace)?.(project) ?? [];
   }
 
   registerConverter(converter: Converter): void {

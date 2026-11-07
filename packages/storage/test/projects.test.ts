@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectToJson, type DataReader, type Project } from "@fission/core";
-import { asideKey, bringForward, forget, journalEntry, memoryKeyValue, NEWER_PREFIX, projectStore, recoverUnsaved, unsavedKey, type JournalStorage, type KeyValue } from "../src/index.ts";
+import { asideKey, bringForward, forget, journalEntry, MAX_PROJECT_NAME, memoryKeyValue, NEWER_PREFIX, ProjectChangedError, rename, projectStore, recoverUnsaved, unsavedKey, type JournalStorage, type KeyValue } from "../src/index.ts";
 
 const design: DataReader = { id: "design", readData: (d) => d };
 const part = (name: string, width: number): Project => ({ ...emptyProject(name), workspaces: { design: { version: 1, width } } });
@@ -215,3 +215,48 @@ for (const seed of [1, 2, 3, 4, 5]) {
     assert.deepEqual((await store.list()).map((s) => s.id), order, `seed ${seed}: after recovery`);
   });
 }
+
+test("hand-worked: renaming the oldest of two lists it first under the new name, trimmed, text otherwise the same", async () => {
+  const kv = memoryKeyValue();
+  const store = projectStore(kv, [design], ticking());
+  await store.save("a", part("A", 10)); // save number 1
+  await store.save("b", part("B", 20)); // save number 2
+  await rename(store, "a", "  Bracket  ", new Date(Date.UTC(2026, 10, 5)));
+  // Two saves were counted, so the rename is number 3: above B's 2, so Bracket lists first. "  Bracket  " trims to 7 letters.
+  const list = await store.list();
+  assert.deepEqual(list.map((s) => [s.id, s.name, s.order]), [["a", "Bracket", 3], ["b", "B", 2]]);
+  assert.equal(list[0].modified.getTime(), Date.UTC(2026, 10, 5));
+  assert.deepEqual((await store.open("a")).workspaces, part("A", 10).workspaces);
+});
+
+test("rename refuses an empty name, a name over the limit (boundary 100 passes, 101 fails) and an unknown id, writing nothing", async () => {
+  const kv = memoryKeyValue();
+  const store = projectStore(kv, [design], ticking());
+  await store.save("a", part("A", 10));
+  const before = new Map(kv.entries);
+  await assert.rejects(rename(store, "a", "   "), /needs a name/);
+  await assert.rejects(rename(store, "a", "x".repeat(MAX_PROJECT_NAME + 1)), /at most 100/);
+  await assert.rejects(rename(store, "nope", "Fine"), /no stored project/);
+  assert.deepEqual(kv.entries, before);
+  await rename(store, "a", "x".repeat(MAX_PROJECT_NAME));
+  assert.equal((await store.list())[0].name.length, 100);
+});
+
+test("rename leaves alone a project another save changed since it was read, and says so", async () => {
+  const kv = memoryKeyValue();
+  const store = projectStore(kv, [design], ticking());
+  await store.save("a", part("A", 10));
+  const realList = store.list.bind(store);
+  const racing: typeof store = { ...store, list: async () => { const l = await realList(); await store.save("a", part("A2", 11)); return l; } };
+  await assert.rejects(rename(racing, "a", "Late"), ProjectChangedError);
+  assert.equal((await store.list())[0].name, "A2");
+});
+
+test("rename on full storage throws and changes nothing", async () => {
+  const kv = memoryKeyValue();
+  const store = projectStore(kv, [design], ticking());
+  await store.save("a", part("A", 10));
+  const full = projectStore({ ...kv, update: async () => { throw new Error("QuotaExceededError"); } } as KeyValue, [design], ticking());
+  await assert.rejects(rename(full, "a", "New"), /QuotaExceededError/);
+  assert.equal((await store.list())[0].name, "A");
+});

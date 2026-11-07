@@ -1,0 +1,979 @@
+{
+  "formatVersion": 2,
+  "links": [],
+  "materials": [],
+  "name": "Untitled",
+  "units": {
+    "length": "mm"
+  },
+  "workspaces": {
+    "design": {
+      "bodies": [
+        {
+          "id": "body:feature-10",
+          "number": 1
+        },
+        {
+          "id": "body:feature-25",
+          "number": 4
+        },
+        {
+          "id": "body:feature-27",
+          "number": 5
+        },
+        {
+          "id": "body:feature-30",
+          "number": 6
+        },
+        {
+          "id": "body:feature-32",
+          "number": 7
+        },
+        {
+          "id": "body:feature-52",
+          "number": 8
+        },
+        {
+          "id": "body:feature-54",
+          "number": 9
+        }
+      ],
+      "hidden": [
+        "sketch-1",
+        "sketch-11",
+        "sketch-35"
+      ],
+      "nextBody": 10,
+      "nextId": 58,
+      "profiles": [],
+      "sketches": [
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "end": "point-3",
+              "id": "line-4",
+              "kind": "line",
+              "start": "point-2"
+            },
+            {
+              "end": "point-5",
+              "id": "line-6",
+              "kind": "line",
+              "start": "point-3"
+            },
+            {
+              "end": "point-7",
+              "id": "line-8",
+              "kind": "line",
+              "start": "point-5"
+            },
+            {
+              "end": "point-2",
+              "id": "line-9",
+              "kind": "line",
+              "start": "point-7"
+            }
+          ],
+          "id": "sketch-1",
+          "points": [
+            {
+              "id": "point-2",
+              "x": -19.6,
+              "y": 7.6
+            },
+            {
+              "id": "point-3",
+              "x": 20,
+              "y": 7.6
+            },
+            {
+              "id": "point-5",
+              "x": 20,
+              "y": -12.1
+            },
+            {
+              "id": "point-7",
+              "x": -19.6,
+              "y": -12.1
+            }
+          ]
+        },
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "end": "point-13",
+              "id": "line-14",
+              "kind": "line",
+              "start": "point-12"
+            },
+            {
+              "centre": "point-16",
+              "end": "point-12",
+              "id": "arc-17",
+              "kind": "arc",
+              "start": "point-15"
+            },
+            {
+              "end": "point-16",
+              "id": "line-18",
+              "kind": "line",
+              "start": "point-15"
+            },
+            {
+              "end": "point-13",
+              "id": "line-20",
+              "kind": "line",
+              "start": "point-19"
+            },
+            {
+              "end": "point-19",
+              "id": "line-21",
+              "kind": "line",
+              "start": "point-16"
+            }
+          ],
+          "face": {
+            "body": {
+              "normal": [
+                0,
+                0,
+                1
+              ],
+              "origin": [
+                0,
+                0,
+                0
+              ],
+              "xAxis": [
+                1,
+                0,
+                0
+              ]
+            },
+            "frame": {
+              "normal": [
+                0,
+                -1,
+                0
+              ],
+              "origin": [
+                0,
+                -12.1,
+                0
+              ],
+              "xAxis": [
+                1,
+                0,
+                0
+              ]
+            },
+            "side": 1
+          },
+          "id": "sketch-11",
+          "points": [
+            {
+              "id": "point-12",
+              "x": -5.93,
+              "y": 9.41
+            },
+            {
+              "id": "point-13",
+              "x": -3.72,
+              "y": 4.85
+            },
+            {
+              "id": "point-15",
+              "x": 2.61,
+              "y": 9.41
+            },
+            {
+              "id": "point-16",
+              "x": -1.66,
+              "y": 8.432455882352942
+            },
+            {
+              "id": "point-19",
+              "x": 1.11,
+              "y": 5.96
+            }
+          ]
+        },
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "end": "point-37",
+              "id": "line-38",
+              "kind": "line",
+              "start": "point-36"
+            },
+            {
+              "end": "point-39",
+              "id": "line-40",
+              "kind": "line",
+              "start": "point-37"
+            },
+            {
+              "end": "point-41",
+              "id": "line-42",
+              "kind": "line",
+              "start": "point-39"
+            },
+            {
+              "end": "point-43",
+              "id": "line-44",
+              "kind": "line",
+              "start": "point-41"
+            },
+            {
+              "end": "point-45",
+              "id": "line-46",
+              "kind": "line",
+              "start": "point-43"
+            },
+            {
+              "end": "point-47",
+              "id": "line-48",
+              "kind": "line",
+              "start": "point-45"
+            },
+            {
+              "end": "point-49",
+              "id": "line-50",
+              "kind": "line",
+              "start": "point-47"
+            },
+            {
+              "end": "point-36",
+              "id": "line-51",
+              "kind": "line",
+              "start": "point-49"
+            }
+          ],
+          "face": {
+            "body": {
+              "normal": [
+                0,
+                0,
+                1
+              ],
+              "origin": [
+                -49,
+                0,
+                0
+              ],
+              "xAxis": [
+                1,
+                0,
+                0
+              ]
+            },
+            "frame": {
+              "normal": [
+                1,
+                0,
+                0
+              ],
+              "origin": [
+                -9,
+                0,
+                0
+              ],
+              "xAxis": [
+                0,
+                1,
+                0
+              ]
+            },
+            "side": -1
+          },
+          "id": "sketch-35",
+          "points": [
+            {
+              "id": "point-36",
+              "x": 21.11,
+              "y": 14.66
+            },
+            {
+              "id": "point-37",
+              "x": 20.72,
+              "y": 14.66
+            },
+            {
+              "id": "point-39",
+              "x": 20.61,
+              "y": 14.56
+            },
+            {
+              "id": "point-41",
+              "x": 20.61,
+              "y": 14.35
+            },
+            {
+              "id": "point-43",
+              "x": 20.72,
+              "y": 14.19
+            },
+            {
+              "id": "point-45",
+              "x": 20.92,
+              "y": 14.19
+            },
+            {
+              "id": "point-47",
+              "x": 21.11,
+              "y": 14.35
+            },
+            {
+              "id": "point-49",
+              "x": 21.3,
+              "y": 14.56
+            }
+          ]
+        }
+      ],
+      "timeline": {
+        "features": [
+          {
+            "dependsOn": [],
+            "id": "sketch-1",
+            "intent": {
+              "parameters": {
+                "plane": "XY"
+              },
+              "summary": "Sketch 1 on the XY plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-1",
+                "label": "Sketch 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-1"
+            ],
+            "id": "feature-10",
+            "intent": {
+              "parameters": {
+                "distance": 17,
+                "sketch": "sketch-1"
+              },
+              "summary": "Extrude Sketch 1 by 17 mm",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-1",
+                  "label": "Sketch 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-10",
+                "label": "Extrude 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-10"
+            ],
+            "id": "sketch-11",
+            "intent": {
+              "parameters": {
+                "plane": "face:feature-10/side:line-8"
+              },
+              "summary": "Sketch 2 on a face of Extrude 1",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-10",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "sketch-11",
+                "label": "Sketch 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "feature-25",
+            "intent": {
+              "parameters": {
+                "depth": 30,
+                "height": 20,
+                "width": 40
+              },
+              "summary": "Box: 40 × 30 × 20 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-25",
+                "label": "Box 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-10",
+              "feature-25"
+            ],
+            "id": "feature-26",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "cut",
+                "target": "body:feature-10",
+                "tools": [
+                  "body:feature-25"
+                ]
+              },
+              "summary": "Cut Box 1 from Extrude 1",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-10",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-25",
+                  "label": "Box 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-26",
+                "label": "Combine 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "feature-27",
+            "intent": {
+              "parameters": {
+                "depth": 30,
+                "height": 20,
+                "width": 40
+              },
+              "summary": "Box: 40 × 30 × 20 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-27",
+                "label": "Box 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-27"
+            ],
+            "id": "feature-28",
+            "intent": {
+              "parameters": {
+                "bodies": [
+                  "body:feature-27"
+                ],
+                "pivotX": 20,
+                "pivotY": 15,
+                "pivotZ": 10,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": -49,
+                "y": 0,
+                "z": 0
+              },
+              "summary": "Move Box 2 by (-49, 0, 0) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-27",
+                  "label": "Box 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-28",
+                "label": "Move 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-27",
+              "feature-10"
+            ],
+            "id": "feature-29",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "join",
+                "target": "body:feature-27",
+                "tools": [
+                  "body:feature-10"
+                ]
+              },
+              "summary": "Join Extrude 1 to Box 2",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-27",
+                  "label": "Box 2",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-10",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-29",
+                "label": "Combine 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "feature-30",
+            "intent": {
+              "parameters": {
+                "depth": 30,
+                "height": 20,
+                "width": 40
+              },
+              "summary": "Box: 40 × 30 × 20 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-30",
+                "label": "Box 3",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-30",
+              "feature-27"
+            ],
+            "id": "feature-31",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "join",
+                "target": "body:feature-30",
+                "tools": [
+                  "body:feature-27"
+                ]
+              },
+              "summary": "Join Box 2 to Box 3",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-30",
+                  "label": "Box 3",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-27",
+                  "label": "Box 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-31",
+                "label": "Combine 3",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "feature-32",
+            "intent": {
+              "parameters": {
+                "depth": 30,
+                "height": 20,
+                "width": 40
+              },
+              "summary": "Box: 40 × 30 × 20 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-32",
+                "label": "Box 4",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-32"
+            ],
+            "id": "feature-33",
+            "intent": {
+              "parameters": {
+                "bodies": [
+                  "body:feature-32"
+                ],
+                "pivotX": 20,
+                "pivotY": 15,
+                "pivotZ": 10,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": -24,
+                "y": 0,
+                "z": 0
+              },
+              "summary": "Move Box 4 by (-24, 0, 0) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-32",
+                  "label": "Box 4",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-33",
+                "label": "Move 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-32",
+              "feature-30"
+            ],
+            "id": "feature-34",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "cut",
+                "target": "body:feature-32",
+                "tools": [
+                  "body:feature-30"
+                ]
+              },
+              "summary": "Cut Box 3 from Box 4",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-32",
+                  "label": "Box 4",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-30",
+                  "label": "Box 3",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-34",
+                "label": "Combine 4",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-27"
+            ],
+            "id": "sketch-35",
+            "intent": {
+              "parameters": {
+                "plane": "face:feature-27/right"
+              },
+              "summary": "Sketch 3 on a face of Box 2",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-27",
+                  "label": "Box 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "sketch-35",
+                "label": "Sketch 3",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-35"
+            ],
+            "id": "feature-52",
+            "intent": {
+              "parameters": {
+                "distance": 14,
+                "flip": true,
+                "sketch": "sketch-35"
+              },
+              "summary": "Extrude Sketch 3 by 14 mm, flipped",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-35",
+                  "label": "Sketch 3",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-52",
+                "label": "Extrude 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-32",
+              "feature-52"
+            ],
+            "id": "feature-53",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "cut",
+                "target": "body:feature-32",
+                "tools": [
+                  "body:feature-52"
+                ]
+              },
+              "summary": "Cut Extrude 2 from Box 4",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-32",
+                  "label": "Box 4",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-52",
+                  "label": "Extrude 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-53",
+                "label": "Combine 5",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "feature-54",
+            "intent": {
+              "parameters": {
+                "depth": 10,
+                "height": 10,
+                "width": 10
+              },
+              "summary": "Box: 10 × 10 × 10 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-54",
+                "label": "Box 5",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-54"
+            ],
+            "id": "feature-55",
+            "intent": {
+              "parameters": {
+                "bodies": [
+                  "body:feature-54"
+                ],
+                "pivotX": 20,
+                "pivotY": 15,
+                "pivotZ": 10,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": 0,
+                "y": 0,
+                "z": 15
+              },
+              "summary": "Move Box 5 by (0, 0, 15) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-54",
+                  "label": "Box 5",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-55",
+                "label": "Move 3",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-54"
+            ],
+            "id": "feature-56",
+            "intent": {
+              "parameters": {
+                "bodies": [
+                  "body:feature-54"
+                ],
+                "pivotX": 5,
+                "pivotY": 5,
+                "pivotZ": 20,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": -9,
+                "y": 23,
+                "z": 0
+              },
+              "summary": "Move Box 5 by (-9, 23, 0) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-54",
+                  "label": "Box 5",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-56",
+                "label": "Move 4",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-32",
+              "feature-54"
+            ],
+            "id": "feature-57",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "cut",
+                "target": "body:feature-32",
+                "tools": [
+                  "body:feature-54"
+                ]
+              },
+              "summary": "Cut Box 5 from Box 4",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-32",
+                  "label": "Box 4",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-54",
+                  "label": "Box 5",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-57",
+                "label": "Combine 6",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          }
+        ]
+      },
+      "version": 7
+    }
+  }
+}

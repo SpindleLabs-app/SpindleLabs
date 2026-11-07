@@ -9,6 +9,13 @@ export async function insert(a: A, kind: string) {
   await a.settle();
   (a.$(`#insert-${kind}`) as HTMLButtonElement).click();
   await a.settle();
+  // An inserted preset starts in Move with it picked (Ben, 2026-11-04); these journeys model the size boxes and the
+  // selection, so they leave the Move as a person does before picking another body: Cancel, nothing moved.
+  const move = a.$("#move-panel");
+  if (move && !move.hidden) {
+    (a.$("#move-cancel") as HTMLButtonElement).click();
+    await a.settle();
+  }
 }
 export async function type(a: A, key: string, v: string, leave = false) {
   const el = a.$(`#${key}`) as HTMLInputElement;

@@ -63,7 +63,7 @@ const view = (errors: string[] = []): BodyView => ({
 
 test("the panel labels and hides the size rows for the shape", () => {
   const { p, $ } = panel();
-  assert.deepEqual(p.inputs.map((i) => i.id), ["width", "depth", "height"]);
+  assert.deepEqual(p.inputs.map((i) => i.el.id), ["width", "depth", "height"]);
   p.setShape("sphere");
   assert.equal($("width-label").textContent, "Diameter");
   assert.equal($("depth-row").hidden, true);

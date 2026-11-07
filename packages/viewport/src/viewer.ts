@@ -4,14 +4,15 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { NO_HIGHLIGHT, triangleColours, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
-import { clientToNdc, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
+import { clientToNdc, CORNER_PICK_PX, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
-import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
+import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
-import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
+import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
+import { MOUSE_ATTRIBUTE, MOUSE_EVENT, leftDragOf, readMousePreset } from "@fission/core";
 import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
@@ -41,7 +42,10 @@ interface ViewHost {
   pick(pick: ViewportPick): void;
   /** The view's menu on what is under the pointer (SharedViewport.onMenu); whether one opened. */
   menu(pick: ViewportPick, at: { x: number; y: number }): boolean;
-  setHover(face: number | null, edge: number | null): void;
+  /** At most one of the three set: the offered corner under the pointer (by its place in corners()), else the edge, else the face. */
+  setHover(face: number | null, edge: number | null, corner?: number | null): void;
+  /** The corners a click can pick (showCorners, Measure 35e2l3), world points; null while none are offered. */
+  corners(): readonly (readonly number[])[] | null;
   bodyFraming(): Framing;
   /** The body and the finished sketches drawn: what Fit and the standard views frame. */
   fitFraming(): Framing;
@@ -109,6 +113,8 @@ export class ViewportView {
   private host: ViewHost;
   /** What a left-button drag does (SF3a): picked on the navigation bar. */
   private mode: NavMode = "orbit";
+  /** What a left drag does with no bar tool lit: orbit, or select (the Fusion-style mouse preset, U2d). */
+  private home: "orbit" | "select" = "orbit";
   private bar: ReturnType<typeof navBar>;
   /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */
   private arrowDrag: { id: number; offset: number; last: number } | null = null;
@@ -145,7 +151,8 @@ export class ViewportView {
     });
     container.appendChild(this.cube.element);
     this.bar = navBar({
-      mode: (mode) => this.setMode(mode),
+      // A lit tool pressed again puts itself away where the left button rests as a picker (Fusion's way).
+      mode: (mode) => this.setMode(mode === this.mode && this.home === "select" ? "select" : mode),
       fit: () => this.fitSelection() ?? this.fit(),
       lookAt: () => {
         const plane = this.host.sketchPlane();
@@ -178,7 +185,8 @@ export class ViewportView {
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.dragSketchPoint(); // and a press on a sketch point the Select tool can drag (47d3)
     this.navigate();
-    this.setMode("orbit");
+    this.followMouse();
+    this.setMode(this.home);
 
     // A click picks; a press that moves further is the camera orbiting.
     let down: { x: number; y: number; id: number } | null = null;
@@ -244,12 +252,14 @@ export class ViewportView {
       if (plane) return this.host.sketchPointer({ kind: "click", ...this.pointerOn(e.clientX, e.clientY, plane), ...this.sketchPick(e.clientX, e.clientY), ...(e.shiftKey ? { shift: true as const } : {}), ...(e.pointerType === "touch" ? { touch: true as const } : {}) });
       // Picking where a sketch goes: the face under the pointer, else the nearest offered plane, never an edge (26d).
       if (this.host.offeredFaces()) return this.host.pick({ ...this.planeTarget(e.clientX, e.clientY), edge: null, shift: e.shiftKey });
-      const edge = this.edgeAt(e.clientX, e.clientY);
+      const touch = e.pointerType === "touch";
+      const corner = this.cornerAt(e.clientX, e.clientY, touch);
+      const edge = corner === null ? this.edgeAt(e.clientX, e.clientY) : null;
       // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
-      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch: e.pointerType === "touch", shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
+      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch, shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
       const double = isDoublePick(this.lastClick, click);
       this.lastClick = double ? null : click;
-      this.host.pick({ face: edge === null ? this.faceAt(e.clientX, e.clientY) : null, edge, shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
+      this.host.pick({ face: edge === null && corner === null ? this.faceAt(e.clientX, e.clientY) : null, edge, ...(corner !== null ? { vertex: corner } : {}), shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
     });
     // Hover: what a click would pick, looked up at most once a frame, never while a button is held.
     let pointer: { x: number; y: number } | null = null;
@@ -290,6 +300,8 @@ export class ViewportView {
           this.host.setPlaneHover(target.plane);
           return this.host.setHover(target.face !== null && offered.has(target.face) ? target.face : null, null);
         }
+        const corner = this.cornerAt(pointer.x, pointer.y, this.pointerKind === "touch");
+        if (corner !== null) return this.host.setHover(null, null, corner);
         const edge = this.edgeAt(pointer.x, pointer.y);
         this.host.setHover(edge === null ? this.faceAt(pointer.x, pointer.y) : null, edge);
       });
@@ -307,6 +319,20 @@ export class ViewportView {
     this.resizer.observe(container);
     this.resize();
     this.renderer.setAnimationLoop(this.draw);
+  }
+
+  /**
+   * A picture of this view as on screen, without the view cube, as a PNG
+   * (File > Save picture, quick wins): drawn once more and read at once, as
+   * the canvas keeps its drawing buffer until the next frame.
+   */
+  picture(): Promise<Blob | null> {
+    this.controls.update();
+    this.host.frame(this);
+    paintBackdrop(this.renderer);
+    this.renderer.render(this.host.scene, this.camera);
+    const canvas = this.renderer.domElement;
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   }
 
   private draw = () => {
@@ -335,11 +361,11 @@ export class ViewportView {
   }
 
   /** Writes what the viewer shows onto this view's element (read by the e2e test) and lists the overlays in its legend. */
-  label(overlays: AnalysisOverlay[], highlight: ViewportHighlight, hover: { face: number | null; edge: number | null }) {
+  label(overlays: AnalysisOverlay[], highlight: ViewportHighlight, hover: { face: number | null; edge: number | null; corner: number | null }) {
     this.element.dataset.overlays = overlays.map((o) => o.id).join(" ");
     const { body, faces, edges } = highlight;
     this.element.dataset.highlight = `${body ? "body " : ""}faces ${faces.join(",")} edges ${edges.join(",")}`;
-    this.element.dataset.hover = hover.edge !== null ? `edge ${hover.edge}` : hover.face !== null ? `face ${hover.face}` : "";
+    this.element.dataset.hover = hover.corner !== null ? `corner ${hover.corner}` : hover.edge !== null ? `edge ${hover.edge}` : hover.face !== null ? `face ${hover.face}` : "";
     this.legend.hidden = overlays.length === 0;
     this.legend.replaceChildren(
       ...overlays.map((o) => {
@@ -355,12 +381,26 @@ export class ViewportView {
 
   /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit nothing changes and it says false. */
   leaveNavTool(): boolean {
-    if (this.mode === "orbit") return false;
-    this.setMode("orbit");
+    if (this.mode === this.home) return false;
+    this.setMode(this.home);
     return true;
   }
 
-  /** What a left-button drag does from now on: orbit, pan or zoom (the navigation bar's first three buttons). */
+  /**
+   * The mouse preset (U2d): the page wears it as `data-mouse` and sends `mousechange` when Settings changes it; the left
+   * button rests as an orbit or as a picker, and a view resting (no bar tool lit) follows at once.
+   */
+  private followMouse() {
+    const doc = this.element.ownerDocument;
+    const read = () => leftDragOf(readMousePreset(doc.documentElement.dataset[MOUSE_ATTRIBUTE]));
+    this.home = read();
+    doc.addEventListener(MOUSE_EVENT, () => {
+      this.home = read();
+      if (this.mode === "orbit" || this.mode === "select") this.setMode(this.home);
+    }, { signal: this.listening.signal });
+  }
+
+  /** What a left-button drag does from now on: orbit, pan, zoom or nothing (the navigation bar's first three buttons, or none lit). */
   setMode(mode: NavMode) {
     this.mode = mode;
     this.element.dataset.nav = mode; // read by the e2e test
@@ -371,7 +411,8 @@ export class ViewportView {
   /** OrbitControls' share of the buttons for the mode: the left button orbits only in Orbit mode (Pan and Zoom are navigate()'s), and pans in the 2D view; one finger pans in Pan mode and in 2D. */
   private applyButtons() {
     const flat = this.image !== null;
-    this.controls.mouseButtons.LEFT = this.mode !== "orbit" ? null : flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    // A flat (2D image) view keeps its left-drag pan whichever mouse preset rests the left button as a picker in 3D (U2d).
+    this.controls.mouseButtons.LEFT = this.mode === "orbit" || (flat && this.mode === "select") ? (flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE) : null;
     this.controls.touches.ONE = this.mode === "pan" || flat ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
   }
 
@@ -379,6 +420,18 @@ export class ViewportView {
   cameraPose(): CameraPose {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
     return { position: this.camera.position.toArray(), target: this.controls.target.toArray(), up: up.toArray() };
+  }
+
+  /**
+   * Puts the camera back at `pose` from `cameraPose()` earlier (a design tab returned to, tabs step 2), the near and far
+   * planes scaled with the change in distance as zooming does. A pose with a number that is not finite is ignored.
+   */
+  restorePose(pose: CameraPose) {
+    if (![...pose.position, ...pose.target, ...pose.up].every(Number.isFinite)) return;
+    const before = this.camera.position.distanceTo(this.controls.target);
+    const after = new THREE.Vector3(...pose.position).distanceTo(new THREE.Vector3(...pose.target));
+    this.camera.up.set(...pose.up);
+    this.setPose(pose, before > 0 && after > 0 ? after / before : 1);
   }
 
   /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims); `zoom` scales the near and far planes with the distance in 3D, so nothing is clipped close up. */
@@ -422,7 +475,7 @@ export class ViewportView {
     this.element.addEventListener("pointerdown", (e) => {
       if (e.target !== canvas || e.pointerType === "touch" || drag) return;
       const action = dragAction(e.button, e.shiftKey, this.mode);
-      if (action === null || action === "orbit") return; // orbits are OrbitControls'
+      if (action === null || action === "orbit" || action === "select") return; // orbits are OrbitControls', and a picking left button is the click picker's
       e.preventDefault(); // no middle-button autoscroll
       e.stopPropagation(); // neither OrbitControls nor the click picker hears it
       canvas.setPointerCapture(e.pointerId);
@@ -841,6 +894,28 @@ export class ViewportView {
   }
 
   /**
+   * The offered corner (host.corners(), Measure 35e2l3) nearest a point on
+   * screen (client pixels) within CORNER_PICK_PX and not hidden by a face,
+   * by its place in the list; null when none is offered or near.
+   */
+  private cornerAt(clientX: number, clientY: number, touch: boolean): number | null {
+    const corners = this.host.corners();
+    const faceMesh = this.host.faceMesh();
+    if (!corners || corners.length === 0 || !faceMesh || this.image) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const at = { x: clientX - rect.left, y: clientY - rect.top };
+    for (const i of pointsNear(this.screenPoints(corners), at, CORNER_PICK_PX[touch ? "touch" : "mouse"])) {
+      const c = corners[i];
+      const towards = new THREE.Vector3(c[0], c[1], c[2]).sub(this.camera.position);
+      const distance = towards.length();
+      this.raycaster.set(this.camera.position, towards.normalize());
+      const [hit] = this.raycaster.intersectObject(faceMesh, false);
+      if (unhidden(distance, hit ? hit.distance : null)) return i;
+    }
+    return null;
+  }
+
+  /**
    * The kernel edge index whose line passes within a few pixels of a point
    * on screen (client pixels) and is not hidden by a face there, or null.
    */
@@ -1101,9 +1176,14 @@ export class ViewportView {
  * body's dark edges.
  */
 export const GRID_OPACITY = 0.16;
+/** How opaque the tint of the sketch plane is (U7a): enough to see the plane as a surface from any side, light enough to leave the body and the sketch clear. */
+export const PLANE_TINT_OPACITY = 0.07;
 /** How opaque the origin axes are while sketching. */
 export const AXIS_OPACITY = 1;
 /** How opaque an origin plane offered for a sketch is, under the pointer, and one not offered. */
+/** The dot on the offered corner under the pointer (Measure, 35e2l3), in CSS pixels across: bigger than an edge is wide, so it reads as the corner. */
+export const CORNER_DOT_PX = 9;
+
 export const PLANE_OPACITY = { offered: 0.35, hover: 0.6, off: 0.12 };
 /** How opaque the body's faces and edges are while a sketch is edited, so what is drawn shows through it (SF2). */
 export const BODY_FADE = { faces: 0.3, edges: 0.35 };
@@ -1118,6 +1198,8 @@ export const BODY_FADE = { faces: 0.3, edges: 0.35 };
  * hover colour.
  */
 const GROUND_ORDER = -2;
+/** The corner dot (Measure, 35e2l3) comes last, over the analysis places too: it shows what a click picks. */
+const CORNER_DOT_ORDER = 13;
 /** The origin planes offered for a sketch: over the ground grid, under everything else (showPlanes). */
 const PLANE_ORDER = -1.5;
 const FINISHED_SKETCH_ORDER = -1;
@@ -1157,8 +1239,11 @@ export class Viewer implements SharedViewport {
   private picker: ((pick: ViewportPick) => void) | null = null;
   private menuHandler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
-  /** The face or edge under the pointer while picking is on (at most one is set). */
-  private hover: { face: number | null; edge: number | null } = { face: null, edge: null };
+  /** The offered corner, edge or face under the pointer while picking is on (at most one is set). */
+  private hover: { face: number | null; edge: number | null; corner: number | null } = { face: null, edge: null, corner: null };
+  /** The corners offered to pick (showCorners, Measure 35e2l3), and the dot drawn on the one under the pointer. */
+  private cornerPoints: (readonly [number, number, number])[] | null = null;
+  private cornerDot = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: CORNER_DOT_PX, sizeAttenuation: false, depthTest: false, depthWrite: false, transparent: true }));
   private overlays = new Map<string, AnalysisOverlay>();
   private host: ViewHost;
   /** The ground grid and the model's axes, hidden while a sketch with its own grid and axes is edited. */
@@ -1234,8 +1319,10 @@ export class Viewer implements SharedViewport {
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, this.originPlanes, this.buildArea, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group, this.placesLayer.group);
+    this.scene.add(grid, this.axes, this.originPlanes, this.buildArea, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group, this.placesLayer.group, this.cornerDot);
 
+    this.cornerDot.visible = false; // until a corner is under the pointer
+    this.cornerDot.renderOrder = CORNER_DOT_ORDER;
     this.host = {
       scene: this.scene,
       body: this.body,
@@ -1245,7 +1332,8 @@ export class Viewer implements SharedViewport {
       picking: () => this.picker !== null,
       pick: (pick) => this.picker?.(pick),
       menu: (pick, at) => (this.picker ? (this.menuHandler?.(pick, at) ?? false) : false),
-      setHover: (face, edge) => this.setHover(face, edge),
+      setHover: (face, edge, corner) => this.setHover(face, edge, corner ?? null),
+      corners: () => (this.picker ? this.cornerPoints : null),
       bodyFraming: () => this.bodyFraming(),
       fitFraming: () => this.fitFraming(),
       sketchPlane: () => (this.sketchHandler ? this.editedPlane : null),
@@ -1305,6 +1393,7 @@ export class Viewer implements SharedViewport {
     (old.material as THREE.Material).dispose();
     this.scene.add(this.grid);
     this.paint();
+    this.drawCornerDot();
     if (this.lastSketches) this.showSketches(this.lastSketches);
     if (this.lastPlanes) this.showPlanes(this.lastPlanes.planes, this.lastPlanes.faces);
     if (this.lastOrigin) this.showOrigin(this.lastOrigin);
@@ -1386,7 +1475,7 @@ export class Viewer implements SharedViewport {
     edgeLines.onBeforeRender = (renderer) => renderer.getSize(edgeMaterial.resolution);
     this.faceMesh = new THREE.Mesh(geometry, material);
     this.body.add(this.faceMesh, edgeLines);
-    this.hover = { face: null, edge: null }; // indices of the old body
+    this.hover = { face: null, edge: null, corner: null }; // indices of the old body
     this.fadeBody();
     this.paint();
   }
@@ -1624,6 +1713,14 @@ export class Viewer implements SharedViewport {
       this.sketchGridGroup.add(l);
       return material;
     };
+    // The plane itself, tinted (U7a), under the lines: it shows from the back and edge on too.
+    const sheet = gridSheet(grid.bounds).flatMap((p) => at(p));
+    const tint = new THREE.BufferGeometry();
+    tint.setAttribute("position", new THREE.Float32BufferAttribute(sheet, 3));
+    tint.setIndex([0, 1, 2, 0, 2, 3]);
+    const fill = new THREE.Mesh(tint, new THREE.MeshBasicMaterial({ color: SKETCH_COLOURS.plane, side: THREE.DoubleSide, depthTest: false, depthWrite: false, transparent: true, opacity: PLANE_TINT_OPACITY }));
+    fill.renderOrder = 0.5;
+    this.sketchGridGroup.add(fill);
     this.minorMaterial = segments(grid.lines.filter((l) => !l.major).map((l) => [l.a, l.b]), SKETCH_COLOURS.grid, GRID_OPACITY * grid.strength, 1);
     segments(grid.lines.filter((l) => l.major).map((l) => [l.a, l.b]), SKETCH_COLOURS.grid, GRID_OPACITY, 1);
     if (grid.axes.x) segments([grid.axes.x], SKETCH_COLOURS.axisX, AXIS_OPACITY, 2);
@@ -1645,11 +1742,16 @@ export class Viewer implements SharedViewport {
     this.element.dataset.bodyFaded = String(faded);
   }
 
-  /** What Look At frames (framing.ts lookAtFraming): the body's box corners and the edited sketch's ends, else round the plane's origin. */
+  /**
+   * What Look At frames (framing.ts): the body's box corners and the edited sketch's ends, else round the plane's origin;
+   * when the plane holds a face of the body smaller than the body (a sketch on a small face) that face and the sketch (U7a2).
+   */
   private lookAtFraming(plane: Plane): Framing {
     const box = new THREE.Box3().setFromObject(this.body);
     const corners = box.isEmpty() ? [] : [box.min.toArray(), box.max.toArray()];
-    return lookAtFraming([...corners, ...this.editedWorld], plane.origin);
+    const whole = lookAtFraming([...corners, ...this.editedWorld], plane.origin);
+    const inPlane = this.mesh ? pointsInPlane(this.mesh.positions, plane) : [];
+    return faceFraming(inPlane, this.editedWorld, whole, plane.origin, this.mesh && inPlane.length >= 3 ? pieceCount(this.mesh.positions, this.mesh.indices) : 1);
   }
 
   /** Look At in the main view. */
@@ -1795,10 +1897,27 @@ export class Viewer implements SharedViewport {
     this.paint();
   }
 
-  private setHover(face: number | null, edge: number | null) {
-    if (face === this.hover.face && edge === this.hover.edge) return;
-    this.hover = { face, edge };
+  private setHover(face: number | null, edge: number | null, corner: number | null = null) {
+    if (face === this.hover.face && edge === this.hover.edge && corner === this.hover.corner) return;
+    this.hover = { face, edge, corner };
+    this.drawCornerDot();
     this.paint();
+  }
+
+  showCorners(corners: readonly (readonly [number, number, number])[] | null) {
+    this.cornerPoints = corners && corners.length > 0 ? corners.map((c) => [c[0], c[1], c[2]] as const) : null;
+    if (this.cornerPoints) this.element.dataset.corners = String(this.cornerPoints.length); // read by the e2e test
+    else delete this.element.dataset.corners;
+    if (this.hover.corner !== null) this.setHover(null, null, null);
+  }
+
+  /** The dot on the corner under the pointer, in the hover colour, drawn over the body; none while no corner is. */
+  private drawCornerDot() {
+    const c = this.hover.corner === null ? undefined : this.cornerPoints?.[this.hover.corner];
+    this.cornerDot.visible = c !== undefined;
+    if (!c) return;
+    this.cornerDot.geometry.setAttribute("position", new THREE.Float32BufferAttribute([...c], 3));
+    (this.cornerDot.material as THREE.PointsMaterial).color.setHex(SKETCH_COLOURS.hover);
   }
 
   setOverlay(overlay: AnalysisOverlay) {
@@ -1871,6 +1990,11 @@ export class Viewer implements SharedViewport {
   /** Frames the current body from the home view in the main view; returns what it framed (null if none). */
   fit(): Framing | null {
     return this.main.fit();
+  }
+
+  /** A picture of the main view as on screen, without the view cube (File > Save picture). */
+  picture(): Promise<Blob | null> {
+    return this.main.picture();
   }
 
   /** Turns the main view's camera to a standard view, framing the current body. */

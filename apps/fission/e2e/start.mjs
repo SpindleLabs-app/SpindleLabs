@@ -3,11 +3,19 @@
 
 import { pinProperties } from "./properties.mjs";
 
-/** Adds a preset as a new body by Insert ▾ (`kind`: box, cylinder, sphere, l-bracket, plate, slot, star). */
-export async function insertPreset(page, kind = "box", tap = false) {
+/**
+ * Adds a preset as a new body by Insert ▾ (`kind`: box, cylinder, sphere, l-bracket, plate, slot, star). It starts in
+ * Move with only it picked (Ben, 2026-11-04): unless `keepMove`, that Move is cancelled once it opens, nothing moved,
+ * so a check that starts from a part begins with no tool open, as before (insert.mjs checks the Move itself).
+ */
+export async function insertPreset(page, kind = "box", tap = false, keepMove = false) {
   const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
   await press("#insert");
   await press(`#insert-${kind}`);
+  if (keepMove) return;
+  await page.waitForFunction(() => document.getElementById("move-panel")?.hidden === false, null, { timeout: 30000 });
+  await page.evaluate(() => document.getElementById("move-cancel").click());
+  await page.waitForFunction(() => document.getElementById("move-panel")?.hidden === true && document.getElementById("properties-toggle")?.getAttribute("aria-expanded") !== "true", null, { timeout: 10000 });
 }
 
 /**

@@ -12,8 +12,10 @@
 import { buildingItems, greyedBy, greyedItems, isSketchItem, type DesignDocument } from "./document.ts";
 import { deleteItem, itemName, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS } from "./timeline-edits.ts";
 import { dragItem } from "./timeline-reorder.ts";
+import { hideCard, showCard } from "./timeline-card.ts";
+import type { Scene } from "./scene.ts";
 
-export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "feature";
+export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "feature";
 
 export interface TimelineBarItem {
   id: string;
@@ -37,7 +39,7 @@ export interface TimelineBarItem {
   warning: string | null;
 }
 
-const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere" };
+const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine" };
 
 /**
  * The bar's items and where the marker stands: `marker` items come before
@@ -49,7 +51,7 @@ const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extr
  * greyed instead (26e, Q3), from the data alone. `warnings` are the
  * rebuild's words for the items built with a warning.
  */
-export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map()): { items: TimelineBarItem[]; marker: number } {
+export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map(), describe: (summary: string) => string = (s) => s): { items: TimelineBarItem[]; marker: number } {
   const { features, marker } = document.timeline;
   let at = features.length;
   if (marker === "start") at = 0;
@@ -68,7 +70,7 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
     return {
       id: f.id,
       label: `${i + 1}. ${itemName(f)}`,
-      description: f.intent.summary,
+      description: describe(f.intent.summary),
       icon: Object.hasOwn(ICON_OF, f.intent.type) ? ICON_OF[f.intent.type] : "feature",
       suppressed: f.suppressed,
       rolledBack: i >= at,
@@ -343,6 +345,9 @@ const ICONS: Record<TimelineIcon, string> = {
   box: '<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>',
   cylinder: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/>',
   sphere: '<circle cx="12" cy="12" r="8"/><ellipse cx="12" cy="12" rx="8" ry="3"/>',
+  // Our own drawings (timeline card, 2026-11-05): a Move is a cross of arrows, a Combine two overlapping squares, so neither is a plain circle.
+  move: '<path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
+  combine: '<rect x="3" y="3" width="12" height="12" rx="1"/><rect x="9" y="9" width="12" height="12" rx="1"/>',
   feature: '<circle cx="12" cy="12" r="7"/>',
 };
 
@@ -521,6 +526,8 @@ const lastClicks = new WeakMap<HTMLElement, { id: string; at: number; x: number;
 /** What the bar's items do (step 24f3): `failed` are the rebuild's failed items (drawn red); `picked` is the item whose ⋯ shows. */
 export interface BarWiring {
   failed?: ReadonlySet<string>;
+  /** How an item's summary is said in the bar's tooltips (U2c3: in the unit chosen in Settings); as saved when left out. Passed in so this file holds no import it cannot run alone (the planted-bug tests copy it). */
+  describe?: (summary: string) => string;
   /** 35d4: the failed items that took the kernel too long: "took too long" in their title, and a Retry beside the picked one's ⋯. */
   slow?: ReadonlySet<string>;
   /** Retry pressed on item `id` (35d4). */
@@ -544,7 +551,15 @@ export interface BarWiring {
   onOpen?(id: string): void;
   /** A right-click on an item (or its ⋯, or the keyboard's menu key): its menu at that point of the screen. */
   onMenu?(id: string, at: { x: number; y: number }): void;
+  /** What the view shows now, for the item card's pictures of bodies (timeline-card.ts); none draws no body pictures. */
+  scene?(): Scene | null;
 }
+
+/** How the last press on each bar's items came (a finger shows the picked item's card, having no hover). */
+const pickedBy = new WeakMap<HTMLElement, string>();
+
+/** Whether the item cards are off: the browser checks switch them off with the app's tooltips (main.ts), so a hover covers nothing they probe. */
+const cardsOff = (page: Document) => (page.defaultView as unknown as { __noTooltips?: boolean } | null)?.__noTooltips === true;
 
 /**
  * Fills the timeline slot: an ordered list of the items, with the marker
@@ -554,7 +569,13 @@ export interface BarWiring {
  */
 export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: BarWiring = {}) {
   const document = slot.ownerDocument;
-  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings);
+  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings, wiring.describe);
+  // The card of an item on the old bar goes with it; one picked by a finger shows again below.
+  hideCard(document);
+  const card = (li: HTMLElement, i: number) => {
+    if (cardsOff(document) || !li.isConnected) return;
+    showCard(li, doc, { feature: doc.timeline.features[i], item: items[i], index: i }, wiring.scene?.() ?? null, wiring.slow);
+  };
   const list = document.createElement("ol");
   list.className = "timeline-bar";
   // The row of the playback buttons and this list, made here so an item's drag can show where it would drop above both (24f6).
@@ -595,7 +616,19 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       (item.failed ? (wiring.slow?.has(item.id) ? " (failed: took too long)" : " (failed)") : "") +
       (item.warning !== null ? ` (warning: ${item.warning})` : "");
     li.title = words;
+    // Its card (timeline-card.ts) says all this and shows its shape, so the app's own hover box holds the title back and shows nothing.
+    li.dataset.ownTip = "";
     li.tabIndex = 0;
+    li.addEventListener("pointerenter", (e) => {
+      if (e.pointerType !== "touch" && e.buttons === 0) card(li, i);
+    });
+    li.addEventListener("pointerleave", () => hideCard(document));
+    li.addEventListener("pointerdown", (e) => {
+      pickedBy.set(slot, e.pointerType);
+      if (e.pointerType !== "touch") hideCard(document); // a press may start a drag
+    });
+    li.addEventListener("focus", () => card(li, i));
+    li.addEventListener("blur", () => hideCard(document));
     li.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const m = e as MouseEvent;
@@ -735,6 +768,13 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
     // never opened (seen at 375 px once the phone's 40 px tap areas spaced the items wider). A moved marker at once.
     if (shown.classList.contains("timeline-bar-more-slot")) (slot.ownerDocument.defaultView ?? globalThis).setTimeout(bring, DOUBLE_CLICK_MS);
     else bring();
+  }
+  // A finger has no hover: the item it picked shows its card above it, once the row has scrolled it into view
+  // (the timer above, set first, runs first), until the pick ends. Never covers the view: it is the size of a tooltip.
+  const pickedAt = items.findIndex((it) => it.id === wiring.picked);
+  if (pickedAt >= 0 && pickedBy.get(slot) === "touch") {
+    const li = [...list.querySelectorAll<HTMLElement>(".timeline-bar-item")].find((el) => el.dataset.item === items[pickedAt].id);
+    if (li) (slot.ownerDocument.defaultView ?? globalThis).setTimeout(() => card(li, pickedAt), DOUBLE_CLICK_MS);
   }
 }
 

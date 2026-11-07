@@ -14,6 +14,9 @@
 // (extrude-operation.ts); OK stays off until one is ticked.
 // Styles: src/styles/extrude.css.
 
+import { wordsInUnit } from "@fission/core";
+import { currentUnit } from "@fission/ui";
+import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
 import { EXTRUDE_OPERATION_WORDS, EXTRUDE_OPERATIONS, type BodyChoice, type ExtrudeOperation } from "./extrude-operation.ts";
 
 export interface ExtrudePanelEvents {
@@ -78,7 +81,8 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     if (text) e.textContent = text;
     return e;
   };
-  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; profile: HTMLElement; clear: HTMLButtonElement; note: HTMLElement; select: HTMLSelectElement | null; bodies: HTMLElement } | null = null;
+  /** The distance is millimetres everywhere outside the box (`field.value`); the box shows the unit chosen in Settings (U2c3). */
+  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; field: SizeBox; profile: HTMLElement; clear: HTMLButtonElement; onUnit: () => boolean; note: HTMLElement; select: HTMLSelectElement | null; bodies: HTMLElement } | null = null;
   // OK needs both: the kernel's closed outline, and (Join, Cut, Intersect) a body ticked.
   let closed = false;
   let bodiesReady = true;
@@ -97,24 +101,27 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       const profileRow = el("div", "", "extrude-row extrude-profile-row");
       profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear);
       const input = el("input", "extrude-distance");
-      Object.assign(input, { type: "number", step: "any", value: distance });
-      input.setAttribute("aria-label", "Distance in mm");
-      input.addEventListener("input", () => on.distance(input.value));
+      Object.assign(input, { type: "number", step: "any" });
+      const field = sizeBox(input, () => currentUnit(document));
+      field.value = distance;
+      input.setAttribute("aria-label", `Distance in ${currentUnit(document)}`);
+      field.addEventListener("input", () => on.distance(field.value));
       // Enter in the box is OK, as in any dialog.
       input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !ok.disabled) on.ok(input.value);
+        if (e.key === "Enter" && !ok.disabled) on.ok(field.value);
       });
       const flip = el("button", "extrude-flip", "extrude-flip", "Flip");
       flip.type = "button";
       flip.title = "Extrude the other way from the sketch's plane (the distance turns negative); the body still starts on it";
       flip.addEventListener("click", () => {
-        const n = Number(input.value);
-        if (input.value.trim() === "" || !Number.isFinite(n) || n === 0) return;
-        input.value = String(-n);
-        on.flip(input.value);
+        const n = Number(field.value);
+        if (field.value.trim() === "" || !Number.isFinite(n) || n === 0) return;
+        field.value = String(-n);
+        on.flip(field.value);
       });
       const distanceRow = el("label", "", "extrude-row");
-      distanceRow.append(el("span", "", "extrude-label", "Distance"), input, " mm ", flip);
+      const unitName = el("span", "", "unit-name", currentUnit(document));
+      distanceRow.append(el("span", "", "extrude-label", "Distance"), input, " ", unitName, " ", flip);
       const status = el("p", "extrude-status", "extrude-status");
       const error = el("p", "extrude-error", "bad");
       error.hidden = true;
@@ -122,7 +129,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       ok.type = "button";
       ok.title = "Make the solid (Enter)";
       ok.disabled = true; // until the kernel says the outline is closed
-      ok.addEventListener("click", () => on.ok(input.value));
+      ok.addEventListener("click", () => on.ok(field.value));
       const cancel = el("button", "extrude-cancel", "", "Cancel");
       cancel.type = "button";
       cancel.addEventListener("click", () => on.cancel());
@@ -167,7 +174,16 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       );
       closed = false;
       bodiesReady = true;
-      parts = { status, error, ok, input, profile, clear, note, select, bodies };
+      /** Shows the unit now chosen; false once this panel was closed or opened again, and it is no longer wanted. */
+      const onUnit = (): boolean => {
+        if (parts?.input !== input) return false;
+        field.reshow();
+        unitName.textContent = currentUnit(document);
+        input.setAttribute("aria-label", `Distance in ${currentUnit(document)}`);
+        return true;
+      };
+      parts = { status, error, ok, input, field, profile, clear, onUnit, note, select, bodies }; // `onUnit` is held here: the page's listener holds it only weakly
+      followUnit(document, onUnit);
       this.showProfile(chosen);
       box.hidden = false;
     },
@@ -181,7 +197,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       parts?.input.classList.toggle("extrude-dragged", on);
     },
     showDistance(typed) {
-      if (parts) parts.input.value = typed;
+      if (parts) parts.field.value = typed;
     },
     showStatus(text, isClosed) {
       if (!parts) return;
@@ -213,7 +229,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     },
     showError(message) {
       if (!parts) return;
-      parts.error.textContent = message;
+      parts.error.textContent = wordsInUnit(message, currentUnit(document));
       parts.error.hidden = message === "";
     },
     hide() {
@@ -230,7 +246,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       return parts !== null && !parts.ok.disabled;
     },
     get typed() {
-      return parts?.input.value ?? "";
+      return parts?.field.value ?? "";
     },
   };
 }

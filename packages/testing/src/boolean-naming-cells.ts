@@ -255,11 +255,18 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
 
   /**
    * The faces of a solid with each face's names in rule 4's order: by the
-   * participant they came from (`from`), then by how early the name stood
-   * in the lists it came in (a face shown under one name keeps showing it),
-   * then made order. Every square of a face then carries that list.
+   * participant whose face this one lies on (the first of `order` with a
+   * square of this face carrying the name), then by the name's place in that
+   * participant's list (a face shown under one name keeps showing it), then
+   * made order. A name no participant carries on this face's squares (a cut's
+   * face from the tool, which faces the other way) ranks by the first
+   * participant holding it anywhere and its earliest place in the lists it
+   * came in. Every square of a face then carries that list. (SL #430, #431:
+   * before, every name ranked the fallback way, so a body holding a copy of
+   * another's names lifted them over the face's own.)
    */
-  const settle = (s: Cells, from: (name: string) => number): Cells => {
+  const settle = (s: Cells, order: readonly Cells[]): Cells => {
+    const from = fromParticipants(order);
     const names = new Map<string, string[]>();
     for (const { squares } of groupFaces(s)) {
       const all: string[] = [];
@@ -269,7 +276,20 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
           if (!placeIn.has(n)) all.push(n);
           placeIn.set(n, Math.min(i, placeIn.get(n) ?? i));
         });
-      all.sort((x, y) => from(x) - from(y) || placeIn.get(x)! - placeIn.get(y)! || before(madeOf(x), madeOf(y)));
+      const key = new Map<string, [number, number]>();
+      for (const n of all) {
+        let found: [number, number] | null = null;
+        for (const [i, o] of order.entries()) {
+          let at = Infinity;
+          for (const q of squares) {
+            const k = o.names.get(q)?.indexOf(n) ?? -1;
+            if (k >= 0 && k < at) at = k;
+          }
+          if (at < Infinity) { found = [i, at]; break; }
+        }
+        key.set(n, found ?? [from(n), placeIn.get(n)!]);
+      }
+      all.sort((x, y) => key.get(x)![0] - key.get(y)![0] || key.get(x)![1] - key.get(y)![1] || before(madeOf(x), madeOf(y)));
       for (const q of squares) names.set(q, all);
     }
     return { filled: s.filled, names };
@@ -362,7 +382,7 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
           const joined = lumps(raw.filled);
           const lumpOf = (c: string) => joined.findIndex((l) => l.has(c));
           if (pinches(raw.filled, (cells) => cells.some((c) => block.filled.has(c)) || new Set(cells.filter((c) => raw.filled.has(c)).map(lumpOf)).size === 1)) throw new Refused();
-          const after = settle(raw, fromParticipants(order));
+          const after = settle(raw, order);
           const out = lumps(after.filled).map((l) => {
             const holding = inputs.find((b) => [...b.cells.filled].some((c) => l.has(c)));
             return { id: holding?.id ?? `body:${esc(f.id)}`, cells: piece(after, l) };
@@ -391,7 +411,7 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
         let raw = order[0];
         for (const s of order.slice(1)) raw = apply(raw, s, "join");
         if (pinches(raw.filled)) throw new Refused();
-        const after = settle(raw, fromParticipants(order));
+        const after = settle(raw, order);
         const parts = lumps(after.filled);
         // Section 8, joins: the piece holding the target keeps its id; the tools' pieces left apart are new bodies.
         const holder = parts.findIndex((l) => l.has([...target.cells.filled][0]));
@@ -410,7 +430,7 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
     let raw = body.cells;
     for (const t of toolCells) raw = apply(raw, t, op);
     if (raw.filled.size === 0 || pinches(raw.filled)) throw new Refused();
-    const after = settle(raw, fromParticipants([body.cells, ...toolCells]));
+    const after = settle(raw, [body.cells, ...toolCells]);
     const parts = lumps(after.filled);
     const { keep, rest } = rank(body.cells, after, parts);
     return [{ id: body.id, cells: piece(after, parts[keep]) }, ...rest.map((l, i) => ({ id: `body:${esc(feature)}/piece:${first + i}`, cells: piece(after, parts[l]) }))];

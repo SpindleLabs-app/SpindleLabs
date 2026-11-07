@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CLICK_SLOP_PX, EDGE_DEPTH_SLACK, EDGE_PICK_PX, clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, nearestWithin, planeOrFace, segmentsNear, SKETCH_GRAB_PX, unhidden } from "../src/picking.ts";
+import { CLICK_SLOP_PX, CORNER_PICK_PX, EDGE_DEPTH_SLACK, EDGE_PICK_PX, clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "../src/picking.ts";
 
 test("a press and release under the slop is a click, over it is a camera drag", () => {
   const at = { x: 100, y: 200 };
@@ -144,4 +144,21 @@ test("a press grabs the nearest sketch point within reach (47d3); at 0.9× the r
   assert.equal(nearestWithin([], press, r), null);
   // A finger reaches further than a mouse.
   assert.ok(SKETCH_GRAB_PX.touch > SKETCH_GRAB_PX.mouse);
+});
+
+test("pointsNear (35e2l3): corners nearer than the reach, nearest first; 0.9× in, 1.1× and exactly the reach out", () => {
+  const press = { x: 100, y: 100 };
+  for (const r of [CORNER_PICK_PX.mouse, CORNER_PICK_PX.touch]) {
+    // Straight across: a point 0.9 r away is in, 1.1 r and r itself are out (as for an edge, exactly the reach is a miss).
+    assert.deepEqual(pointsNear([{ x: 100 + 0.9 * r, y: 100 }], press, r), [0]);
+    assert.deepEqual(pointsNear([{ x: 100 + 1.1 * r, y: 100 }], press, r), []);
+    assert.deepEqual(pointsNear([{ x: 100, y: 100 + r }], press, r), []);
+  }
+  // By hand: (103, 104) is √(3² + 4²) = 5 px away, (106, 100) 6 px, (100, 93) 7 px, (109, 100) 9 px: within 8 px, nearest first.
+  assert.deepEqual(pointsNear([{ x: 106, y: 100 }, { x: 109, y: 100 }, null, { x: 100, y: 93 }, { x: 103, y: 104 }], press, 8), [4, 0, 3]);
+  // A tie keeps the order offered (the same corner of two bodies touching).
+  assert.deepEqual(pointsNear([{ x: 104, y: 100 }, { x: 96, y: 100 }], press, 8), [0, 1]);
+  assert.deepEqual(pointsNear([], press, 8), []);
+  // A finger reaches further than the mouse, and a corner wider than an edge (it wins over the edges meeting at it).
+  assert.ok(CORNER_PICK_PX.touch > CORNER_PICK_PX.mouse && CORNER_PICK_PX.mouse > EDGE_PICK_PX);
 });

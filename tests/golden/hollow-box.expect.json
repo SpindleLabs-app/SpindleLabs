@@ -4,7 +4,7 @@
   "from": "35",
   "recipe": [
     {
-      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2. (Since 35e2 a body keeps its number for good, so the deleted box keeps Body 1 and the next bodies are Body 2 and Body 3; and each rectangle adds its four horizontal and vertical constraints, ids 11 to 14 here, so the items after it are numbered 4 later: corrected 11-06 with the step-35 models made.)"
     },
     {
       "do": "Create Sketch on the top plane XY.",
@@ -14,29 +14,29 @@
       "do": "Rectangle tool: click (−20, −15), then (20, 15) (points 3, 4, 6, 8 and lines 5, 7, 9, 10, the tool's order). Nothing is before it, so nothing is pinned."
     },
     {
-      "do": "Extrude the sketch 20 (towards +Z): Body 1, the block x −20..20, y −15..15, z 0..20, across the front and side planes.",
-      "makes": "feature-11"
+      "do": "Extrude the sketch 20 (towards +Z): Body 2, the block x −20..20, y −15..15, z 0..20, across the front and side planes.",
+      "makes": "feature-15"
     },
     {
       "do": "Create Sketch on the front plane XZ (sketch x is X, sketch y is Z, its normal −Y).",
-      "makes": "sketch-12"
+      "makes": "sketch-16"
     },
     {
-      "do": "Rectangle tool: click (−10, 5), then (10, 15) (x −10..10, z 5..15; points and lines 13 to 20); seen along Y the block offers its corners (±20, 0 or 20), its edges' middles (0, 0), (0, 20), (±20, 0), (±20, 20), (±20, 10) and nothing else, so no point here is pinned."
+      "do": "Rectangle tool: click (−10, 5), then (10, 15) (x −10..10, z 5..15; points and lines 17 to 24); seen along Y the block offers its corners (±20, 0 or 20), its edges' middles (0, 0), (0, 20), (±20, 0), (±20, 20), (±20, 10) and nothing else, so no point here is pinned."
     },
     {
-      "do": "Extrude the sketch 5, not flipped (along −Y, y 0 to −5): Body 2, the box x −10..10, y −5..0, z 5..15, inside the block (clear by 10 in x, 10 and 15 in y, 5 in z).",
-      "makes": "feature-21"
+      "do": "Extrude the sketch 5, not flipped (along −Y, y 0 to −5): Body 3, the box x −10..10, y −5..0, z 5..15, inside the block (clear by 10 in x, 10 and 15 in y, 5 in z).",
+      "makes": "feature-29"
     },
     {
-      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off.",
-      "makes": "feature-22"
+      "do": "Combine: target Body 2, tool Body 3, Cut, Keep tools off.",
+      "makes": "feature-30"
     }
   ],
   "bodies": [
     {
-      "body": "Body 1",
-      "item": "feature-22",
+      "body": "Body 2",
+      "item": "feature-15",
       "volume": {
         "is": "40*30*20 - 20*5*10",
         "why": "the block less the box, all of it inside: 24000 − 1000"

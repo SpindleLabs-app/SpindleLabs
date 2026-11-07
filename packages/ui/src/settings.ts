@@ -5,7 +5,10 @@
 // is off or full never throws, the settings just don't stick.
 
 import { CUSTOM_NAMES, DEFAULT_CUSTOM, parseHex, toHex, type CustomColours } from "./custom-theme.ts";
+import { boxShown, parseLength, wordsInUnit, type Unit } from "@fission/core";
+import { MOUSE_PRESETS, type MousePreset } from "@fission/core";
 import { THEME_CHOICES, type ThemeChoice } from "./theme-choice.ts";
+import { UNIT_CHOICES } from "./unit-choice.ts";
 
 export interface SettingsSection {
   id: string;
@@ -15,8 +18,8 @@ export interface SettingsSection {
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  { id: "general", title: "General", coming: "Units will be set here." },
-  { id: "design", title: "Design", coming: "Snapping and the grid will be set here." },
+  { id: "general", title: "General", coming: "" },
+  { id: "design", title: "Design", coming: "" },
   { id: "phone", title: "Phone", coming: "Touch and sheet choices will be set here." },
   { id: "printing", title: "Printing", coming: "Your printer and the slicer will be set here." },
   { id: "privacy", title: "Privacy and data", coming: "" },
@@ -38,8 +41,13 @@ export class SettingsStore {
   private readonly storage: SettingsStorage | null;
   constructor(storage: SettingsStorage | null) {
     this.storage = storage;
+    this.reload();
+  }
+  /** Reads the stored settings again, dropping what was read before (settings brought from the account were just written). */
+  reload(): void {
+    this.values = new Map();
     try {
-      const raw = storage?.getItem(SETTINGS_KEY);
+      const raw = this.storage?.getItem(SETTINGS_KEY);
       const parsed: unknown = raw ? JSON.parse(raw) : null;
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         for (const [k, v] of Object.entries(parsed)) if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") this.values.set(k, v);
@@ -72,6 +80,22 @@ export interface SettingsParts {
   /** The Custom theme's three colours and the way to change them; applies at once and returns what it adjusted, in words (Ben, 2026-11-04). */
   custom?: CustomColours;
   onCustom?: (colours: CustomColours) => string[];
+  /** The stored unit for lengths and the way to change it (U2c2); the Units row shows only when both are given. */
+  unit?: Unit;
+  onUnit?: (unit: Unit) => void;
+  /** The grid size new sketches start with, in millimetres, and the way to change it (U2b): returns why it was refused, or null. The Grid row shows only when both are given. */
+  grid?: number;
+  onGrid?: (mm: number) => string | null;
+  /** Whether new sketches start with Snap to grid on, and the way to change it. */
+  snap?: boolean;
+  onSnap?: (on: boolean) => void;
+  /** Where the AI assistant's provider settings live: a row with a button that closes Settings and shows them. */
+  onAiSettings?: () => void;
+  /** The stored mouse preset and the way to change it (U2d); the Mouse row and its table show only when both are given. */
+  mouse?: MousePreset;
+  onMouse?: (preset: MousePreset) => void;
+  /** Opens Report a bug (bug-report.ts); the About card's row shows only when given. */
+  onReportBug?: () => void;
 }
 
 /** Fill the dialog: a header with Close, then one card per section. */
@@ -91,11 +115,27 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
   close.addEventListener("click", () => dialog.close());
   header.append(h2, close);
   const body = el("div", "settings-body");
+  /** Redraws the Grid box in the unit just chosen (the Units row is in an earlier card, so this is set once the Design card is built). */
+  let showGrid: (unit: Unit) => void = () => {};
   for (const s of SETTINGS_SECTIONS) {
     const card = el("section", "settings-card");
     card.dataset.section = s.id;
     card.append(el("h3", undefined, s.title));
     if (s.coming) card.append(el("p", "settings-empty", s.coming));
+    if (s.id === "design") {
+      if (parts.grid !== undefined && parts.onGrid) showGrid = gridRows(el, card, parts.grid, parts.unit ?? "mm", parts.onGrid, parts.snap ?? false, parts.onSnap);
+      if (parts.onAiSettings) {
+        const row = el("div", "settings-row settings-ai");
+        const open = el("button", "settings-action", "Open");
+        open.type = "button";
+        open.addEventListener("click", () => {
+          dialog.close();
+          parts.onAiSettings?.();
+        });
+        row.append(el("span", undefined, "AI assistant provider"), open);
+        card.append(row);
+      }
+    }
     if (s.id === "general") {
       if (parts.theme !== undefined && parts.onTheme) {
         const themeRow = el("div", "settings-row settings-theme");
@@ -121,6 +161,28 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
         card.append(themeRow);
         if (parts.custom && parts.onCustom) card.append(customBlock(el, parts.custom, parts.onCustom, () => group.querySelector<HTMLElement>('[aria-checked="true"]')?.dataset.choice ?? "", group));
       }
+      if (parts.unit !== undefined && parts.onUnit) {
+        const unitRow = el("div", "settings-row settings-units");
+        const group = el("div", "settings-choices");
+        group.setAttribute("role", "radiogroup");
+        group.setAttribute("aria-label", "Units");
+        for (const c of UNIT_CHOICES) {
+          const b = el("button", "settings-choice", c.label);
+          b.type = "button";
+          b.dataset.unit = c.id;
+          b.setAttribute("role", "radio");
+          b.setAttribute("aria-checked", String(parts.unit === c.id));
+          b.addEventListener("click", () => {
+            parts.onUnit?.(c.id);
+            showGrid(c.id);
+            for (const other of group.children) other.setAttribute("aria-checked", String((other as HTMLElement).dataset.unit === c.id));
+          });
+          group.append(b);
+        }
+        unitRow.append(el("span", undefined, "Units"), group);
+        card.append(unitRow);
+      }
+      if (parts.mouse !== undefined && parts.onMouse) card.append(mouseBlock(el, parts.mouse, parts.onMouse));
       const row = el("div", "settings-row");
       const label = el("span", undefined, "Keyboard shortcuts");
       const open = el("button", "settings-action", "Show");
@@ -135,10 +197,111 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
       card.append(el("p", undefined, "Your projects are kept in this browser and are never sent to us. An account is optional and never needed to design, slice or save; signing in sends only what the privacy page lists. The optional AI assistant sends only what you ask it, and only once you turn it on."));
     } else if (s.id === "about") {
       card.append(el("p", undefined, parts.version ? `SpindleLabs, ${parts.version}` : "SpindleLabs"));
+      if (parts.onReportBug) {
+        const row = el("div", "settings-row");
+        const report = el("button", "settings-action", "Report a bug");
+        report.type = "button";
+        report.id = "settings-report-bug";
+        report.addEventListener("click", () => {
+          dialog.close();
+          parts.onReportBug?.();
+        });
+        row.append(el("span", undefined, "Something not working?"), report);
+        card.append(row);
+      }
     }
     body.append(card);
   }
   dialog.replaceChildren(header, body);
+}
+
+/**
+ * The Design card's Grid size and Snap to grid rows (U2b). The box shows the size in the chosen unit and is read with
+ * `parseLength` (so "0.5 in" and "5mm" work); a size the kernel won't take (0, negative, empty, under 1 µm, over 1 km, not a
+ * number) is refused in words in that unit and the last good size goes back in the box. Returns the redraw for a new unit.
+ */
+function gridRows(el: El, card: HTMLElement, startMm: number, startUnit: Unit, apply: (mm: number) => string | null, snap: boolean, onSnap?: (on: boolean) => void): (unit: Unit) => void {
+  let unit = startUnit;
+  let good = startMm;
+  const row = el("label", "settings-row settings-grid");
+  const input = el("input", "grid-size");
+  input.type = "text";
+  input.inputMode = "decimal";
+  input.setAttribute("aria-label", "Grid size");
+  const name = el("span", "grid-unit", ` ${unit}`);
+  const note = el("p", "settings-grid grid-note");
+  note.setAttribute("role", "status");
+  const show = () => {
+    input.value = boxShown(good, unit);
+    name.textContent = ` ${unit}`;
+  };
+  input.addEventListener("change", () => {
+    const mm = parseLength(input.value, unit);
+    const why = mm === null ? "Type the grid size as a number (like 10 or 0.5 in)." : apply(mm);
+    if (why === null && mm !== null) {
+      good = mm;
+      note.textContent = "";
+    } else {
+      note.textContent = `${wordsInUnit(why ?? "", unit)} The grid stays at ${boxShown(good, unit)} ${unit}.`;
+    }
+    show();
+  });
+  const label = el("span", undefined, "Grid size for new sketches");
+  const field = el("span", "grid-field");
+  field.append(input, name);
+  row.append(label, field);
+  show();
+  card.append(row, note);
+  if (onSnap) {
+    const snapRow = el("label", "settings-row settings-grid grid-snap");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = snap;
+    box.addEventListener("change", () => onSnap(box.checked));
+    snapRow.append(el("span", undefined, "Snap to grid in new sketches"), box);
+    card.append(snapRow);
+  }
+  return (next) => {
+    unit = next;
+    show();
+  };
+}
+
+/** The Mouse row: a choice of presets, and under it the table of what each button and key does in the one chosen. */
+function mouseBlock(el: El, start: MousePreset, choose: (preset: MousePreset) => void): HTMLElement {
+  const block = el("div", "settings-mouse");
+  const row = el("div", "settings-row settings-mouse-row");
+  const group = el("div", "settings-choices");
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", "Mouse controls");
+  const summary = el("p", "settings-mouse-summary");
+  const table = el("table", "settings-mouse-table");
+  table.setAttribute("aria-label", "What each mouse button and key does");
+  const show = (id: MousePreset) => {
+    const preset = MOUSE_PRESETS.find((p) => p.id === id)!;
+    summary.textContent = preset.summary;
+    table.replaceChildren(...preset.rows.map((r) => {
+      const tr = el("tr");
+      tr.append(el("th", undefined, r.gesture), el("td", undefined, r.does));
+      return tr;
+    }));
+    for (const other of group.children) other.setAttribute("aria-checked", String((other as HTMLElement).dataset.mouse === id));
+  };
+  for (const p of MOUSE_PRESETS) {
+    const b = el("button", "settings-choice", p.label);
+    b.type = "button";
+    b.dataset.mouse = p.id;
+    b.setAttribute("role", "radio");
+    b.addEventListener("click", () => {
+      choose(p.id);
+      show(p.id);
+    });
+    group.append(b);
+  }
+  row.append(el("span", undefined, "Mouse"), group);
+  block.append(row, summary, table);
+  show(start);
+  return block;
 }
 
 type El = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => HTMLElementTagNameMap[K];
