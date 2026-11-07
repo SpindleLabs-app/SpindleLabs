@@ -8,6 +8,8 @@ Each pull request's entry in `changelog.d/` ends with a `public:` part: the `- `
 
 - Extrude any closed region of a sketch, including a shape with holes (a circle inside a rectangle makes a plate with a hole) or the inside of a hole on its own. Every region is shaded while you extrude; click the one you want.
 - If the region an extrude uses is cut apart or loses a line, the extrude keeps its last shape and says why.
+- A flat face with holes in it can be extruded straight from the face, and the holes go through the new part too.
+- A region keeps its extrude when a corner is dragged across so the shape turns over, or when a side is deleted and drawn again in the same place.
 - Measure (Inspect menu): click a face, edge or corner to read its size, then a second to get the distance between them, along X, Y and Z, and the angle.
 - With Print check on, finishing a sketch in a scene of several rounded bodies no longer freezes the app for a few seconds.
 
