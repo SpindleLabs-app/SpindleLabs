@@ -14,6 +14,7 @@ check TypeScript mutants: survivors no test kills in packages/storage/src/unsave
 check TypeScript mutants: survivors no test kills in packages/testing/src/boolean-naming-model.ts
 check TypeScript mutants: survivors no test kills in packages/viewport/src/framing.ts
 check TypeScript mutants: survivors no test kills in packages/viewport/src/pane.ts
+check TypeScript mutants: survivors no test kills in packages/viewport/src/picking.ts
 check TypeScript mutants: survivors no test kills in workspaces/design/src/boolean-names.ts
 check TypeScript mutants: survivors no test kills in workspaces/design/src/document.ts
 check soak: cycle #: phone, built [{"w":#,"d":#,"h":#,"z":#},{"w":#,"d":#,"h":#,"z":#}]: the STL's volume is #,# mm³, the model's #,# mm³ (STL bounds [[#,#],[#,#]
@@ -21,6 +22,8 @@ check soak: cycle #: phone: Body # (# × # × #) shows a volume of #,# mm³, the
 check soak: listeners keeps growing: # by cycle #, # at cycle #, # at cycle #
 check soak: the soak's cycle stopped (seed #): page.waitForFunction: Timeout #ms exceeded.
 check the ts-mutants job failed with nothing more specific reported
+monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
 monkey settles: the page was still changing # s after the action
 monkey the tester itself: locator.click: Timeout #ms exceeded.
+monkey timeline bar matches the file: shown [{"id":"feature#","suppressed":false,"rolledBack":false},{"id":"sketch#","suppressed":true,"rolledBack":false},{"

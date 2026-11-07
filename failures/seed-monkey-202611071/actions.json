@@ -1,0 +1,44 @@
+{
+  "seed": 202611071,
+  "failure": {
+    "check": "timeline bar matches the file",
+    "message": "shown [{\"id\":\"feature-1\",\"suppressed\":false,\"rolledBack\":false},{\"id\":\"sketch-2\",\"suppressed\":true,\"rolledBack\":false},{\"id\":\"feature-3\",\"suppressed\":false,\"rolledBack\":false}], file says [{\"id\":\"feature-1\",\"suppressed\":false,\"rolledBack\":false},{\"id\":\"sketch-2\",\"suppressed\":true,\"rolledBack\":false},{\"id\":\"feature-3\",\"suppressed\":false,\"rolledBack\":false},{\"id\":\"feature-4\",\"suppressed\":false,\"rolledBack\":false}]"
+  },
+  "shrunk": true,
+  "replayed": true,
+  "actions": [
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 486
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "canvas",
+      "x": 0.716,
+      "y": 0.48,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 725
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 771
+    },
+    {
+      "do": "combine",
+      "a": 0.9651438887231052,
+      "b": 0.3959467501845211,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    }
+  ]
+}

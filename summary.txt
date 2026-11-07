@@ -1,12 +1,10 @@
-New failures this run (kinds of problem no earlier run found): 5
-  - check TypeScript mutants: survivors no test kills in packages/core/src/model/history.ts
-  - check soak: cycle #: phone, built [{"w":#,"d":#,"h":#,"z":#},{"w":#,"d":#,"h":#,"z":#}]: the STL's volume is #,# mm³, the model's #,# mm³ (STL bounds [[#,#],[#,#]
-  - check soak: cycle #: phone: Body # (# × # × #) shows a volume of #,# mm³, the model #,# mm³
-  - check soak: listeners keeps growing: # by cycle #, # at cycle #, # at cycle #
-  - monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
+New failures this run (kinds of problem no earlier run found): 3
+  - check TypeScript mutants: survivors no test kills in packages/viewport/src/picking.ts
+  - monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
+  - monkey timeline bar matches the file: shown [{"id":"feature#","suppressed":false,"rolledBack":false},{"id":"sketch#","suppressed":true,"rolledBack":false},{"
 new-failures.csv has one line per run; kinds-seen.txt lists every kind found so far.
 
-SpindleLabs random testing, all runs so far (updated 2026-11-06 23:34 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-11-07 22:32 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -24,9 +22,9 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit 3ed44c9 on main, 2026-11-06 23:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42290619467)
-  OK Design: shape to STL: 4 clicks (baseline 4), slowest 1.33 s = 38.97× the fixed workload (baseline 1.16 s)
-  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.50 s = 74.68× the fixed workload (baseline 9.70 s)
+  tested commit 465fed8 on main, 2026-11-07 22:32 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42405399181)
+  FLAG Design: shape to STL: slowest 1.89 s = 45.20× the fixed workload, baseline 1.16 s (64% over, flag above 15%, fail above 100%)
+  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 3.59 s = 79.84× the fixed workload (baseline 9.70 s)
   PENDING Box to laser panels: waits for Laser (L1–L3), X13
   PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
   PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
@@ -35,144 +33,117 @@ Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, 
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit 3ed44c9 on main, 2026-11-06 23:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42290619467)
-  seed 1793997780, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1793997780 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  box-minus-box: 50 rebuilds, fastest 4.3 ms, slowest 7.7 ms, OK
-  bracket-two-holes: 50 rebuilds, fastest 2.9 ms, slowest 19.3 ms, OK
-  enclosure: 50 rebuilds, fastest 1.8 ms, slowest 24.7 ms, OK
-  f2-gap-join: 50 rebuilds, fastest 3.0 ms, slowest 11.9 ms, OK
-  far-wall-outside: 50 rebuilds, fastest 4.7 ms, slowest 10.0 ms, OK
-  flush-blocks: 50 rebuilds, fastest 3.9 ms, slowest 7.3 ms, OK
-  gear: 50 rebuilds, fastest 16.5 ms, slowest 51.0 ms, OK
-  hollow-box: 50 rebuilds, fastest 4.4 ms, slowest 8.5 ms, OK
-  km-plate: 50 rebuilds, fastest 4.5 ms, slowest 47.0 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.5 ms, slowest 4.7 ms, OK
-  micron-cube-halved: 50 rebuilds, fastest 1.5 ms, slowest 5.0 ms, OK
-  small-cube-halved: 50 rebuilds, fastest 3.3 ms, slowest 7.4 ms, OK
-  stepped-boss: 50 rebuilds, fastest 2.8 ms, slowest 6.0 ms, OK
-  thirty-features: 50 rebuilds, fastest 10.8 ms, slowest 18.0 ms, OK
+  tested commit 465fed8 on main, 2026-11-07 22:32 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42405399181)
+  seed 1794079019, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794079019 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  box-minus-box: 50 rebuilds, fastest 4.1 ms, slowest 8.0 ms, OK
+  bracket-two-holes: 50 rebuilds, fastest 2.7 ms, slowest 5.3 ms, OK
+  enclosure: 50 rebuilds, fastest 1.7 ms, slowest 3.9 ms, OK
+  f2-gap-join: 50 rebuilds, fastest 2.9 ms, slowest 36.7 ms, OK
+  far-wall-outside: 50 rebuilds, fastest 4.5 ms, slowest 13.2 ms, OK
+  flush-blocks: 50 rebuilds, fastest 3.7 ms, slowest 10.5 ms, OK
+  gear: 50 rebuilds, fastest 15.7 ms, slowest 31.0 ms, OK
+  hollow-box: 50 rebuilds, fastest 4.2 ms, slowest 8.8 ms, OK
+  km-plate: 50 rebuilds, fastest 4.3 ms, slowest 5.8 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 1.0 ms, OK
+  micron-cube-halved: 50 rebuilds, fastest 1.4 ms, slowest 3.3 ms, OK
+  small-cube-halved: 50 rebuilds, fastest 3.1 ms, slowest 5.9 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.6 ms, slowest 28.4 ms, OK
+  thirty-features: 50 rebuilds, fastest 10.5 ms, slowest 27.6 ms, OK
   | metric | baseline | now | change | |
   | app.golden_box_minus_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_box_minus_box.relative_time | - | 0.0625 | - | new: add to the baseline |
+  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0607 | -11.8% |  |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0431 | +5.4% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0406 | -0.7% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0244 | -14.1% |  |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0261 | -8.1% |  |
   | app.golden_f2_gap_join.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_f2_gap_join.relative_time | - | 0.044 | - | new: add to the baseline |
+  | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0437 | -3.5% |  |
   | app.golden_far_wall_outside.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_far_wall_outside.relative_time | - | 0.07 | - | new: add to the baseline |
+  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0686 | -4.1% |  |
   | app.golden_flush_blocks.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_flush_blocks.relative_time | - | 0.0573 | - | new: add to the baseline |
+  | app.golden_flush_blocks.relative_time | 0.0586 | 0.0567 | -3.2% |  |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.245 | +1.6% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2399 | -0.5% |  |
   | app.golden_hollow_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_hollow_box.relative_time | - | 0.065 | - | new: add to the baseline |
+  | app.golden_hollow_box.relative_time | 0.067 | 0.0639 | -4.6% |  |
   | app.golden_km_plate.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_km_plate.relative_time | - | 0.0654 | - | new: add to the baseline |
+  | app.golden_km_plate.relative_time | 0.0651 | 0.0645 | -0.9% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0057 | -12.3% |  |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.0062 | -4.6% |  |
   | app.golden_micron_cube_halved.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_micron_cube_halved.relative_time | - | 0.02 | - | new: add to the baseline |
+  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0201 | -3.4% |  |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_small_cube_halved.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_small_cube_halved.relative_time | - | 0.0472 | - | new: add to the baseline |
+  | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0471 | -0.2% |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.0399 | +2.3% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.0389 | -0.3% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1588 | -2.7% |  |
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.1593 | -2.4% |  |
   0 metric(s) failed, 0 flagged, 0 better.
   Golden STEP files: 37 bodies read by OpenCascade, 0 disagreement(s)
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit 3ed44c9 on main, 2026-11-06 23:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42290619467)
-  Monkey, seeds 202611060-202611061: 2 session(s) of 2000 actions in Chromium; 8 Combines made of 14 tried; 2 FAILED
-  seed 202611060: FAIL: settles: the page was still changing 6 s after the action
-  seed 202611061: FAIL: selection agrees: with Body 1 (Box: 13 × 20 × 5 mm) selected the Feature panel says "Box: 0.512 × 0.787 × 0.197 in"; with Body 1 (Box: 13 × 20 × 5 mm) selected the Body panel shows 0.07933086732 in³, but that body is 1300.00 mm³; with Body 3 (Cylinder: ⌀14 × 30 mm) selected the Feature panel says "Cylinder: ⌀0.551 × 1.181 in"; with Body 3 (Cylinder: ⌀14 × 30 mm) selected the Body panel shows 0.2818162668 in³, but that body is 4618.14 mm³; with Body 4 (Cylinder: ⌀15 × 30 mm) selected the Feature panel says "Cylinder: ⌀0.591 × 1.181 in"; with Body 4 (Cylinder: ⌀15 × 30 mm) selected the Body panel shows 0.3235135716 in³, but that body is 5301.44 mm³
+  tested commit 465fed8 on main, 2026-11-07 22:32 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42405399181)
+  Monkey, seeds 202611070-202611071: 2 session(s) of 2000 actions in Chromium; 1 Combine made of 17 tried; 2 FAILED
+  seed 202611070: FAIL: selection agrees: clicking hidden Body 10 (Sphere: ⌀36 mm) selected "body:feature-8"
+  seed 202611071: FAIL: timeline bar matches the file: shown [{"id":"feature-1","suppressed":false,"rolledBack":false},{"id":"sketch-2","suppressed":true,"rolledBack":false},{"id":"feature-3","suppressed":false,"rolledBack":false}], file says [{"id":"feature-1","suppressed":false,"rolledBack":false},{"id":"sketch-2","suppressed":true,"rolledBack":false},{"id":"feature-3","suppressed":false,"rolledBack":false},{"id":"feature-4","suppressed":false,"rolledBack":false}]
 monkey/log.txt has one line per night.
 
 Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):
-  tested commit 3ed44c9 on main, 2026-11-06 23:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42290619467)
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:312: packages/core/src/model/history.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:249: packages/core/src/model/history.ts | LogicalOperator | !present || saved.kept.length === 0 => !present && saved.kept.length === 0
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:249: packages/core/src/model/history.ts | ConditionalExpression | saved.kept.length === 0 => false
-  core: 12 survivors, all explained: false
-  3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-  design: 56 survivors, all explained: true
+  tested commit 465fed8 on main, 2026-11-07 22:32 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42405399181)
+  core: 10 survivors, all explained: true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1580: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1586: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1309: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1325: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1382: workspaces/design/src/document.ts | LogicalOperator | Object.hasOwn(f.intent.parameters, "operation") || Object.hasOwn(f.intent.parameters, "bodies") => Object.hasOwn(f.intent.parameters, "operation") && Object.hasOwn(f.intent.parameters, "bodies")
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1382: workspaces/design/src/document.ts | StringLiteral | "operation" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1382: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1505: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1398: workspaces/design/src/document.ts | StringLiteral | `${where} names` => ``
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1398: workspaces/design/src/document.ts | StringLiteral | "curves" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1421: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1421: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 8 => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1421: workspaces/design/src/document.ts | EqualityOperator | v3.version === 8 => v3.version !== 8
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1439: workspaces/design/src/document.ts | EqualityOperator | d.version! > 10 => d.version! >= 10
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1502: workspaces/design/src/document.ts | OptionalChaining | f.intent?.parameters => f.intent.parameters
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1505: workspaces/design/src/document.ts | OptionalChaining | f.intent?.parameters => f.intent.parameters
+  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 => true
+  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | EqualityOperator | d.version! > 8 => d.version! >= 8
+  design: 73 survivors, all explained: false
+  18 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
   storage: 59 survivors, all explained: true
   account: 10 survivors, all explained: true
-  UNEXPLAINED survivor at packages/core/src/model/shortcuts.ts:84: packages/core/src/model/shortcuts.ts | BooleanLiteral | true => false
-  UNEXPLAINED survivor at packages/core/src/model/shortcuts.ts:85: packages/core/src/model/shortcuts.ts | BooleanLiteral | true => false
-  UNEXPLAINED survivor at packages/core/src/model/shortcuts.ts:86: packages/core/src/model/shortcuts.ts | BooleanLiteral | true => false
-  model: 49 survivors, all explained: false
-  3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  model: 46 survivors, all explained: true
   svg: 4 survivors, all explained: true
-  viewport: 35 survivors, all explained: true
+  UNEXPLAINED survivor at packages/viewport/src/picking.ts:50: packages/viewport/src/picking.ts | ArithmeticOperator | a.i - b.i => a.i + b.i
+  viewport: 36 survivors, all explained: false
+  1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
   ai: 23 survivors, all explained: true
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | ObjectLiteral | { start: "-z", end: "+z", 1: "-y", 2: "+x", 3: "+y", 4: "-x" } => {}
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "-z" => ""
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "+z" => ""
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "-y" => ""
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "+x" => ""
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "+y" => ""
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "-x" => ""
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | f.faces => false
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | new Set(FACINGS.map((d) => f.faces![d].name)).size === 6 => true
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | new Set(FACINGS.map((d) => f.faces![d].name)).size === 6 => false
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | EqualityOperator | new Set(FACINGS.map((d) => f.faces![d].name)).size === 6 => new Set(FACINGS.map(d => f.faces![d].name)).size !== 6
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ArrowFunction | (d) => f.faces![d].name => () => undefined
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1055: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:970: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 0, 0] => []
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:989: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 0, 0] => []
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:672: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | f.kind === "block" && blockValid(f) && f.faces => false
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:672: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | f.kind === "block" && blockValid(f) => true
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:672: packages/testing/src/boolean-naming-model.ts | StringLiteral | "block" => ""
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:680: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | own !== undefined => false
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:971: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | (steps[s.axis][first] + steps[s.axis][last]) / 2 => (steps[s.axis][first] + steps[s.axis][last]) * 2
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:971: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | steps[s.axis][first] + steps[s.axis][last] => steps[s.axis][first] - steps[s.axis][last]
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:988: packages/testing/src/boolean-naming-model.ts | BlockStatement | { const sum = [0, 0, 0]; let total = 0; for (const [lo, hi] of rects) { const area = [0, 1, 2].reduce((p, i) => p * (hi[i] - lo[i] || 1), 1); total += area; for (let i = 0; i < 3; i++) sum[i] += (area * (lo[i] + hi[i])) / 2; } return [sum[0] / total, sum[1] / total, sum[2] / total]; } => {}
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:991: packages/testing/src/boolean-naming-model.ts | BlockStatement | { const area = [0, 1, 2].reduce((p, i) => p * (hi[i] - lo[i] || 1), 1); total += area; for (let i = 0; i < 3; i++) sum[i] += (area * (lo[i] + hi[i])) / 2; } => {}
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 1, 2] => []
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArrowFunction | (p, i) => p * (hi[i] - lo[i] || 1) => () => undefined
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | p * (hi[i] - lo[i] || 1) => p / (hi[i] - lo[i] || 1)
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | hi[i] - lo[i] || 1 => true
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | hi[i] - lo[i] || 1 => false
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | LogicalOperator | hi[i] - lo[i] || 1 => hi[i] - lo[i] && 1
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | hi[i] - lo[i] => hi[i] + lo[i]
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:993: packages/testing/src/boolean-naming-model.ts | AssignmentOperator | total += area => total -= area
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | i < 3 => false
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | EqualityOperator | i < 3 => i <= 3
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | EqualityOperator | i < 3 => i >= 3
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | AssignmentOperator | sum[i] += (area * (lo[i] + hi[i])) / 2 => sum[i] -= area * (lo[i] + hi[i]) / 2
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | (area * (lo[i] + hi[i])) / 2 => area * (lo[i] + hi[i]) * 2
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | area * (lo[i] + hi[i]) => area / (lo[i] + hi[i])
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | lo[i] + hi[i] => lo[i] - hi[i]
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sum[0] / total => sum[0] * total
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [sum[0] / total, sum[1] / total, sum[2] / total] => []
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sum[1] / total => sum[1] * total
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sum[2] / total => sum[2] * total
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1000: packages/testing/src/boolean-naming-model.ts | BlockStatement | { const k = seenIn.get(x.body) ?? 0; seenIn.set(x.body, k + 1); return k; } => {}
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1001: packages/testing/src/boolean-naming-model.ts | LogicalOperator | seenIn.get(x.body) ?? 0 => seenIn.get(x.body) && 0
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1002: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | k + 1 => k - 1
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1093: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | ends !== undefined => true
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1097: packages/testing/src/boolean-naming-model.ts | EqualityOperator | same.length > 1 => same.length >= 1
-  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1101: packages/testing/src/boolean-naming-model.ts | EqualityOperator | fits.length > 1 => fits.length >= 1
-  naming: 195 survivors, all explained: false
-  48 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:152: workspaces/design/src/boolean-names.ts | LogicalOperator | made.get(n) ?? [Infinity] => made.get(n) && [Infinity]
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:152: workspaces/design/src/boolean-names.ts | ArrayDeclaration | [Infinity] => []
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | LogicalOperator | x.order - y.order || x.j - y.j || lex(x.made, y.made) => (x.order - y.order || x.j - y.j) && lex(x.made, y.made)
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | ConditionalExpression | x.order - y.order || x.j - y.j => false
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | LogicalOperator | x.order - y.order || x.j - y.j => x.order - y.order && x.j - y.j
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | ArithmeticOperator | x.j - y.j => x.j + y.j
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | ArithmeticOperator | x.k - y.k => x.k + y.k
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:433: workspaces/design/src/boolean-names.ts | MethodExpression | [...ref.tag].sort() => [...ref.tag]
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:469: workspaces/design/src/boolean-names.ts | ConditionalExpression | ends !== undefined => true
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:473: workspaces/design/src/boolean-names.ts | EqualityOperator | same.length > 1 => same.length >= 1
-  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:477: workspaces/design/src/boolean-names.ts | EqualityOperator | fits.length > 1 => fits.length >= 1
-  combine: 66 survivors, all explained: false
-  11 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:432: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | i < (place.get(n) ?? Infinity) => true
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:445: packages/testing/src/boolean-naming-model.ts | EqualityOperator | k >= 0 => k > 0
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:445: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | k < at => true
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:445: packages/testing/src/boolean-naming-model.ts | EqualityOperator | k < at => k <= at
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:454: packages/testing/src/boolean-naming-model.ts | MethodExpression | r.slice(1) => r
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:717: packages/testing/src/boolean-naming-model.ts | BlockStatement | { for (const l of s.names.values()) for (const n of l) if (!from.has(n)) from.set(n, i); } => {}
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:718: packages/testing/src/boolean-naming-model.ts | BooleanLiteral | !from.has(n) => from.has(n)
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:718: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | !from.has(n) => true
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:718: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | !from.has(n) => false
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:720: packages/testing/src/boolean-naming-model.ts | LogicalOperator | from.get(name) ?? order.length => from.get(name) && order.length
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:801: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [body.solid, ...tools] => []
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | StringLiteral | "," => ""
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | StringLiteral | "," => ""
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | ref.tag === undefined || r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") || ref.origin === undefined || holds(pieces[0].f, ref.origin) => true
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") => false
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | EqualityOperator | r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") => r.tagFor(pieces[0].f, ref.name).join(",") !== ref.tag.join(",")
+  UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1081: packages/testing/src/boolean-naming-model.ts | StringLiteral | "whole" => ""
+  naming: 169 survivors, all explained: false
+  17 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:441: workspaces/design/src/boolean-names.ts | ConditionalExpression | names.tagFor(one.body, one.index, ref.name).join(",") === want => false
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:441: workspaces/design/src/boolean-names.ts | StringLiteral | "," => ""
+  combine: 60 survivors, all explained: false
+  2 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 
 Fuzzing (the STL reader, the project loader, the sketch-extrude and timeline sessions and the kernel fuzz targets), all runs so far (updated 2026-11-07 03:38 UTC)
   hours of fuzzing: 50.7

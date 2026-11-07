@@ -1,80 +1,53 @@
-tested commit 3ed44c9 on main, 2026-11-06 23:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42290619467)
-UNEXPLAINED survivor at packages/core/src/model/history.ts:312: packages/core/src/model/history.ts | BooleanLiteral | false => true
-UNEXPLAINED survivor at packages/core/src/model/history.ts:249: packages/core/src/model/history.ts | LogicalOperator | !present || saved.kept.length === 0 => !present && saved.kept.length === 0
-UNEXPLAINED survivor at packages/core/src/model/history.ts:249: packages/core/src/model/history.ts | ConditionalExpression | saved.kept.length === 0 => false
-core: 12 survivors, all explained: false
-3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-design: 56 survivors, all explained: true
+tested commit 465fed8 on main, 2026-11-07 22:32 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42405399181)
+core: 10 survivors, all explained: true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1580: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1586: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1309: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1325: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1382: workspaces/design/src/document.ts | LogicalOperator | Object.hasOwn(f.intent.parameters, "operation") || Object.hasOwn(f.intent.parameters, "bodies") => Object.hasOwn(f.intent.parameters, "operation") && Object.hasOwn(f.intent.parameters, "bodies")
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1382: workspaces/design/src/document.ts | StringLiteral | "operation" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1382: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1505: workspaces/design/src/document.ts | StringLiteral | "bodies" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1398: workspaces/design/src/document.ts | StringLiteral | `${where} names` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1398: workspaces/design/src/document.ts | StringLiteral | "curves" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1421: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1421: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 8 => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1421: workspaces/design/src/document.ts | EqualityOperator | v3.version === 8 => v3.version !== 8
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1439: workspaces/design/src/document.ts | EqualityOperator | d.version! > 10 => d.version! >= 10
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1502: workspaces/design/src/document.ts | OptionalChaining | f.intent?.parameters => f.intent.parameters
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1505: workspaces/design/src/document.ts | OptionalChaining | f.intent?.parameters => f.intent.parameters
+explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 => true
+explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | EqualityOperator | d.version! > 8 => d.version! >= 8
+design: 73 survivors, all explained: false
+18 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 storage: 59 survivors, all explained: true
 account: 10 survivors, all explained: true
-UNEXPLAINED survivor at packages/core/src/model/shortcuts.ts:84: packages/core/src/model/shortcuts.ts | BooleanLiteral | true => false
-UNEXPLAINED survivor at packages/core/src/model/shortcuts.ts:85: packages/core/src/model/shortcuts.ts | BooleanLiteral | true => false
-UNEXPLAINED survivor at packages/core/src/model/shortcuts.ts:86: packages/core/src/model/shortcuts.ts | BooleanLiteral | true => false
-model: 49 survivors, all explained: false
-3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+model: 46 survivors, all explained: true
 svg: 4 survivors, all explained: true
-viewport: 35 survivors, all explained: true
+UNEXPLAINED survivor at packages/viewport/src/picking.ts:50: packages/viewport/src/picking.ts | ArithmeticOperator | a.i - b.i => a.i + b.i
+viewport: 36 survivors, all explained: false
+1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 ai: 23 survivors, all explained: true
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | ObjectLiteral | { start: "-z", end: "+z", 1: "-y", 2: "+x", 3: "+y", 4: "-x" } => {}
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "-z" => ""
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "+z" => ""
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "-y" => ""
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "+x" => ""
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "+y" => ""
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:189: packages/testing/src/boolean-naming-model.ts | StringLiteral | "-x" => ""
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | f.faces => false
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | new Set(FACINGS.map((d) => f.faces![d].name)).size === 6 => true
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | new Set(FACINGS.map((d) => f.faces![d].name)).size === 6 => false
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | EqualityOperator | new Set(FACINGS.map((d) => f.faces![d].name)).size === 6 => new Set(FACINGS.map(d => f.faces![d].name)).size !== 6
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:253: packages/testing/src/boolean-naming-model.ts | ArrowFunction | (d) => f.faces![d].name => () => undefined
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1055: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:970: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 0, 0] => []
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:989: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 0, 0] => []
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:672: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | f.kind === "block" && blockValid(f) && f.faces => false
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:672: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | f.kind === "block" && blockValid(f) => true
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:672: packages/testing/src/boolean-naming-model.ts | StringLiteral | "block" => ""
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:680: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | own !== undefined => false
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:971: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | (steps[s.axis][first] + steps[s.axis][last]) / 2 => (steps[s.axis][first] + steps[s.axis][last]) * 2
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:971: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | steps[s.axis][first] + steps[s.axis][last] => steps[s.axis][first] - steps[s.axis][last]
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:988: packages/testing/src/boolean-naming-model.ts | BlockStatement | { const sum = [0, 0, 0]; let total = 0; for (const [lo, hi] of rects) { const area = [0, 1, 2].reduce((p, i) => p * (hi[i] - lo[i] || 1), 1); total += area; for (let i = 0; i < 3; i++) sum[i] += (area * (lo[i] + hi[i])) / 2; } return [sum[0] / total, sum[1] / total, sum[2] / total]; } => {}
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:991: packages/testing/src/boolean-naming-model.ts | BlockStatement | { const area = [0, 1, 2].reduce((p, i) => p * (hi[i] - lo[i] || 1), 1); total += area; for (let i = 0; i < 3; i++) sum[i] += (area * (lo[i] + hi[i])) / 2; } => {}
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 1, 2] => []
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArrowFunction | (p, i) => p * (hi[i] - lo[i] || 1) => () => undefined
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | p * (hi[i] - lo[i] || 1) => p / (hi[i] - lo[i] || 1)
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | hi[i] - lo[i] || 1 => true
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | hi[i] - lo[i] || 1 => false
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | LogicalOperator | hi[i] - lo[i] || 1 => hi[i] - lo[i] && 1
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:992: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | hi[i] - lo[i] => hi[i] + lo[i]
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:993: packages/testing/src/boolean-naming-model.ts | AssignmentOperator | total += area => total -= area
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | i < 3 => false
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | EqualityOperator | i < 3 => i <= 3
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | EqualityOperator | i < 3 => i >= 3
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | AssignmentOperator | sum[i] += (area * (lo[i] + hi[i])) / 2 => sum[i] -= area * (lo[i] + hi[i]) / 2
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | (area * (lo[i] + hi[i])) / 2 => area * (lo[i] + hi[i]) * 2
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | area * (lo[i] + hi[i]) => area / (lo[i] + hi[i])
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:994: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | lo[i] + hi[i] => lo[i] - hi[i]
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sum[0] / total => sum[0] * total
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [sum[0] / total, sum[1] / total, sum[2] / total] => []
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sum[1] / total => sum[1] * total
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:996: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sum[2] / total => sum[2] * total
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1000: packages/testing/src/boolean-naming-model.ts | BlockStatement | { const k = seenIn.get(x.body) ?? 0; seenIn.set(x.body, k + 1); return k; } => {}
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1001: packages/testing/src/boolean-naming-model.ts | LogicalOperator | seenIn.get(x.body) ?? 0 => seenIn.get(x.body) && 0
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1002: packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | k + 1 => k - 1
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1093: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | ends !== undefined => true
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1097: packages/testing/src/boolean-naming-model.ts | EqualityOperator | same.length > 1 => same.length >= 1
-UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1101: packages/testing/src/boolean-naming-model.ts | EqualityOperator | fits.length > 1 => fits.length >= 1
-naming: 195 survivors, all explained: false
-48 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:152: workspaces/design/src/boolean-names.ts | LogicalOperator | made.get(n) ?? [Infinity] => made.get(n) && [Infinity]
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:152: workspaces/design/src/boolean-names.ts | ArrayDeclaration | [Infinity] => []
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | LogicalOperator | x.order - y.order || x.j - y.j || lex(x.made, y.made) => (x.order - y.order || x.j - y.j) && lex(x.made, y.made)
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | ConditionalExpression | x.order - y.order || x.j - y.j => false
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | LogicalOperator | x.order - y.order || x.j - y.j => x.order - y.order && x.j - y.j
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | ArithmeticOperator | x.j - y.j => x.j + y.j
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:154: workspaces/design/src/boolean-names.ts | ArithmeticOperator | x.k - y.k => x.k + y.k
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:433: workspaces/design/src/boolean-names.ts | MethodExpression | [...ref.tag].sort() => [...ref.tag]
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:469: workspaces/design/src/boolean-names.ts | ConditionalExpression | ends !== undefined => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:473: workspaces/design/src/boolean-names.ts | EqualityOperator | same.length > 1 => same.length >= 1
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:477: workspaces/design/src/boolean-names.ts | EqualityOperator | fits.length > 1 => fits.length >= 1
-combine: 66 survivors, all explained: false
-11 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:432: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | i < (place.get(n) ?? Infinity) => true
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:445: packages/testing/src/boolean-naming-model.ts | EqualityOperator | k >= 0 => k > 0
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:445: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | k < at => true
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:445: packages/testing/src/boolean-naming-model.ts | EqualityOperator | k < at => k <= at
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:454: packages/testing/src/boolean-naming-model.ts | MethodExpression | r.slice(1) => r
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:717: packages/testing/src/boolean-naming-model.ts | BlockStatement | { for (const l of s.names.values()) for (const n of l) if (!from.has(n)) from.set(n, i); } => {}
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:718: packages/testing/src/boolean-naming-model.ts | BooleanLiteral | !from.has(n) => from.has(n)
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:718: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | !from.has(n) => true
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:718: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | !from.has(n) => false
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:720: packages/testing/src/boolean-naming-model.ts | LogicalOperator | from.get(name) ?? order.length => from.get(name) && order.length
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:801: packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [body.solid, ...tools] => []
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | StringLiteral | "," => ""
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | StringLiteral | "," => ""
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | ref.tag === undefined || r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") || ref.origin === undefined || holds(pieces[0].f, ref.origin) => true
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | ConditionalExpression | r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") => false
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1080: packages/testing/src/boolean-naming-model.ts | EqualityOperator | r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") => r.tagFor(pieces[0].f, ref.name).join(",") !== ref.tag.join(",")
+UNEXPLAINED survivor at packages/testing/src/boolean-naming-model.ts:1081: packages/testing/src/boolean-naming-model.ts | StringLiteral | "whole" => ""
+naming: 169 survivors, all explained: false
+17 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:441: workspaces/design/src/boolean-names.ts | ConditionalExpression | names.tagFor(one.body, one.index, ref.name).join(",") === want => false
+UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:441: workspaces/design/src/boolean-names.ts | StringLiteral | "," => ""
+combine: 60 survivors, all explained: false
+2 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
