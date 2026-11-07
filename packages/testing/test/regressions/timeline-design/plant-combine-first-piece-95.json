@@ -1,0 +1,25 @@
+{
+ "seed": "95",
+ "steps": [
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    25,
+    45,
+    30
+   ]
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.8705016907202916
+  },
+  {
+   "op": "add-combine",
+   "target": 0.07499003106353774,
+   "tool": 0.5659030769803327,
+   "operation": "join",
+   "keep": true
+  }
+ ]
+}
