@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MAX_MEETING_POINTS, MOST_PAIRS, regionsUnits, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CORNER, UNITS_PER_MEETING, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -46,6 +46,25 @@ test("a sketch's units by hand: 0.25 a curve and 0.00012 a pair", () => {
   assert.ok(Math.abs(sketchUnits(100) - 26.2) < 1e-9);
   assert.ok(Math.abs(sketchUnits(2000) - 980) < 1e-9);
   assert.equal(callUnits("sketch_outline", [Array(1000).fill(null), Array(600).fill(null), Array(400).fill(null)] as never, () => undefined), sketchUnits(2000));
+});
+
+test("a sketch's regions by hand: the outline's units and 0.03 a point where curves may meet, two a pair, at most 100,000 (48d3)", () => {
+  assert.equal(UNITS_PER_MEETING, 0.03);
+  assert.equal(MAX_MEETING_POINTS, 100_000);
+  // 10 curves: 2.5 + 0.00012 × 100 = 2.512, and 10 × 9 = 90 points (45 pairs, twice each) × 0.03 = 2.7: 5.212.
+  assert.ok(Math.abs(regionsUnits(10) - 5.212) < 1e-9, `${regionsUnits(10)}`);
+  // 600 curves (the 300 × 300 grid): 150 + 43.2, and 600 × 599 = 359,400 points, past the 100,000 a sketch may have: 3,000 more, 3,193.2.
+  assert.ok(Math.abs(regionsUnits(600) - 3193.2) < 1e-9, `${regionsUnits(600)}`);
+  // The cap's edge: 316 × 315 = 99,540 points (under), 317 × 316 = 100,172 (over, so 100,000).
+  assert.ok(Math.abs(regionsUnits(316) - sketchUnits(316) - 0.03 * 99_540) < 1e-9);
+  assert.ok(Math.abs(regionsUnits(317) - sketchUnits(317) - 0.03 * 100_000) < 1e-9);
+  // One curve meets nothing; none is no work.
+  assert.equal(regionsUnits(1), sketchUnits(1));
+  assert.equal(regionsUnits(0), 0);
+  // The call counts lines, circles and arcs together; the outline's call keeps the outline's units.
+  assert.equal(callUnits("sketch_regions", [Array(300).fill(null), Array(200).fill(null), Array(100).fill(null)] as never, () => undefined), regionsUnits(600));
+  assert.equal(callUnits("sketch_outline", [Array(300).fill(null), Array(200).fill(null), Array(100).fill(null)] as never, () => undefined), sketchUnits(600));
+  assert.equal(callUnits("sketch_regions", [undefined, [], []] as never, () => undefined), 0, "the wrong shape: the floor");
 });
 
 test("the limit is the floor, or units × the calibration × HEADROOM above it", () => {

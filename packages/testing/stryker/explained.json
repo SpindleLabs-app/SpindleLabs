@@ -928,7 +928,7 @@
     "mutator": "EqualityOperator",
     "original": "there.at > byId.get(f.id)!.at",
     "replacement": "there.at >= byId.get(f.id)!.at",
-    "why": "In a face sketch's, a pin's or a projection's check, the named feature at the sketch's own place is the sketch itself (ids are unique by then, and `byId` keeps the first), a sketch item, which `isSketchItem(there.item)` refuses on the same line with the same words."
+    "why": "In a face sketch's, a pin's or a projection's check, the named feature at the sketch's own place is the sketch itself (ids are unique by then, and `byId` keeps the first), a sketch item, which `isSketchItem(there.item)` refuses on the same line with the same words. In checkOperation (version 10) the one item at the extrude's own place is the extrude itself, which maker === f.id and isBodyOf (it makes no body of its own) refuse in the same words."
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -1019,21 +1019,21 @@
     "mutator": "EqualityOperator",
     "original": "there.at > byId.get(f.id)!.at",
     "replacement": "there.at >= byId.get(f.id)!.at",
-    "why": "checkPins (issue #220): a pin naming the sketch's own id is at the same place; the sketch is not a solid, so !makesBody refuses it with the same message."
+    "why": "checkPins (issue #220): a pin naming the sketch's own id is at the same place; the sketch is not a solid, so !makesBody refuses it with the same message. In checkOperation (version 10) the one item at the extrude's own place is the extrude itself, which maker === f.id and isBodyOf (it makes no body of its own) refuse in the same words."
   },
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
     "original": "there.at > byId.get(f.id)!.at",
     "replacement": "there.at >= byId.get(f.id)!.at",
-    "why": "checkProjections (issue #220): a projection naming the sketch's own id is at the same place; the sketch is not a solid, so !makesBody refuses it with the same message."
+    "why": "checkProjections (issue #220): a projection naming the sketch's own id is at the same place; the sketch is not a solid, so !makesBody refuses it with the same message. In checkOperation (version 10) the one item at the extrude's own place is the extrude itself, which maker === f.id and isBodyOf (it makes no body of its own) refuse in the same words."
   },
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
     "original": "there.at > byId.get(f.id)!.at",
     "replacement": "there.at >= byId.get(f.id)!.at",
-    "why": "checkMove (issue #220): a Move naming its own id is at the same place; a Move is not a body, so !makesBody refuses it with the same message."
+    "why": "checkMove (issue #220): a Move naming its own id is at the same place; a Move is not a body, so !makesBody refuses it with the same message. In checkOperation (version 10) the one item at the extrude's own place is the extrude itself, which maker === f.id and isBodyOf (it makes no body of its own) refuse in the same words."
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -1096,14 +1096,14 @@
     "mutator": "ConditionalExpression",
     "original": "typeof id === \"string\"",
     "replacement": "true",
-    "why": "migrateDesignV5's hidden map (issue #220): solids holds only text (each id passed typeof f.id === \"string\"), so solids.has gives false for an entry that is not text, as the real check does; the hidden check then refuses it. (The same text on the line before, the version 6 body id check, is killed by document-survivors.test.ts.)"
+    "why": "migrateDesignV5's hidden map (issue #220): solids holds only text (each id passed typeof f.id === \"string\"), so solids.has gives false for an entry that is not text, as the real check does; the hidden check then refuses it. (The same text on the line before, the version 6 body id check, is killed by document-survivors.test.ts.) checkOperation too (Design data version 10): an extrude's body that is not text gets bodyItem's null either way, so byId has no maker for it and it is refused as no body made before it, in the same words."
   },
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
     "original": "maker === null",
     "replacement": "false",
-    "why": "checkMove (issue #220): byId.get(null) is undefined, as the real code gives for a maker of null, since byId's keys are the timeline's ids, all text."
+    "why": "checkMove (issue #220): byId.get(null) is undefined, as the real code gives for a maker of null, since byId's keys are the timeline's ids, all text. The same holds in checkOperation's loop (version 10): byId.get(null) is undefined, so the body is refused as no body made before it either way."
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -3015,6 +3015,27 @@
     "original": "{ return undefined; }",
     "replacement": "{}",
     "why": "parseJson's catch: a function that falls off its end also returns undefined."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "maker === f.id",
+    "replacement": "false",
+    "why": "checkOperation (version 10): an extrude with an operation makes no body of its own (makesBody is false for it, and its pieces are listed only once a rebuild shows them), so isBodyOf refuses its own id in the same words."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "MethodExpression",
+    "original": "operationMakers(f).filter((m) => m !== p.sketch)",
+    "replacement": "operationMakers(f)",
+    "why": "checkOperation (version 10): a sketch makes no body, and every body was checked to be one before this line, so no body's maker is the extrude's sketch and there is nothing to filter out."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "m !== p.sketch",
+    "replacement": "true",
+    "why": "checkOperation (version 10): as for the filter itself, no body's maker can be the extrude's sketch (a sketch makes no body), so the test is always true."
   },
   {
     "file": "packages/account/src/data.ts",

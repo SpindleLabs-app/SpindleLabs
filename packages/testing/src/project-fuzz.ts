@@ -185,6 +185,25 @@ function drawSketch(r: SeededRandom, doc: DesignDocument): DesignDocument {
 }
 
 /**
+ * A region for an extrude of sketch `id` (step 48, Design data version 9),
+ * or none: about half the time some of the sketch's curves by id, in any
+ * order, some run backwards, and a centroid. Without a kernel nothing asks
+ * whether the sketch makes that region; a file may name one it no longer
+ * makes (its extrude then fails or keeps its last shape), so any such is
+ * valid. Chosen by a generator of its own, seeded from the document's id
+ * counter, so the rest of the seeded stream is as it was before step 48.
+ */
+function regionFor(doc: DesignDocument, id: string): Parameters<typeof extrudeSketch>[4] {
+  const curves = doc.sketches.find((s) => s.id === id)?.curves ?? [];
+  const own = seeded(BigInt(doc.nextId) + 48003n);
+  if (curves.length === 0 || own.next() < 0.5) return undefined;
+  const outer = curves.filter(() => own.next() < 0.8).map((c) => ({ curve: c.id, reversed: own.next() < 0.3 }));
+  if (outer.length === 0) return undefined;
+  if (own.next() < 0.3) outer.reverse();
+  return { outer, centroid: [Math.round(own.next() * 2000) / 10 - 100, Math.round(own.next() * 2000) / 10 - 100] };
+}
+
+/**
  * The kept shapes an edit that lost sketch `id`'s outline leaves (24d2):
  * each extrude of it with no kept shape yet keeps the sketch as it was in
  * `before`. Design's `settleKept` keeps it only when the kernel found an
@@ -214,7 +233,7 @@ function keepFor(r: SeededRandom, before: DesignDocument, after: DesignDocument,
 export function timelineEdits(r: SeededRandom, start: DesignDocument): DesignDocument {
   // A sketch extruded first, so most timelines have an extrude for the later edits to break.
   let doc = drawSketch(r, start);
-  if (r.next() < 0.8) doc = extrudeSketch(doc, doc.sketches.at(-1)!.id, 1 + below(r, 50)).doc;
+  if (r.next() < 0.8) doc = extrudeSketch(doc, doc.sketches.at(-1)!.id, 1 + below(r, 50), false, regionFor(doc, doc.sketches.at(-1)!.id)).doc;
   for (let k = 3 + below(r, 10); k > 0; k--) {
     const items = doc.timeline.features;
     const e = r.next();
@@ -222,7 +241,10 @@ export function timelineEdits(r: SeededRandom, start: DesignDocument): DesignDoc
     else if (e < 0.35) {
       // An extrude goes in at the marker, so only a sketch before it can be extruded.
       const open = items.slice(0, insertAt(doc)).filter(isSketchItem);
-      if (open.length > 0) doc = extrudeSketch(doc, pick(r, open).id, (below(r, 401) - 200) / 10 || 5).doc;
+      if (open.length > 0) {
+        const sketch = pick(r, open).id;
+        doc = extrudeSketch(doc, sketch, (below(r, 401) - 200) / 10 || 5, false, regionFor(doc, sketch)).doc;
+      }
     } else if (e < 0.41) doc = insertPreset(doc, pick(r, SHAPES), 1 + below(r, 50), 1 + below(r, 50), 1 + below(r, 50)).doc;
     else if (e < 0.5) {
       const solids = items.filter((f) => !isSketchItem(f));
@@ -612,12 +634,12 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   // Version 4 to 5 numbers the bodies as the file showed them, and version 5 is settled as an edit would settle it:
   // a body with no number gets the next, a gone item's number goes (35e).
   const v4 = upgraded.workspaces.design;
-  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9)) {
+  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 || v4.version === 10 || v4.version === 11)) {
     // Version 5 to 6 lists bodies by body id (35ec): the eyes' and each Move's.
-    const v5 = v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 ? v4 : migrateDesignV5({ ...v4, version: 5 });
-    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01); 7 to 8 (47f) and 8 to 9 (48) change no field.
-    const v6 = v5.version === 7 || v5.version === 8 || v5.version === 9 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
-    upgraded.workspaces.design = numberBodies({ ...v6, version: 9 } as unknown as DesignDocument);
+    const v5 = v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 || v4.version === 10 || v4.version === 11 ? v4 : migrateDesignV5({ ...v4, version: 5 });
+    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01); 7 to 8 (47f), 8 to 9 (48), 9 to 10 (Extrude's operations) and 10 to 11 (Duplicate) change no field.
+    const v6 = v5.version === 7 || v5.version === 8 || v5.version === 9 || v5.version === 10 || v5.version === 11 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
+    upgraded.workspaces.design = numberBodies({ ...v6, version: 11 } as unknown as DesignDocument);
   }
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;

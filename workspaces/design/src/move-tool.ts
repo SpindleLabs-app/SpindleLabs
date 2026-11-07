@@ -9,7 +9,7 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle, StlFile } from "@fission/core";
-import { actsOnBodies, bodyIdOf, bodyItem, isCombineItem, isDuplicateItem, isMoveItem, MOVE_PARAMS, type DesignDocument } from "./document.ts";
+import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, makesPieces, MOVE_PARAMS, type DesignDocument } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
 import { factorOf, madeAfter, movedBodies, moveValues, type MoveBox, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
@@ -344,7 +344,7 @@ export async function endSpec(kernel: KernelCalls, doc: DesignDocument, f: Featu
 export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<BodySpec[]> {
   // Moved, or used by a Combine (35f1): only a rebuild says where it ends.
   // A Duplicate's copy (35e2) too: only the rebuild makes it.
-  const moved = (f: Feature) => isDuplicateItem(f) || doc.timeline.features.some((m) => actsOnBodies(m) && m.dependsOn.includes(f.id));
+  const moved = (f: Feature) => isDuplicateItem(f) || doc.timeline.features.some((m) => (actsOnBodies(m) || isOperationExtrude(m)) && m.dependsOn.includes(f.id));
   let build: Awaited<ReturnType<typeof rebuildTimeline>> | null = null;
   if (features.some(moved)) {
     const cache = new BodyCache(kernel);
@@ -379,7 +379,7 @@ export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, feature
  */
 export async function endStls(kernel: KernelCalls, doc: DesignDocument, bodies: readonly { body: string; feature: Feature; name: string }[]): Promise<StlFile[]> {
   const files: StlFile[] = [];
-  if (!doc.timeline.features.some(isCombineItem)) {
+  if (!doc.timeline.features.some(makesPieces)) {
     // One rebuild for all the moved bodies, not one each (clumsy hunt 2026-11-04, endSpecs).
     const specs = await endSpecs(kernel, doc, bodies.map((b) => b.feature));
     for (const [i, b] of bodies.entries()) files.push(await kernel.call("export_stl", specs[i], b.name));

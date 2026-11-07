@@ -32,3 +32,4 @@ export { currentMouse, MOUSE_SETTING, readMouseChoice, startMouse } from "./mous
 export { currentUnit, readUnitChoice, startUnits, UNIT_CHOICES, UNIT_EVENT, UNIT_SETTING } from "./unit-choice.ts";
 export { CUSTOM_NAMES, DEFAULT_CUSTOM, contrast, deriveCustom, parseHex, readTokens, toHex, type CustomColours, type CustomResult } from "./custom-theme.ts";
 export { activate as activateTab, addTab, canAdd as canAddTab, closeQuestion, confirmClose, designTabs, MAX_TABS, NO_TABS, removeTab, restored as restoredTabs, shortName as tabShortName, stored as storedTabs, tabName, update as updateTab, workspaceChip, type DesignTab, type DesignTabsParts, type DesignTabsStrip, type TabsState } from "./design-tabs.ts";
+export { parseWhatsNew, whatsNewDate, whatsNewList, whatsNewNote, type WhatsNewVersion } from "./whats-new.ts";

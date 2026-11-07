@@ -227,6 +227,8 @@ export interface ExtrudeShow {
   /** The extrude as OK would make it, drawn see-through; null while there is none (nothing chosen yet, or the kernel refused it). */
   preview: DisplayMesh | null;
   arrow: ExtrudeArrow | null;
+  /** The preview is a Cut (Extrude's Operation): drawn red, as Fusion draws what a cut takes away. */
+  cut?: boolean;
 }
 
 /**

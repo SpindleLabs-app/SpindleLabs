@@ -8,6 +8,7 @@
 .feature-edit .feature-edit-row { display: block; margin: 6px 0; }
 .feature-edit .feature-edit-row input { width: 6em; }
 .feature-edit .feature-edit-note { color: var(--text-8b95a3); font-size: 0.9em; }
+.feature-edit .feature-edit-region { font-size: 0.9em; }
 .feature-edit .feature-edit-buttons { display: flex; gap: 6px; margin-top: 4px; }
 /* OK is the box's main action (UX2): bright blue, the one filled button. */
 .feature-edit #feature-edit-ok { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
@@ -20,4 +21,13 @@
   /* The row is the 44 px target; the box itself stays a box. */
   .feature-edit .feature-edit-flip { min-height: 44px; }
   .feature-edit .feature-edit-flip input { min-height: 0; width: 22px; height: 22px; }
+}
+/* An extrude's Operation row and its bodies (with ?combine), as in Extrude's panel. */
+.feature-edit .feature-edit-bodies { border: 1px solid var(--line-6cc4ff); border-radius: 4px; margin: 6px 0; padding: 4px 8px; }
+.feature-edit .feature-edit-body { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 2px 0; cursor: pointer; }
+.feature-edit .feature-edit-body input { flex: none; width: 16px; height: 16px; min-height: 0; margin: 0; }
+@media (max-width: 700px) {
+  .feature-edit .feature-edit-operation-select { min-height: 44px; }
+  .feature-edit .feature-edit-body { min-height: 44px; }
+  .feature-edit .feature-edit-body input { width: 22px; height: 22px; }
 }

@@ -30,6 +30,16 @@ Intro.
 """
 
 
+PUBLIC_START = """# What's new
+
+Intro.
+
+## 0.32.21 (2026-10-27)
+
+- Old public line.
+"""
+
+
 def frag(name, bump, date="2026-11-01"):
     return Fragment(name, bump, f"- Entry {name}.", date)
 
@@ -231,9 +241,9 @@ class LeakGuard(unittest.TestCase):
     def test_the_guard_catches_a_leaky_added_fragment_in_a_pr(self):
         # Same as a real PR: a clean entry passes, the same entry with a kernel
         # file name added fails with the leak message (a deliberate break).
-        clean = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster.\n")
+        clean = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster.\n\npublic: none\n")
         self.assertEqual(clean, [])
-        leaky = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster (widget.rs).\n")
+        leaky = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster (widget.rs).\n\npublic: none\n")
         self.assertEqual(len(leaky), 1)
         self.assertIn("widget.rs", leaky[0])
 
@@ -247,7 +257,7 @@ class CheckPr(unittest.TestCase):
         # for the tests that don't care about its text.
         for s, p in diff:
             if s == "A" and p.startswith("changelog.d/") and p.endswith(".md") and p not in files:
-                files[p] = "none\n\n- A change.\n"
+                files[p] = "none\n\n- A change.\n\npublic: none\n"
         return check_pr(diff, lambda p: self.BASE[p], lambda p: files[p])
 
     def test_one_new_fragment(self):
@@ -339,6 +349,194 @@ class CheckPr(unittest.TestCase):
         self.assertIn("a fold only folds", problems[0])
 
 
+class PublicPart(unittest.TestCase):
+    """The fragment's public part: the lines for What's new (WHATS_NEW.md)."""
+
+    def test_parsed(self):
+        f, problem = parse_fragment("a.md", "fix\n\n- Fixed the arc maths.\n\npublic:\n- Arcs far out no longer crash.\n- Two.\n")
+        self.assertIsNone(problem)
+        self.assertEqual((f.text, f.public), ("- Fixed the arc maths.", "- Arcs far out no longer crash.\n- Two."))
+        f, _ = parse_fragment("a.md", "none\n\n- Tests only.\n\npublic: none\n\n")
+        self.assertEqual((f.text, f.public), ("- Tests only.", ""))
+        # Merged before the public part existed: None, not "".
+        f, _ = parse_fragment("a.md", "none\n\n- Old.\n")
+        self.assertIsNone(f.public)
+
+    def test_refused(self):
+        cases = [
+            ("fix\n\n- x\n\npublic:\n", "is followed by the '- ' lines"),
+            ("fix\n\n- x\n\npublic:\nArcs work.\n", "is followed by the '- ' lines"),
+            ("fix\n\n- x\n\npublic: none\n- But this.\n", "line 6: nothing follows 'public: none'"),
+            ("fix\n\n- x\n\npublic:\n- a\npublic: none\n", "line 7: only one public part"),
+            ("fix\n\npublic:\n- a\n", "the entry must start with '- '"),
+        ]
+        for content, why in cases:
+            f, problem = parse_fragment("a.md", content)
+            self.assertIsNone(f, content)
+            self.assertIn(why, problem, content)
+
+    def test_a_new_fragment_needs_it(self):
+        # The break CI must catch: a fragment in the old form, with no public part.
+        problems = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "fix\n\n- Fixed it.\n")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("end it with its public part for What's new", problems[0])
+        for public in ("public: none", "public:\n- Arcs no longer crash."):
+            self.assertEqual(check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: f"fix\n\n- Fixed it.\n\n{public}\n"), [])
+
+    def test_public_leaks(self):
+        # Each tell in a public line, and a near miss of each that is fine.
+        leaky = [
+            ("- Fixed a flaky CI check.", "'CI'"),
+            ("- More browser tests for Move.", "'browser tests'"),
+            ("- The nightly fuzzing finds more.", "'nightly'"),
+            ("- Refactored the sketch code.", "'Refactored'"),
+            ("- Faster kernel booleans.", "'kernel'"),
+            ("- A looser tolerance for imported parts.", "'tolerance'"),
+            ("- Fixed an XSS in project names.", "'XSS'"),
+            ("- Closed a vulnerability in file opening.", "'vulnerability'"),
+            ("- Faster arcs (arc.rs).", "'arc.rs'"),
+        ]
+        for line, word in leaky:
+            problems = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p, line=line: f"fix\n\n- x\n\npublic:\n{line}\n")
+            self.assertEqual(len(problems), 1, line)
+            self.assertIn(word, problems[0], line)
+        fine = ["- Print a small test piece and measure it.", "- Security improvements.", "- Circles are smoother.",
+                "- Picking a CIrcle's centre.", "- The geometry engine restarts by itself."]
+        for line in fine:
+            self.assertEqual(check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p, line=line: f"fix\n\n- x\n\npublic:\n{line}\n"), [], line)
+        # The internal entry may say how it was tested; only the public part is held to this.
+        self.assertEqual(check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "fix\n\n- Nightly CI fuzzing found it.\n\npublic: none\n"), [])
+
+
+def pfrag(name, bump, public, date="2026-11-01"):
+    return Fragment(name, bump, f"- Entry {name}.", date, public=public)
+
+
+class FoldPublic(unittest.TestCase):
+    def test_hand_worked(self):
+        # From 0.32.21: f1 is a fix with nothing public (0.32.22), f2 a fix
+        # with a line (0.32.23), f3 a none with a line (joins 0.32.23, on top
+        # of f2), f4 step 40 (0.40.0). 0.32.22 gets no heading: the list jumps
+        # from 0.32.23 to 0.32.21, and nothing is renumbered.
+        sections = parse_changelog(START)[1]
+        fragments = [pfrag("f1", "fix", "", "2026-10-28"), pfrag("f2", "fix", "- B.", "2026-10-29"),
+                     pfrag("f3", "none", "- C.", "2026-10-30"), pfrag("f4", ("step", 40), "- D.", "2026-10-31")]
+        assigned = changelog.versions_of(sections, fragments)
+        self.assertEqual([v for _, v in assigned], [(0, 32, 22), (0, 32, 23), (0, 32, 23), (0, 40, 0)])
+        dates = {s.version: s.date for s in number(sections, fragments)}
+        got = changelog.fold_public(PUBLIC_START, assigned, dates)
+        self.assertEqual(got, PUBLIC_START.replace(
+            "## 0.32.21", "## 0.40.0 (2026-10-31)\n\n- D.\n\n## 0.32.23 (2026-10-29)\n\n- C.\n- B.\n\n## 0.32.21"))
+        self.assertEqual(changelog.check_public(got, number(sections, fragments)), [])
+
+    def test_into_the_middle(self):
+        # A version between two already listed goes between them.
+        text = PUBLIC_START.replace("## 0.32.21", "## 0.32.25 (2026-10-30)\n\n- New.\n\n## 0.32.21")
+        got = changelog.fold_public(text, [(pfrag("x", "fix", "- Mid."), (0, 32, 23))], {(0, 32, 23): "2026-10-29"})
+        self.assertIn("## 0.32.25 (2026-10-30)\n\n- New.\n\n## 0.32.23 (2026-10-29)\n\n- Mid.\n\n## 0.32.21", got)
+
+    def test_legacy_and_none_add_nothing(self):
+        assigned = [(pfrag("a", "fix", None), (0, 32, 22)), (pfrag("b", "fix", ""), (0, 32, 23))]
+        self.assertEqual(changelog.fold_public(PUBLIC_START, assigned, {}), PUBLIC_START)
+
+    def test_seeded_random(self):
+        # 300 seeded runs: random bumps and public parts in a random merge
+        # order. Every public line is listed exactly once, under the version
+        # the changelog gives its entry; versions with nothing public have no
+        # heading; the list passes its own check; and folding in two goes
+        # (fold, then fold again later) gives the same text as one go.
+        for seed in range(300):
+            rng = random.Random(seed)
+            fragments = []
+            for i in range(rng.randint(1, 12)):
+                bump = rng.choice(["fix", "fix", "none", ("step", rng.randint(33, 36))])
+                public = rng.choice([None, "", f"- Line {i}.", f"- Line {i}a.\n- Line {i}b."])
+                fragments.append(pfrag(f"f{i}", bump, public, f"2026-11-{i + 1:02d}"))
+            sections = parse_changelog(START)[1]
+            numbered = number(sections, fragments)
+            dates = {s.version: s.date for s in numbered}
+            assigned = changelog.versions_of(sections, fragments)
+            got = changelog.fold_public(PUBLIC_START, assigned, dates)
+            self.assertEqual(changelog.check_public(got, numbered), [], seed)
+            listed = {s.version: s.raw for s in parse_changelog(got)[1]}
+            for f, v in assigned:
+                for line in (f.public or "").splitlines():
+                    self.assertEqual(got.count(line + "\n"), 1, (seed, line))
+                    self.assertIn(line, listed[v], (seed, line))
+            public_versions = {v for f, v in assigned if f.public} | {(0, 32, 21)}
+            self.assertEqual(set(listed), public_versions, seed)
+            cut = rng.randint(0, len(fragments))
+            first = changelog.fold_public(PUBLIC_START, assigned[:cut], dates)
+            self.assertEqual(changelog.fold_public(first, assigned[cut:], dates), got, seed)
+
+
+class CheckPublic(unittest.TestCase):
+    SECTIONS = parse_changelog(START)[1]
+
+    def problems(self, text):
+        return changelog.check_public(text, self.SECTIONS)
+
+    def test_good(self):
+        self.assertEqual(self.problems(PUBLIC_START), [])
+        # Newer than CHANGELOG.md's newest heading: still a fragment, fine.
+        self.assertEqual(self.problems(PUBLIC_START.replace("## 0.32.21", "## 0.33.4 (2026-11-02)\n\n- Later.\n\n## 0.32.21")), [])
+        # A gap: 0.32.21 and 0.32.19 listed, 0.32.20 left out.
+        longer = parse_changelog(START + "\n## 0.32.19 (2026-10-25)\n\n- Oldest.\n")[1]
+        self.assertEqual(changelog.check_public(PUBLIC_START + "\n## 0.32.19 (2026-10-25)\n\n- Older.\n", longer), [])
+
+    def test_each_break(self):
+        cases = [
+            (PUBLIC_START.replace("# What's new", "# News"), "the title"),
+            (PUBLIC_START.replace("(2026-10-27)", "(2026-10-28)"), "CHANGELOG.md dates 0.32.21 2026-10-27, not 2026-10-28"),
+            (PUBLIC_START + "\n## 0.32.21 (2026-10-27)\n\n- Again.\n", "0.32.21 is listed twice"),
+            (PUBLIC_START + "\n## 0.32.25 (2026-10-27)\n\n- Up.\n", "must come below 0.32.21"),
+            (PUBLIC_START + "\n## 0.32.20 (2026-10-26)\n\n", "has no '- ' line"),
+            (PUBLIC_START + "\nJust words.\n", "only '- ' lines"),
+            (PUBLIC_START + "\n## 0.32.18 (2026-10-26)\n\n- Not a version.\n", "0.32.18 is not a version in CHANGELOG.md"),
+            (PUBLIC_START.replace("## 0.32.21 (2026-10-27)", "## Latest"), "must be a version"),
+            (PUBLIC_START.replace("- Old public line.", "- Fixed a CI check."), "'CI'"),
+            ("# What's new\n\nNothing yet.\n", "no version heading"),
+        ]
+        for text, why in cases:
+            found = self.problems(text)
+            self.assertTrue(any(why in p for p in found), (why, found))
+
+
+class WhatsNewInPr(unittest.TestCase):
+    BASE = {"CHANGELOG.md": START, "WHATS_NEW.md": PUBLIC_START,
+            "changelog.d/old.md": "fix\n\n- Old fix.\n\npublic:\n- Users see it.\n"}
+    FOLDED = START.replace("## 0.32.21", "## 0.32.22 (2026-10-28)\n\n- Old fix.\n\n## 0.32.21")
+
+    def run_check(self, diff, head):
+        files = dict(self.BASE, **head)
+        return check_pr(diff, lambda p: self.BASE[p], lambda p: files[p])
+
+    def test_fold_writes_the_public_line(self):
+        diff = [("M", "CHANGELOG.md"), ("M", "WHATS_NEW.md"), ("D", "changelog.d/old.md")]
+        good = PUBLIC_START.replace("## 0.32.21", "## 0.32.22 (2026-10-28)\n\n- Users see it.\n\n## 0.32.21")
+        self.assertEqual(self.run_check(diff, {"CHANGELOG.md": self.FOLDED, "WHATS_NEW.md": good}), [])
+        # Under the wrong version, or left out, is refused.
+        wrong = PUBLIC_START.replace("- Old public line.", "- Users see it.\n- Old public line.")
+        problems = self.run_check(diff, {"CHANGELOG.md": self.FOLDED, "WHATS_NEW.md": wrong})
+        self.assertEqual(len(problems), 1)
+        self.assertIn("isn't what fold writes", problems[0])
+        problems = self.run_check([("M", "CHANGELOG.md"), ("D", "changelog.d/old.md")], {"CHANGELOG.md": self.FOLDED})
+        self.assertEqual(problems, ["a fold writes the folded public lines into WHATS_NEW.md too; run changelog.py fold"])
+
+    def test_hand_edits(self):
+        new = "changelog.d/new.md"
+        frag_ = {new: "none\n\n- Typo.\n\npublic: none\n"}
+        fixed = PUBLIC_START.replace("- Old public line.", "- Old public line, put right.")
+        self.assertEqual(self.run_check([("A", new), ("M", "WHATS_NEW.md")], dict(frag_, **{"WHATS_NEW.md": fixed})), [])
+        heading = PUBLIC_START.replace("## 0.32.21", "## 0.32.22 (2026-10-28)\n\n- Mine.\n\n## 0.32.21")
+        problems = self.run_check([("A", new), ("M", "WHATS_NEW.md")], dict(frag_, **{"WHATS_NEW.md": heading}))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("WHATS_NEW.md gains the heading 0.32.22 (2026-10-28)", problems[0])
+        problems = self.run_check([("A", new), ("D", "WHATS_NEW.md")], frag_)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("don't delete it", problems[0])
+
+
 class RealGit(unittest.TestCase):
     """The commands on real repositories: pull requests merged with merge
     commits (as the merge queue does), in an order unlike their names'."""
@@ -350,6 +548,7 @@ class RealGit(unittest.TestCase):
         self.git("config", "user.email", "t@example.com")
         self.git("config", "commit.gpgsign", "false")
         self.write("CHANGELOG.md", START)
+        self.write("WHATS_NEW.md", PUBLIC_START)
         self.write("changelog.d/README.txt", "Fragments.\n")
         self.commit("start")
 
@@ -370,9 +569,9 @@ class RealGit(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", message, date=date)
 
-    def branch(self, name, bump, base="main"):
+    def branch(self, name, bump, base="main", public="public: none"):
         self.git("checkout", "-q", "-b", name, base)
-        self.write(f"changelog.d/{name}.md", f"{bump}\n\n- Entry {name}.\n")
+        self.write(f"changelog.d/{name}.md", f"{bump}\n\n- Entry {name}.\n\n{public}\n")
         self.commit(name)
         self.git("checkout", "-q", "main")
 
@@ -387,8 +586,11 @@ class RealGit(unittest.TestCase):
         # Three pull requests branch off the same main; they merge z, a, m.
         # z (fix) merged first: 0.32.22 on the 28th; a (fix) 0.32.23 on the
         # 29th; m (none) joins 0.32.23. By name they would be a, m, z.
-        for name, bump in [("a", "fix"), ("m", "none"), ("z", "fix")]:
-            self.branch(name, bump)
+        # z and m have public lines, a has none, so What's new lists 0.32.23
+        # for m alone and 0.32.22 for z.
+        for name, bump, public in [("a", "fix", "public: none"), ("m", "none", "public:\n- Public m."),
+                                   ("z", "fix", "public:\n- Public z.")]:
+            self.branch(name, bump, public=public)
         self.merge("z", "2026-10-28T23:30:00Z")
         # a merges main in first (as threads do): z's fragment reaches a's
         # branch, but on main it was added by z's merge, not a's.
@@ -410,14 +612,23 @@ class RealGit(unittest.TestCase):
 
 ## 0.32.21 (2026-10-27)""", out)
         self.assertEqual(self.run_script("version"), (0, "0.32.23\n"))
+        code, public = self.run_script("public")
+        self.assertEqual(code, 0, public)
+        self.assertEqual(public, PUBLIC_START.replace("## 0.32.21", "## 0.32.23 (2026-10-29)\n\n- Public m.\n\n"
+                                                      "## 0.32.22 (2026-10-28)\n\n- Public z.\n\n## 0.32.21"))
 
         # Fold, commit it as a pull request would, then one more fix merges:
         # the numbers before the fold stay, the new one follows on.
         code, out = self.run_script("fold")
         self.assertEqual((code, out), (0, "folded 3 fragment(s); the version is 0.32.23\n"))
         self.assertEqual(sorted(os.listdir(os.path.join(self.dir, "changelog.d"))), ["README.txt"])
+        with open(os.path.join(self.dir, "WHATS_NEW.md"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), public)  # fold writes what public showed
         self.git("checkout", "-q", "-b", "fold")
         self.commit("fold")
+        # CI's check of the fold pull request agrees with fold itself.
+        r = subprocess.run([sys.executable, SCRIPT, "pr", "main", "fold", self.dir], capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stdout), (0, "this pull request's changelog files are in order\n"))
         self.branch("b", "fix", base="main")
         self.merge("b", "2026-10-30T02:00:00Z")
         self.merge("fold", "2026-10-30T03:00:00Z")

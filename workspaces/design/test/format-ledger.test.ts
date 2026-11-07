@@ -23,11 +23,14 @@ export function propertyNames(source: string, name: string): string[] {
   return [...body.matchAll(/^ {2}([A-Za-z_]\w*)\??:/gm)].map((m) => m[1]);
 }
 
-// Design data version 9 (48): an extrude of a sketch may name its region (`region`, held to its fields below), which
+// Design data version 11 (35e2m): a Duplicate item (`intent.type` "duplicate", its `body` in its parameters, which hold
+// no typed fields, so nothing new below), which a version 10 reader would refuse as an unknown item. Version 10: an extrude of a sketch may join, cut or intersect bodies made before it (`operation` and
+// `bodies` in its parameters, which hold no typed fields, so nothing new below), which a version 9 reader would build
+// as a new body. Version 9 (48): an extrude of a sketch may name its region (`region`, held to its fields below), which
 // a version 8 reader would build as the sketch's one outline. Version 8 (47e, 47f): construction curves
 // (`construction` on each curve kind) and dimensions (two new constraint kinds), which a version 7 reader would build
 // without. Changing any list: see the top of this file.
-const LEDGER_VERSION = 9;
+const LEDGER_VERSION = 11;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

@@ -113,7 +113,7 @@ test("hand-worked: a Combine's pieces are numbered when they first appear, kept 
 test("a file's piece must be a Combine's: a piece of a box is refused, a piece of a deleted item is dropped", () => {
   const withPiece = (id: string) => file({}, {}, { bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { id, number: 3 }], nextBody: 4 });
   assert.deepEqual(readDesignDocument(withPiece("body:feature-3/piece:2")).bodies?.at(-1), { id: "body:feature-3/piece:2", number: 3 });
-  assert.throws(() => readDesignDocument(withPiece("body:feature-1/piece:1")), { message: 'Design body body:feature-1/piece:1 is not "body:" and the id of an item that makes a body, or a piece of a Combine' });
+  assert.throws(() => readDesignDocument(withPiece("body:feature-1/piece:1")), { message: 'Design body body:feature-1/piece:1 is not "body:" and the id of an item that makes a body, or a piece of a Combine or of an extrude that joins, cuts or intersects' });
   // A piece whose item is gone: settled as a body whose item is gone, its number dropped.
   assert.equal(readDesignDocument(withPiece("body:feature-0/piece:1")).bodies?.length, 2);
   // A Move can move a piece the file numbers (35ec), so a later Combine can use one too.

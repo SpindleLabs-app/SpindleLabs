@@ -72,6 +72,12 @@ test("the reader takes a Duplicate as written and refuses one broken in each way
   assert.throws(() => readDesignDocument(broken((f) => delete f.intent.parameters.body)), { message: "Design duplicate feature-3 copies undefined, which is not a body made before it in the timeline" });
   assert.throws(() => readDesignDocument(broken((f) => (f.dependsOn = ["feature-2"]))), { message: "Design duplicate feature-3 must depend on exactly the item that made the body it copies (feature-1)" });
   assert.throws(() => readDesignDocument(broken((f) => (f.dependsOn = ["feature-1", "feature-2"]))), { message: "Design duplicate feature-3 must depend on exactly the item that made the body it copies (feature-1)" });
+  // Design data version 11 brought the Duplicate: a file saying version 10 with one is refused, naming both; version 10
+  // without one reads as 11, unchanged.
+  assert.equal(readDesignDocument(good).version, 11);
+  assert.throws(() => readDesignDocument({ ...good, version: 10 }), { message: "Design data says version 10 but has a Duplicate, which version 11 brought" });
+  const plain = JSON.parse(JSON.stringify(twoBodies()));
+  assert.deepEqual(readDesignDocument({ ...plain, version: 10 }), readDesignDocument(plain));
   // A body deleted since may stay, as a Move's may: the rebuild fails the copy, naming it.
   const gone = JSON.parse(JSON.stringify(deleteItem(insertDuplicates(twoBodies(), ["body:feature-1"]).doc, "feature-1")));
   assert.equal(item(readDesignDocument(gone), "feature-3").intent.parameters.body, "body:feature-1");
