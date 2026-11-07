@@ -3,6 +3,8 @@
 // it draws. Clicks on the view go to Measure while it is open and select
 // nothing; a rebuild lets the picks go (the bodies they were on may have
 // changed); a change of unit shows the same numbers again in the new one.
+// While open, every shown body's corners are offered to the view to pick
+// (35e2l3): a click near one picks it ahead of the edges meeting there.
 // The workspace makes one and hands it the view's picks.
 
 import { kernelFailure, type AnalysisOverlay, type BodyHandle, type MeasurePick, type Measured, type Unit, type ViewportPick } from "@fission/core";
@@ -27,6 +29,8 @@ export interface MeasureDeps {
   over: HTMLElement;
   /** A distance has landed: a phone's Properties sheet opens on it (not before, so the view stays clear for the picks). */
   reveal(): void;
+  /** Offers these corners to the view to pick (Viewport.showCorners), null for none: every shown body's while open. */
+  offerCorners(corners: readonly (readonly [number, number, number])[] | null): void;
 }
 
 export interface MeasureView {
@@ -49,14 +53,29 @@ export interface MeasureView {
 }
 
 /** The hint over the view while picking (short, for a phone's narrow view): nothing picked yet, then one. */
-export const VIEW_HINTS = ["Measure: click or tap a face, edge or body", "Now click or tap a second thing"] as const;
+export const VIEW_HINTS = ["Measure: click or tap a face, edge, corner or body", "Now click or tap a second thing"] as const;
 
 /** What Measure says when the kernel can't measure a pick. */
 export const MEASURE_FAILED = "These can't be measured";
 
-/** The thing a click picks: a face or edge, or with a double-click the whole body under it; null for empty space. */
+/**
+ * Every shown body's corners, one after another in the scene's order, as
+ * offered to the view, and whose each is: shown body `body`'s corner
+ * `index` (the kernel's), at `at` (exact, the kernel's vertex_points).
+ */
+export function sceneCorners(scene: Scene | null): { body: number; index: number; at: readonly [number, number, number] }[] {
+  return (scene?.bodies ?? []).flatMap((b, body) => b.view.vertex_points.map((at, index) => ({ body, index, at })));
+}
+
+/** The thing a click picks: a corner, edge or face, or with a double-click the whole body under it; null for empty space. */
 export function targetOf(pick: ViewportPick, scene: Scene | null): MeasureTarget | null {
   if (!scene) return null;
+  if (pick.vertex !== undefined) {
+    // A corner: its place among the corners offered (sceneCorners).
+    const c = sceneCorners(scene)[pick.vertex];
+    if (c === undefined) return null;
+    return pick.double ? { body: c.body, kind: "body" } : { body: c.body, kind: "vertex", index: c.index };
+  }
   const edge = pick.edge ?? null;
   const hit = edge !== null ? sceneHit(scene, "edge", edge) : pick.face !== null ? sceneHit(scene, "face", pick.face) : null;
   if (hit === null) return null;
@@ -108,8 +127,21 @@ export function measureView(d: MeasureDeps): MeasureView {
     // The picked faces tinted too, so what was measured shows on the part.
     const scene = d.scene();
     const faces = [picks.first, picks.second].flatMap((t) => (t && t.kind === "face" && scene ? [{ target: { face: scene.faceStart[t.body] + t.index }, severity: "info" as const }] : []));
-    if (o || faces.length > 0) d.showOverlay({ ...(o ?? { id: MEASURE_OVERLAY, label: "Measure", places: [] }), marks: faces });
+    // A picked corner gets a dot, so it shows before there is a line (35e2l3).
+    const corners = [picks.first, picks.second].flatMap((t) => {
+      const at = t && t.kind === "vertex" ? scene?.bodies[t.body]?.view.vertex_points[t.index] : undefined;
+      return at ? [{ severity: "info" as const, point: at }] : [];
+    });
+    if (o || faces.length > 0 || corners.length > 0) {
+      const base = o ?? { id: MEASURE_OVERLAY, label: "Measure", places: [] };
+      d.showOverlay({ ...base, marks: faces, places: [...(base.places ?? []), ...corners] });
+    }
     else d.clearOverlay(MEASURE_OVERLAY);
+  }
+  /** Every shown body's corners offered to the view (sceneCorners' order, which targetOf reads picks by). */
+  function offer() {
+    const all = sceneCorners(d.scene());
+    d.offerCorners(all.length > 0 ? all.map((c) => c.at) : null);
   }
   function run() {
     const run = ++asked;
@@ -137,6 +169,7 @@ export function measureView(d: MeasureDeps): MeasureView {
       picks = NO_PICKS;
       measured = null;
       panel.show();
+      offer();
       run();
       d.changed();
     },
@@ -146,6 +179,7 @@ export function measureView(d: MeasureDeps): MeasureView {
       picks = NO_PICKS;
       measured = null;
       panel.hide();
+      d.offerCorners(null);
       showHint();
       d.clearOverlay(MEASURE_OVERLAY);
       d.changed();
@@ -161,6 +195,7 @@ export function measureView(d: MeasureDeps): MeasureView {
     },
     rebuilt() {
       if (!panel.shown) return;
+      offer(); // the new bodies' corners
       picks = NO_PICKS;
       run();
     },

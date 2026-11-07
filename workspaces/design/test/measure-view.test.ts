@@ -12,7 +12,7 @@ import { insertPreset, partDocument, type DesignDocument } from "../src/document
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 import { joinBodies, shownBodies, type Scene } from "../src/scene.ts";
-import { MEASURE_FAILED, measureView, targetOf, VIEW_HINTS } from "../src/measure-view.ts";
+import { MEASURE_FAILED, measureView, sceneCorners, targetOf, VIEW_HINTS } from "../src/measure-view.ts";
 import { MEASURE_OVERLAY } from "../src/measure-tool.ts";
 import { NOTHING_PICKED } from "../src/measure-panel.ts";
 
@@ -51,6 +51,7 @@ async function setup() {
   const overlays = new Map<string, AnalysisOverlay>();
   let changes = 0;
   let reveals = 0;
+  let corners: readonly (readonly number[])[] | null = null;
   const over = doc.createElement("div");
   doc.body.append(over);
   const view = measureView({
@@ -67,9 +68,10 @@ async function setup() {
     showOverlay: (o) => void overlays.set(o.id, o),
     clearOverlay: (id) => void overlays.delete(id),
     changed: () => void changes++,
+    offerCorners: (c) => void (corners = c),
   });
   const text = (id: string) => doc.getElementById(id)?.textContent ?? null;
-  return { scene, view, doc, text, overlays, changes: () => changes, reveals: () => reveals, setUnit: (u: Unit) => (unit = u), setScene: (s: Scene | null) => (current = s), cache, build };
+  return { scene, view, doc, text, overlays, changes: () => changes, reveals: () => reveals, setUnit: (u: Unit) => (unit = u), setScene: (s: Scene | null) => (current = s), cache, build, corners: () => corners };
 }
 
 test("hand-worked on the real kernel: the facing faces of two cubes are 15 mm apart, and 0.591 in", async () => {
@@ -182,5 +184,73 @@ test("targetOf: an edge wins over the face under it, a double-click the body, no
   assert.deepEqual(targetOf(click(4, { double: true }), scene), { body: 0, kind: "body" });
   assert.equal(targetOf(click(null), scene), null);
   assert.equal(targetOf(click(1), null), null);
+  await cache.close();
+});
+
+/** The click on the offered corner at `at` (its place among sceneCorners), as the view reports one. */
+function cornerClick(scene: Scene, body: number, at: (pts: readonly (readonly number[])[]) => readonly number[], extra: Partial<ViewportPick> = {}): ViewportPick {
+  const all = sceneCorners(scene);
+  const want = at(scene.bodies[body].view.vertex_points);
+  const k = all.findIndex((c) => c.body === body && c.at.every((x, j) => x === want[j]));
+  assert.ok(k >= 0, `body ${body} offers the corner ${want}`);
+  return { face: null, edge: null, vertex: k, shift: false, ...extra };
+}
+/** A cube's corner with the largest (or smallest) x + y + z: the one at its top far corner (or its bottom near one). */
+const extreme = (sign: 1 | -1) => (pts: readonly (readonly number[])[]) => pts.reduce((a, b) => (sign * (b[0] + b[1] + b[2]) > sign * (a[0] + a[1] + a[2]) ? b : a));
+
+test("35e2l3 hand-worked on the real kernel: corner to corner between the two cubes is √425 = 20.616 mm", async () => {
+  const s = await setup();
+  s.view.open();
+  // Every corner of both cubes is offered: 8 + 8.
+  assert.equal(s.corners()?.length, 16);
+  // Body 1's top far corner A = (x1, y1, z1) + (10, 10, 10); Body 2's bottom near corner B = (x1, y1, z1) + (25, 0, 0)
+  // (the same cube moved 25 mm along x). B − A = (15, −10, −10), so the distance is √(15² + 10² + 10²) = √425 = 20.6155… → 20.616 mm.
+  s.view.pick(cornerClick(s.scene, 0, extreme(1)));
+  await s.view.settled;
+  assert.equal(s.text("measure-first-name"), "Corner of Body 1");
+  const dot = s.overlays.get(MEASURE_OVERLAY)?.places ?? [];
+  assert.equal(dot.length, 1, "one corner picked: a dot on it, no line yet");
+  assert.deepEqual((dot[0] as { point: number[] }).point, extreme(1)(s.scene.bodies[0].view.vertex_points));
+  s.view.pick(cornerClick(s.scene, 1, extreme(-1)));
+  await s.view.settled;
+  assert.equal(s.text("measure-second-name"), "Corner of Body 2");
+  assert.equal(s.text("measure-distance"), "20.616 mm");
+  assert.equal(s.text("measure-dx"), "15 mm");
+  assert.equal(s.text("measure-dy"), "-10 mm");
+  assert.equal(s.text("measure-dz"), "-10 mm");
+  // A corner and a face: from A to Body 2's −x face (x = x1 + 25) is straight along x, 25 − 10 = 15 mm.
+  // (Clicking A again now would let it go, so start afresh first.) And B, which lies on that face, is 0 from it.
+  s.view.rebuilt();
+  s.view.pick(cornerClick(s.scene, 0, extreme(1)));
+  s.view.pick(click(faceOf(s.scene, 1, [-1, 0, 0])));
+  await s.view.settled;
+  assert.equal(s.text("measure-distance"), "15 mm");
+  assert.equal(s.overlays.get(MEASURE_OVERLAY)?.marks.length, 1, "the face tinted");
+  s.view.rebuilt();
+  s.view.pick(cornerClick(s.scene, 1, extreme(-1)));
+  s.view.pick(click(faceOf(s.scene, 1, [-1, 0, 0])));
+  await s.view.settled;
+  assert.equal(s.text("measure-distance"), "0 mm");
+  // Closing takes the corners away from the view; a rebuild while open offers the new bodies' again.
+  s.view.close();
+  assert.equal(s.corners(), null);
+  s.view.open();
+  assert.equal(s.corners()?.length, 16);
+  s.setScene(null);
+  s.view.rebuilt();
+  assert.equal(s.corners(), null, "no bodies: no corners");
+  await s.cache.close();
+});
+
+test("35e2l3 targetOf: a corner by its place among those offered, a double-click on it the body, a stale place nothing", async () => {
+  const { scene, cache } = await twoCubes();
+  const all = sceneCorners(scene);
+  // Body 1's 8 corners first, then Body 2's: place 8 + 3 is Body 2's corner 3.
+  assert.equal(all.length, 16);
+  assert.deepEqual(targetOf({ face: null, edge: null, vertex: 11, shift: false }, scene), { body: 1, kind: "vertex", index: 3 });
+  assert.deepEqual(all[11].at, scene.bodies[1].view.vertex_points[3]);
+  assert.deepEqual(targetOf({ face: null, edge: null, vertex: 2, shift: false, double: true }, scene), { body: 0, kind: "body" });
+  assert.equal(targetOf({ face: null, edge: null, vertex: 16, shift: false }, scene), null, "past the corners offered");
+  assert.equal(targetOf({ face: null, edge: null, vertex: 0, shift: false }, null), null);
   await cache.close();
 });

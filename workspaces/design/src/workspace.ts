@@ -200,7 +200,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const printCheck = button("inspect-print-check", "Print check", printCheckTitle, () => inspect.printCheck());
   printCheck.setAttribute("aria-pressed", "false");
   // Measure (35e2l2, measure-view.ts): pick two things, read the distance and angle between them; lit while open.
-  const measureTitle = "Measure: click a face, edge or body for its size, then another for the distance and angle between them, from the exact model.";
+  const measureTitle = "Measure: click a face, edge, corner or body for its size, then another for the distance and angle between them, from the exact model.";
   const measure = button("inspect-measure", "Measure", measureTitle, () => inspect.measure());
   measure.setAttribute("aria-pressed", "false");
   // Exploded view (explode.ts): the bodies drawn pulled apart, view only; pressed while on.
@@ -2891,6 +2891,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     over: viewport.element,
     // A phone opens its Properties sheet (main.ts) once there is a distance to read, not before: the view stays clear for the picks.
     reveal: () => ctx.properties.dispatchEvent(new Event("properties-reveal", { bubbles: true })),
+    offerCorners: (corners) => viewport.showCorners(corners), // corners to pick (35e2l3)
   });
   /** Inspect ▾ Measure: every other tool put away first, and the selection let go (a click now picks for Measure). */
   function startMeasure() {
