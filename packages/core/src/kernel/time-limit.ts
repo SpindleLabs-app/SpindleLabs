@@ -17,7 +17,7 @@
 // size. So the limit of any legal call is at least HEADROOM times what it
 // needs, on any device whose calibration is as slow as its other calls.
 import type { KernelOps } from "./kernel-client.ts";
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, Loop, Outline, ShapeSpec, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, Loop, MeasurePick, Outline, ShapeSpec, SupportStyle } from "./kernel-types.ts";
 
 /** The calibration boolean's bodies: two 10 mm cubes, the second moved 5 mm along each axis, so they overlap in a 5 mm cube (36 face pairs). */
 export const CALIBRATION_TARGET: BodySpec = { box: { width: 10, depth: 10, height: 10 } };
@@ -407,6 +407,13 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       const target = sizeOf(a[0] as BodyHandle);
       const tools = (a[1] as BodyHandle[]).map(sizeOf);
       return target && tools.every((t) => t) ? booleanUnits(target, tools as BodySize[]) : 0;
+    }
+    case "body_measure": {
+      // Two picks cost at most what joining their bodies would (every edge of one against every face of the other).
+      const [first, second] = a as [MeasurePick, MeasurePick | null];
+      const one = sizeOf(first.body);
+      const other = second === null ? one : sizeOf(second.body);
+      return one && other ? booleanUnits(one, [other]) : 0;
     }
     case "sketch_outline":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);

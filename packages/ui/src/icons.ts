@@ -38,6 +38,8 @@ export const ICONS = {
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
   // The print check (Inspect ▾, H1): a nozzle over printed layers.
   "print-check": [tone("M4 15H20V20H4Z"), line("M9 3H15V7L13 10H11L9 7ZM12 10V12.5M4 15H20V20H4ZM4 17.5H20")],
+  // A dimension between two upright ticks, an arrow at each end over a ruler: Measure (Inspect ▾, 35e2l).
+  measure: [tone("M3 15H21V20H3Z"), line("M3 15H21V20H3ZM7 15V17M11 15V18M15 15V17M19 15V18M4 4V11M20 4V11M4 7.5H20M7 5.5 4 7.5 7 9.5M17 5.5 20 7.5 17 9.5")],
   // Two blocks pushed apart along a diagonal arrow: Inspect ▾ Exploded view.
   explode: [tone("M3.5 13.5H10.5V20.5H3.5Z"), line("M3.5 13.5H10.5V20.5H3.5ZM13.5 3.5H20.5V10.5H13.5ZM10.5 13.5 13.5 10.5M10.5 10.5H13.5V13.5")],
   // The presets (Insert ▾), one per shape.

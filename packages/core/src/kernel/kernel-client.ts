@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -31,6 +31,8 @@ export interface KernelOps {
    * result face and edge came from, by input handle. A refusal keeps nothing.
    */
   body_boolean: { args: [target: BodyHandle, tools: BodyHandle[], op: BooleanOp]; result: BooleanResult };
+  /** Measures one pick, or two (step 35e2l): their facts, the least distance with its two points, the angle and centre to centre. */
+  body_measure: { args: [first: MeasurePick, second: MeasurePick | null]; result: Measured };
   /** How many bodies the kernel keeps: tests check what they build they free. */
   body_count: { args: []; result: number };
   /** Slices one or more binary STL files (back to back, a body each) with the beginner's choices: layer height (mm), wall count, infill (%), supports under overhangs (off, normal or tree), the warm-up loop (two loops round the first layer, printed first) and Better grip (a 5 mm brim, and a slower, 5 °C hotter first layer). */
@@ -458,6 +460,13 @@ export class KernelClient implements KernelCalls {
       });
     }
     if (op === "body_boolean") return this.boolean(...(args as KernelOps["body_boolean"]["args"]), units) as Promise<KernelOps[K]["result"]>;
+    // Measure's picks name bodies by the app's handles: each sent as the kernel's number (35e2l2).
+    if (op === "body_measure") {
+      const picks = (args as KernelOps["body_measure"]["args"]).map((p) => (p === null ? null : { pick: p, held: this.bodies.get(p.body) }));
+      const unknown = picks.find((p) => p !== null && !p.held);
+      if (unknown) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${unknown.pick.body} is not in the kernel (it was freed, or never made)` }));
+      return this.send(op, picks.map((p) => (p === null ? null : { ...p.pick, body: p.held!.body })) as KernelOps[K]["args"], units) as Promise<KernelOps[K]["result"]>;
+    }
     if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide") {
       const handle = args[0] as BodyHandle;
       const held = this.bodies.get(handle);
