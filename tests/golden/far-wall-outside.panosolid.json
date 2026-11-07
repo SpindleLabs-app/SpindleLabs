@@ -1,0 +1,329 @@
+{
+  "formatVersion": 2,
+  "links": [],
+  "materials": [],
+  "name": "Far wall outside",
+  "units": {
+    "length": "mm"
+  },
+  "workspaces": {
+    "design": {
+      "bodies": [
+        {
+          "id": "body:feature-15",
+          "number": 2
+        },
+        {
+          "id": "body:feature-29",
+          "number": 3
+        }
+      ],
+      "hidden": [
+        "sketch-2",
+        "sketch-16"
+      ],
+      "nextBody": 4,
+      "nextId": 31,
+      "profiles": [],
+      "sketches": [
+        {
+          "constraints": [
+            {
+              "a": "point-3",
+              "b": "point-4",
+              "id": "constraint-11",
+              "kind": "horizontal"
+            },
+            {
+              "a": "point-4",
+              "b": "point-6",
+              "id": "constraint-12",
+              "kind": "vertical"
+            },
+            {
+              "a": "point-6",
+              "b": "point-8",
+              "id": "constraint-13",
+              "kind": "horizontal"
+            },
+            {
+              "a": "point-8",
+              "b": "point-3",
+              "id": "constraint-14",
+              "kind": "vertical"
+            }
+          ],
+          "curves": [
+            {
+              "end": "point-4",
+              "id": "line-5",
+              "kind": "line",
+              "start": "point-3"
+            },
+            {
+              "end": "point-6",
+              "id": "line-7",
+              "kind": "line",
+              "start": "point-4"
+            },
+            {
+              "end": "point-8",
+              "id": "line-9",
+              "kind": "line",
+              "start": "point-6"
+            },
+            {
+              "end": "point-3",
+              "id": "line-10",
+              "kind": "line",
+              "start": "point-8"
+            }
+          ],
+          "id": "sketch-2",
+          "points": [
+            {
+              "id": "point-3",
+              "x": 0,
+              "y": 10
+            },
+            {
+              "id": "point-4",
+              "x": 40,
+              "y": 10
+            },
+            {
+              "id": "point-6",
+              "x": 40,
+              "y": 40
+            },
+            {
+              "id": "point-8",
+              "x": 0,
+              "y": 40
+            }
+          ]
+        },
+        {
+          "constraints": [
+            {
+              "a": "point-17",
+              "b": "point-18",
+              "id": "constraint-25",
+              "kind": "horizontal"
+            },
+            {
+              "a": "point-18",
+              "b": "point-20",
+              "id": "constraint-26",
+              "kind": "vertical"
+            },
+            {
+              "a": "point-20",
+              "b": "point-22",
+              "id": "constraint-27",
+              "kind": "horizontal"
+            },
+            {
+              "a": "point-22",
+              "b": "point-17",
+              "id": "constraint-28",
+              "kind": "vertical"
+            }
+          ],
+          "curves": [
+            {
+              "end": "point-18",
+              "id": "line-19",
+              "kind": "line",
+              "start": "point-17"
+            },
+            {
+              "end": "point-20",
+              "id": "line-21",
+              "kind": "line",
+              "start": "point-18"
+            },
+            {
+              "end": "point-22",
+              "id": "line-23",
+              "kind": "line",
+              "start": "point-20"
+            },
+            {
+              "end": "point-17",
+              "id": "line-24",
+              "kind": "line",
+              "start": "point-22"
+            }
+          ],
+          "id": "sketch-16",
+          "points": [
+            {
+              "id": "point-17",
+              "x": 10,
+              "y": 5
+            },
+            {
+              "id": "point-18",
+              "x": 30,
+              "y": 5
+            },
+            {
+              "id": "point-20",
+              "x": 30,
+              "y": 30
+            },
+            {
+              "id": "point-22",
+              "x": 10,
+              "y": 30
+            }
+          ]
+        }
+      ],
+      "timeline": {
+        "features": [
+          {
+            "dependsOn": [],
+            "id": "sketch-2",
+            "intent": {
+              "parameters": {
+                "plane": "XY"
+              },
+              "summary": "Sketch 1 on the XY plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-2",
+                "label": "Sketch 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-2"
+            ],
+            "id": "feature-15",
+            "intent": {
+              "parameters": {
+                "distance": 20,
+                "sketch": "sketch-2"
+              },
+              "summary": "Extrude Sketch 1 by 20 mm",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-2",
+                  "label": "Sketch 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-15",
+                "label": "Extrude 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "sketch-16",
+            "intent": {
+              "parameters": {
+                "plane": "XZ"
+              },
+              "summary": "Sketch 2 on the XZ plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-16",
+                "label": "Sketch 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-16"
+            ],
+            "id": "feature-29",
+            "intent": {
+              "parameters": {
+                "distance": 40.0005,
+                "flip": true,
+                "sketch": "sketch-16"
+              },
+              "summary": "Extrude Sketch 2 by 40.0005 mm, flipped",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-16",
+                  "label": "Sketch 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-29",
+                "label": "Extrude 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-15",
+              "feature-29"
+            ],
+            "id": "feature-30",
+            "intent": {
+              "parameters": {
+                "keepTools": false,
+                "operation": "cut",
+                "target": "body:feature-15",
+                "tools": [
+                  "body:feature-29"
+                ]
+              },
+              "summary": "Cut Extrude 2 from Extrude 1",
+              "type": "combine"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-15",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-29",
+                  "label": "Extrude 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-30",
+                "label": "Combine 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          }
+        ]
+      },
+      "version": 8
+    }
+  }
+}

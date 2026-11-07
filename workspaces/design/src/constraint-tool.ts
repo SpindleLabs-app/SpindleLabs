@@ -21,7 +21,7 @@ import type { SketchXY } from "@fission/core";
 import type { Sketch, SketchConstraint } from "./document.ts";
 import type { NewConstraint } from "./constraints.ts";
 import { shownValue } from "./typed-entry.ts";
-import { curveAt, toSegment } from "./sketch-select.ts";
+import { curveAt, curveNear, toSegment } from "./sketch-select.ts";
 
 /** The constraint tools' kinds: the constraints' own, and Dimension for distances and diameters. */
 export type ConstraintKind = Exclude<SketchConstraint["kind"], "distance" | "diameter"> | "dimension";
@@ -237,6 +237,11 @@ export function constraintMarks(sketch: Sketch, size: number): Map<string, Segme
 
 /** The constraint whose mark (drawn `size` mm across) passes within `reach` mm of `at`, the nearest; null for none. The Select tool picks it, so Delete takes the constraint off. */
 export function markAt(sketch: Sketch, at: SketchXY, reach: number, size: number): string | null {
+  return markNear(sketch, at, reach, size)?.id ?? null;
+}
+
+/** `markAt`'s mark with how far it is from `at`, or null. */
+function markNear(sketch: Sketch, at: SketchXY, reach: number, size: number): { id: string; d: number } | null {
   let best: string | null = null;
   let nearest = Infinity;
   for (const [id, segments] of constraintMarks(sketch, size)) {
@@ -245,7 +250,22 @@ export function markAt(sketch: Sketch, at: SketchXY, reach: number, size: number
       if (d <= reach && d < nearest) [best, nearest] = [id, d];
     }
   }
-  return best;
+  return best === null ? null : { id: best, d: nearest };
+}
+
+/**
+ * What the Select tool picks at `at`: a constraint's mark within half the
+ * reach (marks sit beside their curves, so a curve is in reach of them
+ * too), unless a curve is nearer than it, else the nearest curve. A
+ * rectangle's own marks sit inside small shapes at phone zoom, where they
+ * took the pick from a diagonal right under the finger (the solver bug
+ * hunt, 2026-11-06).
+ */
+export function selectAt(sketch: Sketch, at: SketchXY, reach: number, size: number): string | null {
+  const mark = markNear(sketch, at, reach / 2, size);
+  const curve = curveNear(sketch, at, reach);
+  if (mark === null || (curve !== null && curve.d < mark.d)) return curve?.id ?? null;
+  return mark.id;
 }
 
 /** How far beside what it sizes a dimension line is drawn, in mark sizes. */

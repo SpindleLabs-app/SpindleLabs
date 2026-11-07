@@ -70,7 +70,7 @@ save)
   id=(-c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com)
   subject="kernel-ci $dest"
   git "${id[@]}" add -A >/dev/null
-  git "${id[@]}" commit -qm "$subject" >/dev/null
+  git "${id[@]}" commit -qm "$subject" >/dev/null 2>&1 || { echo "could not save $job (nothing to save)"; exit 1; }
   # Several jobs save at once: rebase onto whatever landed meanwhile. Only a
   # push whose HEAD is still this save's commit counts: a rebase that stopped
   # leaves HEAD on another job's commit, and pushing that is "up to date", a
@@ -82,15 +82,18 @@ save)
   for n in 1 2 3 4 5 6 7 8 9 10 11 12; do
     if [ "$(git log -1 --format=%s HEAD)" = "$subject" ]; then
       git push -q origin HEAD:main 2>"$work/push" && { echo "saved $job$left"; exit 0; }
+      # Only losing the race to another save is worth another try; a push
+      # GitHub refuses for what it holds (a large file, a secret) never lands.
+      grep -qE 'fetch first|non-fast-forward|Internal Server Error|cannot lock ref' "$work/push" || break
     else
-      echo "rejected: the rebase lost the commit" >"$work/push"
+      echo "rejected: lost, the rebase lost the commit" >"$work/push"
       git rebase --abort >/dev/null 2>&1 || true
     fi
     sleep $(( (RANDOM % (1 << (n < 5 ? n : 5)) + 1) * ${SAVE_WAIT_SCALE:-1} ))
     git "${id[@]}" pull -q --rebase origin main >/dev/null 2>&1 || git rebase --abort >/dev/null 2>&1 || true
   done
   # Why, in words only: the push's own message can name private files.
-  why=$(grep -oE 'GH001|exceeds|rejected|non-fast-forward|denied|403|timed out|Could not resolve' "$work/push" | sort -u | paste -sd, - || true)
+  why=$(grep -oE 'GH001|GH013|exceeds|secrets|rejected|non-fast-forward|fetch first|lost|denied|403|timed out|Could not resolve|Internal Server Error|cannot lock ref' "$work/push" | sort -u | paste -sd, - || true)
   echo "could not save $job (${why:-no reason given})"; exit 1
   ;;
 run)

@@ -12,6 +12,7 @@ import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { gridSheet, pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
+import { MOUSE_ATTRIBUTE, MOUSE_EVENT, leftDragOf, readMousePreset } from "@fission/core";
 import { clampZoom, cubeDragAngles, FARTHEST_VIEW, NEAREST_VIEW, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
@@ -109,6 +110,8 @@ export class ViewportView {
   private host: ViewHost;
   /** What a left-button drag does (SF3a): picked on the navigation bar. */
   private mode: NavMode = "orbit";
+  /** What a left drag does with no bar tool lit: orbit, or select (the Fusion-style mouse preset, U2d). */
+  private home: "orbit" | "select" = "orbit";
   private bar: ReturnType<typeof navBar>;
   /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */
   private arrowDrag: { id: number; offset: number; last: number } | null = null;
@@ -145,7 +148,8 @@ export class ViewportView {
     });
     container.appendChild(this.cube.element);
     this.bar = navBar({
-      mode: (mode) => this.setMode(mode),
+      // A lit tool pressed again puts itself away where the left button rests as a picker (Fusion's way).
+      mode: (mode) => this.setMode(mode === this.mode && this.home === "select" ? "select" : mode),
       fit: () => this.fitSelection() ?? this.fit(),
       lookAt: () => {
         const plane = this.host.sketchPlane();
@@ -178,7 +182,8 @@ export class ViewportView {
     this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.dragSketchPoint(); // and a press on a sketch point the Select tool can drag (47d3)
     this.navigate();
-    this.setMode("orbit");
+    this.followMouse();
+    this.setMode(this.home);
 
     // A click picks; a press that moves further is the camera orbiting.
     let down: { x: number; y: number; id: number } | null = null;
@@ -369,12 +374,26 @@ export class ViewportView {
 
   /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit nothing changes and it says false. */
   leaveNavTool(): boolean {
-    if (this.mode === "orbit") return false;
-    this.setMode("orbit");
+    if (this.mode === this.home) return false;
+    this.setMode(this.home);
     return true;
   }
 
-  /** What a left-button drag does from now on: orbit, pan or zoom (the navigation bar's first three buttons). */
+  /**
+   * The mouse preset (U2d): the page wears it as `data-mouse` and sends `mousechange` when Settings changes it; the left
+   * button rests as an orbit or as a picker, and a view resting (no bar tool lit) follows at once.
+   */
+  private followMouse() {
+    const doc = this.element.ownerDocument;
+    const read = () => leftDragOf(readMousePreset(doc.documentElement.dataset[MOUSE_ATTRIBUTE]));
+    this.home = read();
+    doc.addEventListener(MOUSE_EVENT, () => {
+      this.home = read();
+      if (this.mode === "orbit" || this.mode === "select") this.setMode(this.home);
+    }, { signal: this.listening.signal });
+  }
+
+  /** What a left-button drag does from now on: orbit, pan, zoom or nothing (the navigation bar's first three buttons, or none lit). */
   setMode(mode: NavMode) {
     this.mode = mode;
     this.element.dataset.nav = mode; // read by the e2e test
@@ -385,7 +404,8 @@ export class ViewportView {
   /** OrbitControls' share of the buttons for the mode: the left button orbits only in Orbit mode (Pan and Zoom are navigate()'s), and pans in the 2D view; one finger pans in Pan mode and in 2D. */
   private applyButtons() {
     const flat = this.image !== null;
-    this.controls.mouseButtons.LEFT = this.mode !== "orbit" ? null : flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    // A flat (2D image) view keeps its left-drag pan whichever mouse preset rests the left button as a picker in 3D (U2d).
+    this.controls.mouseButtons.LEFT = this.mode === "orbit" || (flat && this.mode === "select") ? (flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE) : null;
     this.controls.touches.ONE = this.mode === "pan" || flat ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
   }
 
@@ -393,6 +413,18 @@ export class ViewportView {
   cameraPose(): CameraPose {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
     return { position: this.camera.position.toArray(), target: this.controls.target.toArray(), up: up.toArray() };
+  }
+
+  /**
+   * Puts the camera back at `pose` from `cameraPose()` earlier (a design tab returned to, tabs step 2), the near and far
+   * planes scaled with the change in distance as zooming does. A pose with a number that is not finite is ignored.
+   */
+  restorePose(pose: CameraPose) {
+    if (![...pose.position, ...pose.target, ...pose.up].every(Number.isFinite)) return;
+    const before = this.camera.position.distanceTo(this.controls.target);
+    const after = new THREE.Vector3(...pose.position).distanceTo(new THREE.Vector3(...pose.target));
+    this.camera.up.set(...pose.up);
+    this.setPose(pose, before > 0 && after > 0 ? after / before : 1);
   }
 
   /** Moves the camera to `pose` (same direction, so OrbitControls only re-aims); `zoom` scales the near and far planes with the distance in 3D, so nothing is clipped close up. */
@@ -436,7 +468,7 @@ export class ViewportView {
     this.element.addEventListener("pointerdown", (e) => {
       if (e.target !== canvas || e.pointerType === "touch" || drag) return;
       const action = dragAction(e.button, e.shiftKey, this.mode);
-      if (action === null || action === "orbit") return; // orbits are OrbitControls'
+      if (action === null || action === "orbit" || action === "select") return; // orbits are OrbitControls', and a picking left button is the click picker's
       e.preventDefault(); // no middle-button autoscroll
       e.stopPropagation(); // neither OrbitControls nor the click picker hears it
       canvas.setPointerCapture(e.pointerId);

@@ -22,7 +22,7 @@ function importsOf(dir: string): { file: string; spec: string }[] {
 
 // Shared packages by entry point only (no "@fission/core/src/…"), and
 // never another workspace: they meet through the core API.
-const allowed = new Set(["@fission/core", "@fission/ui", "@fission/viewport"]);
+const allowed = new Set(["@fission/core", "@fission/ui", "@fission/viewport", "@fission/print"]);
 const offending = (imports: { file: string; spec: string }[]) => imports.filter(({ spec }) => !spec.startsWith("./") && !allowed.has(spec));
 
 test("workspaces import only the public packages and their own files", () => {
