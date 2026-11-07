@@ -18,7 +18,7 @@ import "@fission/ui/theme.css";
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -1134,7 +1134,8 @@ const shellShortcuts: Record<string, (e: Event) => boolean> = {
   open: () => ($("open-file").click(), true),
   "paste-files": (e) => {
     const files = [...((e as ClipboardEvent).clipboardData?.files ?? [])];
-    if (files.length === 0) return false; // text pastes as usual
+    // No files: the workspace in use may take the text (Design's copied bodies, Ctrl+V); else text pastes as usual.
+    if (files.length === 0) return panesInUse().some((p) => pool.awake(p)?.view.shortcut?.("paste-bodies", e) === true);
     void receive(files);
     return true;
   },
@@ -1175,6 +1176,22 @@ function showShortcuts(back?: () => void) {
   if (back) shortcutDialog.addEventListener("close", back, { once: true });
   shortcutDialog.showModal();
 }
+// What's new (Settings > About): the public list of changes, built in from WHATS_NEW.md (whats-new.mjs). Like the
+// shortcuts list, Close and Escape go back to Settings.
+declare const __WHATS_NEW__: string;
+declare const __APP_VERSION__: string | null;
+const whatsNewDialog = Object.assign(document.createElement("dialog"), { id: "whats-new", className: "whats-new" });
+whatsNewDialog.setAttribute("aria-labelledby", "whats-new-title");
+document.body.append(whatsNewDialog);
+function showWhatsNew(back?: () => void) {
+  const note = Object.assign(document.createElement("p"), { className: "whats-new-note", textContent: whatsNewNote(__APP_VERSION__) });
+  whatsNewDialog.innerHTML = `<header class="whats-new-head"><div class="whats-new-title"><h2 id="whats-new-title">What's new</h2><button type="button" class="close">Close</button></div></header><div class="whats-new-body">${whatsNewList(parseWhatsNew(__WHATS_NEW__))}</div>`;
+  whatsNewDialog.querySelector(".whats-new-head")!.append(note);
+  whatsNewDialog.querySelector(".close")!.addEventListener("click", () => whatsNewDialog.close());
+  if (back) whatsNewDialog.addEventListener("close", back, { once: true });
+  whatsNewDialog.showModal();
+  whatsNewDialog.querySelector<HTMLElement>(".whats-new-body")!.scrollTop = 0;
+}
 // Settings: a card dialog of sections (@fission/ui settings.ts), kept in this
 // browser alone. Close, Escape and a tap outside the card all leave it.
 const settingsDialog = Object.assign(document.createElement("dialog"), { id: "settings", className: "settings" });
@@ -1210,8 +1227,13 @@ function showAiSettings() {
   target?.scrollIntoView({ block: "start" });
   target?.querySelector<HTMLElement>("select, input, button")?.focus();
 }
+/** What's new opened from Settings closes back to it, with focus on its Show. */
+function backFromWhatsNew() {
+  settingsDialog.showModal();
+  document.getElementById("settings-whats-new")?.focus();
+}
 function fillSettingsNow(backToSettings: () => void) {
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), onWhatsNew: () => showWhatsNew(backFromWhatsNew), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings });
 }
 // Report a bug (Ben, 2026-11-04; @fission/ui bug-report.ts): from Settings > About, a form that opens a filled-in
 // GitHub issue in a new tab. The app adds the version, browser, screen and workspace; nothing from the project.

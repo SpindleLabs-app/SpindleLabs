@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { KernelError, type BodySpec, type BooleanResult, type Outline } from "@fission/core";
-import { calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, callUnits, facesSize, builtSize, HEADROOM, type BodySize } from "../../core/src/kernel/time-limit.ts";
+import { calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, callUnits, facesSize, builtSize, HEADROOM, MAX_MEETING_POINTS, type BodySize } from "../../core/src/kernel/time-limit.ts";
 import { entry } from "../../core/src/kernel/entry-points.ts";
 import { loadKernel, nodeKernel } from "../src/node-kernel.ts";
 
@@ -121,6 +121,29 @@ test("legal calls of each size take less than their units × the calibration, wi
     return { a: at(k), b: at(k + 1) };
   });
   check("a 1,000-line sketch", callUnits("sketch_outline", [lines, [], []], () => undefined), () => timed(() => entry.sketch_outline(lines, [], []))[0]);
+  // Its regions (step 48), and the costliest legal sketches for regions: ones whose curves meet at nearly the most points
+  // a sketch may have (100,000). A 300 × 300 grid of lines meets at 90,000 points and makes 299² = 89,401 squares; 223
+  // circles of radius 50 with centres 10 mm from the origin all cross each other, 2 × 223 × 222 / 2 = 49,506 points.
+  // Regression (48d3): the regions' units counted only curves, as the outline's do, giving the grid 333 ms here where
+  // it took 1,968 (the 10 s floor hid it on a fast machine; a device five times slower would have been stopped).
+  const regions = (what: string, lines: unknown[], circles: unknown[], expected: number) => {
+    const args = [lines, circles, []] as Parameters<typeof entry.sketch_regions>;
+    check(what, callUnits("sketch_regions", args, () => undefined), () => {
+      const [ms, out] = timed(() => entry.sketch_regions(...args));
+      assert.equal(out.regions.length, expected, what);
+      return ms;
+    });
+  };
+  regions("a 1,000-line sketch's regions", lines, [], 1);
+  const grid = Array.from({ length: 300 }, (_, i) => [{ a: [0, i + 1], b: [301, i + 1] }, { a: [i + 1, 0], b: [i + 1, 301] }]).flat();
+  regions("a 300 × 300 grid's regions", grid, [], 299 * 299);
+  const crossing = Array.from({ length: 223 }, (_, k) => ({ centre: [10 * Math.cos((2 * Math.PI * k) / 223), 10 * Math.sin((2 * Math.PI * k) / 223)], radius: 50 }));
+  // Each circle crossing all the others: 223 × 222 + 2 = 49,508 regions by Euler (V − E + F = 2 with V = 49,506 points,
+  // E = 2V arcs between them, F counting the outside), less the outside, 49,507.
+  regions("223 crossing circles' regions", [], crossing, 223 * 222 + 1);
+  // The units' cap is the kernel's own limit: a 317 × 317 grid meets at 100,489 points, past it, and is refused naming it.
+  const over = Array.from({ length: 317 }, (_, i) => [{ a: [0, i + 1], b: [318, i + 1] }, { a: [i + 1, 0], b: [i + 1, 318] }]).flat();
+  assert.throws(() => entry.sketch_regions(over, [], []), (e: unknown) => String((e as { message?: unknown }).message ?? e).includes(`more than ${MAX_MEETING_POINTS} points`));
 });
 
 test("the calibration cubes joined by hand, through the app's handles; hidden bodies shown again the same", async () => {

@@ -5,11 +5,13 @@
 import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, insertAt, isHidden, isMoveItem, isPiece, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
-import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
+import { bodyChoices, operationNote, tickedBodies, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
+import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, pastedBodies } from "./duplicate.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
@@ -58,7 +60,7 @@ import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./p
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, faceRegion, type FaceProfile } from "./face-extrude.ts";
-import { offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
+import { editRegionWords, offerOf, pickRegionWords, regionChosenWords, regionOffers, regionRefusedWords, type RegionOffer } from "./extrude-regions.ts";
 import type { RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
@@ -137,6 +139,15 @@ interface Inspecting {
   noExplode(): string | null;
 }
 
+/** Duplicate in Modify ▾ (step 35e2): what it does, and why it is off. */
+interface Duplicating {
+  run(): void;
+  /** Why it can't be chosen now (nothing picked), or null. */
+  off(): string | null;
+}
+
+const DUPLICATE_TITLE = "Duplicate: copy the picked bodies where they are, then move the copies. A copy follows its body's sizes. A Duplicate in the timeline, at the marker.";
+
 /** Exploded view's tooltip. */
 const EXPLODE_TITLE = "Exploded view: draw the bodies pulled apart from the middle, to see how they fit. Only the view changes: the design stays as it is.";
 /** Why Exploded view is off with fewer than two bodies shown. */
@@ -155,7 +166,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; explode: HTMLButtonElement; measure: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting, duplicate: Duplicating): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; explode: HTMLButtonElement; measure: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -246,6 +257,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       items: [
         { id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove },
         { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate },
+        { id: "modify-menu-duplicate", label: "Duplicate", icon: "duplicate", title: DUPLICATE_TITLE, off: duplicate.off() ?? undefined, run: duplicate.run },
         ...(combining ? [{ id: "modify-menu-combine", label: "Combine", icon: "combine" as const, title: combineTitle, run: onCombine }] : []),
       ],
     },
@@ -466,6 +478,9 @@ interface Warned {
   lost?: true;
 }
 
+/** The open design's token for copied bodies (duplicate.ts `copiedText`). */
+let designToken = "0";
+
 function mount(ctx: WorkspaceContext): MountedWorkspace {
   const panel = propertiesPanel(ctx.properties);
   const { inputs } = panel;
@@ -524,7 +539,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     exploded: () => explodeSpread !== null,
     noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
@@ -603,6 +618,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let missed = false;
   /** Every body drawn, with its faces' and edges' names (steps 24c, 24d3b), which the selection holds. */
   let lastScene: Scene | null = null;
+  /** Edit feature's regions (48d4, `offerEditRegions`): the extrude edited, its sketch's regions offered, the one chosen and the one picked (null until a pick). */
+  let editRegions: { id: string; sketch: string; name: string; offers: RegionOffer[]; chosen: string | null; picked: RegionRef | null } | null = null;
   /** The part's body in the last scene that showed it: the panel's numbers, marked out of date, while the part fails. */
   let partShown: ShownBody | null = null;
   /** The note about items the last rebuild dropped, and whether that drop is being applied now. */
@@ -963,7 +980,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** The body the boxes describe (`boxesPart`) in `doc` while it is a body that builds, else the last body; null with none. */
   function boxesFeature(doc: DesignDocument): Feature | null {
     const f = boxesPart === null ? undefined : doc.timeline.features.find((x) => x.id === boxesPart);
-    return f !== undefined && makesBody(f) && builds(doc, f) ? f : partFeature(doc);
+    return f !== undefined && ownShape(f) && builds(doc, f) ? f : partFeature(doc);
   }
   /** The boxes and the Shape choice show `part`'s shape and sizes, and a size typed now changes it. */
   function showPartSizes(doc: DesignDocument, part: Feature) {
@@ -1135,6 +1152,44 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.selection.set([bodyReference(body)]);
     startMove();
     moveFromInsert = true;
+  }
+
+  // A new token for copied bodies whenever Design opens other than by Undo or Redo putting it back (a project opened,
+  // another workspace left): a paste finds only bodies copied from the design on screen, through any undo.
+  if (!ctx.history.restoring()) designToken = Math.floor(Math.random() * 2 ** 48).toString(36);
+
+  /** Why Duplicate is off: no body picked (a face or edge picks its body). */
+  function duplicateOff(): string | null {
+    return pickedBodies(ctx.selection.items, lastScene).length === 0 ? "Pick one or more bodies first, then Duplicate." : null;
+  }
+
+  /**
+   * Duplicate (step 35e2), from Modify ▾: a Duplicate of each picked body
+   * at the marker (`insertDuplicates`), one undo step, then, as Insert does,
+   * the Move panel opens on the copies so they can be slid off their bodies
+   * straight away (Fusion's copy and paste); Cancel leaves them where they are.
+   */
+  async function duplicateBodies(bodies?: readonly string[]) {
+    const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
+    if (picked.length === 0) return;
+    leaveExtrude();
+    leaveEdit();
+    leaveMove();
+    leaveCombine();
+    if (mode.kind !== "none") leaveSketch(false);
+    let added: ReturnType<typeof insertDuplicates>;
+    try {
+      added = insertDuplicates(designDoc(), picked);
+    } catch (err) {
+      return panel.showError(err instanceof Error ? err.message : String(err));
+    }
+    ctx.selection.clear();
+    await update(DUPLICATE_STEP, undefined, added.doc);
+    const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
+    const copies = copiesOf(added.ids).filter((b) => shownNow.has(b));
+    if (copies.length === 0 || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
+    ctx.selection.set(copies.map(bodyReference));
+    startMove();
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -1515,7 +1570,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         ctx.graph.markFresh(PART_VIEW);
       }
       markStale(failure !== undefined);
-      showBodies(scene);
+      showBodies(scene); // Edit feature offering regions leaves the edited body out (48d4, bodyMesh)
       // 36d: where a refused Combine would touch itself or be too thin, pointed at over everything.
       refusalsNow = refusalOverlay(doc.timeline.features, value.results);
       showRefusals();
@@ -2473,6 +2528,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     base: { doc: DesignDocument; sketch: string; region: RegionRef | null; spec: BodySpec } | null;
     preview: BodyView | null;
     arrow: ExtrudeArrow | null;
+    /** Fusion's Operation (only with Combine shown): a new body, or Join, Cut or Intersect with the bodies listed and ticked. */
+    operation: ExtrudeOperation;
+    /** The bodies listed for Join, Cut or Intersect (those the preview reaches), and those unticked while the panel is open. */
+    choices: BodyChoice[];
+    unticked: Set<string>;
   } | null = null;
   const extrudeBox = extrudePanel(ctx.properties, {
     distance: (typed) => extrudeDistance(signedDistance(typed)),
@@ -2480,7 +2540,33 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     clear: () => chooseProfile(null),
     ok: (typed) => void ctx.history.hold(finishExtrude(typed)),
     cancel: () => leaveExtrude(),
+    operation: (op) => {
+      if (!extruding) return;
+      extruding.operation = op;
+      extrudeBox.showError("");
+      showOperationBodies();
+      showExtrudeView();
+    },
+    tick: (body, on) => {
+      if (!extruding) return;
+      if (on) extruding.unticked.delete(body);
+      else extruding.unticked.add(body);
+      showOperationBodies();
+    },
   });
+  /**
+   * Join, Cut or Intersect chosen: the bodies on screen the preview reaches,
+   * as Fusion lists them, ticked unless unticked, and what OK will do (OK
+   * off with none ticked). Listed again with each new preview.
+   */
+  function showOperationBodies() {
+    const e = extruding;
+    if (!e || e.operation === "new") return;
+    const listed = (lastScene?.bodies ?? []).map((b) => ({ body: b.body, label: `Body ${b.place}`, bounds: b.view.bounds }));
+    e.choices = e.preview === null ? [] : bodyChoices(e.preview.bounds, listed, e.unticked);
+    const note = e.preview === null ? { text: OPERATION_WAITS, ready: false } : operationNote(e.operation, e.choices);
+    extrudeBox.showBodies(e.choices, note.text, note.ready);
+  }
   const sketchLabel = (id: string) => sketchItem(designDoc(), id).provenance.self.label;
   /** What the chosen `id` extrudes: a sketch of the design, or a face's sketch in the design it was offered in (UX1c). */
   const sourceOf = (id: string): { doc: DesignDocument; sketch: string; label: string; face: FaceProfile | null } => {
@@ -2512,9 +2598,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A flat face selected first is chosen once it is offered (UX1c); meanwhile nothing is.
     const wanted = editing === null && ctx.selection.items.length === 1 && ctx.selection.items[0].kind === "face" ? String(ctx.selection.items[0].id) : null;
     const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? (wanted ? undefined : items.at(-1)?.id) ?? null;
-    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], regions: new Map(), offer: null, region: null, distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
+    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], regions: new Map(), offer: null, region: null, distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null, operation: "new", choices: [], unticked: new Set() };
     leaveExplode(); // a tool works on the bodies where they are
-    extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE));
+    extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE), combineShown());
     // No usable sketch: say why (a body's flat faces are still offered to click, UX1c); with no sketch at all and a body, just how to pick.
     if (items.length > 0 ? !chosen : sketches.length === 0 && (lastScene?.bodies.length ?? 0) > 0) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
     else if (items.length === 0) extrudeBox.showStatus(sketches.length > 0 ? NO_USABLE_SKETCH : NO_SKETCH, false);
@@ -2537,9 +2623,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Asleep or put away (an Undo before a preview build answered), the view is not this Design's to draw on (app hunt 2026-11-04).
     if (!shown) return;
     const e = extruding;
-    if (!e) return viewport.showExtrude(null);
+    // Edit feature's regions (48d4) stay drawn while it is open.
+    if (!e) return editRegions !== null ? showEditRegions() : viewport.showExtrude(null);
     const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
-    viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, preview: e.preview?.mesh ?? null, arrow });
+    viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, preview: e.preview?.mesh ?? null, arrow, ...(e.operation === "cut" ? { cut: true } : {}) });
     // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
     if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), faces: [...e.faces.keys()].join(" "), chosen: e.sketch ?? "", region: e.offer ?? "", previewVolume: e.preview ? String(e.preview.volume) : "" });
@@ -2652,7 +2739,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // The pointer while Extrude is shown (UX1b): a click on an offered outline chooses it (one on
   // none keeps the choice, as Fusion does); the arrow dragged sets the distance in whole mm.
   const onExtrudePointer: SharedViewport["onExtrudePointer"] = (pointer) => {
-    if (!extruding) return;
+    if (!extruding) {
+      if (editRegions !== null && pointer.kind === "pick" && pointer.profile !== null) pickEditRegion(pointer.profile);
+      return;
+    }
     if (pointer.kind === "pick") {
       if (pointer.profile !== null) return void chooseProfile(pointer.profile);
       // On no outline but on a face that can't be extruded (a curved one, one with holes): say why, keeping the choice.
@@ -2711,6 +2801,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // A distance refused since this build began (extrudeDistance said why) shows no preview under the words.
       e.preview = e.distance === null || d === 0 || distanceRefused(e.distance) !== null ? null : view;
       e.arrow = arrowOf(view, d === 0 ? 1 : d) ?? e.arrow;
+      showOperationBodies();
     } catch (err) {
       // Out of date too when another region was picked since (48d hunt): its words are not this one's.
       if (extruding !== e || e.sketch !== id || e.region !== region || e.distance !== d) return;
@@ -2740,14 +2831,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (source.face.region !== undefined) {
         if (extruding?.sketch !== id) return;
         Object.assign(extruding, { region: source.face.region, closed: true });
-        extrudeBox.showStatus(`${name} makes a closed outline. ${FACE_NEW_BODY}`, true);
+        extrudeBox.showStatus(`${name} makes a closed outline.${combineShown() ? "" : ` ${FACE_NEW_BODY}`}`, true);
         return refreshPreview();
       }
       const { current, value } = await onceMoreAfterRestart(() => extrudeOutline(sketchCurves(sketch)));
       if (!current || extruding?.sketch !== id) return;
       if ("closed" in value) {
         // A face's extrude is a new body until Combine (35f): said plainly (UX1c).
-        extrudeBox.showStatus(`${name} makes a closed outline. ${FACE_NEW_BODY}`, true);
+        extrudeBox.showStatus(`${name} makes a closed outline.${combineShown() ? "" : ` ${FACE_NEW_BODY}`}`, true);
         extruding.closed = true;
         refreshPreview();
       } else extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${value.open}).`, false);
@@ -2805,10 +2896,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const region = extruding?.region ?? null;
     // A face offered in another design is out of date (that design changed since).
     if (source.face && source.face.from !== before) return;
+    // Join, Cut or Intersect (with Combine shown): the bodies ticked, which the kernel's boolean must take (else the panel says why).
+    const operation = extruding?.operation ?? "new";
+    const choice = operation === "new" ? null : { operation, bodies: tickedBodies(extruding?.choices ?? []) };
+    if (choice !== null && choice.bodies.length === 0) return extrudeBox.showError(`Tick a body to ${operation === "join" ? "join to" : operation} first.`);
     let made: ReturnType<typeof extrudeSketch>;
     try {
-      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined);
+      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined, choice);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
+      if (choice !== null) {
+        const refused = await onceMoreAfterRestart(() => refusedMove(kernel, made.doc, made.id));
+        if (refused !== null) throw new Error(refused);
+      }
     } catch (e) {
       if (extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region) extrudeBox.showError(e instanceof Error ? e.message : String(e));
       return;
@@ -2824,11 +2923,103 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     void update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, usedSketchHidden(made.doc, source.sketch));
   }
 
+  /** What the bodies list says before the preview shows where the extrude reaches. */
+  const OPERATION_WAITS = "Type a distance or drag the arrow: the bodies the extrude reaches are listed here.";
+
   // Edit feature (step 25a2): an earlier feature's sizes from its timeline item or browser row.
   const editBox = featureEditPanel(ctx.properties, {
     ok: (typed, flip) => void ctx.history.hold(finishEdit(typed, flip)),
     cancel: () => leaveEdit(),
+    operation: (op) => {
+      if (editOps === null) return;
+      editOps.operation = op;
+      showEditBodies();
+    },
+    tick: (body, on) => {
+      if (editOps === null) return;
+      if (on) editOps.unticked.delete(body);
+      else editOps.unticked.add(body);
+      showEditBodies();
+    },
+    sizes: (typed, flip) => void reachAgain(typed, flip),
   });
+  /**
+   * Edit feature on an extrude of a sketch with Combine shown: its operation
+   * as Extrude's panel has it, the bodies built before it (each with its box)
+   * and its own body's box, found once the panel opens (null meanwhile); the
+   * bodies its operation uses are ticked, any of the others reached unticked.
+   */
+  let editOps: { id: string; operation: ExtrudeOperation; candidates: ListedBody[] | null; own: Bounds | null; kept: Set<string>; unticked: Set<string>; choices: BodyChoice[]; asked: number } | null = null;
+  /** The bodies an edited extrude can work on, and what OK will do, in the Edit panel. */
+  function showEditBodies() {
+    const e = editOps;
+    if (e === null || e.operation === "new") return;
+    if (e.candidates === null || e.own === null) return editBox.showBodies([], "Finding the bodies the extrude reaches…", false);
+    e.choices = bodyChoices(e.own, e.candidates, e.unticked, e.kept);
+    const note = operationNote(e.operation, e.choices);
+    editBox.showBodies(e.choices, note.text, note.ready);
+  }
+  /**
+   * The bodies built just before extrude `id` (the design rolled back to the item before it, on a body store of its own)
+   * with their boxes, and its own body's box; the bodies its operation uses ticked, the rest unticked. Shown when the
+   * Edit panel is still on it.
+   */
+  async function loadEditBodies(id: string) {
+    const doc = designDoc();
+    const at = doc.timeline.features.findIndex((f) => f.id === id);
+    const f = doc.timeline.features[at];
+    const rolled: DesignDocument = { ...doc, timeline: { ...doc.timeline, marker: at === 0 ? "start" : doc.timeline.features[at - 1].id } };
+    const store = new BodyCache(kernel);
+    let found: { candidates: ListedBody[]; own: Bounds } | null = null;
+    try {
+      const build = await rebuildTimeline(rolled, store, kernel);
+      const numbers = bodyNumbers(doc);
+      const candidates = await Promise.all(Object.entries(build.bodies).map(async ([body, b]) => ({ body, label: `Body ${numbers.get(body) ?? "?"}`, bounds: (await store.view(b.handle)).bounds })));
+      found = { candidates, own: await ownBox(doc, f) };
+    } catch {
+      // Its sketch makes no outline now, or the kernel refused: no list, and Join, Cut or Intersect can't be picked anew.
+      found = { candidates: [], own: [[0, 0, 0], [0, 0, 0]] };
+    } finally {
+      await store.close();
+    }
+    const e = editOps;
+    if (e === null || e.id !== id || editBox.editing !== id || designDoc() !== doc) return;
+    const saved = extrudeOperation(f)?.bodies ?? null;
+    // Its own bodies first in their order, reached or not; the others reached, unticked when it already has bodies.
+    const listed = [...(saved ?? []).map((b) => found.candidates.find((c) => c.body === b) ?? { body: b, label: `Body ${bodyNumbers(doc).get(b) ?? "?"}`, bounds: found.own }), ...found.candidates.filter((c) => !(saved ?? []).includes(c.body))];
+    e.candidates = listed;
+    e.own ??= found.own;
+    e.kept = new Set(saved ?? []);
+    if (saved !== null) for (const c of found.candidates) if (!saved.includes(c.body)) e.unticked.add(c.body);
+    showEditBodies();
+  }
+
+  /** The box round extrude `f`'s own body in `doc`, as the kernel builds it. */
+  async function ownBox(doc: DesignDocument, f: Feature): Promise<Bounds> {
+    return (await buildSpec(kernel, await featureSpec(kernel, doc, f))).bounds;
+  }
+  /**
+   * A distance typed or Flip changed in the Edit panel: the extrude's own box found again at the sizes typed, so the list
+   * holds the bodies it reaches now (as the new extrude's preview does); a size that can't be read or built leaves it as it was.
+   */
+  async function reachAgain(typed: Partial<Record<SizeKey, string>>, flip?: boolean) {
+    const e = editOps;
+    if (e === null) return;
+    const asked = ++e.asked;
+    const doc = designDoc();
+    let own: Bounds;
+    try {
+      const read = readTyped(editableFeature(doc, e.id).keys, typed);
+      if (!("sizes" in read)) return;
+      const next = editFeature(doc, e.id, read.sizes, flip, editRegions?.id === e.id ? (editRegions.picked ?? undefined) : undefined);
+      own = await ownBox(next, next.timeline.features.find((f) => f.id === e.id)!);
+    } catch {
+      return;
+    }
+    if (editOps !== e || e.asked !== asked || designDoc() !== doc) return;
+    e.own = own;
+    showEditBodies();
+  }
 
   // Move (step 35e2b): a new Move of the bodies picked, or a Move's numbers edited from its timeline item.
   const moveBox = movePanel(ctx.properties, {
@@ -2859,7 +3050,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** The bodies' mesh as the view draws it: pulled apart while Exploded view is on. */
   function bodyMesh(scene: Scene) {
-    return explodeSpread === null ? scene.mesh : explodedMesh(scene, explodeSpread);
+    return explodeSpread === null ? editMesh(scene) : explodedMesh(scene, explodeSpread);
   }
 
   /**
@@ -3152,10 +3343,88 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch();
     leaveExplode(); // a tool works on the bodies where they are
     editBox.show(editableFeature(designDoc(), id));
+    editRegions = null;
+    editOps = null;
+    // Extrude's Operation row (with Combine shown), as Fusion's Extrude edited.
+    if (combineShown() && isSketchExtrude(item)) {
+      const op = extrudeOperation(item)?.operation ?? "new";
+      editOps = { id, operation: op, candidates: null, own: null, kept: new Set(), unticked: new Set(), choices: [], asked: 0 };
+      editBox.showOperation(op);
+      showEditBodies();
+      void loadEditBodies(id);
+    }
+    void offerEditRegions(id);
   }
 
   function leaveEdit() {
     editBox.hide();
+    editOps = null;
+    if (editRegions === null) return;
+    editRegions = null;
+    viewport.showExtrude(null);
+    if (shown && lastScene) showBodies(lastScene);
+  }
+
+  /**
+   * Edit feature on an extrude of a sketch (48d4, as Fusion's Extrude edited): its sketch's regions are shaded in the view,
+   * the one it extrudes chosen (found by its curves, `offerOf`), so a click or tap picks another, which OK saves with the
+   * sizes as one undo step. The sketch's one region is shown too, chosen. An old extrude without a region chooses none
+   * while its sketch has several (picking one gives it a region); a sketch gone, or one the kernel refuses, offers none.
+   */
+  async function offerEditRegions(id: string) {
+    const doc = designDoc();
+    const f = doc.timeline.features.find((x) => x.id === id);
+    if (!f || !isSketchExtrude(f)) return;
+    const sketchId = f.intent.parameters.sketch as string;
+    const sketch = doc.sketches.find((x) => x.id === sketchId);
+    if (!sketch || !doc.timeline.features.some((x) => x.id === sketchId)) return;
+    let offers: RegionOffer[];
+    try {
+      offers = (await regionOffers(kernel, sketch, sketchPlane(doc, sketchId, placedNow))).offers;
+    } catch {
+      return;
+    }
+    // Closed, opened on another item, or the design changed while the kernel looked: out of date.
+    if (editBox.editing !== id || designDoc() !== doc || offers.length === 0) return;
+    const saved = f.intent.parameters.region as RegionRef | undefined;
+    const chosen = saved !== undefined ? (offerOf(offers, sketchId, saved)?.id ?? null) : offers.length === 1 ? offers[0].id : null;
+    // The sketch's one region, the one it extrudes: nothing to pick, so nothing shaded and its body stays drawn.
+    if (offers.length === 1 && chosen !== null) return;
+    editRegions = { id, sketch: sketchId, name: sketchLabel(sketchId), offers, chosen, picked: null };
+    editBox.showRegion(editRegionWords(editRegions.name, offers.length, chosen !== null, false));
+    showEditRegions();
+  }
+
+  /**
+   * The bodies drawn while Edit feature offers regions: every one but the edited extrude's own, which stands on its
+   * sketch and would hide the regions (Fusion rolls the timeline back to before it while it is edited); the whole
+   * scene otherwise.
+   */
+  function editMesh(scene: Scene) {
+    const hidden = editRegions === null ? null : bodyIdOf(editRegions.id);
+    return hidden === null || !scene.bodies.some((b) => b.body === hidden) ? scene.mesh : joinBodies(scene.bodies.filter((b) => b.body !== hidden)).mesh;
+  }
+
+  /** The regions Edit feature offers, drawn in the view with the chosen one, the edited body put out of the way; read by the tests from the panel. */
+  function showEditRegions() {
+    const r = editRegions;
+    if (!shown || r === null) return;
+    if (lastScene) showBodies(lastScene);
+    viewport.showExtrude({ profiles: r.offers, chosen: r.chosen, preview: null, arrow: null });
+    const box = ctx.properties.querySelector<HTMLElement>("#feature-edit");
+    if (box) Object.assign(box.dataset, { regions: r.offers.map((o) => o.id).join(" "), regionChosen: r.chosen ?? "" });
+  }
+
+  /** A click or tap on a region while Edit feature is open: it is the one OK saves; one that can't be extruded says why. */
+  function pickEditRegion(offerId: string) {
+    const r = editRegions;
+    const offer = r?.offers.find((o) => o.id === offerId);
+    if (!r || !offer || offer.sketch !== r.sketch) return;
+    if (offer.refused !== undefined) return void editBox.showError(regionRefusedWords(r.name, offer.refused));
+    Object.assign(r, { chosen: offer.id, picked: offer.ref });
+    editBox.showError("");
+    editBox.showRegion(editRegionWords(r.name, r.offers.length, true, true));
+    showEditRegions();
   }
 
   /**
@@ -3178,7 +3447,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const label = f.shape === "sketch-extrude" ? "distance" : parameterRows(f.shape).find((r) => r.key === key)!.label.toLowerCase();
         return editBox.showError("bad" in read ? `Type the ${label} in mm.` : `The ${label}${read.why.slice("A length".length)}`);
       }
-      next = editFeature(before, id, read.sizes, flip);
+      next = editFeature(before, id, read.sizes, flip, editRegions?.id === id ? (editRegions.picked ?? undefined) : undefined);
+      // Its operation (with Combine shown): New body, or Join, Cut or Intersect with the bodies ticked.
+      const op = editOps?.id === id ? editBox.operation : null;
+      if (op !== null && editOps !== null) {
+        if (op !== "new" && editOps.candidates === null) return editBox.showError("Wait a moment: the bodies the extrude reaches are still being found.");
+        next = setExtrudeOperation(next, id, op === "new" ? null : { operation: op, bodies: tickedBodies(editOps.choices) });
+      }
     } catch (e) {
       return editBox.showError(e instanceof Error ? e.message : String(e));
     }
@@ -3187,6 +3462,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let refused: string | null;
     try {
       refused = await refusedSizes(kernel, before, next, id);
+      // An extrude that joins, cuts or intersects: its boolean must work too, or the edit says why and records nothing.
+      const now = next.timeline.features.find((f) => f.id === id);
+      if (refused === null && now !== undefined && isOperationExtrude(now)) refused = await onceMoreAfterRestart(() => refusedMove(kernel, next, id));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
@@ -3951,8 +4229,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label), mode.kind === "edit" ? mode.tool.sketch : null);
     },
     // Escape clears the selection; Copy with one profile selected runs Copy as SVG (shortcuts.ts).
-    shortcut(id) {
+    shortcut(id, e) {
       if (!shown) return false; // the shell only asks while shown; never act asleep
+      // Ctrl+D duplicates the picked bodies; Ctrl+C copies them (with no profile picked) and Ctrl+V pastes a Duplicate
+      // of each, outside a sketch (missing basics: Fusion's keys); the pasted copies open in Move as Duplicate's do.
+      if (id === "duplicate-bodies") return mode.kind === "none" && duplicateOff() === null ? (void duplicateBodies(), true) : false;
+      if (id === "copy-svg" && mode.kind === "none" && designShortcut(id, ctx.selection.items) === null) {
+        const picked = pickedBodies(ctx.selection.items, lastScene);
+        const data = (e as ClipboardEvent | undefined)?.clipboardData;
+        if (picked.length === 0 || !data) return false;
+        data.setData("text/plain", copiedText(designToken, picked));
+        return true;
+      }
+      if (id === "paste-bodies") {
+        const bodies = mode.kind === "none" ? pastedBodies((e as ClipboardEvent | undefined)?.clipboardData?.getData("text/plain") ?? "", designToken) : null;
+        return bodies === null ? false : (void duplicateBodies(bodies), true);
+      }
       // Escape during a drag on the timeline bar calls the drag off, and only that (timeline hunt, finding 7).
       if (id === "clear-selection" && callOffDrag()) return true;
       // Escape with Pan or Zoom lit on the view bar turns it off, back to Orbit, and only that (U7b, as in Fusion).

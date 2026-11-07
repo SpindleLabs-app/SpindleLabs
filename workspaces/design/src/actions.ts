@@ -7,7 +7,7 @@
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type SolidReport, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
 import { designBodies } from "./browser.ts";
-import { bodyHidden, bodyIdOf, bodyNumbers, isCombineItem, partFeature, shapeOf, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, isDuplicateItem, makesPieces, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
 import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked } from "./solid-badge.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
@@ -204,7 +204,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
       const features = picked.map((p) => p.feature);
       const kindOf = (f: Feature) => {
         // A Combine's piece is named for no one shape (35f1).
-        if (isCombineItem(f)) return "body";
+        if (makesPieces(f) || isDuplicateItem(f)) return "body";
         const shape = shapeOf(doc, f).shape;
         return shape === "sketch-extrude" ? "extrude" : shape;
       };

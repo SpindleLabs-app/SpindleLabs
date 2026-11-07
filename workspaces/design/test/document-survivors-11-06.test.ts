@@ -86,7 +86,7 @@ test("a bodies list entry is a body id with nothing after the item's id", () => 
   const d = file();
   d.bodies.push({ id: "body:feature-1/x", number: 9 });
   d.nextBody = 10;
-  refused(d, 'Design body body:feature-1/x is not "body:" and the id of an item that makes a body, or a piece of a Combine');
+  refused(d, 'Design body body:feature-1/x is not "body:" and the id of an item that makes a body, or a piece of a Combine or of an extrude that joins, cuts or intersects');
 });
 
 test("a Combine with no name is given the next free Combine name", () => {
@@ -114,7 +114,7 @@ const V8_ONLY = "Design data says version 7 but has construction curves or dimen
 test("version 7 data without a bodies list opens, its bodies numbered as they were shown", () => {
   // Kills `v3.version === 7` => false / `!==` in which versions may leave out the bodies' numbers.
   const d = readDesignDocument(v7().raw);
-  assert.equal(d.version, 9); // read as the current version (9 from step 48c)
+  assert.equal(d.version, 11); // read as the current version (11 from Duplicate; 10 from Extrude's Operation row)
   // One box (feature-1), the only body: number 1, and the next body gets 2.
   assert.deepEqual(d.bodies, [{ id: "body:feature-1", number: 1 }]);
   assert.equal(d.nextBody, 2);

@@ -177,13 +177,17 @@ test("every timeline Design's own edits leave opens again as it was saved (27e: 
   // The fuzzer above only asks that the loader never crashes or lets a broken file in; it never asked that a file Design
   // made itself opens. A line drawn from a projected point was refused on opening (27e), and nothing here saw it.
   let shared = 0;
+  let regions = 0;
   for (let k = 0; k < 600; k++) {
     const doc = timelineEdits(seeded(BigInt(7000 + k)), partDocument("box", 40, 30, 20));
     const text = projectToJson({ ...emptyProject("Round trip"), workspaces: { design: doc } });
     // Saved again it is the same text (−0 and 0 are one number in a file).
     assert.equal(projectToJson(projectFromJson(text, READERS)), text, `seed ${7000 + k}`);
+    // Step 48: extrudes naming a region of their sketch, read back as they were saved.
+    if (doc.timeline.features.some((f) => Object.hasOwn(f.intent.parameters, "region"))) regions++;
     if (doc.sketches.some((s) => (s.projected ?? []).some((p) => madePoints(s, p).some((q) => s.curves.some((c) => !s.projected!.some((x) => x.made === c.id) && JSON.stringify(c).includes(`"${q}"`)))))) shared++;
   }
   // Lines drawn from projected points came up, or this proves nothing about them.
   assert.ok(shared >= 10, `${shared} timelines with a line drawn from a projected point`);
+  assert.ok(regions >= 100, `${regions} timelines with an extrude naming its region`);
 });

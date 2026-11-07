@@ -125,6 +125,24 @@ export function sketchUnits(curves: number): number {
 }
 
 /**
+ * Units of a sketch's regions (step 48) per point where its curves meet,
+ * on top of the outline's: a 300 × 300 grid of lines (90,000 points,
+ * 89,401 squares) took 1,968 ms at a 1.72 ms unit and 1,863 at 1.16
+ * (0.013 and 0.018 a point), 223 circles each crossing all the others
+ * (49,506 points) 1,143 ms at 1.72 (0.013). How many points there will be
+ * is only known once the kernel looks, so each pair of curves is counted
+ * as meeting twice (no two lines, circles or arcs meet more often unless
+ * they overlap), up to the most a sketch may have (the kernel's limit).
+ */
+export const UNITS_PER_MEETING = 0.03;
+export const MAX_MEETING_POINTS = 100_000;
+
+/** The units of finding the regions of a sketch of `curves` lines, circles and arcs. */
+export function regionsUnits(curves: number): number {
+  return sketchUnits(curves) + UNITS_PER_MEETING * Math.min(MAX_MEETING_POINTS, curves * (curves - 1));
+}
+
+/**
  * Units of a sketch solve (step 47) per arc cubed: its Newton steps cost
  * about (arcs)² × (unknowns) each and a failure solves several prefixes.
  * The costliest sketch the kernel's tests know (a chain whose newest arc
@@ -430,8 +448,9 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       return one && other ? booleanUnits(one, [other]) : 0;
     }
     case "sketch_outline":
-    case "sketch_regions":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
+    case "sketch_regions":
+      return regionsUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
     case "check_solid":
       return checkUnits(a[0] as Uint8Array);
     case "solve_sketch":

@@ -154,8 +154,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
       },
     ],
     run: ["timeline"],
-    caught: "the rebuild differs from a rebuild from scratch",
-    why: "the drifted volume is off against both the model and a rebuild from scratch; with 26e's random steps the first session to meet it fails the from-scratch check first (recorded from planted/run.ts, 2026-10-22)",
+    caught: "the rebuild differs from the model",
+    why: "the drifted volume is off against both the model and a rebuild from scratch; with 26e's random steps the first session to meet it fails the from-scratch check first (recorded from planted/run.ts, 2026-10-22); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the model check first (already so on main before Duplicate)",
   },
   "resolve-last-body-only": {
     what: "a reference is looked for only on the last body shown, as while there was one body",
@@ -173,22 +173,22 @@ export const PLANTS: Record<ModelFault, Plant> = {
   // recorded on that kernel built locally with the sessions given MODEL_KNOWS, 2026-11-04.
   "combine-tool-kept": {
     what: "a Combine leaves its tools in the design though Keep tools is off",
-    edits: [{ file: REBUILD, find: "  for (const tool of keepTools ? [] : tools) delete bodies[tool];", replace: "  for (const tool of keepTools ? [] : tools.slice(0, 0)) delete bodies[tool];" }],
+    edits: [{ file: REBUILD, find: "    for (const tool of step.keepTools ? [] : step.tools) delete work[tool];", replace: "    for (const tool of step.keepTools ? [] : step.tools.slice(0, 0)) delete work[tool];" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
   "combine-not-held": {
     what: "a Combine's target keeps its body as it was",
     edits: [
-      { file: REBUILD, find: "  delete bodies[target];\n", replace: "" },
-      { file: REBUILD, find: "    bodies[nb.id] = { feature: nb.id === target", replace: "    if (nb.id !== target) bodies[nb.id] = { feature: nb.id === target" },
+      { file: REBUILD, find: "    delete work[step.target];\n", replace: "" },
+      { file: REBUILD, find: "      work[nb.id] = { feature: nb.id === step.target", replace: "      if (nb.id !== step.target) work[nb.id] = { feature: nb.id === step.target" },
     ],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
   "combine-pieces-dropped": {
     what: "a Combine's pieces apart from its target are left out",
-    edits: [{ file: REBUILD, find: "    bodies[nb.id] = { feature: nb.id === target", replace: "    if (nb.id === target) bodies[nb.id] = { feature: nb.id === target" }],
+    edits: [{ file: REBUILD, find: "      work[nb.id] = { feature: nb.id === step.target", replace: "      if (nb.id === step.target) work[nb.id] = { feature: nb.id === step.target" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
@@ -196,16 +196,16 @@ export const PLANTS: Record<ModelFault, Plant> = {
     what: "changing a Combine's operation keeps the old one",
     edits: [{ file: COMBINE, find: "parameters: { ...old.intent.parameters, operation, keepTools }", replace: "parameters: { ...old.intent.parameters, keepTools }" }],
     run: ["timeline"],
-    caught: "the rebuild differs from the model",
-    why: "Design's summary words change with the operation, so its data changes and the edit counts as done; the model's planted bug leaves its data as it was (no change)",
+    caught: "outcome differs from the model",
+    why: "Design's summary words change with the operation, so its data changes and the edit counts as done; the model's planted bug leaves its data as it was (no change); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the edit's outcome check first",
   },
   "combine-refusal-changes": {
     what: "a Combine the kernel refuses still uses its tools up",
     edits: [
       {
         file: REBUILD,
-        find: "      return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
-        replace: "      for (const tool of keepTools ? [] : tools) delete bodies[tool];\n      return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+        find: "        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+        replace: "        for (const tool of step.keepTools ? [] : step.tools) delete bodies[tool];\n        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
       },
     ],
     run: ["timeline"],
@@ -221,8 +221,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     what: "a name on a split face goes to its first piece, never by tag, origin or size",
     edits: [{ file: NAMES, find: "  if (pieces.length === 1) {\n    const [one] = pieces;", replace: "  if (pieces.length >= 1) {\n    const [one] = pieces;" }],
     run: ["timeline"],
-    caught: "a reference guessed between pieces",
-    why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner)",
+    caught: "a reference was lost",
+    why: "found at seed 95 only, beyond planted/session.ts's seeds 1 to 30; its 3 steps shrunk from seed 95 are saved in test/regressions/timeline-design/plant-combine-first-piece-95.json, which session.ts replays after the seeds (2026-11-07); from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) a session within seeds 1 to 30 meets it first, as a reference lost",
   },
   // 35f1e2: recorded on the #132 kernel built locally with the sessions given MODEL_KNOWS, 2026-11-05.
   "combine-face-moves-with-target": {
@@ -236,7 +236,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
     ],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
-    why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions; planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught); workspaces/design/test/combine-scene.test.ts catches it by hand",
+    why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions); its 16 steps shrunk from seed 140 are saved in test/regressions/timeline-design/plant-combine-face-moves-140.json, which planted/session.ts replays after its seeds 1 to 30 (2026-11-07); workspaces/design/test/combine-scene.test.ts catches it by hand",
   },
   "combine-edge-tags-dropped": {
     what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
@@ -248,8 +248,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
       },
     ],
     run: ["timeline"],
-    caught: "the rebuild differs from the model",
-    why: "recorded on the #132 kernel built locally with MODEL_KNOWS, 2026-11-05 (seed 3); before 35f1e2 the sessions named a combined body's edges themselves from its faces' full names, so this mistake in the app was never compared: they now read the names the app writes",
+    caught: "two edges share a name",
+    why: "recorded on the #132 kernel built locally with MODEL_KNOWS, 2026-11-05 (seed 3); before 35f1e2 the sessions named a combined body's edges themselves from its faces' full names, so this mistake in the app was never compared: they now read the names the app writes; from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the edge-name check first",
   },
   "save-stamps": {
     what: "each save writes a counter into the file",
@@ -341,8 +341,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
       },
     ],
     run: ["timeline"],
-    caught: "rebuilding twice differs",
-    why: "the reused body is wrong; since 35eb the plant also puts the old item's bodies back under their body ids, so the second rebuild of the same document differs from the first before the comparison with a rebuild from scratch is reached",
+    caught: "the rebuild differs from a rebuild from scratch",
+    why: "the reused body is wrong; since 35eb the plant also puts the old item's bodies back under their body ids, so the second rebuild of the same document differs from the first before the comparison with a rebuild from scratch is reached; from 35e2m (Duplicate drawn too, 2026-11-07, planted/run.ts) the sessions change and the first to meet it fails the from-scratch check first (already so on main before Duplicate)",
   },
   // 26e: the timeline's rules on a face sketch, and the greying unified.
   "suppress-fails-dependents": {
@@ -395,6 +395,18 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [{ file: MOVE, find: "const kept = sameBodies ? null : items!;", replace: "const kept = Number(\"1\") ? null : items!;" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
+  },
+  "duplicate-no-body": {
+    what: "a Duplicate builds but makes no copy (35e2)",
+    edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: b.handle, spec: b.spec, ...(b.curves ? { curves: b.curves } : {}) };\n  return { status: \"built\", bodies: [id] };", replace: "  return { status: \"built\" };" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "duplicate-source-names": {
+    what: "a copy's faces keep the names of the body it was copied from (35e2)",
+    edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: b.handle,", replace: "  bodies[id] = { feature: b.feature, handle: b.handle," }],
+    run: ["timeline"],
+    caught: "two faces share a name",
   },
 };
 
@@ -477,7 +489,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "source-lost-silent": {
     fault: "source-lost-silent",
     what: "an extrude of a held face sketch says nothing",
-    edits: [{ file: REBUILD, find: "...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) });", replace: "...(spec.warning ? { warning: spec.warning } : {}) });" }],
+    edits: [{ file: REBUILD, find: "...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) };", replace: "...(spec.warning ? { warning: spec.warning } : {}) };" }],
     run: ["naming"],
     caught: "hand-worked: a sketch on a cylinder's flat top",
     why: "the hand-worked file naming a cylinder's side comes before the Fusion answers",
@@ -677,7 +689,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "own-face-targets-only": {
     what: "a sketch is offered only its own face's edges, as in 26f, so a centre can't be snapped onto another body or another face",
-    edits: [{ file: EDGES, find: "  const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));", replace: "  const own = isFacePlane(facePlane) ? findInScene(faceReference(facePlane), scene) : null;\n  const all = own?.status === \"found\" ? scene.bodies.flatMap((b, k) => (k === sceneHit(scene, \"face\", own.index)!.body ? placedTargets(b.view, b.names, plane, sceneHit(scene, \"face\", own.index)!.index) : [])) : [];" }, { file: EDGES, find: 'import { findInScene, type Scene } from "./scene.ts";', replace: 'import { findInScene, sceneHit, type Scene } from "./scene.ts";' }],
+    edits: [{ file: EDGES, find: "  const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));", replace: "  const facePlane = features[at].intent.parameters.plane;\n  const own = isFacePlane(facePlane) ? findInScene(faceReference(facePlane), scene) : null;\n  const all = own?.status === \"found\" ? scene.bodies.flatMap((b, k) => (k === sceneHit(scene, \"face\", own.index)!.body ? placedTargets(b.view, b.names, plane, sceneHit(scene, \"face\", own.index)!.index) : [])) : [];" }, { file: EDGES, find: 'import { findInScene, type Scene } from "./scene.ts";', replace: 'import { findInScene, sceneHit, type Scene } from "./scene.ts";' }],
     run: ["naming"],
     caught: "Design offers no",
     why: "the naming harness snaps onto the target the model names, and finds none to snap onto before any check runs",

@@ -96,6 +96,8 @@ export interface SettingsParts {
   onMouse?: (preset: MousePreset) => void;
   /** Opens Report a bug (bug-report.ts); the About card's row shows only when given. */
   onReportBug?: () => void;
+  /** Opens What's new (whats-new.ts), the public list of changes; the About card's row shows only when given. */
+  onWhatsNew?: () => void;
 }
 
 /** Fill the dialog: a header with Close, then one card per section. */
@@ -197,6 +199,18 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
       card.append(el("p", undefined, "Your projects are kept in this browser and are never sent to us. An account is optional and never needed to design, slice or save; signing in sends only what the privacy page lists. The optional AI assistant sends only what you ask it, and only once you turn it on."));
     } else if (s.id === "about") {
       card.append(el("p", undefined, parts.version ? `SpindleLabs, ${parts.version}` : "SpindleLabs"));
+      if (parts.onWhatsNew) {
+        const row = el("div", "settings-row");
+        const show = el("button", "settings-action", "Show");
+        show.type = "button";
+        show.id = "settings-whats-new";
+        show.addEventListener("click", () => {
+          dialog.close();
+          parts.onWhatsNew?.();
+        });
+        row.append(el("span", undefined, "What's new"), show);
+        card.append(row);
+      }
       if (parts.onReportBug) {
         const row = el("div", "settings-row");
         const report = el("button", "settings-action", "Report a bug");
