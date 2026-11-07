@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -11,6 +11,8 @@ export interface KernelOps {
   make_sphere: { args: [radius: number]; result: BodyView };
   make_extrude: { args: [profile: Outline, distance: number]; result: BodyView };
   export_stl: { args: [spec: BodySpec, name: string]; result: StlFile };
+  /** The "this is solid" check of an exported binary STL file, from its own bytes (the export badge). */
+  check_solid: { args: [stl: Uint8Array<ArrayBuffer>]; result: SolidReport };
   snap_to_grid: { args: [x: number, y: number, spacing: number]; result: [number, number] };
   place_freely: { args: [x: number, y: number, pixel: number]; result: [number, number] };
   sketch_outline: { args: [lines: SketchLine[], circles: SketchCircle[], arcs: SketchArc[]]; result: SketchOutline };

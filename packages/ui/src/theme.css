@@ -421,7 +421,7 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
 #workspace .tree-row { display: block; width: 100%; text-align: left; padding: 4px 6px; background: none; border: 1px solid transparent; overflow-wrap: anywhere; }
 #workspace .tree-row:hover { background: var(--surface-raised); }
 #workspace .tree-row[aria-current="true"] { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
-#action-note { margin: 0; font-size: 13px; min-height: 1em; overflow-wrap: anywhere; }
+#action-note { margin: 0; font-size: 13px; min-height: 1em; overflow-wrap: anywhere; flex-shrink: 0; }
 #workspace .verbs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 #workspace .selection-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 #workspace .selection-list code { color: var(--text-dim); font-size: 12px; overflow-wrap: anywhere; }

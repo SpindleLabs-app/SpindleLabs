@@ -9,6 +9,7 @@
 import type { WorkspaceId } from "./project.ts";
 import type { RepresentationKind } from "./representation.ts";
 import type { WorkspaceContext } from "./workspace.ts";
+import type { SolidReport } from "../kernel/kernel-types.ts";
 
 /** What can be selected and acted on. Outlines (sketch profiles, Vector paths) come with step 21 and V1. */
 export type SelectionKind = "body" | "face" | "edge" | "outline";
@@ -30,6 +31,8 @@ export interface ActionOutcome {
   message: string;
   /** True for a warning or an error, shown as one. */
   bad: boolean;
+  /** An export's "this is solid" check of the file it saved (the export badge), when it ran one. */
+  solid?: SolidReport;
 }
 
 export interface Action {

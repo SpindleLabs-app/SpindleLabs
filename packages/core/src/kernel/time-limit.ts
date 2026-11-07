@@ -308,6 +308,20 @@ function shape(spec: BodySpec): ShapeSpec {
   return "moved" in spec ? spec.moved.body : spec;
 }
 
+/**
+ * The "this is solid" check of a file's triangles (check_solid):
+ * UNITS_PER_CHECKED_TRIANGLE each, a generous allowance (one unit per
+ * 1,000 triangles), read from the count in the header; a file too short to
+ * say has none, and every export of a few hundred thousand triangles or
+ * fewer stays under the floor.
+ */
+export const UNITS_PER_CHECKED_TRIANGLE = 1e-3;
+
+export function checkUnits(stl: Uint8Array): number {
+  if (stl.byteLength < 84) return 0;
+  return UNITS_PER_CHECKED_TRIANGLE * new DataView(stl.buffer, stl.byteOffset, stl.byteLength).getUint32(80, true);
+}
+
 /** The units of building `spec` and showing it (make_*, body_build, export_stl). */
 export function buildUnits(spec: BodySpec): number {
   const s = shape(spec);
@@ -410,6 +424,8 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
     }
     case "sketch_outline":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
+    case "check_solid":
+      return checkUnits(a[0] as Uint8Array);
     case "solve_sketch":
       return typeof a[0] === "string" ? solveUnits(a[0]) : 0;
     case "slice_stl":
