@@ -15,12 +15,18 @@ export const TOP = { ...HOME, toward: [0, 0, 1], up: [0, 1, 0] };
  */
 export const EMPTY_TOP = { toward: [0, 0, 1], up: [0, 1, 0], centre: [0, 0, 0], radius: 50 };
 
-/** Where a model point is on screen, for a canvas at `box` and a view framing the box. */
-export function screenPoint(box, [px, py, pz], view) {
+/**
+ * Where a model point is on screen, for a canvas at `box` and a view framing
+ * the box. `fitted` is the canvas the camera was fitted at, when the view has
+ * since changed only its height: the viewport keeps the camera then (viewer.ts
+ * `resize`: a toolbar or a keyboard settling), so the fit is that canvas's.
+ */
+export function screenPoint(box, [px, py, pz], view, fitted = box) {
   const n = Math.hypot(...view.toward);
   const dir = view.toward.map((d) => d / n);
   const aspect = box.width / box.height;
-  const half = aspect < 1 ? Math.atan(Math.tan(Math.PI / 8) * aspect) : Math.PI / 8;
+  const fit = fitted.width / fitted.height;
+  const half = fit < 1 ? Math.atan(Math.tan(Math.PI / 8) * fit) : Math.PI / 8;
   const dist = view.radius / Math.sin(half);
   const cam = view.centre.map((c, i) => c + dir[i] * dist);
   const fwd = dir.map((d) => -d);
@@ -41,9 +47,9 @@ export function screenPoint(box, [px, py, pz], view) {
  * `view`. Fails if something else is on top of the canvas there (the view
  * cube, a panel), so a test never clicks it by accident.
  */
-export async function clickPlane(page, [x, y], view = TOP, tap = false) {
+export async function clickPlane(page, [x, y], view = TOP, tap = false, fitted = undefined) {
   const box = await page.locator("#viewport canvas").boundingBox();
-  const p = screenPoint(box, [x, y, 0], view);
+  const p = screenPoint(box, [x, y, 0], view, fitted ?? box);
   const on = await page.evaluate(([px, py]) => {
     const e = document.elementFromPoint(px, py);
     return e?.tagName === "CANVAS" && e.closest("#viewport") ? "canvas" : e ? e.id || e.className || e.tagName : "nothing";

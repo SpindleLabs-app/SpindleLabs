@@ -184,6 +184,19 @@ export function deleteAsk(slot: HTMLElement): DeleteAsk {
   slot.append(holder);
 
   let onConfirm = () => {};
+  // Where the open menu was asked for: at the pointer, kept on the screen, and kept there again whenever the window
+  // changes size (a phone turned from upright to sideways left it mostly off the screen: clumsy-human hunt 11-04).
+  let menuAt = { x: 0, y: 0 };
+  const placeMenu = () => {
+    const view = document.defaultView;
+    const w = view?.innerWidth ?? 0;
+    const h = view?.innerHeight ?? 0;
+    const r = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(0, Math.min(menuAt.x, w - r.width))}px`;
+    menu.style.top = `${Math.max(0, Math.min(menuAt.y, h - r.height))}px`;
+  };
+  // Listened for only while the menu is open (a Design mounted again makes a new one).
+  menu.addEventListener("close", () => document.defaultView?.removeEventListener("resize", placeMenu));
   const shut = (d: HTMLDialogElement) => {
     if (d.open) d.close();
   };
@@ -243,13 +256,9 @@ export function deleteAsk(slot: HTMLElement): DeleteAsk {
         }),
       );
       show(menu);
-      // At the pointer, kept on the screen.
-      const view = document.defaultView;
-      const w = view?.innerWidth ?? 0;
-      const h = view?.innerHeight ?? 0;
-      const r = menu.getBoundingClientRect();
-      menu.style.left = `${Math.max(0, Math.min(at.x, w - r.width))}px`;
-      menu.style.top = `${Math.max(0, Math.min(at.y, h - r.height))}px`;
+      menuAt = at;
+      placeMenu();
+      document.defaultView?.addEventListener("resize", placeMenu);
       menu.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
     },
     ask(q, run) {

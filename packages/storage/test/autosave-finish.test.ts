@@ -262,3 +262,38 @@ test("finish back at the stored state while a save of another state is in flight
   assert.equal(h.stored.at(-1), 20, "the store holds the state the user left");
   assert.equal(j.items.size, 0, "the journal entry goes once 20 is stored");
 });
+
+test("#331: settled() waits for finish's own save to land, and for one in flight before it", async () => {
+  // Nightly issue #331: Open looked up the stored copy while New's last save (finish) was still landing, so it read the
+  // save time from before it. settled() is what Open now waits for. Edit to 20, its save asked at 1000 and held; edit
+  // to 30 and finish: 30 is stored after 20. settled() must still be waiting after 20 lands, and settle once 30 has.
+  const h = heldStore();
+  const { autosave, edit, clock } = page(h.store);
+  let done = false;
+  edit(20);
+  await clock.advance(1000);
+  assert.deepEqual(h.asked, [20], "20 in flight");
+  edit(30);
+  autosave.finish();
+  void autosave.settled().then(() => (done = true));
+  await settle();
+  assert.equal(done, false, "20 still in flight");
+  await h.finishOne();
+  assert.deepEqual(h.stored, [20]);
+  assert.deepEqual(h.asked, [20, 30], "finish's own save asked once 20 landed");
+  assert.equal(done, false, "finish's own save (30) is still landing: a lookup now would read the store before it");
+  await h.finishOne();
+  assert.deepEqual(h.stored, [20, 30]);
+  assert.equal(done, true, "settled once 30 is stored");
+});
+
+test("settled() settles when nothing was ever saved, and when finish's save is refused", async () => {
+  const quiet = page(heldStore().store);
+  quiet.autosave.finish();
+  await quiet.autosave.settled(); // nothing to wait for
+  const refusing: ProjectStore = { list: async () => [], open: async () => emptyProject(), remove: async () => {}, save: async () => Promise.reject(new Error("storage off")) };
+  const { autosave, edit } = page(refusing);
+  edit(20);
+  autosave.finish();
+  await autosave.settled(); // settles either way, never rejects
+});

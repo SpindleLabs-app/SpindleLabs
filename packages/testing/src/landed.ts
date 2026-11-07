@@ -6,8 +6,8 @@
 // model and Design must then answer them). A step's thread adds its
 // number here the day it lands.
 
-/** 35e2: Move (its session moves, add-move and set-move). */
-export const LANDED: ReadonlySet<string> = new Set<string>(["35e2"]);
+/** 35e2: Move (its session moves, add-move and set-move); 35 and 36: Combine, with faces lying on each other (35f1f, 11-06: the kernel the app ships answers both). */
+export const LANDED: ReadonlySet<string> = new Set<string>(["35e2", "35", "36"]);
 
 /**
  * Steps whose session moves the timeline model answers before Design's

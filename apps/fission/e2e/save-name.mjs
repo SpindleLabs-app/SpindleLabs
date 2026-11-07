@@ -245,6 +245,116 @@ await check("with a save picker: after File > New, Save asks where to save the n
   }
 });
 
+await check("keys (missing-basics audit): Ctrl+S saves with no browser Save page box, again to the same file; Ctrl+Shift+S asks again; Ctrl+S in a text box saves too; Ctrl+O opens the file chooser", async () => {
+  const { context, page } = await fresh(1280, FAKE_PICKER);
+  try {
+    // Playwright takes over the browser's file chooser only once something listens for it; listening from the start
+    // (not just before the key) makes sure the take-over is on when Ctrl+O comes.
+    let choosers = 0;
+    page.on("filechooser", () => choosers++);
+    await page.evaluate(() => (window.__chosen = "Keys.spindle"));
+    await page.click("#viewport", { position: { x: 5, y: 5 } }).catch(() => {}); // the focus on the page, off any box
+    // A key press the app handled has its default (the browser's Save page box) prevented: the event says so.
+    await page.evaluate(() => {
+      window.__prevented = [];
+      document.addEventListener("keydown", (e) => window.__prevented.push([e.key, e.defaultPrevented]));
+    });
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForFunction(() => window.__picked.length === 1);
+    await page.waitForFunction(() => window.__files["Keys.spindle"]?.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.__prevented.at(-1)), ["s", true]);
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForFunction(() => window.__files["Keys.spindle"].length === 2);
+    assert.equal((await picked(page)).length, 1, "a second Ctrl+S didn't ask");
+    await page.evaluate(() => (window.__chosen = "Other.spindle"));
+    await page.keyboard.press("ControlOrMeta+Shift+S");
+    await page.waitForFunction(() => window.__files["Other.spindle"]?.length === 1);
+    assert.equal((await picked(page)).length, 2, "Ctrl+Shift+S asked again");
+    // In a text box (the shortcut table leaves most keys to the box): Save still runs, as in a desktop app.
+    await page.evaluate(() => {
+      const box = Object.assign(document.createElement("input"), { id: "probe-box", type: "text" });
+      document.body.append(box);
+    });
+    await page.focus("#probe-box");
+    await page.keyboard.press("ControlOrMeta+s");
+    await page.waitForFunction(() => window.__files["Other.spindle"].length === 2);
+    await page.evaluate(() => document.getElementById("probe-box").remove());
+    // Ctrl+O: the app's own file chooser (the browser's Open file box is never reached).
+    await page.keyboard.press("ControlOrMeta+o");
+    await page.waitForFunction(() => true); // a round trip, then the chooser has been reported
+    for (let i = 0; i < 50 && choosers === 0; i++) await page.waitForTimeout(100);
+    assert.equal(choosers, 1, "Ctrl+O opened the app's file chooser once");
+    assert.deepEqual(await page.evaluate(() => window.__prevented.at(-1)), ["o", true]);
+    // File ▾ shows the keys at the right of Open…, Save and Save As….
+    await page.click("#file-menu");
+    const keys = await page.$$eval("[role=menuitem] .menu-button-key", (ks) => ks.map((k) => [k.closest("[role=menuitem]").id, k.textContent]));
+    assert.deepEqual(keys, [["open", "Ctrl+O"], ["file-save", "Ctrl+S"], ["file-save-as", "Ctrl+Shift+S"]]); // CI and this check run on Linux
+  } finally {
+    await context.close();
+  }
+});
+
+for (const [width, tap] of [[1280, false], [375, true]]) {
+  await check(`${width} px: File > Save picture (PNG) saves the view as on screen, the box in the middle, without the view cube (quick wins)`, async () => {
+    const { context, page } = await fresh(width, NO_PICKER, tap);
+    try {
+      await chooseFile(page, "file-save-picture", tap);
+      await page.waitForSelector(".save-name input");
+      assert.equal(await page.inputValue(".save-name input"), "Untitled");
+      assert.equal(await page.textContent(".save-name .ext"), ".png");
+      const [download] = await Promise.all([page.waitForEvent("download"), press(".save-name .ok", page, tap)]);
+      assert.equal(download.suggestedFilename(), "Untitled.png");
+      const path = join(tmpdir(), `save-picture-${process.pid}-${width}.png`);
+      await download.saveAs(path);
+      const png = readFileSync(path);
+      // A PNG starts with its 8-byte signature, then the IHDR chunk: width and height as 4-byte big-endian numbers at 16 and 20.
+      assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "a PNG file");
+      const size = [png.readUInt32BE(16), png.readUInt32BE(20)];
+      const canvas = await page.$eval("#viewport canvas", (c) => [c.width, c.height]);
+      assert.deepEqual(size, canvas, "the size of the view's canvas");
+      // Read back in the page: the middle is the box (lit faces, not the backdrop), and the view cube's corner is
+      // backdrop only, while on screen the same corner has the cube's edges (its spread of brightness is far larger).
+      const read = await page.evaluate(async (b64) => {
+        const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+        const c = new OffscreenCanvas(img.width, img.height);
+        const g = c.getContext("2d");
+        g.drawImage(img, 0, 0);
+        const lum = (d, i) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        const spread = (data) => {
+          const ls = [];
+          for (let i = 0; i < data.length; i += 4) ls.push(lum(data, i));
+          const mean = ls.reduce((a, x) => a + x, 0) / ls.length;
+          return Math.sqrt(ls.reduce((a, x) => a + (x - mean) ** 2, 0) / ls.length);
+        };
+        const view = document.querySelector("#viewport canvas");
+        const r = view.getBoundingClientRect();
+        const cube = document.querySelector("#viewport").getBoundingClientRect();
+        const k = img.width / r.width;
+        // The cube is drawn in the canvas's top right corner (about 120 CSS px square).
+        const box = [Math.round((r.width - 130) * k), Math.round(10 * k), Math.round(120 * k), Math.round(120 * k)];
+        const onScreen = document.createElement("canvas");
+        onScreen.width = view.width;
+        onScreen.height = view.height;
+        onScreen.getContext("2d").drawImage(view, 0, 0);
+        const mid = g.getImageData(Math.round(img.width / 2), Math.round(img.height / 2), 1, 1).data;
+        const corner = g.getImageData(4, img.height - 5, 1, 1).data;
+        return {
+          mid: [...mid.slice(0, 3)],
+          corner: [...corner.slice(0, 3)],
+          pictureCube: spread(g.getImageData(...box).data),
+          screenCube: spread(onScreen.getContext("2d").getImageData(...box).data),
+          cubeShown: cube.width > 0,
+        };
+      }, png.toString("base64"));
+      const diff = read.mid.reduce((a, x, i) => a + Math.abs(x - read.corner[i]), 0);
+      assert.ok(diff > 60, `the box in the middle differs from the backdrop: ${JSON.stringify(read)}`);
+      assert.ok(read.screenCube > 3 * read.pictureCube, `the cube is on screen but not in the picture: ${JSON.stringify(read)}`);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 await check("no page errors", () => assert.deepEqual(errors, []));
 await browser.close();
 await server.close();

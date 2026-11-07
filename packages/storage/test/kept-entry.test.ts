@@ -121,9 +121,9 @@ test("that tab finished (a file opened) keeps its change as a separate project b
   a.changed();
   await settle();
   // Its rename can't go over the kept 50, and before the fix Open dropped it; now it is stored apart, and named.
-  assert.equal(a.finish(), "Renamed (from another tab)");
+  assert.equal(a.finish(), "Renamed (kept copy)");
   await settle();
-  assert.equal((await real.open("copy-1")).name, "Renamed (from another tab)");
+  assert.equal((await real.open("copy-1")).name, "Renamed (kept copy)");
   assert.equal(widthOf(await real.open("p")), 40, "nothing saved over the kept 50's stored state");
   assert.equal(widthOf(JSON.parse(keptEntry(journal, "p")!)), 50, "the kept entry as it was");
 });

@@ -1,7 +1,8 @@
 // Projects kept in this browser (19b): list, open, save, remove, written
 // over a KeyValue. Each project is two entries:
 //   project/<id>  the exact text of its .spindlelabs.json file (projectToJson)
-//   summary/<id>  {"name", "modified", "order", "writer"} for the list, so listing never reads whole projects
+//   summary/<id>  {"name", "modified", "order", "writer", "touched", "works"} for the list, so listing never reads whole
+//                 projects ("touched": when the save was made by the clock, "works": the workspaces holding work, U6a)
 //                 ("writer": the autosave that made the save, when it named itself, own-save.test.ts)
 // and one entry for them all:
 //   order         the number of the last save, counted up by each one: the summary's "order" puts the list in the
@@ -9,7 +10,7 @@
 // Opening goes through projectFromJson, so an old project migrates exactly
 // as an opened file would, and a corrupt one is refused with a message.
 
-import { projectFromJson, projectToJson, type DataReader, type Project } from "@fission/core";
+import { projectFromJson, projectToJson, workspacesWithWork, type DataReader, type Project, type WorkspaceId } from "@fission/core";
 import type { KeyValue } from "./key-value.ts";
 
 export interface ProjectSummary {
@@ -23,6 +24,13 @@ export interface ProjectSummary {
    * that same writer has no other tab's work under it (unsaved.ts, own-save.test.ts). Left out otherwise.
    */
   writer?: string;
+  /**
+   * When the last save was made, by the clock (`modified` is the time of the state, which a project brought forward
+   * from the list keeps): the home screen's "last opened". Left out for a project saved before this was kept.
+   */
+  touched?: Date;
+  /** The workspaces holding work in it (`workspacesWithWork`); left out for a project saved before this was kept. */
+  works?: WorkspaceId[];
   /** Set when this entry's summary can't be read; the project may still open. */
   problem?: string;
 }
@@ -82,12 +90,18 @@ function readSummary(id: string, text: string | undefined): ProjectSummary {
   try {
     const s: unknown = JSON.parse(text ?? "");
     if (typeof s !== "object" || s === null) throw new Error("not an object");
-    const { name, modified, order, writer } = s as Record<string, unknown>;
+    const { name, modified, order, writer, touched, works } = s as Record<string, unknown>;
     const when = typeof modified === "string" ? new Date(modified) : new Date(NaN);
     if (typeof name !== "string") throw new Error("no name");
     if (Number.isNaN(when.getTime())) throw new Error("no save time");
     const by = writerId(writer);
-    return by === null ? { id, name, modified: when, order: count(order) } : { id, name, modified: when, order: count(order), writer: by };
+    const base: ProjectSummary = { id, name, modified: when, order: count(order) };
+    if (by !== null) base.writer = by;
+    // Optional details: one that can't be read is left out, never a reason to refuse the project (U6a).
+    const at = typeof touched === "string" ? new Date(touched) : null;
+    if (at !== null && !Number.isNaN(at.getTime())) base.touched = at;
+    if (Array.isArray(works) && works.every((w) => typeof w === "string")) base.works = works as WorkspaceId[];
+    return base;
   } catch (e) {
     return { id, name: id, modified: new Date(0), order: 0, problem: `this project's summary can't be read (${message(e)})` };
   }
@@ -125,7 +139,9 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       if (Number.isNaN(when.getTime())) throw new Error("a stored project needs a valid save time");
       const modified = when.toISOString();
       const by = writerId(writer);
-      const summaryOf = (order: number) => JSON.stringify(by === null ? { name: project.name, modified, order } : { name: project.name, modified, order, writer: by });
+      const touched = read === undefined ? modified : now().toISOString(); // the clock is read once more only when the state's own time was handed in
+      const works = workspacesWithWork(project);
+      const summaryOf = (order: number) => JSON.stringify(by === null ? { name: project.name, modified, order, touched, works } : { name: project.name, modified, order, writer: by, touched, works });
       // The check and both writes in one step (KeyValue.update): no other tab's save lands between them, and a tab
       // killed mid-save leaves both entries or neither (real-use hunt B6, B7).
       await kv.update([SUMMARY + id, ORDER], ([summary, last]) => {

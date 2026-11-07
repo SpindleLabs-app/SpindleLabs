@@ -1,5 +1,5 @@
 // The top bar's File ▾ (U0f2a), at its left as in Fusion: New, Open…,
-// Projects in this browser… (U6a), Earlier versions… (3b), Save (and Save As…), then the exports. Open, Save and Save As are the shell's (the whole
+// Projects in this browser… (U6a), Earlier versions… (3b), My designs… (with accounts on), Save (and Save As…), then the exports. Open, Save and Save As are the shell's (the whole
 // project as a file); New and the exports are the workspace's on screen
 // (Design: Start fresh, after asking, and Export STL), read each time the
 // menu opens, so an entry that would do nothing is off and says why. A
@@ -15,6 +15,8 @@ export interface FileMenuEntry {
   label: string;
   title: string;
   off?: string;
+  /** Its shortcut as the user reads it ("Ctrl+S", "⌘S"), shown at the item's right. */
+  key?: string;
   run(): void;
 }
 
@@ -23,8 +25,12 @@ export interface FileMenuParts {
   open: FileMenuEntry;
   /** Projects in this browser…, listed after Open when given (U6a): every project kept here, to open or delete. */
   projects?: FileMenuEntry;
+  /** Home (U6b): back to the home screen, when the build has one. */
+  home?: FileMenuEntry;
   /** Earlier versions…, listed after it when given (missing basics 3b): the open project's versions kept here, to restore. */
   versions?: FileMenuEntry;
+  /** My designs…, listed after them when given (account features 1): the designs kept in the person's account. */
+  myDesigns?: FileMenuEntry;
   save: FileMenuEntry;
   /** Save As…, listed after Save when given: it asks for a name and place again. */
   saveAs?: FileMenuEntry;
@@ -58,6 +64,7 @@ export function fileSections(parts: FileMenuParts): MenuSection[] {
     label: e.label,
     title: e.title,
     off: e.off,
+    ...(e.key ? { key: e.key } : {}),
     icon,
     run: () => {
       const chosen = shell ? e : now(e.id);
@@ -66,7 +73,7 @@ export function fileSections(parts: FileMenuParts): MenuSection[] {
   });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  return [{ items: [item(newEntry, "new"), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
+  return [{ items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
 }
 
 /** File ▾ in `doc`: a menu button with the id `file-menu`. */

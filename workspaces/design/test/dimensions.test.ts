@@ -75,7 +75,7 @@ test("the Dimension tool's picks: a line's length, an arc's radius, a circle's d
   const p1 = clickConstraint(tool, s, { point: "point-3" });
   assert.equal(p1.tool.first, "point-3");
   assert.equal(p1.tool.pending, null);
-  assert.equal(constraintHint(p1.tool), "Click the point to measure to");
+  assert.equal(constraintHint(p1.tool), "Click the point to measure to (not a line: a point to a line comes later)");
   const p2 = clickConstraint(p1.tool, s, { point: centre.centre });
   assert.deepEqual(p2.tool.pending, { kind: "distance", a: "point-3", b: centre.centre, value: 20 });
   assert.equal(p2.tool.first, null);

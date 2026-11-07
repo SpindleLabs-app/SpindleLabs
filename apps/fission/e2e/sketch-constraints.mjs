@@ -15,7 +15,7 @@ import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { closePanels, pickPlane, sheetsClearFor } from "./start.mjs";
+import { closePanels, openPanel, pickPlane, sheetsClearFor } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4283, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4283/?test-hooks";
@@ -98,7 +98,21 @@ async function sketchOnXY(page, tap) {
   await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on XY");
   await settle(page);
+  await halfMillimetreGrid(page, tap);
   if (tap) await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
+}
+
+/**
+ * Grid snap on a 0.5 mm grid, so a click lands exactly on the point it aims at in every engine: Firefox and WebKit
+ * send the pointer on whole pixels, and the nearest round number within half a pixel of that can be 0.1 mm off (19.9 for 20).
+ * Every point these checks draw is on the 0.5 mm grid. Drags are not snapped (they follow the pointer).
+ */
+async function halfMillimetreGrid(page, tap) {
+  await openPanel(page, "properties", tap);
+  await page.fill("#sketch-grid", "0.5");
+  await page.press("#sketch-grid", "Enter");
+  await page.check("#sketch-grid-snap");
+  await closePanels(page, tap);
 }
 
 
@@ -143,7 +157,8 @@ try {
     // Vertical on the same line: both ends would be one point.
     await page.click("#sketch-tool-vertical");
     await at(page, [10, 0]);
-    await until(page, () => /shrink line-\d+ to almost nothing/.test(document.querySelector("#sketch-grid-error")?.textContent ?? ""), null, "the vertical refused");
+    await until(page, () => /shrink the line shown in red to almost nothing/.test(document.querySelector("#sketch-grid-error")?.textContent ?? ""), null, "the vertical refused");
+    assert.ok(Number(await data(page, "sketchFighting")) > 0, "the line drawn red");
     assert.equal(await points(page), "0,0 20,0", "nothing moved");
     assert.equal(await data(page, "sketchConstraints"), "1");
     await shot(page, "constraints-refused-1280");

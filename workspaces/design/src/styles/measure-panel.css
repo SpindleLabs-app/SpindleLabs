@@ -1,0 +1,31 @@
+/* The Measure panel (step 35e2l2, measure-panel.ts): a card at the top of
+   the properties as the Combine panel's is (the mode's bright blue edge).
+   Each pick is a row with its words and a × that lets it go; the numbers
+   are a two-column list, the distance first and brightest. At phone width
+   it is the only thing in the Properties sheet while open and keeps to the
+   distance and the two picks, so the sheet stays short and never covers
+   most of the view. Colours are tokens only. */
+.measure-panel { border-left: 3px solid var(--look-accent, var(--accent)); padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.measure-panel h2 { margin: 0 0 6px; }
+.measure-panel .measure-panel-pick { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; padding: 4px 8px; background: var(--look-field, var(--page)); border: 1px solid var(--line); border-radius: var(--look-radius-s, 6px); }
+.measure-panel .measure-panel-legend { flex: none; width: 4em; font-size: 0.9em; color: var(--text-b9c3d1); }
+.measure-panel .measure-panel-value { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; color: var(--look-accent-text, var(--accent-text)); }
+.measure-panel .measure-panel-value.measure-panel-empty { color: var(--text-8b95a3); }
+.measure-panel .measure-panel-drop { flex: none; padding: 0 6px; background: none; border: none; color: var(--text-b9c3d1); font-size: 1.1em; }
+.measure-panel .measure-panel-hint { margin: 4px 0; color: var(--text-8b95a3); font-size: 0.9em; }
+.measure-panel .measure-panel-rows { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0; }
+.measure-panel .measure-panel-rows dt { color: var(--text-b9c3d1); }
+.measure-panel .measure-panel-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.measure-panel #measure-distance { color: var(--look-accent-text, var(--accent-text)); font-weight: 600; }
+.measure-panel .measure-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
+@media (max-width: 700px) {
+  .measure-panel button { min-height: 44px; min-width: 44px; }
+}
+@media (max-width: 640px) {
+  .measure-panel:not([hidden]) ~ * { display: none !important; }
+  .measure-panel h2 { font-size: 1.05em; margin: 0 0 4px; }
+  .measure-panel .measure-panel-hint { display: none; }
+  .measure-panel .measure-panel-pick { padding: 0 0 0 8px; }
+  /* The distance, along X/Y/Z, angle and centre to centre only: each pick's own facts stay off the phone's short sheet. */
+  .measure-panel .measure-pair .measure-own { display: none; }
+}

@@ -172,12 +172,14 @@ try {
           ["open", "open", false],
           ["file-projects", "folder", false],
           ["file-versions", "undo", false],
+          ["file-my-designs", "account", false],
           ["file-save", "save", false],
           ["file-save-as", "save", false],
           ["file-export-stl", "export", true],
+          ["file-save-picture", "export", false],
           ["file-slice-print", "export", true],
         ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Projects in this browser…", "Earlier versions…", "Save", "Save As…", "Export STL", "Slice for printing"]);
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…Ctrl+O", "Projects in this browser…", "Earlier versions…", "My designs…", "SaveCtrl+S", "Save As…Ctrl+Shift+S", "Export STL", "Save picture (PNG)", "Slice for printing"]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
         assert.equal(await page.getAttribute("#file-slice-print", "title"), NO_BODY);
@@ -349,6 +351,8 @@ try {
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-projects", "Projects in this browser… next (U6a)");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-versions", "then Earlier versions… (3b)");
+      await page.keyboard.press("ArrowDown");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-my-designs", "then My designs… (account features 1)");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-save");
       const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Enter")]);

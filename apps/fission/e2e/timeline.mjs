@@ -193,8 +193,10 @@ async function clickModel(page, [x, y], tap) {
 }
 
 /**
- * Sketches the layout's 10 × 10 square by the rectangle tool and extrudes it: Sketch 1 (sketch-2) and Extrude 1
+ * Sketches the layout's 10 × 10 square as four lines and extrudes it: Sketch 1 (sketch-2) and Extrude 1
  * (feature-11) on the starting box's design. `live`: click through the app's camera (clickModel), not clickPlane's.
+ * (Four lines, not the Rectangle tool, whose Horizontal and Vertical take four ids more since the solver bug hunt,
+ * 2026-11-06: the timeline's ids below stay as they were; sketch-tool.mjs checks the Rectangle tool.)
  */
 async function addSquare(page, tap, layout, live = false) {
   await press(page, "#create-sketch", tap);
@@ -205,10 +207,19 @@ async function addSquare(page, tap, layout, live = false) {
   await gridSnapOn(page);
   await closePanels(page, tap); // and it covers the view's lower part, so closed again to draw
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
-  await press(page, "#sketch-tool-rectangle", tap);
+  await press(page, "#sketch-tool-line", tap);
   // The sketch's panel floats over the square's corners on a wide screen (U0b).
+  const [[x0, y0], [x1, y1]] = layout.corners;
   await withPropertiesFolded(page, async () => {
-    for (const p of layout.corners) await (live ? clickModel(page, p, tap) : clickPlane(page, p, TOP, tap));
+    // On a phone the bar of floating buttons (Finish and the rest) lies over the square's top-left corner,
+    // which the Rectangle tool's two clicks never needed: it is hidden while the four lines are clicked, and
+    // shown again after (what is checked here is the timeline, not drawing beside that bar).
+    await page.evaluate(() => document.getElementById("phone-float")?.style.setProperty("visibility", "hidden"));
+    try {
+      for (const p of [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]) await (live ? clickModel(page, p, tap) : clickPlane(page, p, TOP, tap));
+    } finally {
+      await page.evaluate(() => document.getElementById("phone-float")?.style.removeProperty("visibility"));
+    }
   });
   await until(page, (w) => document.querySelector("#viewport").dataset.sketchPoints?.startsWith(w), layout.corners[0].join(","), "the square's first corner where it was clicked");
   await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "the square closed");

@@ -7,8 +7,10 @@
 // it; the panel only shows what it is given and reports what was typed and
 // clicked. Styles: src/styles/feature-edit.css.
 
+import { wordsInUnit } from "@fission/core";
+import { currentUnit } from "@fission/ui";
 import type { EditableFeature } from "./feature-edit.ts";
-import { parameterRows, type SizeKey } from "./properties.ts";
+import { followUnit, parameterRows, sizeBox, type SizeBox, type SizeKey } from "./properties.ts";
 
 export interface FeatureEditEvents {
   /** OK (or Enter), with each shown box as typed and, for an extrude, whether Flip is ticked. */
@@ -48,9 +50,11 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
   let editing: string | null = null;
   let error: HTMLElement | null = null;
   let ok: HTMLButtonElement | null = null;
-  let inputs: [SizeKey, HTMLInputElement][] = [];
+  let inputs: [SizeKey, SizeBox][] = [];
   let flip: HTMLInputElement | null = null;
   let region: HTMLElement | null = null;
+  /** The unit follower of the open item, kept here because the page's listener holds it only weakly. */
+  let watching: (() => boolean) | null = null;
   const typed = () => Object.fromEntries(inputs.map(([k, i]) => [k, i.value])) as Partial<Record<SizeKey, string>>;
   return {
     show(f) {
@@ -59,15 +63,17 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       inputs = [];
       const labels = rows.map((r) => {
         const input = el("input", `edit-${r.key}`);
-        Object.assign(input, { type: "number", step: "any", value: String(f.sizes[r.key] ?? "") });
+        Object.assign(input, { type: "number", step: "any" });
+        const field = sizeBox(input, () => currentUnit(document)); // the sizes are millimetres outside the box (U2c3)
+        field.value = String(f.sizes[r.key] ?? "");
         // Enter in a box is OK, as in any dialog.
         input.addEventListener("keydown", (e) => {
           if (e.key === "Enter" && ok && !ok.disabled) on.ok(typed(), flip?.checked);
         });
-        inputs.push([r.key, input]);
+        inputs.push([r.key, field]);
         const label = el("label", "", "feature-edit-row");
         // A sketch extrude's one size is its distance; the main panel calls the same box "Extrude by".
-        label.append(`${f.shape === "sketch-extrude" ? "Distance" : r.label} `, input, " mm");
+        label.append(`${f.shape === "sketch-extrude" ? "Distance" : r.label} `, input, " ", el("span", "", "unit-name", currentUnit(document)));
         return label;
       });
       flip = null;
@@ -97,12 +103,22 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       const note = el("p", "", "feature-edit-note", "Everything after it in the timeline is built again.");
       box.replaceChildren(title, ...labels, region, error, note, buttons);
       box.hidden = false;
-      inputs[0]?.[1].focus();
-      inputs[0]?.[1].select();
+      inputs[0]?.[1].el.focus();
+      inputs[0]?.[1].el.select();
+      const names = box.querySelectorAll(".unit-name");
+      const mine = inputs;
+      const onUnit = (): boolean => {
+        if (inputs !== mine || watching !== onUnit) return false;
+        for (const [, b] of mine) b.reshow();
+        for (const n of names) n.textContent = currentUnit(document);
+        return true;
+      };
+      watching = onUnit;
+      followUnit(document, onUnit);
     },
     showError(message) {
       if (!error) return;
-      error.textContent = message;
+      error.textContent = wordsInUnit(message, currentUnit(document));
       error.hidden = message === "";
     },
     showRegion(words) {
@@ -121,6 +137,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       box.hidden = true;
       error = ok = flip = region = null;
       inputs = [];
+      watching = null;
     },
     get editing() {
       return editing;
