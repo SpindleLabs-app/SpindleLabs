@@ -46,7 +46,7 @@ import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
-import { findRegion, regionOutline, type RegionRef } from "./regions.ts";
+import { findRegion, refusalReason, regionOutline, type RegionRef } from "./regions.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -1177,7 +1177,7 @@ export async function extrudeSpec(
   const name = item.provenance.self.label;
   // A region gone from a sketch that still has others says so; from one that has none, why it has none (a line deleted: "not joined"), as before regions.
   const said = (o: { lost: LostCause; message: string; refused?: true }) =>
-    o.refused ? o.message : o.message === REGION_GONE ? `${name} ${REGION_GONE}` : region !== undefined && o.lost === "invalid-outline" ? `${name}'s region can't be extruded: ${o.message}` : `${name} has no closed outline: ${o.message}`;
+    o.refused ? o.message : o.message === REGION_GONE ? `${name} ${REGION_GONE}` : region !== undefined && o.lost === "invalid-outline" ? `${name}'s region can't be extruded: ${refusalReason(o.message)}` : `${name} has no closed outline: ${o.message}`;
   if (!("outline" in out)) return await lost(out.lost, said(out), out.curves);
   // Where the sketch lies: given by the rebuild, an origin plane's, or (asked from outside a rebuild) its face's as the timeline builds it.
   const at = placed !== undefined ? placed : isFaceSketch(item) ? await placementOf(kernel, doc, sketchId) : originPlacement(item);

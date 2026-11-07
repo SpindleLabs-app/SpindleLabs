@@ -1,6 +1,7 @@
 // The Edit feature panel (step 25a2, feature-edit.ts), at the top of the
 // properties: the item's name, a box for each size its shape uses with the
-// value it has now, an extrude's Flip (26c), the kernel's refusal, and OK
+// value it has now, an extrude's Flip (26c), what it says of an extrude's
+// region (48d4: picked in the view), the kernel's refusal, and OK
 // or Cancel. Enter in a box
 // is OK; Escape is Cancel (workspace.ts `shortcut`). The workspace drives
 // it; the panel only shows what it is given and reports what was typed and
@@ -22,6 +23,8 @@ export interface FeatureEditPanel {
   show(f: EditableFeature): void;
   /** Why OK recorded nothing ("" hides it). */
   showError(message: string): void;
+  /** An extrude of a sketch (48d4): what the panel says about its region, shaded in the view to pick another (null: no line). */
+  showRegion(words: string | null): void;
   /** OK off while the kernel checks the sizes, so a second press can't record twice. */
   busy(on: boolean): void;
   hide(): void;
@@ -49,6 +52,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
   let ok: HTMLButtonElement | null = null;
   let inputs: [SizeKey, SizeBox][] = [];
   let flip: HTMLInputElement | null = null;
+  let region: HTMLElement | null = null;
   /** The unit follower of the open item, kept here because the page's listener holds it only weakly. */
   let watching: (() => boolean) | null = null;
   const typed = () => Object.fromEntries(inputs.map(([k, i]) => [k, i.value])) as Partial<Record<SizeKey, string>>;
@@ -82,6 +86,8 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
         row.append(flip, " Flip");
         labels.push(row);
       }
+      region = el("p", "edit-region", "feature-edit-region");
+      region.hidden = true;
       error = el("p", "feature-edit-error", "bad");
       error.hidden = true;
       error.setAttribute("role", "alert");
@@ -95,7 +101,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       buttons.append(ok, cancel);
       const title = el("h2", "feature-edit-title", "", `Edit ${f.name}`);
       const note = el("p", "", "feature-edit-note", "Everything after it in the timeline is built again.");
-      box.replaceChildren(title, ...labels, error, note, buttons);
+      box.replaceChildren(title, ...labels, region, error, note, buttons);
       box.hidden = false;
       inputs[0]?.[1].el.focus();
       inputs[0]?.[1].el.select();
@@ -115,6 +121,11 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       error.textContent = wordsInUnit(message, currentUnit(document));
       error.hidden = message === "";
     },
+    showRegion(words) {
+      if (!region) return;
+      region.textContent = words ?? "";
+      region.hidden = words === null;
+    },
     busy(on) {
       if (ok) ok.disabled = on;
     },
@@ -124,7 +135,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       // holding the panel as hovered, and then in memory once a new design replaces it (e2e/closed-panels.mjs).
       box.replaceChildren();
       box.hidden = true;
-      error = ok = flip = null;
+      error = ok = flip = region = null;
       inputs = [];
       watching = null;
     },

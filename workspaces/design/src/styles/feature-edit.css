@@ -8,6 +8,7 @@
 .feature-edit .feature-edit-row { display: block; margin: 6px 0; }
 .feature-edit .feature-edit-row input { width: 6em; }
 .feature-edit .feature-edit-note { color: var(--text-8b95a3); font-size: 0.9em; }
+.feature-edit .feature-edit-region { font-size: 0.9em; }
 .feature-edit .feature-edit-buttons { display: flex; gap: 6px; margin-top: 4px; }
 /* OK is the box's main action (UX2): bright blue, the one filled button. */
 .feature-edit #feature-edit-ok { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
