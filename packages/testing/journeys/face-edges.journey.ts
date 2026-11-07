@@ -238,7 +238,7 @@ const PLANTS: { name: string; find: string; replace: string }[] = [
   // The settle runs on the click's document, dropping the pin made from it.
   { name: "settle-drops-pin", find: "          next = await settleKept(kernel, before, next, bodies);\n        } catch (e) {\n          return sketchBox.showError(e instanceof Error ? e.message : String(e));\n        }\n        // Undo, Escape", replace: "          next = await settleKept(kernel, before, done.doc, bodies);\n        } catch (e) {\n          return sketchBox.showError(e instanceof Error ? e.message : String(e));\n        }\n        // Undo, Escape" },
   // The rebuild's followed points never taken into the document: drawn, saved and held where they were snapped.
-  { name: "followed-not-taken", find: "      if (value.followed !== doc && designDoc() === doc && !ctx.history.restoring()) takeIn(doc, value.followed);", replace: "      if (value.followed !== doc && designDoc() === doc && !ctx.history.restoring() && false) takeIn(doc, value.followed);" },
+  { name: "followed-not-taken", find: "      const taken = value.followed !== doc && designDoc() === doc && !ctx.history.restoring();", replace: "      const taken = value.followed !== doc && designDoc() === doc && !ctx.history.restoring() && false;" },
   // Taken in as a step of their own: one undo takes back only the point (an opened file gets an undo step).
   { name: "followed-own-step", find: "    ctx.history.amend(true);", replace: "    ctx.projectChanged(\"Follow\");" },
   // Taken in ending the merge: the typing in one box becomes a step per key.

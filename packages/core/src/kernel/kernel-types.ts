@@ -382,3 +382,53 @@ export type KernelTouch = { at: "edge"; from: [number, number, number]; to: [num
 
 /** One place a boolean's result would be too thin, in world mm: an edge too short (its two ends), or a gap (the nearest points of its two sides). */
 export type KernelThin = { at: "edge" | "gap"; from: [number, number, number]; to: [number, number, number] };
+
+/**
+ * A pick to measure (step 35e2l): a kept body's corner, edge or face by its
+ * kernel index (as `BodyView` numbers them), or the whole body with none.
+ */
+export type MeasurePick = { body: BodyHandle; vertex?: number; edge?: number; face?: number };
+
+/** What one measured pick is; points and directions in the world (mm), each of length 1. */
+export interface MeasureFacts {
+  kind: "vertex" | "line" | "arc" | "circle" | "plane" | "cylinder" | "sphere" | "body";
+  /** A corner's point. */
+  point?: [number, number, number];
+  /** An edge's length. */
+  length?: number;
+  /** A round edge's or face's radius. */
+  radius?: number;
+  /** A round edge's or sphere's centre; a cylinder's point on its axis level with its lowest rim. */
+  centre?: [number, number, number];
+  /** A line's direction, a round edge's or cylinder's axis, a flat face's outward normal. */
+  direction?: [number, number, number];
+  /** How far round an arc goes (degrees). */
+  sweep?: number;
+  /** A face's or body's area (mm²). */
+  area?: number;
+  /** A body's volume (mm³). */
+  volume?: number;
+}
+
+/** A distance and the two points it runs between (world mm). */
+export interface MeasureGap {
+  distance: number;
+  from: [number, number, number];
+  to: [number, number, number];
+}
+
+/**
+ * The kernel's measurement of one or two picks: each pick's facts, and with
+ * two, the least distance between them (from a point of the first to one of
+ * the second), the distance between their centres or axes, and the angle
+ * between their directions in degrees (lines either way along 0–90, a line
+ * and a flat face 0 lying along it to 90 straight through, two flat faces
+ * their outward normals' 0–180).
+ */
+export interface Measured {
+  first: MeasureFacts;
+  second?: MeasureFacts;
+  distance?: MeasureGap;
+  centres?: MeasureGap;
+  angle?: number;
+}

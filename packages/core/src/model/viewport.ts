@@ -25,6 +25,12 @@ export interface ViewportPick {
   /** Absent or null when no edge was picked. */
   edge?: number | null;
   /**
+   * The offered corner picked (showCorners, Measure's 35e2l3), by its place
+   * in the list offered; absent when none was. A corner wins over the
+   * edges and faces at it, so with it set `edge` and `face` are null.
+   */
+  vertex?: number;
+  /**
    * The offered origin plane clicked (showPlanes), by id; absent or null
    * when none was. While planes are offered a click picks the body's face
    * under the pointer whenever there is one (never an edge), else the
@@ -285,6 +291,8 @@ export interface SharedViewport {
   bodyFraming(): Framing;
   /** Frames the current body; returns what it framed (null if none). */
   fit(): Framing | null;
+  /** A picture of the main view as it is on screen, without the view cube, as a PNG (File > Save picture); null when the browser can't make one. */
+  picture?(): Promise<Blob | null>;
   /** Turns the camera to a standard view framing the current body; returns what it framed (null if none). */
   setView(name: ViewName): Framing | null;
   /** Frames the selection (as last shown) from the current direction; null, camera untouched, when nothing is selected. */
@@ -337,6 +345,14 @@ export interface SharedViewport {
    * offered plane or one of these faces, never an edge.
    */
   showPlanes(planes: readonly OriginPlane[], faces?: readonly number[]): void;
+  /**
+   * Offers these points (world mm, the body's exact corners) to be picked
+   * (Measure, 35e2l3): while offered, a click or hover within a few pixels
+   * of one in sight (CORNER_PICK_PX, wider for a finger) picks it ahead of
+   * an edge or face, the one under the pointer drawn as a dot; null offers
+   * none.
+   */
+  showCorners(corners: readonly (readonly [number, number, number])[] | null): void;
   /**
    * Which of the origin's axes and planes the browser's eyes show
    * (Ben, 2026-10-29: an eye on everything): `axes` X, Y and Z, each drawn

@@ -1,8 +1,8 @@
 // Split view (X3): each workspace on screen gets a SharedViewport of its
 // own over one view of the one viewer. Scene methods (body, selection,
 // overlays) go to the viewer, so every view draws the same thing; camera
-// methods (fit, setView, fitSelection, lookAt) and an image (showImage, clearImage)
-// go to that pane's view only.
+// methods (fit, setView, fitSelection, lookAt), an image (showImage, clearImage)
+// and a picture of the view (picture) go to that pane's view only.
 import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, MoveHandlesShow, MovePointer, OriginPlane, OriginShown, Plane, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
 
 /** What a pane needs of its view: the element it fills and its camera. */
@@ -15,6 +15,8 @@ export interface PaneCamera {
   showImage(image: ImageRep | null): void;
   clearImage(): void;
   leaveNavTool(): boolean;
+  /** A picture of this view as on screen, without the view cube (File > Save picture). */
+  picture?(): Promise<Blob | null>;
 }
 
 type PickHandler = (pick: ViewportPick) => void;
@@ -50,6 +52,8 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       showBody: (mesh: DisplayMesh) => scene.showBody(mesh),
       bodyFraming: () => scene.bodyFraming(),
       fit: () => view.fit(),
+      // The picture is this pane's view, as the camera methods are (split view: the pane the File menu is for).
+      ...(view.picture ? { picture: () => view.picture!() } : {}),
       setView: (name: ViewName) => view.setView(name),
       fitSelection: () => view.fitSelection(),
       lookAt: (plane: Plane, side?: 1 | -1) => view.lookAt(plane, side),
@@ -63,6 +67,7 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       showSelection: (highlight: ViewportHighlight) => scene.showSelection(highlight),
       showSketches: (drawings: readonly SketchDrawing[]) => scene.showSketches(drawings),
       showPlanes: (planes: readonly OriginPlane[], faces?: readonly number[]) => scene.showPlanes(planes, faces),
+      showCorners: (corners: readonly (readonly [number, number, number])[] | null) => scene.showCorners(corners),
       showOrigin: (shown: OriginShown) => scene.showOrigin(shown),
       showExtrude: (show: ExtrudeShow | null) => scene.showExtrude(show),
       get onExtrudePointer() {

@@ -59,14 +59,16 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [] };
+  const svc = { calls: [], designCalls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [] };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    svc.calls.push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") || url.pathname.startsWith("/rest/") ? url.search : ""}`);
+    // My designs' and settings' own requests (e2e/my-designs.mjs and e2e/settings-follow.mjs check them) are kept apart, so these checks see only the account's.
+    const designsCall = /^\/rest\/v1\/rpc\/(my_designs|save_design|get_design|delete_design|my_design_space|my_settings|save_settings|set_keep_settings)$/.test(url.pathname) || url.searchParams.get("select") === "keep_designs";
+    (designsCall ? svc.designCalls : svc.calls).push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") || url.pathname.startsWith("/rest/") ? url.search : ""}`);
     if (url.pathname === "/auth/v1/authorize") {
       const back = new URL(url.searchParams.get("redirect_to"));
       assert.equal(url.searchParams.get("provider"), "google");
@@ -86,6 +88,10 @@ function fakeService() {
       // The data API, as the database's rules allow it for the one signed-in person.
       if (!svc.profile || !svc.tokens.has((req.headers().authorization ?? "").replace("Bearer ", ""))) return json(route, 401, { message: "JWT invalid" });
       const what = url.pathname.slice("/rest/v1/".length);
+      if (what === "rpc/my_designs") return json(route, 200, []);
+      if (what === "rpc/my_design_space") return json(route, 200, { designs: 0, bytes: 0 });
+      if (what === "rpc/save_design") return json(route, 200, { status: "saved", id: "00000000-0000-4000-8000-0000000000d1", revision: 1 });
+      if (req.method() === "GET" && what === "profiles" && url.searchParams.get("select") === "keep_designs") return json(route, 200, [{ keep_designs: true }]);
       if (req.method() === "GET" && what === "profiles") {
         await svc.profileHeld; // a slow service, for the check that the last choice seen shows at once
         return json(route, 200, [{ email_opt_in: svc.profile.email_opt_in }]);
@@ -152,6 +158,8 @@ async function fresh(base, width = 1280, phone = false) {
   const svc = fakeService();
   const elsewhere = [];
   await context.route(`${SERVICE}/**`, svc.handle);
+  // This browser's projects count as Ada's, so My designs never stops these checks to ask (e2e/my-designs.mjs asks).
+  await context.addInitScript(() => localStorage.getItem("spindle.account.designs/7f3c2a10-0000-4000-8000-000000000001") ?? localStorage.setItem("spindle.account.designs/7f3c2a10-0000-4000-8000-000000000001", "{}"));
   // Stripe's checkout page, faked: paying sends the person back with ?checkout=done, and Stripe's webhook makes them Pro a moment later.
   await context.route("https://checkout.stripe.com/**", (route) => {
     const back = new URL(svc.checkouts.at(-1).returnTo);
@@ -219,7 +227,8 @@ try {
     await page.click("#account-open");
     assert.equal(await page.locator("#account-title").textContent(), "Sign in to SpindleLabs");
     const gives = await page.$$eval("#account .account-gives li", (l) => l.map((x) => x.textContent));
-    assert.equal(gives.length, 2);
+    assert.equal(gives.length, 4);
+    assert.match(gives[1], /^Your settings \(the theme, units and slicer presets\) the same on every device/);
     if (shots) await page.screenshot({ path: `${shots}/account-signed-out-1280.png` });
     assert.deepEqual(svc.calls, [], "opening the dialog contacts nothing");
     await context.close();
@@ -246,7 +255,7 @@ try {
     assert.equal(await page.isChecked("#account-emails"), false, "the email choice is no until ticked");
     assert.equal(await page.locator("#account-title").textContent(), "Your account");
     assert.match(await page.locator("#account .account-who").textContent(), /Ada Maker.*ada@example\.com/);
-    await page.click("#account .account-action");
+    await page.click("#account .account-action:text('Sign out')");
     await page.waitForFunction(() => document.getElementById("account-open")?.textContent === "Sign in");
     assert.deepEqual(svc.loggedOut, ["Bearer access-2"]);
     assert.match(await page.locator("#account .account-note").textContent(), /^Signed out\.$/);

@@ -219,7 +219,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "combine-first-piece": {
     what: "a name on a split face goes to its first piece, never by tag, origin or size",
-    edits: [{ file: NAMES, find: "  if (pieces.length === 1) return { ...pieces[0], warning: null };", replace: "  if (pieces.length >= 1) return { ...pieces[0], warning: null };" }],
+    edits: [{ file: NAMES, find: "  if (pieces.length === 1) {\n    const [one] = pieces;", replace: "  if (pieces.length >= 1) {\n    const [one] = pieces;" }],
     run: ["timeline"],
     caught: "a reference guessed between pieces",
     why: "found at seed 95 only (planted/session.ts runs seeds 1 to 30, so run.ts reports it not caught until the sessions reach it sooner)",

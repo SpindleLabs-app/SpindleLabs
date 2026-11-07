@@ -125,9 +125,11 @@ export function clampZoom(distance: number, factor: number, min: number, max: nu
   return factor;
 }
 
-/** What a left-button drag does: orbit (the default), pan or zoom; picked on the navigation bar. */
-export type NavMode = "orbit" | "pan" | "zoom";
-export const NAV_MODES: readonly NavMode[] = ["orbit", "pan", "zoom"];
+/** The three tools on the navigation bar: what a left-button drag does while one is lit. */
+export type BarNavMode = "orbit" | "pan" | "zoom";
+export const NAV_MODES: readonly BarNavMode[] = ["orbit", "pan", "zoom"];
+/** What a left-button drag does: a bar tool's move, or nothing ("select": no tool lit; the Fusion-style mouse preset's rest state, U2d). */
+export type NavMode = BarNavMode | "select";
 
 /**
  * What a press starts, from its button and Shift: middle pans and

@@ -42,7 +42,6 @@ export const COMING_SOON: readonly ComingTool[] = [
   { id: "plane", label: "Construction plane", group: "Construct", step: "59", does: "make a plane to sketch on: offset from a face, at an angle, or midway between two" },
   { id: "axis", label: "Construction axis", group: "Construct", step: "59", does: "make an axis to revolve round or mirror across" },
   { id: "point", label: "Construction point", group: "Construct", step: "59", does: "make a point to measure from or build on" },
-  { id: "measure", label: "Measure", group: "Inspect", step: "35e2", does: "measure the distance between two points, edges or faces" },
   { id: "section", label: "Section view", group: "Inspect", step: "65", does: "cut the view open to see inside the part" },
 ];
 

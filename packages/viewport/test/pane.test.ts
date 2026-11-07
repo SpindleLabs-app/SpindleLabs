@@ -23,6 +23,7 @@ function fakeScene() {
     showPlanes: (p, faces) => void calls.push(`showPlanes ${p.map((x) => x.id).join(",")}${faces ? ` faces ${faces.join(",")}` : ""}`),
     showExtrude: (show) => void calls.push(`showExtrude ${show ? show.profiles.map((p) => p.id).join(",") : "none"}`),
     showOrigin: (shown) => void calls.push(`showOrigin ${shown.axes.join(",")} ${shown.planes.length}`),
+    showCorners: (c) => void calls.push(`showCorners ${c ? c.length : "none"}`),
     showMoveHandles: (show) => void calls.push(`showMoveHandles ${show ? show.centre.join(",") : "none"}`),
     editedScreenPoints: () => (calls.push("editedScreenPoints"), [{ x: 7, y: 8 }]),
     sketchScreenPoint: (at) => (calls.push(`sketchScreenPoint ${at.join(",")}`), { x: at[0] * 2, y: at[1] * 2 }),
@@ -138,7 +139,10 @@ test("sketches and planes reach the one viewer; the sketch pointer follows the s
   a.showSketches([]);
   b.showPlanes([{ id: "XY", plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, offered: true }]);
   a.showPlanes([{ id: "XY", plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, offered: true }], [0, 4]); // the faces offered with them (26d)
-  assert.deepEqual(calls, ["showSketches 0", "showPlanes XY", "showPlanes XY faces 0,4"]);
+  // Measure's corners (35e2l3) go to the one scene from either pane.
+  b.showCorners([[0, 0, 0], [1, 0, 0]]);
+  a.showCorners(null);
+  assert.deepEqual(calls, ["showSketches 0", "showPlanes XY", "showPlanes XY faces 0,4", "showCorners 2", "showCorners none"]);
   const handlerA = () => {};
   const handlerB = () => {};
   a.onSketchPointer = handlerA;
@@ -204,4 +208,30 @@ test("Move's handles (35e2c) go to the scene, and their drags to the pane that s
   assert.equal(scene.onExtrudePointer, null, "Extrude's pointer is separate");
   a.onMovePointer = null;
   assert.equal(scene.onMovePointer, null);
+});
+
+test("issue #219: the view's menu on a body goes to the pane that set it most recently and still has one", () => {
+  // Three panes, so "the newest" (the last of three) differs from "the second" a wrong index would give.
+  const { scene, calls } = fakeScene();
+  const make = paneViewports(scene);
+  const [a, b, c] = [make(fakeView("a", calls)), make(fakeView("b", calls)), make(fakeView("c", calls))];
+  assert.equal(a.onMenu, null, "nothing set: null, not undefined");
+  assert.equal(scene.onMenu, undefined, "untouched until a pane sets one");
+  const [menuA, menuB, menuC] = [() => true, () => false, () => true];
+  a.onMenu = menuA;
+  assert.equal(scene.onMenu, menuA);
+  b.onMenu = menuB;
+  c.onMenu = menuC;
+  assert.equal(scene.onMenu, menuC, "the newest of three wins");
+  assert.deepEqual([a.onMenu, b.onMenu, c.onMenu], [menuA, menuB, menuC], "each pane keeps its own");
+  c.onMenu = null;
+  assert.equal(scene.onMenu, menuB, "c cleared: the next newest, b");
+  assert.equal(c.onMenu, null);
+  b.onMenu = undefined;
+  assert.equal(scene.onMenu, menuA, "b cleared with undefined too");
+  a.onMenu = menuA; // set again: still the only one
+  assert.equal(scene.onMenu, menuA);
+  a.onMenu = null;
+  assert.equal(scene.onMenu, null, "none left: null");
+  assert.equal(scene.onPick, null, "picking is separate");
 });
