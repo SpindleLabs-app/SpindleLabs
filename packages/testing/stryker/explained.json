@@ -42,6 +42,13 @@
     "why": "As above: index is at least 1 whenever lastWasRecord is true."
   },
   {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "ConditionalExpression",
+    "original": "saved.kept.length === 0",
+    "replacement": "false",
+    "why": "In load, an empty kept list has no entry at any index, so present is undefined and !present refuses it first with the same false; the length test only says so explicitly."
+  },
+  {
     "file": "packages/core/src/model/project.ts",
     "mutator": "ConditionalExpression",
     "original": "typeof v !== \"number\"",

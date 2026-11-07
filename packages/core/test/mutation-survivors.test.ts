@@ -186,3 +186,31 @@ test("provenance from one origin has no 'applied to'; from three, the later two 
     "Plate 1 comes from Photo in Image, applied to Trace in Vector, then Relief in Design.",
   );
 });
+
+// Survivors 11-07 (issue #421; history.ts after Design tabs 2 added save and load).
+
+test("load: a record straight after it never merges into the loaded step (load's `lastWasRecord = false` → true)", () => {
+  // Fake clock at 0 throughout, so a merge is allowed by time. Width 50 recorded under key "w": steps [40, 50], and the
+  // last thing done was a record. Saved and loaded straight back (the project is still 50, so load takes it). Width 60
+  // under "w" must be a step of its own, [40, 50, 60]: one undo goes back to 50, not 40. Merging would need a record
+  // just before, and a load is not one.
+  const { h, edit, doc } = rig({ now: () => 0 });
+  edit(50, "Width 50", "w");
+  assert.equal(h.load(h.save()), true);
+  edit(60, "Width 60", "w");
+  assert.equal(h.undo(), "Width 60");
+  assert.equal(doc.w, 50);
+  assert.equal(h.undo(), "Width 50");
+  assert.equal(doc.w, 40);
+});
+
+test("load: a save whose present is past its kept steps is refused, not read (`!present || …` → `!present && …`)", () => {
+  // One kept step but index 3: there is no present to compare, so load says false and changes nothing (with && it went
+  // on to read the missing step's snapshot and threw).
+  const { h, edit, doc } = rig();
+  edit(50);
+  const saved = h.save();
+  assert.equal(h.load({ kept: saved.kept, index: 3 }), false);
+  assert.equal(doc.w, 50);
+  assert.equal(h.undo(), "Width 50");
+});

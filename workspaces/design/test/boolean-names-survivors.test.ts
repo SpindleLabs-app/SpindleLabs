@@ -301,3 +301,33 @@ test("faceHolds agrees with an independent distance on seeded points by every pa
   }
   assert.ok(checked > 390);
 });
+
+// Survivors 11-07 (issue #424).
+
+test("combineNames: a merged face's names, the target's first, then by place in a face's list, then made order, then the order merged", () => {
+  // The result's one face lies on target faces a (made [0, 1]), u1 and u2 (no made order: last) and b (made [0, 0]), and
+  // on the tool's face holding x then y (x made [5], y made [-1]). The target's names come first (its place 0), each at
+  // place 0 in its own face's list, so by made order: b [0, 0], a [0, 1], then u1 and u2 (Infinity) in the order merged
+  // (u1's face was listed first). Then the tool's: x before y by their place in that face's list, though y was made first.
+  const t = body("body:t", 1, view(), [["face:t/a"], ["face:t/u1"], ["face:t/b"], ["face:t/u2"]], new Map([["face:t/a", [0, 1]], ["face:t/b", [0, 0]]]));
+  const s = body("body:s", 2, view(), [["face:s/x", "face:s/y"]], new Map([["face:s/x", [5]], ["face:s/y", [-1]]]));
+  const history = [{ faces: [{ body: 1, face: 0 }], also: [[{ body: 1, face: 1 }, { body: 2, face: 0 }, { body: 1, face: 2 }, { body: 1, face: 3 }]] }];
+  const r = combineNames("feature-9", "union", t, [s], { bodies: [100], history }, [view({ volume: 10, face_areas: [5] })]);
+  assert.deepEqual(r.bodies[0].faces[0].names, ["face:t/b", "face:t/a", "face:t/u1", "face:t/u2", "face:s/x", "face:s/y"]);
+});
+
+test("resolveFaceName: a tag written in another order is the same set (`[...ref.tag].sort()` → unsorted)", () => {
+  // Two pieces carry face:a, tagged [p, q] and [r] (tags are kept sorted). A reference tagged [q, p] is the first.
+  const b = body("body:x", 1, view(), [["face:a"], ["face:a"]]);
+  const names = { tagFor: (_b, i) => (i === 0 ? ["face:p", "face:q"] : ["face:r"]), edges: [[]] };
+  assert.deepEqual(resolveFaceName([b], names, { name: "face:a", tag: ["face:q", "face:p"] }), { body: 0, index: 0, warning: null });
+});
+
+test("resolveEdgeName: a name without ends that two edges fit is ambiguous; one that a single edge fits but not by name is lost", () => {
+  // Without `;ends:` the ends rule never runs: two edges between a and b → ambiguous 2 (the ends rule would say lost);
+  // one edge between a and b, named with its ends (made while another lay there) → lost, not found with a warning.
+  const two = { edges: [[{ name: "edge:a+b;ends:c,e", faces: ["a", "b"], ends: ["c", "e"] }, { name: "edge:a+b;ends:c,f", faces: ["a", "b"], ends: ["c", "f"] }]] };
+  assert.deepEqual(resolveEdgeName(two, "edge:a+b"), { ambiguous: 2 });
+  const one = { edges: [[{ name: "edge:a+b;ends:c,e", faces: ["a", "b"], ends: ["c", "e"] }]] };
+  assert.deepEqual(resolveEdgeName(one, "edge:a+b"), { lost: true });
+});

@@ -6,6 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  blockFaceName,
+  FACINGS,
   nameEdges,
   rebuildBooleans,
   resolveEdge,
@@ -15,6 +17,7 @@ import {
   type BooleanRebuild,
   type CombineFeature,
   type DescribedFace,
+  type Facing,
   type Rect,
 } from "../src/boolean-naming-model.ts";
 
@@ -301,4 +304,68 @@ test("rule 5: an edge name with ends fits every edge between its faces whose end
   assert.deepEqual(resolveEdge(oneOfTwo, "edge:a+b;ends:c,d"), { found: oneOfTwo.bodies[0].edges[1], body: oneOfTwo.bodies[0].id });
   // Another pair altogether is never found by its ends.
   assert.deepEqual(resolveEdge(once, "edge:a+x;ends:c,d"), { lost: true });
+});
+
+// Survivors 11-07 (issue #423): the faces given to a block by the timeline model (35f1d2), and the centroids and
+// `between` the timeline model compares faces and edges by.
+
+/** A block's six faces named `face:<p>/<facing>`, each made `made(facing)`. */
+const given = (p: string, made: (d: Facing) => number[]) => Object.fromEntries(FACINGS.map((d) => [d, { name: `face:${p}/${d}`, made: made(d) }])) as NonNullable<BlockFeature["faces"]>;
+
+test("a block given its faces names each role by the way it faces (FACE_OF_ROLE's entries)", () => {
+  // Line 1 runs along y = y0, so its side faces −y; line 2 +x, line 3 +y, line 4 −x; the start cap −z, the end +z.
+  const f: BlockFeature = { ...block("t", [0, 0, 10, 10], [0, 5]), faces: given("a", () => [0]) };
+  assert.deepEqual(
+    (["start", "end", 1, 2, 3, 4] as const).map((r) => blockFaceName(f, r)),
+    ["face:a/-z", "face:a/+z", "face:a/-y", "face:a/+x", "face:a/+y", "face:a/-x"],
+  );
+});
+
+test("a block's given faces are listed in their given made order, and two given the same name make it invalid", () => {
+  // Given made orders +z 0, −z 1, +y 2, −y 3, +x 4, −x 5: the body lists its faces in that order (describe sorts by
+  // made order first). Ignoring the given order, every name's made order would be unknown (Infinity) and the faces
+  // would come by lowest corner instead.
+  const order: Facing[] = ["+z", "-z", "+y", "-y", "+x", "-x"];
+  const r = rebuildBooleans([{ ...block("t1", [0, 0, 10, 10], [0, 5]), faces: given("a", (d) => [order.indexOf(d)]) }]);
+  assert.deepEqual([...r.failed], []);
+  assert.deepEqual(r.bodies[0].faces.map((f) => f.facing), order);
+  // The top given the bottom's name: six faces, five names, so the block is refused in words and builds nothing.
+  const twice = rebuildBooleans([{ ...block("t1", [0, 0, 10, 10], [0, 5]), faces: { ...given("a", () => [0]), "+z": { name: "face:a/-z", made: [0] } } }]);
+  assert.deepEqual(twice.bodies, []);
+  assert.deepEqual([...twice.failed], [["t1", "the rectangle or the heights are not valid"]]);
+});
+
+test("a face's centroid weighs its pieces of surface by area, and an edge's is its middle", () => {
+  // A block x 0–30, y 0–10, z 0–5, with a far block whose side at x = 10 splits the grid there. Its top (z = 5) is
+  // two rects, x 0–10 (area 100, middle x 5) and x 10–30 (area 200, middle x 20): x = (100·5 + 200·20)/300 = 15,
+  // y = 5. Its front (y = 0) likewise: x 15, z 2.5 (each rect's area there is its x length × its height 5; y, flat, is
+  // counted as 1). The bottom front edge runs x 0–30 in two steps: its middle (15, 0, 0), length 30.
+  const r = rebuildBooleans([block("feature-1", [0, 0, 30, 10], [0, 5]), block("feature-2", [10, 50, 40, 60], [50, 60])]);
+  const top = faceOn(r, "body:feature-1", "+z", 5);
+  assert.equal(top.rects.length, 2);
+  assert.deepEqual(top.centroid, [15, 5, 5]);
+  assert.deepEqual(faceOn(r, "body:feature-1", "-y", 0).centroid, [15, 0, 2.5]);
+  const edge = r.bodies[0].edges.find((e) => e.faces.join("+") === "face:feature-1/side:line-1+face:feature-1/start")!;
+  assert.deepEqual([edge.centroid, edge.length], [[15, 0, 0], 30]);
+});
+
+test("an edge's `between` names its two faces by their place in its own body's faces", () => {
+  // Two separate bodies: the second's faces count from 0 again, so every edge's two places point at its own two faces.
+  const r = rebuildBooleans([block("feature-1", [0, 0, 30, 10], [0, 5]), block("feature-2", [10, 50, 40, 60], [50, 60])]);
+  assert.equal(r.bodies.length, 2);
+  for (const b of r.bodies)
+    for (const e of b.edges) assert.deepEqual(e.between.map((i) => b.faces[i]?.full).sort(), [...e.faces].sort(), `${b.id} ${e.faces.join("+")}`);
+});
+
+test("rule 5: a name without ends that two edges between its faces fit is ambiguous, one that a single edge fits but not by name is lost", () => {
+  // Without `;ends:` a name never takes the ends rule's way: two edges between a and b → ambiguous 2 (taking it would
+  // say lost); one edge between a and b named otherwise (made while another lay there) → lost, never found with a warning.
+  const two = made([], [
+    { faces: ["a", "b"], ends: ["c", "e"] },
+    { faces: ["a", "b"], ends: ["c", "f"] },
+  ]);
+  assert.deepEqual(resolveEdge(two, "edge:a+b"), { ambiguous: 2 });
+  const one = made([], [{ faces: ["a", "b"], ends: ["c", "e"] }]);
+  one.bodies[0].edges[0] = { ...one.bodies[0].edges[0], name: "edge:a+b;ends:c,e" };
+  assert.deepEqual(resolveEdge(one, "edge:a+b"), { lost: true });
 });

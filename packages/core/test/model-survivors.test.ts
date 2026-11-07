@@ -442,3 +442,10 @@ test("an unclosed comment after a declaration ends the sniffing, it doesn't star
   // at the "?>" at 4, i = 6, "<!--" there has no "-->", so the first element isn't <svg.
   assert.deepEqual(identifyFile(fileOf("a.svg", "<?<??><!--")), renamed("svg"));
 });
+
+// Survivors 11-07 (issue #422): Save, Save As and Open run from the keys while typing in a box too, as in a desktop app
+// (missing-basics audit 2026-11-04); with `inText: true` → false a Ctrl+S in the name box would be the browser's own
+// "Save page" again. Undo and Redo stay off there (the box's own typing undo), shortcuts.test.ts.
+test("Ctrl+S, Ctrl+Shift+S and Ctrl+O fire while typing in a text field (each `inText: true` → false)", () => {
+  for (const id of ["save", "save-as", "open"]) assert.equal(SHELL_SHORTCUTS.find((e) => e.id === id)?.inText, true, id);
+});
