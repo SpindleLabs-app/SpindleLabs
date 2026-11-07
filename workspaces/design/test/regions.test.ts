@@ -242,9 +242,9 @@ test("the file's checks on region: saved and read back exactly; version 8 holdin
   }, "Design data says version 5 but has an extrude naming its sketch region, which version 9 brought");
   // Regression (48d hunt): a region on anything but an extrude of a sketch (the first item, the sketch) is refused, never kept unread.
   refused((r, d) => ((d.timeline as { features: { intent: { parameters: Record<string, unknown> } }[] }).features[0].intent.parameters.region = r), `Design feature ${data.timeline.features[0].id} has a region, which only an extrude of a sketch has`);
-  // Version 8 data without a region reads as version 9, unchanged.
+  // Version 8 data without a region reads as version 10 (through 9), unchanged.
   const v8 = JSON.parse(JSON.stringify(extrudeSketch(doc, sketch, 10).doc));
-  assert.equal(readDesignDocument({ ...v8, version: 8 }).version, 9);
+  assert.equal(readDesignDocument({ ...v8, version: 8 }).version, 10);
 });
 
 test("regression (48c2 browser check): the distance arrow of a plate with a hole stands on the plate, never over the hole, where a click picks the disc", async () => {

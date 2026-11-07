@@ -22,3 +22,12 @@
   .feature-edit .feature-edit-flip { min-height: 44px; }
   .feature-edit .feature-edit-flip input { min-height: 0; width: 22px; height: 22px; }
 }
+/* An extrude's Operation row and its bodies (with ?combine), as in Extrude's panel. */
+.feature-edit .feature-edit-bodies { border: 1px solid var(--line-6cc4ff); border-radius: 4px; margin: 6px 0; padding: 4px 8px; }
+.feature-edit .feature-edit-body { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 2px 0; cursor: pointer; }
+.feature-edit .feature-edit-body input { flex: none; width: 16px; height: 16px; min-height: 0; margin: 0; }
+@media (max-width: 700px) {
+  .feature-edit .feature-edit-operation-select { min-height: 44px; }
+  .feature-edit .feature-edit-body { min-height: 44px; }
+  .feature-edit .feature-edit-body input { width: 22px; height: 22px; }
+}
