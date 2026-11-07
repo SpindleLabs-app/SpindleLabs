@@ -539,8 +539,9 @@ function unionSection(solids: readonly Solid[], z: number, only?: readonly (read
         const right: Point = [((q[1] - p[1]) / len) * NUDGE, (-(q[0] - p[0]) / len) * NUDGE, 0];
         const outside: Point = [mid[0] + right[0], mid[1] + right[1], z];
         const within: Point = [mid[0] - right[0], mid[1] - right[1], z];
-        if (live.some((j) => j !== i && solids[j].inside(outside))) continue;
-        if (live.some((j) => j < i && solids[j].inside(within))) continue;
+        // A point beyond a body's (widened) section box is not in it at this height, so its ray is not cast.
+        if (live.some((j) => j !== i && inBox(whole[j], outside) && solids[j].inside(outside))) continue;
+        if (live.some((j) => j < i && inBox(whole[j], within) && solids[j].inside(within))) continue;
         out.push([at(f0), at(f1)]);
       }
     }
@@ -564,6 +565,9 @@ function segmentBox(p: Point, q: Point): Box2 {
   const pad = 1e-6 + 1e-3 * (Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]));
   return [Math.min(p[0], q[0]) - pad, Math.min(p[1], q[1]) - pad, Math.max(p[0], q[0]) + pad, Math.max(p[1], q[1]) + pad];
 }
+
+/** Whether a point is in (or on) a box. */
+const inBox = (b: Box2, o: Point) => o[0] >= b[0] && o[0] <= b[2] && o[1] >= b[1] && o[1] <= b[3];
 
 /** Whether two boxes are apart (not touching). */
 const apart = (a: Box2, b: Box2) => a[0] > b[2] || b[0] > a[2] || a[1] > b[3] || b[1] > a[3];
