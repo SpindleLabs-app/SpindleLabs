@@ -42,6 +42,13 @@
     "why": "As above: index is at least 1 whenever lastWasRecord is true."
   },
   {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "ConditionalExpression",
+    "original": "saved.kept.length === 0",
+    "replacement": "false",
+    "why": "In load, an empty kept list has no entry at any index, so present is undefined and !present refuses it first with the same false; the length test only says so explicitly."
+  },
+  {
     "file": "packages/core/src/model/project.ts",
     "mutator": "ConditionalExpression",
     "original": "typeof v !== \"number\"",
@@ -3106,5 +3113,61 @@
     "original": "journal?.removeItem",
     "replacement": "journal.removeItem",
     "why": "(issue #275) reached only with journalVersion non-null, which needs a journal."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The default fault list of resolveFace: a fault name no rule looks for changes nothing, so a list holding one acts like the empty one."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 0, 0]",
+    "replacement": "[]",
+    "why": "An edge run's centroid: its three entries, at the run's axis and the two others (three different axes), are all written straight after, so it starts as three zeros or as nothing to the same end."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < 3",
+    "replacement": "i <= 3",
+    "why": "centroidOf's sum: a fourth pass adds to sum[3] (from lo[3] and hi[3], which do not exist), and only sum[0] to sum[2] are ever read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ends !== undefined",
+    "replacement": "true",
+    "why": "resolveEdge with no ends in the name: no edge's ends joined make undefined, so nothing is pushed to same either way, and same is read only when ends is given."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "same.length > 1",
+    "replacement": "same.length >= 1",
+    "why": "resolveEdge: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "x.k - y.k",
+    "replacement": "x.k + y.k",
+    "why": "combineNames' last tie-break, the order merged: names tied on place among the inputs, place in their face's list and made order come in the list in merge order already (origins are listed in merge order), and Array.sort is stable, so this term only confirms an order the sort keeps anyway. A positive answer both ways reads the same to the engine: 15,800 random lists of up to 80 such names (seeded, made orders with ties) sorted alike under both."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ends !== undefined",
+    "replacement": "true",
+    "why": "resolveEdgeName with no ends in the name: no edge's ends joined make undefined, so nothing is pushed to same either way, and same is read only when ends is given."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "same.length > 1",
+    "replacement": "same.length >= 1",
+    "why": "resolveEdgeName: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
   }
 ]

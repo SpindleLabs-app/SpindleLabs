@@ -84,11 +84,17 @@ const until = (p, fn, arg) => p.waitForFunction(fn, arg);
 const saveFile = join(tmpdir(), `soak-${process.pid}.spindle`);
 const resaved = join(tmpdir(), `soak-${process.pid}-fresh.spindle`);
 
-/** A sketch on the ground plane: Create Sketch, then the XY plane (on a phone, from the bar over the view). */
+/**
+ * A sketch on the ground plane: Create Sketch, then the XY plane (on a phone, from the bar over the view). Returns the
+ * canvas the sketch's view was fitted at: on a phone the sketch's tool rows then take ~90 px off the view's height, and
+ * the viewport keeps its camera through a change of height only (viewer.ts `resize`), so clicks map by that canvas.
+ */
 async function sketchOnGround(p) {
+  const fitted = await p.locator("#viewport canvas").boundingBox();
   await p.click("#create-sketch");
   await pickPlane(p, "XY", false);
   await until(p, () => document.querySelector("#viewport").dataset.sketching === "true");
+  return fitted;
 }
 
 /** Body `n`'s row in the Browser pressed (on a phone, in its sheet). */
@@ -165,9 +171,9 @@ async function cycle(i, random) {
 
   // A w × d rectangle on the ground (grid snap, at the empty sketch's zoom on 10 mm marks), extruded h.
   const [w, d, h] = [between(10, 40, 10), between(10, 30, 10), between(4, 18)];
-  await sketchOnGround(page);
+  const fitted = await sketchOnGround(page);
   await page.click("#sketch-tool-rectangle");
-  for (const corner of [[0, 0], [w, d]]) await clickPlane(page, corner, EMPTY_TOP);
+  for (const corner of [[0, 0], [w, d]]) await clickPlane(page, corner, EMPTY_TOP, false, fitted);
   await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.");
   await page.click("#sketch-extrude");
   await until(page, () => document.querySelector("#extrude-status")?.textContent.startsWith("Sketch 1 makes a closed outline."));
