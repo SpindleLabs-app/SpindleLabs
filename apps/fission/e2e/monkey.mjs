@@ -46,6 +46,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { switchTo } from "./start.mjs";
+import { summaryShown, volumeShown } from "./monkey-units.mjs";
 import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, settledText, shrinkFailure, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
@@ -119,7 +120,7 @@ function offered() {
     const top = document.elementFromPoint(cx, cy);
     return top !== null && (top === e || e.contains(top) || top.contains(e));
   };
-  const all = [...document.querySelectorAll("button, summary, [role=menuitem], input, select, li[data-item]")].filter(usable);
+  const all = [...document.querySelectorAll("button, summary, [role=menuitem], input, select, li[data-item]")].filter((e) => usable(e) && !e.closest(".account-google")); // never one that leaves the app (LEAVES below)
   const targets = [];
   const inputs = [];
   for (const e of all) {
@@ -308,6 +309,11 @@ async function check(s) {
   if (s.errors.length) fail("no errors", s.errors.splice(0).join(" | "));
 }
 
+/** Controls that leave the app for another site (Sign in with Google goes to Google's page): a session that left can't be checked, so the tester never presses them. */
+const LEAVES = ".account-google";
+/** Is the point (page pixels) on a control that leaves the app, as when a dialog lies over the view? */
+const leavesAt = (page, x, y) => page.evaluate(([px, py, leaves]) => document.elementFromPoint(px, py)?.closest(leaves) != null, [x, y, LEAVES]);
+
 const viewBox = (page) => page.evaluate(() => {
   const r = document.querySelector("#viewport").getBoundingClientRect();
   return { x: r.left, y: r.top, w: r.width, h: r.height };
@@ -347,12 +353,14 @@ async function act(s, a) {
     case "canvas": {
       const b = await viewBox(page);
       const [x, y] = [b.x + a.x * b.w, b.y + a.y * b.h];
+      if (await leavesAt(page, x, y)) return false;
       if (a.double) await page.mouse.dblclick(x, y);
       else await page.mouse.click(x, y);
       return true;
     }
     case "drag": {
       const b = await viewBox(page);
+      if ((await leavesAt(page, b.x + a.x * b.w, b.y + a.y * b.h)) || (await leavesAt(page, b.x + a.x2 * b.w, b.y + a.y2 * b.h))) return false;
       if (a.shift) await page.keyboard.down("Shift");
       await page.mouse.move(b.x + a.x * b.w, b.y + a.y * b.h);
       await page.mouse.down({ button: a.button });
@@ -504,6 +512,7 @@ async function act(s, a) {
           topology: document.getElementById("topology")?.textContent ?? "",
           stale: document.getElementById("stats")?.dataset.stale === "true",
           highlight: document.querySelector("#viewport").dataset.highlight ?? "",
+          unit: document.documentElement.dataset.unit ?? "mm", // Settings' unit (U2c, issue #427): the screens show it, the design keeps mm
         }));
         const f = design.timeline.features.find((x) => x.id === id);
         const name = `Body ${place} (${f.intent.summary})`;
@@ -514,15 +523,15 @@ async function act(s, a) {
         }
         // A piece is its own body ("body:<combine>/piece:k"), made by its Combine.
         if (got.selection !== body) wrong.push(`clicking ${name} selected "${got.selection}"`);
-        if (got.intent !== f.intent.summary) wrong.push(`with ${name} selected the Feature panel says "${got.intent}"`);
+        if (got.intent !== summaryShown(f.intent.summary, got.unit)) wrong.push(`with ${name} selected the Feature panel says "${got.intent}" (in ${got.unit})`);
         const faces = /faces ([\d,]*)/.exec(got.highlight)?.[1].split(",").filter(Boolean).map(Number) ?? [];
         const shownFaces = Number(/(\d+) F/.exec(got.topology)?.[1]);
         if (!got.stale) {
           // A Combine's target and pieces are what the kernel made of them, which the file alone can't say.
-          const want = combined ? null : modelVolume(design, f);
+          const want = combined ? null : volumeShown(modelVolume(design, f), got.unit);
           const volume = Number(got.volume.replace(/[^\d.]/g, ""));
           // The panel rounds to a few figures (fmt in properties.ts); 0.5% is far inside the gap between any two different bodies the monkey makes, and far outside the kernel's 1e-6 relative volume error.
-          if (want !== null && !(Math.abs(volume - want) <= 0.005 * want)) wrong.push(`with ${name} selected the Body panel shows ${got.volume}, but that body is ${want.toPrecision(6)} mm³`);
+          if (want !== null && !(Math.abs(volume - want) <= 0.005 * want)) wrong.push(`with ${name} selected the Body panel shows ${got.volume}, but that body is ${want.toPrecision(6)} ${got.unit}³`);
           // With every body selected (one body alone) the app lights none of them on purpose (scene.ts), so the count is checked from two bodies up.
           if (inView > 1 && faces.length !== shownFaces) wrong.push(`with ${name} selected ${faces.length} faces light up, but the Body panel says it has ${shownFaces}`);
         }

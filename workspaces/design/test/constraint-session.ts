@@ -100,6 +100,9 @@ export async function runConstraintSession(kernel: KernelCalls, mods: SessionMod
       const got = await mods.addConstraint(kernel, doc, id, kind === "fix" ? { kind, point: a } : { kind, a, b });
       if ("doc" in got) changed = got.doc;
       else if (doc !== before) return `${where}: refusal: a refusal changed the design`;
+      // A Fix in a sketch with no constraints yet always adds something (the solver bug hunt, 2026-11-06: refusing Fixes that add
+      // nothing must not refuse these).
+      else if (kind === "fix" && sketch().constraints.length === 0 && !(sketch().pins ?? []).some((q) => q.point === a)) return `${where}: added: a Fix in a sketch with no constraints was refused: ${got.refused}`;
     } else if (what === "drag" && points.length > 0) {
       const free = points.filter((p) => mods.grabProblem(sketch(), p) === null);
       if (free.length > 0) {

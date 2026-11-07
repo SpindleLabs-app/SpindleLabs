@@ -1013,9 +1013,12 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
       const lifted = res.warning ? item.kept?.lift : sketch?.status === "built" ? sketch.lift : undefined;
       const turn = res.warning ? item.kept?.turn : sketch?.status === "built" ? sketch.turn : undefined;
       const lift = lifted === undefined ? null : turn ? [lifted, turn.x, turn.at] : lifted;
+      // The solid alone: a turn since drawn that is none but for rounding (two Moves' motions composed and taken apart
+      // again) puts it where no turn does, so it is the same shape (SL #404).
+      const place = lifted === undefined ? null : turn && !noTurn(turn) ? [lifted, turn.x, turn.at] : lifted;
       out.set(id, {
         spec: JSON.stringify(["extrude", from.shape, from.curves, item.distance, lift]),
-        shape: JSON.stringify(["extrude", solid(from.shape), item.distance, lift]),
+        shape: JSON.stringify(["extrude", solid(from.shape), item.distance, place]),
       });
     } else if (item.kind !== "sketch") {
       const { id: _, suppressed: __, ...sizes } = item;
@@ -1026,6 +1029,13 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
   }
   return out;
 }
+
+/** How far from none a face sketch's turn since drawn may be and still be none in `bodyKeys`' shapes (mm, and cos/sin): rounding only, far below the kernel's 10 nm. */
+export const NO_TURN = 1e-9;
+
+/** Whether `t` turns and shifts by no more than rounding (`NO_TURN`): x along (1, 0), the origin kept. */
+export const noTurn = (t: Turn): boolean =>
+  Math.abs(t.x[0] - 1) <= NO_TURN && Math.abs(t.x[1]) <= NO_TURN && Math.abs(t.at[0]) <= NO_TURN && Math.abs(t.at[1]) <= NO_TURN;
 
 /** The fewest and the most bodies a cache holding `before`'s bodies must build to give `after` (see `bodyKeys`). */
 export function buildBounds(before: Iterable<{ spec: string; shape: string }>, after: Iterable<{ spec: string; shape: string }>): { least: number; most: number } {

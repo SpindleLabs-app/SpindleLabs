@@ -26,6 +26,7 @@ import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC,
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
 import { dashes } from "./construction.ts";
+import { squaredRectangle } from "./constraints.ts";
 import { constraintMarks, dimensionLabels, dimensionLine, isConstraintKind, isConstraintTool, startConstraintTool, type ConstraintTool } from "./constraint-tool.ts";
 
 export { pointAt };
@@ -300,10 +301,11 @@ function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY):
   // Each side is a line, so each must be MIN_SIZE long, with a line's allowance for rounding (`underMin`), as the kernel judges them.
   const scale = Math.max(Math.abs(tool.corner[0]), Math.abs(tool.corner[1]), Math.abs(at[0]), Math.abs(at[1]));
   if (underMin(Math.abs(at[0] - tool.corner[0]), scale, true) || underMin(Math.abs(at[1] - tool.corner[1]), scale, true)) return { doc, tool, drew: false, note: SMALL_RECTANGLE };
-  const drawn = drawRectangle(doc, tool.sketch, tool.corner, at).doc;
+  const made = drawRectangle(doc, tool.sketch, tool.corner, at);
   // Every side a line already there (the same rectangle twice): nothing drawn, as the line tool says for one side.
-  if (drawn === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
-  return { doc: drawn, tool: { ...tool, corner: null }, drew: true };
+  if (made.doc === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
+  // Level and upright sides kept so (Fusion's rectangle): a size on one side then keeps it a rectangle.
+  return { doc: squaredRectangle(made.doc, tool.sketch, made.ids), tool: { ...tool, corner: null }, drew: true };
 }
 
 /**

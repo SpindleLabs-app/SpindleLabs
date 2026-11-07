@@ -64,37 +64,54 @@ export function followingPoints(sketch: Sketch): Set<string> {
   return new Set([...(sketch.pins ?? []).map((p) => p.point), ...(sketch.projected ?? []).flatMap((p) => madePoints(sketch, p))]);
 }
 
-/** The sketch for the solver (see the top comment), `held` the points to keep still if they can be. */
+/**
+ * The sketch for the solver (see the top comment), `held` the points to
+ * keep still if they can be. Only the points a constraint or arc ties, and
+ * the held ones, are sent (`points`, in the sketch's order): a point
+ * nothing ties stays where it is in any least change, so a big sketch with
+ * few constraints is not refused for its size (the solver bug hunt,
+ * 2026-11-06: 1,001 lines could take no constraint and no drag).
+ * `solvedPoints` gives every point's place from the answer.
+ */
 export function solverRequest(sketch: Sketch, held: readonly string[] = []): SolverRequest {
-  const points = sketch.points.map((p) => p.id);
-  const at = new Map(points.map((id, i) => [id, i]));
-  const n = (id: string): number => {
-    const i = at.get(id);
-    if (i === undefined) throw new Error(`sketch ${sketch.id} has no point ${id}`);
-    return i;
+  const all = new Set(sketch.points.map((p) => p.id));
+  const known = (id: string): string => {
+    if (!all.has(id)) throw new Error(`sketch ${sketch.id} has no point ${id}`);
+    return id;
   };
-  const constraints: (string | number)[][] = [];
+  const equations: (string | number)[][] = [];
   const sources: Source[] = [];
   for (const c of sketch.curves) {
     if (c.kind !== "arc") continue;
-    constraints.push(["arc", n(c.centre), n(c.start), n(c.end)]);
+    equations.push(["arc", known(c.centre), known(c.start), known(c.end)]);
     sources.push({ arc: c.id });
   }
   for (const p of followingPoints(sketch)) {
-    if (!at.has(p)) continue;
-    constraints.push(["fix", n(p)]);
+    if (!all.has(p)) continue;
+    equations.push(["fix", p]);
     sources.push({ follows: p });
   }
   for (const c of sketch.constraints) {
     // A diameter sizes a circle directly: no equation, one radius fewer free (below).
     if (c.kind === "diameter") continue;
-    constraints.push(c.kind === "fix" ? ["fix", n(c.point)] : c.kind === "distance" ? ["distance", n(c.a), n(c.b), c.value] : [c.kind, n(c.a), n(c.b)]);
+    equations.push(c.kind === "fix" ? ["fix", known(c.point)] : c.kind === "distance" ? ["distance", known(c.a), known(c.b), c.value] : [c.kind, known(c.a), known(c.b)]);
     sources.push({ constraint: c.id });
   }
+  const tied = new Set([...equations.flatMap((q) => q.slice(1).filter((x): x is string => typeof x === "string")), ...held.map(known)]);
+  const kept = sketch.points.filter((p) => tied.has(p.id));
+  const at = new Map(kept.map((p, i) => [p.id, i]));
+  const constraints = equations.map((q) => q.map((x, k) => (k > 0 && typeof x === "string" ? at.get(x)! : x)));
   const sized = new Set(sketch.constraints.flatMap((c) => (c.kind === "diameter" ? [c.circle] : [])));
   const circles = sketch.curves.filter((c) => c.kind === "circle" && !sized.has(c.id)).length;
-  const text = JSON.stringify({ points: sketch.points.map((p) => [p.x, p.y]), constraints, held: [...new Set(held)].map(n), circles });
-  return { text, points, sources };
+  const text = JSON.stringify({ points: kept.map((p) => [p.x, p.y]), constraints, held: [...new Set(held)].map((id) => at.get(id)!), circles });
+  return { text, points: kept.map((p) => p.id), sources };
+}
+
+/** Every point of `sketch` where a solved answer to `request` puts it: the ones sent where the solver says, the rest where they are. */
+export function solvedPoints(sketch: Sketch, request: SolverRequest, answered: readonly (readonly [number, number])[]): Map<string, readonly [number, number]> {
+  const at = new Map<string, readonly [number, number]>(sketch.points.map((p) => [p.id, [p.x, p.y]]));
+  request.points.forEach((p, i) => at.set(p, answered[i]));
+  return at;
 }
 
 /** Reads the solver's answer, refusing text that is not one (a kernel fault, never the user's). */
@@ -125,6 +142,12 @@ export function shrunk(sketch: Sketch, points: ReadonlyMap<string, readonly [num
   return null;
 }
 
+/** A curve in a refusal's words: "the line", "the arc" (never its id). */
+export function curveWord(sketch: Sketch, id: string, article: "the" | "a" = "the"): string {
+  const kind = sketch.curves.find((c) => c.id === id)?.kind ?? "curve";
+  return article === "the" ? `the ${kind}` : `${kind === "arc" ? "an" : "a"} ${kind}`;
+}
+
 /** What adding a constraint came to: the document with it (its points solved), or why not, with the constraints and arcs that fight it (by id). */
 export type Added = { doc: DesignDocument; id: string } | { refused: string; fighting: string[] };
 
@@ -134,7 +157,7 @@ export function namingProblem(sketch: Sketch, c: NewConstraint): string | null {
     if (!sketch.curves.some((q) => q.id === c.circle && q.kind === "circle")) return `The sketch has no circle ${c.circle}.`;
     if ((sketch.projected ?? []).some((p) => p.made === c.circle)) return "That circle is projected from a body, so the body says its size: it can't be given a dimension.";
     if (sketch.constraints.some((q) => q.kind === "diameter" && q.circle === c.circle)) return "That circle already has a diameter: double-click its dimension to change it.";
-    return null;
+    return dimensionProblem(c.value);
   }
   const names = c.kind === "fix" ? [c.point] : [c.a, c.b];
   for (const p of names) if (!sketch.points.some((q) => q.id === p)) return `The sketch has no point ${p}.`;
@@ -195,9 +218,21 @@ async function solvedWith(kernel: KernelCalls, trial: Sketch, made: SketchConstr
     const why = made.kind === "distance" ? "the others already set that size" : "it already holds";
     return { refused: `That ${named(made.kind)} would add nothing: ${why}.`, fighting: [] };
   }
-  const solved = new Map(request.points.map((p, i) => [p, answer.points[i]] as const));
+  if (newest && made.kind !== "diameter" && made.kind !== "distance") {
+    // Wholly redundant through a size (the solver bug hunt, 2026-11-06): a second Fix on a corner a size and a Fix already hold
+    // was taken, since the solver names the older size redundant, not the newest; it then blocked every change. A constraint
+    // that leaves as many freedoms as before adds nothing. The same points are told both times (`held` ties them), so the
+    // counts compare.
+    const before: Sketch = { ...trial, constraints: trial.constraints.filter((c) => c !== made) };
+    const was = readAnswer(await kernel.call("solve_sketch", solverRequest(before, [...held, ...constraintPoints(made)]).text));
+    if (was.result === "solved" && answer.free >= was.free) {
+      const why = made.kind === "fix" ? "the others already hold that point" : "the others already hold it";
+      return { refused: `That ${named(made.kind)} would add nothing: ${why}.`, fighting: [] };
+    }
+  }
+  const solved = solvedPoints(trial, request, answer.points);
   const tiny = shrunk(trial, solved);
-  if (tiny !== null) return { refused: `That ${named(made.kind)} would shrink ${tiny} to almost nothing, so it can't be ${newest ? "added" : "changed"}.`, fighting: [] };
+  if (tiny !== null) return { refused: `That ${named(made.kind)} would shrink ${curveWord(trial, tiny)} shown in red to almost nothing, so it can't be ${newest ? "added" : "changed"}.`, fighting: [tiny] };
   const points = trial.points.map((p) => {
     const [x, y] = solved.get(p.id)!;
     return x === p.x && y === p.y ? p : { ...p, x, y };
@@ -236,12 +271,67 @@ export function deleteConstraint(doc: DesignDocument, sketchId: string, id: stri
   return { ...doc, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, constraints: s.constraints.filter((c) => c.id !== id) } : s)) };
 }
 
+/** The two points a curve's own size or direction is about: a line's two ends, an arc's centre with its start and with its end. */
+function curvePairs(c: Sketch["curves"][number]): [string, string][] {
+  return c.kind === "line" ? [[c.start, c.end]] : c.kind === "arc" ? [[c.centre, c.start], [c.centre, c.end]] : [];
+}
+
+/**
+ * The constraints left when curve `removed` goes and `left` stay: a
+ * horizontal, vertical or distance on the two points of `removed`'s own
+ * pairs (its length, its radius, its level) goes with it, as in Fusion,
+ * unless a curve left has the same pair (a line drawn over the arc's
+ * radius); its ends may stay, shared with the curves next to it, but the
+ * constraint was about the curve, and a hidden one would hold a line drawn
+ * there later without the user knowing why. A coincident or fix is about
+ * its points and stays (`keptConstraints` takes a gone point's).
+ */
+export function withoutCurveConstraints(constraints: SketchConstraint[], removed: Sketch["curves"][number], left: readonly Sketch["curves"][number][]): SketchConstraint[] {
+  const key = (a: string, b: string) => (a < b ? `${a} ${b}` : `${b} ${a}`);
+  const still = new Set(left.flatMap(curvePairs).map(([a, b]) => key(a, b)));
+  const gone = new Set(curvePairs(removed).map(([a, b]) => key(a, b)).filter((k) => !still.has(k)));
+  if (gone.size === 0) return constraints;
+  const kept = constraints.filter((c) => !((c.kind === "horizontal" || c.kind === "vertical" || c.kind === "distance") && gone.has(key(c.a, c.b))));
+  return kept.length === constraints.length ? constraints : kept;
+}
+
 /** The constraints of a sketch that still name only its points (a deleted curve takes its points' constraints with it). */
 export function keptConstraints(sketch: Pick<Sketch, "points" | "constraints" | "curves">): SketchConstraint[] {
   const points = new Set(sketch.points.map((p) => p.id));
   const circles = new Set(sketch.curves.filter((c) => c.kind === "circle").map((c) => c.id));
   const kept = sketch.constraints.filter((c) => (c.kind === "diameter" ? circles.has(c.circle) : constraintPoints(c).every((p) => points.has(p))));
   return kept.length === sketch.constraints.length ? sketch.constraints : kept;
+}
+
+/**
+ * The document with Horizontal on each level side of a rectangle just
+ * drawn (`sides`, line ids) and Vertical on each upright one, as Fusion
+ * gives a rectangle (the beginner check, 2026-11-06: without them a size
+ * on one side made a trapezoid). Only where it holds exactly as drawn, so
+ * the sketch stays solved without a solve and nothing can fight; a side
+ * through a point that follows a body, or already level or upright by its
+ * own constraint, gets none. The ids from the one counter.
+ */
+export function squaredRectangle(doc: DesignDocument, sketchId: string, sides: readonly string[]): DesignDocument {
+  const sketch = doc.sketches.find((s) => s.id === sketchId);
+  if (!sketch) throw new Error(`there is no sketch ${sketchId} in the design`);
+  const at = new Map(sketch.points.map((p) => [p.id, p]));
+  const follows = followingPoints(sketch);
+  let nextId = doc.nextId;
+  const added: SketchConstraint[] = [];
+  for (const id of sides) {
+    const line = sketch.curves.find((c) => c.id === id);
+    if (line?.kind !== "line" || follows.has(line.start) || follows.has(line.end)) continue;
+    const [a, b] = [at.get(line.start)!, at.get(line.end)!];
+    const kind = a.y === b.y ? "horizontal" : a.x === b.x ? "vertical" : null;
+    if (kind === null) continue;
+    const same = (c: SketchConstraint) => c.kind === kind && ((c.a === line.start && c.b === line.end) || (c.a === line.end && c.b === line.start));
+    if ([...sketch.constraints, ...added].some(same)) continue;
+    added.push({ id: `constraint-${nextId}`, kind, a: line.start, b: line.end });
+    nextId = counted(nextId + 1);
+  }
+  if (added.length === 0) return doc;
+  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, constraints: [...s.constraints, ...added] } : s)) };
 }
 
 /** The points a line picked gives a horizontal or vertical constraint: its start, held, then its end. */

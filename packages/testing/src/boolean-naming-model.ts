@@ -405,7 +405,7 @@ interface Face {
  * 4), then by its place in the patches' lists (so a face merged earlier
  * keeps the name it showed), then by the rest of `rank` (made order).
  */
-function facesOf(g: Grid, s: Solid, rank: Made, faults: ReadonlySet<BooleanFault>): Face[] {
+function facesOf(g: Grid, s: Solid, rank: Made, faults: ReadonlySet<BooleanFault>, origins?: readonly Solid[]): Face[] {
   const seen = new Set<number>();
   const faces: Face[] = [];
   eachPatch(g, s.cells, (c0, d) => {
@@ -431,9 +431,27 @@ function facesOf(g: Grid, s: Solid, rank: Made, faults: ReadonlySet<BooleanFault
       s.names.get(key(c, d))!.forEach((n, i) => {
         if (i < (place.get(n) ?? Infinity)) place.set(n, i);
       });
+    // The body a name came from (rule 4): the first input whose face, lying where this face lies, carries it; a name
+    // no input face here carries (a cut's wall, from the tool's face turned the other way) by the body holding it
+    // anywhere. Never only the latter: a body holding a copy of another's faces (a kept tool joined in, #431) would
+    // put its name first on a face that lies on the other body alone.
+    // Its place is then its place in that input face's list (#430: a tool's face lying on the target's, both carrying
+    // the target's earlier-made name, must not lift that name over the target's own first name).
+    const fromHere = (n: string): [number, number] | null => {
+      for (const [i, o] of (origins ?? []).entries()) {
+        let at = Infinity;
+        for (const c of patches) {
+          const k = o.names.get(key(c, d))?.indexOf(n) ?? -1;
+          if (k >= 0 && k < at) at = k;
+        }
+        if (at < Infinity) return [i, at];
+      }
+      return null;
+    };
     const sortKey = (n: string) => {
       const r = rank(n);
-      return [r[0], place.get(n)!, ...r.slice(1)];
+      const here = fromHere(n);
+      return here === null ? [r[0], place.get(n)!, ...r.slice(1)] : [...here, ...r.slice(1)];
     };
     let names = [...place.keys()].sort((x, y) => lexCompare(sortKey(x), sortKey(y)));
     if (faults.has("merge-tool-first")) names.reverse();
@@ -451,9 +469,9 @@ function facesOf(g: Grid, s: Solid, rank: Made, faults: ReadonlySet<BooleanFault
 }
 
 /** The solid with every patch renamed to its face's names, so the next feature sees whole faces. */
-function settled(g: Grid, s: Solid, rank: Made, faults: ReadonlySet<BooleanFault>): Solid {
+function settled(g: Grid, s: Solid, rank: Made, faults: ReadonlySet<BooleanFault>, origins?: readonly Solid[]): Solid {
   const names = new Map<number, readonly string[]>();
-  for (const f of facesOf(g, s, rank, faults)) for (const c of f.patches) names.set(key(c, f.d), f.names);
+  for (const f of facesOf(g, s, rank, faults, origins)) for (const c of f.patches) names.set(key(c, f.d), f.names);
   return { cells: s.cells, names };
 }
 
@@ -733,7 +751,7 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
           const touched = (around: readonly number[]) => around.some((c) => block.cells[c] === 1) || new Set(around.filter((c) => raw.cells[c] === 1).map((c) => lumps.of[c])).size === 1;
           refusePinch(raw, touched);
           refuseSliver(raw, touched);
-          const after = settled(g, raw, rankBy(order), fs);
+          const after = settled(g, raw, rankBy(order), fs, order);
           const pieces = piecesOf(g, after.cells);
           const out: Body[] = [];
           for (let p = 0; p < pieces.count; p++) {
@@ -781,7 +799,7 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
     refusePinch(raw);
     refuseSliver(raw);
     const rank = rankBy([body.solid, ...tools]);
-    const after = settled(g, raw, rank, fs);
+    const after = settled(g, raw, rank, fs, [body.solid, ...tools]);
     const pieces = piecesOf(g, after.cells);
     // A Combine join: the piece holding the target keeps its id, whether or not any of its faces survive (a tool may swallow it).
     const holder = op === "join" ? pieces.of[body.solid.cells.indexOf(1)] : -1;
@@ -1039,7 +1057,7 @@ export interface FaceReference {
 }
 
 export type FaceFound =
-  | { found: DescribedFace; body: string; warning: "split" | null }
+  | { found: DescribedFace; body: string; warning: "split" | "whole" | null }
   | { lost: true }
   | { ambiguous: number };
 
@@ -1056,7 +1074,12 @@ export function resolveFace(r: BooleanRebuild, ref: FaceReference, faults: Itera
   const fs = new Set(faults);
   const pieces = r.bodies.flatMap((b) => b.faces.filter((f) => f.names.includes(ref.name)).map((f) => ({ f, body: b.id })));
   if (pieces.length === 0) return { lost: true };
-  if (pieces.length === 1) return { found: pieces[0].f, body: pieces[0].body, warning: null };
+  // A tagged reference finding one face without its tag that doesn't hold its origin: its piece is gone and another face
+  // carries the name (a kept tool's own face), so found with a warning, never silently (hunt 11-06); whole again holds it.
+  if (pieces.length === 1) {
+    const same = ref.tag === undefined || r.tagFor(pieces[0].f, ref.name).join(",") === ref.tag.join(",") || ref.origin === undefined || holds(pieces[0].f, ref.origin);
+    return { found: pieces[0].f, body: pieces[0].body, warning: same ? null : "whole" };
+  }
   if (ref.tag !== undefined) {
     const want = ref.tag.join(",");
     const match = pieces.filter((p) => r.tagFor(p.f, ref.name).join(",") === want);

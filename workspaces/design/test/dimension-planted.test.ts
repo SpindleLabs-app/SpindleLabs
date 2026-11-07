@@ -29,7 +29,7 @@ interface Plant {
 }
 
 const PLANTS: Plant[] = [
-  { name: "length-told-off-by-a-thousandth", find: '["distance", n(c.a), n(c.b), c.value]', replace: '["distance", n(c.a), n(c.b), c.value * 1.001]', caught: "holds" },
+  { name: "length-told-off-by-a-thousandth", find: '["distance", known(c.a), known(c.b), c.value]', replace: '["distance", known(c.a), known(c.b), c.value * 1.001]', caught: "holds" },
   { name: "diameter-leaves-the-radius", find: "? { ...q, radius: made.value / 2 } : q", replace: "? { ...q } : q", caught: "diameter" },
   { name: "sized-circle-still-free", find: 'c.kind === "circle" && !sized.has(c.id)).length', replace: 'c.kind === "circle").length', caught: "diameter" },
   { name: "a-set-size-added-again", find: "AXES[made.kind].every((axis) => redundantAxes.has(axis))", replace: "AXES[made.kind].length === 0", caught: "redundant" },

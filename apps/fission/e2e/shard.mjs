@@ -1,10 +1,11 @@
 // Splits `npm run e2e` across CI's parallel e2e jobs: `node e2e/shard.mjs 2 3`
-// runs the second of three shares. package.json's "e2e" script stays the one
-// list of browser checks; this reads it, so a check added there runs in some
-// shard without touching CI. Each share runs every one of its checks, even
-// after a failure, and fails if any did.
+// runs the second of three shares, and `npm run e2e` is `shard.mjs 1 1`, all
+// of them. The checks are every browser check file in this folder
+// (checks.mjs), so a new check runs in some shard without touching CI or
+// package.json. Each share runs every one of its checks, even after a failure,
+// and fails if any did.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { allChecks } from "./checks.mjs";
 
 /** Seconds each check took on CI (one merge queue run's three shares, 2026-10-29: 2,500 s in all), to even out the shares; a check not listed counts as `UNKNOWN`.
  * Only the balance depends on them: a wrong or missing entry makes one share slower, never skips a check. */
@@ -67,25 +68,16 @@ export const SECONDS = {
   "framing.mjs": 10,
   "offline.mjs": 0,
   "offline-off.mjs": 4,
+  "home.mjs": 6,
   "leave-save.mjs": 33,
   "monkey.mjs": 89,
 };
 export const UNKNOWN = 30;
 
-/** The commands of an "a && b && c" script, refusing any other shape so no check can be lost in the split. */
-export function commands(script) {
-  if (/\|\||;|(^|[^&])&([^&]|$)|\|/.test(script)) throw new Error(`the e2e script must be a plain "a && b" chain: ${script}`);
-  const parts = script.split("&&").map((s) => s.trim());
-  for (const p of parts) {
-    if (!/^node( --[a-z-]+)* e2e\/[a-z0-9-]+\.mjs$/.test(p)) throw new Error(`not a browser check: "${p}"`);
-  }
-  return parts;
-}
-
 /** The file a command runs, e.g. "smoke.mjs". */
 export const fileOf = (command) => command.slice(command.lastIndexOf("/") + 1);
 
-/** `cmds` dealt into `n` shares, longest first onto the lightest share; every command lands in exactly one, in its original order. */
+/** `cmds` dealt into `n` shares, longest first onto the lightest share; every command lands in exactly one, in the order given. */
 export function shares(cmds, n, seconds = SECONDS) {
   if (!Number.isInteger(n) || n < 1) throw new Error(`shard count must be a whole number from 1: ${n}`);
   const cost = (c) => seconds[fileOf(c)] ?? UNKNOWN;
@@ -103,10 +95,8 @@ export function shares(cmds, n, seconds = SECONDS) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const [k, n] = process.argv.slice(2).map(Number);
-  const script = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts.e2e;
-  const all = shares(commands(script), n);
   if (!Number.isInteger(k) || k < 1 || k > n) throw new Error(`usage: node e2e/shard.mjs <1..n> <n>, got ${k} ${n}`);
-  const mine = all[k - 1];
+  const mine = shares(allChecks(), n)[k - 1];
   console.log(`e2e share ${k} of ${n}: ${mine.map(fileOf).join(", ")}`);
   const failed = [];
   const took = [];

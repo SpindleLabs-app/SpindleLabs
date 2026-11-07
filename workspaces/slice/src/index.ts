@@ -36,3 +36,5 @@ export const sliceWorkspace: WorkspacePlugin = {
     return { unmount: () => ctx.properties.replaceChildren() };
   },
 };
+
+export { mountSlicePage, plateMesh, plateWords, readPlate, slicePageWorkspace, type PlateBody } from "./page.ts";

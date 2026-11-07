@@ -124,7 +124,7 @@ class Save(unittest.TestCase):
             f.write("all passed\n")
 
     def save(self):
-        env = dict(os.environ, RESULTS_REPO=self.remote, RESULTS_PATH="ci/pr-3/abc/1-1", LABEL="pr-3", HEAD_SHA="abc")
+        env = dict(os.environ, RESULTS_REPO=self.remote, RESULTS_PATH="ci/pr-3/abc/1-1", LABEL="pr-3", HEAD_SHA="abc", SAVE_WAIT_SCALE="0")
         return subprocess.run(["bash", SCRIPT, "save", "checks", self.logs], capture_output=True, text=True, env=env)
 
     def saved(self):
@@ -238,6 +238,34 @@ exec {real} "$@"
         files = self.saved()
         self.assertIn("runs/other-8/log.txt", files)
         self.assertIn("runs/7-1/mutants-shard-3/tests.log", files)
+
+    def test_a_push_refused_for_a_secret_or_by_the_server_says_so(self):
+        # Kernel PR #144's run, 2026-11-05: two mutant shards that passed were "rejected" twelve times in a quiet
+        # hour, with no word saying why. GitHub's push protection and its server errors now say so, still in
+        # words only (the file a secret was found in is a private path).
+        hook = os.path.join(self.remote, "hooks", "pre-receive")
+        with open(hook, "w") as f:
+            f.write("#!/bin/sh\necho 'remote: error: GH013: Repository rule violations found for refs/heads/main.' >&2\n"
+                    "echo 'remote: - GITHUB PUSH PROTECTION: Push cannot contain secrets' >&2\n"
+                    "echo 'remote:   path: ci/pr-3/abc/1-1/checks/secret_name.log:12' >&2\nexit 1\n")
+        os.chmod(hook, 0o755)
+        out = self.save()
+        self.assertEqual((out.returncode, out.stdout), (1, "could not save checks (GH013,rejected,secrets)\n"))
+        self.assertNotIn("secret_name", out.stdout + out.stderr)
+        with open(hook, "w") as f:
+            f.write("#!/bin/sh\necho 'remote: Internal Server Error' >&2\nexit 1\n")
+        out = self.save()
+        self.assertEqual((out.returncode, out.stdout), (1, "could not save checks (Internal Server Error,rejected)\n"))
+
+    def test_nothing_to_save_says_so(self):
+        # A job whose folder is empty makes no commit, so no push could ever save it: said at once, not after
+        # twelve tries called "rejected".
+        empty = os.path.join(self.tmp.name, "empty")
+        os.makedirs(empty)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(RESULTS_REPO=self.remote, RESULTS_PATH="runs/7-1", SAVE_WAIT_SCALE="0")
+        out = subprocess.run(["bash", SCRIPT, "save", "checks", empty], capture_output=True, text=True, env=env)
+        self.assertEqual((out.returncode, out.stdout), (1, "could not save checks (nothing to save)\n"))
 
     def test_a_refused_push_says_why_without_naming_files(self):
         # The way GitHub refuses a file over 100 MB, from a hook.

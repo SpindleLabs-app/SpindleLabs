@@ -9,6 +9,7 @@ export { SPLIT_MIN_WIDTH_PX, defaultSplit, splitChoices, type SplitEntry } from 
 export { WarmPool, type WarmHooks } from "./warm.ts";
 export { CUSTOM_KEYS, applyCustom, readCustom, THEME_CHOICES, THEME_COLOURS, THEME_SETTING, applyTheme, isThemeChoice, readThemeChoice, resolveTheme, startTheme, type Theme, type ThemeChoice } from "./theme-choice.ts";
 export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type SettingsParts, type SettingsSection, type SettingsStorage, type SettingValue } from "./settings.ts";
+export { BUG_REPORT_EMPTY, ISSUES_NEW, MAX_REPORT_URL, bugReportBody, bugReportDialog, bugReportTitle, bugReportUrl, type BugFacts, type BugReport } from "./bug-report.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
@@ -17,9 +18,17 @@ export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type Fi
 export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-elsewhere.ts";
 export { commandSearch, matchCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { REPEAT_MS, repeatGuard, type RepeatGuard } from "./press-guard.ts";
-export { askName, GCODE_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
+export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visible.ts";
+export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
 export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELETON_DELAY_MS, SKELETON_FADE_MS, type HeldSkeleton, type SkeletonShape } from "./skeleton.ts";
+export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, homeScreen, usedAt, workspacesIn, type HomeParts, type HomeProject, type HomeRow, type HomeScreen } from "./home-screen.ts";
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
-export { NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIONS_TITLE, versionList, versionRows, versionTime, type VersionList, type VersionListParts, type VersionRow } from "./version-list.ts";
+export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type DesignRowWords, type MyDesigns, type MyDesignsParts } from "./my-designs.ts";
+export { ACCOUNT_NOTE, ACCOUNT_TAG, NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIONS_TITLE, versionList, versionRows, versionTime, type AccountVersions, type VersionList, type VersionListParts, type VersionPlace, type VersionRow } from "./version-list.ts";
 export { startTooltips, tipWords, quickInfoFor, TIP_SHORT_MAX, type TipWords, type Tooltips } from "./tooltip.ts";
+export { agoWords, historyPanel, stepWords, type HistoryPanel, type HistoryPanelParts } from "./history-panel.ts";
+export { currentDesignDefaults, DEFAULT_GRID_MM, DEFAULT_GRID_SNAP_ON, GRID_SIZE_SETTING, GRID_SNAP_SETTING, readGridSize, readGridSnap, startDesignDefaults, type DesignDefaultChoices, type DesignDefaults } from "./design-defaults.ts";
+export { currentMouse, MOUSE_SETTING, readMouseChoice, startMouse } from "./mouse-choice.ts";
+export { currentUnit, readUnitChoice, startUnits, UNIT_CHOICES, UNIT_EVENT, UNIT_SETTING } from "./unit-choice.ts";
 export { CUSTOM_NAMES, DEFAULT_CUSTOM, contrast, deriveCustom, parseHex, readTokens, toHex, type CustomColours, type CustomResult } from "./custom-theme.ts";
+export { activate as activateTab, addTab, canAdd as canAddTab, closeQuestion, confirmClose, designTabs, MAX_TABS, NO_TABS, removeTab, restored as restoredTabs, shortName as tabShortName, stored as storedTabs, tabName, update as updateTab, workspaceChip, type DesignTab, type DesignTabsParts, type DesignTabsStrip, type TabsState } from "./design-tabs.ts";

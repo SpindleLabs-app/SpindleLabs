@@ -5,8 +5,8 @@
 // opening on the preset picked last. The Chromium check is apps/fission/e2e/slice-presets.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GRIP_KEY, NOZZLE_KEY, PRINT_DEFAULTS, FILE_DEFAULTS, presetSettingsOf, slicePrint, WARM_UP_KEY, type PrintChoices, type FileChoices } from "../src/slice-print.ts";
-import { byName, NAME_MAX, nameProblem, PRESET_PICKED_KEY, PRESETS_KEY, PRESETS_MAX, readPresets, sameSettings, writePresets, type PresetSettings, type PrintPreset } from "../src/slice-presets.ts";
+import { byName, GRIP_KEY, NAME_MAX, nameProblem, NOZZLE_KEY, PRINT_DEFAULTS, FILE_DEFAULTS, presetSettingsOf, PRESET_PICKED_KEY, PRESETS_KEY, PRESETS_MAX, readPresets, sameSettings, WARM_UP_KEY, writePresets, type FileChoices, type PresetSettings, type PrintChoices, type PrintPreset } from "@fission/print";
+import { slicePrint } from "../src/slice-print.ts";
 
 const DEFAULTS: PresetSettings = { ...PRINT_DEFAULTS, ...FILE_DEFAULTS };
 const WORK: PresetSettings = { layerHeight: 0.16, walls: 3, infill: 40, supports: "tree", warmUp: false, betterGrip: true, format: "p1s", plate: "smooth", nozzle: "high-flow" };

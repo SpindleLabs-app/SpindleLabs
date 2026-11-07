@@ -134,3 +134,11 @@ test("Save As… is listed after Save when the shell gives it, runs as the shell
   items[3].run();
   assert.deepEqual(ran, ["file-save-as"]);
 });
+
+test("an entry's key shows at its item's right; an entry without one has none (missing-basics audit: Ctrl+S, Ctrl+O)", () => {
+  const { entry, parts: p } = parts(() => null);
+  const keyed = { ...p, open: { ...entry("open", "Open…"), key: "Ctrl+O" }, save: { ...entry("file-save", "Save"), key: "Ctrl+S" } };
+  assert.deepEqual(fileSections(keyed)[0].items.map((i) => [i.id, i.key ?? null]), [[NEW_ID, null], ["open", "Ctrl+O"], ["file-save", "Ctrl+S"]]);
+  // Without keys nothing is shown: the field is left out, not set to an empty word.
+  assert.deepEqual(fileSections(p)[0].items.map((i) => "key" in i), [false, false, false]);
+});
