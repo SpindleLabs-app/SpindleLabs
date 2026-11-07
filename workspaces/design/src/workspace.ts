@@ -11,7 +11,7 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, pastedBodies } from "./duplicate.ts";
-import { changedMove, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, SCALE_STEP, type MoveValues } from "./move.ts";
+import { changedMove, factorOf, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, SCALE_STEP, type MoveBox, type MoveValues } from "./move.ts";
 import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
@@ -3495,10 +3495,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * (`insertMove` at the marker, or `changedMove`), checked by building the
    * design on the kernel (`refusedMove`: a body moved out past model space
    * is refused with the kernel's words) and recorded as one undo step,
-   * "Move bodies" or "Edit Move 1". A new Move that moves nothing, or an
+   * "Move bodies" or "Edit Move 1". A new Move that moves, turns and scales nothing, or an
    * edit that changes nothing, closes the panel and records nothing.
    */
-  async function finishMove(typed: Record<MoveParam, string>) {
+  async function finishMove(typed: Record<MoveBox, string>) {
     if (!moveBox.shown) return;
     const id = moveBox.editing;
     const before = designDoc();
@@ -3509,7 +3509,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let moved: string;
     try {
       if (id === null) {
-        if (v.x === 0 && v.y === 0 && v.z === 0 && v.turnX === 0 && v.turnY === 0 && v.turnZ === 0 && moveBodies.length > 0) return leaveMove();
+        // A Scale of 2 moves nothing yet changes everything (the browser check found it closing as if nothing was asked).
+        if (v.x === 0 && v.y === 0 && v.z === 0 && v.turnX === 0 && v.turnY === 0 && v.turnZ === 0 && factorOf(v) === 1 && moveBodies.length > 0) return leaveMove();
         ({ doc: next, id: moved } = insertMove(before, moveBodies, v, moveBox.kind));
       } else [next, moved] = [changedMove(before, id, v, moveBodies), id];
     } catch (e) {

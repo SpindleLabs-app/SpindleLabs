@@ -94,7 +94,7 @@ const ROWS: readonly { legend: string; keys: readonly MoveBox[]; unit: string; i
   { legend: "Angle", keys: ["turnX", "turnY", "turnZ"], unit: "°", id: "move-angle" },
   { legend: "Pivot", keys: ["pivotX", "pivotY", "pivotZ"], unit: "mm", id: "move-pivot" },
   // Scale (step 35e2): one box, the factor (2 doubles every size, 0.5 halves it), about the pivot.
-  { legend: "Scale", keys: [MOVE_SCALE], unit: "×", id: "move-scale" },
+  { legend: "Scale", keys: [MOVE_SCALE], unit: "×", id: "move-scale-row" }, // its box is #move-scale
 ];
 
 /** What the folded pivot's summary says: where the Move turns about (`p` as the boxes show it, in `unit`). */
@@ -183,7 +183,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     for (const key of row.keys) {
       const input = el("input", `move-${key}`);
       Object.assign(input, { type: "number", step: "any", inputMode: "decimal" });
-      const axis = key === MOVE_SCALE ? "factor" : key.slice(-1).toUpperCase();
+      const axis = key.slice(-1).toUpperCase();
       input.setAttribute("aria-label", key === MOVE_SCALE ? "Scale factor" : `${row.legend} ${axis}`);
       if (isLength(key)) fields.set(key, sizeBox(input, unitNow));
       input.addEventListener("input", () => {
@@ -204,7 +204,9 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       });
       inputs.set(key, input);
       const label = el("label", "", "move-panel-box");
-      label.append(el("span", "", "move-panel-axis", axis), input);
+      // The factor's box needs no axis letter: its legend says Scale (×).
+      if (key === MOVE_SCALE) label.append(input);
+      else label.append(el("span", "", "move-panel-axis", axis), input);
       set.append(label);
     }
     return set;
