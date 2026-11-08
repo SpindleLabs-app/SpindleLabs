@@ -5,7 +5,7 @@
 // number stays the design's size, the tag only says what it is for. The pick stays for the next circle (the Circle
 // tool keeps it), and "+ Fit" takes it off again. The Dimension tool: a circle picked for its diameter, a fit picked
 // under the box tags it at once ("⌀ 20 · pin, slide"), then 24 typed sizes it ("⌀ 24 · pin, slide"); Ctrl+Z takes the
-// size off, then the tag, each its own step. Saved and reloaded: the stored design holds both fits, version 14, and
+// size off, then the tag, each its own step. Saved and reloaded: the stored design holds both fits, version 15, and
 // opens. At 1280 px with clicks and 375 px with taps, the list whole on screen. Screenshots go to E2E_SHOTS when set.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -225,10 +225,10 @@ try {
         await labels(page, "⌀ 3 · M3 bolt | ⌀ 20 · pin, slide", "redo puts the tag back");
       }
 
-      // Stored and reloaded: both fits are in the design, version 14, and it opens again.
+      // Stored and reloaded: both fits are in the design, version 15, and it opens again.
       await until(page, () => document.querySelector("#save-status")?.dataset.state === "saved", null, "saved");
       let design = await stored(page);
-      assert.equal(design.version, 14);
+      assert.equal(design.version, 15);
       assert.deepEqual(fitsIn(design), [{ role: "hole", kind: "bolt-normal" }, { role: "hole", kind: "slide", partner: "bought" }]);
       await page.evaluate(() => sessionStorage.setItem("kept", "1"));
       await page.reload();

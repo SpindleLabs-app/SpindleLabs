@@ -57,7 +57,7 @@ test("hand-worked: a version 1 file whose ids carry no numbers starts the counte
   f.id = "base";
   const doc = readDesignDocument({ version: 1, profiles: [], timeline: { features: [f] } });
   assert.equal(doc.nextId, 1);
-  assert.equal(doc.version, 14);
+  assert.equal(doc.version, 15);
 });
 
 test("a version 3 file missing its profiles list or its timeline is refused as having no timeline", () => {

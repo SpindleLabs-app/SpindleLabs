@@ -35,7 +35,10 @@ export function propertyNames(source: string, name: string): string[] {
 // without. Changing any list: see the top of this file.
 // Design data version 14 (FK2): a circle tagged with its fit (`fit` on SketchCircleCurve), which a version 13 reader
 // would drop on saving, losing what the hole is for.
-const LEDGER_VERSION = 14;
+// Design data version 15 (35f1f2b): a pin's `name` or a projection's `edge` may hold a Combine result's edge by its name
+// across the design ("design:…", its `feature` the Combine), in fields already listed, so nothing new below; a version 14
+// reader would hold such a point where it was.
+const LEDGER_VERSION = 15;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

@@ -45,7 +45,7 @@ import type { DesignDocument, Sketch, SketchCurve, SketchPoint } from "./documen
 import { faceHeld, inSketch, partName, unordered, vertexNames } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
 import { sharedBy } from "./references.ts";
-import { sceneHit, type Scene } from "./scene.ts";
+import { madeBy, sceneHit, type Scene } from "./scene.ts";
 import type { EdgeToProject } from "./sketch.ts";
 import { SAME_PLACE, type EdgeCurve } from "./snap.ts";
 
@@ -492,7 +492,7 @@ export function projectPick(doc: DesignDocument, sketchId: string, scene: Scene 
   const hit = kind === null ? null : sceneHit(scene, kind, (kind === "edge" ? under.edge : under.face)!);
   if (hit === null) return { edges: [], note: PROJECT_NOTHING };
   const body = scene.bodies[hit.body];
-  const on = features.findIndex((f) => f.id === body.feature);
+  const on = features.findIndex((f) => f.id === madeBy(body));
   if (on < 0 || on > at) return { edges: [], note: projectAfter(features[on]?.provenance.self.label ?? body.feature, item.provenance.self.label) };
   const picked = kind === "edge" ? [hit.index] : body.view.edge_faces.flatMap((pair, e) => (pair !== null && (pair[0] === hit.index || pair[1] === hit.index) ? [e] : []));
   const edges: EdgeToProject[] = [];
@@ -503,7 +503,7 @@ export function projectPick(doc: DesignDocument, sketchId: string, scene: Scene 
     const shape = edgeShape(body.view, e, plane, corners);
     if (name === null) refused.push(PROJECT_UNNAMED);
     else if ("refused" in shape) refused.push(shape.message);
-    else edges.push({ feature: body.feature, edge: name, shape });
+    else edges.push({ feature: madeBy(body), edge: name, shape });
   }
   if (refused.length === 0) return { edges, note: null };
   if (kind === "edge") return { edges, note: refused[0] };
