@@ -1324,13 +1324,6 @@
   },
   {
     "file": "packages/testing/src/boolean-naming-model.ts",
-    "mutator": "ConditionalExpression",
-    "original": "pieces.of[Math.floor(k / 6)] === p",
-    "replacement": "true",
-    "why": "The piece's names then hold the other pieces' patches too; names are only read at a solid's own filled cells (combine, facesOf), and the one read of the first entry is the planted wall-target-name fault's, still caught."
-  },
-  {
-    "file": "packages/testing/src/boolean-naming-model.ts",
     "mutator": "ArrayDeclaration",
     "original": "[0]",
     "replacement": "[]",
