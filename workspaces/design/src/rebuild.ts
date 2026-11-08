@@ -851,7 +851,10 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
     return { status: "built", placement, ...warn, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
   };
-  if (Object.values(bodies).some((b) => b.named !== undefined)) {
+  // SL #430: a reference made on a piece (it holds a tag) is read by rule 3 even when no Combine is built now (the one
+  // that split its face suppressed, or no longer touching): found on the face whole again, with a warning when that face
+  // has neither its tag nor its origin, as while one is. Read as a plain name it was placed silently.
+  if (Object.values(bodies).some((b) => b.named !== undefined) || readDesignReference(faceReference(plane))?.tag !== undefined) {
     // 35f1e, rule 3: once a Combine built, the face is found by its name on every body built so far: the one face carrying
     // it, the piece with its tag, or (made on a whole face now split) the piece holding the origin it was drawn with,
     // else the largest, with a warning; two alike are never guessed between. The made order is not read here (0).
