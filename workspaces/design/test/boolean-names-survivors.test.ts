@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { seeded } from "../../../packages/testing/src/index.ts";
-import { bodyLow, combineNames, cornerCompare, sizeCompare, designNames, faceHolds, faceLow, featureBody, fullNames, resolveEdgeName, resolveFaceName, resolveOldEdge, roleOrder, SAME_CORNER, solidHolds } from "../src/boolean-names.ts";
+import { bodyLow, combineNames, cornerCompare, sizeCompare, designNames, shownFaces, faceHolds, faceLow, featureBody, fullNames, resolveEdgeName, resolveFaceName, resolveOldEdge, roleOrder, SAME_CORNER, solidHolds } from "../src/boolean-names.ts";
 
 /** A view with only what boolean-names.ts reads. */
 function view(v = {}) {
@@ -354,4 +354,39 @@ test("resolveFaceName: the one face carrying the name, with the reference's two-
   assert.deepEqual(resolveFaceName([b], names, { name: "face:a", tag: ["face:q", "face:p"], origin: [5, 5, 5] }), { body: 0, index: 0, warning: null });
   // The same face with another tag and the origin still off it: the piece it was drawn on is gone, so found, warned.
   assert.deepEqual(resolveFaceName([b], names, { name: "face:a", tag: ["face:r"], origin: [5, 5, 5] }), { body: 0, index: 0, warning: "whole" });
+});
+
+// Survivors 11-08 (#424): what a Combine's piece is remembered by, and which remembered ids are its own.
+
+test("shownFaces: each face's first name once, sorted, a face without names adding none", () => {
+  // Firsts: face:u/b, (none), face:u/a, face:u/b again; once each and sorted: [face:u/a, face:u/b] (the later "x" is no face's first).
+  assert.deepEqual(shownFaces([{ names: ["face:u/b", "x"] }, { names: [] }, { names: ["face:u/a"] }, { names: ["face:u/b"] }]), ["face:u/a", "face:u/b"]);
+});
+
+test("combineNames: a remembered piece is matched by its faces in any order, and only an id this Combine could give counts", () => {
+  // Piece 0 holds the target's face (it keeps body:t); piece 1 the tool's faces b then a, so its shown faces are
+  // [face:u/a, face:u/b]. Each remembered id below has those faces, listed b first (as data might hold them).
+  const t = body("body:t", 1, view(), [["face:t/a"]]);
+  const tool = body("body:u", 2, view(), [["face:u/b"], ["face:u/a"]]);
+  const result = { bodies: [100, 101], history: [{ faces: [{ body: 1, face: 0 }] }, { faces: [{ body: 2, face: 0 }, { body: 2, face: 1 }] }] };
+  const views = [view({ face_areas: [1] }), view({ face_areas: [1, 1] })];
+  const piece = (id) => {
+    const r = combineNames("feature-9", "difference", t, [tool], result, views, 1, new Map([[id, ["face:u/b", "face:u/a"]]]));
+    return [r.bodies.map((b) => b.id), r.nextPiece];
+  };
+  // piece:12 is this Combine's and its faces match whatever their order: piece 1 is piece 12, next 13.
+  assert.deepEqual(piece("body:feature-9/piece:12"), [["body:t", "body:feature-9/piece:12"], 13]);
+  // Not numbers this Combine gives: "02" (a leading 0), "2x", and another Combine's piece 2 (its prefix as long as
+  // ours): each is ignored, so the piece takes the lowest free number, 1.
+  for (const id of ["body:feature-9/piece:02", "body:feature-9/piece:2x", "body:feature-8/piece:2"])
+    assert.deepEqual(piece(id), [["body:t", "body:feature-9/piece:1"], 2], id);
+});
+
+test("resolveOldEdge: a side the view lists past the body's faces holds no names", () => {
+  // One face, named face:a; the one edge's other side is face 5, which the body does not have, so it holds no name:
+  // an edge between face:a and any other name is lost, whichever side the missing face is on.
+  for (const pair of [[0, 5], [5, 0]]) {
+    const b = body("body:t", 1, view({ edge_faces: [pair] }), [["face:a"]]);
+    assert.deepEqual(resolveOldEdge([b], "face:a", "Stryker was here"), { lost: true }, String(pair));
+  }
 });
