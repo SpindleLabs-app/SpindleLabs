@@ -187,9 +187,14 @@ class RandomTestingGroups(unittest.TestCase):
         before = "random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}"
         self.assertNotEqual(expand(before, dispatch("claude/a")), expand(before, dispatch("claude/b")))
 
-def kernel_dispatch(ref):
-    """kernel-nightly.yml is always started on this repo's main; the kernel branch is the `ref` input."""
-    return dict(dispatch("main"), inputs={"ref": ref})
+def kernel_dispatch(ref, night=False):
+    """kernel-nightly.yml is always started on this repo's main; the kernel branch is the `ref` input,
+    and the night is started with `night` (kernel-night-clock.yml)."""
+    return dict(dispatch("main"), inputs={"ref": ref, "night": night})
+
+
+def kernel_night():
+    return kernel_dispatch("main", night=True)
 
 
 class KernelRandomTestingGroups(unittest.TestCase):
@@ -199,20 +204,24 @@ class KernelRandomTestingGroups(unittest.TestCase):
         return expand(concurrency(KERNEL_NIGHTLY)[0], context)
 
     def test_worked_by_hand(self):
-        self.assertEqual(self.group(dict(schedule(), inputs={})), "kernel-random-testing-nightly")
+        self.assertEqual(self.group(kernel_night()), "kernel-random-testing-nightly")
         self.assertEqual(self.group(kernel_dispatch("main")), "kernel-random-testing-main")
         self.assertEqual(self.group(kernel_dispatch("claude/project-thread-e53sft")), "kernel-random-testing-branches")
+
+    def test_a_night_ignores_the_ref_input(self):
+        # The clock passes only night=true; a stray ref never moves the night out of its group.
+        self.assertEqual(self.group(dict(dispatch("main"), inputs={"ref": "claude/a", "night": True})), "kernel-random-testing-nightly")
 
     def test_two_kernel_branches_share_one_group(self):
         self.assertEqual(self.group(kernel_dispatch("claude/a")), self.group(kernel_dispatch("claude/b")))
 
     def test_branch_runs_never_hold_up_the_night_or_main(self):
         branch = self.group(kernel_dispatch("claude/a"))
-        self.assertNotEqual(branch, self.group(dict(schedule(), inputs={})))
+        self.assertNotEqual(branch, self.group(kernel_night()))
         self.assertNotEqual(branch, self.group(kernel_dispatch("main")))
 
     def test_never_shares_a_group_with_the_apps_nightly(self):
-        for ctx in (dict(schedule(), inputs={}), kernel_dispatch("main"), kernel_dispatch("claude/a")):
+        for ctx in (kernel_night(), kernel_dispatch("main"), kernel_dispatch("claude/a")):
             self.assertNotEqual(self.group(ctx), expand(concurrency(NIGHTLY)[0], ctx))
 
     def test_nothing_is_cancelled_by_a_newer_run(self):
@@ -224,6 +233,14 @@ class KernelRandomTestingGroups(unittest.TestCase):
         mine = "kernel-random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref == 'refs/heads/main' && 'main' || 'branches' }}"
         self.assertEqual(expand(mine, kernel_dispatch("claude/a")), expand(mine, kernel_dispatch("main")))
 
+
+class KernelNightClockGroup(unittest.TestCase):
+    """kernel-night-clock.yml: one clock at a time, and a newer one never cancels the one asleep."""
+
+    def test_one_fixed_group_never_cancelling(self):
+        group, cancel = concurrency(os.path.join(os.path.dirname(HERE), "workflows", "kernel-night-clock.yml"))
+        self.assertEqual(expand(group, schedule()), "kernel-night-clock")
+        self.assertEqual(cancel, "false")
 
 if __name__ == "__main__":
     unittest.main()
