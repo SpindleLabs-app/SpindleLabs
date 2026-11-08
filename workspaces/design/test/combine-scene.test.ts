@@ -21,6 +21,7 @@ import { BodyCache, rebuildTimeline, settleKept } from "../src/rebuild.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { editFeature } from "../src/feature-edit.ts";
 import { readDesignReference } from "../src/references.ts";
+import { suppressItem } from "../src/timeline-edits.ts";
 import { findInScene, joinBodies, sceneReference, shownBodies, type Scene } from "../src/scene.ts";
 import { referenceLabel } from "../src/selection.ts";
 import { addFaceSketch, drawCircle } from "../src/sketch.ts";
@@ -167,6 +168,33 @@ test("hand-worked: a sketch drawn on a whole face a Combine split goes to the pi
   assert.ok(tie.status === "built");
   assert.equal(tie.plane?.cause, "plane-split");
   await cache.clear();
+});
+
+test("hand-worked: a sketch on a piece of a split face, once no Combine splits it, finds the whole face, and says so when its origin is gone too (SL #430)", async () => {
+  // The sketch drawn on the cut bar's near top piece (tag: the bar's x = 0 side and the tool's x = 30 wall), its origin
+  // (0, 0, 10), as 26e draws it. With the Combine suppressed nothing is combined: the bar's top is one face again,
+  // x 0..100, y 0..20 at z 10, and its corner (0, 0, 10) is the origin, so the face holds it: found, no warning.
+  const { doc: cut, id: combine } = BAR();
+  const near = addFaceSketch(cut, { plane: "face:feature-1/top#face:feature-1/left,face:feature-2/left", feature: "feature-1" }, drawnFrame([0, 0, 1], [15, 10, 10]));
+  const runs = [await sceneOf(suppressItem(near.doc, combine, true))];
+  const whole = runs[0].build.results[near.id];
+  assert.ok(whole.status === "built");
+  assert.equal(whole.plane, undefined);
+  assert.equal(whole.placement?.plane.origin[2], 10);
+  // The bar made 8 tall as well: its top is the plane z = 8, which (0, 0, 10) is 2 mm off. The one face named
+  // feature-1/top now has neither the reference's tag (it borders all four sides, not the tool's wall) nor its origin,
+  // so the sketch lies on it with the warning (rule 3, section 8), exactly as it does while a Combine is built (the
+  // nightly session that found it: Design placed it silently whenever no body of the design was a Combine's).
+  runs.push(await sceneOf(suppressItem(editFeature(near.doc, "feature-1", { height: 8 }), combine, true)));
+  const lower = runs[1].build.results[near.id];
+  assert.ok(lower.status === "built");
+  assert.equal(lower.plane?.cause, "plane-split");
+  assert.equal(lower.placement?.plane.origin[2], 8);
+  // And with the Combine built, the same lower bar: the near piece is gone from z 10 too, but its tag still finds it.
+  runs.push(await sceneOf(editFeature(near.doc, "feature-1", { height: 8 })));
+  const built = runs[2].build.results[near.id];
+  assert.ok(built.status === "built" && built.plane === undefined && built.placement?.plane.origin[2] === 8);
+  for (const r of runs) await r.cache.clear();
 });
 
 test("hand-worked: a sketch on a whole face split into two equal pieces, its origin on neither, is never guessed between", async () => {
