@@ -1,4 +1,4 @@
-tested commit 465fed8 on main, 2026-11-07 22:32 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42405399181)
-Monkey, seeds 202611070-202611071: 2 session(s) of 2000 actions in Chromium; 1 Combine made of 17 tried; 2 FAILED
-seed 202611070: FAIL: selection agrees: clicking hidden Body 10 (Sphere: ⌀36 mm) selected "body:feature-8"
-seed 202611071: FAIL: timeline bar matches the file: shown [{"id":"feature-1","suppressed":false,"rolledBack":false},{"id":"sketch-2","suppressed":true,"rolledBack":false},{"id":"feature-3","suppressed":false,"rolledBack":false}], file says [{"id":"feature-1","suppressed":false,"rolledBack":false},{"id":"sketch-2","suppressed":true,"rolledBack":false},{"id":"feature-3","suppressed":false,"rolledBack":false},{"id":"feature-4","suppressed":false,"rolledBack":false}]
+tested commit b8e42a7 on claude/project-thread-ich6rn, 2026-11-08 07:23 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42443826830)
+Monkey, seeds 202611080-202611081: 2 session(s) of 2000 actions in Chromium; 8 Combines made of 30 tried; every check passed after every action
+seed 202611080: pass (2000 actions)
+seed 202611081: pass (2000 actions)

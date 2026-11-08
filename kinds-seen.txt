@@ -1,5 +1,6 @@
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/files.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/history.ts
+check TypeScript mutants: explained.json lists mutants that no longer survive in packages/testing/src/boolean-naming-model.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in workspaces/design/src/document.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/commands.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/hosted.ts
