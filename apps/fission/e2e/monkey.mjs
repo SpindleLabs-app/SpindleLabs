@@ -508,6 +508,9 @@ async function act(s, a) {
       const isHidden = (body) => folderShut || shut.has(body);
       const inView = rows.filter((r) => !isHidden(r.body)).length;
       for (const { row, place, id, body, combined } of rows) {
+        // A hidden body's row has no click of its own, so the selection stays what it was (issue #444: after Body 4's
+        // row, clicking hidden Body 10's left Body 4 selected, which the monkey read as Body 10's row selecting it).
+        const before = await page.evaluate(() => document.body.dataset.selection ?? "");
         await page.evaluate((row) => document.querySelector(`#browser .tree-row[data-node="${row}"]`).click(), row);
         await settle(page);
         const got = await page.evaluate(() => ({
@@ -522,7 +525,7 @@ async function act(s, a) {
         const f = design.timeline.features.find((x) => x.id === id);
         const name = `Body ${place} (${f.intent.summary})`;
         if (isHidden(body)) {
-          if (got.selection !== "") wrong.push(`clicking hidden ${name} selected "${got.selection}"`);
+          if (got.selection !== before) wrong.push(`clicking hidden ${name} changed the selection from "${before}" to "${got.selection}"`);
           blocks.push([]);
           continue;
         }
