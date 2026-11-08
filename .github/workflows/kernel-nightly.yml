@@ -3,7 +3,7 @@ name: Kernel random testing
 # The private kernel's Tier 3 (SpindleLabs-app/kernel), on this public repo's free
 # runners like its CI (kernel-ci.yml; Ben's decision, 2026-10-27).
 #
-# Nightly, 11pm to 7am Perth (UTC+8), so 15:00 to 22:35 UTC, testing the
+# Nightly, 11pm to 6:35am Perth (UTC+8), so 15:00 to 22:35 UTC, testing the
 # kernel's main: 8 parallel jobs run the kernel's scripts/endless.sh (the
 # stateful harness plus the OpenCascade oracle, a fresh random seed per round)
 # in two legs, because a GitHub job may last at most 6 hours; alongside the
@@ -39,8 +39,12 @@ run-name: ${{ github.event_name == 'schedule' && 'Kernel random testing, nightly
 
 on:
   schedule:
-    # 15:17, not on the hour: GitHub delays top-of-the-hour schedules most.
-    - cron: "17 15 * * *"
+    # Every hour from 10:17 to 21:17 UTC, not on the hour (GitHub delays
+    # top-of-the-hour schedules most): GitHub starts scheduled runs hours
+    # late (11-06 and 11-07: 4 to 5.5 h), so the first run that lands after
+    # 15:00 UTC takes the night and the others stop at once (idle's gate,
+    # nightly_gate.py).
+    - cron: "17 10-21 * * *"
   workflow_dispatch:
     inputs:
       ref:
@@ -77,17 +81,27 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      go: ${{ steps.gate.outputs.go }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - env:
+      # A scheduled run takes the night only inside 15:00-22:05 UTC and only
+      # if no earlier run took it today (nightly_gate.py); by hand, always.
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/nightly_gate.py kernel-nightly.yml
+      - if: steps.gate.outputs.go == 'true'
+        env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/branch_testing.py wait-idle ${{ github.event_name == 'schedule' && 3600 || 7200 }}
 
   plan:
     needs: idle
+    if: needs.idle.outputs.go == 'true'
     runs-on: ubuntu-latest
     environment: kernel
     timeout-minutes: 5
@@ -113,8 +127,8 @@ jobs:
           [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "no kernel branch $REF"; exit 1; }
           now=$(date +%s)
           if [ "$NIGHTLY" = true ]; then
-            # 22:35 UTC of the day the run started (it is meant to start at
-            # 15:17 UTC, so this is the same UTC day). GitHub can start a
+            # 22:35 UTC of the day the run started (idle's gate only lets a
+            # run through from 15:00 UTC, so this is the same UTC day). GitHub can start a
             # scheduled run hours late: one that starts after 22:05 UTC (or
             # after midnight, when "today's" 22:35 would be a whole day of
             # runners away) skips the night instead.
@@ -393,7 +407,7 @@ jobs:
   # prints nothing else). Nightly runs only.
   keys:
     needs: idle
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' && needs.idle.outputs.go == 'true'
     runs-on: ubuntu-latest
     environment: kernel
     timeout-minutes: 5
