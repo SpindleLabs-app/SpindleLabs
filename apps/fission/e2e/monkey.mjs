@@ -151,6 +151,10 @@ function shown() {
     sketching: view?.dataset.sketching === "true",
     // A rebuild still running: the bar's failed marks and the Bodies rows are not the last edit's yet.
     rebuilding: view?.dataset.rebuilding === "true",
+    // Combine's OK waiting on the kernel's check (combine-panel.ts busy): the Combine is recorded when it answers, so the
+    // page still has a change to come though nothing on it moves meanwhile (issue #445: the bar read before the Combine
+    // landed, the file saved after).
+    checking: document.getElementById("combine-ok")?.dataset.busy === "1",
     data: { ...(view?.dataset ?? {}) },
     undo: document.getElementById("undo")?.title,
     redo: document.getElementById("redo")?.title,
@@ -165,7 +169,7 @@ function shown() {
   };
 }
 
-/** Waits until the page stops changing (two reads 150 ms apart agree, no rebuild running), at most 6 s; a page still changing then is a failure. */
+/** Waits until the page stops changing (two reads 150 ms apart agree, no rebuild running, no Combine check waiting), at most 6 s; a page still changing then is a failure. */
 /**
  * Leaves full screen (the nav bar's Full screen button, which the monkey
  * clicks like any other) before the window is resized, as a person must:
@@ -185,7 +189,8 @@ async function settle(page) {
   const until = Date.now() + 6000;
   while (Date.now() < until) {
     const now = JSON.stringify(await page.evaluate(shown));
-    if (now === last && !JSON.parse(now).rebuilding) return JSON.parse(now);
+    const view = JSON.parse(now);
+    if (now === last && !view.rebuilding && !view.checking) return view;
     last = now;
     await page.waitForTimeout(150);
   }
