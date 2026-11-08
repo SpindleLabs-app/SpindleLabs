@@ -158,6 +158,11 @@ test("pointsNear (35e2l3): corners nearer than the reach, nearest first; 0.9× i
   assert.deepEqual(pointsNear([{ x: 106, y: 100 }, { x: 109, y: 100 }, null, { x: 100, y: 93 }, { x: 103, y: 104 }], press, 8), [4, 0, 3]);
   // A tie keeps the order offered (the same corner of two bodies touching).
   assert.deepEqual(pointsNear([{ x: 104, y: 100 }, { x: 96, y: 100 }], press, 8), [0, 1]);
+  // Many ties (more than a short sort's insertion run): 30 corners alternately 3 px right and 5 px above: the 15 at
+  // 3 px (even indices) first, then the 15 at 5 px (odd), each group in the order offered.
+  const many = [...Array(30).keys()].map((i) => (i % 2 === 0 ? { x: 103, y: 100 } : { x: 100, y: 95 }));
+  const evens = [...Array(15).keys()].map((k) => 2 * k);
+  assert.deepEqual(pointsNear(many, press, 8), [...evens, ...evens.map((i) => i + 1)]);
   assert.deepEqual(pointsNear([], press, 8), []);
   // A finger reaches further than the mouse, and a corner wider than an edge (it wins over the edges meeting at it).
   assert.ok(CORNER_PICK_PX.touch > CORNER_PICK_PX.mouse && CORNER_PICK_PX.mouse > EDGE_PICK_PX);

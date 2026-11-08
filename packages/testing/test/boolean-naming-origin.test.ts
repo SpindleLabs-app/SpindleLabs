@@ -51,3 +51,53 @@ test("#430: faces lying on each other: the target's own first name stays first, 
   assert.deepEqual(r.failed, new Map());
   assert.deepEqual(namesOn(r, "body:feature-2", "-x", 0), ["face:feature-2/left", "face:feature-1/left"]);
 });
+
+// Survivors 11-08 (#423): the two ties a name's place and body leave to made order.
+
+test("a name on two of a tool's faces under one result face, first in each, ties another first name there: made order, not the body holding it elsewhere", () => {
+  // Box 4 is a bridge x 10–30, z 0–5 (all y 0–10); Combine 4 joins posts Box 1 (x 10–15, its top named face:q, made at
+  // 1) and Box 2 (x 25–30, its top named face:n, made at 2) onto it, both z 0–10: one body, two tops at z = 10 lying
+  // apart. Box 5 (x 0–10, z 0–10) has its x = 0 side named face:n too. Combine 7 joins the bridge's body and a filler
+  // (Box 6, x 15–25, z 5–10) into Box 5: one top x 0–30 at z = 10, 3000 in all (1000 + 1000 + 250 + 250 + 500).
+  // Box 5's own top comes first (the target's, place 0). face:q and face:n each lie first in a top of the bridge's body
+  // (the first tool, place 0): a tie, so made order, q (1) before n (2); the filler's top last. That Box 5 holds
+  // face:n elsewhere (its side) does not lift it.
+  const r = rebuildBooleans([
+    block("feature-1", [10, 0, 15, 10], [0, 10], boxFaces("feature-1", 1, { "+z": "face:q" })),
+    block("feature-2", [25, 0, 30, 10], [0, 10], boxFaces("feature-2", 2, { "+z": "face:n" })),
+    block("feature-3", [10, 0, 30, 10], [0, 5], boxFaces("feature-3", 3)),
+    combine("feature-4", "body:feature-3", ["body:feature-1", "body:feature-2"], "join"),
+    block("feature-5", [0, 0, 10, 10], [0, 10], boxFaces("feature-5", 4, { "-x": "face:n" })),
+    block("feature-6", [15, 0, 25, 10], [5, 10], boxFaces("feature-6", 5)),
+    combine("feature-7", "body:feature-5", ["body:feature-3", "body:feature-6"], "join"),
+  ]);
+  assert.deepEqual(r.failed, new Map());
+  assert.deepEqual(r.bodies.map((b) => `${b.id} ${b.volume}`), ["body:feature-5 3000"]);
+  assert.deepEqual(namesOn(r, "body:feature-5", "+z", 10), ["face:feature-5/top", "face:q", "face:n", "face:feature-6/top"]);
+});
+
+test("a cut's wall: a name first on one tool face and second on another takes its first place, tying another first name: made order", () => {
+  // The tool body: Box 5, a bar x 5–28, y −1–3 (all z −1–11), with posts joined on: Box 1 (x 5–10, y −1–5, its y = 5
+  // side named face:x, made at 1) and Box 2 (x 20–25, y = 5 side face:y, made at 3) after Box 3 (x 25–28, y = 5 side
+  // face:x, made at 2) joined into it, so Box 2's y = 5 side x 20–28 lists [face:y, face:x] (the target's first). Its
+  // two y = 5 sides lie apart (x 5–10 and 20–28). Box 8, a bar x 0–30, y 0–10, z 0–10, is cut by it and by Box 7 (x
+  // 10–20, y −1–5): a notch x 5–28, y 0–5, Box 7 reaching y = 5 between the posts, so the notch's
+  // back wall is one face at y = 5, x 5–28; removed 690 (y 0–3) + 100 + 160 (posts, y 3–5) + 200 (Box 7, y 3–5),
+  // 1850 left. The wall faces −y and lies on the tools' y = 5 sides turned (no input face faces −y there), so each name
+  // ranks by the body holding it, then its place: face:x is first on Box 1's side and second on Box 2's, so place 0,
+  // as face:y's: both the first tool's, a tie, so made order, x (made at 1, and at 2) before y (3); Box 7's side (the second tool) last.
+  const r = rebuildBooleans([
+    block("feature-1", [5, -1, 10, 5], [-1, 11], boxFaces("feature-1", 1, { "+y": "face:x" })),
+    block("feature-2", [20, -1, 25, 5], [-1, 11], boxFaces("feature-2", 3, { "+y": "face:y" })),
+    block("feature-3", [25, -1, 28, 5], [-1, 11], boxFaces("feature-3", 2, { "+y": "face:x" })),
+    combine("feature-4", "body:feature-2", ["body:feature-3"], "join"),
+    block("feature-5", [5, -1, 28, 3], [-1, 11], boxFaces("feature-5", 4)),
+    combine("feature-6", "body:feature-5", ["body:feature-1", "body:feature-2"], "join"),
+    block("feature-7", [10, -1, 20, 5], [-1, 11], boxFaces("feature-7", 5)),
+    block("feature-8", [0, 0, 30, 10], [0, 10], boxFaces("feature-8", 6)),
+    combine("feature-9", "body:feature-8", ["body:feature-5", "body:feature-7"], "cut"),
+  ]);
+  assert.deepEqual(r.failed, new Map());
+  assert.deepEqual(r.bodies.map((b) => `${b.id} ${b.volume}`), ["body:feature-8 1850"]);
+  assert.deepEqual(namesOn(r, "body:feature-8", "-y", 5), ["face:x", "face:y", "face:feature-7/back"]);
+});

@@ -648,7 +648,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /**
    * The unit changed (Settings): the browser's and the timeline's words say it (U2c3). Held by `unmount`, since the page's
-   * listener holds it only weakly (followUnit); false once unmounted, and the listener goes.
+   * listener holds it only weakly (followUnit); false once unmounted, and it is dropped.
    */
   let unitWatch: (() => boolean) | null = () => {
     if (putAway || unitWatch === null) return false;
