@@ -239,7 +239,7 @@ test("changing the distance keeps the operation; New body takes it off; the pane
   const s1 = addSketch(cube);
   const drawn = drawRectangle(s1.doc, s1.id, ...SQUARE).doc;
   assert.throws(() => extrudeSketch(drawn, s1.id, 5, false, undefined, { operation: "cut", bodies: [] }), { message: "pick at least one body for the extrude to work on" });
-  assert.throws(() => extrudeSketch(drawn, s1.id, 5, false, undefined, { operation: "cut", bodies: [bodies[0], bodies[0]] }), { message: `${bodies[0]} is picked twice` });
+  assert.throws(() => extrudeSketch(drawn, s1.id, 5, false, undefined, { operation: "cut", bodies: [bodies[0], bodies[0]] }), { message: "Body 1 is picked twice" });
   assert.throws(() => extrudeSketch(drawn, s1.id, 5, false, undefined, { operation: "cut", bodies: [`body:${s1.id}`] }), { message: `body:${s1.id} is not a body in the design` });
   assert.throws(() => extrudeSketch(drawn, s1.id, 5, false, undefined, { operation: "glue" as CombineOperation, bodies }), { message: "glue is not join, cut or intersect" });
   const rolled: DesignDocument = { ...drawn, timeline: { ...drawn.timeline, marker: drawn.timeline.features[0].id } };
