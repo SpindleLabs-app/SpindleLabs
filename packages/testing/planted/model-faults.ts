@@ -267,7 +267,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     what: "a copy of a Combine's result names each face by its role alone, as a plain copy's, so two inputs' faces of one role read the same (35f1f2c)",
     edits: [{ file: BUILT, find: "  return `face:${dup}/${role}:${curve === undefined ? feature : `${feature}~${curve}`}`;", replace: "  return `face:${dup}/${role}${curve === undefined ? \"\" : `:${curve}`}`;" }],
     run: ["timeline"],
-    caught: "two faces share a name",
+    // In the real code the model (still telling the roles apart) differs first; the model's own copy of this fault is caught by "two faces share a name" (timeline-session.test.ts).
+    caught: "the rebuild differs from the model",
   },
   "combine-edge-tags-dropped": {
     what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
