@@ -287,10 +287,10 @@ test("hand-worked on the real kernel: the mirrored copy is the box's mirror imag
 test("Design data version 12 brought Scale and Mirror: version 11 holding either is refused, naming both; without them it opens as 12", () => {
   const scaled = JSON.parse(JSON.stringify(insertMove(box(), ["body:feature-1"], { ...NO_MOVE, scale: 2 }, "scale").doc));
   const mirrored = JSON.parse(JSON.stringify(insertDuplicates(box(), ["body:feature-1"], "XY").doc));
-  assert.equal(scaled.version, 14);
+  assert.equal(scaled.version, 15);
   for (const d of [scaled, mirrored]) assert.throws(() => readDesignDocument({ ...d, version: 11 }), { message: "Design data says version 11 but has a Scale or a Mirror, which version 12 brought" });
   // A version 11 Move that doesn't scale and a plain copy open as they were, read as version 13.
   const moved = JSON.parse(JSON.stringify(insertMove(box(), ["body:feature-1"], { ...NO_MOVE, x: 5 }).doc));
   const copied = JSON.parse(JSON.stringify(insertDuplicates(box(), ["body:feature-1"]).doc));
-  for (const d of [moved, copied]) assert.equal(readDesignDocument({ ...d, version: 11 }).version, 14);
+  for (const d of [moved, copied]) assert.equal(readDesignDocument({ ...d, version: 11 }).version, 15);
 });

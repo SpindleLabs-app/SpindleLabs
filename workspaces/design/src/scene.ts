@@ -10,6 +10,7 @@ import { bodyHidden, bodyItem, bodyNumbers, isPiece, numberPieces, type DesignDo
 import type { BodyNames } from "./naming.ts";
 import { designNames, resolveEdgeName, resolveFaceName, resolveOldEdge, type DesignNames, type NamedBody, type NameFound } from "./boolean-names.ts";
 import { frameOfBody, namedBody, namesOfBody } from "./built-body.ts";
+import { withHeldEdges } from "./design-edges.ts";
 import type { BodyCache, TimelineBuild } from "./rebuild.ts";
 import { designReference, oldEdgeFaces, readDesignReference, resolveReference, sharedBy } from "./references.ts";
 
@@ -27,6 +28,8 @@ export interface ShownBody {
   frames?: readonly (Plane | null)[];
   /** A Combine's result (35f1): its faces named by its Combine. */
   combined?: true;
+  /** A Combine's result (35f1f2b): the Combine that made it, the item a pin or projection on it names (`madeBy`). */
+  by?: string;
   /** Once a Combine has built (35f1e): every body of the design named as one (`SceneDesign`), and this body's place in it. */
   design?: { of: SceneDesign; at: number };
 }
@@ -41,6 +44,9 @@ export interface SceneDesign {
   bodies: readonly NamedBody[];
   names: DesignNames;
 }
+
+/** The item a pin or projection on a shown body names (35f1f2b): a Combine's result's Combine, else the item that built it. */
+export const madeBy = (b: Pick<ShownBody, "feature" | "by">): string => b.by ?? b.feature;
 
 /** The bodies shown, in build order, and their joined mesh. */
 export interface Scene {
@@ -101,7 +107,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
       continue;
     }
     const frame = frameOfBody(b);
-    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.frames && { frames: b.frames }), ...(b.named !== undefined && { combined: true as const }) });
+    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.frames && { frames: b.frames }), ...(b.named !== undefined && { combined: true as const }), ...(b.by !== undefined && { by: b.by }) });
   }
   // 35f1e: once a Combine built, the design is named as one, over every body it holds, hidden ones too.
   if (!ids.some((id) => build.bodies[id].named !== undefined)) return shown;
@@ -119,7 +125,12 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
     bodies.push(namedBody(id, b, view, places.get(b.feature) ?? Infinity));
   }
   const of: SceneDesign = { bodies, names: designNames(bodies) };
-  return shown.map((x) => ({ ...x, design: { of, at: bodies.findIndex((b) => b.id === x.body) } }));
+  return shown.map((x) => {
+    const at = bodies.findIndex((b) => b.id === x.body);
+    // 35f1f2b: a Combine's result's edges by rule 5's names, as a pin or projection holds them (design-edges.ts).
+    const names = x.combined && at >= 0 ? withHeldEdges(x.names, of.names, at) : x.names;
+    return { ...x, names, design: { of, at } };
+  });
 }
 
 /** The sketches a rebuild placed (Scene `placed`): built with a placement and no lost or ambiguous plane (a split face's piece counts). */
@@ -204,7 +215,8 @@ export function shownReference(scene: Scene, body: number, kind: "face" | "edge"
   const shown = scene.bodies[body];
   const d = scene.design;
   const at = d === undefined ? -1 : d.shown.indexOf(body);
-  if (d === undefined || at < 0) return designReference(kind, shown.names, index);
+  // A Combine's result's edge names are held names (35f1f2b), never a reference's: without the design's names it has none.
+  if (d === undefined || at < 0) return shown.combined && kind === "edge" ? null : designReference(kind, shown.names, index);
   if (!Number.isInteger(index) || index < 0) throw new Error(`a ${kind} reference needs a kernel index (a whole number ≥ 0), got ${index}`);
   if (kind === "face") {
     const full = d.names.full[at][index] ?? null;

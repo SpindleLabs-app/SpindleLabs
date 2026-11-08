@@ -37,9 +37,10 @@
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
-import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
+import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
-import { combineNames, designNames, resolveFaceName, shownFaces, type NamedBody } from "./boolean-names.ts";
+import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type NamedBody } from "./boolean-names.ts";
+import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
@@ -192,6 +193,8 @@ export interface BuiltBody {
    * a later Combine names its result from them.
    */
   named?: Pick<NamedBody, "faces" | "made">;
+  /** A Combine's result (35f1f2b): the Combine that made it, the item its pins and projections depend on. */
+  by?: string;
   /**
    * A Combine's result (35f1e2): where the Moves before it had put the
    * frame of the body each face came from (`bodyFrame`), by kernel face
@@ -932,21 +935,42 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
 async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureResult>, built: Bodies, cache: BodyCache, plane: Plane, face: string | null, kernel: KernelCalls): Promise<Partial<Extract<FeatureResult, { status: "built" }>>> {
   const content = index.sketches.get(f.id)!;
   if (!follows(content)) return {};
-  const bodies = new Map<string, { view: BodyView; names: BodyNames } | null>();
+  type Seen = { key: string; view: BodyView; names: BodyNames };
+  const bodies = new Map<string, Seen | null>();
   const bodyOf = async (id: string) => {
     if (!bodies.has(id)) {
       const b = done[id]?.status === "built" ? built[bodyIdOf(id)] : undefined;
       const view = b && (await cache.view(b.handle));
-      bodies.set(id, b && view ? { view, names: namesOfBody(b, view) } : null);
+      bodies.set(id, b && view ? { key: id, view, names: namesOfBody(b, view) } : null);
     }
     return bodies.get(id)!;
+  };
+  // 35f1f2b (design-edges.ts): a pin or projection on a Combine's result holds rule 5's name, found over every body
+  // built so far, as the screen names them, on whichever body has it now; its item (the Combine) must have built.
+  let design: { ids: string[]; names: DesignNames; seen: Map<number, Seen> } | undefined;
+  const designBody = async (feature: string, name: string): Promise<{ body: Seen; name: string } | { cause: "point-lost" | "point-ambiguous" }> => {
+    if (done[feature]?.status !== "built") return { cause: "point-lost" };
+    if (design === undefined) {
+      const ids = Object.keys(built);
+      const list = await Promise.all(ids.map((k) => namedOf(k, built[k], cache, 0)));
+      const names = designNames(list);
+      design = { ids, names, seen: new Map(list.map((n, k) => [k, { key: `${DESIGN_EDGE}${k}`, view: n.view, names: withHeldEdges(namesOfBody(built[ids[k]], n.view), names, k) }])) };
+    }
+    const now = pinNameNow(name, design.names);
+    return "cause" in now ? now : { body: design.seen.get(now.body)!, name: now.name };
   };
   const pinned: { point: string; at: SketchXY }[] = [];
   const held = { "point-lost": 0, "point-ambiguous": 0 };
   for (const pin of content.pins ?? []) {
     const feature = pin.feature ?? face;
-    const body = feature === null ? null : await bodyOf(feature);
-    const now = body === null ? ({ cause: "point-lost" } as const) : pinNow(pin, body.view, body.names, plane);
+    let now: PinNow;
+    if (feature !== null && isHeldDesignName(pin.name)) {
+      const on = await designBody(feature, pin.name);
+      now = "cause" in on ? on : pinNow({ ...pin, name: on.name }, on.body.view, on.body.names, plane);
+    } else {
+      const body = feature === null ? null : await bodyOf(feature);
+      now = body === null ? { cause: "point-lost" } : pinNow(pin, body.view, body.names, plane);
+    }
     if ("at" in now) pinned.push({ point: pin.point, at: now.at });
     else held[now.cause]++;
   }
@@ -955,14 +979,22 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
   const lost: { id: string; cause: HeldCause }[] = [];
   const cornersOf = new Map<string, (string | null)[]>();
   for (const q of content.projected ?? []) {
-    const body = await bodyOf(q.feature);
-    const found = body === null ? ({ cause: "projection-lost" } as const) : edgeNamed(body.names, body.view.edges, q.edge);
+    let body: Seen | null;
+    let found: { edge: number } | { cause: HeldCause };
+    if (isHeldDesignName(q.edge)) {
+      const on = await designBody(q.feature, q.edge);
+      body = "cause" in on ? null : on.body;
+      found = "cause" in on ? { cause: on.cause === "point-lost" ? "projection-lost" : "projection-ambiguous" } : edgeNamed(on.body.names, on.body.view.edges, on.name);
+    } else {
+      body = await bodyOf(q.feature);
+      found = body === null ? ({ cause: "projection-lost" } as const) : edgeNamed(body.names, body.view.edges, q.edge);
+    }
     if ("cause" in found) {
       lost.push({ id: q.id, cause: found.cause });
       continue;
     }
-    if (!cornersOf.has(q.feature)) cornersOf.set(q.feature, vertexNames(body!.view, body!.names).vertices);
-    const corners = cornersOf.get(q.feature)!;
+    if (!cornersOf.has(body!.key)) cornersOf.set(body!.key, vertexNames(body!.view, body!.names).vertices);
+    const corners = cornersOf.get(body!.key)!;
     const shape = edgeShape(body!.view, found.edge, plane, corners);
     if ("refused" in shape || shape.kind !== madeKind(content, q)) {
       lost.push({ id: q.id, cause: "projection-changed" });
@@ -1256,7 +1288,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     delete work[step.target];
     for (const nb of named.bodies) {
       const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
-      work[nb.id] = { feature: nb.id === step.target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, ...(frames && { frames }) };
+      work[nb.id] = { feature: nb.id === step.target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
       if (nb.id !== step.target) {
         firstPiece++;

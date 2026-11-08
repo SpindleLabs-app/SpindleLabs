@@ -14,7 +14,7 @@ import { XY_PLANE } from "@fission/core";
 import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { constraintPoints, counted, curvePoints, insertAt, insertItem, hasOwnFaces, isSketchItem, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { constraintPoints, counted, curvePoints, insertAt, insertItem, hasOwnFaces, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
 import { keptConstraints, withoutCurveConstraints } from "./constraints.ts";
@@ -470,7 +470,7 @@ export function projectEdges(doc: DesignDocument, sketchId: string, edges: reado
   };
   for (const e of edges) {
     const on = features.findIndex((f) => f.id === e.feature);
-    if (on < 0 || on > at || !hasOwnFaces(features[on])) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
+    if (on < 0 || on > at || !pinnable(features[on], e.edge)) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
     if (projected.some((p) => p.feature === e.feature && p.edge === e.edge)) continue;
     const [id, after] = take(next, "projection");
     next = after;
