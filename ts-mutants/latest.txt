@@ -1,4 +1,4 @@
-tested commit 591dc01 on claude/project-thread-ich6rn, 2026-11-08 18:27 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42498195803)
+tested commit 269ab49 on main, 2026-11-08 21:22 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42514724197)
 core: 10 survivors, all explained: true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1732: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1733: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
@@ -20,6 +20,6 @@ account: 10 survivors, all explained: true
 model: 46 survivors, all explained: true
 svg: 4 survivors, all explained: true
 viewport: 35 survivors, all explained: true
-ai: no report (the job stopped before the check)
-naming: no report (the job stopped before the check)
-combine: no report (the job stopped before the check)
+ai: 23 survivors, all explained: true
+naming: 152 survivors, all explained: true
+combine: 56 survivors, all explained: true
