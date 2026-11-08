@@ -1,5 +1,4 @@
 // @ts-nocheck
-// 
 // Step 35ed3: cases killing the mutants of boolean-names.ts that the
 // kernel cases and seeded sessions let through (Stryker target "combine",
 // packages/testing/stryker/combine.json). Small bodies written by hand

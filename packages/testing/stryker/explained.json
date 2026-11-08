@@ -107,13 +107,6 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "typeof p !== \"string\"",
-    "replacement": "false",
-    "why": "The points set holds only text ids, so has() is false for an arc point that is not text and the same message follows."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
     "original": "typeof end !== \"string\"",
     "replacement": "false",
     "why": "The points set holds only text ids, so has() is false for a line end that is not text and the same message follows."
@@ -1115,9 +1108,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9",
+    "original": "v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13",
     "replacement": "true",
-    "why": "readDesignDocument (issues #220, #246): unnumbered then also holds for data of a version other than 5, 6, 7, 8 or 9 leaving the numbers out; versions 1 to 4 are unnumbered already (old or version 4), and any other is refused by the version check (d.version !== 9) before unnumbered is read."
+    "why": "readDesignDocument (issues #220, #246): unnumbered then also holds for data of a version other than 5 to 13 leaving the numbers out; versions 1 to 4 are unnumbered already (old or version 4), and any other is refused by the version check (d.version !== 13) before unnumbered is read."
   },
   {
     "file": "packages/storage/src/autosave.ts",
@@ -2844,23 +2837,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
-    "original": "d.version! > 8",
-    "replacement": "d.version! >= 8",
-    "why": "Reached only when d.version !== 8, so the two differ only at 8, which never gets here."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "typeof c.circle === \"string\"",
-    "replacement": "true",
-    "why": "A diameter's circle is looked up in a map whose keys are the circles' ids (text): any other value finds nothing either way, and is refused as not one of the sketch's circles."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "typeof c.point !== \"string\"",
-    "replacement": "false",
-    "why": "A fix's point is looked up in the set of the sketch's point ids (text): any other value is not in it, so it is refused either way."
+    "original": "d.version! > 13",
+    "replacement": "d.version! >= 13",
+    "why": "Reached only when d.version !== 13, so the two differ only at 13, which never gets here."
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -3036,6 +3015,69 @@
     "original": "m !== p.sketch",
     "replacement": "true",
     "why": "checkOperation (version 10): as for the filter itself, no body's maker can be the extrude's sketch (a sketch makes no body), so the test is always true."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion9Fields' features when the data has no timeline list (issue #220, 11-08): a text in place of an item is not a record, so no region is found either way, and the data is refused later for having no timeline."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion10Fields' features when the data has no timeline list (issue #220, 11-08): a text in place of an item is not a record, so no extrude with an operation is found either way, and the data is refused later for having no timeline."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion11Fields' features when the data has no timeline list (issue #220, 11-08): a text in place of an item is not a record, so no Duplicate is found either way, and the data is refused later for having no timeline."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion12Fields' features when the data has no timeline list (issue #220, 11-08): a text in place of an item is not a record, so no Scale or Mirror is found either way, and the data is refused later for having no timeline."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "maker === null",
+    "replacement": "false",
+    "why": "checkOperation (issue #220, 11-08): byId.get(null) is undefined, as `maker === null ? undefined` gives, since byId's keys are the timeline's ids, all text; deleted is false for a null maker either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "maker === null",
+    "replacement": "false",
+    "why": "checkDuplicate (issue #220, 11-08): byId.get(null) is undefined, as `maker === null ? undefined` gives (byId's keys are all text); deleted is false for a null maker either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at > byId.get(f.id)!.at",
+    "replacement": "there.at >= byId.get(f.id)!.at",
+    "why": "checkOperation (issue #220, 11-08): the two are equal only when the body's maker is the extrude itself, which `maker === f.id` refuses on the same line with the same message."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "OptionalChaining",
+    "original": "f.intent?.parameters",
+    "replacement": "f.intent.parameters",
+    "why": "In the region check (issue #220, 11-08): every item's intent was checked to be an object earlier in readDesignDocument (\"has no id or intent\"), so f.intent is never undefined here."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "OptionalChaining",
+    "original": "f.intent?.parameters",
+    "replacement": "f.intent.parameters",
+    "why": "In the operation check (issue #220, 11-08): every item's intent was checked to be an object earlier in readDesignDocument (\"has no id or intent\"), so f.intent is never undefined here."
   },
   {
     "file": "packages/account/src/data.ts",
