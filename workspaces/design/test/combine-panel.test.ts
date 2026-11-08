@@ -154,6 +154,12 @@ test("hand-worked: the flag is on with ?combine, kept for the tab, and off again
   // A value that is neither: ignored, the store decides.
   assert.equal(readCombineFlag("?combine=maybe", s), true);
   assert.equal(readCombineFlag("?combine=maybe", store()), false);
+  // After the "#" (spindlelabs.app/#design?combine, Ben 11-08): the same, and the part before the "#" wins when both say.
+  for (const [q, h, want] of [["", "#design?combine", true], ["", "#design?x=1&combine=on", true], ["", "#design?combine=off", false], ["", "#design", false], ["", "#combine", false], ["?combine=off", "#design?combine", false], ["?combine", "#design?combine=off", true]] as const) {
+    const t = store();
+    assert.equal(readCombineFlag(q, t, h), want, `${q} ${h}`);
+    assert.equal(t.m.get(COMBINE_KEY) === "on", want, `${q} ${h} remembered`);
+  }
   // ?combine=off: off, and forgotten, so the next load without it is off.
   for (const q of ["?combine=off", "?combine=0", "?combine=false"]) {
     s.setItem(COMBINE_KEY, "on");

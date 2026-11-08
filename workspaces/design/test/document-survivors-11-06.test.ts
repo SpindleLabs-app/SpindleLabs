@@ -224,4 +224,7 @@ test("a diameter can't size a projected circle, only a drawn one", () => {
   const diameter = (circle: string, value: number) => withConstraints(both, [{ id: "constraint-100", kind: "diameter", circle, value }]);
   assert.equal(readDesignDocument(diameter(drawn.id, 8)).sketches[0].constraints.length, 1, "the drawn circle (radius 4) takes a diameter of 8");
   refused(diameter(projected, 10), `Design sketch sketch-2: dimension constraint-100 sizes ${projected}, which is projected from a body, so the body says its size`);
+  // Survivor 11-08 (`some` => `every`): with a second projection beside it, a line, the projected circle is still refused.
+  const more = projectEdges(both, s.id, [{ feature: "feature-1", edge: "front+top", shape: { kind: "line", a: [0, 10], b: [10, 10] } }]).doc;
+  refused(withConstraints(more, [{ id: "constraint-100", kind: "diameter", circle: projected, value: 10 }]), `Design sketch sketch-2: dimension constraint-100 sizes ${projected}, which is projected from a body, so the body says its size`);
 });

@@ -1241,7 +1241,8 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
     return chars.length > NAME_LIMIT ? chars.slice(0, NAME_LIMIT).join("").trimEnd() : spaced;
   });
   // Every name now in the file, so a name made below repeats none of them, the later items' too.
-  const used = new Set(cleaned.filter((n) => n !== "").map(nameKey));
+  // An empty name's key is "" too, which no name made below has (each is a word and a number), so it never blocks one.
+  const used = new Set(cleaned.map(nameKey));
   const kept = new Set<string>();
   // Where each repeated name's numbers carry on from, so 5,000 items of one name open in a moment (audit S2).
   const nextNumber = new Map<string, number>();
@@ -1733,14 +1734,15 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const s of d.sketches) {
     if (s.constraints.length === 0) continue;
     const curves = new Map(s.curves.map((c) => [c.id, c]));
-    const follows = new Set((s.pins ?? []).map((p) => p.point));
-    for (const p of s.projected ?? []) {
+    // Read with ?. rather than "?? []" (mutation survivors 11-08: an empty list stood in by anything gives the same set).
+    const follows = new Set(s.pins?.map((p) => p.point));
+    s.projected?.forEach((p) => {
       const c = curves.get(p.made);
       for (const q of c === undefined ? [p.made] : c.kind === "line" ? [c.start, c.end] : c.kind === "circle" ? [c.centre] : [c.start, c.end, c.centre]) follows.add(q);
-    }
+    });
     for (const c of s.constraints) for (const q of constraintPoints(c)) if (follows.has(q)) throw new Error(`Design sketch ${s.id}: constraint ${c.id} names ${q}, which follows a body's edge, so a constraint can't hold it`);
     // A projected circle's size is the body's (47e).
-    for (const c of s.constraints) if (c.kind === "diameter" && (s.projected ?? []).some((p) => p.made === c.circle)) throw new Error(`Design sketch ${s.id}: dimension ${c.id} sizes ${c.circle}, which is projected from a body, so the body says its size`);
+    for (const c of s.constraints) if (c.kind === "diameter" && s.projected?.some((p) => p.made === c.circle) === true) throw new Error(`Design sketch ${s.id}: dimension ${c.id} sizes ${c.circle}, which is projected from a body, so the body says its size`);
   }
   // Every solid feature is its own body (24d1), so each one's sizes or profile are checked, not only the part's.
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).

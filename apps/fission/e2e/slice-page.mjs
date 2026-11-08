@@ -3,6 +3,8 @@
 //   `npm run e2e:slice-page` builds one with the page on (dist-slice/, E2E_DIST names another) and checks:
 // - With a box in the design, the page lists "Body 1" and says "1 body on the plate."; an empty design says nothing is there.
 // - Going back to Design and adding a second body, then coming back to Slice, lists both ("2 bodies on the plate.").
+// - A Combine's result (35f1f2d, behind ?combine): a file with Box 2 joined to Box 1 lists "Body 1", "1 body on the plate.", and
+//   none unread; one with a bar cut in three by two slabs lists three bodies (the two pieces of one Combine each its own).
 // - At 393 px nothing runs off the side; screenshots (SHOTS=<dir>) at 1280 and 393 px in both themes.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
@@ -87,6 +89,59 @@ if (!WITH_PAGE) {
     assert.equal((await listed(page)).length, 2);
     await context.close();
   });
+  // Made as Design's own functions make it (version 13, read as today's); the cubes' corners give each body.
+  const feature = (id, type, parameters, label, dependsOn = []) => ({ id, intent: { type, parameters, summary: label }, provenance: { self: { workspace: "design", id, label }, from: [] }, dependsOn, suppressed: false });
+  const MOVE = { y: -5, z: -5, turnX: 0, turnY: 0, turnZ: 0, pivotX: 0, pivotY: 0, pivotZ: 0 };
+  const combineFile = (features, bodies) => ({
+    formatVersion: 2,
+    links: [],
+    materials: [],
+    name: "Combine on the plate",
+    units: { length: "mm" },
+    workspaces: { design: { version: 13, nextId: features.length + 1, profiles: [], sketches: [], timeline: { features }, bodies: bodies.map((id, k) => ({ id, number: k + 1 })), nextBody: bodies.length + 1 } },
+  });
+  // Box 2 (40 × 30 × 20) moved (20, 15, 10) and joined to Box 1: one body.
+  const JOINED = combineFile(
+    [
+      feature("feature-1", "box", { width: 40, depth: 30, height: 20 }, "Box 1"),
+      feature("feature-2", "box", { width: 40, depth: 30, height: 20 }, "Box 2"),
+      feature("feature-3", "move", { ...MOVE, x: 20, y: 15, z: 10, bodies: ["body:feature-2"] }, "Move 1", ["feature-2"]),
+      feature("feature-4", "combine", { target: "body:feature-1", tools: ["body:feature-2"], operation: "join", keepTools: false }, "Combine 1", ["feature-1", "feature-2"]),
+    ],
+    ["body:feature-1", "body:feature-2"],
+  );
+  // A bar 50 × 10 × 10 with two slabs 10 × 20 × 20 at x 10..20 and 30..40 cut from it: three pieces, x 0..10, 20..30, 40..50.
+  const THREE = combineFile(
+    [
+      feature("feature-1", "box", { width: 50, depth: 10, height: 10 }, "Box 1"),
+      feature("feature-2", "box", { width: 10, depth: 20, height: 20 }, "Box 2"),
+      feature("feature-3", "box", { width: 10, depth: 20, height: 20 }, "Box 3"),
+      feature("feature-4", "move", { ...MOVE, x: 10, bodies: ["body:feature-2"] }, "Move 1", ["feature-2"]),
+      feature("feature-5", "move", { ...MOVE, x: 30, bodies: ["body:feature-3"] }, "Move 2", ["feature-3"]),
+      feature("feature-6", "combine", { target: "body:feature-1", tools: ["body:feature-2", "body:feature-3"], operation: "cut", keepTools: false }, "Combine 1", ["feature-1", "feature-2", "feature-3"]),
+    ],
+    ["body:feature-1", "body:feature-2", "body:feature-3"],
+  );
+  for (const [name, file, words, count] of [
+    ["joined", JOINED, "1 body on the plate.", 1],
+    ["cut in three", THREE, "3 bodies on the plate.", 3],
+  ])
+    await check(`a Combine's result on the plate (${name}): ${words}, none unread`, async () => {
+      const { context, page } = await newPage();
+      await page.goto(url + "?combine#design");
+      await page.locator("#start-hint").waitFor();
+      await page.setInputFiles("#open-file", { name: "combine.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(file)) });
+      await until(page, (n) => document.querySelectorAll("#timeline li[data-item]").length === n, file.workspaces.design.timeline.features.length, "the file open");
+      await until(page, () => document.querySelector("#viewport")?.dataset.rebuilding !== "true", null, "the rebuild landed");
+      await page.evaluate(() => (location.hash = "#slice"));
+      await active(page, "slice");
+      await plateWords(page, words);
+      const said = await page.locator(".slice-page-words").textContent();
+      assert.ok(!said.includes("could not be read"), said);
+      assert.equal((await listed(page)).length, count);
+      if (shots) await page.screenshot({ path: `${shots}/slice-page-combine-${count}.png` });
+      await context.close();
+    });
   await check("at 393 px nothing runs off the side; screenshots in both themes", async () => {
     for (const [width, touch] of [[1280, false], [393, true]]) {
       for (const scheme of ["dark", "light"]) {
