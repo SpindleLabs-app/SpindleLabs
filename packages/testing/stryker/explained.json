@@ -1089,7 +1089,7 @@
     "mutator": "ConditionalExpression",
     "original": "typeof id === \"string\"",
     "replacement": "true",
-    "why": "migrateDesignV5's hidden map (issue #220): solids holds only text (each id passed typeof f.id === \"string\"), so solids.has gives false for an entry that is not text, as the real check does; the hidden check then refuses it. (The same text on the line before, the version 6 body id check, is killed by document-survivors.test.ts.) checkOperation too (Design data version 10): an extrude's body that is not text gets bodyItem's null either way, so byId has no maker for it and it is refused as no body made before it, in the same words."
+    "why": "migrateDesignV5's hidden map (issue #220): solids holds only text (each id passed typeof f.id === \"string\"), so solids.has gives false for an entry that is not text, as the real check does; the hidden check then refuses it. (The same text on the line before, the version 6 body id check, is killed by document-survivors.test.ts.)"
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -2850,13 +2850,6 @@
   },
   {
     "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "typeof id === \"string\"",
-    "replacement": "true",
-    "why": "A Combine's body that isn't text: bodyItem reads it as text, which matches no body id shape, so maker is null either way (second of this pair in the file)."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
     "original": "there.at > byId.get(f.id)!.at",
     "replacement": "there.at >= byId.get(f.id)!.at",
@@ -3078,6 +3071,27 @@
     "original": "f.intent?.parameters",
     "replacement": "f.intent.parameters",
     "why": "In the operation check (issue #220, 11-08): every item's intent was checked to be an object earlier in readDesignDocument (\"has no id or intent\"), so f.intent is never undefined here."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof p !== \"string\"",
+    "replacement": "false",
+    "why": "An arc's ends and centre are looked up in the set of point ids (text): any other value is not in it, so it is refused either way (second of this pair in the file)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof c.circle === \"string\"",
+    "replacement": "true",
+    "why": "A diameter's circle is looked up in a map whose keys are the circles' ids (text): any other value finds nothing either way, and is refused as not one of the sketch's circles."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof c.point !== \"string\"",
+    "replacement": "false",
+    "why": "A fix's point is looked up in the set of the sketch's point ids (text): any other value is not in it, so it is refused either way."
   },
   {
     "file": "packages/account/src/data.ts",

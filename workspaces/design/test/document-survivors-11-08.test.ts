@@ -8,6 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DESIGN_LIMITS, insertPreset, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
+import { insertCombine } from "../src/combine.ts";
 import { insertDuplicates } from "../src/duplicate.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
@@ -96,4 +97,34 @@ test("version 5 to 13 data written without bodies' numbers gets the ones it show
     const r = readDesignDocument(d);
     assert.deepEqual([r.version, r.bodies, r.nextBody], [13, [{ id: "body:feature-1", number: 1 }], 2], `version ${v}`);
   }
+});
+
+test("a Copy's body given as a list holding a body id is refused, never read as that id", () => {
+  // Kills `typeof id === "string"` => true in checkDuplicate: bodyItem would read ["body:feature-1"] as its text,
+  // "body:feature-1", and the list would pass for Box 1's body.
+  const c = copied();
+  c.timeline.features[2].intent.parameters.body = ["body:feature-1"];
+  refused(c, "Design duplicate feature-3 copies a list, which is not a body made before it in the timeline");
+});
+
+test("a Move's, a Combine's or a Join's body given as a list holding a body id is refused, never read as that id", () => {
+  // Kills `typeof id === "string"` => true in checkMove, checkCombine and checkOperation, as for a Copy above.
+  const m = moved();
+  m.timeline.features[2].intent.parameters.bodies = [["body:feature-1"]];
+  refused(m, "Design move feature-3 moves a list, which is not a body made before it in the timeline");
+  const c = json(insertCombine(twoBoxes(), "body:feature-1", ["body:feature-2"], "cut", false).doc);
+  const tool = structuredClone(c);
+  tool.timeline.features[2].intent.parameters.tools = [["body:feature-2"]];
+  refused(tool, "Design combine feature-3: tool a list is not a body made before it in the timeline");
+  const target = structuredClone(c);
+  target.timeline.features[2].intent.parameters.target = ["body:feature-1"];
+  refused(target, "Design combine feature-3: its target a list is not a body made before it in the timeline");
+  // Box 1, then a 10 × 10 rectangle extruded 5 mm and joined to Box 1's body.
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const r = drawRectangle(s.doc, s.id, [0, 0], [10, 10]);
+  const { doc, id } = extrudeSketch(r.doc, s.id, 5, false, undefined, { operation: "join", bodies: ["body:feature-1"] });
+  const j = json(doc);
+  assert.doesNotThrow(() => readDesignDocument(j), "the join itself opens");
+  j.timeline.features.find((f: Raw) => f.id === id).intent.parameters.bodies = [["body:feature-1"]];
+  refused(j, `Design extrude ${id}: a list is not a body made before it in the timeline`);
 });
