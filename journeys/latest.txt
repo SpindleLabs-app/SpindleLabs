@@ -1,2 +1,8 @@
-tested commit 6ee47ed on claude/project-thread-ich6rn, 2026-11-08 07:25 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42454548584)
-no report: the journeys job stopped before the walk
+tested commit 6e6f717 on claude/project-thread-ich6rn, 2026-11-08 11:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42458665600)
+FLAG Design: shape to STL: slowest 1.62 s = 46.79× the fixed workload, baseline 1.16 s (40% over, flag above 15%, fail above 100%)
+OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.58 s = 76.66× the fixed workload (baseline 9.70 s), 0.98× main's build on the same runner
+PENDING Box to laser panels: waits for Laser (L1–L3), X13
+PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
+PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
+PENDING Photo to lithophane: waits for Image (G2), Slice (P2)
+PENDING Part to simulation and back: waits for Simulate (S3), parameters (50, I18)

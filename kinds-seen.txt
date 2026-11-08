@@ -1,6 +1,7 @@
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/files.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/core/src/model/history.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/testing/src/boolean-naming-model.ts
+check TypeScript mutants: explained.json lists mutants that no longer survive in workspaces/design/src/boolean-names.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in workspaces/design/src/document.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/commands.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/hosted.ts
@@ -23,6 +24,7 @@ check soak: cycle #: phone: Body # (# × # × #) shows a volume of #,# mm³, the
 check soak: listeners keeps growing: # by cycle #, # at cycle #, # at cycle #
 check soak: the soak's cycle stopped (seed #): page.waitForFunction: Timeout #ms exceeded.
 check the ts-mutants job failed with nothing more specific reported
+monkey save: Save gave no file
 monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
 monkey settles: the page was still changing # s after the action
