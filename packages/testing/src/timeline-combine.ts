@@ -106,7 +106,8 @@ const TURNED: Record<Facing, Facing> = { "-x": "-y", "-y": "+x", "+x": "+y", "+y
  * quarter turns keeps a block a block; `to` gets the new form (the block
  * with the Move's id added to its own, made at the Move's place `place`).
  * Anything else leaves `to` flat. Only a single block is moved (a
- * Combine's result can't be moved yet: Design fails that Move in words).
+ * Combine's result, 35f1f2a, keeps no form: a later Combine of it is
+ * left out as unmodelled).
  */
 export function movedForm(from: ModelBody, to: ModelBody, move: { id: string; turnZ: number; pivot: readonly [number, number]; shift: Vec3 }, place: number): ModelBody {
   const k = kinds.get(from);

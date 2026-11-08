@@ -89,6 +89,13 @@ test("legal calls of each size take less than their units × the calibration, wi
     // Each result shown again after hiding: its mesh made anew, timed by its faces.
     const piece = out.bodies[0];
     check(`gratings ${op}, its first piece shown again`, facesSize(out.history[0].faces.length).mesh, () => (entry.body_hide(piece), timed(() => entry.body_view(piece))[0]));
+    // 35f1f2a: the result moved, turned and scaled (a scale makes its mesh anew, the costliest move), timed as the body it moves.
+    const moves = [{ turn: { pivot: [0, 0, 0], axis: [1, 1, 0], angle: 0.3 } }, { scale: { about: [0, 0, 0], factor: 1.5 } }, { move: [10, 0, 0] }] as const;
+    check(`gratings ${op}, its first piece moved and scaled`, callUnits("body_move", [piece, [...moves]], () => facesSize(out.history[0].faces.length)), () => {
+      const [ms, moved] = timed(() => entry.body_move(piece, [...moves] as never));
+      entry.body_free(moved);
+      return ms;
+    });
     out.bodies.forEach((p) => entry.body_free(p));
   }
   // The STL of the plate, sliced at 0.2 mm (10 layers).

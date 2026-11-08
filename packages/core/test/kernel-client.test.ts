@@ -719,6 +719,37 @@ test("body_measure with the app's handles: the kernel's numbers sent for each pi
     assert.equal(worker.posted.length, sent);
   }));
 
+test("body_move with the app's handles (35f1f2a): the kernel's number sent, the moved body given a handle of its own, timed and sized as the body moved", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    // 100 ms a unit: a box's mesh is 44 units (4 corners × 11), so its move's limit is 44 × 100 × 4 = 17,600 ms.
+    worker.ready(100);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    assert.equal(await a, 1);
+    const moves = [{ turn: { pivot: [0, 0, 0] as [number, number, number], axis: [0, 0, 1] as [number, number, number], angle: Math.PI / 2 } }, { move: [20, 0, 0] as [number, number, number] }];
+    const moved = client.call("body_move", 1, moves);
+    assert.deepEqual(worker.posted.at(-1), { id: 2, op: "body_move", args: [11, moves] });
+    assert.equal(keptAfter(t, worker, 17_600 * 0.9), true, "the move at 0.9 ×");
+    worker.answer(2, 12);
+    assert.equal(await moved, 2);
+    // The moved body is held by its own handle, sized as the body it was: its view sends the kernel's number and is
+    // kept at 0.9 × the box's 17,600 ms (15,840 ms, past the 10 s floor an unsized body would get).
+    const view = client.call("body_view", 2);
+    assert.deepEqual(worker.posted.at(-1), { id: 3, op: "body_view", args: [12] });
+    assert.equal(keptAfter(t, worker, 17_600 * 0.9), true, "its view at 0.9 ×");
+    worker.answer(3, { faces: 6 });
+    await view;
+  }));
+
+test("body_move refuses a body the kernel doesn't hold before sending anything", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    const sent = worker.posted.length;
+    await assert.rejects(client.call("body_move", 7, [{ move: [1, 0, 0] }]), (e: KernelError) => e.kind === "unknown-body" && /body 7 /.test(e.message));
+    assert.equal(worker.posted.length, sent);
+  }));
+
 const CUBE_MOVED: BodySpec = { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [5, 5, 5] }] } };
 
 test("a boolean's limit grows with its inputs' faces; its result's view with the result's faces", (t) =>

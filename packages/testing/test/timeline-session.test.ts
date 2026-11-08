@@ -79,6 +79,8 @@ test("seeded sessions on the model pass, and reach every kind of outcome", async
     "save-open:nothing-built",
     // 35f1e2: the check needing no model compared sketches whose face did not move.
     "sketch-still:checked",
+    // 35f1f2a: a Move of a Combine's result, built.
+    "move:combine-result",
   ];
   const missing = wanted.filter((k) => !total[k]);
   assert.deepEqual(missing, [], `never reached: ${missing.join(", ")}`);
@@ -133,6 +135,9 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "combine-face-moves-with-target": "the rebuild differs from the model",
   // From 35e2's Duplicate the first catch (seed 6) is the untagged edges sharing a name; seed 15's is the model's.
   "combine-edge-tags-dropped": "two edges share a name",
+  // 35f1f2a: a Combine's result refused a Move, as before body_move; or moved with its faces' motions left as they were.
+  "combine-move-refused": "the rebuild differs from the model",
+  "combine-move-frames-kept": "the rebuild differs from the model",
   // 35e2: a copy keeping its source's names shares every one of them with it.
   "duplicate-source-names": "two faces share a name",
   "duplicate-no-body": "the rebuild differs from the model",

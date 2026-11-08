@@ -13,8 +13,10 @@
 // description written next to the geometry.
 
 import type { BodySpec, Feature, Plane } from "@fission/core";
+import { isFit, type Fit } from "@fission/print";
 import { NewerFormatError, XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
+import { isHeldDesignName } from "./design-edges.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
@@ -53,6 +55,12 @@ export interface SketchCircleCurve {
   radius: number;
   /** A construction curve (47f): drawn dashed, left out of the outline, held by constraints and dimensions like any other. Absent for an ordinary curve. */
   construction?: true;
+  /**
+   * What the hole or peg it makes is for (FK2, version 14: an M3 bolt's clearance, a 6 mm pin's slide fit), so it can
+   * be printed at the size that fits. The radius stays the design's size; the tag never changes it. Never on a
+   * construction circle (it makes nothing). Absent when untagged.
+   */
+  fit?: Fit;
 }
 
 /**
@@ -208,7 +216,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 13;
+  version: 15;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -400,7 +408,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 13, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 15, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -983,6 +991,12 @@ function checkContent(pointList: unknown[], curves: unknown[], at: string): void
     if (!isRecord(c) || typeof c.id !== "string") throw new Error(`${at}: curve ${j + 1} has no id`);
     // 47f: true or left out, so a file never says false where an ordinary curve says nothing.
     if (Object.hasOwn(c, "construction") && c.construction !== true) throw new Error(`${at}: curve ${c.id} has construction ${shown(c.construction)}, which must be true or left out`);
+    // FK2: a fit only on a circle that makes something, and only one this SpindleLabs knows, exactly.
+    if (Object.hasOwn(c, "fit")) {
+      if (c.kind !== "circle") throw new Error(`${at}: curve ${c.id} has a fit, which only a circle holds`);
+      if (c.construction === true) throw new Error(`${at}: construction circle ${c.id} has a fit, but a construction circle makes no hole or peg`);
+      if (!isFit(c.fit)) throw new Error(`${at}: circle ${c.id}'s fit ${JSON.stringify(c.fit) ?? shown(c.fit)} is not one this SpindleLabs knows`);
+    }
     if (c.kind === "circle") {
       if (typeof c.centre !== "string" || !points.has(c.centre)) throw new Error(`${at}: circle ${c.id} is round ${shown(c.centre)}, which is not one of the sketch's points`);
       if (!isFiniteNumber(c.radius) || c.radius <= 0) throw new Error(`${at}: circle ${c.id} needs a radius in mm above 0, not ${shown(c.radius)}`);
@@ -1051,6 +1065,9 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
  * the sketch (or gone: deleted, the point is held) that the sketch depends
  * on.
  */
+/** Whether a pin or projection named `name` can be on item `item`'s body: one with its own faces, or (35f1f2b, version 15) a Combine, by a name its result gives (design-edges.ts). */
+export const pinnable = (item: Feature, name: string): boolean => hasOwnFaces(item) || (isCombineItem(item) && isHeldDesignName(name));
+
 function checkPins(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
   const at = `Design sketch ${f.id}`;
   const pins = content.pins as unknown;
@@ -1071,7 +1088,8 @@ function checkPins(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item
     const feature = pin.feature;
     if (typeof feature !== "string" || feature.length === 0) throw new Error(`${at}'s pin on ${pin.point} names no feature`);
     const there = byId.get(feature);
-    if (there !== undefined && (there.at > byId.get(f.id)!.at || !hasOwnFaces(there.item))) throw new Error(`${at}'s pin on ${pin.point} is on ${shown(feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && (there.at > byId.get(f.id)!.at || !pinnable(there.item, pin.name))) throw new Error(`${at}'s pin on ${pin.point} is on ${shown(feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && !isCombineItem(there.item) && isHeldDesignName(pin.name)) throw new Error(`${at}'s pin on ${pin.point} has a Combine result's name but is on ${shown(feature)}, which is not a Combine`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} has a point pinned to ${feature} but does not depend on it`);
   }
 }
@@ -1100,7 +1118,8 @@ function checkProjections(f: Feature, content: Sketch, byId: ReadonlyMap<string,
     const name = `${at}'s projection ${p.id}`;
     if (typeof p.feature !== "string" || p.feature.length === 0) throw new Error(`${name} names no feature`);
     const there = byId.get(p.feature);
-    if (there !== undefined && (there.at > byId.get(f.id)!.at || !hasOwnFaces(there.item))) throw new Error(`${name} is of ${shown(p.feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && (there.at > byId.get(f.id)!.at || !pinnable(there.item, typeof p.edge === "string" ? p.edge : ""))) throw new Error(`${name} is of ${shown(p.feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && typeof p.edge === "string" && !isCombineItem(there.item) && isHeldDesignName(p.edge)) throw new Error(`${name} has a Combine result's edge name but is of ${shown(p.feature)}, which is not a Combine`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.feature)) throw new Error(`${at} projects an edge of ${p.feature} but does not depend on it`);
     if (typeof p.edge !== "string" || p.edge.length === 0 || p.edge.includes("/")) throw new Error(`${name} has no edge name`);
     if (edges.has(`${p.feature}/${p.edge}`)) throw new Error(`${at} projects the edge ${p.edge} of ${p.feature} twice`);
@@ -1484,6 +1503,21 @@ function hasVersion12Fields(d: Record<string, unknown>): boolean {
 /** Whether version 12 data holds what only version 13 brought (hunt 11-06): a Combine piece's remembered faces. */
 const hasVersion13Fields = (d: Record<string, unknown>): boolean => Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && Object.hasOwn(b, "faces"));
 
+/** Whether version 13 data holds what only version 14 brought (FK2): a circle tagged with its fit, in a sketch or a kept shape. */
+function hasVersion14Fields(d: Record<string, unknown>): boolean {
+  const curves = (list: unknown) => Array.isArray(list) && list.some((c) => isRecord(c) && Object.hasOwn(c, "fit"));
+  const sketches = Array.isArray(d.sketches) ? d.sketches.filter(isRecord) : [];
+  const kept = isRecord(d.kept) ? Object.values(d.kept).filter(isRecord) : [];
+  return sketches.some((s) => curves(s.curves)) || kept.some((k) => curves(k.curves));
+}
+
+/** Whether version 14 data holds what only version 15 brought (35f1f2b): a pin or projection by a Combine result's edge name (design-edges.ts). */
+function hasVersion15Fields(d: Record<string, unknown>): boolean {
+  const sketches = Array.isArray(d.sketches) ? d.sketches.filter(isRecord) : [];
+  const held = (list: unknown, key: string) => Array.isArray(list) && list.some((x) => isRecord(x) && typeof x[key] === "string" && isHeldDesignName(x[key]));
+  return sketches.some((s) => held(s.pins, "name") || held(s.projected, "edge"));
+}
+
 /**
  * Checks an extrude's `region` (step 48): `{ outer, centroid }`, `outer`
  * the curves round the region's outside as `{ curve, reversed }` (a curve
@@ -1520,7 +1554,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
@@ -1545,10 +1579,17 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 13 (hunt 11-06) remembers each Combine piece's faces, which version 12 never held; other version 12 data is
   // read as it is, its pieces given their faces on their next build (`numberPieces`).
   if (v12.version === 12 && hasVersion13Fields(v12)) throw new Error(`Design data says version ${shown(given)} but has pieces' faces, which version 13 brought`);
-  const d = (v12.version === 12 ? { ...v12, version: 13 } : v12) as Partial<DesignDocument>;
+  const v13 = v12.version === 12 ? { ...v12, version: 13 } : v12;
+  // Version 14 (FK2) tags circles with their fits, which version 13 never held; other version 13 data is read as it is.
+  if (v13.version === 13 && hasVersion14Fields(v13)) throw new Error(`Design data says version ${shown(given)} but has a circle tagged with its fit, which version 14 brought`);
+  const v14 = v13.version === 13 ? { ...v13, version: 14 } : v13;
+  // Version 15 (35f1f2b) lets a pin or projection hold a Combine result's edge by its name across the design, which
+  // version 14 never held (a version 14 reader would hold such a point where it was); other version 14 data is read as it is.
+  if (v14.version === 14 && hasVersion15Fields(v14)) throw new Error(`Design data says version ${shown(given)} but has a point or edge taken from a Combine's result, which version 15 brought`);
+  const d = (v14.version === 14 ? { ...v14, version: 15 } : v14) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 13 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 13) throw new (Number.isSafeInteger(d.version) && d.version! > 13 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 or 13)`);
+  // A whole number above 15 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 15) throw new (Number.isSafeInteger(d.version) && d.version! > 15 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 or 15)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");

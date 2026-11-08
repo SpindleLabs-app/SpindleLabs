@@ -1108,9 +1108,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13",
+    "original": "v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15",
     "replacement": "true",
-    "why": "readDesignDocument (issues #220, #246): unnumbered then also holds for data of a version other than 5 to 13 leaving the numbers out; versions 1 to 4 are unnumbered already (old or version 4), and any other is refused by the version check (d.version !== 13) before unnumbered is read."
+    "why": "readDesignDocument (issues #220, #246): unnumbered then also holds for data of a version other than 5 to 15 leaving the numbers out; versions 1 to 4 are unnumbered already (old or version 4), and any other is refused by the version check (d.version !== 15) before unnumbered is read."
   },
   {
     "file": "packages/storage/src/autosave.ts",
@@ -2816,9 +2816,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
-    "original": "d.version! > 13",
-    "replacement": "d.version! >= 13",
-    "why": "Reached only when d.version !== 13, so the two differ only at 13, which never gets here."
+    "original": "d.version! > 15",
+    "replacement": "d.version! >= 15",
+    "why": "Reached only when d.version !== 15, so the two differ only at 15, which never gets here."
   },
   {
     "file": "workspaces/design/src/document.ts",

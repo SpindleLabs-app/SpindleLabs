@@ -11,16 +11,17 @@
 
 import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, SketchLine, SketchXY } from "@fission/core";
 import { XY_PLANE } from "@fission/core";
+import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { constraintPoints, counted, curvePoints, insertAt, insertItem, hasOwnFaces, isSketchItem, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { constraintPoints, counted, curvePoints, insertAt, insertItem, hasOwnFaces, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
 import { keptConstraints, withoutCurveConstraints } from "./constraints.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
-export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", dimension: "Dimension", redimension: "Change dimension", unconstrain: "Delete constraint" } as const;
+export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", dimension: "Dimension", redimension: "Change dimension", unconstrain: "Delete constraint", fit: "Tag fit", unfit: "Remove fit" } as const;
 
 /**
  * Each origin plane's frame: the sketch's x along `xAxis`, its y along
@@ -186,13 +187,35 @@ function pointFor(drawn: { doc: DesignDocument; sketch: Sketch }, at: LineEnd): 
  * radius that is not a number above 0 is refused here; the kernel holds
  * the size limits when it looks for the outline, as it does for lines.
  */
-export function drawCircle(doc: DesignDocument, sketchId: string, centre: LineEnd, radius: number): { doc: DesignDocument; id: string } {
+export function drawCircle(doc: DesignDocument, sketchId: string, centre: LineEnd, radius: number, fit?: Fit): { doc: DesignDocument; id: string } {
   const start = { doc, sketch: sketchIn(doc, sketchId) };
   if (!Number.isFinite(radius) || radius <= 0) throw new Error(`a circle needs a radius in mm above 0, not ${radius}`);
+  if (fit !== undefined && !isFit(fit)) throw new Error(`${JSON.stringify(fit)} is not a fit this SpindleLabs knows`);
   const [at, drawn] = pointFor(start, centre);
   const [id, after] = take(withSketch(drawn.doc, drawn.sketch), "circle");
-  const sketch: Sketch = { ...drawn.sketch, curves: [...drawn.sketch.curves, { id, kind: "circle", centre: at, radius }] };
+  // FK2: tagged with the fit chosen under its Diameter box while it was drawn; the radius is never changed by it.
+  const sketch: Sketch = { ...drawn.sketch, curves: [...drawn.sketch.curves, fit ? { id, kind: "circle", centre: at, radius, fit } : { id, kind: "circle", centre: at, radius }] };
   return { id, doc: withSketch(after, sketch) };
+}
+
+/**
+ * Circle `circleId` of sketch `sketchId` tagged with `fit` (FK2), or untagged when `fit` is null: what the hole or peg
+ * it makes is for, so it can be printed at the size that fits. Its radius never changes. The step to record it as
+ * (SKETCH_STEPS.fit or .unfit), or the reason it can't be: not a circle, a construction circle (it makes nothing), or
+ * a projected one (it follows its body's edge). The same tag again changes nothing (null step).
+ */
+export function setCircleFit(doc: DesignDocument, sketchId: string, circleId: string, fit: Fit | null): { doc: DesignDocument; step: string | null } | { refused: string } {
+  const sketch = sketchIn(doc, sketchId);
+  const circle = sketch.curves.find((c) => c.id === circleId);
+  if (circle?.kind !== "circle") return { refused: "Only a circle can be tagged with a fit." };
+  if (fit !== null && !isFit(fit)) throw new Error(`${JSON.stringify(fit)} is not a fit this SpindleLabs knows`);
+  if (fit !== null && circle.construction) return { refused: "A construction circle makes no hole or peg, so it can't hold a fit." };
+  if (fit !== null && (sketch.projected ?? []).some((p) => p.made === circleId)) return { refused: "A projected circle follows its body's edge, so it can't hold a fit: tag the circle that made the hole." };
+  const same = (circle.fit === undefined && fit === null) || (circle.fit !== undefined && fit !== null && fitId(circle.fit) === fitId(fit));
+  if (same) return { doc, step: null };
+  const { fit: _old, ...plain } = circle;
+  const tagged: SketchCurve = fit === null ? plain : { ...plain, fit };
+  return { doc: withSketch(doc, { ...sketch, curves: sketch.curves.map((c) => (c.id === circleId ? tagged : c)) }), step: fit === null ? SKETCH_STEPS.unfit : SKETCH_STEPS.fit };
 }
 
 /**
@@ -447,7 +470,7 @@ export function projectEdges(doc: DesignDocument, sketchId: string, edges: reado
   };
   for (const e of edges) {
     const on = features.findIndex((f) => f.id === e.feature);
-    if (on < 0 || on > at || !hasOwnFaces(features[on])) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
+    if (on < 0 || on > at || !pinnable(features[on], e.edge)) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
     if (projected.some((p) => p.feature === e.feature && p.edge === e.edge)) continue;
     const [id, after] = take(next, "projection");
     next = after;

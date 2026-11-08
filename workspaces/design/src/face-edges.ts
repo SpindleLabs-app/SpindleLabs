@@ -52,7 +52,7 @@ import { bodyHidden, bodyIdOf, type DesignDocument } from "./document.ts";
 import { faceFeature, faceReference, isFacePlane } from "./face-sketch.ts";
 import type { BodyNames } from "./naming.ts";
 import { sharedBy } from "./references.ts";
-import { findInScene, type Scene } from "./scene.ts";
+import { findInScene, madeBy, type Scene } from "./scene.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** What a face's edge offers: an end (a vertex), the middle of a line or arc, the centre of an arc or circle. The words match snap.ts's kinds. */
@@ -138,11 +138,10 @@ export function vertexNames(view: BodyView, names: BodyNames): { vertices: (stri
 type Placed = EdgeTarget & { off: number };
 
 /** `edgeTargets` with each point's distance from the plane. */
-function placedTargets(view: BodyView, names: BodyNames, plane: Plane, face?: number): Placed[] {
+function placedTargets(view: BodyView, names: BodyNames, plane: Plane, face?: number, feature = names.feature): Placed[] {
   const { vertices } = vertexNames(view, names);
   const out: Placed[] = [];
   const seen = new Set<number>();
-  const feature = names.feature;
   const off = (p: Vec3) => Math.abs(dot([p[0] - plane.origin[0], p[1] - plane.origin[1], p[2] - plane.origin[2]], plane.normal));
   const put = (p: Vec3, kind: EdgeKind, name: string) => out.push({ at: inSketch(p, plane), kind, name, feature, off: off(p) });
   view.edge_faces.forEach((pair, e) => {
@@ -299,7 +298,7 @@ function placedBefore(doc: DesignDocument, sketchId: string, scene: Scene | null
   if (scene === null || plane === undefined || at < 0) return [];
   if (faceHeld(doc, sketchId, scene)) return [];
   const before = new Set(features.slice(0, at).map((f) => f.id));
-  const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));
+  const all = scene.bodies.filter((b) => before.has(madeBy(b))).flatMap((b) => placedTargets(b.view, b.names, plane, undefined, madeBy(b)));
   const key = (t: Placed) => `${t.feature}/${t.name}`;
   all.sort((a, b) => a.off - b.off || (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
   return all;

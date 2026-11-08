@@ -238,6 +238,24 @@ export const PLANTS: Record<ModelFault, Plant> = {
     caught: "the rebuild differs from the model",
     why: "found at seed 140 only (a sketch on a tool's face of a combined body, then the target's Move changed, is rare in the sessions); its 16 steps shrunk from seed 140 are saved in test/regressions/timeline-design/plant-combine-face-moves-140.json, which planted/session.ts replays after its seeds 1 to 30 (2026-11-07); workspaces/design/test/combine-scene.test.ts catches it by hand",
   },
+  "combine-move-refused": {
+    what: "a Move of a Combine's result fails, as before the app used the kernel's body_move (35f1f2a)",
+    edits: [
+      {
+        file: REBUILD,
+        find: "    const handle = await cache.moved(b.handle, motions);",
+        replace: "    if (Number(\"1\")) return { status: \"failed\", cause: \"error\", message: `${f.provenance.self.label} can't move a Combine's result yet` };\n    const handle = await cache.moved(b.handle, motions);",
+      },
+    ],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "combine-move-frames-kept": {
+    what: "a moved Combine's result keeps its faces' frames as they were, so a sketch on it stays behind when its Move changes (35f1f2a)",
+    edits: [{ file: REBUILD, find: "    moved.push([id, { ...b, handle, frames }]);", replace: "    moved.push([id, { ...b, handle, frames: Number(\"1\") ? b.frames : frames }]);" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
   "combine-edge-tags-dropped": {
     what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",
     edits: [
@@ -689,7 +707,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   },
   "own-face-targets-only": {
     what: "a sketch is offered only its own face's edges, as in 26f, so a centre can't be snapped onto another body or another face",
-    edits: [{ file: EDGES, find: "  const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));", replace: "  const facePlane = features[at].intent.parameters.plane;\n  const own = isFacePlane(facePlane) ? findInScene(faceReference(facePlane), scene) : null;\n  const all = own?.status === \"found\" ? scene.bodies.flatMap((b, k) => (k === sceneHit(scene, \"face\", own.index)!.body ? placedTargets(b.view, b.names, plane, sceneHit(scene, \"face\", own.index)!.index) : [])) : [];" }, { file: EDGES, find: 'import { findInScene, type Scene } from "./scene.ts";', replace: 'import { findInScene, sceneHit, type Scene } from "./scene.ts";' }],
+    edits: [{ file: EDGES, find: "  const all = scene.bodies.filter((b) => before.has(madeBy(b))).flatMap((b) => placedTargets(b.view, b.names, plane, undefined, madeBy(b)));", replace: "  const facePlane = features[at].intent.parameters.plane;\n  const own = isFacePlane(facePlane) ? findInScene(faceReference(facePlane), scene) : null;\n  const all = own?.status === \"found\" ? scene.bodies.flatMap((b, k) => (k === sceneHit(scene, \"face\", own.index)!.body ? placedTargets(b.view, b.names, plane, sceneHit(scene, \"face\", own.index)!.index) : [])) : [];" }, { file: EDGES, find: 'import { findInScene, madeBy, type Scene } from "./scene.ts";', replace: 'import { findInScene, madeBy, sceneHit, type Scene } from "./scene.ts";' }],
     run: ["naming"],
     caught: "Design offers no",
     why: "the naming harness snaps onto the target the model names, and finds none to snap onto before any check runs",

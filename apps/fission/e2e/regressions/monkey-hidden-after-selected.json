@@ -1,0 +1,23 @@
+{
+  "seed": 202611070,
+  "what": "Issue #444: a hidden body's row has no click (browser.ts rowReferences), so clicking it after a shown body's row leaves that body selected; the monkey expected no selection and reported the hidden row as selecting the other body (seed 202611070 at action 1217, Body 4 then hidden Body 10). The selection must stay what it was.",
+  "actions": [
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 0
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 1
+    },
+    {
+      "do": "click",
+      "sel": "button[data-eye=\"body-2\"]"
+    },
+    {
+      "do": "select-bodies"
+    }
+  ]
+}

@@ -3,7 +3,8 @@
 // `typedFields`), each showing the live size until something is typed
 // in it, then a padlock while its text is a size it accepts. The boxes
 // only show and report; the workspace decides what the locks do.
-// Keys inside a box: Tab and Shift+Tab go round the boxes, Enter places
+// Keys inside a box: Tab and Shift+Tab go round the boxes (and anything
+// put under one, such as the fit list under Diameter), Enter places
 // the point (not while a box holds text it refused: the keys go there),
 // Escape empties the boxes and leaves them (a second Escape,
 // outside, ends the line as before). Styles: src/styles/typed-entry.css.
@@ -70,6 +71,11 @@ export interface TypedBoxes {
    */
   restore(texts: Partial<Record<TypedField, string>>): boolean;
   hide(): void;
+  /**
+   * Puts `el` under box `field` whenever that box shows (FK2: the fit list under Diameter), or takes it away (null).
+   * The boxes only place it; whoever made it hears it.
+   */
+  under(field: TypedField, el: HTMLElement | null): void;
   readonly element: HTMLElement;
 }
 
@@ -83,6 +89,27 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
   let fields: TypedField[] = [];
   const boxes = new Map<TypedField, { row: HTMLElement; input: HTMLInputElement; unit: HTMLElement; lock: HTMLElement; error: HTMLElement }>();
   const unitNow = (): Unit => currentUnit(document);
+  const extras = new Map<TypedField, HTMLElement>();
+  /** Each extra right under its box's row, when its box shows. */
+  const placeExtras = () => {
+    for (const [f, el] of extras) {
+      const b = boxes.get(f);
+      if (b && fields.includes(f)) {
+        if (b.row.nextSibling !== el) b.row.after(el);
+      } else el.remove();
+    }
+  };
+
+  /** Where Tab goes, in order: each shown box, then what is under it (FK2: without this the fit list took no keys). */
+  const stops = (): HTMLElement[] => fields.flatMap((f) => [boxes.get(f)!.input, ...(extras.has(f) ? [extras.get(f)!] : [])]);
+  const tabFrom = (from: HTMLElement, back: boolean) => {
+    const all = stops();
+    const to = all[(all.indexOf(from) + (back ? all.length - 1 : 1)) % all.length]!;
+    to.focus();
+    if (to.tagName === "INPUT") (to as HTMLInputElement).select();
+  };
+  /** Each extra's Tab listener, let go when it is taken away (a list held by the page would hold these boxes with it). */
+  const tabbed = new Map<HTMLElement, AbortController>();
 
   const locks = (): Locks => {
     const out: Locks = {};
@@ -152,11 +179,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
     input.addEventListener("keydown", (e) => {
       if (e.key === "Tab") {
         e.preventDefault();
-        const i = fields.indexOf(f);
-        const next = fields[(i + (e.shiftKey ? fields.length - 1 : 1)) % fields.length];
-        const to = boxes.get(next)!.input;
-        to.focus();
-        to.select();
+        tabFrom(input, e.shiftKey);
       } else if (e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();
@@ -218,6 +241,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
         fields = [...next];
         for (const b of boxes.values()) b.row.remove();
         for (const f of fields) root.append(boxes.get(f)?.row ?? box(f));
+        placeExtras();
         for (const f of fields) {
           boxes.get(f)!.input.value = "";
           mark(f);
@@ -280,7 +304,33 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
       for (const f of fields) boxes.get(f)!.input.value = "";
       fields = [];
       for (const b of boxes.values()) b.row.remove();
+      for (const el of extras.values()) el.remove();
       root.hidden = true;
+    },
+    under(field, el) {
+      const was = extras.get(field);
+      if (was && was !== el) {
+        was.remove();
+        tabbed.get(was)?.abort();
+        tabbed.delete(was);
+      }
+      if (el) {
+        extras.set(field, el);
+        if (!tabbed.has(el)) {
+          const listening = new AbortController();
+          tabbed.set(el, listening);
+          el.addEventListener(
+            "keydown",
+            (e) => {
+              if (e.key !== "Tab" || !el.isConnected) return;
+              e.preventDefault();
+              tabFrom(el, e.shiftKey);
+            },
+            { signal: listening.signal },
+          );
+        }
+      } else extras.delete(field);
+      placeExtras();
     },
   };
   return api;

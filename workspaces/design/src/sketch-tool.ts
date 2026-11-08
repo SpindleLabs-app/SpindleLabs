@@ -20,6 +20,7 @@
 // chain's first point closes it. Keeping points together after that comes
 // with the sketch constraints (29).
 
+import type { Fit } from "@fission/print";
 import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
 import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
@@ -103,6 +104,8 @@ export interface CircleTool {
   centre: SketchXY | null;
   /** A radius from a typed diameter (typed-entry.ts `withLocks`): exactly half of it, used instead of the distance to the click. */
   radius?: number;
+  /** The fit picked under the Diameter box (FK2): each circle drawn is tagged with it, until another is picked. */
+  fit?: Fit;
 }
 
 /** The 3-point arc tool on one sketch: the start clicked, then the end, or null before each. */
@@ -343,12 +346,12 @@ function circleClick(doc: DesignDocument, tool: CircleTool, at: SketchXY): { doc
   // A typed diameter's radius is exact intent, never the distance to a click rounded onto the circle.
   // The tool given back never keeps it: the boxes hold the typed size, and a cleared box must clear it.
   const radius = tool.radius ?? distance(tool.centre, at);
-  const kept: CircleTool = { kind: "circle", sketch: tool.sketch, centre: tool.centre };
+  const kept: CircleTool = tool.fit ? { kind: "circle", sketch: tool.sketch, centre: tool.centre, fit: tool.fit } : { kind: "circle", sketch: tool.sketch, centre: tool.centre };
   if (radius === 0) return { doc, tool: kept, drew: false, note: NO_RADIUS };
   if (underMin(radius, 0, false)) return { doc, tool: kept, drew: false, note: SMALL_CIRCLE };
   const centre: LineEnd = pointAt(sketch, tool.centre) ?? tool.centre;
   if (typeof centre === "string" && sketch.curves.some((c) => c.kind === "circle" && c.centre === centre && Math.abs(c.radius - radius) <= SAME_PLACE)) return { doc, tool: kept, drew: false, note: SAME_CIRCLE };
-  return { doc: drawCircle(doc, tool.sketch, centre, radius).doc, tool: { ...kept, centre: null }, drew: true };
+  return { doc: drawCircle(doc, tool.sketch, centre, radius, tool.fit).doc, tool: { ...kept, centre: null }, drew: true };
 }
 
 /**

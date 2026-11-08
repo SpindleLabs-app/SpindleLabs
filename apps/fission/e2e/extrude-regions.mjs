@@ -355,8 +355,15 @@ try {
           ctx.drawImage(src, 0, 0);
           return Array.from(ctx.getImageData(Math.round((x - box.x) * dpr), Math.round((y - box.y) * dpr), 1, 1).data.slice(0, 3));
         }, [q.x, q.y]);
-      const [r, g, b] = await pixel(corner);
-      const [dr, , db] = await pixel(toScreen(await camera(page), await canvasBox(page), [-40, 15, 0]));
+      // The shading lands on a later frame than the status line, so read until it shows (up to 5 s; a busy CI
+      // runner once read the bare background at phone size, 2026-11-08); the colours asked for are unchanged.
+      const disc = toScreen(await camera(page), await canvasBox(page), [-40, 15, 0]);
+      let [r, g, b, dr, db] = [0, 0, 0, 0, 0];
+      for (const end = Date.now() + 5000; ; await page.waitForTimeout(100)) {
+        [r, g, b] = await pixel(corner);
+        [dr, , db] = await pixel(disc);
+        if ((r > g + 15 && r > b + 5 && db > dr + 30) || Date.now() > end) break;
+      }
       assert.ok(r > g + 15 && r > b + 5 && db > dr + 30, `the plate drawn red and the disc blue, read ${[r, g, b]} and ${[dr, , db]}`);
       await shot(page, `refused-offered-${width}`);
       await at(page, [-58, 2], { tap });
