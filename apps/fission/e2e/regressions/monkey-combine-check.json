@@ -1,0 +1,39 @@
+{
+  "seed": 202611071,
+  "what": "Issue #445: a Combine's OK waits on the kernel's check before it records the Combine, with nothing on the page changing meanwhile, so the monkey's settle read the timeline bar before the Combine landed and the file it saved after had it (feature-4 missing from the bar; on another replay the kernel held 3 bodies for 2 rows). settle now waits for Combine's OK to stop being busy.",
+  "actions": [
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 486
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "canvas",
+      "x": 0.716,
+      "y": 0.48,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 725
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 771
+    },
+    {
+      "do": "combine",
+      "a": 0.9651438887231052,
+      "b": 0.3959467501845211,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    }
+  ]
+}
