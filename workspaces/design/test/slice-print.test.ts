@@ -602,8 +602,40 @@ function layerMoves(gcode: string): string[] {
   return gcode
     .slice(first, end)
     .split("\n")
-    .filter((l) => l.startsWith("G0 ") || l.startsWith("G1 "))
+    .filter((l) => /^G[0-3] /.test(l))
     .map((l) => l.split(/\s+/).filter((w) => !w.startsWith("F")).join(" "));
+}
+
+/**
+ * Whether a P1S file's layer moves are the plain slice's, apart from its round runs sent as arcs: every straight move
+ * the same, and each arc (G2/G3) standing for the run of plain extrusion moves that ends at its end point, laying the
+ * same plastic. The arc lays the circle's length, a little more than the chords' (1 + θ²/24 at most, under 1.0001 for
+ * the slicer's steps), and each E is rounded to 0.00001, so the plastic agrees within 0.0001 of it plus that rounding
+ * per move. Says why it doesn't match, or "" when it does.
+ */
+function apartFromArcs(file: string[], plain: string[]): string {
+  const word = (l: string, k: string) => l.split(" ").find((w) => w.startsWith(k))?.slice(1);
+  let j = 0;
+  for (const [i, l] of file.entries()) {
+    if (!/^G[23] /.test(l)) {
+      if (plain[j] !== l) return `move ${i}: ${l} is ${plain[j]} in the plain slice`;
+      j += 1;
+      continue;
+    }
+    const end = `X${word(l, "X")} Y${word(l, "Y")}`;
+    let e = 0;
+    let n = 0;
+    while (j < plain.length && plain[j].startsWith("G1 ") && word(plain[j], "E") !== undefined && Number(word(plain[j], "E")) > 0) {
+      e += Number(word(plain[j], "E"));
+      n += 1;
+      j += 1;
+      if (plain[j - 1].startsWith(`G1 ${end} `)) break;
+    }
+    if (n < 2 || !plain[j - 1].startsWith(`G1 ${end} `)) return `arc ${i}: ${l} ends nowhere the plain slice's run does`;
+    const arc = Number(word(l, "E"));
+    if (Math.abs(arc - e) > 1e-4 * e + 1e-5 * (n + 1)) return `arc ${i}: ${l} lays ${arc} where the run lays ${e}`;
+  }
+  return j === plain.length ? "" : `the plain slice has ${plain.length - j} moves more`;
 }
 
 test("the cube's P1S print file on the shipped build: a package the printer checks, for the plate picked, the same layers as the plain slice", async () => {
@@ -647,11 +679,21 @@ test("the cube's P1S print file on the shipped build: a package the printer chec
     // Only the plate's own lines change, not one move.
     assert.deepEqual(layerMoves(g), layerMoves(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode"))), plate);
   }
-  // Two code paths agreeing: the same layer moves as the plain slice of the same choices; 3 walls differ, so the comparison can fail.
+  // Two code paths agreeing: the same layer moves as the plain slice of the same choices, apart from the P1S file's
+  // round runs (the warm-up loop's corners) sent as arcs, which the plain G-code never uses (not every printer reads
+  // them); 3 walls differ, so the comparison can fail.
   const plain = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
-  assert.deepEqual(layerMoves(gcode), layerMoves(plain.gcode));
+  assert.match(gcode, /^G[23] /m, "the P1S file sends arcs");
+  assert.doesNotMatch(plain.gcode, /^G[23] /m, "the plain G-code doesn't");
+  assert.equal(apartFromArcs(layerMoves(gcode), layerMoves(plain.gcode)), "");
   const three = await sliceBodies(kernel, doc, bodyFeatures(doc), { ...PRINT_DEFAULTS, walls: 3 });
-  assert.notDeepEqual(layerMoves(gcode), layerMoves(three.gcode));
+  assert.notEqual(apartFromArcs(layerMoves(gcode), layerMoves(three.gcode)), "");
+  // The comparison catches an arc laying the wrong plastic, or ending somewhere else.
+  const moves = layerMoves(gcode);
+  const k = moves.findIndex((l) => /^G[23] /.test(l));
+  const bent = (f: (l: string) => string) => moves.map((l, i) => (i === k ? f(l) : l));
+  assert.match(apartFromArcs(bent((l) => l.replace(/E([\d.]+)/, (_, e) => `E${(Number(e) * 1.01).toFixed(5)}`)), layerMoves(plain.gcode)), /lays/);
+  assert.match(apartFromArcs(bent((l) => l.replace(/X([\d.]+)/, (_, x) => `X${(Number(x) + 0.1).toFixed(3)}`)), layerMoves(plain.gcode)), /ends nowhere/);
   // A plate the engine doesn't know is the app's bug, refused as a bad request.
   await assert.rejects(printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "glass" as never), (e: Error & { kind?: string }) => e.kind === "bad-request" && /bad plate/.test(e.message));
   await assert.rejects(printFileOf(kernel, doc, [], PRINT_DEFAULTS, "textured"), /no body to slice/);
