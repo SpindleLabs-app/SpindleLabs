@@ -528,11 +528,14 @@ export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f);
  * An extrude of a sketch with an operation (Fusion's Join, Cut and
  * Intersect in Extrude's panel; Design data version 10): `operation` and
  * `bodies`, the bodies it works on (body ids, each made before it, in the
- * order picked). Its own body never stays a body: Join puts it and every
- * other body picked into the first one picked (which keeps its id), Cut
- * takes it out of each body picked, Intersect keeps only what each body
- * picked shares with it. Every body picked keeps its id; any other piece
- * is `body:<the extrude>/piece:<k>`, as a Combine's. It depends on its
+ * order picked). Its own body never stays a body of that id: Join puts it
+ * and the bodies picked together, each piece holding any of them keeping
+ * the id of the earliest made one it holds (docs/document-model.md section
+ * 8; the others' ids are gone), Cut takes it out of each body picked,
+ * Intersect keeps only what each body picked shares with it, each keeping
+ * its id. Any other piece (one a Cut splits off, or one of a Join holding
+ * only the extrude) is `body:<the extrude>/piece:<k>`, remembered by its
+ * faces as a Combine's (version 13's `faces`). It depends on its
  * sketch, then on the items that made its bodies. Without `operation` an
  * extrude is a new body, as before version 10.
  */
@@ -1378,7 +1381,8 @@ function checkOperation(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMa
   for (const id of p.bodies as unknown[]) {
     const maker = typeof id === "string" ? bodyItem(id) : null;
     const there = maker === null ? undefined : byId.get(maker);
-    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    // A piece of an item deleted since is allowed too, as a Move's (hunt 11-08: deleting the Combine or extrude that made it left a file that would not open again).
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
     if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || maker === f.id || !isBodyOf(d, byId, id as string))) throw new Error(`${at}: ${shown(id)} is not a body made before it in the timeline`);
     if (once.has(id)) throw new Error(`${at} picks ${id} twice`);
     once.add(id);
