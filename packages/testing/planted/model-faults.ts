@@ -47,6 +47,7 @@ const NAMING = "workspaces/design/src/naming.ts";
 const DOCUMENT = "workspaces/design/src/document.ts";
 const COMBINE = "workspaces/design/src/combine.ts";
 const NAMES = "workspaces/design/src/boolean-names.ts";
+const BUILT = "workspaces/design/src/built-body.ts";
 
 export const PLANTS: Record<ModelFault, Plant> = {
   "reorder-past-dependency": {
@@ -255,6 +256,18 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [{ file: REBUILD, find: "    moved.push([id, { ...b, handle, frames }]);", replace: "    moved.push([id, { ...b, handle, frames: Number(\"1\") ? b.frames : frames }]);" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
+  },
+  "combine-copy-refused": {
+    what: "a Duplicate of a Combine's result fails, as before 35f1f2c",
+    edits: [{ file: REBUILD, find: "  if (b.spec === null) {\n    // 35f1f2c:", replace: "  if (b.spec === null) {\n    if (Number(\"1\")) return { status: \"failed\", cause: \"error\", message: `${label} can't copy a Combine's result yet` };\n    // 35f1f2c:" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "combine-copy-roles-merged": {
+    what: "a copy of a Combine's result names each face by its role alone, as a plain copy's, so two inputs' faces of one role read the same (35f1f2c)",
+    edits: [{ file: BUILT, find: "  return `face:${dup}/${role}:${curve === undefined ? feature : `${feature}~${curve}`}`;", replace: "  return `face:${dup}/${role}${curve === undefined ? \"\" : `:${curve}`}`;" }],
+    run: ["timeline"],
+    caught: "two faces share a name",
   },
   "combine-edge-tags-dropped": {
     what: "a Combine's result names its edges by their faces' names without the tags (rule 5 says with them)",

@@ -357,6 +357,8 @@ export type ModelFault =
   | "combine-edge-tags-dropped"
   | "combine-move-refused"
   | "combine-move-frames-kept"
+  | "combine-copy-refused"
+  | "combine-copy-roles-merged"
   | "duplicate-no-body"
   | "duplicate-source-names";
 
@@ -404,6 +406,8 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "combine-edge-tags-dropped",
   "combine-move-refused",
   "combine-move-frames-kept",
+  "combine-copy-refused",
+  "combine-copy-roles-merged",
   "duplicate-no-body",
   "duplicate-source-names",
 ];
@@ -781,10 +785,12 @@ function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: Re
 /**
  * A Duplicate's result (35e2): greyed while its body's item is suppressed
  * or greyed (Q3); failed naming that item when it is deleted, not built,
- * or has no body (used up by a Combine); failed in words for a Combine's
- * result (Design can't name a copy of one yet); else its own body, the
- * source as it is here with every face and edge named by the Duplicate
- * instead, so its volume, areas, lengths and centroids are the source's.
+ * or has no body (used up by a Combine); else its own body, the source as
+ * it is here with every face and edge named by the Duplicate instead, so
+ * its volume, areas, lengths and centroids are the source's. A Combine's
+ * result (35f1f2c) is copied so too, each face keeping its role with the
+ * feature it came from (and its curve) as its curve: "face:feature-1/top"
+ * as "face:<dup>/top:feature-1" (Design's built-body.ts `copiedFaceName`).
  * What is done to the source after it never reaches it.
  */
 function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
@@ -793,13 +799,23 @@ function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults:
   const r = done[item.body];
   if (r === undefined) return { status: "failed", cause: "deleted-input", input: item.body };
   if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: item.body };
-  if (r.body.combined) return { status: "failed", cause: "error" };
+  // Planted bug ("combine-copy-refused"): a Combine's result can't be copied, as before 35f1f2c.
+  if (r.body.combined && faults.has("combine-copy-refused")) return { status: "failed", cause: "error" };
   // Planted bug ("duplicate-source-names"): the copy keeps its source's names.
   const owner = faults.has("duplicate-source-names") ? null : item.id;
-  const name = (n: FaceName): FaceName => ({ ...n, feature: owner ?? n.feature, ...(n.tag ? { tag: n.tag.map(name) } : {}) });
+  // Planted bug ("combine-copy-roles-merged"): a Combine's result's copy names each face by its role alone, as a plain copy's,
+  // so two inputs' faces of one role (both cubes' tops) read the same.
+  const keep = r.body.combined && owner !== null && !faults.has("combine-copy-roles-merged");
+  const name = (n: FaceName): FaceName => ({
+    ...n,
+    feature: owner ?? n.feature,
+    ...(keep ? { curve: n.curve === undefined ? n.feature : `${n.feature}~${n.curve}` } : {}),
+    ...(n.tag ? { tag: n.tag.map(name) } : {}),
+  });
   const copy: ModelBody = {
     ...r.body,
-    faces: r.body.faces.map((f) => ({ ...f, name: name(f.name) })),
+    // A face two inputs' faces made keeps every name, each copied so (rule 4).
+    faces: r.body.faces.map((f) => ({ ...f, name: name(f.name), ...(f.also ? { also: f.also.map(name) } : {}) })),
     edges: r.body.edges.map((e) => ({ ...e, name: { ...e.name, feature: owner ?? e.name.feature, faces: [name(e.name.faces[0]), name(e.name.faces[1])] } })),
   };
   // Planted bug ("duplicate-no-body"): the Duplicate builds but makes no body, as a Move.

@@ -81,6 +81,7 @@ test("seeded sessions on the model pass, and reach every kind of outcome", async
     "sketch-still:checked",
     // 35f1f2a: a Move of a Combine's result, built.
     "move:combine-result",
+    "duplicate:combine-result",
   ];
   const missing = wanted.filter((k) => !total[k]);
   assert.deepEqual(missing, [], `never reached: ${missing.join(", ")}`);
@@ -138,6 +139,8 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   // 35f1f2a: a Combine's result refused a Move, as before body_move; or moved with its faces' motions left as they were.
   "combine-move-refused": "the rebuild differs from the model",
   "combine-move-frames-kept": "the rebuild differs from the model",
+  "combine-copy-refused": "the rebuild differs from the model",
+  "combine-copy-roles-merged": "two faces share a name",
   // 35e2: a copy keeping its source's names shares every one of them with it.
   "duplicate-source-names": "two faces share a name",
   "duplicate-no-body": "the rebuild differs from the model",

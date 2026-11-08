@@ -63,3 +63,27 @@ export function namedBody(id: string, b: BuiltBody, view: BodyView, place: numbe
   if (b.named !== undefined) return { id, handle: b.handle, view, faces: b.named.faces, made: b.named.made };
   return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves }, view), place);
 }
+
+/**
+ * A face name of a Combine's result as a Duplicate `dup` of it names that
+ * face (35f1f2c): the copy's faces are the Duplicate's own, as a plain
+ * copy's are, and each keeps its role, with the feature it came from (and
+ * its curve) as its id, so two inputs' faces of one role stay apart:
+ * "face:feature-1/top" as "face:<dup>/top:feature-1",
+ * "face:feature-2/side:line-4" as "face:<dup>/side:feature-2~line-4". "~"
+ * is in no feature id, so no two names read the same.
+ */
+export function copiedFaceName(name: string, dup: string): string {
+  const m = /^face:([^/]+)\/([a-z]+)(?::(.+))?$/.exec(name);
+  if (m === null) throw new Error(`not a face name Design makes: ${JSON.stringify(name)}`);
+  const [, feature, role, curve] = m;
+  return `face:${dup}/${role}:${curve === undefined ? feature : `${feature}~${curve}`}`;
+}
+
+/** A Combine's result's names (BuiltBody `named`) as Duplicate `dup`'s copy of it holds them (`copiedFaceName`). */
+export function copiedNames(named: NonNullable<BuiltBody["named"]>, dup: string): NonNullable<BuiltBody["named"]> {
+  return {
+    faces: named.faces.map((f) => ({ ...f, names: f.names.map((n) => copiedFaceName(n, dup)) })),
+    made: new Map([...named.made].map(([n, order]) => [copiedFaceName(n, dup), order])),
+  };
+}

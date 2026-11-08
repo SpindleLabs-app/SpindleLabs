@@ -500,10 +500,10 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
       // As in the app: a body shown, built before where the new item goes.
       const built = rebuild(doc);
       const before = new Set(doc.items.slice(0, insertAt(doc)).map((i) => i.id));
-      const body = choose(
-        built.order.filter((id) => before.has(id) && built.results[id].status === "built" && (built.results[id] as { body?: unknown }).body !== undefined),
-        step.pick,
-      );
+      const bodies = built.order.filter((id) => before.has(id) && built.results[id].status === "built" && (built.results[id] as { body?: unknown }).body !== undefined);
+      // 35f1f2c: while a Combine's result is shown, half the Duplicates copy one (as the Moves do, 35f1f2a).
+      const combined = bodies.filter((id) => (built.results[id] as { body?: ModelBody }).body?.combined);
+      const body = combined.length === 0 ? choose(bodies, step.pick) : step.pick < 0.5 ? choose(combined, 2 * step.pick) : choose(bodies, 2 * step.pick - 1);
       return body === undefined ? null : edit({ op: "add-duplicate", body });
     }
     case "add-combine": {
@@ -629,7 +629,8 @@ export function rebuildDiff(a: Rebuild, b: Rebuild, edgeClose?: EdgeClose): stri
 const nameTo = (n: FaceName, to: (id: string) => string): FaceName => ({
   feature: to(n.feature),
   role: n.role,
-  ...(n.curve !== undefined && { curve: to(n.curve) }),
+  // 35f1f2c: a copied Combine result's face holds the feature it came from (and its curve) joined by "~", each an id.
+  ...(n.curve !== undefined && { curve: n.curve.split("~").map(to).join("~") }),
   ...(n.tag !== undefined && { tag: n.tag.map((t) => nameTo(t, to)) }),
 });
 
@@ -1002,6 +1003,8 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
         count(`combine:${r.status === "failed" ? `failed-${r.cause}` : r.status}`);
         if (r.status === "built") count(`combine:${item.operation}${item.keep ? "-keep" : ""}${r.pieces ? "-pieces" : ""}`);
       }
+      // 35f1f2c: a Duplicate built of a Combine's result.
+      if (item?.kind === "duplicate" && r.status === "built" && (expected.results[item.body] as { body?: ModelBody } | undefined)?.body?.combined) count("duplicate:combine-result");
       // 35f1f2a: a Move built after a Combine built on a body it moves: it moved that Combine's result.
       if (item?.kind === "move" && r.status === "built") {
         const at = expected.order.indexOf(id);
