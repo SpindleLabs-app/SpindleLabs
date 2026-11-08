@@ -1,4 +1,2 @@
-tested commit b8e42a7 on claude/project-thread-ich6rn, 2026-11-08 07:23 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42443826830)
-Monkey, seeds 202611080-202611081: 2 session(s) of 2000 actions in Chromium; 8 Combines made of 30 tried; every check passed after every action
-seed 202611080: pass (2000 actions)
-seed 202611081: pass (2000 actions)
+tested commit 6ee47ed on claude/project-thread-ich6rn, 2026-11-08 07:25 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42454548584)
+no report: the monkey job stopped before the sessions

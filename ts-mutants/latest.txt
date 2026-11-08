@@ -1,37 +1,11 @@
-tested commit b8e42a7 on claude/project-thread-ich6rn, 2026-11-08 07:23 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42443826830)
-core: 10 survivors, all explained: true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1386: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:950: workspaces/design/src/document.ts | ConditionalExpression | typeof c.circle === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:959: workspaces/design/src/document.ts | ConditionalExpression | typeof c.point !== "string" => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:993: workspaces/design/src/document.ts | ConditionalExpression | typeof p !== "string" => false
-design: 69 survivors, all explained: false
-4 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-storage: 59 survivors, all explained: true
-account: 10 survivors, all explained: true
-model: 46 survivors, all explained: true
-svg: 4 survivors, all explained: true
-viewport: 35 survivors, all explained: true
-ai: 23 survivors, all explained: true
-explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ConditionalExpression | pieces.of[Math.floor(k / 6)] === p => true
-naming: 152 survivors, all explained: true
-1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:139: workspaces/design/src/boolean-names.ts | MethodExpression | [...new Set(faces.flatMap((f) => (f.names.length > 0 ? [f.names[0]] : [])))].sort() => [...new Set(faces.flatMap(f => f.names.length > 0 ? [f.names[0]] : []))]
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:191: workspaces/design/src/boolean-names.ts | ConditionalExpression | f.names.length > 0 => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:191: workspaces/design/src/boolean-names.ts | EqualityOperator | f.names.length > 0 => f.names.length >= 0
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:552: workspaces/design/src/boolean-names.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:215: workspaces/design/src/boolean-names.ts | ConditionalExpression | id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:215: workspaces/design/src/boolean-names.ts | LogicalOperator | id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) => id.startsWith(prefix) || /^[1-9][0-9]*$/.test(id.slice(prefix.length))
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:215: workspaces/design/src/boolean-names.ts | Regex | /^[1-9][0-9]*$/ => /[1-9][0-9]*$/
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:215: workspaces/design/src/boolean-names.ts | Regex | /^[1-9][0-9]*$/ => /^[1-9][0-9]*/
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:215: workspaces/design/src/boolean-names.ts | Regex | /^[1-9][0-9]*$/ => /^[1-9][^0-9]*$/
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:216: workspaces/design/src/boolean-names.ts | MethodExpression | [...new Set(names)].sort() => [...new Set(names)]
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:218: workspaces/design/src/boolean-names.ts | MethodExpression | [...remembered].filter(([id]) => numberOf(id) !== null) => [...remembered]
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:218: workspaces/design/src/boolean-names.ts | ConditionalExpression | numberOf(id) !== null => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | ConditionalExpression | at.length === 1 && ours.filter((o) => o.key === r.key).length === 1 => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | ConditionalExpression | at.length === 1 => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | LogicalOperator | at.length === 1 && ours.filter((o) => o.key === r.key).length === 1 => at.length === 1 || ours.filter(o => o.key === r.key).length === 1
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | ConditionalExpression | ours.filter((o) => o.key === r.key).length === 1 => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | EqualityOperator | o.key === r.key => o.key !== r.key
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:232: workspaces/design/src/boolean-names.ts | MethodExpression | rest.some((p) => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key) => rest.every(p => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key)
-combine: 76 survivors, all explained: false
-18 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+tested commit 6ee47ed on claude/project-thread-ich6rn, 2026-11-08 07:25 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42454548584)
+core: no report (the job stopped before the check)
+design: no report (the job stopped before the check)
+storage: no report (the job stopped before the check)
+account: no report (the job stopped before the check)
+model: no report (the job stopped before the check)
+svg: no report (the job stopped before the check)
+viewport: no report (the job stopped before the check)
+ai: no report (the job stopped before the check)
+naming: no report (the job stopped before the check)
+combine: no report (the job stopped before the check)
