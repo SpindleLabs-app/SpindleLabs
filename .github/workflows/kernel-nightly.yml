@@ -4,8 +4,9 @@ name: Kernel random testing
 # runners like its CI (kernel-ci.yml; Ben's decision, 2026-10-27).
 #
 # Nightly, 11pm to 6:35am Perth (UTC+8), so 15:00 to 22:35 UTC, testing the
-# kernel's main: 8 parallel jobs run the kernel's scripts/endless.sh (the
-# stateful harness plus the OpenCascade oracle, a fresh random seed per round)
+# kernel's main (started by kernel-night-clock.yml with `night`, since GitHub
+# drops or delays most of this repo's scheduled runs): 8 parallel jobs run
+# the kernel's scripts/endless.sh (the stateful harness plus the OpenCascade oracle, a fresh random seed per round)
 # in two legs, because a GitHub job may last at most 6 hours; alongside the
 # first leg, 4 jobs run the next slice of the whole-kernel mutation rotation
 # (mutant_rotation.py: cargo mutants, lib tests, the kernel's riskiest code
@@ -35,18 +36,18 @@ name: Kernel random testing
 # Secrets: KERNEL_READ (kernel: contents read-only, statuses read-write) and
 # RESULTS_WRITE (kernel-results: contents and issues read-write), as for
 # kernel-ci.yml; only this repo's own branches' workflows see them.
-run-name: ${{ github.event_name == 'schedule' && 'Kernel random testing, nightly' || format('Kernel random testing on {0}', inputs.ref) }}
+run-name: ${{ inputs.night && 'Kernel random testing, nightly' || format('Kernel random testing on {0}', inputs.ref) }}
 
 on:
-  schedule:
-    # Every hour from 10:17 to 21:17 UTC, not on the hour (GitHub delays
-    # top-of-the-hour schedules most): GitHub starts scheduled runs hours
-    # late (11-06 and 11-07: 4 to 5.5 h), so the first run that lands after
-    # 15:00 UTC takes the night and the others stop at once (idle's gate,
-    # nightly_gate.py).
-    - cron: "17 10-21 * * *"
+  # No schedule: GitHub started this repo's scheduled runs hours late or not
+  # at all (11-06 and 11-07: 4 to 5.5 h late; 11-08: none of twelve hourly
+  # runs). kernel-night-clock.yml starts the night instead.
   workflow_dispatch:
     inputs:
+      night:
+        description: "Tonight's testing of main (kernel-night-clock.yml starts it; the rest of the inputs are ignored)"
+        type: boolean
+        default: false
       ref:
         description: "Kernel branch to test"
         default: "main"
@@ -64,11 +65,12 @@ permissions: {}
 # shared group, as nightly.yml had (Ben, 2026-10-26). Tested in
 # .github/scripts/test_ci_concurrency.py.
 concurrency:
-  group: kernel-random-testing-${{ github.event_name == 'schedule' && 'nightly' || inputs.ref == 'main' && 'main' || 'branches' }}
+  group: kernel-random-testing-${{ inputs.night && 'nightly' || inputs.ref == 'main' && 'main' || 'branches' }}
   cancel-in-progress: false
 
 env:
-  REF: ${{ github.event_name == 'schedule' && 'main' || inputs.ref }}
+  REF: ${{ inputs.night && 'main' || inputs.ref }}
+  NIGHT: ${{ inputs.night && 'true' || 'false' }}
 
 jobs:
   # Starts the testing only once CI is idle (Ben, 2026-10-29): no CI job
@@ -88,16 +90,16 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      # A scheduled run takes the night only inside 15:00-22:05 UTC and only
-      # if no earlier run took it today (nightly_gate.py); by hand, always.
+      # A night run takes the night only inside 15:00-22:05 UTC and only
+      # if no earlier run took it today (nightly_gate.py); a branch's, always.
       - id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/nightly_gate.py kernel-nightly.yml
+        run: python3 .github/scripts/nightly_gate.py gate kernel-nightly.yml
       - if: steps.gate.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/branch_testing.py wait-idle ${{ github.event_name == 'schedule' && 3600 || 7200 }}
+        run: python3 .github/scripts/branch_testing.py wait-idle ${{ inputs.night && 3600 || 7200 }}
 
   plan:
     needs: idle
@@ -115,7 +117,7 @@ jobs:
     steps:
       - id: plan
         env:
-          NIGHTLY: ${{ github.event_name == 'schedule' }}
+          NIGHTLY: ${{ env.NIGHT }}
           MINUTES: ${{ inputs.minutes || '290' }}
           MUTANTS: ${{ inputs.mutants }}
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
@@ -128,8 +130,8 @@ jobs:
           now=$(date +%s)
           if [ "$NIGHTLY" = true ]; then
             # 22:35 UTC of the day the run started (idle's gate only lets a
-            # run through from 15:00 UTC, so this is the same UTC day). GitHub can start a
-            # scheduled run hours late: one that starts after 22:05 UTC (or
+            # run through from 15:00 UTC, so this is the same UTC day). A night
+            # run can wait for runners: one that starts after 22:05 UTC (or
             # after midnight, when "today's" 22:35 would be a whole day of
             # runners away) skips the night instead.
             deadline=$(date -u -d "$(date -u +%F) 22:35" +%s)
@@ -203,7 +205,7 @@ jobs:
           watcher=
           # A branch's run, and tonight's jobs past the first two (the night
           # always keeps two), give their runners to CI (stop-on-merge.sh).
-          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi
@@ -265,7 +267,7 @@ jobs:
           watcher=
           # A branch's run, and tonight's jobs past the first two (the night
           # always keeps two), give their runners to CI (stop-on-merge.sh).
-          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi
@@ -407,7 +409,7 @@ jobs:
   # prints nothing else). Nightly runs only.
   keys:
     needs: idle
-    if: github.event_name == 'schedule' && needs.idle.outputs.go == 'true'
+    if: inputs.night && needs.idle.outputs.go == 'true'
     runs-on: ubuntu-latest
     environment: kernel
     timeout-minutes: 5
