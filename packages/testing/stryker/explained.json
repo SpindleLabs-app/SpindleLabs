@@ -3171,6 +3171,13 @@
     "why": "resolveEdge: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
   },
   {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "k < at",
+    "replacement": "k <= at",
+    "why": "When the name's place in this face's list equals the smallest found so far, setting it again changes nothing."
+  },
+  {
     "file": "workspaces/design/src/boolean-names.ts",
     "mutator": "ArithmeticOperator",
     "original": "x.k - y.k",

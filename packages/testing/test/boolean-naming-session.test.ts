@@ -228,7 +228,13 @@ const KEPT: { from: string; features: BooleanFeature[]; references: BooleanSessi
     features: [{"kind": "block", "id": "feature-1", "rect": [5, 4, 8, 7], "z": [3, 6], "operation": "new"}, {"kind": "block", "id": "feature-6", "rect": [-1, -1, 9, 9], "z": [4, 6], "operation": "cut", "bodies": ["body:feature-1"]}],
     references: [{"after": 1, "ref": {"kind": "face", "name": "face:feature-1/side:line-1", "origin": [7, 4, 6], "tag": ["face:feature-5/end", "face:feature-6/end"]}}],
   },
-  // KEPT-MUTANTS
+  // Seed 21 (11-08, mutant search): a name first (place 0) in an input face's list must count as lying there; the
+  // naming model's `k >= 0` taken as `k > 0` changed a tag here, and only this session showed it.
+  {
+    from: "seed 21",
+    features: [{"kind":"block","id":"feature-1","rect":[5,-1,7,9],"z":[-1,7],"operation":"new"},{"kind":"block","id":"feature-2","rect":[-1,2,9,4],"z":[-1,7],"operation":"new","lines":["line-3","line-1","line-2","line-4"]},{"kind":"block","id":"feature-3","rect":[-1,1,9,3],"z":[-1,7],"operation":"cut","bodies":["body:feature-2","body:feature-1"]},{"kind":"combine","id":"feature-4","target":"body:feature-2","tools":["body:feature-1","body:feature-3/piece:1"],"operation":"cut","keepTools":false},{"kind":"block","id":"feature-5","rect":[2,2,3,4],"z":[3,4],"operation":"new"},{"kind":"combine","id":"feature-9","target":"body:feature-2","tools":["body:feature-5","body:feature-4/piece:1"],"operation":"join","keepTools":false}],
+    references: [],
+  },
 ];
 
 test("kept sessions: the model and the unit-cell count agree at every step", () => {

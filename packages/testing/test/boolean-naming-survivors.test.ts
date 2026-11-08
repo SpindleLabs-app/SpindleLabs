@@ -435,3 +435,43 @@ test("rule 4: a cut's wall made of two tools' faces lists the tools' names in th
   assert.deepEqual(bodies(r), ["body:feature-1 2000 0,0,0"]);
   assert.deepEqual(faceOn(r, "body:feature-1", "-y", 5).names, ["face:feature-3/side:line-3", "face:feature-2/side:line-3"]);
 });
+
+test("rule 4: a name on two of the target's faces takes its smaller place, wherever the larger lies", () => {
+  // A bar T x 0–30, y 0–10, z 0–10 with a slot cut from its top, x 10–20, z 5–10: two tops, each listing T's end cap
+  // alone. A block X x 30–40 joins it by Combine, X kept: the far top (x 20–40) lists [T's, X's]. Then X joins T by
+  // Combine (X the target, T used up): X's body holds the near top x 0–10 [T's] and the far top x 20–40 [X's, T's]
+  // (the target's first). A block filling the slot joins X's body: one top x 0–40, 40 × 10 × 10 = 4000. T's end cap
+  // lies on two of the target's faces, first in the near top's list (place 0) and second in the far one's (place 1):
+  // it takes place 0, as X's does (first in the far top's): a tie, so made order, T's first; the filler's last.
+  // (Taking the place from the face met last, the far top, would put X's first.)
+  const r = rebuildBooleans([
+    block("feature-1", [0, 0, 30, 10], [0, 10]),
+    block("feature-2", [10, -1, 20, 11], [5, 11], "cut", ["body:feature-1"]),
+    block("feature-3", [30, 0, 40, 10], [0, 10]),
+    combine("feature-4", "body:feature-1", ["body:feature-3"], "join", true),
+    combine("feature-5", "body:feature-3", ["body:feature-1"], "join"),
+    block("feature-6", [10, 0, 20, 10], [5, 10], "join", ["body:feature-3"]),
+  ]);
+  assert.deepEqual(bodies(r), ["body:feature-3 4000 0,0,0"]);
+  assert.deepEqual(faceOn(r, "body:feature-3", "+z", 10).names, ["face:feature-1/end", "face:feature-3/end", "face:feature-6/end"]);
+});
+
+test("rule 4: a cut's wall name held by two tools ranks by the first of them in the order picked", () => {
+  // A post A x 5–15, y −1–5, z −1–11 and a block B under it, x 5–15, y −1–5, z −20 to −1: Combine joins B with A, A
+  // kept, so B's body (10 × 6 × 31 = 1860) holds A's names too, its y = 5 side listing [B's line 3, A's line 3]. A
+  // second post C x 15–25 beside A. A bar x 0–30, y 0–10, z 0–10 is cut by Combine with tools A, C, then B: a notch
+  // x 5–25, y 0–5 (30 × 10 × 10 − 20 × 5 × 10 = 2000 left). Its back wall (y = 5, facing −y) lies on A's and C's
+  // line 3 sides turned (B's adds nothing: A took that part away first), with no input face facing −y there, so each
+  // name ranks by the first body in [bar, A, C, B] holding it: A's line 3 by A (1), though B (3) holds it too; C's by
+  // C (2). So [A's, C's]. (Ranking by the last body holding a name would put A's after C's.)
+  const r = rebuildBooleans([
+    block("feature-1", [5, -1, 15, 5], [-1, 11]),
+    block("feature-2", [5, -1, 15, 5], [-20, -1]),
+    combine("feature-3", "body:feature-2", ["body:feature-1"], "join", true),
+    block("feature-4", [15, -1, 25, 5], [-1, 11]),
+    block("feature-5", [0, 0, 30, 10], [0, 10]),
+    combine("feature-6", "body:feature-5", ["body:feature-1", "body:feature-4", "body:feature-2"], "cut"),
+  ]);
+  assert.deepEqual(bodies(r), ["body:feature-5 2000 0,0,0"]);
+  assert.deepEqual(faceOn(r, "body:feature-5", "-y", 5).names, ["face:feature-1/side:line-3", "face:feature-4/side:line-3"]);
+});
