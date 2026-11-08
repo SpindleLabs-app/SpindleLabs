@@ -243,7 +243,11 @@ export function aimOf(doc: DesignDocument, tool: SketchTool, pointer: SketchXY |
   if (!anchor) return pointer;
   if (tool.kind === "rectangle") return rectangleCorner(anchor, pointer, locks);
   // A circle's typed diameter: the point half of it from the centre, the pointer's way (the preview's rim point; the click's radius is `withLocks`').
-  if (tool.kind === "circle") return lineEnd(anchor, pointer, { length: locks.diameter === undefined ? undefined : locks.diameter / 2 });
+  // With no way to read (a phone's tap leaves the pointer on the centre) it goes along +x: a circle is the same circle whichever way its rim point lies.
+  if (tool.kind === "circle") {
+    if (locks.diameter === undefined) return lineEnd(anchor, pointer, {});
+    return lineEnd(anchor, pointer, { length: locks.diameter / 2 }) ?? lineEnd(anchor, null, { length: locks.diameter / 2, angle: 0 });
+  }
   if (tool.kind !== "centre") return lineEnd(anchor, pointer, locks);
   if (tool.start === null) return lineEnd(anchor, pointer, { length: locks.radius, angle: locks.angle });
   return locks.sweep === undefined ? pointer : centreEnd(anchor, tool.start, wayRound(tool, pointer) * locks.sweep);

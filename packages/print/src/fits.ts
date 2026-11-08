@@ -175,6 +175,71 @@ export type Fit =
   | { role: "hole"; kind: "bolt-close" | "bolt-normal" | "screw-thread" }
   | { role: "hole" | "peg"; kind: keyof typeof GAPS; partner: "bought" | "printed" };
 
+/** The fit kinds that need a metric size as the diameter (a bolt or a screw). */
+const SCREW_KINDS = ["bolt-close", "bolt-normal", "screw-thread"] as const;
+
+/**
+ * Every fit a hole or peg can be tagged with (FK2), each with an id (kept in the select's value) and its words in the
+ * fit list, in the order the list shows them. Bolt and screw fits first, then pins and pegs by how tight.
+ */
+export const FIT_CHOICES: readonly { id: string; fit: Fit; label: string; group: string }[] = [
+  { id: "bolt-normal", fit: { role: "hole", kind: "bolt-normal" }, label: "Clearance hole for a bolt", group: "Bolt or screw (the diameter is its M size)" },
+  { id: "bolt-close", fit: { role: "hole", kind: "bolt-close" }, label: "Close clearance hole for a bolt", group: "Bolt or screw (the diameter is its M size)" },
+  { id: "screw-thread", fit: { role: "hole", kind: "screw-thread" }, label: "Hole a screw cuts its own thread in", group: "Bolt or screw (the diameter is its M size)" },
+  ...(["bought", "printed"] as const).flatMap((partner) =>
+    (["press", "slide", "loose"] as const).map((kind) => ({
+      id: `hole-${kind}-${partner}`,
+      fit: { role: "hole" as const, kind, partner },
+      label: `${partner === "bought" ? "Hole for a metal pin or shaft" : "Hole for a printed peg"}: ${kind} fit`,
+      group: "Hole for a pin or peg (the diameter is the pin's)",
+    })),
+  ),
+  ...(["printed", "bought"] as const).flatMap((partner) =>
+    (["press", "slide", "loose"] as const).map((kind) => ({
+      id: `peg-${kind}-${partner}`,
+      fit: { role: "peg" as const, kind, partner },
+      label: `${partner === "printed" ? "Peg into a printed hole" : "Peg into a bearing or bushing"}: ${kind} fit`,
+      group: "Peg (the diameter is the hole's)",
+    })),
+  ),
+];
+
+/** A fit's id in FIT_CHOICES. */
+export function fitId(fit: Fit): string {
+  return "partner" in fit ? `${fit.role}-${fit.kind}-${fit.partner}` : fit.kind;
+}
+
+/** The fit with id `id`, or null for any other text. */
+export function fitOfId(id: string): Fit | null {
+  return FIT_CHOICES.find((c) => c.id === id)?.fit ?? null;
+}
+
+/**
+ * Whether `v` is a Fit exactly as a file must hold one: an object with only `role` and `kind` for a bolt or screw
+ * fit (a hole), or only `role`, `kind` and `partner` for a pin or peg fit. Anything else, extra keys included, is not.
+ */
+export function isFit(v: unknown): v is Fit {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o).sort().join(",");
+  if ((SCREW_KINDS as readonly unknown[]).includes(o.kind)) return keys === "kind,role" && o.role === "hole";
+  return keys === "kind,partner,role" && (o.role === "hole" || o.role === "peg") && Object.hasOwn(GAPS, o.kind as string) && (o.partner === "bought" || o.partner === "printed");
+}
+
+/**
+ * A fit's short tag beside a circle's diameter on the sketch ("M3 bolt", "pin, slide"), for the diameter `d`; a
+ * bolt or screw fit on a size that is not an M size says so, as it can't be printed fitted.
+ */
+export function fitTag(fit: Fit, d: number): string {
+  if (!("partner" in fit)) {
+    if (typeof targetSize(fit, d) !== "number") return "bolt fit: not an M size";
+    const n = Number(d.toFixed(3));
+    return fit.kind === "bolt-normal" ? `M${n} bolt` : fit.kind === "bolt-close" ? `M${n} bolt, close` : `M${n} thread`;
+  }
+  const what = fit.role === "hole" ? (fit.partner === "bought" ? "pin" : "peg hole") : fit.partner === "printed" ? "peg" : "into bearing";
+  return `${what}, ${fit.kind}`;
+}
+
 /** A fit's name in words, for the size `d` typed. */
 export function fitWords(fit: Fit, d: number): string {
   const n = Number(d.toFixed(3));

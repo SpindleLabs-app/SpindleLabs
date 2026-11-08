@@ -60,8 +60,8 @@ test("opened with nothing kept: the typical sizes, said to be an estimate, with 
   assert.equal(items.length, 3);
   assert.equal(t.$<HTMLButtonElement>("fit-cal-save").disabled, true);
   assert.equal(t.$<HTMLButtonElement>("fit-cal-forget").disabled, true);
-  // Says plainly that tagging holes comes next.
-  assert.match(t.$("fit-cal-soon").textContent!, /^Coming next: tag a hole or peg/);
+  // Says plainly how holes are tagged (FK2) and that printing them at the fitted size comes next (FK3).
+  assert.match(t.$("fit-cal-soon").textContent!, /^Coming next: holes and pegs you tag with \+ Fit under a circle's Diameter/);
 });
 
 test("typing the worked piece shows what it means before saving; Save keeps it for this nozzle only", () => {

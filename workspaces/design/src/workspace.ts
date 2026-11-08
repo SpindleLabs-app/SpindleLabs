@@ -54,7 +54,8 @@ import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectio
 import { measureView } from "./measure-view.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
-import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, setCircleFit, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { fitPicker } from "./fit-tag.ts";
 import { dragTo, grabProblem } from "./point-drag.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
@@ -74,7 +75,7 @@ import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep,
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import { toggleConstruction } from "./construction.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
-import { rememberedBetterGrip, rememberedWarmUp, type PrintFacts } from "@fission/print";
+import { rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } from "@fission/print";
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
@@ -1718,6 +1719,38 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       drawSketches();
     },
   });
+  // FK2: the fit list under the Diameter box tags the circle a diameter dimension sizes (at once, its own undo step),
+  // or each circle the Circle tool draws next. The number stays the design's size.
+  const fitList = fitPicker(viewport.element.ownerDocument, (fit) => pickFit(fit));
+  typed.under("diameter", fitList.element);
+  /** The fit the list shows now: the Circle tool's, or the dimensioned circle's. */
+  function fitNow(): Fit | null {
+    if (mode.kind !== "edit") return null;
+    const tool = mode.tool;
+    if (tool.kind === "circle") return tool.fit ?? null;
+    if (isConstraintTool(tool) && tool.pending?.kind === "diameter") {
+      const circle = tool.pending.circle;
+      const c = designDoc().sketches.find((s) => s.id === tool.sketch)?.curves.find((q) => q.id === circle);
+      return c?.kind === "circle" ? (c.fit ?? null) : null;
+    }
+    return null;
+  }
+  function pickFit(fit: Fit | null) {
+    if (mode.kind !== "edit") return;
+    const tool = mode.tool;
+    if (tool.kind === "circle") {
+      const { fit: _old, ...rest } = tool;
+      mode.tool = fit ? { ...rest, fit } : rest;
+    } else if (isConstraintTool(tool) && tool.pending?.kind === "diameter") {
+      const got = setCircleFit(designDoc(), tool.sketch, tool.pending.circle, fit);
+      if ("refused" in got) sketchBox.showError(got.refused);
+      else if (got.step) applySketchEdit(got.doc, got.step, tool.sketch);
+    }
+    fitList.set(fitNow());
+    drawSketches();
+    // Back to the number, so Enter places the circle or the dimension as before.
+    viewport.element.ownerDocument.getElementById("typed-diameter")?.focus();
+  }
   /** What the next click places, by the pointer ("Specify next point"). */
   const hint = pointerHint(viewport.element);
   /** Empties the boxes: a point placed, the tool changed or ended, the sketch left. */
@@ -1786,6 +1819,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const live = pending ? { [typedFields(tool)[0]]: pending.value } : anchor && aim ? liveValues(anchor, aim, tool) : {};
     // A dimension's box stays by its label: the next thing is typing, not a tap on a point, and moving it off the points sent it
     // to the view's far corner on almost any small sketch (the solver bug hunt, 2026-11-06).
+    fitList.set(fitNow());
     typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, pending ? undefined : viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");

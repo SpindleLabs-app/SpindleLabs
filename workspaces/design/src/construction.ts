@@ -29,7 +29,11 @@ export function toggleConstruction(doc: DesignDocument, sketchId: string, ids: r
   const turned = new Set(picked.map((c) => c.id));
   const curves = sketch.curves.map((c): SketchCurve => {
     if (!turned.has(c.id)) return c;
-    if (on) return { ...c, construction: true };
+    // A construction circle makes no hole or peg, so a fit it held (FK2) goes with it.
+    if (on) {
+      const { fit: _fit, ...rest } = c as SketchCurve & { fit?: unknown };
+      return { ...rest, construction: true } as SketchCurve;
+    }
     const { construction: _, ...rest } = c;
     return rest as SketchCurve;
   });

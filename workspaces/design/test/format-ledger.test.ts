@@ -33,13 +33,15 @@ export function propertyNames(source: string, name: string): string[] {
 // a version 8 reader would build as the sketch's one outline. Version 8 (47e, 47f): construction curves
 // (`construction` on each curve kind) and dimensions (two new constraint kinds), which a version 7 reader would build
 // without. Changing any list: see the top of this file.
-const LEDGER_VERSION = 13;
+// Design data version 14 (FK2): a circle tagged with its fit (`fit` on SketchCircleCurve), which a version 13 reader
+// would drop on saving, losing what the hole is for.
+const LEDGER_VERSION = 14;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
   { file: "workspaces/design/src/document.ts", type: "KeptShape", names: ["points", "curves", "placement"] },
   { file: "workspaces/design/src/document.ts", type: "SketchLineCurve", names: ["id", "kind", "start", "end", "construction"] },
-  { file: "workspaces/design/src/document.ts", type: "SketchCircleCurve", names: ["id", "kind", "centre", "radius", "construction"] },
+  { file: "workspaces/design/src/document.ts", type: "SketchCircleCurve", names: ["id", "kind", "centre", "radius", "construction", "fit"] },
   { file: "workspaces/design/src/document.ts", type: "SketchArcCurve", names: ["id", "kind", "start", "end", "centre", "construction"] },
   { file: "workspaces/design/src/document.ts", type: "SketchDistance", names: ["id", "kind", "a", "b", "value"] },
   { file: "workspaces/design/src/document.ts", type: "SketchDiameter", names: ["id", "kind", "circle", "value"] },
