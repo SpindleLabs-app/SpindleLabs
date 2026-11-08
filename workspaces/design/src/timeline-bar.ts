@@ -767,8 +767,13 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
   const scroll = old?.scrollLeft ?? 0;
   const markerWas = lastMarkers.get(slot);
   lastMarkers.set(slot, marker);
+  // A keyboard user's focused item would go with the old bar (focus falling to the page, so the Delete pressed next did
+  // nothing: the merge queue's view-menu.mjs flake): the same item on the new bar takes focus back.
+  const on = document.activeElement;
+  const had = on !== null && slot.contains(on) ? on.closest<HTMLElement>("[data-item]")?.dataset.item : undefined;
   slot.replaceChildren(row);
   list.scrollLeft = scroll;
+  if (had !== undefined) [...list.querySelectorAll<HTMLElement>("[data-item]")].find((el) => el.dataset.item === had)?.focus({ preventScroll: true });
   const shown = list.querySelector<HTMLElement>(".timeline-bar-more-slot") ?? (markerWas !== undefined && markerWas !== marker ? list.querySelector<HTMLElement>(".timeline-bar-marker") : null);
   if (shown) {
     // The picked item and its ⋯ together; measured from the start of the scrolled row, as `barEdges` measures.
