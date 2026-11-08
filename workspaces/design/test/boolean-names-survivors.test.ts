@@ -1,4 +1,5 @@
 // @ts-nocheck
+// 
 // Step 35ed3: cases killing the mutants of boolean-names.ts that the
 // kernel cases and seeded sessions let through (Stryker target "combine",
 // packages/testing/stryker/combine.json). Small bodies written by hand
@@ -340,4 +341,18 @@ test("resolveEdgeName: a name without ends that two edges fit is ambiguous; one 
   assert.deepEqual(resolveEdgeName(two, "edge:a+b"), { ambiguous: 2 });
   const one = { edges: [[{ name: "edge:a+b;ends:c,e", faces: ["a", "b"], ends: ["c", "e"] }]] };
   assert.deepEqual(resolveEdgeName(one, "edge:a+b"), { lost: true });
+});
+
+// Survivors 11-08 (issue #424, seen again on 465fed8).
+
+test("resolveFaceName: the one face carrying the name, with the reference's two-name tag, is found without a warning though its origin lies off it", () => {
+  // One face carries face:a; its tag (all its neighbours, no other piece to tell apart) is [p, q]. A reference tagged
+  // [q, p] (sorted: "face:p,face:q") with its origin at (5, 5, 5), off the face (the view's mesh is empty, so the face
+  // holds no point), has its tag: the face it was drawn on, no warning. (Comparing the tag joined with "" against the
+  // reference's joined with ",", or never matching by tag, would leave only the origin and so warn "whole".)
+  const b = body("body:x", 1, view(), [["face:a"]]);
+  const names = { tagFor: () => ["face:p", "face:q"], edges: [[]] };
+  assert.deepEqual(resolveFaceName([b], names, { name: "face:a", tag: ["face:q", "face:p"], origin: [5, 5, 5] }), { body: 0, index: 0, warning: null });
+  // The same face with another tag and the origin still off it: the piece it was drawn on is gone, so found, warned.
+  assert.deepEqual(resolveFaceName([b], names, { name: "face:a", tag: ["face:r"], origin: [5, 5, 5] }), { body: 0, index: 0, warning: "whole" });
 });

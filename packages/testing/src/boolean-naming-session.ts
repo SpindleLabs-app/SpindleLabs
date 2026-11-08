@@ -260,7 +260,7 @@ export function shapeDifference(a: Shape, b: Shape, labels: readonly [string, st
 function modelFinds(r: BooleanRebuild, ref: SessionReference, faults: readonly BooleanFault[]): string {
   if (ref.kind === "edge") {
     const e = resolveEdge(r, ref.name);
-    return "lost" in e ? "lost" : "ambiguous" in e ? `ambiguous ${e.ambiguous}` : `${e.body} ${e.found.name}`;
+    return "lost" in e ? "lost" : "ambiguous" in e ? `ambiguous ${e.ambiguous}` : `${e.body} ${e.found.name}${e.warning ? " (warned)" : ""}`;
   }
   const f = resolveFace(r, ref, faults);
   if ("lost" in f) return "lost";
@@ -270,8 +270,8 @@ function modelFinds(r: BooleanRebuild, ref: SessionReference, faults: readonly B
 
 function cellsFinds(r: CellsRebuild, ref: SessionReference): string {
   if (ref.kind === "edge") {
-    const e = resolveEdgeOnCells(r, ref.name);
-    return e === "lost" ? "lost" : "ambiguous" in e ? `ambiguous ${e.ambiguous}` : `${e.body} ${e.full}`;
+    const { found: e, warned } = resolveEdgeOnCells(r, ref.name);
+    return e === "lost" ? "lost" : "ambiguous" in e ? `ambiguous ${e.ambiguous}` : `${e.body} ${e.full}${warned ? " (warned)" : ""}`;
   }
   const { found, warned } = resolveOnCells(r, ref);
   if (found === "lost") return "lost";

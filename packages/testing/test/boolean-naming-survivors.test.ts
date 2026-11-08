@@ -383,3 +383,55 @@ test("rule 5: a name without ends that two edges between its faces fit is ambigu
   one.bodies[0].edges[0] = { ...one.bodies[0].edges[0], name: "edge:a+b;ends:c,e" };
   assert.deepEqual(resolveEdge(one, "edge:a+b"), { lost: true });
 });
+
+// Survivors 11-08 (issue #423, seen again on 465fed8).
+
+test("rule 3: a tagged reference whose piece is gone finds the one face left with its name, warned unless that face has its tag or holds its origin", () => {
+  // A bar x 0–10, y 0–2, z 0–8, cut through by a slab z 2–4: the bottom piece (z 0–2, the bar's start cap wholly in
+  // it) keeps body:feature-1, 10 × 2 × 2 = 40; the top (z 4–8, 80) is body:feature-2/piece:1. Each piece's x = 0 side
+  // carries the bar's line 4; the top's is tagged with its neighbours the bottom's lacks: the bar's end cap (z = 8) and
+  // the slab's end (its z = 4 wall).
+  const cut = [block("feature-1", [0, 0, 10, 2], [0, 8]), block("feature-2", [-1, -1, 11, 3], [2, 4], "cut", ["body:feature-1"])];
+  const before = rebuildBooleans(cut);
+  assert.deepEqual(bodies(before), ["body:feature-1 40 0,0,0", "body:feature-2/piece:1 80 0,0,4"]);
+  assert.equal(faceOn(before, "body:feature-2/piece:1", "-x", 0).full, "face:feature-1/side:line-4#face:feature-1/end,face:feature-2/end");
+  // A block x 0–10, y 0–3, z 5–7 has the top piece cut from it (Combine, tool not kept): the top piece is gone, and
+  // what is left of the block is y 2–3, 10 × 1 × 2 = 20, its x = 0 side its own (the tool's lay in the same plane).
+  // Only the bottom piece's x = 0 side carries the bar's line 4 now: no other piece, so its tag is every neighbour,
+  // sorted: the bar's line 1 and line 3 sides, its start cap and the slab's start (its z = 2 wall).
+  const r = rebuildBooleans([...cut, block("feature-3", [0, 0, 10, 3], [5, 7]), combine("feature-4", "body:feature-3", ["body:feature-2/piece:1"], "cut")]);
+  assert.deepEqual(bodies(r), ["body:feature-1 40 0,0,0", "body:feature-3 20 0,2,5"]);
+  const name = "face:feature-1/side:line-4";
+  const left = faceOn(r, "body:feature-1", "-x", 0);
+  const said = (ref: Parameters<typeof resolveFace>[1]) => {
+    const f = resolveFace(r, ref);
+    return "found" in f ? `${f.body} ${f.found === left} ${f.warning}` : JSON.stringify(f);
+  };
+  // Drawn on the top piece (its tag), origin (0, 1, 6) on it: the bottom's side has neither, so it is found, warned.
+  const topTag = ["face:feature-1/end", "face:feature-2/end"];
+  assert.equal(said({ name, tag: topTag, origin: [0, 1, 6] }), "body:feature-1 true whole");
+  // The same tag with its origin (0, 1, 1) on the bottom's side: it holds the origin, so no warning.
+  assert.equal(said({ name, tag: topTag, origin: [0, 1, 1] }), "body:feature-1 true null");
+  // The bottom's own tag (four names), origin off it: it has the tag, so no warning.
+  const ownTag = ["face:feature-1/side:line-1", "face:feature-1/side:line-3", "face:feature-1/start", "face:feature-2/start"];
+  assert.equal(said({ name, tag: ownTag, origin: [0, 1, 6] }), "body:feature-1 true null");
+  // No origin (or no tag): nothing tells the face is not the reference's, so no warning.
+  assert.equal(said({ name, tag: topTag }), "body:feature-1 true null");
+  assert.equal(said({ name, origin: [0, 1, 6] }), "body:feature-1 true null");
+});
+
+test("rule 4: a cut's wall made of two tools' faces lists the tools' names in the order picked, not made", () => {
+  // A bar x 0–30, y 0–10, z 0–10; tools A x 5–15 (made second) and B x 15–25 (made third), both y −1–5 through the
+  // bar's height. Combine cuts the bar with B picked first, then A: one notch x 5–25, y 0–5, 30 × 10 × 10 − 20 × 5 ×
+  // 10 = 2000 left. Its back wall at y = 5 faces −y and lies on both tools' line 3 sides (y = 5), turned: no input face
+  // facing −y lies there, so each name ranks by the body holding it, in the order [bar, B, A]: B's, then A's, though
+  // A's was made first.
+  const r = rebuildBooleans([
+    block("feature-1", [0, 0, 30, 10], [0, 10]),
+    block("feature-2", [5, -1, 15, 5], [-1, 11]),
+    block("feature-3", [15, -1, 25, 5], [-1, 11]),
+    combine("feature-4", "body:feature-1", ["body:feature-3", "body:feature-2"], "cut"),
+  ]);
+  assert.deepEqual(bodies(r), ["body:feature-1 2000 0,0,0"]);
+  assert.deepEqual(faceOn(r, "body:feature-1", "-y", 5).names, ["face:feature-3/side:line-3", "face:feature-2/side:line-3"]);
+});

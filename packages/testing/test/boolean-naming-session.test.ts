@@ -7,9 +7,9 @@
 // session disagree, so the sessions are shown to be able to fail.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BOOLEAN_FAULTS, ORDER_FAULTS, type BlockFeature, type BooleanFault, type Rect } from "../src/boolean-naming-model.ts";
-import { cellsCanCount, countOnCells, resolveOnCells } from "../src/boolean-naming-cells.ts";
-import { firstDifference, invarianceDifference, moved, nameBack, randomBooleanSession, strangeIds } from "../src/boolean-naming-session.ts";
+import { BOOLEAN_FAULTS, ORDER_FAULTS, type BlockFeature, type BooleanFault, type BooleanFeature, type CombineFeature, type Rect } from "../src/boolean-naming-model.ts";
+import { cellsCanCount, countOnCells, resolveEdgeOnCells, resolveOnCells } from "../src/boolean-naming-cells.ts";
+import { firstDifference, invarianceDifference, moved, nameBack, randomBooleanSession, strangeIds, type BooleanSession } from "../src/boolean-naming-session.ts";
 
 const block = (id: string, rect: Rect, z: [number, number], operation: BlockFeature["operation"] = "new", bodies?: string[]): BlockFeature => ({ kind: "block", id, rect, z, operation, bodies });
 
@@ -164,4 +164,73 @@ test("names put back after renaming: ids renamed back and every list sorted by t
   const ids = [...strangeIds([block("feature-1", [0, 0, 1, 1], [0, 1])]).values()];
   assert.deepEqual(ids.slice(0, 2), ["z0 /+#,;@:x", "y1 /+#,;@:x"]);
   assert.ok(ids.every((id, i) => i === 0 || id < ids[i - 1]));
+});
+
+test("the unit-cell count by hand: a tagged reference whose piece is gone is found on the one face left with its name, warned", () => {
+  // A bar x 0–10, y 0–2, z 0–8 cut through by a slab z 2–4: the bottom piece (z 0–2) keeps body:feature-1, the top
+  // (z 4–8) is body:feature-2/piece:1, its x = 0 side tagged with the bar's end cap and the slab's end. A block
+  // x 0–10, y 0–3, z 5–7 has the top piece cut from it (tool not kept): only the bottom's x = 0 side (x 0, y 0–2,
+  // z 0–2) still carries the bar's line 4, tagged with all four of its neighbours.
+  const cut = [block("feature-1", [0, 0, 10, 2], [0, 8]), block("feature-2", [-1, -1, 11, 3], [2, 4], "cut", ["body:feature-1"])];
+  const combine: CombineFeature = { kind: "combine", id: "feature-4", target: "body:feature-3", tools: ["body:feature-2/piece:1"], operation: "cut", keepTools: false };
+  const r = countOnCells([...cut, block("feature-3", [0, 0, 10, 3], [5, 7]), combine]);
+  const name = "face:feature-1/side:line-4";
+  const left = { body: "body:feature-1", full: name };
+  const topTag = ["face:feature-1/end", "face:feature-2/end"];
+  // The top's tag and an origin (0, 1, 6) on the top: the bottom's side has neither, so found and warned.
+  assert.deepEqual(resolveOnCells(r, { name, tag: topTag, origin: [0, 1, 6] }), { found: left, warned: true });
+  // An origin (0, 1, 1) on the bottom's side, or the bottom's own tag, or no origin: found, not warned.
+  assert.deepEqual(resolveOnCells(r, { name, tag: topTag, origin: [0, 1, 1] }), { found: left, warned: false });
+  assert.deepEqual(resolveOnCells(r, { name, tag: ["face:feature-1/side:line-1", "face:feature-1/side:line-3", "face:feature-1/start", "face:feature-2/start"], origin: [0, 1, 6] }), { found: left, warned: false });
+  assert.deepEqual(resolveOnCells(r, { name, tag: topTag }), { found: left, warned: false });
+});
+
+test("the unit-cell count by hand: an edge name with ends finds its own, or the only edge left between its faces, said", () => {
+  // A bar x 0–30, y 0–10, z 0–10 with a notch cut from its bottom front, x 10–20, y 0–3, z 0–5: the bar's front
+  // (y = 0) and bottom (z = 0) now meet twice, x 0–10 and x 20–30, each 10 long, told apart by their ends: the bar's
+  // x = 0 side and the notch's x = 10 wall (its line 4), and the notch's x = 20 wall (its line 2) and the bar's x = 30
+  // side.
+  const pair = "edge:face:feature-1/side:line-1+face:feature-1/start";
+  const near = `${pair};ends:face:feature-1/side:line-4,face:feature-2/side:line-4`;
+  const notched = [block("feature-1", [0, 0, 30, 10], [0, 10]), block("feature-2", [10, -1, 20, 3], [-1, 5], "cut", ["body:feature-1"])];
+  const before = countOnCells(notched);
+  assert.deepEqual(resolveEdgeOnCells(before, near), { found: { body: "body:feature-1", full: near }, warned: false });
+  // Ends neither has: lost (two edges, none its own); no ends at all: the two fit, ambiguous.
+  assert.deepEqual(resolveEdgeOnCells(before, `${pair};ends:face:feature-1/end,face:feature-1/side:line-3`), { found: "lost", warned: false });
+  assert.deepEqual(resolveEdgeOnCells(before, pair), { found: { ambiguous: 2 }, warned: false });
+  // A block filling the notch joins: one front, one bottom, meeting once along x 0–30, named without ends. The
+  // reference with the near edge's ends finds that one edge, said (its ends changed); without ends, it is the name.
+  const after = countOnCells([...notched, block("feature-3", [10, 0, 20, 3], [0, 5], "join", ["body:feature-1"])]);
+  assert.deepEqual(resolveEdgeOnCells(after, near), { found: { body: "body:feature-1", full: pair }, warned: true });
+  assert.deepEqual(resolveEdgeOnCells(after, pair), { found: { body: "body:feature-1", full: pair }, warned: false });
+});
+
+/**
+ * Sessions kept from failures, each the shortest timeline (and its references) found: the model and the unit-cell
+ * count must agree at every step. The seed it was shrunk from and what went wrong are beside it.
+ */
+const KEPT: { from: string; features: BooleanFeature[]; references: BooleanSession["references"] }[] = [
+  // Seed 277 (11-08, 2,000-seed search): an edge reference with ;ends: whose two faces now meet once, with other ends: model found it, the cell count said lost.
+  {
+    from: "seed 277",
+    features: [{"kind": "block", "id": "feature-1", "rect": [2, 2, 4, 7], "z": [1, 4], "operation": "new", "lines": ["line-5", "line-4", "line-1", "line-2"]}, {"kind": "block", "id": "feature-3", "rect": [1, 5, 6, 8], "z": [1, 5], "operation": "join", "bodies": ["body:feature-1"], "lines": ["line-4", "line-6", "line-5", "line-2"]}, {"kind": "block", "id": "feature-4", "rect": [5, 4, 8, 8], "z": [4, 6], "operation": "join", "bodies": ["body:feature-1"], "lines": ["line-5", "line-1", "line-2", "line-3"]}, {"kind": "block", "id": "feature-5", "rect": [6, -1, 7, 9], "z": [-1, 7], "operation": "cut", "bodies": ["body:feature-1"], "lines": ["line-1", "line-2", "line-4", "line-5"]}, {"kind": "block", "id": "feature-7", "rect": [3, 3, 6, 7], "z": [1, 4], "operation": "join", "bodies": ["body:feature-1", "body:feature-5/piece:1"]}],
+    references: [{"after": 2, "ref": {"kind": "edge", "name": "edge:face:feature-1/start+face:feature-3/side:line-4;ends:face:feature-1/side:line-4,face:feature-3/side:line-6"}}],
+  },
+  // Seed 400 (11-08, 2,000-seed search): a tagged face reference whose piece is gone, the one face left with neither its tag nor its origin: model warned, the cell count did not.
+  {
+    from: "seed 400",
+    features: [{"kind": "block", "id": "feature-3", "rect": [0, 2, 3, 3], "z": [0, 6], "operation": "new"}, {"kind": "block", "id": "feature-4", "rect": [-1, -1, 9, 9], "z": [2, 3], "operation": "new"}, {"kind": "block", "id": "feature-5", "rect": [-1, -1, 9, 9], "z": [4, 5], "operation": "new"}, {"kind": "combine", "id": "feature-6", "target": "body:feature-3", "tools": ["body:feature-4", "body:feature-5"], "operation": "cut", "keepTools": true}, {"kind": "combine", "id": "feature-7", "target": "body:feature-5", "tools": ["body:feature-6/piece:2", "body:feature-3"], "operation": "cut", "keepTools": false}],
+    references: [{"after": 3, "ref": {"kind": "face", "name": "face:feature-3/side:line-4", "origin": [0, 2, 1], "tag": ["face:feature-3/start", "face:feature-4/start"]}}],
+  },
+  // Seed 540 (11-08, 2,000-seed search): the same, minimised to two features.
+  {
+    from: "seed 540",
+    features: [{"kind": "block", "id": "feature-1", "rect": [5, 4, 8, 7], "z": [3, 6], "operation": "new"}, {"kind": "block", "id": "feature-6", "rect": [-1, -1, 9, 9], "z": [4, 6], "operation": "cut", "bodies": ["body:feature-1"]}],
+    references: [{"after": 1, "ref": {"kind": "face", "name": "face:feature-1/side:line-1", "origin": [7, 4, 6], "tag": ["face:feature-5/end", "face:feature-6/end"]}}],
+  },
+  // KEPT-MUTANTS
+];
+
+test("kept sessions: the model and the unit-cell count agree at every step", () => {
+  for (const k of KEPT) assert.equal(firstDifference({ seed: 0n, features: k.features, references: k.references }), null, k.from);
 });
