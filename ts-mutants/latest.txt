@@ -1,4 +1,4 @@
-tested commit 6e6f717 on claude/project-thread-ich6rn, 2026-11-08 11:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42458665600)
+tested commit 9bc61b0 on claude/project-thread-ich6rn, 2026-11-08 15:17 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42468244995)
 core: 10 survivors, all explained: true
 design: 67 survivors, all explained: true
 storage: 59 survivors, all explained: true
@@ -8,12 +8,4 @@ svg: 4 survivors, all explained: true
 viewport: 35 survivors, all explained: true
 ai: 23 survivors, all explained: true
 naming: 152 survivors, all explained: true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | ConditionalExpression | at.length === 1 && ours.filter((o) => o.key === r.key).length === 1 => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | LogicalOperator | at.length === 1 && ours.filter((o) => o.key === r.key).length === 1 => at.length === 1 || ours.filter(o => o.key === r.key).length === 1
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | ConditionalExpression | at.length === 1 => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:222: workspaces/design/src/boolean-names.ts | ConditionalExpression | ours.filter((o) => o.key === r.key).length === 1 => true
-UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:232: workspaces/design/src/boolean-names.ts | MethodExpression | rest.some((p) => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key) => rest.every(p => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key)
-explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/boolean-names.ts | ArrayDeclaration | [] => ["Stryker was here"]
-explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/boolean-names.ts | ArrayDeclaration | [] => ["Stryker was here"]
-combine: 61 survivors, all explained: false
-7 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+combine: 56 survivors, all explained: true

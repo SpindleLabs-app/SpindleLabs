@@ -18,3 +18,4 @@
 2026-11-07 22:32,465fed8,main,FLAG Design: shape to STL: slowest 1.89 s = 45.20× the fixed workload, baseline 1.16 s (64% over, flag above 15%, fail above 100%)
 2026-11-08 07:23,b8e42a7,claude/project-thread-ich6rn,FLAG Design: shape to STL: slowest 1.49 s = 44.13× the fixed workload, baseline 1.16 s (29% over, flag above 15%, fail above 100%)
 2026-11-08 11:21,6e6f717,claude/project-thread-ich6rn,FLAG Design: shape to STL: slowest 1.62 s = 46.79× the fixed workload, baseline 1.16 s (40% over, flag above 15%, fail above 100%)
+2026-11-08 15:17,9bc61b0,claude/project-thread-ich6rn,FLAG Design: shape to STL: slowest 1.44 s = 43.11× the fixed workload, baseline 1.16 s (24% over, flag above 15%, fail above 100%)
