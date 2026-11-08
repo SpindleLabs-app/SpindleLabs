@@ -476,7 +476,10 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
       const built = rebuild(doc);
       const before = new Set(doc.items.slice(0, insertAt(doc)).map((i) => i.id));
       const bodies = built.order.filter((id) => before.has(id) && built.results[id].status === "built" && (built.results[id] as { body?: unknown }).body !== undefined);
-      const first = choose(bodies, step.pick);
+      // 35f1f2a: while a Combine's result is shown, half the Moves move one (rare otherwise: most Combines a session makes
+      // are refused or left unmodelled), the pick's halves read as fresh draws.
+      const combined = bodies.filter((id) => (built.results[id] as { body?: ModelBody }).body?.combined);
+      const first = combined.length === 0 ? choose(bodies, step.pick) : step.pick < 0.5 ? choose(combined, 2 * step.pick) : choose(bodies, 2 * step.pick - 1);
       if (first === undefined) return null;
       const second = step.other === null ? undefined : choose(bodies.filter((b) => b !== first), step.other);
       return edit({ op: "add-move", bodies: second === undefined ? [first] : [first, second], shift: step.shift, turnZ: step.turnZ, pivot: step.pivot });
@@ -998,6 +1001,12 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
       if (item?.kind === "combine") {
         count(`combine:${r.status === "failed" ? `failed-${r.cause}` : r.status}`);
         if (r.status === "built") count(`combine:${item.operation}${item.keep ? "-keep" : ""}${r.pieces ? "-pieces" : ""}`);
+      }
+      // 35f1f2a: a Move built after a Combine built on a body it moves: it moved that Combine's result.
+      if (item?.kind === "move" && r.status === "built") {
+        const at = expected.order.indexOf(id);
+        const after = (b: string) => model.doc.items.some((c) => c.kind === "combine" && c.target === b && expected.results[c.id]?.status === "built" && expected.order.indexOf(c.id) < at);
+        if (item.bodies.some(after)) count("move:combine-result");
       }
     }
     prev = now;

@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -35,6 +35,12 @@ export interface KernelOps {
    * result face and edge came from, by input handle. A refusal keeps nothing.
    */
   body_boolean: { args: [target: BodyHandle, tools: BodyHandle[], op: BooleanOp]; result: BooleanResult };
+  /**
+   * The kept body `body` moved, turned, scaled or mirrored by `moves` in order
+   * (35f1f2a: a Combine's result, which no spec builds): a new kept body, the
+   * one given left as it was. Refused as a moved spec's moves are.
+   */
+  body_move: { args: [body: BodyHandle, moves: Motion[]]; result: BodyHandle };
   /** Measures one pick, or two (step 35e2l): their facts, the least distance with its two points, the angle and centre to centre. */
   body_measure: { args: [first: MeasurePick, second: MeasurePick | null]; result: Measured };
   /** How many bodies the kernel keeps: tests check what they build they free. */
@@ -463,6 +469,7 @@ export class KernelClient implements KernelCalls {
         return handle as KernelOps[K]["result"];
       });
     }
+    if (op === "body_move") return this.move(...(args as KernelOps["body_move"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     if (op === "body_boolean") return this.boolean(...(args as KernelOps["body_boolean"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     // Measure's picks name bodies by the app's handles: each sent as the kernel's number (35e2l2).
     if (op === "body_measure") {
@@ -525,6 +532,26 @@ export class KernelClient implements KernelCalls {
           edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
         })),
       };
+    });
+  }
+
+  /**
+   * body_move with the app's handles (35f1f2a): the input's kernel number
+   * sent, the moved body given a handle of its own, sized as the input
+   * (a move changes where a body is, never how many faces it has).
+   */
+  private move(body: BodyHandle, moves: Motion[], units: number): Promise<BodyHandle> {
+    const held = this.bodies.get(body);
+    if (!held) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${body} is not in the kernel (it was freed, or never made)` }));
+    const worker = this.worker;
+    const size = this.sizes.get(body);
+    return this.send("body_move", [held.body, moves], units).then((reply) => {
+      const handle = this.nextBody++;
+      if (worker === this.worker) {
+        this.bodies.set(handle, { worker, body: reply as BodyHandle });
+        if (size) this.sizes.set(handle, size);
+      } else this.retired.add(handle);
+      return handle;
     });
   }
 

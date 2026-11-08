@@ -598,6 +598,8 @@ test("seeded sessions: Design's timeline on the real kernel passes runSession fo
     "builds:most",
     // Step 24f4: a design with nothing built saved and opened, like any other.
     "save-open:nothing-built",
+    // 35f1f2a: a Move of a Combine's result, built.
+    "move:combine-result",
   ];
   const missing = wanted.filter((k) => !total[k]);
   assert.deepEqual(missing, [], `never reached: ${missing.join(", ")}`);
