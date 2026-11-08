@@ -2612,20 +2612,6 @@
   },
   {
     "file": "workspaces/design/src/boolean-names.ts",
-    "mutator": "ArrayDeclaration",
-    "original": "[]",
-    "replacement": "[\"Stryker was here\"]",
-    "why": "resolveOldEdge's fallback for a face index past the body's faces: \"Stryker was here\" is never a face name looked for (they are face:… names), so includes is false either way."
-  },
-  {
-    "file": "workspaces/design/src/boolean-names.ts",
-    "mutator": "ArrayDeclaration",
-    "original": "[]",
-    "replacement": "[\"Stryker was here\"]",
-    "why": "resolveOldEdge's fallback for a face index past the body's faces: \"Stryker was here\" is never a face name looked for (they are face:… names), so includes is false either way."
-  },
-  {
-    "file": "workspaces/design/src/boolean-names.ts",
     "mutator": "EqualityOperator",
     "original": "found.length > 1",
     "replacement": "found.length >= 1",

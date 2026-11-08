@@ -390,3 +390,34 @@ test("resolveOldEdge: a side the view lists past the body's faces holds no names
     assert.deepEqual(resolveOldEdge([b], "face:a", "Stryker was here"), { lost: true }, String(pair));
   }
 });
+
+test("combineNames: a remembered number goes only to the one piece with its faces, when no other remembered piece has them", () => {
+  // Pieces 1 and 2 (after the keeper, piece 0) have the tool's faces a and b alone: shown [face:u/a] and [face:u/b];
+  // piece 1 is first (the larger, 20 against 10).
+  const t = body("body:t", 1, view(), [["face:t/a"]]);
+  const tool = body("body:u", 2, view(), [["face:u/a"], ["face:u/b"]]);
+  const result = { bodies: [100, 101, 102], history: [{ faces: [{ body: 1, face: 0 }] }, { faces: [{ body: 2, face: 0 }] }, { faces: [{ body: 2, face: 1 }] }] };
+  const views = [view({ face_areas: [1] }), view({ volume: 20, face_areas: [1] }), view({ volume: 10, face_areas: [1] })];
+  const run = (remembered) => {
+    const r = combineNames("feature-9", "difference", t, [tool], result, views, 1, new Map(remembered));
+    return [r.bodies.slice(1).map((b) => b.id), r.renumbered];
+  };
+  // Piece 3 remembered with b's faces: piece 2 takes 3, piece 1 the lowest free, 1. Nothing renumbered.
+  assert.deepEqual(run([["body:feature-9/piece:3", ["face:u/b"]]]), [["body:feature-9/piece:1", "body:feature-9/piece:3"], []]);
+  // Piece 1 remembered with faces no piece has now: it goes to no piece, so 1 is free again and piece 1 takes it,
+  // which is a number given to another piece's faces: renumbered. Piece 2 takes 2.
+  assert.deepEqual(run([["body:feature-9/piece:1", ["face:u/z"]]]), [["body:feature-9/piece:1", "body:feature-9/piece:2"], ["body:feature-9/piece:1"]]);
+  // Pieces 5 and 7 both remembered with b's faces: neither can be told apart, so neither is given; the pieces take 1 and 2.
+  assert.deepEqual(run([["body:feature-9/piece:5", ["face:u/b"]], ["body:feature-9/piece:7", ["face:u/b"]]]), [["body:feature-9/piece:1", "body:feature-9/piece:2"], []]);
+});
+
+test("combineNames: two pieces with the same faces share a remembered piece's faces, so neither is given its number", () => {
+  // Pieces 1 and 2 both show [face:u/a] (each a part of the tool's face a): piece 5 remembered with those faces
+  // matches two pieces, so it is given to neither; they take 1 and 2 (the larger first).
+  const t = body("body:t", 1, view(), [["face:t/a"]]);
+  const tool = body("body:u", 2, view(), [["face:u/a"]]);
+  const result = { bodies: [100, 101, 102], history: [{ faces: [{ body: 1, face: 0 }] }, { faces: [{ body: 2, face: 0 }] }, { faces: [{ body: 2, face: 0 }] }] };
+  const views = [view({ face_areas: [1] }), view({ volume: 20, face_areas: [1] }), view({ volume: 10, face_areas: [1] })];
+  const r = combineNames("feature-9", "difference", t, [tool], result, views, 1, new Map([["body:feature-9/piece:5", ["face:u/a"]]]));
+  assert.deepEqual([r.bodies.map((b) => [b.id, b.handle]), r.nextPiece], [[["body:t", 100], ["body:feature-9/piece:1", 101], ["body:feature-9/piece:2", 102]], 3]);
+});
