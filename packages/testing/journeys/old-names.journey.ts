@@ -29,13 +29,16 @@ import {
   drawLine,
   edgeNamed,
   edgeName,
+  edgeNow,
   extrudeSketch,
   inSketch,
+  namesOfBody,
   partDocument,
   pinNow,
   readDesignDocument,
   rebuildTimeline,
   resolveReference,
+  ruleFiveName,
   sharedBy,
   shownBodies,
   vertexNames,
@@ -120,9 +123,53 @@ interface Tally {
   disagree: string[];
 }
 
-/** One body's checks: every name of each kind found both ways. */
-function checkBody(body: ShownBody, tally: Tally, savedNames: { kind: "face" | "edge" | "part" | EdgeKind; name: string }[], faults: OldNameFault[]): void {
-  const { view, names } = body;
+/**
+ * A Combine's result's edges as a pin or projection holds them (35f1f2b:
+ * "design:" and rule 5's name, design-edges.ts), found both ways: Design by
+ * the string (`edgeNow`, over the whole design), and here by the two faces'
+ * full names the name holds (and, for ";ends:", the faces at its ends), read
+ * off the kernel's view and the design's face names only.
+ */
+function checkHeld(body: ShownBody, tally: Tally): void {
+  if (!body.combined || body.design === undefined || body.design.at < 0) return;
+  const { of, at } = body.design;
+  const { view } = body;
+  const full = of.names.full[at];
+  // Rule 5's ends: the first name of each other face meeting the edge at either end.
+  const shown = (f: number) => of.bodies[at].faces[f]?.names[0];
+  const atEnds = (e: number) => {
+    const pair = view.edge_faces[e] ?? [];
+    const out = new Set<string>();
+    for (const v of new Set(view.edge_vertices[e]))
+      for (let o = 0; o < view.edge_faces.length; o++)
+        if (view.edge_vertices[o].includes(v))
+          for (const f of view.edge_faces[o] ?? []) {
+            const n = shown(f);
+            if (!pair.includes(f) && n !== undefined) out.add(n);
+          }
+    return [...out].sort().join(",");
+  };
+  body.names.edges.forEach((held, e) => {
+    if (held === null) return;
+    tally.names++;
+    tally.byKind.held = (tally.byKind.held ?? 0) + 1;
+    const now = edgeNow(held, of.names);
+    const design = "cause" in now ? (now.cause === "point-ambiguous" ? "ambiguous" : "lost") : now.body === at && now.name === held ? `#${e}` : `body ${now.body} ${now.name}`;
+    const rule5 = ruleFiveName(held);
+    let read = "unread";
+    if (rule5 !== null) {
+      const [pair, ends] = rule5.slice("edge:".length).split(";ends:") as [string, string | undefined];
+      const faces = pair.split("+").sort();
+      const fit = view.edge_faces.flatMap((p, k) => (p !== null && [full[p[0]], full[p[1]]].sort().join("+") === faces.join("+") && (ends === undefined || atEnds(k) === ends) ? [k] : []));
+      read = fit.length === 1 ? `#${fit[0]}` : fit.length > 1 ? "ambiguous" : "lost";
+    }
+    if (design !== read) tally.disagree.push(`held ${body.names.feature}/${held}: Design ${design}, read ${read}`);
+  });
+}
+
+/** One body's checks: every name of each kind found both ways. `names` are the body's own (a Combine's result's before its edges are held by rule 5). */
+function checkBody(body: ShownBody, names: ShownBody["names"], tally: Tally, savedNames: { kind: "face" | "edge" | "part" | EdgeKind; name: string }[], faults: OldNameFault[]): void {
+  const { view } = body;
   const feature = names.feature;
   const nb: NewBody = newNames(feature, names, view);
   const record = (kind: string, name: string, old: string, now: string, saved: boolean) => {
@@ -264,7 +311,9 @@ async function sweep(faults: OldNameFault[] = []): Promise<Tally & { bodies: num
       for (const body of await shownBodies(doc, build, cache)) {
         bodies++;
         const before = tally.disagree.length;
-        checkBody(body, tally, saved.get(body.feature) ?? [], faults);
+        // Old names on a Combine's result are checked on its own names, as before 35f1f2b; its held names on their own.
+        checkBody(body, body.combined ? namesOfBody(build.bodies[body.body], body.view) : body.names, tally, saved.get(body.feature) ?? [], faults);
+        checkHeld(body, tally);
         for (let k = before; k < tally.disagree.length; k++) tally.disagree[k] = `${label}: ${tally.disagree[k]}`;
       }
       // Every name the file holds, once each: checked on its body, or listed.
