@@ -1,11 +1,25 @@
-tested commit 9bc61b0 on claude/project-thread-ich6rn, 2026-11-08 15:17 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42468244995)
+tested commit 591dc01 on claude/project-thread-ich6rn, 2026-11-08 18:27 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42498195803)
 core: 10 survivors, all explained: true
-design: 67 survivors, all explained: true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1732: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1733: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1739: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1121: workspaces/design/src/document.ts | ConditionalExpression | typeof p.edge === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1241: workspaces/design/src/document.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1122: workspaces/design/src/document.ts | ConditionalExpression | there !== undefined && typeof p.edge === "string" && !isCombineItem(there.item) && isHeldDesignName(p.edge) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1122: workspaces/design/src/document.ts | StringLiteral | "string" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1122: workspaces/design/src/document.ts | StringLiteral | `${name} has a Combine result's edge name but is of ${shown(p.feature)}, which is not a Combine` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1511: workspaces/design/src/document.ts | ArrowFunction | (k) => curves(k.curves) => () => undefined
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | MethodExpression | list.some((x) => isRecord(x) && typeof x[key] === "string" && isHeldDesignName(x[key])) => list.every(x => isRecord(x) && typeof x[key] === "string" && isHeldDesignName(x[key]))
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | ConditionalExpression | isRecord(x) && typeof x[key] === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | LogicalOperator | isRecord(x) && typeof x[key] === "string" => isRecord(x) || typeof x[key] === "string"
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | ConditionalExpression | typeof x[key] === "string" => true
+design: 80 survivors, all explained: false
+13 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 storage: 59 survivors, all explained: true
 account: 10 survivors, all explained: true
 model: 46 survivors, all explained: true
 svg: 4 survivors, all explained: true
 viewport: 35 survivors, all explained: true
-ai: 23 survivors, all explained: true
-naming: 152 survivors, all explained: true
-combine: 56 survivors, all explained: true
+ai: no report (the job stopped before the check)
+naming: no report (the job stopped before the check)
+combine: no report (the job stopped before the check)

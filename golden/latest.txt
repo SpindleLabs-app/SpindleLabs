@@ -1,47 +1,47 @@
-tested commit 94d9e6b on claude/project-thread-ich6rn, 2026-11-08 16:35 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42487008228)
-seed 1794151053, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794151053 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-box-minus-box: 50 rebuilds, fastest 3.3 ms, slowest 12.8 ms, OK
-bracket-two-holes: 50 rebuilds, fastest 2.4 ms, slowest 13.2 ms, OK
-enclosure: 50 rebuilds, fastest 1.4 ms, slowest 3.1 ms, OK
-f2-gap-join: 50 rebuilds, fastest 2.5 ms, slowest 6.9 ms, OK
-far-wall-outside: 50 rebuilds, fastest 3.7 ms, slowest 5.5 ms, OK
-flush-blocks: 50 rebuilds, fastest 3.1 ms, slowest 10.2 ms, OK
-gear: 50 rebuilds, fastest 13.1 ms, slowest 17.4 ms, OK
-hollow-box: 50 rebuilds, fastest 3.5 ms, slowest 40.2 ms, OK
-km-plate: 50 rebuilds, fastest 3.5 ms, slowest 8.3 ms, OK
-l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 1.1 ms, OK
-micron-cube-halved: 50 rebuilds, fastest 1.1 ms, slowest 4.2 ms, OK
-small-cube-halved: 50 rebuilds, fastest 2.6 ms, slowest 9.9 ms, OK
-stepped-boss: 50 rebuilds, fastest 2.2 ms, slowest 7.4 ms, OK
-thirty-features: 50 rebuilds, fastest 8.7 ms, slowest 13.5 ms, OK
+tested commit 591dc01 on claude/project-thread-ich6rn, 2026-11-08 18:27 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42498195803)
+seed 1794156410, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794156410 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+box-minus-box: 50 rebuilds, fastest 2.5 ms, slowest 5.3 ms, OK
+bracket-two-holes: 50 rebuilds, fastest 1.8 ms, slowest 3.2 ms, OK
+enclosure: 50 rebuilds, fastest 0.9 ms, slowest 2.6 ms, OK
+f2-gap-join: 50 rebuilds, fastest 1.9 ms, slowest 5.1 ms, OK
+far-wall-outside: 50 rebuilds, fastest 2.8 ms, slowest 5.5 ms, OK
+flush-blocks: 50 rebuilds, fastest 2.3 ms, slowest 5.1 ms, OK
+gear: 50 rebuilds, fastest 9.2 ms, slowest 18.4 ms, OK
+hollow-box: 50 rebuilds, fastest 2.6 ms, slowest 31.8 ms, OK
+km-plate: 50 rebuilds, fastest 2.6 ms, slowest 4.4 ms, OK
+l-bracket: 50 rebuilds, fastest 0.3 ms, slowest 1.1 ms, OK
+micron-cube-halved: 50 rebuilds, fastest 0.9 ms, slowest 7.9 ms, OK
+small-cube-halved: 50 rebuilds, fastest 1.9 ms, slowest 5.3 ms, OK
+stepped-boss: 50 rebuilds, fastest 1.6 ms, slowest 3.5 ms, OK
+thirty-features: 50 rebuilds, fastest 5.9 ms, slowest 23.0 ms, OK
 | metric | baseline | now | change | |
 | app.golden_box_minus_box.kernel_calls | 8 | 8 | +0.0% |  |
-| app.golden_box_minus_box.relative_time | 0.0688 | 0.0616 | -10.5% |  |
+| app.golden_box_minus_box.relative_time | 0.0688 | 0.0587 | -14.7% |  |
 | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-| app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0447 | +9.3% |  |
+| app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0411 | +0.5% |  |
 | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-| app.golden_enclosure.relative_time | 0.0284 | 0.0239 | -15.8% | better: lower the baseline? |
+| app.golden_enclosure.relative_time | 0.0284 | 0.0197 | -30.6% | better: lower the baseline? |
 | app.golden_f2_gap_join.kernel_calls | 7 | 7 | +0.0% |  |
-| app.golden_f2_gap_join.relative_time | 0.0453 | 0.0468 | +3.3% |  |
+| app.golden_f2_gap_join.relative_time | 0.0453 | 0.0456 | +0.7% |  |
 | app.golden_far_wall_outside.kernel_calls | 8 | 8 | +0.0% |  |
-| app.golden_far_wall_outside.relative_time | 0.0715 | 0.0686 | -4.1% |  |
+| app.golden_far_wall_outside.relative_time | 0.0715 | 0.0694 | -2.9% |  |
 | app.golden_flush_blocks.kernel_calls | 7 | 7 | +0.0% |  |
-| app.golden_flush_blocks.relative_time | 0.0586 | 0.0568 | -3.1% |  |
+| app.golden_flush_blocks.relative_time | 0.0586 | 0.0576 | -1.7% |  |
 | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-| app.golden_gear.relative_time | 0.2412 | 0.2426 | +0.6% |  |
+| app.golden_gear.relative_time | 0.2412 | 0.2329 | -3.4% |  |
 | app.golden_hollow_box.kernel_calls | 8 | 8 | +0.0% |  |
-| app.golden_hollow_box.relative_time | 0.067 | 0.0644 | -3.9% |  |
+| app.golden_hollow_box.relative_time | 0.067 | 0.0632 | -5.7% |  |
 | app.golden_km_plate.kernel_calls | 8 | 8 | +0.0% |  |
-| app.golden_km_plate.relative_time | 0.0651 | 0.0651 | +0.0% |  |
+| app.golden_km_plate.relative_time | 0.0651 | 0.0645 | -0.9% |  |
 | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-| app.golden_l_bracket.relative_time | 0.0065 | 0.0055 | -15.4% | better: lower the baseline? |
+| app.golden_l_bracket.relative_time | 0.0065 | 0.0047 | -27.7% | better: lower the baseline? |
 | app.golden_micron_cube_halved.kernel_calls | 7 | 7 | +0.0% |  |
-| app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0195 | -6.2% |  |
+| app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0194 | -6.7% |  |
 | app.golden_models.failed_percent | 0 | 0 | - |  |
 | app.golden_small_cube_halved.kernel_calls | 8 | 8 | +0.0% |  |
-| app.golden_small_cube_halved.relative_time | 0.0472 | 0.0472 | +0.0% |  |
+| app.golden_small_cube_halved.relative_time | 0.0472 | 0.0465 | -1.5% |  |
 | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-| app.golden_stepped_boss.relative_time | 0.039 | 0.0405 | +3.8% |  |
+| app.golden_stepped_boss.relative_time | 0.039 | 0.0392 | +0.5% |  |
 | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-| app.golden_thirty_features.relative_time | 0.1632 | 0.1636 | +0.2% |  |
+| app.golden_thirty_features.relative_time | 0.1632 | 0.1459 | -10.6% |  |
 0 metric(s) failed, 0 flagged, 2 better.
