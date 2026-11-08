@@ -7,7 +7,7 @@
 // target's piece keeping its id.
 
 import type { Feature } from "@fission/core";
-import { bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, makesPieces, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, makesPieces, numberedWhenBuilt, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
 
 /** The undo step a new Combine is recorded as. */
 export const COMBINE_STEP = "Combine bodies";
@@ -47,7 +47,7 @@ function itemsFor(doc: DesignDocument, target: string, tools: readonly string[],
     const item = bodyItem(b);
     const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[place];
-    if (f === undefined || !(isPiece(b) ? makesPieces(f) && numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
+    if (f === undefined || !(numberedWhenBuilt(b, f) ? makesPieces(f) && numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
     if (place >= end) throw new Error(`${f.provenance.self.label} comes after ${at} can't use it`);
     return f;
   });
@@ -117,7 +117,8 @@ export function changedCombine(doc: DesignDocument, id: string, target: string, 
 
 /** The design with the remembered faces of item `id`'s pieces in `forget` dropped (hunt 11-06), their numbers kept: a Combine's, or an operation extrude's (its edit confirms them, as a Combine's does). */
 export function forgetPieces(doc: DesignDocument, id: string, forget: readonly string[]): DesignDocument {
-  const ours = (b: { id: string; faces?: string[] }) => b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === id && forget.includes(b.id);
+  // An Extrude Join's own body too (version 16): it is remembered as its pieces are.
+  const ours = (b: { id: string; faces?: string[] }) => b.faces !== undefined && (isPiece(b.id) || b.id === `body:${id}`) && bodyItem(b.id) === id && forget.includes(b.id);
   if (!doc.bodies?.some(ours)) return doc;
   return { ...doc, bodies: doc.bodies.map((b) => (ours(b) ? { id: b.id, number: b.number } : b)) };
 }

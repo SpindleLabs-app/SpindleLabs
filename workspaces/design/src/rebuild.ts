@@ -1254,8 +1254,10 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // Rule 1 for an Extrude join (docs/document-model.md section 8): each piece holding a body it joins keeps the
   // earliest made one's id, by the item in the id, then the item's own body before its pieces, by number.
   const joins = isOperationExtrude(f) && operation === "join";
+  // And its piece holding only the extrude is its own body (version 16), numbered and remembered by its faces as a piece.
+  const own = joins ? bodyIdOf(f.id) : undefined;
   const madeKey = (id: string): [number, number] => [places.get(bodyItem(id)!) ?? Infinity, isPiece(id) ? Number(id.slice(id.lastIndexOf(":") + 1)) : 0];
-  const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
+  const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && (isPiece(b.id) || b.id === own) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
   const pieceFaces: Record<string, string[]> = {};
   const renumbered: string[] = [];
   for (const step of steps) {
@@ -1300,7 +1302,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       throw e;
     }
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
-    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered);
+    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
     // Each input's item, for a piece keeping its id (an Extrude join's other bodies, hunt 11-08).
@@ -1311,7 +1313,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
       work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
-      if (!featureOf.has(nb.id)) {
+      if (!featureOf.has(nb.id) || nb.id === own) {
         firstPiece++;
         if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
       }

@@ -38,7 +38,10 @@ export function propertyNames(source: string, name: string): string[] {
 // Design data version 15 (35f1f2b): a pin's `name` or a projection's `edge` may hold a Combine result's edge by its name
 // across the design ("design:…", its `feature` the Combine), in fields already listed, so nothing new below; a version 14
 // reader would hold such a point where it was.
-const LEDGER_VERSION = 15;
+// Design data version 16 (hunt 11-08): an Extrude Join's piece holding only the extrude is `body:<the extrude>`, where
+// version 15 named it piece 1 (the upgrade renames every body id in the data), in fields already listed (a BodyRecord's
+// `id` and `faces`), so nothing new below; a version 15 reader would refuse the extrude's own id as a body.
+const LEDGER_VERSION = 16;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

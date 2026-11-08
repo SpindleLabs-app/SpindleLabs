@@ -11,7 +11,7 @@
 // them: it is added to the timeline at the marker and replaces nothing.
 
 import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fission/core";
-import { bodyIdOf, bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, extrudeOperation, isCombineItem, isDuplicateItem, isMoveItem, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, extrudeOperation, isCombineItem, isDuplicateItem, isMoveItem, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, numberedWhenBuilt, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 import { lengthRefused } from "./typed-entry.ts";
@@ -93,7 +93,7 @@ function makersFor(doc: DesignDocument, bodies: readonly string[], end: number, 
     const item = bodyItem(b);
     const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[place];
-    if (f === undefined || !(isPiece(b) ? makesPieces(f) && (doc.bodies ?? []).some((x) => x.id === b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
+    if (f === undefined || !(numberedWhenBuilt(b, f) ? makesPieces(f) && (doc.bodies ?? []).some((x) => x.id === b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
     if (place >= end) throw new Error(`${f.provenance.self.label} comes after ${at} can't use it`);
     return f;
   });
@@ -219,7 +219,8 @@ export function setExtrudeOperation(doc: DesignDocument, id: string, choice: Ope
   const feature: Feature = { ...made, intent: { ...made.intent, summary: summary(label, old.intent.parameters.distance as number, isFlipped(old), made) } };
   // The bodies it stops making: its own (a new body becoming Join, Cut or Intersect), or its pieces (back to a new body).
   // A later item working on one of them refuses the change; an eye shut on one goes with it (else the file would not open).
-  const gone = was === null ? [bodyIdOf(id)] : choice === null ? (doc.bodies ?? []).map((b) => b.id).filter((b) => isPiece(b) && bodyItem(b) === id) : [];
+  // A Join's own body (version 16) goes when it stops being a Join: as a new body again it is that body, so it stays.
+  const gone = was === null ? [bodyIdOf(id)] : choice === null ? (doc.bodies ?? []).map((b) => b.id).filter((b) => isPiece(b) && bodyItem(b) === id) : was.operation === "join" && choice.operation !== "join" ? [bodyIdOf(id)] : [];
   for (const later of doc.timeline.features.slice(at + 1)) {
     const used = bodiesUsed(later).find((b) => gone.includes(b));
     if (used !== undefined) {
@@ -231,6 +232,8 @@ export function setExtrudeOperation(doc: DesignDocument, id: string, choice: Ope
   const hidden = doc.hidden?.filter((h) => !gone.includes(h)) ?? [];
   if (hidden.length === 0) delete eyes.hidden;
   else if (hidden.length !== doc.hidden!.length) eyes.hidden = hidden;
+  // A Join made a new body again: its own body is that body, which remembers no faces (version 16 keeps them only on a Join's).
+  if (choice === null && eyes.bodies?.some((b) => b.id === bodyIdOf(id) && b.faces !== undefined)) eyes.bodies = eyes.bodies.map((b) => (b.id === bodyIdOf(id) ? { id: b.id, number: b.number } : b));
   return numberBodies({ ...eyes, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } });
 }
 

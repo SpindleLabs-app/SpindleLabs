@@ -109,11 +109,11 @@ test("the Circle tool tags each circle it draws with the fit picked, until anoth
   assert.equal(Object.hasOwn(sketchOf(plain.doc, t.sketch).curves.at(-1)!, "fit"), false);
 });
 
-test("saved and read back exactly, version 15; every broken fit in a file is refused with the reason", () => {
+test("saved and read back exactly, version 16; every broken fit in a file is refused with the reason", () => {
   const t = withCircle();
   const tagged = ok(setCircleFit(t.doc, t.sketch, t.circle, PIN_SLIDE)).doc;
   const json = JSON.parse(JSON.stringify(tagged));
-  assert.equal(json.version, 15);
+  assert.equal(json.version, 16);
   assert.deepEqual(readDesignDocument(json), readDesignDocument(tagged));
   // Through the project file too.
   const project = projectFromJson(projectToJson({ ...emptyProject(), workspaces: { design: tagged } }), [designWorkspace]);
@@ -133,7 +133,7 @@ test("saved and read back exactly, version 15; every broken fit in a file is ref
   assert.throws(() => readDesignDocument(withCurve((c) => (c.fit = M3), t.line)), { message: `${at}: curve ${t.line} has a fit, which only a circle holds` });
   // Version 13 never held a fit.
   assert.throws(() => readDesignDocument({ ...json, version: 13 }), { message: "Design data says version 13 but has a circle tagged with its fit, which version 14 brought" });
-  // Untagged version 13 data opens as version 15, unchanged.
+  // Untagged version 13 data opens as version 16, unchanged.
   const plain = JSON.parse(JSON.stringify(t.doc));
   assert.deepEqual(readDesignDocument({ ...plain, version: 13 }), readDesignDocument(plain));
   // A kept shape's circle may keep its fit (a lost sketch's last shape), and is checked the same way.
