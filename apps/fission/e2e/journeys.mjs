@@ -452,6 +452,8 @@ try {
 } finally {
   await browser.close();
   await new Promise((r) => server.httpServer.close(r));
+  // Main's build too: left open, it kept node running after the last check until the job's time ran out (the soak never ran).
+  if (referenceServer) await new Promise((r) => referenceServer.httpServer.close(r));
 }
 console.log(`journey numbers: ${JSON.stringify(measured)}`);
 if (failed) process.exit(1);
