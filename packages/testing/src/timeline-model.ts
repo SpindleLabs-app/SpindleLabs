@@ -355,6 +355,8 @@ export type ModelFault =
   | "combine-first-piece"
   | "combine-face-moves-with-target"
   | "combine-edge-tags-dropped"
+  | "combine-move-refused"
+  | "combine-move-frames-kept"
   | "duplicate-no-body"
   | "duplicate-source-names";
 
@@ -400,6 +402,8 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "combine-first-piece",
   "combine-face-moves-with-target",
   "combine-edge-tags-dropped",
+  "combine-move-refused",
+  "combine-move-frames-kept",
   "duplicate-no-body",
   "duplicate-source-names",
 ];
@@ -762,8 +766,9 @@ function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: Re
     if (r === undefined) return { status: "failed", cause: "deleted-input", input: id };
     if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: id };
   }
-  // 35f1d2: a Combine's result can't be moved until the app has the kernel's body_move (Design fails it in words).
-  if (item.bodies.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
+  // 35f1f2a: a Combine's result moves like any body (Design asks the kernel's body_move), each face carrying its own motion.
+  // Planted bug ("combine-move-refused"): a Combine's result can't be moved, as before 35f1f2a.
+  if (faults.has("combine-move-refused") && item.bodies.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
   // Planted bug ("move-not-held"): the Move builds but its bodies stay where they were.
   if (!faults.has("move-not-held"))
     for (const id of item.bodies) {
@@ -863,9 +868,16 @@ function moved(body: ModelBody, m: MoveItem, faults: ReadonlySet<ModelFault>): M
   // Planted bug ("move-shift-then-turn"): shifted first, then turned about the pivot.
   const at = (p: Vec3): Vec3 => (faults.has("move-shift-then-turn") ? turn(shift(p)) : shift(turn(p)));
   // 35e2h: its motion so far followed by this one: R(m)(R(a) p + t) + … turns by a + m and takes t where `at` takes the point t.
-  const was = body.motion ?? { a: 0, t: [0, 0] };
-  const t = at([was.t[0], was.t[1], 0]);
-  return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: at(e.centroid) })), motion: { a: was.a + a, t: [t[0], t[1]] } });
+  const then = (motion: Motion2 | undefined): Motion2 => {
+    const was = motion ?? { a: 0, t: [0, 0] };
+    const t = at([was.t[0], was.t[1], 0]);
+    return { a: was.a + a, t: [t[0], t[1]] };
+  };
+  const edges = body.edges.map((e) => ({ ...e, centroid: at(e.centroid) }));
+  // 35f1f2a: a combined body's faces each carry the motion of the body they came from (35f1e2), each followed by this one.
+  // Planted bug ("combine-move-frames-kept"): a combined body's faces keep the motions they had, as if never moved.
+  if (body.combined) return sameKind(body, { ...body, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid), ...(faults.has("combine-move-frames-kept") ? {} : { motion: then(f.motion) }) })), edges });
+  return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges, motion: then(body.motion) });
 }
 
 /** What the kernel is asked to do for a Move, as Design asks it (move.ts `moveMotions`): the turn when there is one, then the shift when there is one. */

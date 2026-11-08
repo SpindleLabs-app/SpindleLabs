@@ -208,11 +208,20 @@ function spun(v: readonly number[], k: readonly number[], angle: number): Vec3 {
  * `body` and is placed exactly as before 35e2h.
  */
 export function bodyFrame(spec: BodySpec): Plane | null {
-  const moves: readonly Motion[] = "moved" in spec ? spec.moved.moves : [];
-  if (moves.length === 0) return null;
-  let o: Vec3 = [0, 0, 0];
-  let x: Vec3 = [1, 0, 0];
-  let n: Vec3 = [0, 0, 1];
+  return movedFrame(null, "moved" in spec ? spec.moved.moves : []);
+}
+
+/**
+ * Frame `from` (the world's when null) carried on by `moves` as `bodyFrame`
+ * carries the world's (35f1f2a: a Combine's result moved by the kernel's
+ * body_move, each face's frame carried on from where its input body's was).
+ * `from` itself when there are no moves (null stays null).
+ */
+export function movedFrame(from: Plane | null, moves: readonly Motion[]): Plane | null {
+  if (moves.length === 0) return from;
+  let o: Vec3 = from === null ? [0, 0, 0] : [from.origin[0], from.origin[1], from.origin[2]];
+  let x: Vec3 = from === null ? [1, 0, 0] : [from.xAxis[0], from.xAxis[1], from.xAxis[2]];
+  let n: Vec3 = from === null ? [0, 0, 1] : [from.normal[0], from.normal[1], from.normal[2]];
   for (const m of moves) {
     if ("move" in m) {
       o = add(o, m.move);
