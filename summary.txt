@@ -1,7 +1,7 @@
 New failures this run (kinds of problem no earlier run found): 0
 new-failures.csv has one line per run; kinds-seen.txt lists every kind found so far.
 
-SpindleLabs random testing, all runs so far (updated 2026-11-08 15:17 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-11-08 16:35 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -19,9 +19,9 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit 9bc61b0 on claude/project-thread-ich6rn, 2026-11-08 15:17 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42468244995)
-  FLAG Design: shape to STL: slowest 1.44 s = 43.11× the fixed workload, baseline 1.16 s (24% over, flag above 15%, fail above 100%)
-  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.60 s = 77.72× the fixed workload (baseline 9.70 s), 0.98× main's build on the same runner
+  tested commit 94d9e6b on claude/project-thread-ich6rn, 2026-11-08 16:35 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42487008228)
+  FLAG Design: shape to STL: slowest 1.46 s = 42.98× the fixed workload, baseline 1.16 s (26% over, flag above 15%, fail above 100%)
+  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.75 s = 82.97× the fixed workload (baseline 9.70 s), 1.02× main's build on the same runner
   PENDING Box to laser panels: waits for Laser (L1–L3), X13
   PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
   PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
@@ -30,57 +30,57 @@ Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, 
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit 9bc61b0 on claude/project-thread-ich6rn, 2026-11-08 15:17 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42468244995)
-  seed 1794136926, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794136926 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  box-minus-box: 50 rebuilds, fastest 3.3 ms, slowest 7.8 ms, OK
-  bracket-two-holes: 50 rebuilds, fastest 2.4 ms, slowest 3.3 ms, OK
-  enclosure: 50 rebuilds, fastest 1.4 ms, slowest 4.8 ms, OK
-  f2-gap-join: 50 rebuilds, fastest 2.5 ms, slowest 5.5 ms, OK
+  tested commit 94d9e6b on claude/project-thread-ich6rn, 2026-11-08 16:35 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42487008228)
+  seed 1794151053, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794151053 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  box-minus-box: 50 rebuilds, fastest 3.3 ms, slowest 12.8 ms, OK
+  bracket-two-holes: 50 rebuilds, fastest 2.4 ms, slowest 13.2 ms, OK
+  enclosure: 50 rebuilds, fastest 1.4 ms, slowest 3.1 ms, OK
+  f2-gap-join: 50 rebuilds, fastest 2.5 ms, slowest 6.9 ms, OK
   far-wall-outside: 50 rebuilds, fastest 3.7 ms, slowest 5.5 ms, OK
-  flush-blocks: 50 rebuilds, fastest 3.0 ms, slowest 7.3 ms, OK
-  gear: 50 rebuilds, fastest 13.0 ms, slowest 33.6 ms, OK
-  hollow-box: 50 rebuilds, fastest 3.4 ms, slowest 4.9 ms, OK
-  km-plate: 50 rebuilds, fastest 3.5 ms, slowest 41.7 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 0.7 ms, OK
-  micron-cube-halved: 50 rebuilds, fastest 1.1 ms, slowest 9.2 ms, OK
-  small-cube-halved: 50 rebuilds, fastest 2.5 ms, slowest 3.5 ms, OK
-  stepped-boss: 50 rebuilds, fastest 2.2 ms, slowest 3.6 ms, OK
-  thirty-features: 50 rebuilds, fastest 8.6 ms, slowest 15.8 ms, OK
+  flush-blocks: 50 rebuilds, fastest 3.1 ms, slowest 10.2 ms, OK
+  gear: 50 rebuilds, fastest 13.1 ms, slowest 17.4 ms, OK
+  hollow-box: 50 rebuilds, fastest 3.5 ms, slowest 40.2 ms, OK
+  km-plate: 50 rebuilds, fastest 3.5 ms, slowest 8.3 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 1.1 ms, OK
+  micron-cube-halved: 50 rebuilds, fastest 1.1 ms, slowest 4.2 ms, OK
+  small-cube-halved: 50 rebuilds, fastest 2.6 ms, slowest 9.9 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.2 ms, slowest 7.4 ms, OK
+  thirty-features: 50 rebuilds, fastest 8.7 ms, slowest 13.5 ms, OK
   | metric | baseline | now | change | |
   | app.golden_box_minus_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0623 | -9.4% |  |
+  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0616 | -10.5% |  |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0442 | +8.1% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0447 | +9.3% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0252 | -11.3% |  |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0239 | -15.8% | better: lower the baseline? |
   | app.golden_f2_gap_join.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0466 | +2.9% |  |
+  | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0468 | +3.3% |  |
   | app.golden_far_wall_outside.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0693 | -3.1% |  |
+  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0686 | -4.1% |  |
   | app.golden_flush_blocks.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_flush_blocks.relative_time | 0.0586 | 0.057 | -2.7% |  |
+  | app.golden_flush_blocks.relative_time | 0.0586 | 0.0568 | -3.1% |  |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.244 | +1.2% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2426 | +0.6% |  |
   | app.golden_hollow_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_hollow_box.relative_time | 0.067 | 0.0645 | -3.7% |  |
+  | app.golden_hollow_box.relative_time | 0.067 | 0.0644 | -3.9% |  |
   | app.golden_km_plate.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_km_plate.relative_time | 0.0651 | 0.0654 | +0.5% |  |
+  | app.golden_km_plate.relative_time | 0.0651 | 0.0651 | +0.0% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0056 | -13.8% |  |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.0055 | -15.4% | better: lower the baseline? |
   | app.golden_micron_cube_halved.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0199 | -4.3% |  |
+  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0195 | -6.2% |  |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_small_cube_halved.kernel_calls | 8 | 8 | +0.0% |  |
   | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0472 | +0.0% |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.041 | +5.1% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.0405 | +3.8% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1643 | +0.7% |  |
-  0 metric(s) failed, 0 flagged, 0 better.
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.1636 | +0.2% |  |
+  0 metric(s) failed, 0 flagged, 2 better.
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit 9bc61b0 on claude/project-thread-ich6rn, 2026-11-08 15:17 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42468244995)
+  tested commit 94d9e6b on claude/project-thread-ich6rn, 2026-11-08 16:35 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42487008228)
   Monkey, seeds 202611080-202611081: 2 session(s) of 2000 actions in Chromium; 8 Combines made of 30 tried; every check passed after every action
   seed 202611080: pass (2000 actions)
   seed 202611081: pass (2000 actions)
