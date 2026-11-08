@@ -1,0 +1,42 @@
+name: Kernel night clock
+
+# Starts the private kernel's night of random testing (kernel-nightly.yml
+# with night=true) at 15:00 UTC (11pm Perth), because GitHub starts this
+# repo's scheduled runs hours late or not at all (11-06 to 11-08). One clock
+# run at a time sleeps on a runner (at most 5.5 hours) and then starts the
+# next one with workflow_dispatch, which GitHub starts within seconds; the
+# run that finds the night's window open and the night not yet taken starts
+# it. The rules are in .github/scripts/nightly_gate.py (clock).
+#
+# The hourly schedule only restarts a clock that stopped (a cancelled run,
+# a failed start): while a clock runs, a newer run waits in the group, and
+# GitHub keeps only the newest waiting one, so there is never more than one
+# clock. It prints only times and run ids.
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: kernel-night-clock
+  cancel-in-progress: false
+
+jobs:
+  clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      # Starts tonight's run and the next clock run.
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Start tonight's testing when it is due, sleep, start the next clock run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/nightly_gate.py clock kernel-nightly.yml kernel-night-clock.yml
