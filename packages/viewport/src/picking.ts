@@ -47,7 +47,9 @@ export function pointsNear(points: readonly ({ x: number; y: number } | null)[],
     const d = Math.hypot(p.x - at.x, p.y - at.y);
     if (d < reach) near.push({ i, d });
   });
-  return near.sort((a, b) => a.d - b.d || a.i - b.i).map((n) => n.i);
+  // Ties keep index order without a second key: `near` is filled in index order and Array.prototype.sort is stable
+  // (ES2019), so a tie-break by index could never change the order (a mutant swapping it lived, #443).
+  return near.sort((a, b) => a.d - b.d).map((n) => n.i);
 }
 
 /** A rectangle on screen in client (CSS) pixels, as getBoundingClientRect gives. */

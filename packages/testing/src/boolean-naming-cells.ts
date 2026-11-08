@@ -609,7 +609,14 @@ export function resolveOnCells(r: CellsRebuild, ref: { name: string; tag?: reado
   const carrying = all.map((x, i) => ({ ...x, i })).filter((x) => x.f.names.includes(ref.name));
   const one = (x: (typeof carrying)[number]) => ({ body: x.b.id, full: x.f.full });
   if (carrying.length === 0) return { found: "lost", warned: false };
-  if (carrying.length === 1) return { found: one(carrying[0]), warned: false };
+  // One face with the name: it is the reference's face, whole again. Except that a tagged reference whose one face has
+  // neither its tag nor its origin was drawn on a piece now gone, the name surviving elsewhere (a kept tool's own face):
+  // found, and the user told (section 8, rule 3, the 11-06 hunt).
+  if (carrying.length === 1) {
+    const [x] = carrying;
+    const gone = ref.tag !== undefined && r.tagFor(x.i, ref.name).join(",") !== ref.tag.join(",") && ref.origin !== undefined && !faceHolds(x.f, ref.origin);
+    return { found: one(x), warned: gone };
+  }
   if (ref.tag) {
     const tag = ref.tag.join(",");
     const same = carrying.filter((x) => r.tagFor(x.i, ref.name).join(",") === tag);
@@ -623,13 +630,24 @@ export function resolveOnCells(r: CellsRebuild, ref: { name: string; tag?: reado
   return largest.length === 1 ? { found: one(largest[0]), warned: true } : { found: { ambiguous: largest.length }, warned: false };
 }
 
-/** Section 8's edge references by words: the one edge with the name; two or more fitting it (its faces now meet more than once) ambiguous; else lost. */
-export function resolveEdgeOnCells(r: CellsRebuild, name: string): Found {
+/**
+ * Section 8's edge references by words: the one edge with the name; else
+ * the edges between its two faces. A name with `;ends:` takes the one of
+ * them with those ends (two: ambiguous); none with them, the only edge
+ * between the two faces, said (warned); two or more, lost. A name without
+ * ends that two or more fit is ambiguous; one is lost (that edge was named
+ * with its ends, so it is not the reference's).
+ */
+export function resolveEdgeOnCells(r: CellsRebuild, name: string): { found: Found; warned: boolean } {
   const exact = r.bodies.flatMap((b) => b.edges.filter((e) => e.name === name).map(() => ({ body: b.id, full: name })));
-  if (exact.length === 1) return exact[0];
-  const fits = r.bodies.flatMap((b) => b.edges).filter((e) => {
-    const pair = `edge:${e.faces.join("+")}`;
-    return name === pair || name === `${pair};ends:${e.ends.join(",")}`;
-  }).length;
-  return fits > 1 ? { ambiguous: fits } : "lost";
+  if (exact.length === 1) return { found: exact[0], warned: false };
+  const cut = name.indexOf(";ends:");
+  const pair = cut < 0 ? name : name.slice(0, cut);
+  const between = r.bodies.flatMap((b) => b.edges.filter((e) => `edge:${e.faces.join("+")}` === pair).map((e) => ({ b, e })));
+  if (cut < 0) return { found: between.length > 1 ? { ambiguous: between.length } : "lost", warned: false };
+  const ends = name.slice(cut + ";ends:".length);
+  const same = between.filter(({ e }) => e.ends.join(",") === ends);
+  if (same.length > 1) return { found: { ambiguous: same.length }, warned: false };
+  if (same.length === 1) return { found: { body: same[0].b.id, full: String(same[0].e.name) }, warned: false };
+  return between.length === 1 ? { found: { body: between[0].b.id, full: String(between[0].e.name) }, warned: true } : { found: "lost", warned: false };
 }

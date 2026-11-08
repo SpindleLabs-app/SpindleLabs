@@ -179,7 +179,7 @@ test("the file checks: a Combine result's name only on a Combine, and a Combine 
   };
   assert.doesNotThrow(() => readDesignDocument(edit(() => {})));
   // The held name on box A (feature-1), not a Combine: refused.
-  assert.throws(() => readDesignDocument(edit((p, i) => ((p.feature = "feature-1"), (i.dependsOn = ["feature-1"])))), /has a Combine result's name but is on feature-1, which is not a Combine/);
+  assert.throws(() => readDesignDocument(edit((p, i) => ((p.feature = "feature-1"), (i.dependsOn = ["feature-1"])))), /has a Combine result's name but is on feature-1, which is not a Combine or a Duplicate/);
   // A box's own name on the Combine: refused, as a Combine has no faces of its own to name it by.
   assert.throws(() => readDesignDocument(edit((p) => (p.name = "back+right&back+top&right+top"))), /is on feature-4, which is not a solid item before it/);
 });

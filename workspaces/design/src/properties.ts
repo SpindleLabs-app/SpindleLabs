@@ -174,17 +174,28 @@ export interface SizeBox {
   reshow(): void;
 }
 
+/** Each document's followers of the unit (followUnit), each held weakly; one listener a document calls them. */
+const followers = new WeakMap<Document, Set<WeakRef<() => boolean>>>();
+
 /**
- * Calls `onUnit` on each `unitchange` of `doc` while it returns true. The page's listener holds `onUnit` only weakly and
- * is made here, apart from the panel, so its scope holds none of the panel's elements: a closed view is not kept alive
- * by it (a closure shares one scope with its siblings, so the listener must not be made beside the panel's own).
+ * Calls `onUnit` on each `unitchange` of `doc` while it returns true. The page has one listener a document, made
+ * here, apart from any panel, so its scope holds none of the panel's elements: it holds each `onUnit` only weakly, so
+ * a closed view is not kept alive by it. A follower goes when it returns false, and one whose `onUnit` was collected
+ * goes when the next follower comes, so following never adds to the page's listeners: a listener each, left until
+ * the unit next changed, grew by about 13 a soak cycle (#197).
  */
 export function followUnit(doc: Document, onUnit: () => boolean): void {
-  const weak = new WeakRef(onUnit);
-  const listener = () => {
-    if (weak.deref()?.() !== true) doc.removeEventListener(UNIT_EVENT, listener);
-  };
-  doc.addEventListener(UNIT_EVENT, listener);
+  let all = followers.get(doc);
+  if (all === undefined) {
+    const mine = new Set<WeakRef<() => boolean>>();
+    all = mine;
+    followers.set(doc, mine);
+    doc.addEventListener(UNIT_EVENT, () => {
+      for (const f of [...mine]) if (f.deref()?.() !== true) mine.delete(f);
+    });
+  }
+  for (const f of all) if (f.deref() === undefined) all.delete(f);
+  all.add(new WeakRef(onUnit));
 }
 
 /** A size box over `el`, showing the unit `unitNow()` gives, now and after each `reshow`. */

@@ -75,5 +75,5 @@ test("a design-wide name on an extrude that makes a new body is still refused: o
   const extrude = data.timeline.features.find((f: { id: string }) => f.id === b.extrude);
   delete extrude.intent.parameters.operation;
   delete extrude.intent.parameters.bodies;
-  assert.throws(() => readDesignDocument(data), /pin on point-\d+ has a Combine result.s name but is on feature-\d+, which is not a Combine or an extrude that joins, cuts or intersects/);
+  assert.throws(() => readDesignDocument(data), /pin on point-\d+ has a Combine result.s name but is on feature-\d+, which is not a Combine or a Duplicate, or an extrude that joins, cuts or intersects/);
 });

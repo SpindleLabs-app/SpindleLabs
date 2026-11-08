@@ -134,7 +134,7 @@ test("the copy's faces are named by the Duplicate, so a pick on the copy never f
   }
 });
 
-test("a copy is greyed with its suppressed source, fails when the source is deleted, and can't copy a Combine's result yet", async () => {
+test("a copy is greyed with its suppressed source, fails when the source is deleted, and copies a Combine's result (35f1f2c)", async () => {
   const doc = insertDuplicates(twoBodies(), ["body:feature-1"]).doc; // Copy 1: feature-3
   const off = suppressItem(doc, "feature-1", true);
   assert.equal(greyedBy(off, item(off, "feature-3")), "feature-1");
@@ -152,7 +152,8 @@ test("a copy is greyed with its suppressed source, fails when the source is dele
   } finally {
     await gone.close();
   }
-  // Box 1 joined with Box 2 (10 × 10 × 10, inside it), then copied: a Combine's result has no spec to name the copy's faces from.
+  // Box 1 joined with Box 2 (10 × 10 × 10, inside it), then copied: before 35f1f2c refused ("can't copy a Combine's result
+  // yet"); now the copy is the joined body, Box 1's 40 × 30 × 20 = 24,000 mm³ at x/y/z 0..40, 0..30, 0..20 (Box 2 adds nothing).
   const boxes = insertPreset(partDocument("box", 40, 30, 20), "box", 10, 10, 10).doc;
   const joined = insertCombine(boxes, "body:feature-1", ["body:feature-2"], "join", false).doc;
   const j = await built(joined);
@@ -160,7 +161,10 @@ test("a copy is greyed with its suppressed source, fails when the source is dele
   await j.close();
   const c = await built(insertDuplicates(joined, ["body:feature-1"]).doc);
   try {
-    assert.deepEqual(c.build.results["feature-4"], { status: "failed", cause: "error", message: "Copy 1 can't copy a Combine's result yet: that comes with the next kernel release" });
+    assert.deepEqual(c.build.results["feature-4"], { status: "built", bodies: ["body:feature-4"] });
+    const v = await c.view("body:feature-4");
+    assert.equal(Math.round(v.volume * 1e6) / 1e6, 24000);
+    assert.deepEqual(v.bounds.map((p) => p.map((x) => Math.round(x * 1e9) / 1e9 + 0)), [[0, 0, 0], [40, 30, 20]]);
   } finally {
     await c.close();
   }
