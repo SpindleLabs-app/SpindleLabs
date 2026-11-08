@@ -1407,7 +1407,8 @@ function checkDuplicate(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMa
   const id: unknown = p.body;
   const maker = typeof id === "string" ? bodyItem(id) : null;
   const there = maker === null ? undefined : byId.get(maker);
-  const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+  // A piece of a Combine deleted since is allowed too, as a Move's or a Combine's pick of one (Combine bug hunt 11-08: the file would not open).
+  const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
   if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} copies ${shown(id)}, which is not a body made before it in the timeline`);
   if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it copies (${maker})`);
 }

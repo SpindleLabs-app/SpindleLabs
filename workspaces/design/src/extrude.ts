@@ -11,7 +11,7 @@
 // them: it is added to the timeline at the marker and replaces nothing.
 
 import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fission/core";
-import { bodyIdOf, bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, extrudeOperation, isCombineItem, isMoveItem, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, extrudeOperation, isCombineItem, isDuplicateItem, isMoveItem, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 import { lengthRefused } from "./typed-entry.ts";
@@ -227,8 +227,9 @@ export function setExtrudeOperation(doc: DesignDocument, id: string, choice: Ope
   return numberBodies({ ...eyes, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } });
 }
 
-/** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, an extrude's operation's. */
+/** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), an extrude's operation's. */
 function bodiesUsed(f: Feature): string[] {
+  if (isDuplicateItem(f)) return typeof f.intent.parameters.body === "string" ? [f.intent.parameters.body] : [];
   if (isMoveItem(f)) return Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : [];
   if (isCombineItem(f)) {
     const c = combineBodies(f);
