@@ -48,6 +48,12 @@ export interface NamedBody {
   faces: readonly FaceNames[];
   /** Where each name comes in made order: its feature's place in the timeline, then that feature's own order of its faces. */
   made: ReadonlyMap<string, readonly number[]>;
+  /**
+   * An Extrude join's input body (hunt 11-08, docs/document-model.md section 8): its place in made order among the
+   * bodies the extrude joins (0 the earliest made). Each result piece holding one keeps the id of the earliest it
+   * holds; a Combine's inputs leave it out, and then only the target's piece keeps an id.
+   */
+  keepsId?: number;
 }
 
 /**
@@ -145,7 +151,9 @@ export const shownFaces = (faces: readonly FaceNames[]): string[] => [...new Set
  * holds the pieces the data numbered, each by its id and the shown names
  * of its faces when first numbered: each goes to the one piece (not the
  * keeper) with exactly those faces, the only remembered piece with them;
- * the rest take the lowest free numbers in rank order.
+ * the rest take the lowest free numbers in rank order. An Extrude join's
+ * inputs carry `keepsId`: then every piece holding one of them keeps an id
+ * (the earliest made one's), and only a piece holding none is numbered.
  */
 export function combineNames(
   feature: string,
@@ -209,7 +217,15 @@ export function combineNames(
     (p, q) => first[p] - first[q] || sizeCompare(share[p], share[q]) || sizeCompare(views[p].volume, views[q].volume) || cornerCompare(lows[p], lows[q]) || p - q,
   );
   if (keeper < 0) keeper = order[0];
-  const rest = order.filter((p) => p !== keeper);
+  // The pieces keeping an id: the target's; for an Extrude join, each holding a body it joins, with the earliest made
+  // one's id (a body swallowed whole is held by the piece holding its solid, as the target is).
+  const keepers = [target, ...tools].filter((b) => b.keepsId !== undefined).sort((a, b) => a.keepsId! - b.keepsId!);
+  const kept = new Map<number, string>();
+  for (const b of keepers.length > 0 ? keepers : [target]) {
+    const p = b === target ? keeper : holderOf(b, result, views);
+    if (!kept.has(p)) kept.set(p, b.id);
+  }
+  const rest = order.filter((p) => !kept.has(p));
   // Each remembered piece of this Combine to the one piece with its faces, when no other remembered piece has them too.
   const prefix = `body:${feature}/piece:`;
   const numberOf = (id: string) => (id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) ? Number(id.slice(prefix.length)) : null);
@@ -232,7 +248,7 @@ export function combineNames(
   const renumbered = ours.filter((r) => rest.some((p) => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key)).map((r) => r.id);
   const body = (p: number, id: string): NamedBody => ({ id, handle: result.bodies[p], view: views[p], faces: named[p], made });
   return {
-    bodies: [body(keeper, target.id), ...rest.map((p) => body(p, `${prefix}${given.get(p)}`))],
+    bodies: [...[...kept].map(([p, id]) => body(p, id)), ...rest.map((p) => body(p, `${prefix}${given.get(p)}`))],
     nextPiece: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1)),
     renumbered,
   };

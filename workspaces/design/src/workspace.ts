@@ -16,7 +16,7 @@ import { changedMove, factorOf, insertMove, MOVE_STEP, MOVE_VERBS, moveKindOf, m
 import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
-import { changedCombine, COMBINE_STEP, insertCombine } from "./combine.ts";
+import { changedCombine, COMBINE_STEP, forgetPieces, insertCombine } from "./combine.ts";
 import { combinePanel } from "./combine-panel.ts";
 import { combineShown } from "./combine-flag.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
@@ -3507,6 +3507,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return editBox.showError(e instanceof Error ? e.message : String(e));
     }
     if (next === before) return leaveEdit();
+    // Editing an extrude confirms its pieces the last build warned about as they are now, as editing a Combine does (hunt 11-08).
+    next = forgetPieces(next, id, resultsNow[id]?.pieces?.renumbered ?? []);
     editBox.busy(true);
     let refused: string | null;
     try {

@@ -1119,8 +1119,8 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
     const b = r?.status === "built" ? bodies[body] : undefined;
     if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
     if (r?.status !== "built") return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
-    // Built, but gone from here on: an earlier Combine used it up, or left no such piece (as `combineRun` says it; hunt 11-06).
-    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${f.provenance.self.label} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine used it up or left no such piece` };
+    // Built, but gone from here on: an earlier Combine or extrude used it up, or left no such piece (as `booleanSteps` says it; hunts 11-06, 11-08).
+    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${f.provenance.self.label} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
     from.push([body, b]);
   }
   // Built only once every body is there, so a Move that fails builds nothing.
@@ -1235,15 +1235,21 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const made: BodyHandle[] = []; // the bodies of its own an equal pick needed (below)
   const ids: string[] = [];
   let firstPiece = 1;
-  // Each Combine piece the data numbered with its faces (hunt 11-06): it stays on the piece with those faces. An operation
-  // extrude's pieces are numbered by its own order of them, as before (editing an extrude has no way yet to confirm them).
-  const remembers = isCombineItem(f);
+  // Each piece the data numbered with its faces (hunt 11-06): it stays on the piece with those faces. An operation
+  // extrude's too (hunt 11-08: an earlier edit could hand a Move another bar's piece without a word); editing the
+  // extrude confirms them, as editing a Combine does (combine.ts `forgetPieces`).
+  const remembers = isCombineItem(f) || isOperationExtrude(f);
+  // Rule 1 for an Extrude join (docs/document-model.md section 8): each piece holding a body it joins keeps the
+  // earliest made one's id, by the item in the id, then the item's own body before its pieces, by number.
+  const joins = isOperationExtrude(f) && operation === "join";
+  const madeKey = (id: string): [number, number] => [places.get(bodyItem(id)!) ?? Infinity, isPiece(id) ? Number(id.slice(id.lastIndexOf(":") + 1)) : 0];
   const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
   const pieceFaces: Record<string, string[]> = {};
   const renumbered: string[] = [];
   for (const step of steps) {
     const inputs: NamedBody[] = [];
     const built = new Map<BodyHandle, BuiltBody>();
+    const joined = joins ? [step.target, ...step.tools].filter((b) => bodyItem(b) !== f.id).sort((a, b) => madeKey(a)[0] - madeKey(b)[0] || madeKey(a)[1] - madeKey(b)[1]) : [];
     for (const body of [step.target, ...step.tools]) {
       const maker = bodyItem(body)!;
       // The item's own body (an operation extrude's, built just before) is no input of an earlier item.
@@ -1260,7 +1266,8 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
       if (own !== b) made.push(own.handle);
       built.set(own.handle, own);
-      inputs.push(await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!));
+      const named = await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!);
+      inputs.push(joined.includes(body) ? { ...named, keepsId: joined.indexOf(body) } : named);
     }
     const [t, ...ts] = inputs;
     const op = KERNEL_OP[operation];
@@ -1284,13 +1291,15 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
+    // Each input's item, for a piece keeping its id (an Extrude join's other bodies, hunt 11-08).
+    const featureOf = new Map([step.target, ...step.tools].map((b) => [b, work[b].feature] as const));
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];
     for (const nb of named.bodies) {
       const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
-      work[nb.id] = { feature: nb.id === step.target ? targetFeature : f.id, handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
+      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
-      if (nb.id !== step.target) {
+      if (!featureOf.has(nb.id)) {
         firstPiece++;
         if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
       }

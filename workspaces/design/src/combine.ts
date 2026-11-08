@@ -7,7 +7,7 @@
 // target's piece keeping its id.
 
 import type { Feature } from "@fission/core";
-import { bodyItem, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, makesPieces, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, makesPieces, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
 
 /** The undo step a new Combine is recorded as. */
 export const COMBINE_STEP = "Combine bodies";
@@ -21,6 +21,12 @@ export function combineSummary(target: string, tools: readonly string[], operati
   const words = operation === "cut" ? `Cut ${list} from ${target}` : operation === "join" ? `Join ${list} to ${target}` : `Intersect ${target} with ${list}`;
   return keepTools ? `${words}, keeping the tools` : words;
 }
+
+/** A body's name as the browser shows it ("Body 2"), or undefined when it has no number. */
+const numberOf = (doc: DesignDocument, body: string): string | undefined => {
+  const n = bodyNumbers(doc).get(body);
+  return n === undefined ? undefined : `Body ${n}`;
+};
 
 /** Whether the data numbers this piece (a Combine's pieces are numbered when they first appear). */
 const numbered = (doc: DesignDocument, body: string) => (doc.bodies ?? []).some((b) => b.id === body);
@@ -36,7 +42,8 @@ function itemsFor(doc: DesignDocument, target: string, tools: readonly string[],
   if (tools.includes(target)) throw new Error(`${shown(target)} is the target, so it can't be a tool too`);
   const bodies = [target, ...tools];
   return bodies.map((b, i) => {
-    if (bodies.indexOf(b) !== i) throw new Error(`${shown(b)} is picked twice`);
+    // Named as the browser shows it ("Body 2"), when it has a number (hunt 11-08).
+    if (bodies.indexOf(b) !== i) throw new Error(`${numberOf(doc, b) ?? shown(b)} is picked twice`);
     const item = bodyItem(b);
     const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[place];
@@ -108,8 +115,8 @@ export function changedCombine(doc: DesignDocument, id: string, target: string, 
   return forgetPieces({ ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f.id === id ? changed : f)) } }, id, forget);
 }
 
-/** The design with the remembered faces of Combine `id`'s pieces in `forget` dropped (hunt 11-06), their numbers kept. */
-function forgetPieces(doc: DesignDocument, id: string, forget: readonly string[]): DesignDocument {
+/** The design with the remembered faces of item `id`'s pieces in `forget` dropped (hunt 11-06), their numbers kept: a Combine's, or an operation extrude's (its edit confirms them, as a Combine's does). */
+export function forgetPieces(doc: DesignDocument, id: string, forget: readonly string[]): DesignDocument {
   const ours = (b: { id: string; faces?: string[] }) => b.faces !== undefined && isPiece(b.id) && bodyItem(b.id) === id && forget.includes(b.id);
   if (!doc.bodies?.some(ours)) return doc;
   return { ...doc, bodies: doc.bodies.map((b) => (ours(b) ? { id: b.id, number: b.number } : b)) };

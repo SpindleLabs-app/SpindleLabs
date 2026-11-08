@@ -72,6 +72,12 @@ export interface OperationChoice {
   bodies: readonly string[];
 }
 
+/** A body's name as the browser shows it ("Body 2"), or undefined when it has no number. */
+const numberOf = (doc: DesignDocument, body: string): string | undefined => {
+  const n = bodyNumbers(doc).get(body);
+  return n === undefined ? undefined : `Body ${n}`;
+};
+
 /**
  * The items an operation extrude put in at `end` (the marker's place, or
  * its own) depends on for `bodies`, each once in the order picked: refused
@@ -82,7 +88,8 @@ export interface OperationChoice {
 function makersFor(doc: DesignDocument, bodies: readonly string[], end: number, at: string): Feature[] {
   if (bodies.length === 0) throw new Error("pick at least one body for the extrude to work on");
   return bodies.map((b, i) => {
-    if (bodies.indexOf(b) !== i) throw new Error(`${shown(b)} is picked twice`);
+    // Named as the browser shows it ("Body 2"), when it has a number (hunt 11-08).
+    if (bodies.indexOf(b) !== i) throw new Error(`${numberOf(doc, b) ?? shown(b)} is picked twice`);
     const item = bodyItem(b);
     const place = item === null ? -1 : doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[place];
