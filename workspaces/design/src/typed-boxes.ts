@@ -108,7 +108,8 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
     to.focus();
     if (to.tagName === "INPUT") (to as HTMLInputElement).select();
   };
-  const tabbed = new WeakSet<HTMLElement>();
+  /** Each extra's Tab listener, let go when it is taken away (a list held by the page would hold these boxes with it). */
+  const tabbed = new Map<HTMLElement, AbortController>();
 
   const locks = (): Locks => {
     const out: Locks = {};
@@ -307,16 +308,26 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
       root.hidden = true;
     },
     under(field, el) {
-      extras.get(field)?.remove();
+      const was = extras.get(field);
+      if (was && was !== el) {
+        was.remove();
+        tabbed.get(was)?.abort();
+        tabbed.delete(was);
+      }
       if (el) {
         extras.set(field, el);
         if (!tabbed.has(el)) {
-          tabbed.add(el);
-          el.addEventListener("keydown", (e) => {
-            if (e.key !== "Tab" || !el.isConnected) return;
-            e.preventDefault();
-            tabFrom(el, e.shiftKey);
-          });
+          const listening = new AbortController();
+          tabbed.set(el, listening);
+          el.addEventListener(
+            "keydown",
+            (e) => {
+              if (e.key !== "Tab" || !el.isConnected) return;
+              e.preventDefault();
+              tabFrom(el, e.shiftKey);
+            },
+            { signal: listening.signal },
+          );
         }
       } else extras.delete(field);
       placeExtras();

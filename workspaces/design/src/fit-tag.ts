@@ -15,6 +15,11 @@ export interface FitPicker {
   readonly element: HTMLSelectElement;
   /** Shows `fit` as picked (null: none), hearing nothing. */
   set(fit: Fit | null): void;
+  /**
+   * Lets go of `picked` and the list's own listeners, for a Design put away: Chrome keeps a list it has made even once
+   * it is out of the page, and its listeners held the old Design's panels with it (closed-views.mjs, 2026-11-08).
+   */
+  dispose(): void;
 }
 
 /** The list; `picked` hears each choice a person makes (null: "+ Fit", none). */
@@ -42,14 +47,21 @@ export function fitPicker(document: Document, picked: (fit: Fit | null) => void)
     o.textContent = c.label;
     g.append(o);
   }
-  select.addEventListener("change", () => picked(fitOfId(select.value)));
+  const listening = new AbortController();
+  let heard: ((fit: Fit | null) => void) | null = picked;
+  select.addEventListener("change", () => heard?.(fitOfId(select.value)), { signal: listening.signal });
   // Its keys stay in it: a letter picks an option, never a sketch tool behind it, and Enter or Escape is the list's own.
-  select.addEventListener("keydown", (e) => e.stopPropagation());
+  select.addEventListener("keydown", (e) => e.stopPropagation(), { signal: listening.signal });
   return {
     element: select,
     set(fit) {
       select.value = fit ? fitId(fit) : "";
       select.classList.toggle("fit-tag-on", fit !== null);
+    },
+    dispose() {
+      heard = null;
+      listening.abort();
+      select.remove();
     },
   };
 }

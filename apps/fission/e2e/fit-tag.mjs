@@ -187,8 +187,8 @@ try {
       await labels(page, "⌀ 3 · M3 bolt", "the tagged circle's label");
       await shot(page, `fit-tag-drawn-${width}`);
 
-      // The next circle, round (15, 15), starts with the same fit (the tool keeps it); "+ Fit" takes it off before it is placed.
-      await at(page, [15, 15], tap);
+      // The next circle, round (0, 30), well clear of the first one's label, starts with the same fit (the tool keeps it); "+ Fit" takes it off before it is placed.
+      await at(page, [0, 30], tap);
       await until(page, () => document.querySelector("#typed-fit")?.value === "bolt-normal", null, "the Circle tool keeps the fit for the next");
       await typeDiameter(page, "20", tap);
       await pickFit(page, "", tap, width);
@@ -196,9 +196,9 @@ try {
       await until(page, () => document.querySelector("#viewport").dataset.sketchLines === "128", null, "the second circle drawn");
       await labels(page, "⌀ 3 · M3 bolt", "the untagged circle has no label");
 
-      // The Dimension tool: the second circle's rim (15, 25) picked, a fit picked under the box tags it at once, then 8.
+      // The Dimension tool: the second circle's rim (0, 40) picked, a fit picked under the box tags it at once, then 24.
       await press(page, "#sketch-tool-dimension", tap);
-      await at(page, [15, 25], tap);
+      await at(page, [0, 40], tap);
       if (tap) {
         await until(page, () => document.querySelector("#typed-entry")?.hidden === false, null, "the Diameter box for the circle").catch(async (e) => {
           await shot(page, `fit-tag-fail-${width}`);

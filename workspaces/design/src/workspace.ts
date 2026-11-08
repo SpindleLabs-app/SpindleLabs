@@ -4412,6 +4412,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       areaNote.remove();
       viewport.showSketches([]);
       viewport.showOrigin(ORIGIN_AT_FIRST);
+      typed.under("diameter", null);
+      fitList.dispose();
       typed.element.remove();
       hint.element.remove();
       moveHint.remove();

@@ -284,3 +284,28 @@ test("Tab reaches the list under Diameter and goes on round; Shift+Tab goes back
   tab();
   assert.equal(at(), "typed-length");
 });
+
+test("put away, the list hears nothing and the boxes let go of it (a list Chrome kept held the old Design's panels, closed-views.mjs)", () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const host = doc.createElement("div");
+  doc.body.append(host);
+  const b = typedBoxes(host, { locks: () => {}, enter: () => {}, escape: () => {} });
+  const heard: (Fit | null)[] = [];
+  const p = fitPicker(doc, (f) => heard.push(f));
+  b.under("diameter", p.element);
+  b.show(["diameter"], {}, 10, 10);
+  const pick = (id: string) => ((p.element.value = id), p.element.dispatchEvent(new window.Event("change") as unknown as Event));
+  pick("bolt-normal");
+  assert.equal(heard.length, 1, "heard while in use");
+  // Taken away: Tab on it no longer moves the keys (its listener is gone), and disposed it hears no change.
+  b.under("diameter", null);
+  doc.body.append(p.element);
+  p.element.focus();
+  p.element.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }) as unknown as Event);
+  assert.equal(doc.activeElement?.id, "typed-fit", "the boxes no longer move the keys from it");
+  p.dispose();
+  assert.equal(p.element.isConnected, false, "out of the page");
+  pick("hole-slide-bought");
+  assert.equal(heard.length, 1, "nothing heard once put away");
+});
