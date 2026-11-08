@@ -103,7 +103,7 @@ export function fitCalibration(slot: HTMLElement, storage: Storage | null, event
     "Every printer prints holes a little small and outsides a little big. Print this test piece once, measure it, and SpindleLabs knows by how much. The sizes in your design never change; only the size sent to the printer does.",
   );
   // Placeholders never pretend to work: tagging a hole with its fit comes next (P10), so this says so.
-  const soon = el("p", "fit-cal-soon", "Coming next: tag a hole or peg with what it's for (an M3 bolt, a 6 mm pin) and it prints at the size that fits. For now this measures your printer and shows what those sizes would be.");
+  const soon = el("p", "fit-cal-soon", "Coming next: holes and pegs you tag with + Fit under a circle's Diameter (an M3 bolt, a 6 mm pin) print at the size that fits. For now this measures your printer and shows what those sizes would be.");
   const step1 = el("h3", "fit-cal-step1", "1. Print the test piece");
   const step1Words = el("p", "fit-cal-step1-words", "A plate 120 × 20 × 2 mm with three holes and three pegs, about 25 minutes in PLA, with the quality and walls chosen in Slice for printing.");
   const download = el("button", "fit-cal-download", "Download test piece");

@@ -406,3 +406,19 @@ test("only a digit, a point or a minus starts typing, through the one shortcut t
   const table = new ShortcutTable(SHELL_SHORTCUTS, [{ id: "design", shortcuts: DESIGN_SHORTCUTS }]);
   assert.deepEqual(table.clashes(), [], "no key clashes with the shell's or the browser's");
 });
+
+test("a circle's typed diameter places it with the pointer still on the centre (a phone's tap leaves no pointer to aim with)", () => {
+  // Found by the fit tag's browser check (FK2, 2026-11-08): on a phone, the centre tapped, Type, 3 and Enter placed
+  // nothing and asked to move a pointer there isn't. A circle is the same whichever way its rim point lies, so with no
+  // way to read off the pointer it goes along +x: centre (4, -2), diameter 3, so the rim point (4 + 1.5, -2) = (5.5, -2).
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const tool: SketchTool = { kind: "circle", sketch: s.id, centre: [4, -2] };
+  assert.deepEqual(aimOf(s.doc, tool, [4, -2], { diameter: 3 }), [5.5, -2], "the pointer on the centre");
+  assert.deepEqual(aimOf(s.doc, tool, null, { diameter: 3 }), [5.5, -2], "no pointer at all");
+  // The pointer's way still wins when it has one: towards (4, 8), so (4, -2 + 1.5).
+  assert.deepEqual(aimOf(s.doc, tool, [4, 8], { diameter: 3 }), [4, -0.5]);
+  // Nothing typed: the pointer itself, as before (the click there is the circle tool's to refuse, a zero radius).
+  assert.deepEqual(aimOf(s.doc, tool, [4, -2], {}), [4, -2]);
+  // A line still needs the pointer's way: its direction is the line.
+  assert.equal(aimOf(s.doc, { kind: "line", sketch: s.id, from: [0, 0] }, [0, 0], { length: 3 }), null);
+});

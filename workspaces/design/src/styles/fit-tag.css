@@ -1,0 +1,12 @@
+/* The fit list under a circle's Diameter box (fit-tag.ts, FK2): as small as the
+   typed boxes (typed-entry.css) and lined up under them, quiet as "+ Fit" until
+   a fit is picked, then in the accent colour so a tagged hole is seen. It takes
+   clicks only while the boxes do (once one is typed in), like the boxes, so it
+   never swallows a click on the sketch as it trails the pointer. Theme tokens
+   only. ":not(#none)" lifts a rule over the base layout's "#workspace select". */
+.fit-tag:not(#none) { align-self: flex-start; max-width: 190px; min-height: 22px; padding: 1px 6px; font: 12px inherit; font-family: inherit; color: var(--text-soft); background: var(--fill-22-25-30-092); border: 1px dashed var(--line-3a404a); border-radius: var(--look-radius-s); cursor: pointer; }
+.fit-tag:not(#none):focus { outline: none; border-color: var(--accent); }
+.fit-tag.fit-tag-on:not(#none) { color: var(--text); border-style: solid; border-color: var(--look-accent); }
+@media (max-width: 640px) {
+  .fit-tag:not(#none) { min-height: 32px; font-size: 16px; max-width: 240px; }
+}

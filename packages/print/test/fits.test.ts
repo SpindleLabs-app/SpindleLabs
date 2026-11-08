@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allowanceAt, fitSizes, fitKey, forgetMeasures, keepMeasures, keptMeasures, LIMITS, METRIC, PIECE, printedSize, printsAs, profileFor, profileOf, profileWords, sizesWords, targetSize, TYPICAL_PROFILE, type Fit, type FitMeasures, type FitProfile } from "../src/fits.ts";
+import { allowanceAt, FIT_CHOICES, fitId, fitOfId, fitTag, isFit, fitSizes, fitKey, forgetMeasures, keepMeasures, keptMeasures, LIMITS, METRIC, PIECE, printedSize, printsAs, profileFor, profileOf, profileWords, sizesWords, targetSize, TYPICAL_PROFILE, type Fit, type FitMeasures, type FitProfile } from "../src/fits.ts";
 
 /** The piece a printer with shrink s, outsides growing e and holes closing c (per side, at 5, 10, 15 mm) would print. */
 function piece(s: number, e: readonly [number, number, number], c: readonly [number, number, number]): FitMeasures {
@@ -316,4 +316,52 @@ test("a hole is printed bigger and a peg smaller than they should come out, when
     assert.ok(printedSize(TYPICAL_PROFILE, "hole", want)! > want, `hole ${want}`);
     assert.ok(printedSize(TYPICAL_PROFILE, "peg", want)! < want, `peg ${want}`);
   }
+});
+
+// ---------------------------------------------------------------- tagging a circle (FK2)
+
+
+test("every fit in the list has its own id, which gives back the same fit", () => {
+  // 3 bolt or screw fits, then 3 tightnesses × 2 partners for holes and again for pegs: 3 + 6 + 6 = 15.
+  assert.equal(FIT_CHOICES.length, 15);
+  assert.equal(new Set(FIT_CHOICES.map((c) => c.id)).size, 15);
+  for (const c of FIT_CHOICES) {
+    assert.equal(fitId(c.fit), c.id);
+    assert.deepEqual(fitOfId(c.id), c.fit);
+    assert.ok(isFit(c.fit), c.id);
+  }
+  assert.equal(fitOfId(""), null);
+  assert.equal(fitOfId("bolt"), null);
+});
+
+test("isFit takes exactly a fit, and nothing near one", () => {
+  assert.ok(isFit({ role: "hole", kind: "bolt-normal" }));
+  assert.ok(isFit({ role: "peg", kind: "loose", partner: "bought" }));
+  for (const bad of [
+    null,
+    [],
+    "bolt-normal",
+    { role: "peg", kind: "bolt-normal" }, // a peg is never a bolt hole
+    { role: "hole", kind: "bolt-normal", partner: "bought" }, // a bolt fit has no partner
+    { role: "hole", kind: "slide" }, // a pin fit needs its partner
+    { role: "hole", kind: "slide", partner: "steel" },
+    { role: "shaft", kind: "slide", partner: "bought" },
+    { role: "hole", kind: "snug", partner: "bought" },
+    { role: "hole", kind: "toString", partner: "bought" }, // an object's own key is not a kind
+    { role: "hole", kind: "bolt-close", extra: 1 },
+    { role: "hole", kind: "press", partner: "printed", size: 3 },
+  ])
+    assert.equal(isFit(bad), false, JSON.stringify(bad));
+});
+
+test("hand-worked: the tags shown beside a circle's diameter", () => {
+  assert.equal(fitTag({ role: "hole", kind: "bolt-normal" }, 3), "M3 bolt");
+  assert.equal(fitTag({ role: "hole", kind: "bolt-close" }, 2.5), "M2.5 bolt, close");
+  assert.equal(fitTag({ role: "hole", kind: "screw-thread" }, 4), "M4 thread");
+  // 3.5 mm is no M size, so a bolt fit on it can't be printed fitted, and the tag says so.
+  assert.equal(fitTag({ role: "hole", kind: "bolt-normal" }, 3.5), "bolt fit: not an M size");
+  assert.equal(fitTag({ role: "hole", kind: "slide", partner: "bought" }, 6), "pin, slide");
+  assert.equal(fitTag({ role: "hole", kind: "loose", partner: "printed" }, 6), "peg hole, loose");
+  assert.equal(fitTag({ role: "peg", kind: "press", partner: "printed" }, 6), "peg, press");
+  assert.equal(fitTag({ role: "peg", kind: "slide", partner: "bought" }, 8), "into bearing, slide");
 });

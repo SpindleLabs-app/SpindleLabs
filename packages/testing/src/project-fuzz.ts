@@ -634,12 +634,12 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   // Version 4 to 5 numbers the bodies as the file showed them, and version 5 is settled as an edit would settle it:
   // a body with no number gets the next, a gone item's number goes (35e).
   const v4 = upgraded.workspaces.design;
-  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 || v4.version === 10 || v4.version === 11 || v4.version === 12 || v4.version === 13)) {
+  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 || v4.version === 10 || v4.version === 11 || v4.version === 12 || v4.version === 13 || v4.version === 14)) {
     // Version 5 to 6 lists bodies by body id (35ec): the eyes' and each Move's.
-    const v5 = v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 || v4.version === 10 || v4.version === 11 || v4.version === 12 || v4.version === 13 ? v4 : migrateDesignV5({ ...v4, version: 5 });
-    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01); 7 to 8 (47f), 8 to 9 (48), 9 to 10 (Extrude's operations) 10 to 11 (Duplicate) 11 to 12 (Scale, Mirror body) and 12 to 13 (pieces' faces, given on their next build) change no field.
-    const v6 = v5.version === 7 || v5.version === 8 || v5.version === 9 || v5.version === 10 || v5.version === 11 || v5.version === 12 || v5.version === 13 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
-    upgraded.workspaces.design = numberBodies({ ...v6, version: 13 } as unknown as DesignDocument);
+    const v5 = v4.version === 6 || v4.version === 7 || v4.version === 8 || v4.version === 9 || v4.version === 10 || v4.version === 11 || v4.version === 12 || v4.version === 13 || v4.version === 14 ? v4 : migrateDesignV5({ ...v4, version: 5 });
+    // Version 6 to 7 names a ready-made profile's pieces with its shape (face hunt 11-01); 7 to 8 (47f), 8 to 9 (48), 9 to 10 (Extrude's operations) 10 to 11 (Duplicate) 11 to 12 (Scale, Mirror body) 12 to 13 (pieces' faces, given on their next build) and 13 to 14 (circles' fits) change no field.
+    const v6 = v5.version === 7 || v5.version === 8 || v5.version === 9 || v5.version === 10 || v5.version === 11 || v5.version === 12 || v5.version === 13 || v5.version === 14 ? v5 : withKindPieces({ ...v5, version: 7 } as unknown as DesignDocument);
+    upgraded.workspaces.design = numberBodies({ ...v6, version: 14 } as unknown as DesignDocument);
   }
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;
