@@ -1068,7 +1068,7 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
  * the sketch (or gone: deleted, the point is held) that the sketch depends
  * on.
  */
-/** Whether a pin or projection named `name` can be on item `item`'s body: one with its own faces, or (35f1f2b, version 15) a Combine, by a name its result gives (design-edges.ts). */
+/** Whether a pin or projection named `name` can be on item `item`'s body: one with its own faces, or (35f1f2b, version 15) a Combine, by a name its result gives (design-edges.ts). A held name (one its result gives) is on an item that makes pieces: a Combine or an extrude that joins, cuts or intersects (hunt 2: snapping to a body such an extrude changed names it by the extrude). */
 export const pinnable = (item: Feature, name: string): boolean => hasOwnFaces(item) || (isCombineItem(item) && isHeldDesignName(name));
 
 function checkPins(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
@@ -1092,7 +1092,7 @@ function checkPins(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item
     if (typeof feature !== "string" || feature.length === 0) throw new Error(`${at}'s pin on ${pin.point} names no feature`);
     const there = byId.get(feature);
     if (there !== undefined && (there.at > byId.get(f.id)!.at || !pinnable(there.item, pin.name))) throw new Error(`${at}'s pin on ${pin.point} is on ${shown(feature)}, which is not a solid item before it in the timeline`);
-    if (there !== undefined && !isCombineItem(there.item) && isHeldDesignName(pin.name)) throw new Error(`${at}'s pin on ${pin.point} has a Combine result's name but is on ${shown(feature)}, which is not a Combine`);
+    if (there !== undefined && !makesPieces(there.item) && isHeldDesignName(pin.name)) throw new Error(`${at}'s pin on ${pin.point} has a Combine result's name but is on ${shown(feature)}, which is not a Combine or an extrude that joins, cuts or intersects`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} has a point pinned to ${feature} but does not depend on it`);
   }
 }
@@ -1122,7 +1122,7 @@ function checkProjections(f: Feature, content: Sketch, byId: ReadonlyMap<string,
     if (typeof p.feature !== "string" || p.feature.length === 0) throw new Error(`${name} names no feature`);
     const there = byId.get(p.feature);
     if (there !== undefined && (there.at > byId.get(f.id)!.at || !pinnable(there.item, typeof p.edge === "string" ? p.edge : ""))) throw new Error(`${name} is of ${shown(p.feature)}, which is not a solid item before it in the timeline`);
-    if (there !== undefined && typeof p.edge === "string" && !isCombineItem(there.item) && isHeldDesignName(p.edge)) throw new Error(`${name} has a Combine result's edge name but is of ${shown(p.feature)}, which is not a Combine`);
+    if (there !== undefined && typeof p.edge === "string" && !makesPieces(there.item) && isHeldDesignName(p.edge)) throw new Error(`${name} has a Combine result's edge name but is of ${shown(p.feature)}, which is not a Combine or an extrude that joins, cuts or intersects`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.feature)) throw new Error(`${at} projects an edge of ${p.feature} but does not depend on it`);
     if (typeof p.edge !== "string" || p.edge.length === 0 || p.edge.includes("/")) throw new Error(`${name} has no edge name`);
     if (edges.has(`${p.feature}/${p.edge}`)) throw new Error(`${at} projects the edge ${p.edge} of ${p.feature} twice`);
