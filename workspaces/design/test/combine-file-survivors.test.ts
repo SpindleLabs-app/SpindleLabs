@@ -44,7 +44,7 @@ test("a projection holding a Combine result's edge name on a box is refused, in 
   // On box A (feature-1), which has faces of its own, so only the held-name check can refuse it.
   p.feature = "feature-1";
   data.timeline.features.find((x: { id: string }) => x.id === id).dependsOn = ["feature-1"];
-  assert.throws(() => readDesignDocument(data), { message: `Design sketch ${id}'s projection ${p.id} has a Combine result's edge name but is of feature-1, which is not a Combine or a Duplicate` });
+  assert.throws(() => readDesignDocument(data), { message: `Design sketch ${id}'s projection ${p.id} has a Combine result's edge name but is of feature-1, which is not a Combine or a Duplicate, or an extrude that joins, cuts or intersects` });
 });
 
 test("a projection on the Combine whose edge is not text is refused as not a solid item's, never read as a name", async () => {
