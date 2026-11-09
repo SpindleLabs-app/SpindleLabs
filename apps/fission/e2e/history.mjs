@@ -62,10 +62,10 @@ try {
       await openHistory(page, tap);
       assert.equal(await page.getAttribute("#history", "aria-expanded"), "true");
       const open = await rows(page);
-      // Start of the project, the box inserted, the width, the height: four, the height on top and current.
+      // Before these steps (the project as opened), the box inserted, the width, the height: four, the height on top and current.
       assert.equal(open.length, 4, JSON.stringify(open));
       assert.deepEqual(open.map((r) => r.state), ["current", "done", "done", "done"]);
-      assert.equal(open[3].name, "Start of the project");
+      assert.equal(open[3].name, "Before these steps");
       assert.match(open[0].name, /height/i);
       assert.match(open[1].name, /width/i);
       if (shots) await page.screenshot({ path: `${shots}/history-open-${width}.png` });

@@ -4,7 +4,7 @@
 // is the shell's, one for the whole project like Undo and Redo. A dropdown under its button on a wide screen; at phone
 // width a bottom sheet of at most 45 % of the screen (one tap never covers most of the view), with Close always in it.
 // Styles: styles/history-panel.css (the button, in the Undo and Redo group, in styles/undo-redo.css).
-import type { HistoryStepInfo } from "@fission/core";
+import { UNDO_LIMIT, type HistoryStepInfo } from "@fission/core";
 
 export interface HistoryPanelParts {
   steps(): HistoryStepInfo[];
@@ -28,8 +28,12 @@ export function agoWords(ms: number): string {
   return "over a day ago";
 }
 
-/** The words for step `i` of the list: its label, or "Start of the project" for the first. */
-export const stepWords = (i: number, label: string): string => (i === 0 ? "Start of the project" : label);
+/**
+ * The words for step `i` of the list: its label, or "Before these steps" for the first. The history starts afresh each
+ * time a project is opened (a reload too) and drops its oldest steps past UNDO_LIMIT, so the first row is the project
+ * as it was before the steps listed, which is the project's real start only for a new one.
+ */
+export const stepWords = (i: number, label: string): string => (i === 0 ? "Before these steps" : label);
 
 export interface HistoryPanel {
   button: HTMLButtonElement;
@@ -91,7 +95,7 @@ export function historyPanel(doc: Document, parts: HistoryPanelParts): HistoryPa
   head.append(title, close);
   const hint = doc.createElement("p");
   hint.className = "history-hint";
-  hint.textContent = "Tap a step to go back to it. The steps after it stay here, dimmed, until you make a new change.";
+  hint.textContent = `The steps since this project was opened (the last ${UNDO_LIMIT}). The timeline at the bottom keeps the whole design. Tap a step to go back to it. The steps after it stay here, dimmed, until you make a new change.`;
   const list = doc.createElement("ol");
   list.className = "history-list";
   const empty = doc.createElement("p");
