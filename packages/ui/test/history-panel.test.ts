@@ -18,7 +18,10 @@ test("hand-worked: how long ago, in words", () => {
   assert.equal(agoWords(23 * 3600 * S + 3599 * S), "23 h ago");
   assert.equal(agoWords(24 * 3600 * S), "over a day ago");
   assert.equal(agoWords(-5 * S), "just now", "a clock set back");
-  assert.equal(stepWords(0, ""), "Start of the project");
+  // Ben's report (2026-11-09): after a reload the first row said "Start of the project" while the timeline held nine
+  // earlier features. The history starts afresh whenever a project is opened (a reload too) and keeps at most 100 steps,
+  // so its first row is only ever the state before the steps listed, never sure to be the project's real start.
+  assert.equal(stepWords(0, ""), "Before these steps");
   assert.equal(stepWords(2, "Extrude"), "Extrude");
 });
 
@@ -51,10 +54,15 @@ test("closed at first; the button opens it, newest step first, the present marke
   assert.deepEqual(rows(), [
     { state: "current", text: "Extrude 10 mmnow, 10 s ago" },
     { state: "done", text: "Insert Box30 s ago" },
-    { state: "done", text: "Start of the project1 min ago" },
+    { state: "done", text: "Before these steps1 min ago" },
   ]);
   assert.equal(p.panel.querySelector('[aria-current="step"]')?.textContent, "Extrude 10 mmnow, 10 s ago");
   assert.equal(p.panel.querySelector<HTMLElement>(".history-empty")!.hidden, true, "there are steps");
+  // It says what it covers, so nobody takes it for the whole design: since the project was opened, and where the rest is.
+  const hint = p.panel.querySelector(".history-hint")!.textContent!;
+  assert.match(hint, /since this project was opened/);
+  assert.match(hint, /timeline/i);
+  assert.doesNotMatch(p.panel.textContent!, /Start of the project/);
 });
 
 test("undone steps are dimmed by state and say so; the start alone shows the empty note", () => {
@@ -69,7 +77,7 @@ test("undone steps are dimmed by state and say so; the start alone shows the emp
   set([{ label: "", at: 0, state: "current" }]);
   p.refresh();
   assert.equal(p.panel.querySelector<HTMLElement>(".history-empty")!.hidden, false);
-  assert.deepEqual(rows(), [{ state: "current", text: "Start of the projectnow, at the start" }]);
+  assert.deepEqual(rows(), [{ state: "current", text: "Before these stepsnow, at the start" }]);
 });
 
 test("a click on a step goes to its number (counted from the start) and, on a wide screen, keeps the panel open", () => {
