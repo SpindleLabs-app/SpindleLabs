@@ -160,6 +160,14 @@ test("hand-worked: the flag is on with ?combine, kept for the tab, and off again
     assert.equal(readCombineFlag(q, t, h), want, `${q} ${h}`);
     assert.equal(t.m.get(COMBINE_KEY) === "on", want, `${q} ${h} remembered`);
   }
+  // Typed with a slash, spaces or capitals (spindlelabs.app/?combine/#design, Ben 11-09, still "coming soon"): the same
+  // word, so the same answer; "combines" or "comb" is another word and says nothing.
+  for (const [q, h, want] of [["?combine/", "", true], ["?combine//", "", true], ["?Combine", "", true], ["?COMBINE=ON", "", true], ["?combine=on/", "", true], ["?combine%20", "", true], ["?combine=off/", "", false], ["", "#design?combine/", true], ["?x=1/&combine/", "", true]] as const) {
+    const t = store();
+    assert.equal(readCombineFlag(q, t, h), want, `${q} ${h}`);
+    assert.equal(t.m.get(COMBINE_KEY) === "on", want, `${q} ${h} remembered`);
+  }
+  for (const q of ["?combines", "?comb", "?combine=onn", "?/combine=off"]) assert.equal(readCombineFlag(q, store({ [COMBINE_KEY]: "on" })), q !== "?/combine=off", q);
   // ?combine=off: off, and forgotten, so the next load without it is off.
   for (const q of ["?combine=off", "?combine=0", "?combine=false"]) {
     s.setItem(COMBINE_KEY, "on");
