@@ -29,6 +29,7 @@ monkey save: Save gave no file
 monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in" (in in); with Body # (Box: # × # × # mm) selecte
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
+monkey selection agrees: with Body # (Extrude: Slot with round ends profile # × # mm, by # mm) selected the Body panel shows #,# in³, but that body is # in³
 monkey settles: the page was still changing # s after the action
 monkey the tester itself: locator.click: Timeout #ms exceeded.
 monkey timeline bar matches the file: shown [{"id":"feature#","suppressed":false,"rolledBack":false},{"id":"sketch#","suppressed":true,"rolledBack":false},{"
