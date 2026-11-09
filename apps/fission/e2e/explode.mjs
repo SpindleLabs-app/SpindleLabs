@@ -4,7 +4,8 @@
 // the view drawn differently), the Spread slider moves them further, Done
 // draws them where they were, and nothing goes on Undo; a tool opening
 // (Move) turns it off. 375 px with taps: from Inspect ▾, the bar fits the
-// screen, takes little of the view, and its Done is finger-sized.
+// screen, takes little of the view, and its Done is finger-sized. At both
+// widths the Spread knob reaches both ends of its slider (issue #470).
 // Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after
 // `npm run build`).
 import assert from "node:assert/strict";
@@ -58,6 +59,38 @@ async function addCylinder(page, tap = false) {
   await until(page, () => [...document.querySelectorAll("#browser *")].some((e) => e.textContent?.trim() === "Body 2"), null, "Body 2's row");
 }
 
+/**
+ * Where the Spread slider's knob reaches at `value`, in screen pixels from the slider's own left and right edges
+ * (issue #470: a style for text boxes padded the slider, so its bar ran on past where the knob can go and at 100
+ * the knob stopped about 10 px short of the end). Read from a picture of the slider alone, which holds still (it is
+ * not the 3D view): the knob and the filled bar are the accent colour, so the first and last accent-coloured pixel
+ * on its middle row give the gaps at either end. At 0 the knob's own left edge must touch the left end (gap within
+ * 2 px, for anti-aliasing), at 100 its right edge the right end.
+ */
+async function knobGaps(page, value) {
+  await page.locator("#explode-spread").fill(value);
+  const png = await page.locator("#explode-spread").screenshot();
+  return page.evaluate(async (bytes) => {
+    const img = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: "image/png" }));
+    const c = new OffscreenCanvas(img.width, img.height);
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    const row = g.getImageData(0, Math.floor(img.height / 2), img.width, 1).data;
+    // The accent: blue well over red, as the slider's fill and knob are (and its unfilled bar and background are not).
+    const accent = (x) => row[4 * x + 2] > 180 && row[4 * x + 2] - row[4 * x] > 100;
+    const xs = [...Array(img.width).keys()].filter(accent);
+    return xs.length === 0 ? null : { left: xs[0], right: img.width - 1 - xs[xs.length - 1] };
+  }, [...png]);
+}
+
+/** Asserts the knob reaches both ends: issue #470. */
+async function knobReachesEnds(page) {
+  const atMax = await knobGaps(page, "100");
+  assert.ok(atMax && atMax.right <= 2, `at 100 the knob stops ${atMax?.right} px short of the slider's right end`);
+  const atMin = await knobGaps(page, "0");
+  assert.ok(atMin && atMin.left <= 2, `at 0 the knob stops ${atMin?.left} px short of the slider's left end`);
+}
+
 let failed = 0;
 async function check(name, fn) {
   try {
@@ -95,6 +128,8 @@ try {
     const further = await drawnBox(page);
     assert.ok(spanOf(further) > spanOf(apart), `Spread 100 draws them no further apart than 50: ${further} against ${apart}`);
     assert.equal(await page.getAttribute("#undo", "title"), undoBefore, "Exploded view went on Undo");
+    // Issue #470: the knob reaches both ends of the slider.
+    await knobReachesEnds(page);
     // Done: the bodies drawn where they are again.
     await page.click("#explode-done");
     await until(page, () => document.querySelector("#viewport").dataset.exploded === "", null, "off");
@@ -141,6 +176,8 @@ try {
     assert.ok(bar.width * bar.height < 0.15 * v.width * v.height, `the bar covers ${Math.round((100 * bar.width * bar.height) / (v.width * v.height))}% of the view`);
     const done = await page.locator("#explode-done").boundingBox();
     assert.ok(done.height >= 44, `Done is ${done.height} px tall`);
+    await knobReachesEnds(page); // issue #470
+    await page.locator("#explode-spread").fill("100");
     await shot(page, "explode-375");
     await page.tap("#explode-done");
     await until(page, () => document.querySelector("#viewport").dataset.exploded === "", null, "off");

@@ -2,7 +2,8 @@
 .explode.explode-bar { position: absolute; z-index: 18; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 14px; max-width: calc(100% - 32px); box-sizing: border-box; font-size: 13px; color: var(--text); background: var(--look-float, var(--shade-21-27-38-096)); border: 1px solid var(--look-accent, var(--accent)); border-radius: var(--look-radius-pill, 999px); box-shadow: var(--look-glow, 0 0 14px var(--shade-74-168-255-035)); }
 .explode.explode-bar[hidden] { display: none; }
 .explode .explode-bar-label { display: flex; align-items: center; gap: 8px; }
-.explode .explode-bar-label input { width: 140px; min-width: 0; accent-color: var(--look-accent, var(--accent)); }
+/* The slider is in a label, so theme.css's style for text boxes in labels (padding, border, background) lands on it too: that drew its bar past where the knob can go, which stopped 10 px short of the right end (issue #470). None of it here. */
+.explode .explode-bar-label input { flex: none; width: 140px; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; accent-color: var(--look-accent, var(--accent)); }
 .explode .explode-bar-done { min-height: var(--look-target, 32px); padding: 0 14px; border-radius: var(--look-radius-pill, 999px); }
 /* On a phone the top of the view holds the Browser and Properties pills (phone-float.css): the bar goes under them, its targets finger-sized. */
 @media (max-width: 640px) {
