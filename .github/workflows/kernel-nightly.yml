@@ -14,6 +14,14 @@ name: Kernel random testing
 # on where the last stopped and a new cycle starts when every mutant has been
 # tested). Every job is cut off at 22:35 UTC however late it started.
 #
+# Round the clock (Ben, 2026-11-09): while .github/scripts/round_the_clock.txt
+# on main says `on`, the clock also starts daytime runs (`day`) between
+# nights, back to back from 22:35 to 14:50 UTC (6:35am to 10:50pm Perth): 4
+# jobs on the kernel's main for `minutes` each (never past 14:50 UTC), with
+# fresh seeds, no mutation rotation, every job giving its runner to CI like a
+# branch's run. Their results go to kernel-results like the night's. Rules
+# and tests: nightly_gate.py.
+#
 # "Run workflow" (a kernel thread starts it after each push: workflow_dispatch
 # on this repo's main with `ref` = the kernel branch) tests one kernel branch:
 # 4 jobs for `minutes`; the mutation rotation only if asked, and only on main. Branch runs share one
@@ -36,7 +44,7 @@ name: Kernel random testing
 # Secrets: KERNEL_READ (kernel: contents read-only, statuses read-write) and
 # RESULTS_WRITE (kernel-results: contents and issues read-write), as for
 # kernel-ci.yml; only this repo's own branches' workflows see them.
-run-name: ${{ inputs.night && 'Kernel random testing, nightly' || format('Kernel random testing on {0}', inputs.ref) }}
+run-name: ${{ inputs.night && 'Kernel random testing, nightly' || inputs.day && 'Kernel random testing, daytime' || format('Kernel random testing on {0}', inputs.ref) }}
 
 on:
   # No schedule: GitHub started this repo's scheduled runs hours late or not
@@ -46,6 +54,10 @@ on:
     inputs:
       night:
         description: "Tonight's testing of main (kernel-night-clock.yml starts it; the rest of the inputs are ignored)"
+        type: boolean
+        default: false
+      day:
+        description: "Daytime testing of main, round the clock (kernel-night-clock.yml starts it; ref and mutants are ignored)"
         type: boolean
         default: false
       ref:
@@ -65,12 +77,13 @@ permissions: {}
 # shared group, as nightly.yml had (Ben, 2026-10-26). Tested in
 # .github/scripts/test_ci_concurrency.py.
 concurrency:
-  group: kernel-random-testing-${{ inputs.night && 'nightly' || inputs.ref == 'main' && 'main' || 'branches' }}
+  group: kernel-random-testing-${{ inputs.night && 'nightly' || inputs.day && 'daytime' || inputs.ref == 'main' && 'main' || 'branches' }}
   cancel-in-progress: false
 
 env:
-  REF: ${{ inputs.night && 'main' || inputs.ref }}
+  REF: ${{ (inputs.night || inputs.day) && 'main' || inputs.ref }}
   NIGHT: ${{ inputs.night && 'true' || 'false' }}
+  DAY: ${{ !inputs.night && inputs.day && 'true' || 'false' }}
 
 jobs:
   # Starts the testing only once CI is idle (Ben, 2026-10-29): no CI job
@@ -91,7 +104,8 @@ jobs:
           sparse-checkout: .github/scripts
           persist-credentials: false
       # A night run takes the night only inside 15:00-22:05 UTC and only
-      # if no earlier run took it today (nightly_gate.py); a branch's, always.
+      # if no earlier run took it today (nightly_gate.py); a daytime run only
+      # while round the clock is on, from 22:35 to 14:20 UTC; a branch's, always.
       - id: gate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,6 +154,18 @@ jobs:
               echo "Tonight's run started too late ($(date -u '+%H:%M UTC')); skipped"; exit 1
             fi
             jobs="[0,1,2,3,4,5,6,7]" shards=4
+          elif [ "$DAY" = true ]; then
+            # The next 14:50 UTC (ten minutes before the night), as
+            # nightly_gate.py's day_end; idle's gate let it through only with
+            # 30 minutes left, but runners can make it later still.
+            end=$(date -u -d "$(date -u +%F) 14:50" +%s)
+            [ "$now" -ge "$end" ] && end=$(( end + 86400 ))
+            deadline=$(( now + MINUTES * 60 ))
+            [ "$deadline" -gt "$end" ] && deadline=$end
+            if [ $(( deadline - now )) -lt 1800 ]; then
+              echo "Daytime run started too late ($(date -u '+%H:%M UTC')); skipped"; exit 1
+            fi
+            jobs="[0,1,2,3]" shards=0
           else
             deadline=$(( now + MINUTES * 60 ))
             jobs="[0,1,2,3]" shards=0
@@ -203,9 +229,10 @@ jobs:
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
-          # A branch's run, and tonight's jobs past the first two (the night
-          # always keeps two), give their runners to CI (stop-on-merge.sh).
-          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
+          # A branch's run, every daytime job, and tonight's jobs past the
+          # first two (the night always keeps two), give their runners to CI
+          # (stop-on-merge.sh).
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || [ "$DAY" = true ] || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi
@@ -265,9 +292,10 @@ jobs:
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
-          # A branch's run, and tonight's jobs past the first two (the night
-          # always keeps two), give their runners to CI (stop-on-merge.sh).
-          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
+          # A branch's run, every daytime job, and tonight's jobs past the
+          # first two (the night always keeps two), give their runners to CI
+          # (stop-on-merge.sh).
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || [ "$DAY" = true ] || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi
