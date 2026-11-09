@@ -1,7 +1,8 @@
 name: Kernel night clock
 
 # Starts the private kernel's night of random testing (kernel-nightly.yml
-# with night=true) at 15:00 UTC (11pm Perth), because GitHub starts this
+# with night=true) and the app's (nightly.yml with night=true; its own 15:00
+# UTC schedule stays only as a spare) at 15:00 UTC (11pm Perth), because GitHub starts this
 # repo's scheduled runs hours late or not at all (11-06 to 11-08). One clock
 # run at a time sleeps on a runner (at most 5.5 hours) and then starts the
 # next one with workflow_dispatch, which GitHub starts within seconds; the

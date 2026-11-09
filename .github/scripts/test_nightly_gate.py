@@ -81,6 +81,20 @@ class Clock(unittest.TestCase):
             self.assertIn(9, woke, start)
 
 
+class TookNight(unittest.TestCase):
+    def test_by_hand(self):
+        # The kernel's night: its plan job succeeded (it fails when started too late).
+        self.assertTrue(ng.took_night("kernel-nightly.yml", [{"name": "plan", "conclusion": "success"}]))
+        self.assertFalse(ng.took_night("kernel-nightly.yml", [{"name": "plan", "conclusion": "failure"}]))
+        # The app's: its journeys job exists and wasn't skipped (running, or finished either way).
+        self.assertTrue(ng.took_night("nightly.yml", [{"name": "journeys", "conclusion": None}]))
+        self.assertTrue(ng.took_night("nightly.yml", [{"name": "journeys", "conclusion": "failure"}]))
+        self.assertFalse(ng.took_night("nightly.yml", [{"name": "journeys", "conclusion": "skipped"}]))
+        self.assertFalse(ng.took_night("nightly.yml", [{"name": "gate", "conclusion": "success"}]))
+        # Each workflow's rule only: a kernel-style plan job means nothing to the app's.
+        self.assertFalse(ng.took_night("nightly.yml", [{"name": "plan", "conclusion": "success"}]))
+
+
 class RoundTheClock(unittest.TestCase):
     """The daytime runs between nights (Ben, 2026-11-09)."""
 
@@ -159,7 +173,8 @@ FAKE_GH = r"""#!/usr/bin/env bash
 # Plays `gh`: today's runs 10 (a night whose plan was skipped: too early),
 # 11 (a night whose plan succeeded), 12 (a branch's run on main) and 13 (a
 # night still waiting), 14 (a daytime run waiting) and 15 (a daytime run
-# running); $FAKE_RUNS picks which are listed. The switch file says
+# running), 17 (the app's night, journeys ran) and 18 (the app's night,
+# skipped at the gate); $FAKE_RUNS picks which are listed. The switch file says
 # $FAKE_SWITCH; its read fails when $FAKE_SWITCH_FAILS is set.
 echo "$*" >>"$FAKE_LOG"
 case "$*" in
@@ -173,6 +188,7 @@ case "$*" in
         13) title="Kernel random testing, nightly"; status=queued;;
         14) title="Kernel random testing, daytime"; status=queued;;
         16) title="Random testing, daytime"; status=queued;;
+        17|18) title="Random testing, nightly"; status=completed;;
         15) title="Kernel random testing, daytime"; status=in_progress;;
         *) title="Kernel random testing, nightly"; status=completed;;
       esac
@@ -182,6 +198,8 @@ case "$*" in
   *"/runs/10/jobs"*) echo '{"jobs":[{"name":"idle","conclusion":"success"},{"name":"plan","conclusion":"skipped"}]}';;
   *"/runs/11/jobs"*|*"/runs/12/jobs"*) echo '{"jobs":[{"name":"idle","conclusion":"success"},{"name":"plan","conclusion":"success"}]}';;
   *"/runs/13/jobs"*) echo '{"jobs":[{"name":"idle","conclusion":null}]}';;
+  *"/runs/17/jobs"*) echo '{"jobs":[{"name":"gate","conclusion":"success"},{"name":"journeys","conclusion":"failure"}]}';;
+  *"/runs/18/jobs"*) echo '{"jobs":[{"name":"gate","conclusion":"success"},{"name":"journeys","conclusion":"skipped"}]}';;
 esac
 """
 
@@ -319,6 +337,26 @@ class WithFakeGh(unittest.TestCase):
         self.assertLess(300000000 + 2 * (far // 60) + 3, 2**31 - 1)
         with open(os.path.join(os.path.dirname(HERE), "workflows", "nightly.yml")) as f:
             self.assertIn("first=$(( 300000000 + 2 * (now / 60) )) seeds=4", f.read())
+
+    def test_the_apps_night_is_found_by_its_own_title_and_journeys(self):
+        self.use(FAKE_RUNS="10 11 17 18")
+        self.assertEqual(ng.nights_today("o/r", "nightly.yml", at(16, 17)), [(17, True, True), (18, True, False)])
+
+    def test_the_clock_starts_the_apps_night_too(self):
+        code, slept, dispatched = self.run_clock(at(15, 0), app="nightly.yml", FAKE_RUNS="")
+        self.assertEqual(dispatched, ["workflow run kernel-nightly.yml --repo o/r --ref main -f night=true",
+                                      "workflow run nightly.yml --repo o/r --ref main -f night=true",
+                                      "workflow run kernel-night-clock.yml --repo o/r --ref main"])
+        self.assertEqual(slept, [19800])
+        # The kernel's night taken (11) and the app's (17): neither again.
+        os.remove(self.log)
+        code, slept, dispatched = self.run_clock(at(16, 0), app="nightly.yml", FAKE_RUNS="11 17")
+        self.assertEqual(dispatched, ["workflow run kernel-night-clock.yml --repo o/r --ref main"])
+        # The app's only night so far skipped at its gate (18): it is still owed.
+        os.remove(self.log)
+        code, slept, dispatched = self.run_clock(at(16, 0), app="nightly.yml", FAKE_RUNS="11 18")
+        self.assertEqual(dispatched, ["workflow run nightly.yml --repo o/r --ref main -f night=true",
+                                      "workflow run kernel-night-clock.yml --repo o/r --ref main"])
 
     def test_one_waiting_daytime_run_is_enough(self):
         code, slept, dispatched = self.run_clock(at(3, 0), FAKE_RUNS="14 15", FAKE_SWITCH="on")
