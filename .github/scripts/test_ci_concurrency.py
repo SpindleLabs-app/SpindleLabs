@@ -218,6 +218,12 @@ class KernelRandomTestingGroups(unittest.TestCase):
         # A stray `day` beside `night` is still the night.
         self.assertEqual(self.group(dict(dispatch("main"), inputs={"ref": "main", "night": True, "day": True})), "kernel-random-testing-nightly")
 
+    def test_the_apps_daytime_runs_have_their_own_group(self):
+        day = expand(concurrency(NIGHTLY)[0], dict(dispatch("main"), inputs={"day": True}))
+        self.assertEqual(day, "random-testing-daytime")
+        for other in (dict(dispatch("main"), inputs={}), dispatch("claude/a")):
+            self.assertNotEqual(day, expand(concurrency(NIGHTLY)[0], other))
+
     def test_a_night_ignores_the_ref_input(self):
         # The clock passes only night=true; a stray ref never moves the night out of its group.
         self.assertEqual(self.group(dict(dispatch("main"), inputs={"ref": "claude/a", "night": True})), "kernel-random-testing-nightly")

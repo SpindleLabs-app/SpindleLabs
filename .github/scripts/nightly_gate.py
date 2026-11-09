@@ -46,6 +46,10 @@ so pull requests never wait for it. The switch is read from main each time
 (a failed read counts as off): writing `off` there stops new daytime runs,
 and a waiting one skips; the night is not affected.
 
+With the app's random testing named too (`clock ... nightly.yml`), the clock
+keeps its daytime runs ("Random testing, daytime": the monkey's long seeded
+sessions with fresh seeds and the golden models) going the same way.
+
   nightly_gate.py gate <workflow file>
       with DAY=true: a daytime run goes only while the switch is on and
       inside the daytime window (at least 30 minutes before 14:50 UTC).
@@ -65,6 +69,7 @@ NIGHT_TITLE = "Kernel random testing, nightly"  # kernel-nightly.yml's run-name 
 HOP = 19800  # seconds a clock run sleeps at most: 5.5 hours, inside the job's 360 minutes
 RETRY = 600  # seconds before trying again when tonight's run could not be started
 DAY_TITLE = "Kernel random testing, daytime"  # kernel-nightly.yml's run-name for a daytime run
+APP_DAY_TITLE = "Random testing, daytime"  # nightly.yml's run-name for a daytime run
 DAY_END = (14, 50)  # UTC: 10:50pm Perth, the daytime runs' cut-off, ten minutes before the night
 DAY_HOP = 3600  # seconds a clock run sleeps at most while the switch is on
 SWITCH = ".github/scripts/round_the_clock.txt"  # `on` or `off`, read from main
@@ -177,7 +182,7 @@ def read_switch(repo):
     return switch_on(out)
 
 
-def days_waiting(repo, workflow):
+def days_waiting(repo, workflow, title=DAY_TITLE):
     """Ids of daytime runs waiting to start; a failed lookup counts as none
     (a second waiting one only replaces the first: GitHub keeps one per group)."""
     try:
@@ -185,7 +190,20 @@ def days_waiting(repo, workflow):
     except (subprocess.SubprocessError, ValueError, KeyError, TypeError) as e:
         print(f"could not list the daytime runs ({type(e).__name__}); counting none as waiting")
         return []
-    return [r["id"] for r in runs if r.get("display_title") == DAY_TITLE and r.get("status") in WAITING]
+    return [r["id"] for r in runs if r.get("display_title") == title and r.get("status") in WAITING]
+
+
+def queue_day(repo, workflow, title, now):
+    """Queues a daytime run of `workflow` unless one already waits."""
+    waiting = days_waiting(repo, workflow, title)
+    if waiting:
+        print(f"the next daytime run of {workflow} is already waiting (run {waiting[0]})")
+        return
+    try:
+        gh("workflow", "run", workflow, "--repo", repo, "--ref", "main", "-f", "day=true")
+        print(f"queued daytime testing of {workflow} ({now:%H:%M} UTC)")
+    except subprocess.SubprocessError as e:
+        print(f"could not queue daytime testing of {workflow} ({type(e).__name__}); trying again next time")
 
 
 def gate(argv):
@@ -214,6 +232,7 @@ def utc_now():
 
 def clock(argv, sleep=time.sleep, clock_now=utc_now):
     repo, night, me = os.environ["GITHUB_REPOSITORY"], argv[2], argv[3]
+    app = argv[4] if len(argv) > 4 else None
     now = clock_now()
     taken = [i for i, finished, planned in lookup(repo, night, now) if planned or not finished]
     due = owed(now, taken)
@@ -228,15 +247,9 @@ def clock(argv, sleep=time.sleep, clock_now=utc_now):
         print(f"tonight's testing already started (run {taken[0]})")
     on = read_switch(repo)
     if on and day_open(now)[0]:
-        waiting = days_waiting(repo, night)
-        if waiting:
-            print(f"the next daytime run is already waiting (run {waiting[0]})")
-        else:
-            try:
-                gh("workflow", "run", night, "--repo", repo, "--ref", "main", "-f", "day=true")
-                print(f"queued daytime testing ({now:%H:%M} UTC)")
-            except subprocess.SubprocessError as e:
-                print(f"could not queue daytime testing ({type(e).__name__}); trying again next time")
+        queue_day(repo, night, DAY_TITLE, now)
+        if app:
+            queue_day(repo, app, APP_DAY_TITLE, now)
     wait = sleep_for(clock_now(), due, on)
     print(f"sleeping {wait // 60} minutes")
     sleep(wait)
@@ -257,7 +270,7 @@ def clock(argv, sleep=time.sleep, clock_now=utc_now):
 def main(argv):
     if len(argv) == 3 and argv[1] == "gate":
         return gate(argv)
-    if len(argv) == 4 and argv[1] == "clock":
+    if len(argv) in (4, 5) and argv[1] == "clock":
         return clock(argv)
     print(__doc__)
     return 2

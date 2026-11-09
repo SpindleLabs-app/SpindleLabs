@@ -8,7 +8,8 @@ name: Kernel night clock
 # run that finds the night's window open and the night not yet taken starts
 # it. While .github/scripts/round_the_clock.txt on main says `on` (Ben,
 # 2026-11-09), it also keeps daytime runs going back to back between nights
-# (kernel-nightly.yml with day=true, 22:35 to 14:50 UTC) and wakes hourly.
+# (kernel-nightly.yml with day=true, 22:35 to 14:50 UTC), and the app's too
+# (nightly.yml with day=true: the monkey and the golden models), and wakes hourly.
 # The rules are in .github/scripts/nightly_gate.py (clock).
 #
 # The hourly schedule only restarts a clock that stopped (a cancelled run,
@@ -42,4 +43,4 @@ jobs:
       - name: Start tonight's testing when it is due, sleep, start the next clock run
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/nightly_gate.py clock kernel-nightly.yml kernel-night-clock.yml
+        run: python3 .github/scripts/nightly_gate.py clock kernel-nightly.yml kernel-night-clock.yml nightly.yml

@@ -172,6 +172,7 @@ case "$*" in
         12) title="Kernel random testing on main"; status=completed;;
         13) title="Kernel random testing, nightly"; status=queued;;
         14) title="Kernel random testing, daytime"; status=queued;;
+        16) title="Random testing, daytime"; status=queued;;
         15) title="Kernel random testing, daytime"; status=in_progress;;
         *) title="Kernel random testing, nightly"; status=completed;;
       esac
@@ -231,10 +232,10 @@ class WithFakeGh(unittest.TestCase):
             self.assertEqual(f.read(), "go=true\n")
         self.assertEqual(self.calls(), [])
 
-    def run_clock(self, now, **extra):
+    def run_clock(self, now, app=None, **extra):
         self.use(**extra)
         slept = []
-        code = ng.clock(["", "clock", "kernel-nightly.yml", "kernel-night-clock.yml"], sleep=slept.append, clock_now=lambda: now)
+        code = ng.clock(["", "clock", "kernel-nightly.yml", "kernel-night-clock.yml"] + ([app] if app else []), sleep=slept.append, clock_now=lambda: now)
         dispatched = [c for c in self.calls() if c.startswith("workflow run")]
         return code, slept, dispatched
 
@@ -282,6 +283,42 @@ class WithFakeGh(unittest.TestCase):
                                           "workflow run kernel-night-clock.yml --repo o/r --ref main"], runs)
             self.assertEqual(slept, [3600], runs)
         self.assertIn("api -H Accept: application/vnd.github.raw repos/o/r/contents/.github/scripts/round_the_clock.txt?ref=main", self.calls())
+
+    def test_the_apps_daytime_runs_too(self):
+        code, slept, dispatched = self.run_clock(at(3, 0), app="nightly.yml", FAKE_RUNS="", FAKE_SWITCH="on")
+        self.assertEqual(dispatched, ["workflow run kernel-nightly.yml --repo o/r --ref main -f day=true",
+                                      "workflow run nightly.yml --repo o/r --ref main -f day=true",
+                                      "workflow run kernel-night-clock.yml --repo o/r --ref main"])
+        # Each keeps its own one waiting: the kernel's waiting run doesn't hold up the app's, nor the other way round.
+        for runs, queued in (("14", "nightly.yml"), ("16", "kernel-nightly.yml")):
+            os.remove(self.log)
+            code, slept, dispatched = self.run_clock(at(3, 0), app="nightly.yml", FAKE_RUNS=runs, FAKE_SWITCH="on")
+            self.assertEqual(dispatched, [f"workflow run {queued} --repo o/r --ref main -f day=true",
+                                          "workflow run kernel-night-clock.yml --repo o/r --ref main"], runs)
+        # Switched off: neither.
+        os.remove(self.log)
+        code, slept, dispatched = self.run_clock(at(3, 0), app="nightly.yml", FAKE_RUNS="", FAKE_SWITCH="off")
+        self.assertEqual(dispatched, ["workflow run kernel-night-clock.yml --repo o/r --ref main"])
+
+    def test_the_clock_workflow_names_the_apps_testing(self):
+        with open(os.path.join(os.path.dirname(HERE), "workflows", "kernel-night-clock.yml")) as f:
+            self.assertIn("nightly_gate.py clock kernel-nightly.yml kernel-night-clock.yml nightly.yml", f.read())
+
+    def test_daytime_monkey_seeds_by_hand(self):
+        # nightly.yml's daytime seeds: 300,000,000 + 2 x minutes since 1970. At
+        # 2026-11-09 03:00 UTC (1,794,193,200 s = 29,903,220 min) the first is
+        # 300,000,000 + 59,806,440 = 359,806,440: above every night's seed
+        # (2026MMDD0/1, at most 202,912,311) and below 2^31 - 1 = 2,147,483,647.
+        t = int(at(3, 0, day=9).timestamp())
+        self.assertEqual(t, 1794193200)
+        first = 300000000 + 2 * (t // 60)
+        self.assertEqual(first, 359806440)
+        self.assertGreater(first, 202912311)
+        # Still under 2^31 in 2500: about 300,000,000 + 2 x 279,000,000 minutes.
+        far = int(datetime.datetime(2500, 1, 1, tzinfo=UTC).timestamp())
+        self.assertLess(300000000 + 2 * (far // 60) + 3, 2**31 - 1)
+        with open(os.path.join(os.path.dirname(HERE), "workflows", "nightly.yml")) as f:
+            self.assertIn("first=$(( 300000000 + 2 * (now / 60) )) seeds=4", f.read())
 
     def test_one_waiting_daytime_run_is_enough(self):
         code, slept, dispatched = self.run_clock(at(3, 0), FAKE_RUNS="14 15", FAKE_SWITCH="on")
