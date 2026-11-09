@@ -85,6 +85,7 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
   const building = buildingItems(document);
   const out = new Map<string, DesignBody>();
   const pieces = new Map<string, string[]>();
+  const numbered = new Set((document.bodies ?? []).map((b) => b.id));
   for (const b of [...(document.bodies ?? [])].sort((x, y) => x.number - y.number))
     if (isPiece(b.id)) pieces.set(bodyItem(b.id)!, [...(pieces.get(bodyItem(b.id)!) ?? []), b.id]);
   for (const f of document.timeline.features) {
@@ -100,6 +101,9 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
       const op = extrudeOperation(f);
       if (op === null || !op.bodies.every((b) => out.has(b))) continue;
       if (op.operation === "join") for (const b of op.bodies.slice(1)) out.delete(b);
+      // Its piece holding only the extrude is its own body (version 16), once numbered.
+      const own = bodyIdOf(f.id);
+      if (op.operation === "join" && !failed.has(own) && numbered.has(own)) out.set(own, { body: own, feature: f });
       for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
     }
   }

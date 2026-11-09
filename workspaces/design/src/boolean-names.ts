@@ -154,6 +154,10 @@ export const shownFaces = (faces: readonly FaceNames[]): string[] => [...new Set
  * the rest take the lowest free numbers in rank order. An Extrude join's
  * inputs carry `keepsId`: then every piece holding one of them keeps an id
  * (the earliest made one's), and only a piece holding none is numbered.
+ * `own` (an Extrude join's own body id, version 16) is the first of those:
+ * numbered as a piece 1 before the others would be, so it goes to the
+ * piece with its remembered faces, else to the first free one by rank,
+ * and the others are pieces from 1 (docs/document-model.md section 8).
  */
 export function combineNames(
   feature: string,
@@ -164,6 +168,7 @@ export function combineNames(
   views: readonly BodyView[],
   firstPiece = 1,
   remembered: ReadonlyMap<string, readonly string[]> = new Map(),
+  own?: string,
 ): CombineNames {
   if (result.bodies.length === 0) return { failed: `it would leave nothing of ${target.id}` };
   if (views.length !== result.bodies.length || result.history.length !== result.bodies.length) throw new Error("each result body needs its view and its history");
@@ -228,7 +233,10 @@ export function combineNames(
   const rest = order.filter((p) => !kept.has(p));
   // Each remembered piece of this Combine to the one piece with its faces, when no other remembered piece has them too.
   const prefix = `body:${feature}/piece:`;
-  const numberOf = (id: string) => (id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) ? Number(id.slice(prefix.length)) : null);
+  // With `own`, number 1 is its id and number k + 1 piece k (version 15 named it piece 1; Design data's upgrade renames so).
+  const shift = own === undefined ? 0 : 1;
+  const numberOf = (id: string) => (id === own ? 1 : id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) ? Number(id.slice(prefix.length)) + shift : null);
+  const idOf = (k: number) => (k === shift ? own! : `${prefix}${k - shift}`);
   const key = (names: readonly string[]) => JSON.stringify([...new Set(names)].sort());
   const keys = rest.map((p) => key(shownFaces(named[p])));
   const ours = [...remembered].filter(([id]) => numberOf(id) !== null).map(([id, names]) => ({ id, k: numberOf(id)!, key: key(names) }));
@@ -248,8 +256,8 @@ export function combineNames(
   const renumbered = ours.filter((r) => rest.some((p) => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key)).map((r) => r.id);
   const body = (p: number, id: string): NamedBody => ({ id, handle: result.bodies[p], view: views[p], faces: named[p], made });
   return {
-    bodies: [...[...kept].map(([p, id]) => body(p, id)), ...rest.map((p) => body(p, `${prefix}${given.get(p)}`))],
-    nextPiece: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1)),
+    bodies: [...[...kept].map(([p, id]) => body(p, id)), ...rest.map((p) => body(p, idOf(given.get(p)!)))],
+    nextPiece: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1 - shift)),
     renumbered,
   };
 }
