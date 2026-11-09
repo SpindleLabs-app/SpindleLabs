@@ -24,8 +24,10 @@ check soak: cycle #: phone: Body # (# × # × #) shows a volume of #,# mm³, the
 check soak: listeners keeps growing: # by cycle #, # at cycle #, # at cycle #
 check soak: the soak's cycle stopped (seed #): page.waitForFunction: Timeout #ms exceeded.
 check the ts-mutants job failed with nothing more specific reported
+monkey Bodies group matches the file: rows ["body# Body #"], the file builds ["body# Body #","body# Body #"]
 monkey save: Save gave no file
 monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
+monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in" (in in); with Body # (Box: # × # × # mm) selecte
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
 monkey settles: the page was still changing # s after the action
 monkey the tester itself: locator.click: Timeout #ms exceeded.

@@ -1,4 +1,6 @@
-tested commit 269ab49 on main, 2026-11-08 21:22 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42514724197)
-Monkey, seeds 202611080-202611081: 2 session(s) of 2000 actions in Chromium; 8 Combines made of 30 tried; every check passed after every action
-seed 202611080: pass (2000 actions)
-seed 202611081: pass (2000 actions)
+tested commit 7d134d4 on main, 2026-11-09 09:09 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42564634698)
+Monkey, seeds 359806678-359806681: 4 session(s) of 2000 actions in Chromium; 16 Combines made of 45 tried; 2 FAILED
+seed 359806678: FAIL: Bodies group matches the file: rows ["body-5 Body 5"], the file builds ["body-5 Body 5","body-7 Body 7"]
+seed 359806679: FAIL: selection agrees: with Body 5 (Box: 1 × 30 × 0.5 mm) selected the Feature panel says "Box: 0.0394 × 1.181 × 0.0197 in" (in in); with Body 5 (Box: 1 × 30 × 0.5 mm) selected the Body panel shows 9.153561614 × 10⁻⁴ in³, but that body is 0.000915356 in³
+seed 359806680: pass (2000 actions)
+seed 359806681: pass (2000 actions)
