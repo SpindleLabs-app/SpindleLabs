@@ -31,6 +31,24 @@ The night's window, on the UTC day:
 A failed lookup counts as "not taken": only a second night could follow,
 and that is the better mistake (the night runs share one concurrency group,
 so the second one waits and then finds the first).
+
+Round the clock (Ben, 2026-11-09: random testing every hour of the day,
+until he says stop). While the switch file round_the_clock.txt on main says
+`on`, the clock also keeps the daytime going between nights: from the
+night's 22:35 UTC cut-off to 14:50 UTC (10:50pm Perth, ten minutes before
+the next night), runs titled "Kernel random testing, daytime" test the
+kernel's main back to back, each with fresh seeds, each at most `minutes`
+long and never past 14:50 UTC. The clock keeps one waiting behind the one
+running (the daytime runs share one concurrency group, so the waiting one
+starts the moment the running one ends) and wakes at least hourly while the
+switch is on. Every daytime job gives its runner to CI (stop-on-merge.sh),
+so pull requests never wait for it. The switch is read from main each time
+(a failed read counts as off): writing `off` there stops new daytime runs,
+and a waiting one skips; the night is not affected.
+
+  nightly_gate.py gate <workflow file>
+      with DAY=true: a daytime run goes only while the switch is on and
+      inside the daytime window (at least 30 minutes before 14:50 UTC).
 """
 
 import datetime
@@ -46,6 +64,11 @@ MIN_LEFT = 1800  # seconds: as the plan job's "started too late"
 NIGHT_TITLE = "Kernel random testing, nightly"  # kernel-nightly.yml's run-name for a night
 HOP = 19800  # seconds a clock run sleeps at most: 5.5 hours, inside the job's 360 minutes
 RETRY = 600  # seconds before trying again when tonight's run could not be started
+DAY_TITLE = "Kernel random testing, daytime"  # kernel-nightly.yml's run-name for a daytime run
+DAY_END = (14, 50)  # UTC: 10:50pm Perth, the daytime runs' cut-off, ten minutes before the night
+DAY_HOP = 3600  # seconds a clock run sleeps at most while the switch is on
+SWITCH = ".github/scripts/round_the_clock.txt"  # `on` or `off`, read from main
+WAITING = {"queued", "pending", "waiting", "requested"}
 
 
 def window(now):
@@ -77,15 +100,42 @@ def owed(now, taken_ids):
     return start <= now <= last and not taken_ids
 
 
-def sleep_for(now, still_owed):
+def sleep_for(now, still_owed, round_the_clock=False):
     """Seconds the clock sleeps before starting the next clock run: until the
-    next night's start, at most HOP; RETRY while tonight's run is owed."""
+    next night's start, at most HOP (DAY_HOP while the switch is on); RETRY
+    while tonight's run is owed."""
     if still_owed:
         return RETRY
     start, _ = window(now)
     if now >= start:
         start += datetime.timedelta(days=1)
-    return max(0, min(HOP, int((start - now).total_seconds())))
+    return max(0, min(DAY_HOP if round_the_clock else HOP, int((start - now).total_seconds())))
+
+
+def day_end(now):
+    """The daytime cut-off now falls before: the next 14:50 UTC."""
+    utc = now.astimezone(datetime.timezone.utc)
+    end = utc.replace(hour=DAY_END[0], minute=DAY_END[1], second=0, microsecond=0)
+    return end if utc < end else end + datetime.timedelta(days=1)
+
+
+def day_open(now):
+    """(go, why) for starting a daytime run now: after the night's 22:35 UTC
+    cut-off, and with at least MIN_LEFT before the daytime cut-off."""
+    utc = now.astimezone(datetime.timezone.utc)
+    end = day_end(utc)
+    cut = utc.replace(hour=CUT_OFF[0], minute=CUT_OFF[1], second=0, microsecond=0)
+    if end.date() > utc.date() and utc < cut:
+        return False, f"the night's hours ({utc:%H:%M} UTC; the daytime starts at {cut:%H:%M} UTC)"
+    if (end - utc).total_seconds() < MIN_LEFT:
+        return False, f"too late ({utc:%H:%M} UTC; a daytime run must start by 30 minutes before {end:%H:%M} UTC)"
+    return True, f"starting daytime testing ({utc:%H:%M} UTC, until {end:%H:%M} UTC at the latest)"
+
+
+def switch_on(text):
+    """The switch file says on: its first word, any case."""
+    words = (text or "").split()
+    return bool(words) and words[0].lower() == "on"
 
 
 def gh(*args):
@@ -116,9 +166,36 @@ def lookup(repo, workflow, now):
         return []
 
 
+def read_switch(repo):
+    """Whether round the clock is on, from main's switch file; off if it can't be read."""
+    try:
+        out = subprocess.run(["gh", "api", "-H", "Accept: application/vnd.github.raw", f"repos/{repo}/contents/{SWITCH}?ref=main"],
+                             check=True, capture_output=True, text=True, timeout=60).stdout
+    except subprocess.SubprocessError as e:
+        print(f"could not read the round-the-clock switch ({type(e).__name__}); counting it as off")
+        return False
+    return switch_on(out)
+
+
+def days_waiting(repo, workflow):
+    """Ids of daytime runs waiting to start; a failed lookup counts as none
+    (a second waiting one only replaces the first: GitHub keeps one per group)."""
+    try:
+        runs = gh("api", f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=30")["workflow_runs"]
+    except (subprocess.SubprocessError, ValueError, KeyError, TypeError) as e:
+        print(f"could not list the daytime runs ({type(e).__name__}); counting none as waiting")
+        return []
+    return [r["id"] for r in runs if r.get("display_title") == DAY_TITLE and r.get("status") in WAITING]
+
+
 def gate(argv):
     now = datetime.datetime.now(datetime.timezone.utc)
-    if os.environ.get("NIGHT") != "true":
+    if os.environ.get("DAY") == "true":
+        if read_switch(os.environ["GITHUB_REPOSITORY"]):
+            go, why = day_open(now)
+        else:
+            go, why = False, "round the clock is switched off"
+    elif os.environ.get("NIGHT") != "true":
         go, why = True, "a branch's run"
     else:
         nights = lookup(os.environ["GITHUB_REPOSITORY"], argv[2], now)
@@ -149,7 +226,18 @@ def clock(argv, sleep=time.sleep, clock_now=utc_now):
             print(f"could not start tonight's testing ({type(e).__name__}); trying again soon")
     elif taken:
         print(f"tonight's testing already started (run {taken[0]})")
-    wait = sleep_for(clock_now(), due)
+    on = read_switch(repo)
+    if on and day_open(now)[0]:
+        waiting = days_waiting(repo, night)
+        if waiting:
+            print(f"the next daytime run is already waiting (run {waiting[0]})")
+        else:
+            try:
+                gh("workflow", "run", night, "--repo", repo, "--ref", "main", "-f", "day=true")
+                print(f"queued daytime testing ({now:%H:%M} UTC)")
+            except subprocess.SubprocessError as e:
+                print(f"could not queue daytime testing ({type(e).__name__}); trying again next time")
+    wait = sleep_for(clock_now(), due, on)
     print(f"sleeping {wait // 60} minutes")
     sleep(wait)
     # The next clock run waits in the clock's concurrency group until this one

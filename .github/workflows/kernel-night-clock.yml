@@ -6,7 +6,10 @@ name: Kernel night clock
 # run at a time sleeps on a runner (at most 5.5 hours) and then starts the
 # next one with workflow_dispatch, which GitHub starts within seconds; the
 # run that finds the night's window open and the night not yet taken starts
-# it. The rules are in .github/scripts/nightly_gate.py (clock).
+# it. While .github/scripts/round_the_clock.txt on main says `on` (Ben,
+# 2026-11-09), it also keeps daytime runs going back to back between nights
+# (kernel-nightly.yml with day=true, 22:35 to 14:50 UTC) and wakes hourly.
+# The rules are in .github/scripts/nightly_gate.py (clock).
 #
 # The hourly schedule only restarts a clock that stopped (a cancelled run,
 # a failed start): while a clock runs, a newer run waits in the group, and

@@ -81,12 +81,89 @@ class Clock(unittest.TestCase):
             self.assertIn(9, woke, start)
 
 
+class RoundTheClock(unittest.TestCase):
+    """The daytime runs between nights (Ben, 2026-11-09)."""
+
+    def test_the_daytime_window_by_hand(self):
+        # The night's jobs stop at 22:35 UTC (6:35am Perth): the daytime
+        # starts then. Its runs stop at 14:50 UTC, ten minutes before the
+        # night's 15:00 start, and a run needs 30 minutes, so the last start
+        # is 14:20 UTC.
+        self.assertFalse(ng.day_open(at(22, 34, 59))[0])
+        self.assertIn("night's hours", ng.day_open(at(22, 34, 59))[1])
+        self.assertTrue(ng.day_open(at(22, 35))[0])
+        self.assertTrue(ng.day_open(at(3, 0))[0])
+        self.assertTrue(ng.day_open(at(14, 20))[0])
+        self.assertFalse(ng.day_open(at(14, 20, 1))[0])
+        self.assertIn("too late", ng.day_open(at(14, 20, 1))[1])
+        for night in (at(14, 50), at(15, 0), at(18, 0), at(22, 5)):
+            self.assertFalse(ng.day_open(night)[0], night)
+
+    def test_the_cut_off_by_hand(self):
+        # 03:00 UTC: today's 14:50. 23:00 UTC: tomorrow's.
+        self.assertEqual(ng.day_end(at(3, 0)), at(14, 50))
+        self.assertEqual(ng.day_end(at(23, 0)), at(14, 50, day=9))
+        self.assertEqual(ng.day_end(at(14, 50)), at(14, 50, day=9))
+
+    def test_the_last_start_at_0_9_and_1_1_of_the_half_hour(self):
+        # 1.1 x 30 min = 33 min left (14:17): starts. 0.9 x 30 = 27 min left (14:23): doesn't.
+        self.assertTrue(ng.day_open(at(14, 17))[0])
+        self.assertFalse(ng.day_open(at(14, 23))[0])
+
+    def test_daytime_and_night_never_overlap(self):
+        # Every minute of two days: a daytime run may start only outside the
+        # night's start window and outside its jobs' hours (15:00 to 22:35
+        # UTC), and its cut-off is always before the next night starts.
+        t = at(0, 0)
+        while t < at(0, 0, day=10):
+            if ng.day_open(t)[0]:
+                self.assertFalse(ng.owed(t, []), t)
+                self.assertFalse((15, 0) <= (t.hour, t.minute) < (22, 35), t)
+                start, _ = ng.window(t)
+                if t >= start:
+                    start += datetime.timedelta(days=1)
+                self.assertLessEqual(ng.day_end(t), start - datetime.timedelta(minutes=10), t)
+                self.assertGreaterEqual((ng.day_end(t) - t).total_seconds(), ng.MIN_LEFT, t)
+            t += datetime.timedelta(minutes=1)
+
+    def test_the_switch_by_hand(self):
+        self.assertTrue(ng.switch_on("on\n"))
+        self.assertTrue(ng.switch_on("ON"))
+        self.assertFalse(ng.switch_on("off\n"))
+        self.assertFalse(ng.switch_on(""))
+        self.assertFalse(ng.switch_on(None))
+        self.assertFalse(ng.switch_on("onward"))
+
+    def test_sleeps_hourly_while_on(self):
+        self.assertEqual(ng.sleep_for(at(2, 0), False, True), 3600)
+        self.assertEqual(ng.sleep_for(at(14, 59), False, True), 60)
+        self.assertEqual(ng.sleep_for(at(16, 0), True, True), 600)
+        # Off: as before.
+        self.assertEqual(ng.sleep_for(at(2, 0), False, False), 19800)
+
+    def test_a_clock_chain_with_the_switch_on_still_never_skips_a_night(self):
+        for start in (at(0, 0), at(9, 13), at(15, 0), at(22, 40), at(23, 59)):
+            now, woke = start, []
+            while now < at(15, 1, day=10):
+                if ng.owed(now, [] if now.day not in woke else [1]):
+                    woke.append(now.day)
+                    self.assertEqual((now.hour, now.minute), (15, 0), start)
+                step = ng.sleep_for(now, False, True)
+                self.assertLessEqual(step, 3600)
+                now += datetime.timedelta(seconds=step)
+            self.assertIn(9, woke, start)
+            self.assertIn(10, woke, start)
+
+
 FAKE_GH = r"""#!/usr/bin/env bash
 # Plays `gh`: today's runs 10 (a night whose plan was skipped: too early),
 # 11 (a night whose plan succeeded), 12 (a branch's run on main) and 13 (a
-# night still waiting); $FAKE_RUNS picks which are listed.
+# night still waiting), 14 (a daytime run waiting) and 15 (a daytime run
+# running); $FAKE_RUNS picks which are listed. The switch file says
+# $FAKE_SWITCH; its read fails when $FAKE_SWITCH_FAILS is set.
 echo "$*" >>"$FAKE_LOG"
 case "$*" in
+  *"/contents/.github/scripts/round_the_clock.txt?ref=main"*) [ -n "$FAKE_SWITCH_FAILS" ] && exit 1; echo "$FAKE_SWITCH";;
   "workflow run"*) [ -n "$FAKE_DISPATCH_FAILS" ] && exit 1; exit 0;;
   *"/workflows/"*)
     runs=""
@@ -94,6 +171,8 @@ case "$*" in
       case $id in
         12) title="Kernel random testing on main"; status=completed;;
         13) title="Kernel random testing, nightly"; status=queued;;
+        14) title="Kernel random testing, daytime"; status=queued;;
+        15) title="Kernel random testing, daytime"; status=in_progress;;
         *) title="Kernel random testing, nightly"; status=completed;;
       esac
       runs="$runs${runs:+,}{\"id\":$id,\"display_title\":\"$title\",\"status\":\"$status\"}"
@@ -117,7 +196,8 @@ class WithFakeGh(unittest.TestCase):
         self.log = os.path.join(d, "log")
         self.env = dict(os.environ, PATH=os.path.join(d, "bin") + os.pathsep + os.environ["PATH"], FAKE_LOG=self.log,
                         FAKE_RUNS="10 11 12", GITHUB_REPOSITORY="o/r")
-        self.env.pop("FAKE_DISPATCH_FAILS", None)
+        for k in ("FAKE_DISPATCH_FAILS", "FAKE_SWITCH", "FAKE_SWITCH_FAILS"):
+            self.env.pop(k, None)
         self.old = os.environ.copy()
 
     def tearDown(self):
@@ -184,6 +264,59 @@ class WithFakeGh(unittest.TestCase):
         self.assertEqual(slept, [600, 30, 30])
         self.assertEqual(code, 1)
         self.assertEqual(len(dispatched), 4)
+
+    def test_switched_off_the_clock_queues_no_daytime_run(self):
+        for extra in ({"FAKE_SWITCH": "off"}, {"FAKE_SWITCH": "on", "FAKE_SWITCH_FAILS": "1"}, {}):
+            os.path.exists(self.log) and os.remove(self.log)
+            code, slept, dispatched = self.run_clock(at(3, 0), FAKE_RUNS="", **extra)
+            self.assertEqual(dispatched, ["workflow run kernel-night-clock.yml --repo o/r --ref main"], extra)
+            self.assertEqual(slept, [19800], extra)
+
+    def test_switched_on_the_clock_queues_the_next_daytime_run(self):
+        # Nothing waiting, or one running (the new one waits behind it): queue one, wake within the hour.
+        for runs in ("", "15", "10 11 12"):
+            os.path.exists(self.log) and os.remove(self.log)
+            code, slept, dispatched = self.run_clock(at(3, 0), FAKE_RUNS=runs, FAKE_SWITCH="on")
+            self.assertEqual(code, 0)
+            self.assertEqual(dispatched, ["workflow run kernel-nightly.yml --repo o/r --ref main -f day=true",
+                                          "workflow run kernel-night-clock.yml --repo o/r --ref main"], runs)
+            self.assertEqual(slept, [3600], runs)
+        self.assertIn("api -H Accept: application/vnd.github.raw repos/o/r/contents/.github/scripts/round_the_clock.txt?ref=main", self.calls())
+
+    def test_one_waiting_daytime_run_is_enough(self):
+        code, slept, dispatched = self.run_clock(at(3, 0), FAKE_RUNS="14 15", FAKE_SWITCH="on")
+        self.assertEqual(dispatched, ["workflow run kernel-night-clock.yml --repo o/r --ref main"])
+
+    def test_no_daytime_run_in_the_nights_hours(self):
+        # 18:00 UTC with tonight running: switched on, but it is the night's.
+        code, slept, dispatched = self.run_clock(at(18, 0), FAKE_RUNS="11", FAKE_SWITCH="on")
+        self.assertEqual(dispatched, ["workflow run kernel-night-clock.yml --repo o/r --ref main"])
+        self.assertEqual(slept, [3600])
+        # 15:00 UTC: the night starts, and no daytime run beside it.
+        os.remove(self.log)
+        code, slept, dispatched = self.run_clock(at(15, 0), FAKE_RUNS="", FAKE_SWITCH="on")
+        self.assertEqual(dispatched, ["workflow run kernel-nightly.yml --repo o/r --ref main -f night=true",
+                                      "workflow run kernel-night-clock.yml --repo o/r --ref main"])
+
+    def gate_day(self, **extra):
+        out = os.path.join(self.dir.name, "out")
+        env = dict(self.env, NIGHT="false", DAY="true", GITHUB_OUTPUT=out, **extra)
+        p = subprocess.run([sys.executable, os.path.join(HERE, "nightly_gate.py"), "gate", "kernel-nightly.yml"], env=env,
+                           capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        with open(out) as f:
+            return f.read(), p.stdout
+
+    def test_a_daytime_run_skips_once_switched_off(self):
+        for extra in ({"FAKE_SWITCH": "off"}, {"FAKE_SWITCH": "on", "FAKE_SWITCH_FAILS": "1"}):
+            os.path.exists(os.path.join(self.dir.name, "out")) and os.remove(os.path.join(self.dir.name, "out"))
+            got, said = self.gate_day(**extra)
+            self.assertEqual(got, "go=false\n", extra)
+            self.assertIn("switched off", said, extra)
+
+    def test_a_daytime_run_switched_on_follows_the_window(self):
+        got, said = self.gate_day(FAKE_SWITCH="on")
+        self.assertEqual(got, f"go={'true' if ng.day_open(datetime.datetime.now(UTC))[0] else 'false'}\n", said)
 
 
 if __name__ == "__main__":
