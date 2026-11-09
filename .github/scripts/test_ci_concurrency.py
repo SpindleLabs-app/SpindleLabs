@@ -218,6 +218,13 @@ class KernelRandomTestingGroups(unittest.TestCase):
         # A stray `day` beside `night` is still the night.
         self.assertEqual(self.group(dict(dispatch("main"), inputs={"ref": "main", "night": True, "day": True})), "kernel-random-testing-nightly")
 
+    def test_the_clocks_app_night_shares_the_schedules_group(self):
+        # The clock's night (night=true) and the 15:00 UTC schedule's spare queue in one group, so
+        # the second waits and then skips at the gate instead of running beside the first.
+        night = expand(concurrency(NIGHTLY)[0], dict(dispatch("main"), inputs={"night": True}))
+        self.assertEqual(night, "random-testing-nightly")
+        self.assertEqual(night, expand(concurrency(NIGHTLY)[0], schedule()))
+
     def test_the_apps_daytime_runs_have_their_own_group(self):
         day = expand(concurrency(NIGHTLY)[0], dict(dispatch("main"), inputs={"day": True}))
         self.assertEqual(day, "random-testing-daytime")

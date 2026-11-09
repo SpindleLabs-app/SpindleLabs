@@ -8,7 +8,11 @@ workflow_dispatch starts within seconds, so a clock does it instead
 (kernel-night-clock.yml): one run at a time sleeps on a runner until the next
 night (at most 5.5 hours, a job's limit is 6), then starts the next clock
 run; one that finds the night's window open and the night not yet taken
-starts tonight's run (kernel-nightly.yml with night=true). The clock's
+starts tonight's run (kernel-nightly.yml with night=true), and, when the
+app's workflow is named as the clock's last word, the app's night the same
+way (nightly.yml with night=true: GitHub's 15:00 UTC schedule started it 4
+to 6 hours late every night of 11-01 to 11-08; that schedule stays as a
+spare, and its run skips at the gate once tonight is taken). The clock's
 hourly schedule only restarts a clock that stopped.
 
 The night's window, on the UTC day:
@@ -66,6 +70,8 @@ START_HOUR = 15  # UTC: 11pm Perth
 CUT_OFF = (22, 35)  # UTC: 6:35am Perth, as the plan job's deadline
 MIN_LEFT = 1800  # seconds: as the plan job's "started too late"
 NIGHT_TITLE = "Kernel random testing, nightly"  # kernel-nightly.yml's run-name for a night
+APP = "nightly.yml"  # the app's random testing
+APP_NIGHT_TITLE = "Random testing, nightly"  # nightly.yml's run-name for a night
 HOP = 19800  # seconds a clock run sleeps at most: 5.5 hours, inside the job's 360 minutes
 RETRY = 600  # seconds before trying again when tonight's run could not be started
 DAY_TITLE = "Kernel random testing, daytime"  # kernel-nightly.yml's run-name for a daytime run
@@ -148,17 +154,27 @@ def gh(*args):
     return json.loads(out) if out.strip() else None
 
 
+def took_night(workflow, jobs):
+    """Whether a night run's jobs show it took the night: kernel-nightly.yml's
+    plan job succeeded (it fails when started too late); nightly.yml's
+    journeys job exists and was not skipped (its gate let the night through)."""
+    if workflow == APP:
+        return any(j["name"] == "journeys" and j.get("conclusion") != "skipped" for j in jobs)
+    return any(j["name"] == "plan" and j.get("conclusion") == "success" for j in jobs)
+
+
 def nights_today(repo, workflow, now):
     """Today's night runs (by their title) created from 14:00 UTC on, each as
-    (id, finished, planned): planned when its plan job succeeded."""
+    (id, finished, planned): planned when it took the night (took_night)."""
+    title = APP_NIGHT_TITLE if workflow == APP else NIGHT_TITLE
     since = now.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT14:00:00Z")
     runs = gh("api", f"repos/{repo}/actions/workflows/{workflow}/runs?created=%3E%3D{since}&per_page=100")["workflow_runs"]
     out = []
     for run in runs:
-        if run.get("display_title") != NIGHT_TITLE:
+        if run.get("display_title") != title:
             continue
         jobs = gh("api", f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
-        planned = any(j["name"] == "plan" and j.get("conclusion") == "success" for j in jobs)
+        planned = took_night(workflow, jobs)
         out.append((run["id"], run.get("status") == "completed", planned))
     return out
 
@@ -234,17 +250,18 @@ def clock(argv, sleep=time.sleep, clock_now=utc_now):
     repo, night, me = os.environ["GITHUB_REPOSITORY"], argv[2], argv[3]
     app = argv[4] if len(argv) > 4 else None
     now = clock_now()
-    taken = [i for i, finished, planned in lookup(repo, night, now) if planned or not finished]
-    due = owed(now, taken)
-    if due:
-        try:
-            gh("workflow", "run", night, "--repo", repo, "--ref", "main", "-f", "night=true")
-            print(f"started tonight's testing ({now:%H:%M} UTC)")
-            due = False
-        except subprocess.SubprocessError as e:
-            print(f"could not start tonight's testing ({type(e).__name__}); trying again soon")
-    elif taken:
-        print(f"tonight's testing already started (run {taken[0]})")
+    due = False
+    for workflow in (night, app) if app else (night,):
+        taken = [i for i, finished, planned in lookup(repo, workflow, now) if planned or not finished]
+        if owed(now, taken):
+            try:
+                gh("workflow", "run", workflow, "--repo", repo, "--ref", "main", "-f", "night=true")
+                print(f"started tonight's testing of {workflow} ({now:%H:%M} UTC)")
+            except subprocess.SubprocessError as e:
+                print(f"could not start tonight's testing of {workflow} ({type(e).__name__}); trying again soon")
+                due = True
+        elif taken:
+            print(f"tonight's testing of {workflow} already started (run {taken[0]})")
     on = read_switch(repo)
     if on and day_open(now)[0]:
         queue_day(repo, night, DAY_TITLE, now)
