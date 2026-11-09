@@ -6,10 +6,11 @@
 // profiles are one kind; sketches (step 21b) register as another type with
 // this same producer, so there is no sketch-only path.
 
-import type { KernelCalls, Outline, Plane, Producible, Producer, RepresentationRegistry, SourceLookup } from "@fission/core";
+import type { BodySpec, KernelCalls, Outline, Plane, Producible, Producer, RepresentationRegistry, SourceLookup } from "@fission/core";
 import { bodyFeatures, designBodies } from "./browser.ts";
-import { bodyHidden, bodyNumbers, readDesignDocument, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, makesPieces, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
+import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { outline } from "./profiles.ts";
 import { readDesignReference, readProfileReference } from "./references.ts";
 import { bodyOf, findInScene, type Scene } from "./scene.ts";
@@ -28,10 +29,45 @@ export const outlineProducer: Producer = async (object) => {
   return { kind: "outline", plane: source.plane, outline: await source.outline() };
 };
 
-/** A feature's result, handed over by id. */
+/**
+ * A feature's result, handed over by id. In a design with a Combine (or an
+ * extrude with an operation) it also names its `body` (35f1f2d): a
+ * Combine's result, each of its pieces and a copy of one have no spec of
+ * their own, only the kernel holds them, so they are handed over from a
+ * rebuild by body (`bodyNow`).
+ */
 export interface FeatureHandle extends Producible {
   type: "design.feature";
   document: DesignDocument;
+  body?: string;
+}
+
+/** Whether a design's bodies are handed over by body (35f1f2d): it holds an item that makes pieces. */
+const byBody = (document: DesignDocument) => document.timeline.features.some(makesPieces);
+
+/**
+ * Body `body` where the timeline ends it, from one rebuild on a body store
+ * of its own: its spec when it has one, and its triangles. A Combine's
+ * result has no spec: asked for one, it says so in words, never a wrong
+ * body. A body the rebuild doesn't make is refused in words.
+ */
+async function bodyNow(kernel: KernelCalls, document: DesignDocument, body: string, want: "spec"): Promise<BodySpec>;
+async function bodyNow(kernel: KernelCalls, document: DesignDocument, body: string, want: "mesh"): Promise<{ positions: number[]; indices: number[] }>;
+async function bodyNow(kernel: KernelCalls, document: DesignDocument, body: string, want: "spec" | "mesh"): Promise<BodySpec | { positions: number[]; indices: number[] }> {
+  const cache = new BodyCache(kernel);
+  try {
+    const build = await rebuildTimeline(document, cache, kernel);
+    const built = build.bodies[body];
+    if (built === undefined) throw new Error(`${body} is not built`);
+    if (want === "spec") {
+      if (built.spec === null) throw new Error(`${body} is a Combine's result: only the kernel holds it, so it is handed over as a mesh, not as an exact solid`);
+      return built.spec;
+    }
+    const { mesh } = await cache.view(built.handle);
+    return { positions: [...mesh.positions], indices: [...mesh.indices] };
+  } finally {
+    await cache.close();
+  }
 }
 
 /**
@@ -54,7 +90,7 @@ export function designObjects(document: DesignDocument, kernel: KernelCalls): (O
     outline: () => sketchOutline(kernel, document, s.id),
   }));
   // Every body shown, not only the part's (25c1); a design with no body (24f4) offers no solid.
-  const solids: FeatureHandle[] = bodyFeatures(document).map((f) => ({ type: "design.feature", id: f.id, document }));
+  const solids: FeatureHandle[] = bodyFeatures(document).map((f) => ({ type: "design.feature", id: f.id, document, ...(byBody(document) && { body: bodyIdOf(f.id) }) }));
   return [...profiles, ...sketches, ...solids];
 }
 
@@ -71,7 +107,8 @@ export function designObjects(document: DesignDocument, kernel: KernelCalls): (O
  * not Design's to find (null).
  */
 export function designLookup(document: DesignDocument, scene: Scene | null, kernel: KernelCalls): SourceLookup {
-  const solidOf = (featureId: string): FeatureHandle => ({ type: "design.feature", id: featureId, document });
+  // In a design with a Combine, by the body found (a Combine's piece's item is the Combine, which makes no body of its own).
+  const solidOf = (featureId: string, body: string): FeatureHandle => ({ type: "design.feature", id: featureId, document, ...(byBody(document) && { body }) });
   return (source) => {
     if (source.origin.workspace !== "design") return null;
     if (source.kind === "object") {
@@ -85,10 +122,10 @@ export function designLookup(document: DesignDocument, scene: Scene | null, kern
     if (scene === null || readDesignReference(ref) === null) return null;
     const b = bodyOf(scene, ref);
     if (b < 0) return null;
-    if (ref.kind === "body") return solidOf(scene.bodies[b].feature);
+    if (ref.kind === "body") return solidOf(scene.bodies[b].feature, scene.bodies[b].body);
     const found = findInScene(ref, scene);
     if (found.status === "shared") return { unresolved: `now matches more than one ${ref.kind} after the last edit, so it was not moved to any of them` };
-    return found.status === "found" ? solidOf(scene.bodies[b].feature) : null;
+    return found.status === "found" ? solidOf(scene.bodies[b].feature, scene.bodies[b].body) : null;
   };
 }
 
@@ -97,7 +134,8 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
   registry.registerProducer("design.profile", "outline", outlineProducer);
   registry.registerProducer("design.sketch", "outline", outlineProducer);
   const spec = (o: Producible) => {
-    const { document } = o as FeatureHandle;
+    const { document, body } = o as FeatureHandle;
+    if (body !== undefined) return bodyNow(kernel, document, body, "spec");
     const feature = document.timeline.features.find((f) => f.id === o.id);
     if (!feature) throw new Error(`feature ${o.id} is not in the design`);
     // An extrude of a sketch asks the kernel for the outline, now.
@@ -113,14 +151,19 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
     }
     const numbers = bodyNumbers(doc);
     const seen = new Set<string>();
+    // With a Combine, each body by itself (35f1f2d: a Combine's pieces share their item); else by its item, as before.
+    const pieces = byBody(doc);
     return designBodies(doc).flatMap(({ body, feature }) => {
-      if (bodyHidden(doc, body) || seen.has(feature.id)) return [];
-      seen.add(feature.id);
-      return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}` }];
+      const key = pieces ? body : feature.id;
+      if (bodyHidden(doc, body) || seen.has(key)) return [];
+      seen.add(key);
+      return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}`, ...(pieces && { body }) }];
     });
   });
   registry.registerProducer("design.feature", "solid", async (o) => ({ kind: "solid", spec: await spec(o) }));
   registry.registerProducer("design.feature", "mesh", async (o) => {
+    const { document, body } = o as FeatureHandle;
+    if (body !== undefined) return { kind: "mesh", ...(await bodyNow(kernel, document, body, "mesh")) };
     const view = await buildSpec(kernel, await spec(o));
     return { kind: "mesh", positions: view.mesh.positions, indices: view.mesh.indices };
   });

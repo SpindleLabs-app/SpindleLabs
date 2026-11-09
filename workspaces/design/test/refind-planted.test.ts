@@ -81,8 +81,8 @@ export const REFIND_PLANTS: Plant[] = [
   {
     name: "link-guesses",
     file: "representations",
-    find: '    return found.status === "found" ? solidOf(scene.bodies[b].feature) : null;',
-    replace: "    return solidOf(scene.bodies[b].feature);",
+    find: '    return found.status === "found" ? solidOf(scene.bodies[b].feature, scene.bodies[b].body) : null;',
+    replace: "    return solidOf(scene.bodies[b].feature, scene.bodies[b].body);",
     caught: "the link lookup differs from the model",
   },
 ];

@@ -2,7 +2,10 @@
 // when Ben says it goes public. Opening the app with `?combine` in its
 // address turns it on for the tab (kept in sessionStorage, so it stays on
 // across reloads and moves between workspaces); `?combine=off` turns it off
-// again. Read once, when the Design workspace first asks: a flag changed
+// again. Written after the "#" too (`#design?combine`, as the app's own
+// address ends in "#design": Ben's first try, 11-08), it works the same,
+// the part before the "#" winning when both say; slashes, spaces and capitals typed round it are forgiven
+// (`?combine/`, Ben 11-09). Read once, when the Design workspace first asks: a flag changed
 // later takes effect on the next load. Without it, Modify ▾ shows Combine
 // greyed as coming soon (coming-soon.ts), as before.
 
@@ -13,14 +16,15 @@ type FlagStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 /**
  * The flag from the address's query (`search`, as location.search gives
- * it) and the tab's store: `?combine` (or `=on`, `=1`, `=true`) turns it on
+ * it, else the part of its `hash` after a "?") and the tab's store: `?combine` (or `=on`, `=1`, `=true`) turns it on
  * and remembers it, `?combine=off` (or `=0`, `=false`) turns it off and
  * forgets it, any other value is ignored; no `combine` in the address
  * keeps what the store says. A store that throws (a private window, blocked
  * storage) counts as empty, and the address alone decides.
  */
-export function readCombineFlag(search: string, store: FlagStore | null): boolean {
-  const value = new URLSearchParams(search).get("combine");
+export function readCombineFlag(search: string, store: FlagStore | null, hash = ""): boolean {
+  const asked = hash.indexOf("?");
+  const value = combineIn(search) ?? (asked < 0 ? null : combineIn(hash.slice(asked + 1)));
   const on = value === null ? null : ["", "on", "1", "true"].includes(value) ? true : ["off", "0", "false"].includes(value) ? false : null;
   try {
     if (on === true) store?.setItem(COMBINE_KEY, "on");
@@ -30,6 +34,18 @@ export function readCombineFlag(search: string, store: FlagStore | null): boolea
   } catch {
     return on ?? false;
   }
+}
+
+/**
+ * The `combine` value in a query, forgiving how it was typed: slashes and
+ * spaces at either end and capitals are dropped from both name and value
+ * (`?combine/#design`, Ben 11-09, read as a name "combine/" and so as
+ * nothing: Combine stayed "coming soon"). Null when there is none.
+ */
+function combineIn(query: string): string | null {
+  const plain = (s: string) => s.replace(/^[\s/]+|[\s/]+$/g, "").toLowerCase();
+  for (const [name, value] of new URLSearchParams(query)) if (plain(name) === "combine") return plain(value);
+  return null;
 }
 
 let flag: boolean | null = null;
@@ -43,7 +59,7 @@ export function combineShown(): boolean {
     } catch {
       store = null;
     }
-    flag = readCombineFlag(globalThis.location?.search ?? "", store);
+    flag = readCombineFlag(globalThis.location?.search ?? "", store, globalThis.location?.hash ?? "");
   }
   return flag;
 }

@@ -139,6 +139,10 @@ test("saved and read back exactly, version 16; every broken fit in a file is ref
   // A kept shape's circle may keep its fit (a lost sketch's last shape), and is checked the same way.
   const kept = { ...json, kept: { "feature-x": { points: sketchOf(tagged, t.sketch).points, curves: sketchOf(tagged, t.sketch).curves } } };
   assert.throws(() => readDesignDocument({ ...kept, version: 13 }), /version 14 brought/);
+  // Only the kept shape's circle tagged, the sketch's own not: still refused (mutation survivor 11-08: kept shapes were never looked at alone).
+  const keptOnly = JSON.parse(JSON.stringify(kept));
+  for (const c of keptOnly.sketches.find((q: Sketch) => q.id === t.sketch).curves) delete c.fit;
+  assert.throws(() => readDesignDocument({ ...keptOnly, version: 13 }), { message: "Design data says version 13 but has a circle tagged with its fit, which version 14 brought" });
 });
 
 test("seeded: random tags on random circles save and read back exactly, and the circles' sizes never move", () => {
