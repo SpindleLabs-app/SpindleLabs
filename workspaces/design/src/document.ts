@@ -216,7 +216,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 15;
+  version: 16;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -408,7 +408,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 15, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 16, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -533,9 +533,11 @@ export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f);
  * the id of the earliest made one it holds (docs/document-model.md section
  * 8; the others' ids are gone), Cut takes it out of each body picked,
  * Intersect keeps only what each body picked shares with it, each keeping
- * its id. Any other piece (one a Cut splits off, or one of a Join holding
- * only the extrude) is `body:<the extrude>/piece:<k>`, remembered by its
- * faces as a Combine's (version 13's `faces`). It depends on its
+ * its id. A piece of a Join holding only the extrude is the extrude's own
+ * body, `body:<the extrude>` (version 16; when there are several, the
+ * first by rank keeps it and the others are numbered as a Cut's), and any
+ * other piece (one a Cut splits off) is `body:<the extrude>/piece:<k>`,
+ * remembered by its faces as a Combine's (version 13's `faces`). It depends on its
  * sketch, then on the items that made its bodies. Without `operation` an
  * extrude is a new body, as before version 10.
  */
@@ -553,6 +555,17 @@ export const operationMakers = (f: Feature): string[] => [...new Set((extrudeOpe
 
 /** Whether an item can leave pieces (`body:<it>/piece:<k>`): a Combine, or an extrude with an operation. */
 export const makesPieces = (f: Feature) => isCombineItem(f) || isOperationExtrude(f);
+
+/** Whether an item is an Extrude Join (version 10), whose own body (version 16) is the piece of its result holding only the extrude. */
+export const isExtrudeJoin = (f: Feature) => isOperationExtrude(f) && f.intent.parameters.operation === "join";
+
+/**
+ * Whether body `bodyId` of item `item` is one the bodies list numbers only
+ * once a rebuild makes it (35f1): a piece, or (version 16) an Extrude
+ * Join's own body, `body:<the extrude>`, the piece holding only the
+ * extrude. Such a body is a body of the design while the list numbers it.
+ */
+export const numberedWhenBuilt = (bodyId: string, item: Feature | undefined): boolean => isPiece(bodyId) || (item !== undefined && bodyId === bodyIdOf(item.id) && isExtrudeJoin(item));
 
 /** Whether an item makes a body of its own: anything but a sketch, a Move, a Combine or an extrude with an operation (a Duplicate's copy is its own body). */
 export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f) && !isOperationExtrude(f);
@@ -639,9 +652,10 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
   const made = doc.timeline.features.filter(makesBody);
   const live = new Set(made.map((f) => bodyIdOf(f.id)));
   // A Combine's pieces (35f1) keep their numbers while the Combine is there; `numberPieces` gives them theirs.
-  const combines = new Set(doc.timeline.features.filter(makesPieces).map((f) => f.id));
+  // So does an Extrude Join's own body (version 16).
+  const combines = new Map(doc.timeline.features.filter(makesPieces).map((f) => [f.id, f] as const));
   const old = doc.bodies ?? [];
-  const kept = old.filter((b) => live.has(b.id) || (isPiece(b.id) && combines.has(bodyItem(b.id)!)));
+  const kept = old.filter((b) => live.has(b.id) || (combines.has(bodyItem(b.id)!) && numberedWhenBuilt(b.id, combines.get(bodyItem(b.id)!))));
   const have = new Set(kept.map((b) => b.id));
   const missing = made.filter((f) => !have.has(bodyIdOf(f.id)));
   // Which build is asked only when a body needs a number (the browser asks for the numbers on every draw of a 5,000-item timeline).
@@ -666,14 +680,14 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
 export function numberPieces(doc: DesignDocument, pieces: readonly string[], faces: ReadonlyMap<string, readonly string[]> = new Map()): DesignDocument {
   const numbered = numberBodies(doc);
   const have = new Set(numbered.bodies!.map((b) => b.id));
-  const combines = new Set(doc.timeline.features.filter(makesPieces).map((f) => f.id));
+  const combines = new Map(doc.timeline.features.filter(makesPieces).map((f) => [f.id, f] as const));
   const built = new Set(pieces);
-  const fresh = [...built].filter((id) => isPiece(id) && combines.has(bodyItem(id)!) && !have.has(id));
+  const fresh = [...built].filter((id) => combines.has(bodyItem(id)!) && numberedWhenBuilt(id, combines.get(bodyItem(id)!)) && !have.has(id));
   const facesOf = (id: string) => {
     const f = faces.get(id);
     return f === undefined || f.length === 0 ? {} : { faces: [...new Set(f)].sort() };
   };
-  const filled = numbered.bodies!.map((b) => (b.faces === undefined && isPiece(b.id) && built.has(b.id) ? { ...b, ...facesOf(b.id) } : b));
+  const filled = numbered.bodies!.map((b) => (b.faces === undefined && numberedWhenBuilt(b.id, combines.get(bodyItem(b.id)!)) && built.has(b.id) ? { ...b, ...facesOf(b.id) } : b));
   const changed = filled.some((b, i) => b.faces !== numbered.bodies![i].faces);
   if (fresh.length === 0 && !changed) return numbered;
   let next = numbered.nextBody!;
@@ -1422,7 +1436,7 @@ function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: 
   const maker = bodyItem(id);
   if (maker === null) return false;
   const at = byId.get(maker);
-  if (!isPiece(id)) return at !== undefined && makesBody(at.item);
+  if (!numberedWhenBuilt(id, at?.item)) return at !== undefined && makesBody(at.item);
   return at !== undefined && makesPieces(at.item) && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id);
 }
 
@@ -1449,7 +1463,7 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
     const item = m ? byId.get(m[1])?.item : undefined;
     // A piece (35f1): "body:<a Combine>/piece:<k>"; one whose Combine is gone is dropped by `numberBodies`, as a body whose item is.
     const maker = isPiece(b.id) ? byId.get(bodyItem(b.id)!)?.item : undefined;
-    if (isPiece(b.id) ? maker !== undefined && !makesPieces(maker) : !m || (item && !makesBody(item)))
+    if (isPiece(b.id) ? maker !== undefined && !makesPieces(maker) : !m || (item && !makesBody(item) && !isExtrudeJoin(item)))
       throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body, or a piece of a Combine or of an extrude that joins, cuts or intersects`);
     if (ids.has(b.id)) throw new Error(`Design body ${b.id} is listed twice`);
     ids.add(b.id);
@@ -1457,14 +1471,15 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
     if (numbers.has(b.number)) throw new Error(`Design body number ${b.number} is given twice`);
     numbers.add(b.number);
     if (b.number >= nextBody!) throw new Error(`Design data's nextBody ${nextBody} is not above body ${b.id}'s number ${b.number}, so a new body could repeat it`);
-    if (Object.hasOwn(b, "faces")) faceCount += checkPieceFaces(b as Record<string, unknown> & { id: string }, faceCount);
+    if (Object.hasOwn(b, "faces")) faceCount += checkPieceFaces(b as Record<string, unknown> & { id: string }, faceCount, item);
   }
 }
 
 /** A piece's remembered faces (version 13, hunt 11-06): only on a piece, a list of its faces' names, each once; how many it holds. `before` counts the earlier pieces' names, so the limit is on them all. */
-function checkPieceFaces(b: Record<string, unknown> & { id: string }, before: number): number {
+function checkPieceFaces(b: Record<string, unknown> & { id: string }, before: number, item: Feature | undefined): number {
   const { faces } = b;
-  if (!isPiece(b.id)) throw new Error(`Design body ${b.id} has faces, which only a Combine's piece remembers`);
+  // And an Extrude Join's own body (version 16), the piece holding only the extrude.
+  if (!numberedWhenBuilt(b.id, item)) throw new Error(`Design body ${b.id} has faces, which only a Combine's piece remembers`);
   if (!Array.isArray(faces) || faces.length === 0) throw new Error(`Design body ${b.id}'s faces are not a list of face names`);
   notTooMany(before + faces.length, DESIGN_LIMITS.faces, "Design data's pieces have at least", "face names together");
   const seen = new Set<string>();
@@ -1528,6 +1543,51 @@ function hasVersion15Fields(d: Record<string, unknown>): boolean {
 }
 
 /**
+ * Version 15 data as version 16 (hunt 11-08): an Extrude Join's pieces
+ * holding only the extrude were `body:<the extrude>/piece:<k>`, numbered
+ * from 1 in rank order when first built and kept by their faces after;
+ * version 16 gives the first of them the extrude's own id and numbers the
+ * others from 1 (docs/document-model.md section 8), finding them by their
+ * faces the same way. So piece 1 becomes `body:<the extrude>` and piece k
+ * piece k − 1, its number and faces kept, everywhere the data names a
+ * body: the bodies list, the eyes, and each Move's, Combine's, Duplicate's
+ * and operation extrude's bodies; the same file builds the same bodies at
+ * the same places. Only a Join's (a Cut's or an Intersect's pieces keep
+ * their names), and anything not a body id is left for the checks. Version
+ * 15 data already naming a Join's own id is refused: version 15 never
+ * wrote one.
+ */
+export function migrateDesignV15(d: Record<string, unknown>): Record<string, unknown> {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  const joins = new Set(features.flatMap((f) => (isRecord(f) && typeof f.id === "string" && isRecord(f.intent) && f.intent.type === "extrude" && isRecord(f.intent.parameters) && f.intent.parameters.operation === "join" ? [f.id] : [])));
+  if (joins.size === 0) return { ...d, version: 16 };
+  const renamed = (id: unknown): unknown => {
+    if (typeof id !== "string") return id;
+    const item = bodyItem(id);
+    if (item === null || !joins.has(item)) return id;
+    if (!isPiece(id)) throw new Error(`Design data says version 15 but names ${id}, an Extrude Join's own body, which version 16 brought`);
+    const k = Number(id.slice(id.lastIndexOf(":") + 1));
+    return k === 1 ? bodyIdOf(item) : `${bodyIdOf(item)}/piece:${k - 1}`;
+  };
+  const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(renamed) : ids);
+  const timeline = d.timeline as Record<string, unknown>;
+  const out = features.map((f) => {
+    if (!isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters)) return f;
+    const p = f.intent.parameters;
+    const type = f.intent.type;
+    const parameters =
+      type === "move" || type === "extrude" ? (Object.hasOwn(p, "bodies") ? { ...p, bodies: list(p.bodies) } : p)
+      : type === "combine" ? { ...p, ...(Object.hasOwn(p, "target") && { target: renamed(p.target) }), ...(Object.hasOwn(p, "tools") && { tools: list(p.tools) }) }
+      : type === "duplicate" && Object.hasOwn(p, "body") ? { ...p, body: renamed(p.body) }
+      : p;
+    return parameters === p ? f : { ...f, intent: { ...f.intent, parameters } };
+  });
+  const bodies = Array.isArray(d.bodies) ? { bodies: d.bodies.map((b) => (isRecord(b) && typeof b.id === "string" ? { ...b, id: renamed(b.id) } : b)) } : {};
+  const hidden = Array.isArray(d.hidden) ? { hidden: list(d.hidden) } : {};
+  return { ...d, ...bodies, ...hidden, version: 16, timeline: { ...timeline, features: out } };
+}
+
+/**
  * Checks an extrude's `region` (step 48): `{ outer, centroid }`, `outer`
  * the curves round the region's outside as `{ curve, reversed }` (a curve
  * id and true or false), one at least and at most a sketch's limit, and
@@ -1563,7 +1623,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15 || v3.version === 16) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
@@ -1595,10 +1655,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 15 (35f1f2b) lets a pin or projection hold a Combine result's edge by its name across the design, which
   // version 14 never held (a version 14 reader would hold such a point where it was); other version 14 data is read as it is.
   if (v14.version === 14 && hasVersion15Fields(v14)) throw new Error(`Design data says version ${shown(given)} but has a point or edge taken from a Combine's result, which version 15 brought`);
-  const d = (v14.version === 14 ? { ...v14, version: 15 } : v14) as Partial<DesignDocument>;
+  const v15 = v14.version === 14 ? { ...v14, version: 15 } : v14;
+  // Version 16 (hunt 11-08) names an Extrude Join's piece holding only the extrude by the extrude's own id, which version
+  // 15 named piece 1: renamed everywhere the data names it (`migrateDesignV15`).
+  const d = (v15.version === 15 ? migrateDesignV15(v15) : v15) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 15 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 15) throw new (Number.isSafeInteger(d.version) && d.version! > 15 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 or 15)`);
+  // A whole number above 16 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 16) throw new (Number.isSafeInteger(d.version) && d.version! > 16 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 or 16)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");

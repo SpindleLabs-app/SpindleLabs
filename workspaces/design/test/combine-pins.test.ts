@@ -184,7 +184,7 @@ test("the file checks: a Combine result's name only on a Combine, and a Combine 
   assert.throws(() => readDesignDocument(edit((p) => (p.name = "back+right&back+top&right+top"))), /is on feature-4, which is not a solid item before it/);
 });
 
-test("version 15: version 14 data holding a Combine result's pin or projection is refused, other version 14 data opens as 15", async () => {
+test("version 15: version 14 data holding a Combine result's pin or projection is refused, other version 14 data opens as 16", async () => {
   const s = addSketch(joined());
   const { cache, scene } = await built(s.doc);
   const corner = sketchEdgeTargets(s.doc, s.id, scene, XY_PLANE).find((t) => t.kind === "endpoint" && t.feature === "feature-4")!;
@@ -193,9 +193,9 @@ test("version 15: version 14 data holding a Combine result's pin or projection i
   await cache.close();
   const pinned = JSON.parse(JSON.stringify(pinNewPoints(s.doc, drawCircle(s.doc, s.id, corner.at, 2).doc, s.id, [corner])));
   const projected = JSON.parse(JSON.stringify(projectEdges(s.doc, s.id, pick.edges.slice(0, 1)).doc));
-  assert.equal(pinned.version, 15);
+  assert.equal(pinned.version, 16);
   const words = "Design data says version 14 but has a point or edge taken from a Combine's result, which version 15 brought";
   assert.throws(() => readDesignDocument({ ...pinned, version: 14 }), { message: words });
   assert.throws(() => readDesignDocument({ ...projected, version: 14 }), { message: words });
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(s.doc)), version: 14 }).version, 15);
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(s.doc)), version: 14 }).version, 16);
 });

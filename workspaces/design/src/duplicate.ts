@@ -17,7 +17,7 @@
 // later (with step 59's construction planes).
 
 import type { Feature, Motion } from "@fission/core";
-import { bodyIdOf, bodyItem, counted, freshName, insertAt, insertItem, isDuplicateItem, isPiece, makesBody, numberBodies, shown, SKETCH_PLANES, takenNames, type DesignDocument, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, counted, freshName, insertAt, insertItem, isDuplicateItem, isPiece, makesBody, numberBodies, numberedWhenBuilt, shown, SKETCH_PLANES, takenNames, type DesignDocument, type SketchPlane } from "./document.ts";
 
 /** The undo step new Duplicates are recorded as. */
 export const DUPLICATE_STEP = "Duplicate bodies";
@@ -57,7 +57,7 @@ export function insertDuplicates(doc: DesignDocument, bodies: readonly string[],
     if (bodies.indexOf(b) !== i) throw new Error(`${shown(b)} is picked twice`);
     const at = doc.timeline.features.findIndex((f) => f.id === item);
     const f = doc.timeline.features[at];
-    if (f === undefined || !(isPiece(b) ? numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
+    if (f === undefined || !(numberedWhenBuilt(b, f) ? numbered(doc, b) : makesBody(f))) throw new Error(`${shown(b)} is not a body in the design`);
     if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a copy put in at the marker can't be made of it`);
     return f;
   });

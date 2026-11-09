@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -106,8 +106,10 @@ export function hideBody(doc: DesignDocument, bodyId: string, hide: boolean): De
   const id = bodyItem(bodyId);
   if (id === null) throw new Error(`${JSON.stringify(bodyId)} is not a body id`);
   const item = itemIn(doc, id);
-  if (isPiece(bodyId)) {
-    if (!(doc.bodies ?? []).some((b) => b.id === bodyId)) throw new Error(`${itemName(item)} left no body ${JSON.stringify(bodyId)}`);
+  const listed = (doc.bodies ?? []).some((b) => b.id === bodyId);
+  // An Extrude Join's own body (version 16) once numbered, as a piece is.
+  if (isPiece(bodyId) || (listed && numberedWhenBuilt(bodyId, item))) {
+    if (!listed) throw new Error(`${itemName(item)} left no body ${JSON.stringify(bodyId)}`);
   } else if (isSketchItem(item)) throw new Error(`${itemName(item)} is a sketch, which has no body to hide`);
   else if (isOperationExtrude(item)) throw new Error(`${itemName(item)} joins, cuts or intersects other bodies, so it has no body of its own to hide`);
   else if (!makesBody(item)) throw new Error(`${itemName(item)} is a move, which has no body of its own to hide`);

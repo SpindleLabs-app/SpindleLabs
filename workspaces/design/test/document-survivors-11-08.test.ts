@@ -86,16 +86,16 @@ test("a region naming more curves than a sketch may hold is refused, counting th
   refused(d, `Design feature ${id}'s region names 20001 curves, more than the 20000 this SpindleLabs opens`);
 });
 
-test("version 5 to 15 data written without bodies' numbers gets the ones it shows: Box 1's body is number 1", () => {
-  // Kills `v3.version === N` => false and => `!==` for N = 8, 10, 11, 12, 13 and 14 (each would then read as numbered, and
+test("version 5 to 16 data written without bodies' numbers gets the ones it shows: Box 1's body is number 1", () => {
+  // Kills `v3.version === N` => false and => `!==` for N = 8, 10, 11, 12, 13, 14 and 15 (each would then read as numbered, and
   // be refused for having no bodies list).
-  for (let v = 5; v <= 15; v++) {
+  for (let v = 5; v <= 16; v++) {
     const d = json(partDocument("box", 40, 30, 20));
     delete d.bodies;
     delete d.nextBody;
     d.version = v;
     const r = readDesignDocument(d);
-    assert.deepEqual([r.version, r.bodies, r.nextBody], [15, [{ id: "body:feature-1", number: 1 }], 2], `version ${v}`);
+    assert.deepEqual([r.version, r.bodies, r.nextBody], [16, [{ id: "body:feature-1", number: 1 }], 2], `version ${v}`);
   }
 });
 

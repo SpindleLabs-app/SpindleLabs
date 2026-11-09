@@ -190,7 +190,8 @@ test("hunt A10: an Extrude Join of two touching cubes, then an earlier Move take
 
 test("hunt A2: an Extrude Join that touches nothing it picked: the body keeps its id, the extrude is a body of its own that can be moved and saved", async () => {
   // Cube x 0..10; the square x 20..24, y 0..4 extruded 10 up: apart from it. Two bodies: the cube, 1,000, its own id, and
-  // the extrude's 4 × 4 × 10 = 160, numbered, the only one of the extrude's.
+  // the extrude's 4 × 4 × 10 = 160, numbered, the only one of the extrude's: the extrude's own id (Design data version 16;
+  // version 15 named it piece 1).
   const doc0 = partDocument("box", 10, 10, 10);
   const cube = `body:${doc0.timeline.features[0].id}`;
   const e = extruded(doc0, [20, 0], [24, 4], 10, { operation: "join", bodies: [cube] });
@@ -198,7 +199,7 @@ test("hunt A2: an Extrude Join that touches nothing it picked: the body keeps it
   assert.equal(b.build.results[e.id].status, "built");
   near(await b.volume(cube), 1000);
   const own = Object.keys(b.build.bodies).filter((id) => id !== cube);
-  assert.equal(own.length, 1);
+  assert.deepEqual(own, [`body:${e.id}`]);
   near(await b.volume(own[0]), 160);
   assert.ok(b.doc.bodies!.some((x) => x.id === own[0]), "numbered");
   await b.cache.close();
