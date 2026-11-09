@@ -768,9 +768,11 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
   const markerWas = lastMarkers.get(slot);
   lastMarkers.set(slot, marker);
   // A keyboard user's focused item would go with the old bar (focus falling to the page, so the Delete pressed next did
-  // nothing: the merge queue's view-menu.mjs flake): the same item on the new bar takes focus back.
+  // nothing: the merge queue's view-menu.mjs flake): the same item on the new bar takes focus back. Only the keyboard's
+  // focus (:focus-visible): a tap's or click's is left to go, or the phone's card and sheet would come back over the
+  // view after every redraw (timeline-card.mjs at 375 px, taps).
   const on = document.activeElement;
-  const had = on !== null && slot.contains(on) ? on.closest<HTMLElement>("[data-item]")?.dataset.item : undefined;
+  const had = on !== null && slot.contains(on) && on.matches(":focus-visible") ? on.closest<HTMLElement>("[data-item]")?.dataset.item : undefined;
   slot.replaceChildren(row);
   list.scrollLeft = scroll;
   if (had !== undefined) [...list.querySelectorAll<HTMLElement>("[data-item]")].find((el) => el.dataset.item === had)?.focus({ preventScroll: true });
