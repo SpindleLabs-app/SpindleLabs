@@ -154,6 +154,16 @@ def gh(*args):
     return json.loads(out) if out.strip() else None
 
 
+def dispatch(workflow, repo, *inputs):
+    """Starts `workflow` on main with workflow_dispatch (inputs as key=value).
+    Its output is not read: gh prints the new run's address, not JSON (the
+    clock crashed parsing it, 11-08 and 11-09). A failure raises SubprocessError."""
+    args = ["gh", "workflow", "run", workflow, "--repo", repo, "--ref", "main"]
+    for i in inputs:
+        args += ["-f", i]
+    subprocess.run(args, check=True, capture_output=True, text=True, timeout=60)
+
+
 def took_night(workflow, jobs):
     """Whether a night run's jobs show it took the night: kernel-nightly.yml's
     plan job succeeded (it fails when started too late); nightly.yml's
@@ -216,7 +226,7 @@ def queue_day(repo, workflow, title, now):
         print(f"the next daytime run of {workflow} is already waiting (run {waiting[0]})")
         return
     try:
-        gh("workflow", "run", workflow, "--repo", repo, "--ref", "main", "-f", "day=true")
+        dispatch(workflow, repo, "day=true")
         print(f"queued daytime testing of {workflow} ({now:%H:%M} UTC)")
     except subprocess.SubprocessError as e:
         print(f"could not queue daytime testing of {workflow} ({type(e).__name__}); trying again next time")
@@ -255,7 +265,7 @@ def clock(argv, sleep=time.sleep, clock_now=utc_now):
         taken = [i for i, finished, planned in lookup(repo, workflow, now) if planned or not finished]
         if owed(now, taken):
             try:
-                gh("workflow", "run", workflow, "--repo", repo, "--ref", "main", "-f", "night=true")
+                dispatch(workflow, repo, "night=true")
                 print(f"started tonight's testing of {workflow} ({now:%H:%M} UTC)")
             except subprocess.SubprocessError as e:
                 print(f"could not start tonight's testing of {workflow} ({type(e).__name__}); trying again soon")
@@ -274,7 +284,7 @@ def clock(argv, sleep=time.sleep, clock_now=utc_now):
     # ends. Three tries; if all fail, the clock's hourly schedule restarts it.
     for attempt in range(3):
         try:
-            gh("workflow", "run", me, "--repo", repo, "--ref", "main")
+            dispatch(me, repo)
             print("started the next clock run")
             return 0
         except subprocess.SubprocessError as e:

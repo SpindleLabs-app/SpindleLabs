@@ -170,7 +170,8 @@ class RoundTheClock(unittest.TestCase):
 
 
 FAKE_GH = r"""#!/usr/bin/env bash
-# Plays `gh`: today's runs 10 (a night whose plan was skipped: too early),
+# Plays `gh` (`workflow run` prints the new run's address, not JSON, as the
+# real one does: the clock crashed on it on 11-08 and 11-09): today's runs 10 (a night whose plan was skipped: too early),
 # 11 (a night whose plan succeeded), 12 (a branch's run on main) and 13 (a
 # night still waiting), 14 (a daytime run waiting) and 15 (a daytime run
 # running), 17 (the app's night, journeys ran) and 18 (the app's night,
@@ -179,7 +180,7 @@ FAKE_GH = r"""#!/usr/bin/env bash
 echo "$*" >>"$FAKE_LOG"
 case "$*" in
   *"/contents/.github/scripts/round_the_clock.txt?ref=main"*) [ -n "$FAKE_SWITCH_FAILS" ] && exit 1; echo "$FAKE_SWITCH";;
-  "workflow run"*) [ -n "$FAKE_DISPATCH_FAILS" ] && exit 1; exit 0;;
+  "workflow run"*) [ -n "$FAKE_DISPATCH_FAILS" ] && exit 1; echo "https://github.com/o/r/actions/runs/99"; exit 0;;
   *"/workflows/"*)
     runs=""
     for id in $FAKE_RUNS; do
