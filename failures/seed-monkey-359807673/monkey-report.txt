@@ -1,0 +1,3 @@
+Monkey, seeds 359807672-359807675: 4 session(s) of 2000 actions in Chromium; 0 Combines made of 0 tried; 4 FAILED
+failure: Bodies group matches the file: rows ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-21 Body 21"], the file builds ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-20 Body 20","body-21 Body 21"] | seed 359807673 at action 1616; replay: cd apps/fission && npm run build && FISSION_SEED=359807673 MONKEY_STEPS=2000 node e2e/monkey.mjs
+actions.json: the whole session; the job ended before it was replayed

@@ -1,0 +1,2 @@
+Monkey, seeds 359807672-359807675: 4 session(s) of 2000 actions in Chromium; 0 Combines made of 0 tried; 4 FAILED
+failure: the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line) | the night's sessions; replay: cd apps/fission && npm run build && FISSION_SEED=359807672 MONKEY_STEPS=1 node e2e/monkey.mjs

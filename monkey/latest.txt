@@ -1,6 +1,7 @@
-tested commit 7d134d4 on main, 2026-11-09 13:15 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42570300744)
-Monkey, seeds 359807180-359807183: 4 session(s) of 2000 actions in Chromium; 17 Combines made of 58 tried; 2 FAILED
-seed 359807180: FAIL: Bodies group matches the file: rows ["body-8 Body 8"], the file builds ["body-8 Body 8","body-12 Body 12"]
-seed 359807181: FAIL: selection agrees: with Body 6 (Extrude: Slot with round ends profile 253974.6 × 30 mm, by 20 mm) selected the Body panel shows 9,298.852874 in³, but that body is 0.00000 in³
-seed 359807182: pass (2000 actions)
-seed 359807183: pass (2000 actions)
+tested commit 165f552 on main, 2026-11-09 14:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42597542585)
+Monkey, seeds 359807672-359807675: 4 session(s) of 2000 actions in Chromium; 0 Combines made of 0 tried; 4 FAILED
+FAIL: the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line)
+seed 359807672: pass (2000 actions)
+seed 359807673: FAIL: Bodies group matches the file: rows ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-21 Body 21"], the file builds ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-20 Body 20","body-21 Body 21"]
+seed 359807674: FAIL: no result: the session never finished (job out of time, or the tester crashed)
+seed 359807675: FAIL: no result: the session never finished (job out of time, or the tester crashed)
