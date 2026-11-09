@@ -18,6 +18,13 @@ name: Random testing
 # "Run workflow" on the Actions tab (or workflow_dispatch from a thread) runs
 # the same on any branch, TypeScript mutation testing only if asked.
 # Scheduled runs only fire from the default branch.
+#
+# Round the clock (Ben, 2026-11-09): while .github/scripts/round_the_clock.txt
+# on main says `on`, kernel-night-clock.yml also queues daytime runs (`day`)
+# back to back from 22:35 to 14:50 UTC (6:35am to 10:50pm Perth): only the
+# monkey (four seeded sessions with fresh seeds, never past 14:50 UTC) and
+# the golden models, collected and filed like a night. Rules: nightly_gate.py.
+run-name: ${{ inputs.day && 'Random testing, daytime' || 'Random testing' }}
 on:
   schedule:
     - cron: "0 15 * * *"
@@ -28,6 +35,10 @@ on:
     inputs:
       ts_mutants:
         description: "Also run TypeScript mutation testing (every night runs it)"
+        type: boolean
+        default: false
+      day:
+        description: "Daytime testing of main, round the clock (kernel-night-clock.yml starts it)"
         type: boolean
         default: false
 
@@ -45,7 +56,7 @@ permissions:
 # closes. (The kernel's random rounds, which gave way to CI, are in
 # kernel-nightly.yml now.) Tested in .github/scripts/test_ci_concurrency.py.
 concurrency:
-  group: random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref == 'refs/heads/main' && 'main' || 'branches' }}
+  group: random-testing-${{ github.event_name == 'schedule' && 'nightly' || inputs.day && 'daytime' || github.ref == 'refs/heads/main' && 'main' || 'branches' }}
   cancel-in-progress: false
 
 jobs:
@@ -75,9 +86,28 @@ jobs:
     outputs:
       run: ${{ steps.gate.outputs.run }}
     steps:
-      - id: gate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.day && github.ref == 'refs/heads/main'
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      # A daytime run goes only while round the clock is on, from 22:35 to
+      # 14:20 UTC (nightly_gate.py), and only from main.
+      - id: day
+        if: inputs.day
+        env:
+          DAY: "true"
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ github.event.schedule }}" = "5 3,9,21 * * *" ] && [ "$(date -u +%s)" -ge "$(date -u -d 2026-10-21T07:00:00Z +%s)" ]; then
+          if [ "$GITHUB_REF" != refs/heads/main ]; then echo "daytime runs test main only"; echo "go=false" >>"$GITHUB_OUTPUT"; exit 0; fi
+          python3 .github/scripts/nightly_gate.py gate nightly.yml
+      - id: gate
+        env:
+          DAY_GO: ${{ steps.day.outputs.go }}
+        run: |
+          if [ "${{ inputs.day }}" = true ]; then
+            echo "run=${DAY_GO:-false}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "5 3,9,21 * * *" ] && [ "$(date -u +%s)" -ge "$(date -u -d 2026-10-21T07:00:00Z +%s)" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -89,7 +119,7 @@ jobs:
   # either only flags); the lines go into summary.txt either way.
   journeys:
     needs: gate
-    if: needs.gate.outputs.run == 'true'
+    if: needs.gate.outputs.run == 'true' && !inputs.day
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -182,10 +212,25 @@ jobs:
           OUT: ${{ runner.temp }}/monkey
         run: |
           mkdir -p "$OUT"
-          first="$(date -u +%Y%m%d)0"
-          MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + 1))" MONKEY_STEPS=2000 \
-            timeout 300m node e2e/monkey.mjs 2>&1 | tee "$OUT/monkey.log" | grep -E '^(seed |monkey:)' || true
-          python3 ../../.github/scripts/monkey_night.py "$OUT/monkey.log" e2e/monkey-results "$OUT" "$first" 2 2000 combine
+          first="$(date -u +%Y%m%d)0" seeds=2 limit=300
+          if [ "${{ inputs.day }}" = true ]; then
+            # Daytime (round the clock): fresh seeds every run, never a night's
+            # (those are 2026MMDD0 and 1, about 202,6xx,xxx): 300,000,000 plus
+            # twice the minutes since 1970 (about 359,8xx,xxx in November 2026), so each
+            # minute's four seeds are new, and well under the monkey's 32-bit
+            # seeds (2,147,483,647) for centuries. Four sessions, cut off 15
+            # minutes before 14:50 UTC so the report is written in time.
+            now=$(date -u +%s)
+            first=$(( 300000000 + 2 * (now / 60) )) seeds=4
+            end=$(date -u -d "$(date -u +%F) 14:50" +%s)
+            [ "$now" -ge "$end" ] && end=$(( end + 86400 ))
+            left=$(( (end - now) / 60 - 15 ))
+            [ "$left" -lt "$limit" ] && limit=$left
+            [ "$limit" -ge 10 ] || { echo "too little time left before 14:50 UTC"; exit 1; }
+          fi
+          MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + seeds - 1))" MONKEY_STEPS=2000 \
+            timeout "${limit}m" node e2e/monkey.mjs 2>&1 | tee "$OUT/monkey.log" | grep -E '^(seed |monkey:)' || true
+          python3 ../../.github/scripts/monkey_night.py "$OUT/monkey.log" e2e/monkey-results "$OUT" "$first" "$seeds" 2000 combine
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
