@@ -1,7 +1,4 @@
-tested commit 165f552 on main, 2026-11-09 14:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42597542585)
-Monkey, seeds 359807672-359807675: 4 session(s) of 2000 actions in Chromium; 0 Combines made of 0 tried; 4 FAILED
-FAIL: the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line)
-seed 359807672: pass (2000 actions)
-seed 359807673: FAIL: Bodies group matches the file: rows ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-21 Body 21"], the file builds ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-20 Body 20","body-21 Body 21"]
-seed 359807674: FAIL: no result: the session never finished (job out of time, or the tester crashed)
-seed 359807675: FAIL: no result: the session never finished (job out of time, or the tester crashed)
+tested commit 165f552 on main, 2026-11-09 17:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42640194103)
+Monkey, seeds 202611090-202611091: 2 session(s) of 2000 actions in Chromium; 0 Combines made of 7 tried; 2 FAILED
+seed 202611090: FAIL: Bodies group matches the file: rows ["body-8 Body 8","body-11 Body 11","body-12 Body 12","body-14 Body 14","body-15 Body 15"], the file builds ["body-13 Body 13","body-8 Body 8","body-11 Body 11","body-12 Body 12","body-14 Body 14","body-15 Body 15"]
+seed 202611091: FAIL: selection agrees: with Body 4 (Cylinder: ⌀999999 × 30 mm) selected the Body panel shows 2.356189778 × 10¹³ mm³, but that body is 2.35619e+13 mm³

@@ -1,10 +1,10 @@
 New failures this run (kinds of problem no earlier run found): 3
-  - monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body# Body #","body# Body #"], the file builds ["body# Body #","body# Body #","bod
-  - monkey no result: the session never finished (job out of time, or the tester crashed)
-  - monkey the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line)
+  - check soak: nodes keeps growing: # by cycle #, # at cycle #, # at cycle #
+  - monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body# Body #","body# Body #","body# Body #"], the file builds ["body# Body #","bod
+  - monkey selection agrees: with Body # (Cylinder: ⌀# × # mm) selected the Body panel shows # × #¹³ mm³, but that body is # mm³
 new-failures.csv has one line per run; kinds-seen.txt lists every kind found so far.
 
-SpindleLabs random testing, all runs so far (updated 2026-11-09 14:34 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-11-09 17:44 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -22,89 +22,101 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit 165f552 on main, 2026-11-09 14:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42597542585)
-  no report: the journeys job stopped before the walk
+  tested commit 165f552 on main, 2026-11-09 17:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42640194103)
+  FLAG Design: shape to STL: slowest 1.50 s = 43.63× the fixed workload, baseline 1.16 s (30% over, flag above 15%, fail above 100%)
+  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.84 s = 83.77× the fixed workload (baseline 9.70 s)
+  PENDING Box to laser panels: waits for Laser (L1–L3), X13
+  PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
+  PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
+  PENDING Photo to lithophane: waits for Image (G2), Slice (P2)
+  PENDING Part to simulation and back: waits for Simulate (S3), parameters (50, I18)
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit 165f552 on main, 2026-11-09 14:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42597542585)
-  seed 1794230176, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794230176 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  box-minus-box: 50 rebuilds, fastest 4.1 ms, slowest 15.6 ms, OK
-  bracket-two-holes: 50 rebuilds, fastest 2.9 ms, slowest 5.3 ms, OK
-  enclosure: 50 rebuilds, fastest 1.8 ms, slowest 3.8 ms, OK
-  f2-gap-join: 50 rebuilds, fastest 3.2 ms, slowest 9.8 ms, OK
-  far-wall-outside: 50 rebuilds, fastest 4.6 ms, slowest 9.1 ms, OK
-  flush-blocks: 50 rebuilds, fastest 3.8 ms, slowest 6.7 ms, OK
-  gear: 50 rebuilds, fastest 16.0 ms, slowest 28.5 ms, OK
-  hollow-box: 50 rebuilds, fastest 4.3 ms, slowest 7.3 ms, OK
-  km-plate: 50 rebuilds, fastest 4.3 ms, slowest 9.1 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.5 ms, slowest 1.1 ms, OK
-  micron-cube-halved: 50 rebuilds, fastest 1.4 ms, slowest 27.2 ms, OK
-  small-cube-halved: 50 rebuilds, fastest 3.2 ms, slowest 6.1 ms, OK
-  stepped-boss: 50 rebuilds, fastest 2.7 ms, slowest 6.3 ms, OK
-  thirty-features: 50 rebuilds, fastest 10.9 ms, slowest 57.1 ms, OK
+  tested commit 165f552 on main, 2026-11-09 17:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42640194103)
+  seed 1794236441, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794236441 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  box-minus-box: 50 rebuilds, fastest 3.9 ms, slowest 5.6 ms, OK
+  bracket-two-holes: 50 rebuilds, fastest 2.5 ms, slowest 5.8 ms, OK
+  enclosure: 50 rebuilds, fastest 1.6 ms, slowest 4.5 ms, OK
+  f2-gap-join: 50 rebuilds, fastest 2.9 ms, slowest 6.9 ms, OK
+  far-wall-outside: 50 rebuilds, fastest 4.3 ms, slowest 10.6 ms, OK
+  flush-blocks: 50 rebuilds, fastest 3.7 ms, slowest 35.1 ms, OK
+  gear: 50 rebuilds, fastest 14.1 ms, slowest 29.3 ms, OK
+  hollow-box: 50 rebuilds, fastest 4.0 ms, slowest 7.6 ms, OK
+  km-plate: 50 rebuilds, fastest 4.1 ms, slowest 6.3 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.5 ms, slowest 18.5 ms, OK
+  micron-cube-halved: 50 rebuilds, fastest 1.4 ms, slowest 5.6 ms, OK
+  small-cube-halved: 50 rebuilds, fastest 3.0 ms, slowest 4.9 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.4 ms, slowest 4.4 ms, OK
+  thirty-features: 50 rebuilds, fastest 9.2 ms, slowest 37.3 ms, OK
   | metric | baseline | now | change | |
   | app.golden_box_minus_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0548 | -20.3% | better: lower the baseline? |
+  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0637 | -7.4% |  |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0383 | -6.4% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0413 | +1.0% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0237 | -16.5% | better: lower the baseline? |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0247 | -13.0% |  |
   | app.golden_f2_gap_join.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0424 | -6.4% |  |
+  | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0492 | +8.6% |  |
   | app.golden_far_wall_outside.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0616 | -13.8% |  |
+  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0728 | +1.8% |  |
   | app.golden_flush_blocks.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_flush_blocks.relative_time | 0.0586 | 0.051 | -13.0% |  |
+  | app.golden_flush_blocks.relative_time | 0.0586 | 0.0609 | +3.9% |  |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.2143 | -11.2% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2339 | -3.0% |  |
   | app.golden_hollow_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_hollow_box.relative_time | 0.067 | 0.0572 | -14.6% |  |
+  | app.golden_hollow_box.relative_time | 0.067 | 0.0661 | -1.3% |  |
   | app.golden_km_plate.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_km_plate.relative_time | 0.0651 | 0.0579 | -11.1% |  |
+  | app.golden_km_plate.relative_time | 0.0651 | 0.0674 | +3.5% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0055 | -15.4% | better: lower the baseline? |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.0053 | -18.5% | better: lower the baseline? |
   | app.golden_micron_cube_halved.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0181 | -13.0% |  |
+  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0228 | +9.6% |  |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_small_cube_halved.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0425 | -10.0% |  |
+  | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0494 | +4.7% |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.0363 | -6.9% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.0388 | -0.5% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1473 | -9.7% |  |
-  0 metric(s) failed, 0 flagged, 3 better.
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.1533 | -6.1% |  |
+  0 metric(s) failed, 0 flagged, 1 better.
   Golden STEP files: 37 bodies read by OpenCascade, 0 disagreement(s)
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit 165f552 on main, 2026-11-09 14:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42597542585)
-  Monkey, seeds 359807672-359807675: 4 session(s) of 2000 actions in Chromium; 0 Combines made of 0 tried; 4 FAILED
-  FAIL: the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line)
-  seed 359807672: pass (2000 actions)
-  seed 359807673: FAIL: Bodies group matches the file: rows ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-21 Body 21"], the file builds ["body-6 Body 6","body-12 Body 12","body-15 Body 15","body-20 Body 20","body-21 Body 21"]
-  seed 359807674: FAIL: no result: the session never finished (job out of time, or the tester crashed)
-  seed 359807675: FAIL: no result: the session never finished (job out of time, or the tester crashed)
+  tested commit 165f552 on main, 2026-11-09 17:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42640194103)
+  Monkey, seeds 202611090-202611091: 2 session(s) of 2000 actions in Chromium; 0 Combines made of 7 tried; 2 FAILED
+  seed 202611090: FAIL: Bodies group matches the file: rows ["body-8 Body 8","body-11 Body 11","body-12 Body 12","body-14 Body 14","body-15 Body 15"], the file builds ["body-13 Body 13","body-8 Body 8","body-11 Body 11","body-12 Body 12","body-14 Body 14","body-15 Body 15"]
+  seed 202611091: FAIL: selection agrees: with Body 4 (Cylinder: ⌀999999 × 30 mm) selected the Body panel shows 2.356189778 × 10¹³ mm³, but that body is 2.35619e+13 mm³
 monkey/log.txt has one line per night.
 
 Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):
-  tested commit 269ab49 on main, 2026-11-08 21:22 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42514724197)
+  tested commit 165f552 on main, 2026-11-09 17:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42640194103)
   core: 10 survivors, all explained: true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1732: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1733: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1739: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1121: workspaces/design/src/document.ts | ConditionalExpression | typeof p.edge === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1241: workspaces/design/src/document.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1122: workspaces/design/src/document.ts | ConditionalExpression | there !== undefined && typeof p.edge === "string" && !isCombineItem(there.item) && isHeldDesignName(p.edge) => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1122: workspaces/design/src/document.ts | StringLiteral | "string" => ""
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1122: workspaces/design/src/document.ts | StringLiteral | `${name} has a Combine result's edge name but is of ${shown(p.feature)}, which is not a Combine` => ``
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1511: workspaces/design/src/document.ts | ArrowFunction | (k) => curves(k.curves) => () => undefined
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | MethodExpression | list.some((x) => isRecord(x) && typeof x[key] === "string" && isHeldDesignName(x[key])) => list.every(x => isRecord(x) && typeof x[key] === "string" && isHeldDesignName(x[key]))
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | ConditionalExpression | isRecord(x) && typeof x[key] === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | LogicalOperator | isRecord(x) && typeof x[key] === "string" => isRecord(x) || typeof x[key] === "string"
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1517: workspaces/design/src/document.ts | ConditionalExpression | typeof x[key] === "string" => true
-  design: 80 survivors, all explained: false
-  13 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1562: workspaces/design/src/document.ts | ConditionalExpression | typeof f.id === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1561: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1562: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1562: workspaces/design/src/document.ts | ConditionalExpression | f.intent.type === "extrude" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1773: workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1567: workspaces/design/src/document.ts | ConditionalExpression | item === null => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | ConditionalExpression | !isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | LogicalOperator | !isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters) => (!isRecord(f) || !isRecord(f.intent)) && !isRecord(f.intent.parameters)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | LogicalOperator | !isRecord(f) || !isRecord(f.intent) => !isRecord(f) && !isRecord(f.intent)
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | ConditionalExpression | !isRecord(f) || !isRecord(f.intent) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1581: workspaces/design/src/document.ts | LogicalOperator | type === "duplicate" && Object.hasOwn(p, "body") => type === "duplicate" || Object.hasOwn(p, "body")
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1581: workspaces/design/src/document.ts | ConditionalExpression | type === "duplicate" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1583: workspaces/design/src/document.ts | ConditionalExpression | parameters === p => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1585: workspaces/design/src/document.ts | ConditionalExpression | isRecord(b) && typeof b.id === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1585: workspaces/design/src/document.ts | LogicalOperator | isRecord(b) && typeof b.id === "string" => isRecord(b) || typeof b.id === "string"
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1585: workspaces/design/src/document.ts | ConditionalExpression | typeof b.id === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1626: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15 || v3.version === 16 => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1664: workspaces/design/src/document.ts | EqualityOperator | d.version! > 16 => d.version! >= 16
+  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | MethodExpression | cleaned.filter((n) => n !== "") => cleaned
+  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | n !== "" => true
+  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15 => true
+  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | EqualityOperator | d.version! > 15 => d.version! >= 15
+  design: 81 survivors, all explained: false
+  22 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
   storage: 59 survivors, all explained: true
   account: 10 survivors, all explained: true
   model: 46 survivors, all explained: true
@@ -112,7 +124,18 @@ Latest TypeScript mutation run (packages/testing/stryker, survivors must be kill
   viewport: 35 survivors, all explained: true
   ai: 23 survivors, all explained: true
   naming: 152 survivors, all explained: true
-  combine: 56 survivors, all explained: true
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:227: workspaces/design/src/boolean-names.ts | MethodExpression | [target, ...tools].filter((b) => b.keepsId !== undefined).sort((a, b) => a.keepsId! - b.keepsId!) => [target, ...tools].filter(b => b.keepsId !== undefined)
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:227: workspaces/design/src/boolean-names.ts | ArrayDeclaration | [target, ...tools] => []
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:227: workspaces/design/src/boolean-names.ts | ArrowFunction | (b) => b.keepsId !== undefined => () => undefined
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:227: workspaces/design/src/boolean-names.ts | ConditionalExpression | b.keepsId !== undefined => false
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:227: workspaces/design/src/boolean-names.ts | ArrowFunction | (a, b) => a.keepsId! - b.keepsId! => () => undefined
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:227: workspaces/design/src/boolean-names.ts | ArithmeticOperator | a.keepsId! - b.keepsId! => a.keepsId! + b.keepsId!
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:229: workspaces/design/src/boolean-names.ts | ConditionalExpression | keepers.length > 0 => false
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:230: workspaces/design/src/boolean-names.ts | ConditionalExpression | b === target => true
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:231: workspaces/design/src/boolean-names.ts | ConditionalExpression | !kept.has(p) => true
+  UNEXPLAINED survivor at workspaces/design/src/boolean-names.ts:260: workspaces/design/src/boolean-names.ts | ArithmeticOperator | k + 1 - shift => k + 1 + shift
+  combine: 66 survivors, all explained: false
+  10 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 
 Fuzzing (the STL reader, the project loader, the sketch-extrude and timeline sessions and the kernel fuzz targets), all runs so far (updated 2026-11-09 03:32 UTC)
   hours of fuzzing: 55.8
