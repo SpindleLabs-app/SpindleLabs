@@ -1,6 +1,6 @@
-tested commit f8483c2 on main, 2026-11-10 06:12 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42740046383)
-Monkey, seeds 359809410-359809413: 4 session(s) of 2000 actions in Chromium; 1 Combine made of 17 tried; 1 FAILED
-seed 359809410: pass (2000 actions)
-seed 359809411: pass (2000 actions)
-seed 359809412: pass (2000 actions)
-seed 359809413: FAIL: selection agrees: with Body 5 (Extrude Sketch 3 by 304.8 mm) selected the Body panel shows 1.296240934 in³, but that body is 0.00000 in³
+tested commit f8483c2 on main, 2026-11-10 09:14 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42753401014)
+Monkey, seeds 359809706-359809709: 4 session(s) of 2000 actions in Chromium; 13 Combines made of 28 tried; 1 FAILED
+seed 359809706: pass (2000 actions)
+seed 359809707: pass (2000 actions)
+seed 359809708: pass (2000 actions)
+seed 359809709: FAIL: no kernel body leaks: the kernel holds 3 bodies, the Bodies group lists 2
