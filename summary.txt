@@ -1,8 +1,8 @@
 New failures this run (kinds of problem no earlier run found): 1
-  - monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #
+  - monkey selection agrees: with Body # (Extrude: L-bracket profile # × # mm, by # mm) selected the Body panel shows # in³, but that body is # in³
 new-failures.csv has one line per run; kinds-seen.txt lists every kind found so far.
 
-SpindleLabs random testing, all runs so far (updated 2026-11-10 09:14 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-11-10 11:53 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -20,68 +20,68 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit f8483c2 on main, 2026-11-10 09:14 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42753401014)
+  tested commit f8483c2 on main, 2026-11-10 11:53 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42772741116)
   no report: the journeys job stopped before the walk
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit f8483c2 on main, 2026-11-10 09:14 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42753401014)
-  seed 1794291213, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794291213 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  box-minus-box: 50 rebuilds, fastest 4.1 ms, slowest 7.9 ms, OK
-  bracket-two-holes: 50 rebuilds, fastest 2.9 ms, slowest 5.3 ms, OK
-  enclosure: 50 rebuilds, fastest 1.8 ms, slowest 7.1 ms, OK
-  f2-gap-join: 50 rebuilds, fastest 3.2 ms, slowest 9.4 ms, OK
-  far-wall-outside: 50 rebuilds, fastest 4.5 ms, slowest 22.6 ms, OK
-  flush-blocks: 50 rebuilds, fastest 3.8 ms, slowest 7.4 ms, OK
-  gear: 50 rebuilds, fastest 15.9 ms, slowest 35.1 ms, OK
-  hollow-box: 50 rebuilds, fastest 4.2 ms, slowest 10.0 ms, OK
-  km-plate: 50 rebuilds, fastest 4.3 ms, slowest 13.6 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.5 ms, slowest 1.1 ms, OK
-  micron-cube-halved: 50 rebuilds, fastest 1.4 ms, slowest 4.9 ms, OK
-  small-cube-halved: 50 rebuilds, fastest 3.1 ms, slowest 55.9 ms, OK
-  stepped-boss: 50 rebuilds, fastest 2.7 ms, slowest 6.3 ms, OK
-  thirty-features: 50 rebuilds, fastest 10.8 ms, slowest 42.0 ms, OK
+  tested commit f8483c2 on main, 2026-11-10 11:53 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42772741116)
+  seed 1794302134, 50 rounds of 14 models; every answer right and the same every round; replay: FISSION_SEED=1794302134 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  box-minus-box: 50 rebuilds, fastest 4.4 ms, slowest 10.7 ms, OK
+  bracket-two-holes: 50 rebuilds, fastest 3.1 ms, slowest 5.3 ms, OK
+  enclosure: 50 rebuilds, fastest 1.8 ms, slowest 10.1 ms, OK
+  f2-gap-join: 50 rebuilds, fastest 3.3 ms, slowest 55.1 ms, OK
+  far-wall-outside: 50 rebuilds, fastest 4.8 ms, slowest 12.8 ms, OK
+  flush-blocks: 50 rebuilds, fastest 4.0 ms, slowest 9.7 ms, OK
+  gear: 50 rebuilds, fastest 17.0 ms, slowest 41.0 ms, OK
+  hollow-box: 50 rebuilds, fastest 4.5 ms, slowest 9.8 ms, OK
+  km-plate: 50 rebuilds, fastest 4.5 ms, slowest 13.7 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.5 ms, slowest 1.2 ms, OK
+  micron-cube-halved: 50 rebuilds, fastest 1.5 ms, slowest 7.5 ms, OK
+  small-cube-halved: 50 rebuilds, fastest 3.3 ms, slowest 6.1 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.9 ms, slowest 8.2 ms, OK
+  thirty-features: 50 rebuilds, fastest 11.2 ms, slowest 39.8 ms, OK
   | metric | baseline | now | change | |
   | app.golden_box_minus_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_box_minus_box.relative_time | 0.0688 | 0.062 | -9.9% |  |
+  | app.golden_box_minus_box.relative_time | 0.0688 | 0.0633 | -8.0% |  |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0431 | +5.4% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0452 | +10.5% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0261 | -8.1% |  |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0257 | -9.5% |  |
   | app.golden_f2_gap_join.kernel_calls | 7 | 7 | +0.0% |  |
   | app.golden_f2_gap_join.relative_time | 0.0453 | 0.0476 | +5.1% |  |
   | app.golden_far_wall_outside.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.069 | -3.5% |  |
+  | app.golden_far_wall_outside.relative_time | 0.0715 | 0.0706 | -1.3% |  |
   | app.golden_flush_blocks.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_flush_blocks.relative_time | 0.0586 | 0.0567 | -3.2% |  |
+  | app.golden_flush_blocks.relative_time | 0.0586 | 0.0581 | -0.9% |  |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.2447 | +1.5% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2487 | +3.1% |  |
   | app.golden_hollow_box.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_hollow_box.relative_time | 0.067 | 0.0647 | -3.4% |  |
+  | app.golden_hollow_box.relative_time | 0.067 | 0.0652 | -2.7% |  |
   | app.golden_km_plate.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_km_plate.relative_time | 0.0651 | 0.0651 | +0.0% |  |
+  | app.golden_km_plate.relative_time | 0.0651 | 0.0661 | +1.5% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0061 | -6.2% |  |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.0056 | -13.8% |  |
   | app.golden_micron_cube_halved.kernel_calls | 7 | 7 | +0.0% |  |
-  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0204 | -1.9% |  |
+  | app.golden_micron_cube_halved.relative_time | 0.0208 | 0.0202 | -2.9% |  |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_small_cube_halved.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0472 | +0.0% |  |
+  | app.golden_small_cube_halved.relative_time | 0.0472 | 0.0479 | +1.5% |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.0401 | +2.8% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.0411 | +5.4% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1632 | +0.0% |  |
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.1643 | +0.7% |  |
   0 metric(s) failed, 0 flagged, 0 better.
   Golden STEP files: 37 bodies read by OpenCascade, 0 disagreement(s)
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit f8483c2 on main, 2026-11-10 09:14 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42753401014)
-  Monkey, seeds 359809706-359809709: 4 session(s) of 2000 actions in Chromium; 13 Combines made of 28 tried; 1 FAILED
-  seed 359809706: pass (2000 actions)
-  seed 359809707: pass (2000 actions)
-  seed 359809708: pass (2000 actions)
-  seed 359809709: FAIL: no kernel body leaks: the kernel holds 3 bodies, the Bodies group lists 2
+  tested commit f8483c2 on main, 2026-11-10 11:53 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42772741116)
+  Monkey, seeds 359810070-359810073: 4 session(s) of 2000 actions in Chromium; 6 Combines made of 29 tried; 1 FAILED
+  seed 359810070: pass (2000 actions)
+  seed 359810071: pass (2000 actions)
+  seed 359810072: pass (2000 actions)
+  seed 359810073: FAIL: selection agrees: with Body 6 (Extrude: L-bracket profile 40 × 30 mm, by 20 mm) selected the Body panel shows 0.7469306277 in³, but that body is 0.00000 in³
 monkey/log.txt has one line per night.
 
 Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):

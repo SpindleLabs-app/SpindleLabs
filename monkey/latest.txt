@@ -1,6 +1,6 @@
-tested commit f8483c2 on main, 2026-11-10 09:14 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42753401014)
-Monkey, seeds 359809706-359809709: 4 session(s) of 2000 actions in Chromium; 13 Combines made of 28 tried; 1 FAILED
-seed 359809706: pass (2000 actions)
-seed 359809707: pass (2000 actions)
-seed 359809708: pass (2000 actions)
-seed 359809709: FAIL: no kernel body leaks: the kernel holds 3 bodies, the Bodies group lists 2
+tested commit f8483c2 on main, 2026-11-10 11:53 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42772741116)
+Monkey, seeds 359810070-359810073: 4 session(s) of 2000 actions in Chromium; 6 Combines made of 29 tried; 1 FAILED
+seed 359810070: pass (2000 actions)
+seed 359810071: pass (2000 actions)
+seed 359810072: pass (2000 actions)
+seed 359810073: FAIL: selection agrees: with Body 6 (Extrude: L-bracket profile 40 × 30 mm, by 20 mm) selected the Body panel shows 0.7469306277 in³, but that body is 0.00000 in³
