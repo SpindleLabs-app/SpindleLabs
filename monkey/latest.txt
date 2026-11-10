@@ -1,6 +1,6 @@
-tested commit f8483c2 on main, 2026-11-10 01:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42717108082)
-Monkey, seeds 359808846-359808849: 4 session(s) of 2000 actions in Chromium; 4 Combines made of 33 tried; 1 FAILED
-seed 359808846: pass (2000 actions)
-seed 359808847: pass (2000 actions)
-seed 359808848: FAIL: selection agrees: with Body 10 (Sphere: ⌀999999 mm) selected the Body panel shows 5.235972048 × 10¹⁷ mm³, but that body is 5.23597e+17 mm³
-seed 359808849: pass (2000 actions)
+tested commit f8483c2 on main, 2026-11-10 03:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42725236584)
+Monkey, seeds 359809170-359809173: 4 session(s) of 2000 actions in Chromium; 8 Combines made of 54 tried; every check passed after every action
+seed 359809170: pass (2000 actions)
+seed 359809171: pass (2000 actions)
+seed 359809172: pass (2000 actions)
+seed 359809173: pass (2000 actions)
