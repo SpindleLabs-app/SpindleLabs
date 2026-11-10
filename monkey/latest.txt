@@ -1,4 +1,6 @@
-tested commit 165f552 on main, 2026-11-09 17:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42640194103)
-Monkey, seeds 202611090-202611091: 2 session(s) of 2000 actions in Chromium; 0 Combines made of 7 tried; 2 FAILED
-seed 202611090: FAIL: Bodies group matches the file: rows ["body-8 Body 8","body-11 Body 11","body-12 Body 12","body-14 Body 14","body-15 Body 15"], the file builds ["body-13 Body 13","body-8 Body 8","body-11 Body 11","body-12 Body 12","body-14 Body 14","body-15 Body 15"]
-seed 202611091: FAIL: selection agrees: with Body 4 (Cylinder: ⌀999999 × 30 mm) selected the Body panel shows 2.356189778 × 10¹³ mm³, but that body is 2.35619e+13 mm³
+tested commit f8483c2 on main, 2026-11-10 01:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42717108082)
+Monkey, seeds 359808846-359808849: 4 session(s) of 2000 actions in Chromium; 4 Combines made of 33 tried; 1 FAILED
+seed 359808846: pass (2000 actions)
+seed 359808847: pass (2000 actions)
+seed 359808848: FAIL: selection agrees: with Body 10 (Sphere: ⌀999999 mm) selected the Body panel shows 5.235972048 × 10¹⁷ mm³, but that body is 5.23597e+17 mm³
+seed 359808849: pass (2000 actions)

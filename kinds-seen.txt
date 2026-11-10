@@ -35,6 +35,7 @@ monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature 
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
 monkey selection agrees: with Body # (Cylinder: ⌀# × # mm) selected the Body panel shows # × #¹³ mm³, but that body is # mm³
 monkey selection agrees: with Body # (Extrude: Slot with round ends profile # × # mm, by # mm) selected the Body panel shows #,# in³, but that body is # in³
+monkey selection agrees: with Body # (Sphere: ⌀# mm) selected the Body panel shows # × #¹⁷ mm³, but that body is # mm³
 monkey settles: the page was still changing # s after the action
 monkey the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line)
 monkey the tester itself: locator.click: Timeout #ms exceeded.
