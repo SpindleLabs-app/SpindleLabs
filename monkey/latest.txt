@@ -1,6 +1,7 @@
-tested commit f8483c2 on main, 2026-11-10 11:53 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42772741116)
-Monkey, seeds 359810070-359810073: 4 session(s) of 2000 actions in Chromium; 6 Combines made of 29 tried; 1 FAILED
-seed 359810070: pass (2000 actions)
-seed 359810071: pass (2000 actions)
-seed 359810072: pass (2000 actions)
-seed 359810073: FAIL: selection agrees: with Body 6 (Extrude: L-bracket profile 40 × 30 mm, by 20 mm) selected the Body panel shows 0.7469306277 in³, but that body is 0.00000 in³
+tested commit f8483c2 on main, 2026-11-10 14:34 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42796134014)
+Monkey, seeds 359810394-359810397: 4 session(s) of 2000 actions in Chromium; 0 Combines made of 0 tried; 4 FAILED
+FAIL: the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line)
+seed 359810394: FAIL: selection agrees: with Body 1 (Extrude: Plate with two round holes profile 381 × 508 mm, by 20 mm) selected the Body panel shows 211.1743105 in³, but that body is 0.00000 in³
+seed 359810395: pass (2000 actions)
+seed 359810396: FAIL: save: Save gave no file
+seed 359810397: FAIL: no result: the session never finished (job out of time, or the tester crashed)

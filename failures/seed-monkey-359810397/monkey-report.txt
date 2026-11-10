@@ -1,0 +1,2 @@
+Monkey, seeds 359810394-359810397: 4 session(s) of 2000 actions in Chromium; 0 Combines made of 0 tried; 4 FAILED
+failure: no result: the session never finished (job out of time, or the tester crashed) | seed 359810397; replay: cd apps/fission && npm run build && FISSION_SEED=359810397 MONKEY_STEPS=2000 node e2e/monkey.mjs
