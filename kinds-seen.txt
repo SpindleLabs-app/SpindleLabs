@@ -29,6 +29,7 @@ monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body#
 monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body# Body #","body# Body #"], the file builds ["body# Body #","body# Body #","bod
 monkey Bodies group matches the file: rows ["body# Body #"], the file builds ["body# Body #","body# Body #"]
 monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #
+monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #, and its Moves and Combines keep # bodies as they were
 monkey no result: the session never finished (job out of time, or the tester crashed)
 monkey save: Save gave no file
 monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"

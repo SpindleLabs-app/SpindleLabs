@@ -1,4 +1,4 @@
-tested commit 165f552 on main, 2026-11-09 17:44 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42640194103)
+tested commit f8483c2 on main, 2026-11-10 17:28 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42839840195)
 core: 10 survivors, all explained: true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1562: workspaces/design/src/document.ts | ConditionalExpression | typeof f.id === "string" => true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1561: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
@@ -8,8 +8,8 @@ UNEXPLAINED survivor at workspaces/design/src/document.ts:1773: workspaces/desig
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1567: workspaces/design/src/document.ts | ConditionalExpression | item === null => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | ConditionalExpression | !isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters) => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | LogicalOperator | !isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters) => (!isRecord(f) || !isRecord(f.intent)) && !isRecord(f.intent.parameters)
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | LogicalOperator | !isRecord(f) || !isRecord(f.intent) => !isRecord(f) && !isRecord(f.intent)
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | ConditionalExpression | !isRecord(f) || !isRecord(f.intent) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1575: workspaces/design/src/document.ts | LogicalOperator | !isRecord(f) || !isRecord(f.intent) => !isRecord(f) && !isRecord(f.intent)
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1581: workspaces/design/src/document.ts | LogicalOperator | type === "duplicate" && Object.hasOwn(p, "body") => type === "duplicate" || Object.hasOwn(p, "body")
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1581: workspaces/design/src/document.ts | ConditionalExpression | type === "duplicate" => true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1583: workspaces/design/src/document.ts | ConditionalExpression | parameters === p => false
