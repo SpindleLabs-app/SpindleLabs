@@ -750,6 +750,31 @@ const follows = (content: Sketch | undefined): boolean => content?.pins !== unde
 export const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && follows(doc.sketches.find((s) => s.id === f.id)));
 
 /**
+ * Whether settling an edit from `before` (a settled design) to `after` can
+ * change what an extrude keeps (`settleKept`) in a design with no sketch
+ * placed on bodies: only when an extrude asks for another outline than
+ * before, because it names another region (Edit feature's region pick,
+ * timeline hunt 2026-11-11: the sketch makes the new region, so the shape
+ * kept for the old one is forgotten) or its sketch's points or curves
+ * changed. A new extrude of an unchanged sketch asks nothing new; one whose
+ * sketch is gone and that keeps a shape already is settled (a delete settles
+ * itself before it is recorded). Asks the kernel nothing.
+ */
+export function keptUnsettled(before: DesignDocument, after: DesignDocument): boolean {
+  const drawn = (doc: DesignDocument, id: string) => doc.sketches.find((s) => s.id === id);
+  const was = new Map(before.timeline.features.map((f) => [f.id, f]));
+  return after.timeline.features.some((f) => {
+    if (!isSketchExtrude(f)) return false;
+    const old = was.get(f.id);
+    if (old !== undefined && JSON.stringify(regionOf(old)) !== JSON.stringify(regionOf(f))) return true;
+    const now = drawn(after, f.intent.parameters.sketch as string);
+    const then = drawn(before, (old ?? f).intent.parameters.sketch as string);
+    if (now === then || (now !== undefined && then !== undefined && now.points === then.points && now.curves === then.curves && now.projected === then.projected)) return false;
+    return now !== undefined || keptOf(after, f) === undefined;
+  });
+}
+
+/**
  * Every item of `doc` up to its last sketch on a face or with pins,
  * built with nothing suppressed and no marker, without freeing anything:
  * where each face sketch would lie, and each pinned point would be, with

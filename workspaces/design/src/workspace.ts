@@ -49,7 +49,7 @@ import { showEntries, viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
 import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
-import { BodyCache, builtPieceFaces, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { measureView } from "./measure-view.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
@@ -1536,7 +1536,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * `doc`, the design just recorded, settled against `unsettled` and taken
    * into the edit's own undo step (the typing in a box still one step), or
    * `doc` itself: when nothing is unsettled, when it has no sketch on a face or following a body
-   * (nothing else a non-sketch edit changes is settled), or when the design
+   * and asks no extrude for another outline (`keptUnsettled`; nothing else
+   * a non-sketch edit changes is settled), or when the design
    * changed again while the kernel looked (the next edit settles from the
    * same `unsettled`).
    */
@@ -1544,8 +1545,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const from = unsettled;
     if (from === null || ctx.history.restoring()) return doc;
     // A sketch on a face, or one with points pinned to edges or edges projected (hunt A, 2026-11-04: a followed point
-    // can lose an origin sketch, whose extrude then keeps its last shape).
-    if (!doc.timeline.features.some((f) => placedOnBodies(doc, f))) {
+    // can lose an origin sketch, whose extrude then keeps its last shape); or an extrude given another region by Edit
+    // feature, which forgets the shape kept for the old one (timeline hunt 2026-11-11).
+    if (!doc.timeline.features.some((f) => placedOnBodies(doc, f)) && !keptUnsettled(from, doc)) {
       unsettled = null;
       return doc;
     }
