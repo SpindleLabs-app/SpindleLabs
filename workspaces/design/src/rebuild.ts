@@ -48,7 +48,7 @@ import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
-import { findRegion, refusalReason, regionOutline, type RegionRef } from "./regions.ts";
+import { findRegion, refusalReason, regionCurveIds, regionName, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -578,6 +578,48 @@ function outlinesAtOnce(kernel: KernelCalls, docs: DesignDocument[]): KernelCall
   return { call: ((op: string, ...args: unknown[]) => (op === "sketch_outline" || op === "sketch_regions" ? ask(args, op) : (kernel.call as (op: string, ...a: unknown[]) => unknown)(op, ...args))) as KernelCalls["call"] };
 }
 
+/**
+ * The region an extrude of a sketch's one outline (no `region`: Design
+ * data before version 9, or an assistant's extrude) takes when an edit
+ * from `before` to `after` stops the sketch making one outline but leaves
+ * that outline whole as a region's outside, every curve of the sketch
+ * round some region (issue #541: a circle drawn inside the square, or a
+ * loop beside it; a stray or loose curve is not): the one region `before` made,
+ * found in `after` by the very same loop of curves and extrudable, so the
+ * extrude goes on as an extrude with that region picked does (the hole
+ * cut, the loop beside it left out). Undefined otherwise (the loop broken,
+ * crossed or changed: the extrude keeps its last shape as before), and
+ * for curves the kernel refuses outright.
+ */
+async function outlineRegion(kernel: KernelCalls, before: DesignDocument, after: DesignDocument, sketchId: string): Promise<RegionRef | undefined> {
+  const was = contentOf(before, sketchId);
+  const now = contentOf(after, sketchId);
+  if (was === undefined || now === undefined || !(await makesOutline(kernel, before, sketchId))) return undefined;
+  const regions = async (content: Sketch) => {
+    const c = sketchCurves(content);
+    return (await kernel.call("sketch_regions", c.lines, c.circles, c.arcs)).regions;
+  };
+  try {
+    const one = await regions(was);
+    if (one.length !== 1 || !one[0].extrudes) return undefined;
+    const ref = regionRef(one[0], regionCurveIds(was));
+    const ids = regionCurveIds(now);
+    const all = await regions(now);
+    // Only a sketch made wholly of closed loops: a loose or stray curve still breaks the one outline, as before (the owner's rule, 25a).
+    const round = new Set(all.flatMap((r) => regionName(r, ids) ?? []).map((p) => p.curve));
+    if (![...ids.line, ...ids.arc, ...ids.circle].every((id) => round.has(id))) return undefined;
+    const found = findRegion(all, ids, ref);
+    const name = found === undefined ? null : regionName(found, ids);
+    return found?.extrudes === true && name !== null && sameLoop(name, ref.outer) ? ref : undefined;
+  } catch (e) {
+    if (e instanceof KernelError && e.kind === "invalid-input") return undefined;
+    throw e;
+  }
+}
+
+/** Extrude `f` extruding `region` (`outlineRegion`), or `f` itself when there is none. */
+const withRegion = (f: Feature, region: RegionRef | undefined): Feature => (region === undefined ? f : { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, region } } });
+
 /** Whether a sketch makes an outline now, or the extrude's region (suppression and the marker don't count): the owner's "lost" is its opposite. */
 async function makesOutline(kernel: KernelCalls, doc: DesignDocument, sketchId: string, region?: RegionRef): Promise<boolean> {
   const content = contentOf(doc, sketchId);
@@ -638,13 +680,17 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
      */
     const keepLost = async (doc: DesignDocument): Promise<DesignDocument> => {
       const next: Record<string, KeptShape> = {};
+      const regions = new Map<string, RegionRef>();
       for (const f of doc.timeline.features) {
         if (!isSketchExtrude(f)) continue;
         const sketch = f.intent.parameters.sketch as string;
         if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;
         const had = keptOf(after, f);
         const was = contentOf(before, sketch);
-        if (had !== undefined) next[f.id] = had;
+        // Issue #541: an extrude of the one outline whose outline is still there whole, as a region's outside, takes that region.
+        const region = had === undefined && regionOf(f) === undefined ? await outlineRegion(kernel, before, doc, sketch) : undefined;
+        if (region !== undefined) regions.set(f.id, region);
+        else if (had !== undefined) next[f.id] = had;
         else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f)))) {
           const item = beforeItems.get(sketch)!;
           const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
@@ -652,8 +698,8 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
           next[f.id] = placement ? { ...shape, placement } : shape;
         }
       }
-      const { kept: old, ...rest } = doc;
-      if (JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
+      const { kept: old, ...rest } = regions.size === 0 ? doc : { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => withRegion(f, regions.get(f.id))) } };
+      if (regions.size === 0 && JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
       return Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
     };
     let doc = await keepLost(after);

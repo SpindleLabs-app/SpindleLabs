@@ -23,7 +23,8 @@
 //   to slide the face along itself, or turn it about its normal, takes the
 //   sketch with it, as it takes the face. A sketch with no `body` (drawn
 //   before 35e2h) is not carried: where its body was when drawn is not
-//   known, and a guess would move it on opening.
+//   known, and a guess would move it on opening. Version 4 and older data,
+//   from before Moves, is read with the world's frame (`withDrawnBodies`).
 // - A Scale before it (the owner's rule for SL #539, 2026-11-11) keeps the
 //   sketch's sizes (a 6 mm circle stays 6 mm, typed dimensions never
 //   change) but scales its position: the middle of the box round its

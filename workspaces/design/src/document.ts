@@ -15,7 +15,7 @@
 import type { BodySpec, Feature, Plane } from "@fission/core";
 import { isFit, type Fit } from "@fission/print";
 import { NewerFormatError, XY_PLANE } from "@fission/core";
-import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
+import { faceFeature, isFacePlane, squared, worldFrame, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import { isHeldDesignName } from "./design-edges.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
@@ -811,6 +811,16 @@ function shapeWith(f: Feature, profileOf: (id: unknown) => ReadyProfile | undefi
  * so each solid feature but the last becomes suppressed: the design opens
  * looking as it did, and nothing is lost (unsuppressing one brings it
  * back). Ids, sizes and the counter are kept as they were.
+ *
+ * Version 2 replaced its part on every change of shape, giving it a new
+ * id from the counter ("feature-14") but naming it "Feature 1 (cylinder)"
+ * all the same, where version 3 names a preset by its id's number
+ * (`oldPresetName`). So a ready-made shape's name of that form, any
+ * number, with its own type, is read as version 3 names it, and renamed
+ * with the others (`withShortNames`, issue #541: it kept the old name,
+ * then named a box made of it as a cylinder). Names could not be typed
+ * before version 4, and nothing in version 2 was made from a part (no
+ * face sketches, no pins), so no copy of the name is anywhere else.
  */
 export function migrateDesignV2(d: Record<string, unknown>): Record<string, unknown> {
   const timeline = d.timeline as Record<string, unknown> | undefined;
@@ -818,8 +828,42 @@ export function migrateDesignV2(d: Record<string, unknown>): Record<string, unkn
   if (!isRecord(timeline) || !Array.isArray(timeline.features)) return { ...d, version: 3 };
   const solids = new Set(timeline.features.filter((f) => !(isRecord(f) && isRecord(f.intent) && f.intent.type === "sketch")));
   const last = [...solids].at(-1);
-  const features = timeline.features.map((f) => (solids.has(f) && f !== last && isRecord(f) ? { ...f, suppressed: true } : f));
+  const features = timeline.features.map((f) => version3Named(solids.has(f) && f !== last && isRecord(f) ? { ...f, suppressed: true } : f));
   return { ...d, version: 3, timeline: { ...timeline, features } };
+}
+
+/** A version 2 ready-made shape's name, "Feature <n> (<its type>)", as version 3 gave it (`oldPresetName`); anything else as it is. */
+function version3Named(f: unknown): unknown {
+  if (!isRecord(f) || !isRecord(f.intent) || typeof f.intent.type !== "string" || f.intent.type === "sketch" || !isRecord(f.intent.parameters) || Object.hasOwn(f.intent.parameters, "sketch")) return f;
+  const provenance = f.provenance;
+  if (!isRecord(provenance) || !isRecord(provenance.self) || typeof provenance.self.label !== "string") return f;
+  const form = /^Feature [1-9]\d* \((.*)\)$/.exec(provenance.self.label);
+  if (form === null || form[1] !== f.intent.type) return f;
+  return { ...f, provenance: { ...provenance, self: { ...provenance.self, label: oldPresetName(f as unknown as Feature) } } };
+}
+
+/**
+ * Version 4 and older data's sketches on faces with where their bodies
+ * were when drawn (issue #541): the world's frame, as a sketch drawn today
+ * on a body nothing has moved gets (`face-pick.ts`). Moves came with
+ * version 5, so no body in such data was ever moved; from 35e2h a sketch's
+ * `body` lets the Moves put before it carry it with its face, and one
+ * without it is never carried. A face sketch with a Move before it (data
+ * no SpindleLabs of version 4 wrote) or with `body` already is left as it
+ * is, for the checks; anything not a face sketch's content likewise.
+ */
+export function withDrawnBodies(d: Record<string, unknown>): Record<string, unknown> {
+  const timeline = d.timeline;
+  if (!isRecord(timeline) || !Array.isArray(timeline.features) || !Array.isArray(d.sketches)) return d;
+  const drawn = new Set<unknown>();
+  for (const f of timeline.features) {
+    if (!isRecord(f) || !isRecord(f.intent)) continue;
+    if (f.intent.type === "move") break;
+    if (f.intent.type === "sketch" && isRecord(f.intent.parameters) && isFacePlane(f.intent.parameters.plane)) drawn.add(f.id);
+  }
+  if (drawn.size === 0) return d;
+  const sketches = d.sketches.map((s) => (isRecord(s) && drawn.has(s.id) && isRecord(s.face) && !Object.hasOwn(s.face, "body") ? { ...s, face: { ...s.face, body: worldFrame() } } : s));
+  return { ...d, sketches };
 }
 
 /**
@@ -1637,7 +1681,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // below before this is read, so only whether the data numbers its bodies decides it (issue #246: listing every version
   // here left a mutant no test could tell apart, and its explanation went stale with each new version).
   const unnumbered = !numbered;
-  const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
+  // And its sketches on faces get where their bodies were when drawn, the world's frame (`withDrawnBodies`, issue #541).
+  const v5 = old || v3.version === 4 ? withDrawnBodies({ ...v3, version: 5 }) : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
   // Version 7 names a ready-made profile's pieces with its shape (face hunt 11-01): version 6 and older names are read so, once checked (below).
