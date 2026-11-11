@@ -50,6 +50,12 @@ export function pressed(s: FoldState): FoldState {
 /** The state after words the user must see land in a folded panel: it opens until the user moves on. */
 export const revealed = (s: FoldState): FoldState => (panelShown(s) ? s : { ...s, revealed: true });
 
+/**
+ * The state after the press that opened a folded panel is pressed again (Body facts as a toggle, Ben 2026-11-11): the panel
+ * folds as its own button folds it (the reveal ended, a selection or tool holding it dismissed), but the pin is never touched.
+ */
+export const concealed = (s: FoldState): FoldState => (s.pinned || !panelShown(s) ? s : { ...s, revealed: false, dismissed: true });
+
 /** Where the user's pin is kept in the browser, so a pinned panel stays pinned after a reload. */
 export const PIN_KEY = "fission.properties-pinned";
 /** The part of localStorage the pin uses (any of it may throw: storage off, private mode, full). */
@@ -92,6 +98,10 @@ export interface PropertiesFold {
   update(next: Partial<Pick<FoldReasons, "selected" | "tool">>): void;
   /** Opens a folded panel until the user moves on (`revealed`): a body just inserted shows its sizes (U0d). */
   reveal(): void;
+  /** Folds the panel again unless the user pinned it (`concealed`). */
+  conceal(): void;
+  /** Calls `listener` after every change of the state. */
+  onChange(listener: (state: FoldState) => void): void;
   /** Stops watching the tool boxes and takes the fold off the slot (its class, its folded and ⚠ marks, the button). */
   close(): void;
 }
@@ -126,10 +136,12 @@ export function propertiesFold(slot: HTMLElement, toolBoxes: readonly HTMLElemen
   const Observer = document.defaultView?.MutationObserver ?? MutationObserver;
   const watch = new Observer(() => set(withReasons(state, { tool: toolShown() })));
   for (const box of toolBoxes) watch.observe(box, { attributes: true, attributeFilter: ["hidden"] });
+  const listeners: ((state: FoldState) => void)[] = [];
   function set(next: FoldState) {
     if (next === state) return;
     state = next;
     draw();
+    for (const listener of listeners) listener(state);
   }
   handle.addEventListener("click", () => {
     set(pressed(state));
@@ -145,6 +157,8 @@ export function propertiesFold(slot: HTMLElement, toolBoxes: readonly HTMLElemen
     },
     update: (next) => set(withReasons(state, next)),
     reveal: onWords,
+    conceal: () => set(concealed(state)),
+    onChange: (listener) => void listeners.push(listener),
     // The slot is shared with the next workspace (Image shows its page in it): leave it as it was found.
     close: () => {
       watch.disconnect();
