@@ -236,8 +236,10 @@ try {
       const page = await fresh(width, tap);
       try {
         // Construct ▾ holds only tools to come: its button greyed (coming-soon.css), still opening to show them; Modify ▾ has Move (35e2b).
-        const faded = await page.$$eval("#modify-menu, #construct-menu, #inspect-menu", (bs) => bs.map((b) => [b.id, getComputedStyle(b).opacity, b.disabled]));
-        assert.deepEqual(faded, [["modify-menu", "1", false], ["construct-menu", "0.5", false], ["inspect-menu", "1", false]]);
+        // Marked by a dashed underline, not half opacity (accessibility pass 2026-11-11: half opacity was 1.9 : 1 in the light
+        // theme, yet the menu still opens): only Construct's name is underlined dashed, and every group stays opaque.
+        const faded = await page.$$eval("#modify-menu, #construct-menu, #inspect-menu", (bs) => bs.map((b) => [b.id, getComputedStyle(b).opacity, getComputedStyle(b).textDecorationStyle === "dashed" && getComputedStyle(b).textDecorationLine.includes("underline"), b.disabled]));
+        assert.deepEqual(faded, [["modify-menu", "1", false, false], ["construct-menu", "1", true, false], ["inspect-menu", "1", false, false]]);
         const lists = {};
         for (const menu of ["create-menu", "modify-menu", "construct-menu", "inspect-menu"]) {
           await press(page, `#${menu}`, tap);
@@ -257,7 +259,7 @@ try {
         await until(page, () => !document.getElementById("modify-menu-menu").hidden, null, "Modify ▾ opens");
         assert.deepEqual(await comingProblems(page), []);
         const fillet = await page.$eval("#coming-fillet", (b) => [b.title, b.getAttribute("aria-disabled"), getComputedStyle(b).color, b.querySelector(".menu-button-note")?.textContent]);
-        assert.deepEqual(fillet, ["Fillet is coming soon: it will round the edges you pick.", "true", "rgb(138, 145, 156)", "Coming soon"]);
+        assert.deepEqual(fillet, ["Fillet is coming soon: it will round the edges you pick.", "true", "rgb(154, 161, 172)", "Coming soon"]); // --text-dim, dark (#9aa1ac since the accessibility pass)
         if (shots) await page.screenshot({ path: `${shots}/coming-soon-${width}.png`, clip: { x: 0, y: 0, width, height: width > 640 ? 520 : 667 } });
         // Choosing one does nothing: the list stays open, nothing opens, no undo step, nothing in the timeline.
         const before = [await page.textContent("#properties"), await page.getAttribute("#undo", "title"), await page.$$eval("#browser .tree-row", (rs) => rs.length)];

@@ -14,7 +14,8 @@ const url = "http://localhost:4793/";
 const browser = await launch();
 const errors = [];
 
-const TARGETS = ["#toolbar .toolbar-group-tool", "#toolbar .toolbar-group-name .menu-button-toggle", ".view-controls button.nav-button", ".browser-row-eye"];
+// (The Bodies eye follows the same rule from the app hunt's pull request, #543, and its own check.)
+const TARGETS = ["#toolbar .toolbar-group-tool", "#toolbar .toolbar-group-name .menu-button-toggle", ".view-controls button.nav-button"];
 
 async function sizes(width, height, touch) {
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch });

@@ -43,8 +43,8 @@
   .toolbar-group.toolbar-group-solo .menu-button-toggle .icon { margin: 0; }
 }
 
-/* A touch screen of any width (a tablet) gets the phone's finger-sized targets (44 px, Apple's 44 pt; Ben's OK 2026-11-11): at 768 px 54 of 56 targets were mouse-sized. */
-@media (pointer: coarse) {
+/* A touch screen of any width (a tablet; a phone held sideways keeps its own 45 px row, phone-short.css) gets the phone's finger-sized targets (44 px, Apple's 44 pt; Ben's OK 2026-11-11): at 768 px 54 of 56 targets were mouse-sized. */
+@media (pointer: coarse) and (min-width: 641px) and (min-height: 501px) {
   .toolbar-group .toolbar-group-tool:not(#none) { min-width: var(--look-target-touch); min-height: var(--look-target-touch); }
   .toolbar-group .toolbar-group-name .menu-button-toggle:not(#none) { min-height: var(--look-target-touch); padding: 0 8px; }
   .toolbar-group.toolbar-group-solo .menu-button-toggle:not(#none) { min-height: var(--look-target-touch); }

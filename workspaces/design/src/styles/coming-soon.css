@@ -1,13 +1,12 @@
-/* Toolbar groups whose tools are all still to come (coming-soon.ts): greyed,
-   but their menus still open to show what is on the way. */
-/* Greyed by colour, not by opacity: the toggle still opens its menu, so its name must stay readable (4.5 : 1 on the
-   toolbar in both themes; half opacity was 2.3 : 1 dark and 1.9 : 1 light, accessibility pass 2026-11-11). */
-.coming-soon .menu-button-toggle,
+/* Toolbar groups whose tools are all still to come (coming-soon.ts): marked
+   by a dashed underline under the name and a dimmed icon, but their menus
+   still open to show what is on the way. Not by opacity: the name must stay
+   readable (4.5 : 1 on the toolbar in both themes; half opacity was 2.3 : 1
+   dark and 1.9 : 1 light, accessibility pass 2026-11-11). */
+.coming-soon .menu-button-toggle {
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
 .coming-soon .menu-button-toggle .icon {
   color: var(--text-dim);
-}
-.coming-soon .menu-button-toggle:hover,
-.coming-soon .menu-button-toggle:focus-visible,
-.coming-soon .menu-button-toggle[aria-expanded="true"] {
-  color: var(--text-soft);
 }
