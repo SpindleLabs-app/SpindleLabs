@@ -383,7 +383,7 @@ await check("phone width 375 px: the bar is whole on screen, clear of Undo and R
 });
 
 // U9b: Orbit, Pan and Zoom share one highlight that slides to the chosen one
-// (styles/nav-slider.css, 220 ms), and is there at once under reduced motion.
+// (styles/nav-slider.css, 380 ms), and is there at once under reduced motion.
 // The highlight's place is read as a box on screen against the buttons' boxes.
 const slide = (page) =>
   page.evaluate(() => {
@@ -416,7 +416,7 @@ for (const [width, touch] of [[1280, false], [375, true]]) {
       });
       at = await slide(page);
       assert.ok(lefts.some((x) => x > at.orbit.left + 0.5 && x < at.zoom.left - 0.5), `a frame mid-slide between Orbit and Zoom: ${JSON.stringify(lefts)} against ${JSON.stringify(at)}`);
-      await page.waitForTimeout(500); // past its 220 ms
+      await page.waitForTimeout(700); // past its 380 ms
       at = await slide(page);
       assert.ok(on(at.h, at.zoom), `rests on Zoom: ${JSON.stringify(at)}`);
       assert.equal(await page.getAttribute("#view-controls [data-nav=zoom]", "aria-pressed"), "true");

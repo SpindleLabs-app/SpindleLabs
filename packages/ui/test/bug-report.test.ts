@@ -197,3 +197,29 @@ test("reports go to the service only from SpindleLabs' own pages; elsewhere to a
   const fn = readFileSync(new URL("supabase/functions/bug-report/index.ts", dir), "utf8");
   assert.equal(fn.match(/export const APP_ORIGINS = (\[[^\]]*\]);/)?.[1], JSON.stringify(BUG_REPORT_ORIGINS).replaceAll(",", ", "));
 });
+
+test("the dialog: a moving bar shows while a report is sending, and goes when it is sent or fails", async () => {
+  let answer!: (r: Response) => void;
+  const slow = (() => new Promise<Response>((r) => (answer = r))) as unknown as typeof fetch;
+  const { d, $ } = dialogIn({ endpoint: "https://example.org/report", fetch: slow });
+  d.show();
+  const bar = $("bug-report-progress");
+  assert.equal(bar.hidden, true, "no bar before Send");
+  assert.equal(bar.getAttribute("role"), "progressbar");
+  const sending = d.send();
+  assert.equal(bar.hidden, false, "the bar shows while sending");
+  assert.equal($("bug-report-status").textContent, "Sending… this can take a few seconds.");
+  assert.ok($("bug-report-status").classList.contains("bug-report-calm"), "sending isn't shown in the warning colour");
+  assert.equal($<HTMLButtonElement>("bug-report-go").disabled, true);
+  answer(new Response(JSON.stringify({ issue: 3 }), { status: 200 }));
+  await sending;
+  assert.equal(bar.hidden, true, "gone once sent");
+  // And after a failure.
+  const down = (async () => {
+    throw new TypeError("Failed to fetch");
+  }) as unknown as typeof fetch;
+  const w = dialogIn({ endpoint: "https://example.org/report", fetch: down });
+  w.d.show();
+  await w.d.send();
+  assert.equal(w.$("bug-report-progress").hidden, true, "gone after a failure");
+});

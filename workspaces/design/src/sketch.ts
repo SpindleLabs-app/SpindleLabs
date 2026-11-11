@@ -122,7 +122,10 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   const label = on.provenance.self.label;
   const body = drawn.body === undefined ? null : squared(drawn.body);
   if (drawn.body !== undefined && body === null) throw new Error("a sketch on a moved face needs a frame for where its body was moved to");
-  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body } : {}) });
+  const size = drawn.body?.size ?? 1;
+  if (!Number.isFinite(size) || size <= 0) throw new Error(`a sketch on a scaled face needs its body's size above 0, not ${size}`);
+  // SL #539: the body's size is always recorded (1 too), so a sketch without one is known to be from before and carried as it was.
+  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}) });
 }
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {

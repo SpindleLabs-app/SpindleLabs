@@ -77,8 +77,10 @@ test("remove forgets a project; removing or opening it again is refused", async 
   await store.save("b", part("B"));
   await store.remove("a");
   assert.deepEqual((await store.list()).map((s) => s.id), ["b"]);
-  // The save count is shared by every project, so it stays (B5).
-  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/b"]);
+  // The save count is shared by every project, so it stays (B5). A's text is deleted and its summary is its deletion
+  // mark, in the delete's one step (save/load hunt C2, C3).
+  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/a", "summary/b"]);
+  assert.deepEqual(Object.keys(JSON.parse(kv.entries.get("summary/a")!)), ["deleted"]);
   await assert.rejects(store.open("a"), /^Error: there is no stored project "a" in this browser$/);
   await assert.rejects(store.remove("a"), /^Error: there is no stored project "a" to remove$/);
 });

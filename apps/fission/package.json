@@ -22,6 +22,7 @@
     "@fission/community": "*",
     "@fission/storage": "*",
     "@fission/account": "*",
+    "@fission/open-format": "*",
     "@fission/ai": "*",
     "@fission/design": "*",
     "@fission/render": "*",

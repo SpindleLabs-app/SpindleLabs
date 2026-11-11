@@ -49,7 +49,8 @@ test("each model's kernel calls are as worked out by hand, and tests/baseline.js
   // A Combine (35f1f, 11-06) is one body_boolean and a view of each body it hands back, none when refused:
   // box-minus-box, far-wall-outside, hollow-box, km-plate and small-cube-halved, 2 sketches, 2 extrudes and a Cut
   // leaving one body: 2 + 2 × 2 + 1 + 1 = 8; micron-cube-halved the same with its Cut refused: 2 + 2 × 2 + 1 = 7;
-  // flush-blocks, the box, a sketch and its extrude joined into one: 1 + 2 × 2 + 1 + 1 = 7;
+  // flush-blocks, the box, a sketch and its extrude joined into one: 1 + 2 × 2 + 1 + 1 = 7, and one solve (SL #545):
+  // its sketch is pinned to the box and holds a Horizontal, so the rebuild checks it still holds as stored: 8;
   // f2-gap-join, two boxes (the move is in the second's spec) joined into two pieces: 2 × 2 + 1 + 2 = 7.
   const calls = Object.fromEntries(Object.entries(metrics).filter(([k]) => k !== "golden_models").map(([k, m]) => [k, m.kernel_calls]));
   assert.deepEqual(calls, {
@@ -65,7 +66,7 @@ test("each model's kernel calls are as worked out by hand, and tests/baseline.js
     [goldenMetric("km-plate")]: 2 + 2 * 2 + 1 + 1,
     [goldenMetric("small-cube-halved")]: 2 + 2 * 2 + 1 + 1,
     [goldenMetric("micron-cube-halved")]: 2 + 2 * 2 + 1,
-    [goldenMetric("flush-blocks")]: 1 + 2 * 2 + 1 + 1,
+    [goldenMetric("flush-blocks")]: 1 + 2 * 2 + 1 + 1 + 1,
     [goldenMetric("f2-gap-join")]: 2 * 2 + 1 + 2,
   });
   assert.deepEqual(metrics.golden_models, { failed_percent: 0 });
