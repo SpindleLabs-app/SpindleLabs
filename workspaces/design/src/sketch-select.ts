@@ -7,7 +7,7 @@
 
 import type { SketchXY } from "@fission/core";
 import type { DesignDocument, Sketch, SketchCurve } from "./document.ts";
-import { deleteCurve } from "./sketch.ts";
+import { deleteCurve, deletePoint, lonePoints } from "./sketch.ts";
 import { deleteConstraint } from "./constraints.ts";
 
 /**
@@ -87,6 +87,19 @@ export function curveNear(sketch: Sketch, p: SketchXY, reach: number): { id: str
   return best === null ? null : { id: best, d: nearest };
 }
 
+/** The sketch point on its own (sketch.ts `lonePoints`, the Point tool's) nearest `p` within `reach`, the later drawn on a tie, or null. */
+export function lonePointNear(sketch: Sketch, p: SketchXY, reach: number): string | null {
+  const alone = lonePoints(sketch);
+  let best: string | null = null;
+  let nearest = Infinity;
+  for (const q of sketch.points) {
+    if (!alone.has(q.id)) continue;
+    const d = apart(p, [q.x, q.y]);
+    if (d <= reach && d <= nearest) [best, nearest] = [q.id, d];
+  }
+  return best;
+}
+
 /**
  * The picks after a click on curve `hit` (null: on nothing): a click picks
  * only that curve, Shift adds it or, when picked already, takes it out; a
@@ -102,7 +115,7 @@ export function pickCurve(picked: readonly string[], hit: string | null, shift: 
 export function stillPicked(sketch: Sketch | undefined, picked: readonly string[]): string[] {
   if (!sketch) return [];
   // A constraint's mark can be picked too (47d2).
-  const there = new Set([...sketch.curves.map((c) => c.id), ...sketch.constraints.map((c) => c.id)]);
+  const there = new Set([...sketch.curves.map((c) => c.id), ...sketch.constraints.map((c) => c.id), ...lonePoints(sketch)]);
   return picked.filter((id) => there.has(id));
 }
 
@@ -118,6 +131,11 @@ export function deleteCurves(doc: DesignDocument, sketchId: string, ids: readonl
     const sketch = next.sketches.find((s) => s.id === sketchId);
     if (sketch?.curves.some((c) => c.id === id)) next = deleteCurve(next, sketchId, id);
   }
+  // Sketch points on their own (52c) last: a curve deleted before never takes one.
+  for (const id of ids) {
+    const sketch = next.sketches.find((s) => s.id === sketchId);
+    if (sketch && lonePoints(sketch).has(id)) next = deletePoint(next, sketchId, id);
+  }
   return next;
 }
 
@@ -127,10 +145,10 @@ export function pickedWords(sketch: Sketch | undefined, picked: readonly string[
   const made = new Set((sketch.projected ?? []).map((p) => p.made));
   const kinds = picked.flatMap((id) => {
     const c = sketch.curves.find((x) => x.id === id);
-    if (!c) return sketch.constraints.some((x) => x.id === id) ? ["constraint"] : [];
+    if (!c) return sketch.constraints.some((x) => x.id === id) ? ["constraint"] : lonePoints(sketch).has(id) ? ["point"] : [];
     return [made.has(c.id) ? "projected edge" : c.kind];
   });
-  const words = ["line", "arc", "circle", "projected edge", "constraint"].flatMap((kind) => {
+  const words = ["line", "arc", "circle", "point", "projected edge", "constraint"].flatMap((kind) => {
     const n = kinds.filter((k) => k === kind).length;
     return n ? [`${n} ${kind}${n === 1 ? "" : "s"}`] : [];
   });

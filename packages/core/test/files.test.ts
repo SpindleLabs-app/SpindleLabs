@@ -76,6 +76,21 @@ test("near misses of a strong signature are not that format", () => {
   assert.deepEqual(identifyFile(file("notes.txt", 'see "formatVersion"')), unknown);
 });
 
+test("save-load hunt D1: a STEP file may start with /* comments */, which Part 21 allows wherever whitespace may be; an unclosed one is not STEP", () => {
+  // ISO 10303-21 section 5.6: a comment is "/*" up to the next "*/" and may stand wherever a space may, so these are STEP.
+  assert.deepEqual(identifyFile(file("lead-comment.step", "/* made by X */\nISO-10303-21;\nHEADER;\n")), is("step"));
+  assert.deepEqual(identifyFile(file("part.txt", " \n/* one */ /* two\nlines */\r\n\tISO-10303-21;")), is("step")); // two comments, whitespace round them
+  assert.deepEqual(identifyFile(file("x", "\xef\xbb\xbf/**/ISO-10303-21;")), is("step")); // an empty comment after a byte order mark
+  assert.deepEqual(identifyFile(file("x", "/* ** / * */ISO-10303-21;")), is("step")); // "*" and "/" alone inside don't end it: only "*/" does
+  // Not STEP: a comment never closed (the signature inside it is commented out), text before the comment, a lone "/".
+  assert.deepEqual(identifyFile(file("open.step", "/* ISO-10303-21;")), renamed("step"));
+  assert.deepEqual(identifyFile(file("x.step", "/* x */ HEADER; ISO-10303-21;")), renamed("step"));
+  assert.deepEqual(identifyFile(file("x.step", "/ ISO-10303-21;")), renamed("step"));
+  assert.deepEqual(identifyFile(file("x", "/*/ISO-10303-21;")), unknown); // "/*/" opens a comment that "/" does not close
+  // Only STEP takes comments this way: a project or an SVG after "/* */" is not one.
+  assert.deepEqual(identifyFile(file("x", '/* */{"formatVersion": 2}')), unknown);
+});
+
 test("binary STL by its size alone, worked out by hand, and only when named .stl", () => {
   // 80-byte header + 4-byte count + 50 bytes per triangle (12 floats of 4 bytes, and 2 attribute bytes):
   // one triangle is 80 + 4 + 50 = 134 bytes; two are 184; none is 84.

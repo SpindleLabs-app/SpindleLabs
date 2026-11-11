@@ -1,7 +1,8 @@
 # Community library: open questions
 
 A design note, not a plan. The Community page in the app is a placeholder
-until these are answered with the owner (roadmap item C1).
+until these are answered with the owner (roadmap item C1). Proposed answers
+(2026-11-11) and the steps are in `docs/progress/community.md`.
 
 What it is: people share what they make (a whole SpindleLabs project with its
 editable timeline and every workspace's data, or a plain mesh) and anyone

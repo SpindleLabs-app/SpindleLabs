@@ -224,7 +224,7 @@ test("a warning on one of two bodies names it by its row, marks it alone, and th
 
 test("Design's own run refuses a body the scene does not show (the last rebuild failed it), before asking the kernel", async () => {
   const d = downloading(() => assert.fail("the kernel must not be asked"), twoShown);
-  assert.deepEqual(await d.run([body("feature-17")]), { message: "body:feature-17 is not a body shown in the design, so there is nothing to download.", bad: true });
+  assert.deepEqual(await d.run([body("feature-17")]), { message: "Body 4 is not a body shown in the design, so there is nothing to download.", bad: true });
   assert.deepEqual(d.saved, []);
 });
 

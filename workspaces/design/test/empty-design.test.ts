@@ -111,7 +111,7 @@ test("no body to download, and no solid for other workspaces: the sketch's outli
   const project = emptyProject();
   project.workspaces.design = d;
   const ctx = { project, kernel: { call: () => assert.fail("no kernel call") }, viewport: {} } as unknown as WorkspaceContext;
-  assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body], ctx), { message: "body:feature-11 is not a body shown in the design, so there is nothing to download.", bad: true });
+  assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body], ctx), { message: "Body 2 is not a body shown in the design, so there is nothing to download.", bad: true });
   assert.equal(NO_BODY_STL, "There is no body to download: nothing in the timeline builds.");
   // Other workspaces see Sketch 1's outline, and no design.feature.
   const kernel = {} as KernelCalls;

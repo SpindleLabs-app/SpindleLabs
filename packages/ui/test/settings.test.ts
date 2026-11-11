@@ -71,3 +71,33 @@ test("reload reads what was written behind the store, so the next set never puts
   s.reload();
   assert.equal(s.get("unit", "none"), "none");
 });
+
+// Account bug hunt 2026-11-11 (issue #547 items 3 and 4): the store wrote back only the entries it reads, from its own
+// copy, so an older app dropped a newer app's entries and a tab put back another tab's (or the account's) old values.
+
+test("an entry this app doesn't read (a newer app's) is kept as it is when a choice is written", () => {
+  const storage = memory('{"theme":"light","gridByWorkspace":{"design":5,"laser":1}}');
+  const s = new SettingsStore(storage);
+  assert.equal(s.get("gridByWorkspace", 7), 7, "not one this app reads");
+  s.set("theme", "dark");
+  // Hand-worked: only theme changes; the object entry is written back exactly, in its place.
+  assert.equal(storage.data.get(SETTINGS_KEY), '{"theme":"dark","gridByWorkspace":{"design":5,"laser":1}}');
+});
+
+test("a choice written never puts back an older copy of the other entries (another tab or the account changed them)", () => {
+  const storage = memory('{"theme":"light","unit":"mm"}');
+  const s = new SettingsStore(storage);
+  storage.data.set(SETTINGS_KEY, '{"theme":"dark","unit":"mm"}'); // another tab, or settings from the account, with no reload here
+  s.set("unit", "in");
+  assert.equal(storage.data.get(SETTINGS_KEY), '{"theme":"dark","unit":"in"}');
+  assert.equal(s.get("theme", ""), "dark");
+});
+
+test("storage that can be read but is full: every choice made still holds for this page", () => {
+  const data = new Map<string, string>([[SETTINGS_KEY, '{"a":1}']]);
+  const full: SettingsStorage = { getItem: (k) => data.get(k) ?? null, setItem: () => { throw new Error("full"); } };
+  const s = new SettingsStore(full);
+  s.set("b", 2);
+  s.set("c", 3);
+  assert.deepEqual([s.get("a", 0), s.get("b", 0), s.get("c", 0)], [1, 2, 3]);
+});

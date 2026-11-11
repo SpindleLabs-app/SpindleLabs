@@ -121,9 +121,9 @@ const HTML = `
   <h2>Selection</h2>
   <p id="selection-empty">Nothing selected: click a face or an edge (double-click or double-tap for its whole body), or a body in the browser.</p>
   <ul id="selection-list" class="selection-list"></ul>
-  <p id="selection-note" class="bad" hidden></p>
+  <p id="selection-note" class="bad" role="alert" hidden></p>
   <div id="selection-actions" class="verbs" role="group" aria-label="Actions for the selection" hidden></div>
-  <p id="action-note"></p>
+  <p id="action-note" role="status"></p>
   <h2>Parameters</h2>
   <p id="no-part" hidden>${NO_PART}</p>
   <label id="shape-row" title="${SHAPE_TITLE}">Shape <select id="shape" class="dark-select"><option value="" disabled hidden>—</option><option value="sketch-extrude" disabled hidden>${EXTRUDED_SKETCH}</option>${SHAPES.map((k) => `<option value="${k}">${SHAPE_LABELS[k]}</option>`).join("")}</select></label>
@@ -140,9 +140,9 @@ const HTML = `
     <dt>Topology</dt><dd id="topology">…</dd>
     <dt>Validation</dt><dd id="status">…</dd>
   </dl>
-  <p id="body-problems" class="bad" hidden></p>
-  <p id="stale-note" hidden>Out of date: these numbers are for the last part that built.</p>
-  <p id="error"></p>
+  <p id="body-problems" class="bad" role="alert" hidden></p>
+  <p id="stale-note" role="status" hidden>Out of date: these numbers are for the last part that built.</p>
+  <p id="error" role="alert"></p>
   <p id="kept-warning" class="kept kept-warning" role="status" hidden></p>
   <section id="downstream" hidden>
     <h2>Downstream</h2>
