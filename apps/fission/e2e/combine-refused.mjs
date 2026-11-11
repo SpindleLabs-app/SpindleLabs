@@ -151,6 +151,31 @@ try {
     if (shots) await page.screenshot({ path: `${shots}/combine-used-up-${width}.png` });
     await context.close();
   }
+  // Ben 2026-11-11 (#507): with Combine switched off, a file that already holds a Combine opens and builds, but its row's Edit is greyed out, saying why.
+  {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`${url}?test-hooks&all-workspaces&combine=off#design`);
+    await page.locator("#start-hint").waitFor();
+    await page.setInputFiles("#open-file", { name: "refused.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(project)) });
+    await until(page, (id) => document.querySelector(`#timeline li[data-item="${id}"]`) !== null, COMBINE, "the file open", 15000);
+    await rebuilt(page);
+    await page.evaluate((id) => document.querySelector(`#timeline li[data-item="${id}"]`).click(), COMBINE);
+    await until(page, (id) => document.querySelector(`#timeline [data-more="${id}"]`) !== null, COMBINE, "the item picked");
+    await page.evaluate((id) => document.querySelector(`#timeline [data-more="${id}"]`).click(), COMBINE);
+    await until(page, () => document.getElementById("row-menu")?.open, null, "the row's menu");
+    const edit = await page.$eval("#row-menu-edit", (b) => ({ off: b.disabled, why: b.title }));
+    assert.equal(edit.off, true, "Edit is greyed out with Combine off");
+    assert.match(edit.why, /switched off/, "and says why");
+    // A double-click on the item opens nothing either.
+    await page.keyboard.press("Escape");
+    await page.locator(`#timeline li[data-item="${COMBINE}"]`).dblclick();
+    await page.waitForTimeout(300);
+    assert.equal(await page.$eval("#combine-panel", (p) => p.hidden), true, "a double-click opens no Combine panel with Combine off");
+    await context.close();
+  }
   assert.deepEqual(errors, [], "no page errors");
   console.log("combine-refused: PASS");
 } finally {

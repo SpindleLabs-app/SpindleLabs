@@ -321,6 +321,9 @@ const sameIds = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b
 const folding = new Map<string, boolean>();
 const isOpen = (n: { id: string; startsFolded?: boolean }) => folding.get(n.id) ?? !n.startsFolded;
 
+/** Why a Combine in the file can't be edited while Combine is switched off (#507). */
+const COMBINE_OFF = "Combine is switched off, so this can't be edited.";
+
 /** Lights the browser rows whose geometry is selected (aria-current), and only those; `failed`, the last rebuild's failed ids, select nothing. */
 /**
  * A Timeline row's Retry (35d4): shown, after its words, while its item
@@ -1358,7 +1361,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const editing = editingId();
     // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
     const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
-    const entries = [...shows, ...menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
+    // Ben 2026-11-11 (#507): with Combine switched off, a Combine already in the file builds but can't be edited: Edit is greyed out, saying why.
+    const switchedOff = (e: MenuEntry): MenuEntry => (e.action === "edit" && isCombineItem(item) && !combineShown() ? { ...e, off: COMBINE_OFF } : e);
+    const entries = [...shows, ...menuEntries(doc, id, editing).map(switchedOff).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
@@ -3398,6 +3403,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Opens item `id`'s sizes in the Edit feature panel, out of any sketch or Extrude panel first. */
   function openEdit(id: string) {
     const item = designDoc().timeline.features.find((f) => f.id === id)!;
+    if (isCombineItem(item) && !combineShown()) return panel.showActionNote(COMBINE_OFF, true);
     if (isMoveItem(item)) return startMove(id);
     if (isCombineItem(item)) return startCombine(id);
     leaveExtrude();
