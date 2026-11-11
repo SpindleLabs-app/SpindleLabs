@@ -42,6 +42,8 @@ export const ICONS = {
   mirror: [tone("M4 18 10 6V18Z"), line("M4 18 10 6V18ZM20 18 14 6V18ZM12 3V21")],
   insert: [tone("M4 4H20V20H4Z"), line("M4 4H20V20H4ZM12 8V16M8 12H16")],
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
+  // A lens with two lines of text inside it: the command search button (the S key's box, for a touch screen).
+  search: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20M7.5 9H13.5M7.5 12H11.5")],
   // The print check (Inspect ▾, H1): a nozzle over printed layers.
   "print-check": [tone("M4 15H20V20H4Z"), line("M9 3H15V7L13 10H11L9 7ZM12 10V12.5M4 15H20V20H4ZM4 17.5H20")],
   // A dimension between two upright ticks, an arrow at each end over a ruler: Measure (Inspect ▾, 35e2l).

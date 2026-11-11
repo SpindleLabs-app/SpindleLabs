@@ -301,9 +301,11 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
 // Ben's rule (10-28): on a phone one tap must never suddenly cover the view when the person may not want that. Each toolbar
 // tool (not a menu's ▾, whose list is what was asked for) is tapped at 393 × 852 and at most 40% of the 3D view may be covered
 // afterwards (a 12 × 12 grid of points over the view, each covered when what is on top there is outside it). Body facts is the
-// one tool whose job is to show its numbers in the sheet; Export STL downloads a file and opens nothing.
+// one tool whose job is to show its numbers in the sheet; Export STL downloads a file and opens nothing; the Search button opens
+// the command search box, whose window-wide scrim only dims the view (a press outside it closes the box): the box's card is what
+// covers, and command-search-button.mjs holds that to 40% at 375, 393, 641 and 1280 px.
 {
-  const SHOWS_ITS_SHEET = new Set(["inspect-facts", "tool-export_stl"]);
+  const SHOWS_ITS_SHEET = new Set(["inspect-facts", "tool-export_stl", "command-search-button"]);
   const { page, context } = await open(393, 852);
   const covered = () => page.evaluate(() => {
     const v = document.getElementById("viewport").getBoundingClientRect();

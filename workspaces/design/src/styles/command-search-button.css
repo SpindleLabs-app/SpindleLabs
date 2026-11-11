@@ -1,0 +1,4 @@
+/* The command search button (workspace.ts, beside the S key's box): the first
+   thing in the Design toolbar, kept at the left edge while a phone's toolbar
+   scrolls sideways, so a touch screen, which has no S key, always reaches it. */
+.command-search-button { position: sticky; left: 0; z-index: 2; padding-right: 4px; background: var(--surface); }
