@@ -18,6 +18,7 @@ function browser(acc: FakeAccount, user: string, tag: string, tidy = (t: string)
   const sync = designSync({
     api: designsApi(acc.as(user) as AuthClient),
     userId: user,
+    who: () => user,
     store,
     local: {
       list: async () => [...projects.entries()].map(([id, p]) => ({ id, name: p.name, modified: p.modified })),
