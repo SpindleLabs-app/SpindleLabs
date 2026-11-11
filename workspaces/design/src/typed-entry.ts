@@ -21,9 +21,10 @@ import type { DesignDocument } from "./document.ts";
 import type { CentreArcTool, SketchTool } from "./sketch-tool.ts";
 import { sweep } from "./centre-arc.ts";
 import { isConstraintTool } from "./constraint-tool.ts";
+import { isShapeTool, MAX_SIDES, shapeAim, shapeAnchor, shapeFields, shapeLive, shapeWithLocks } from "./sketch-shapes.ts";
 
-/** The boxes a tool shows: a line's length and angle, a rectangle's width and height, a centre arc's radius and angle, then its arc angle (`sweep`), a circle's diameter. */
-export type TypedField = "length" | "angle" | "width" | "height" | "radius" | "sweep" | "diameter";
+/** The boxes a tool shows: a line's length and angle, a rectangle's width and height, a centre arc's radius and angle, then its arc angle (`sweep`), a circle's diameter, a polygon's number of sides (sketch-shapes.ts). */
+export type TypedField = "length" | "angle" | "width" | "height" | "radius" | "sweep" | "diameter" | "sides";
 
 /** The values typed and accepted so far, each locking its size; absent ones follow the pointer. */
 export type Locks = Partial<Record<TypedField, number>>;
@@ -100,6 +101,15 @@ export function readDiameter(text: string): Reading {
   if ("error" in r) return r;
   if (r.value / 2 < MIN_TYPED) return { error: `A circle's diameter must be at least ${2 * MIN_TYPED} mm: its radius can't be under ${MIN_TYPED} mm, the smallest piece the modeller keeps.` };
   return r;
+}
+
+/** A polygon's number of sides typed in its box: a whole number from 3 to MAX_SIDES (sketch-shapes.ts). */
+export function readSides(text: string): Reading {
+  const t = text.trim();
+  if (!/^\d+$/.test(t)) return { error: `"${t}" isn't a number of sides: type a whole number from 3 to ${MAX_SIDES}, like 6.` };
+  const value = Number(t);
+  if (value < 3 || value > MAX_SIDES) return { error: `A polygon has 3 to ${MAX_SIDES} sides, not ${t}.` };
+  return { value };
 }
 
 /** Degrees into [0, 360): −90 is 270, 360 is 0, 405 is 45. */
@@ -189,6 +199,7 @@ export function rectangleCorner(corner: SketchXY, p: SketchXY | null, locks: Loc
 
 /** The boxes the tool shows now: a line's, a 3-point arc's (for its end) and a tangent arc's once they have a start, a rectangle's once it has a first corner, a centre arc's radius and angle once it has a centre and its arc angle once it has a start, a circle's diameter once it has a centre; none otherwise (a 3-point arc's third click has none). */
 export function typedFields(tool: SketchTool): TypedField[] {
+  if (isShapeTool(tool)) return shapeFields(tool);
   if ((tool.kind === "line" || tool.kind === "tangent") && tool.from !== null) return ["length", "angle"];
   if (tool.kind === "rectangle" && tool.corner !== null) return ["width", "height"];
   if (tool.kind === "arc" && tool.start !== null && tool.end === null) return ["length", "angle"];
@@ -207,6 +218,7 @@ function pointOf(doc: DesignDocument, sketch: string, id: string): SketchXY | nu
 
 /** The tool's anchor, what its boxes measure from: a line's or tangent arc's start (its point id looked up), a rectangle's first corner, a 3-point arc's start until its end is down, a centre arc's or circle's centre; null when the tool shows no boxes. */
 export function anchorOf(doc: DesignDocument, tool: SketchTool): SketchXY | null {
+  if (isShapeTool(tool)) return shapeAnchor(tool);
   if (tool.kind === "rectangle") return tool.corner;
   if (tool.kind === "arc") return tool.end === null ? tool.start : null;
   if (tool.kind === "centre") return tool.centre;
@@ -241,6 +253,7 @@ function wayRound(tool: CentreArcTool, p: SketchXY | null): 1 | -1 {
 export function aimOf(doc: DesignDocument, tool: SketchTool, pointer: SketchXY | null, locks: Locks): SketchXY | null {
   const anchor = anchorOf(doc, tool);
   if (!anchor) return pointer;
+  if (isShapeTool(tool)) return shapeAim(tool, pointer, locks);
   if (tool.kind === "rectangle") return rectangleCorner(anchor, pointer, locks);
   // A circle's typed diameter: the point half of it from the centre, the pointer's way (the preview's rim point; the click's radius is `withLocks`').
   // With no way to read (a phone's tap leaves the pointer on the centre) it goes along +x: a circle is the same circle whichever way its rim point lies.
@@ -263,6 +276,7 @@ export function aimOf(doc: DesignDocument, tool: SketchTool, pointer: SketchXY |
  * not the 90° the other way). The preview draws from the same tool.
  */
 export function withLocks<T extends SketchTool>(tool: T, locks: Locks, pointer: SketchXY | null): T {
+  if (isShapeTool(tool)) return shapeWithLocks(tool, locks) as T;
   if (tool.kind === "circle" && tool.centre !== null && locks.diameter !== undefined) return { ...tool, radius: locks.diameter / 2 };
   if (tool.kind !== "centre" || tool.start === null || locks.sweep === undefined) return tool;
   return { ...tool, swept: (wayRound(tool, pointer) * locks.sweep * Math.PI) / 180 };
@@ -270,6 +284,7 @@ export function withLocks<T extends SketchTool>(tool: T, locks: Locks, pointer: 
 
 /** What each box shows while not typed in: the size the aim would draw (a line's length and angle, a rectangle's width and height, a centre arc's radius and angle, then its arc angle, how far round the arc the aim makes goes, a circle's diameter). */
 export function liveValues(anchor: SketchXY, aim: SketchXY, tool: SketchTool): Locks {
+  if (isShapeTool(tool)) return shapeLive(tool, anchor, aim);
   if (tool.kind === "circle") return { diameter: 2 * lengthOf(anchor, aim) };
   if (tool.kind === "rectangle") return { width: Math.abs(aim[0] - anchor[0]), height: Math.abs(aim[1] - anchor[1]) };
   if (tool.kind === "centre" && tool.start !== null) {

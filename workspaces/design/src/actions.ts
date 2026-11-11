@@ -164,6 +164,8 @@ export function joinStl(files: readonly Uint8Array[], name: string): Uint8Array<
  */
 export interface DesignRun extends WorkspaceContext {
   scene?: Scene | null;
+  /** What the last rebuild failed (browser.ts `failedIds`): a failed Combine used up none of its bodies, so they can still be downloaded (#500). */
+  failed?: ReadonlySet<string>;
 }
 
 /** The overlay's marks for the bodies (by body id, 35f1) that warned: their faces on `scene`, or every body when there is no scene or each shown body warned. */
@@ -192,14 +194,17 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
       if (!doc) return { message: "There is no part to download yet.", bad: true };
       if (targets.length === 0) return { message: "Download STL takes at least one body.", bad: true };
       const picked: { body: string; feature: Feature }[] = [];
+      const failed = ctx.failed ?? NONE_FAILED;
+      // Which body, in a message: its browser row's number (35e: the body's own), never its id.
+      const numbers = bodyNumbers(doc);
       for (const target of targets) {
         // Design's own run knows the bodies the last rebuild drew (a failed one is not among them).
-        const f = shownBodyFeature(target, doc);
-        if (!f || (ctx.scene && !ctx.scene.bodies.some((b) => b.body === target.id))) return { message: `${target.id} is not a body shown in the design, so there is nothing to download.`, bad: true };
+        const f = shownBodyFeature(target, doc, failed);
+        if (!f || (ctx.scene && !ctx.scene.bodies.some((b) => b.body === target.id))) return { message: `${numbers.has(target.id) ? `Body ${numbers.get(target.id)}` : target.id} is not a body shown in the design, so there is nothing to download.`, bad: true };
         if (!picked.some((p) => p.body === target.id)) picked.push({ body: target.id, feature: f });
       }
       // Build order, whatever order they were picked in: the same bodies make the same file.
-      const order = designBodies(doc).map((b) => b.body);
+      const order = designBodies(doc, failed).map((b) => b.body);
       picked.sort((a, b) => order.indexOf(a.body) - order.indexOf(b.body));
       const features = picked.map((p) => p.feature);
       const kindOf = (f: Feature) => {
@@ -233,8 +238,6 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         if (warned.length > 0)
           ctx.viewport.setOverlay({ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: files.flatMap((f) => (f.warning ? [f.warning] : [])).join("\n"), marks: warnedMarks(warned.map((p) => p.body), ctx.scene) });
         else ctx.viewport.clearOverlay(STL_OVERLAY);
-        // Which body, when there are several: its browser row's number (35e: the body's own).
-        const numbers = bodyNumbers(doc);
         const place = (body: string) => `Body ${numbers.get(body)}`;
         const warnings = picked.flatMap((p, i) => (files[i].warning ? [one ? files[i].warning! : `${place(p.body)}: ${files[i].warning}`] : []));
         const badge = solid ? `${badgeFor(solid).title}.` : unchecked;

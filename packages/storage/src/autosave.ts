@@ -118,6 +118,8 @@ export interface Autosave {
    * landed (nightly issue #331: Save, New, then Open of that same file said another tab had changed it).
    */
   settled(): Promise<void>;
+  /** True once a save was refused because another tab stored the project since: this tab's state is no longer the project's (step 89 keeps no undo steps for it). */
+  refused(): boolean;
 }
 
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
@@ -445,6 +447,7 @@ export function startAutosave(
       });
       return null;
     },
+    refused: () => conflicted,
     settled: () => flight.then(
       () => {},
       () => {},

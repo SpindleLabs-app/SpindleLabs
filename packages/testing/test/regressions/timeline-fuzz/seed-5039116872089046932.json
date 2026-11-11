@@ -1,0 +1,60 @@
+{
+ "seed": "5039116872089046932",
+ "check": "an edit changed an item that doesn't depend on it",
+ "issue": "SpindleLabs-app/SpindleLabs#482",
+ "what": "A box cut by a second box (Combine, tools not kept), then a Move of that second box together with a sphere, shift (24, 0, 38). Typing a new width for the first box changes whether the cut builds, so the Move, which moves both bodies or neither, fails once its box is used up and the sphere stays put: its lower half's centroid z goes from 38 + 15.5 - 15.5/2 = 45.75 to 7.75 and x from 24 to 0. The model and Design both did that; the session's locality check counted the sphere as not depending on the edit, since it reached a Move but not the other bodies the Move moves. Fixed in the check (timeline-session.ts dependents).",
+ "steps": [
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    45,
+    56,
+    34
+   ]
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    39,
+    37,
+    30
+   ]
+  },
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    31
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.6560658615561342,
+   "tool": 0.2867514016595545,
+   "operation": "cut",
+   "keep": false
+  },
+  {
+   "op": "add-move",
+   "pick": 0.2192355320259134,
+   "other": 0.9987005881915381,
+   "shift": [
+    24,
+    0,
+    38
+   ],
+   "turnZ": 0,
+   "pivot": [
+    -26,
+    -10
+   ]
+  },
+  {
+   "op": "set-size",
+   "pick": 0.02162862530875176,
+   "value": 36
+  }
+ ]
+}
