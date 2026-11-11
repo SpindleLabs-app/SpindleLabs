@@ -158,11 +158,11 @@ await check("the Create menu: every tool with its key, the tool in use ticked an
     assert.equal(await page.getAttribute("#sketch-tool-rectangle", "aria-pressed"), "true");
     assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "false");
     assert.match(await page.textContent("#sketch-help"), /^Click one corner, then the opposite corner/);
-    // Arrows: from Rectangle (row 1) Down twice is the Arc row (row 3); Enter opens the arcs on 3-point arc, and Enter chooses it.
+    // Arrows: from Rectangle (row 1) Down five times, past the centre and 3-point rectangles, Circle and the 3-point circle
+    // (52c), is the Arc row (row 6); Enter opens the arcs on 3-point arc, and Enter chooses it.
     await page.click("#sketch-create");
     assert.equal(await page.evaluate(() => document.activeElement.id), "sketch-menu-rectangle");
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
+    for (let k = 0; k < 5; k++) await page.keyboard.press("ArrowDown");
     assert.equal(await page.evaluate(() => document.activeElement.id), "sketch-menu-group-arc");
     await page.keyboard.press("Enter");
     assert.equal(await page.evaluate(() => document.activeElement.id), "sketch-menu-arc");

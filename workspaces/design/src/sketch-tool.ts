@@ -25,8 +25,9 @@ import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, V
 import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
-import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
+import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, lonePoints, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
 import { dashes } from "./construction.ts";
+import { isShapeKind, isShapeTool, shapeClick, shapeClicks, shapePreview, shapeStillNeeds, SHAPE_NAMES, startShape, type ShapeKind, type ShapeTool } from "./sketch-shapes.ts";
 import { squaredRectangle } from "./constraints.ts";
 import { constraintMarks, dimensionLabels, dimensionLine, isConstraintKind, isConstraintTool, startConstraintTool, type ConstraintTool } from "./constraint-tool.ts";
 
@@ -142,23 +143,34 @@ export interface SelectTool {
   hover: string | null;
 }
 
-export type { CentreArcTool };
-export type SketchTool = LineTool | RectangleTool | CircleTool | ArcTool | TangentTool | CentreArcTool | ProjectTool | SelectTool | ConstraintTool;
+export type { CentreArcTool, ShapeTool };
+export type SketchTool = LineTool | RectangleTool | CircleTool | ArcTool | TangentTool | CentreArcTool | ShapeTool | ProjectTool | SelectTool | ConstraintTool;
 export type ToolKind = SketchTool["kind"];
 
 /**
  * The tools the sketch panel offers, in its order, with their keys (the
  * letters people already know for them; the centre arc has none) and, for
- * the three arcs, the group the Create menu lists them under.
+ * the three arcs, the two polygons and the two slots, the group the Create
+ * menu lists them under. The shapes of step 52c are in the Create menu
+ * only (`menuOnly`): a button each would push the toolbar past a phone's
+ * width, and Fusion keeps them in its menu too.
  */
-export const SKETCH_TOOLS: readonly { kind: ToolKind; label: string; key?: string; group?: "Arc" }[] = [
+export const SKETCH_TOOLS: readonly { kind: ToolKind; label: string; key?: string; group?: "Arc" | "Polygon" | "Slot"; menuOnly?: true }[] = [
   { kind: "line", label: "Line", key: "L" },
   { kind: "rectangle", label: "Rectangle", key: "R" },
+  { kind: "centre-rectangle", label: "Centre rectangle", menuOnly: true },
+  { kind: "three-rectangle", label: "3-point rectangle", menuOnly: true },
   { kind: "circle", label: "Circle", key: "C" },
+  { kind: "three-circle", label: "3-point circle", menuOnly: true },
   { kind: "arc", label: "3-point arc", key: "A", group: "Arc" },
   { kind: "centre", label: "Centre arc", group: "Arc" },
   // No key: T is kept for Trim (Fusion's, Ben 10-29), which comes with step 52.
   { kind: "tangent", label: "Tangent arc", group: "Arc" },
+  { kind: "polygon", label: "Inscribed polygon", group: "Polygon", menuOnly: true },
+  { kind: "outside-polygon", label: "Circumscribed polygon", group: "Polygon", menuOnly: true },
+  { kind: "slot", label: "Centre to centre slot", group: "Slot", menuOnly: true },
+  { kind: "overall-slot", label: "Overall slot", group: "Slot", menuOnly: true },
+  { kind: "point", label: "Point", menuOnly: true },
   { kind: "project", label: "Project", key: "P" },
 ];
 
@@ -168,6 +180,7 @@ export function startTool(kind: ToolKind, sketch: string): SketchTool {
   if (kind === "arc") return { kind, sketch, start: null, end: null };
   if (kind === "centre") return { kind, sketch, centre: null, start: null, swept: 0 };
   if (kind === "project") return { kind, sketch };
+  if (isShapeKind(kind)) return startShape(kind, sketch);
   if (kind === "select") return { kind, sketch, picked: [], hover: null };
   if (isConstraintKind(kind)) return startConstraintTool(kind, sketch);
   return kind === "rectangle" ? { kind, sketch, corner: null } : { kind, sketch, centre: null };
@@ -183,6 +196,7 @@ function pendingClicks(tool: SketchTool): SketchXY[] {
   if (tool.kind === "arc") return [tool.start, tool.end].filter((p) => p !== null);
   if (tool.kind === "centre") return [tool.centre, tool.start].filter((p) => p !== null);
   if (tool.kind === "tangent" || tool.kind === "project" || tool.kind === "select" || isConstraintTool(tool)) return [];
+  if (isShapeTool(tool)) return shapeClicks(tool);
   const at = tool.kind === "rectangle" ? tool.corner : tool.centre;
   return at ? [at] : [];
 }
@@ -198,6 +212,7 @@ function pendingClicks(tool: SketchTool): SketchXY[] {
 export function unfinishedWords(tool: SketchTool, verb: string): string | null {
   if (tool.kind === "line" || pendingClicks(tool).length === 0) return null;
   const next = (): [string, string] => {
+    if (isShapeTool(tool)) return [SHAPE_NAMES[tool.kind], shapeStillNeeds(tool)];
     switch (tool.kind) {
       case "rectangle":
         return ["rectangle", "its opposite corner"];
@@ -261,6 +276,7 @@ export function clickAt<T extends SketchTool>(doc: DesignDocument, tool: T, at: 
   if (tool.kind === "arc") return arcClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "tangent") return tangentClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "centre") return centreClick(doc, sketchOf(doc, tool.sketch), tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
+  if (isShapeTool(tool)) return shapeClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   // The Project tool places nothing where it is clicked: the workspace projects what is under the pointer (27d).
   if (tool.kind === "project") return { doc, tool, drew: false };
   // Nor does Select: the workspace picks the curve under the pointer (sketch-select.ts).
@@ -567,7 +583,10 @@ export function hoverTool<T extends SketchTool>(tool: T, at: SketchXY | null): T
 }
 
 /** The undo step a tool's drawing click is recorded as. */
-export const drawStep = (tool: SketchTool): string => SKETCH_STEPS[tool.kind === "line" ? "draw" : tool.kind === "select" ? "delete" : tool.kind];
+export const drawStep = (tool: SketchTool): string => SKETCH_STEPS[tool.kind === "line" ? "draw" : tool.kind === "select" ? "delete" : isShapeTool(tool) ? SHAPE_STEPS[tool.kind] : tool.kind];
+
+/** The undo step each shape is recorded as: "Draw rectangle", "Draw circle", "Draw polygon", "Draw slot", "Draw point". */
+const SHAPE_STEPS: Record<ShapeKind, keyof typeof SKETCH_STEPS> = { "centre-rectangle": "rectangle", "three-rectangle": "rectangle", "three-circle": "circle", polygon: "polygon", "outside-polygon": "polygon", slot: "slot", "overall-slot": "slot", point: "point" };
 
 /**
  * How many straight segments the viewport draws a circle with. Drawing
@@ -647,6 +666,7 @@ export function previewSegments(doc: DesignDocument, tool: SketchTool | null, po
     return arc ? arcSegments(arc) : [[tool.start, tool.end]];
   }
   if (tool.kind === "centre") return centrePreview(tool, pointer, arcSegments);
+  if (isShapeTool(tool)) return shapePreview(tool, pointer);
   if (tool.kind === "tangent") {
     const start = tangentStart(sketchOf(doc, tool.sketch), tool);
     if (!start || (start.s[0] === pointer[0] && start.s[1] === pointer[1])) return [];
@@ -711,14 +731,16 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     const tool = editing.tool;
     for (const at of pendingClicks(tool)) if (!s.points.some((p) => p.x === at[0] && p.y === at[1])) points.push([at[0], at[1]]);
     // The Select tool's picks lit, and the curve under the pointer (sketch-select.ts); a pick an undo took out is passed over.
-    const lit = (ids: readonly string[]) => segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id))));
+    // A sketch point on its own (52c) lights as a ring round it, POINT_RING_PIXELS across.
+    const ring = POINT_RING_PIXELS * (editing.pixel !== undefined && editing.pixel > 0 ? editing.pixel : 0.1);
+    const lit = (ids: readonly string[]) => [...segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id)))), ...s.points.filter((p) => ids.includes(p.id)).flatMap((p) => circleSegments([p.x, p.y], ring / 2))];
     // With Select a press on any of its points drags it (47d3, point-drag.ts; one that can't be dragged says why).
     const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}), ...(s.points.length > 0 ? { grab: s.points.map((p): SketchXY => [p.x, p.y]) } : {}) };
     return { plane, ...side, lines, ...construction, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit) } };
   });
 }
 
-/** What the sketch holds, in words for its status: "3 lines", "1 circle", "4 lines and 2 circles", "2 lines, 1 arc and 1 circle", "1 circle and 2 projected edges" (27d), "4 lines and 1 construction curve" (47f), or "Nothing drawn yet" when empty. */
+/** What the sketch holds, in words for its status: "3 lines", "1 circle", "4 lines and 2 circles", "2 lines, 1 arc and 1 circle", "1 circle and 2 projected edges" (27d), "4 lines and 1 construction curve" (47f), "4 lines and 1 point" (52c: points on their own), or "Nothing drawn yet" when empty. */
 export function curveCount(sketch: Sketch): string {
   const made = new Set((sketch.projected ?? []).map((p) => p.made));
   const count = (kind: string, word: string) => {
@@ -729,9 +751,15 @@ export function curveCount(sketch: Sketch): string {
   // Construction curves (47f) are counted apart, since the outline leaves them out.
   const guides = sketch.curves.filter((c) => c.construction === true && !made.has(c.id)).length;
   const construction = guides === 0 ? "" : `${guides} construction curve${guides === 1 ? "" : "s"}`;
-  const words = [count("line", "line"), count("arc", "arc"), count("circle", "circle"), projected, construction].filter(Boolean);
+  // Sketch points on their own (52c) are counted too, so a sketch of only points is not "Nothing drawn yet".
+  const alone = lonePoints(sketch).size;
+  const points = alone === 0 ? "" : `${alone} point${alone === 1 ? "" : "s"}`;
+  const words = [count("line", "line"), count("arc", "arc"), count("circle", "circle"), points, projected, construction].filter(Boolean);
   return words.length ? [words.slice(0, -1).join(", "), words.at(-1)].filter(Boolean).join(" and ") : "Nothing drawn yet";
 }
+
+/** How big the ring round a picked sketch point is drawn, in screen pixels. */
+export const POINT_RING_PIXELS = 12;
 
 /** How far apart a construction curve's dashes are drawn while its sketch is edited, in screen pixels (construction.ts `dashes`). */
 export const CONSTRUCTION_DASH_PIXELS = 10;
