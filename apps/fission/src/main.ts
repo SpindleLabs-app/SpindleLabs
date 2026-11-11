@@ -43,6 +43,7 @@ import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
 import { layoutWorkspace } from "@fission/layout";
+import { keptSteps } from "./kept-steps.ts";
 
 const workspaces: WorkspacePlugin[] = [
   designWorkspace,
@@ -590,6 +591,9 @@ if (everyWorkspace) {
 // Each project has its own stored id: an opened file becomes a new stored
 // project rather than overwriting the one that was open.
 const store = localStore(workspaces);
+// The kept project's undo steps, kept beside it in this browser (step 89), so a reload carries on where it was.
+// Written as each save lands, never by a tab whose saves are refused (another tab stored the project since).
+const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), { refused: () => autosave?.refused() ?? false });
 /** The browser's localStorage, or null when storage is turned off (then the guard and the journal keep nothing). */
 const local = (() => {
   try {
@@ -623,7 +627,7 @@ let autosave: Autosave | null = null;
 // starts too. Only when the journal can't be written (storage off or full)
 // does the page ask before going, and only while a change waits, so a saved
 // page never asks and stays fit for the back/forward cache.
-const leaving = () => autosave?.leaving() ?? true;
+const leaving = () => (steps.flush(), autosave?.leaving() ?? true);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") leaving();
 });
@@ -679,12 +683,14 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
+  steps.follow(id); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
+  autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (steps.saved(), openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
   tabs?.sync();
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
 function keepOnFirstChange() {
+  steps.stop(); // a new project: nothing of it kept until its first change
   finishAutosave(); // the last project keeps a change made within the quiet moment
   autosave = null;
   keepOnChange = newId();
@@ -776,6 +782,7 @@ function replaceProject(project: Project) {
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
   pool.forgetAll(); // every warm workspace showed the old project
+  steps.stop(); // the old project's steps kept as they were, before the history starts afresh
   show(current); // mounts the workspace on the new project
   if (split) mountSplit(split.id); // and the second one
   ctx.history.reset(); // a new start: nothing from the old project to undo
