@@ -31,7 +31,7 @@ import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
 import { bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
-import { callOffDrag, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
+import { callOffDrag, editOff, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { partFailure } from "./part-failure.ts";
@@ -3428,12 +3428,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const item = designDoc().timeline.features.find((f) => f.id === id)!;
     if (isMoveItem(item)) return startMove(id);
     if (isCombineItem(item)) return startCombine(id);
+    // Asked before any open tool is left (hunt 11-11, E2: a Copy, which has nothing to edit, shut an open Move and lost
+    // what was typed in it before the refusal): an item with nothing to edit says why, in the menu's words, and nothing changes.
+    const off = editOff(item);
+    if (off !== null) return panel.showError(off);
+    const feature = editableFeature(designDoc(), id);
     leaveExtrude();
     leaveMove();
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     leaveExplode(); // a tool works on the bodies where they are
-    editBox.show(editableFeature(designDoc(), id));
+    editBox.show(feature);
     editRegions = null;
     editOps = null;
     // Extrude's Operation row (with Combine shown), as Fusion's Extrude edited.
