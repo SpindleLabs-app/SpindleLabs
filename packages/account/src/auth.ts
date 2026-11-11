@@ -165,6 +165,18 @@ export function authClient(deps: AuthDeps) {
     },
 
     /**
+     * A request to the data API for something anyone may do (opening or reporting a sharing link): as the signed-in
+     * person when there is one (so the database knows who reported), otherwise with the public key alone. Never
+     * answers signed-out.
+     */
+    async asAnyone(method: "POST", path: string, body?: unknown): Promise<PersonReply> {
+      const t = await client.accessToken();
+      if (t.kind === "failed" && t.reason !== "offline" && t.reason !== "unavailable") return { kind: "failed", reason: t.reason };
+      const reply = await request(method, `/rest/v1/${path}`, body ?? {}, t.kind === "ok" ? t.token : undefined);
+      return reply.ok ? { kind: "ok", body: reply.body } : { kind: "failed", reason: reply.reason };
+    },
+
+    /**
      * A request to one of the service's server functions (`path` under /functions/v1/) as the signed-in person, token
      * refreshed first. The function checks the token itself.
      */

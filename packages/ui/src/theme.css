@@ -53,6 +53,7 @@
   --accent-text: #8cc8ff;
   --danger: #ff6b6b;
   --fill-0b1024: #0b1024;
+  --guide-sink: #0b1024; /* the navy the guide's sky is sunk toward, in both themes: its words are white */
   --fill-101216: #101216;
   --fill-120-165-230-01: rgba(120, 165, 230, 0.1);
   --fill-121824: #121824;
@@ -387,6 +388,10 @@ body { display: flex; flex-direction: column; }
 }
 #timeline, #split-timeline { grid-column: 1 / -1; grid-row: 3; min-width: 0; }
 #properties { grid-column: 3; grid-row: 2; width: 300px; border-left: 1px solid var(--line); }
+/* A Coming-soon page or the Image panel in it is a floating card (placeholder.css, the Image workspace's image.css; the page is found by its class name in an attribute selector so the base theme names no feature): the panel itself is then just room round the card. */
+@media (min-width: 641px) {
+  #workspace:not([data-split="on"]) #properties:has(> :is([class~="placeholder"], .image)) { background: transparent; border-left: none; padding: 8px 8px 8px 0; overflow: visible; }
+}
 #assistant { grid-column: 4; grid-row: 2; }
 #browser, #properties, #split-browser, #split-properties { padding: 16px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
 /* Scroll bars like Fusion's: thin, only when the panel overflows (auto), and seen only while the pointer is over the panel. */
@@ -462,13 +467,6 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
   #split-toggle, #split { display: none; }
 }
 
-/* Placeholder pages. */
-.placeholder h2 { font-size: 18px; margin: 0; text-transform: none; letter-spacing: 0; color: var(--text-body); }
-.placeholder h3 { font-size: 12px; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
-.placeholder p { margin: 6px 0; line-height: 1.45; }
-.placeholder ul { margin: 0; padding-left: 18px; line-height: 1.45; }
-.placeholder .coming-soon { display: inline-block; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-size: 12px; }
-.placeholder .starts-after { color: var(--text-dim); font-size: 13px; margin-top: 14px; }
 
 /* Toggles for the side panels, shown only at phone width. */
 #panel-toggles { display: none; }

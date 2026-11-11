@@ -1,0 +1,13 @@
+/* The Display name row of the Account dialog (community C6b). Every selector starts with .display-name. */
+.account .display-name { display: grid; gap: var(--look-space-2); margin: 0; }
+.account .display-name[hidden] { display: none; }
+.account .display-name-label { font-weight: 600; }
+.account .display-name-fields { display: flex; gap: var(--look-space-2); }
+.account .display-name-input { flex: 1; min-width: 0; font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-3); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.account .display-name-input:focus-visible { outline: 2px solid var(--look-accent); outline-offset: 1px; }
+.account .display-name-input:disabled { opacity: 0.6; }
+.account .display-name-save { flex: none; }
+.account .display-name-hint { overflow-wrap: anywhere; }
+@media (pointer: coarse), (max-width: 640px) {
+  .account .display-name-input, .account .display-name-save { min-height: 44px; }
+}
