@@ -47,6 +47,29 @@ revoke all on sequence public.share_reports_id_seq from anon, authenticated;
 alter table public.share_reports enable row level security;
 -- No policy: only the functions below and the server touch it.
 
+-- The off switch for all of sharing: one row, off until the owner turns it on (from the dashboard or with
+-- set_sharing as the server). While it is off nobody can make a link, open one or report one; people can still see
+-- and turn off their own links. Closed to the browser, which learns it only from the answers below.
+create table public.share_switch (
+  id boolean primary key default true check (id),
+  sharing_on boolean not null default false,
+  changed_at timestamptz not null default now()
+);
+revoke all on public.share_switch from anon, authenticated;
+alter table public.share_switch enable row level security;
+insert into public.share_switch (id) values (true);
+
+create function public.sharing_on() returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select sharing_on from public.share_switch where id), false)
+$$;
+
+-- Server only: turns sharing on or off for everyone.
+create function public.set_sharing(p_on boolean) returns boolean
+language sql security definer set search_path = '' as $$
+  update public.share_switch set sharing_on = coalesce(p_on, false), changed_at = now() where id returning sharing_on
+$$;
+
 -- The limits, in one place so the app and the tests read the same numbers.
 create function public.share_limits() returns jsonb
 language sql immutable set search_path = '' as $$
@@ -59,6 +82,8 @@ $$;
 --   {"status": "too-big"}  the file text or its picture is over the limit
 --   {"status": "full"}     the person's links that are on, or their space, would go over the limit
 --   {"status": "daily"}    the person made as many links as a day allows (the last 24 hours, turned off ones too)
+--   {"status": "off"}      sharing is switched off for everyone
+--   {"status": "held"}     the person's account is held by moderation
 create function public.share_design(p_name text, p_body text, p_picture text) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -72,6 +97,9 @@ declare
 begin
   if me is null then
     raise exception 'not signed in';
+  end if;
+  if not public.sharing_on() then
+    return jsonb_build_object('status', 'off');
   end if;
   -- One share at a time per person, so two shares can't both fit in room only one has.
   perform 1 from public.profiles where id = me for update;
@@ -100,12 +128,13 @@ begin
   return jsonb_build_object('status', 'shared', 'id', out_row.id, 'created_at', out_row.created_at);
 end $$;
 
--- A link's copy, for anyone with the link (signed in or not), or null when the link is off, taken down or never was.
+-- A link's copy, for anyone with the link (signed in or not), or null when the link is off, taken down or never was,
+-- or sharing is switched off.
 -- Never says who shared it.
 create function public.open_share(p_id uuid) returns jsonb
 language sql stable security definer set search_path = '' as $$
   select jsonb_build_object('id', s.id, 'name', s.name, 'body', s.body, 'picture', s.picture, 'created_at', s.created_at)
-  from public.shares s where s.id = p_id and s.off_at is null and s.removed_at is null
+  from public.shares s where s.id = p_id and s.off_at is null and s.removed_at is null and public.sharing_on()
 $$;
 
 -- The person's links that are on, newest first, without their file text. A link taken down after a report is listed
@@ -137,6 +166,7 @@ end $$;
 --             every link), or the link has as many reports of this kind
 --             (signed in, or signed out) as are kept
 --   "bad"     the kind is not one of the list, or the reason is too long (nothing kept)
+--   "off"     sharing is switched off for everyone (nothing kept)
 -- Signed-out reports have no person to count by, so they have their own small cap a link, and never count against
 -- the signed-in ones: a flood of signed-out reports can't make a link unreportable (security review 2026-11-11).
 create function public.report_share(p_id uuid, p_kind text, p_reason text) returns text
@@ -147,6 +177,9 @@ declare
   sharer uuid;
   n integer;
 begin
+  if not public.sharing_on() then
+    return 'off';
+  end if;
   if p_kind is null or p_kind not in ('copied', 'weapon', 'sexual', 'hateful', 'illegal', 'not-a-design', 'personal-info', 'other')
      or char_length(coalesce(p_reason, '')) > (lim->>'max_reason')::integer then
     return 'bad';
@@ -210,7 +243,7 @@ language sql stable security definer set search_path = '' as $$
                       from public.share_reports r where r.reporter = auth.uid()))
 $$;
 
-revoke all on function public.share_limits(), public.share_design(text, text, text), public.open_share(uuid), public.my_shares(), public.unshare(uuid), public.report_share(uuid, text, text), public.remove_share(uuid), public.my_data_part_shares() from public, anon, authenticated;
+revoke all on function public.sharing_on(), public.set_sharing(boolean), public.share_limits(), public.share_design(text, text, text), public.open_share(uuid), public.my_shares(), public.unshare(uuid), public.report_share(uuid, text, text), public.remove_share(uuid), public.my_data_part_shares() from public, anon, authenticated;
 grant execute on function public.share_limits(), public.open_share(uuid), public.report_share(uuid, text, text) to anon, authenticated;
 grant execute on function public.share_design(text, text, text), public.my_shares(), public.unshare(uuid) to authenticated;
-grant execute on function public.remove_share(uuid) to service_role;
+grant execute on function public.remove_share(uuid), public.set_sharing(boolean) to service_role;

@@ -34,6 +34,9 @@ class SharesDatabase(unittest.TestCase):
             self.assertTrue(ok, f"{os.path.basename(path)} failed to load: {out}")
         for uid, email in [(ADA, "ada@example.com"), (BO, "bo@example.com")]:
             self.owner(f"insert into auth.users (id, email) values ('{uid}', '{email}');")
+        # Sharing starts switched off (its own tests below); every other test runs with it on.
+        self.switch_as_migrated = self.owner("select sharing_on from share_switch;")
+        self.owner("update share_switch set sharing_on = true;")
 
     def owner(self, sql):
         ok, out = self.pg.psql(sql)
@@ -67,6 +70,53 @@ class SharesDatabase(unittest.TestCase):
         ok, out = self.as_role(role, f"select report_share('{link}', '{kind}', {reason});", uid)
         self.assertTrue(ok, out)
         return out
+
+    # The off switch
+
+    def test_sharing_starts_switched_off_for_everyone(self):
+        self.assertEqual(self.switch_as_migrated, "f")
+
+    def test_while_switched_off_nothing_shares_opens_or_reports_but_people_can_still_turn_their_links_off(self):
+        r = self.share(ADA)
+        self.assertEqual(r["status"], "shared")
+        self.assertEqual(self.pg.psql("set role service_role; select set_sharing(false);"), (True, "f"))
+        self.assertEqual(self.share(ADA), {"status": "off"})
+        self.assertEqual(self.share(BO), {"status": "off"})
+        for role, uid in [("anon", None), ("authenticated", BO), ("authenticated", ADA)]:
+            self.assertIsNone(self.open_as(role, r["id"], uid))
+            self.assertEqual(self.report(role, r["id"], uid=uid), "off")
+        self.assertEqual(self.owner("select count(*) from share_reports;"), "0")
+        ok, out = self.as_user(ADA, "select count(*) from my_shares();")
+        self.assertEqual((ok, out), (True, "1"))
+        ok, out = self.as_user(ADA, f"select unshare('{r['id']}');")
+        self.assertEqual((ok, out), (True, "t"))
+        # On again: the link stays off (its owner turned it off), and new links work.
+        self.assertEqual(self.pg.psql("set role service_role; select set_sharing(true);"), (True, "t"))
+        self.assertIsNone(self.open_as("anon", r["id"]))
+        self.assertEqual(self.share(BO)["status"], "shared")
+
+    def test_switching_back_on_opens_links_made_before(self):
+        r = self.share(ADA)
+        self.owner("select set_sharing(false);")
+        self.assertIsNone(self.open_as("anon", r["id"]))
+        self.owner("select set_sharing(true);")
+        self.assertEqual(self.open_as("anon", r["id"])["name"], "Box")
+
+    def test_the_browser_can_neither_read_nor_change_the_switch(self):
+        for role, uid in [("anon", None), ("authenticated", ADA)]:
+            self.denied(self.as_role(role, "select sharing_on from share_switch;", uid))
+            self.denied(self.as_role(role, "update share_switch set sharing_on = false;", uid))
+            self.denied(self.as_role(role, "select set_sharing(false);", uid))
+            self.denied(self.as_role(role, "select sharing_on();", uid))
+        self.assertEqual(self.owner("select sharing_on from share_switch;"), "t")
+
+    def test_the_switch_is_one_row(self):
+        ok, out = self.pg.psql("insert into share_switch (id) values (true);")
+        self.assertFalse(ok)
+        self.assertIn("duplicate key", out)
+        ok, out = self.pg.psql("insert into share_switch (id) values (false);")
+        self.assertFalse(ok)
+        self.assertIn("check constraint", out)
 
     # Sharing and opening
 
