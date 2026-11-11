@@ -145,6 +145,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
         const row = el("div", "settings-row settings-ai");
         const open = el("button", "settings-action", "Open");
         open.type = "button";
+        open.setAttribute("aria-label", "Open AI assistant provider"); // its row's words, so a list of buttons says what it opens
         open.addEventListener("click", () => {
           dialog.close();
           parts.onAiSettings?.();
@@ -204,6 +205,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
       const label = el("span", undefined, "Keyboard shortcuts");
       const open = el("button", "settings-action", "Show");
       open.type = "button";
+      open.setAttribute("aria-label", "Show keyboard shortcuts"); // its row's words, so a list of buttons says what it shows
       open.addEventListener("click", () => {
         dialog.close();
         parts.onShortcuts();
@@ -219,6 +221,7 @@ export function fillSettings(dialog: HTMLDialogElement, parts: SettingsParts): v
         const show = el("button", "settings-action", "Show");
         show.type = "button";
         show.id = "settings-whats-new";
+        show.setAttribute("aria-label", "Show what's new");
         show.addEventListener("click", () => {
           dialog.close();
           parts.onWhatsNew?.();
