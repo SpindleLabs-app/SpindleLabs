@@ -1613,7 +1613,7 @@ try {
       await phone.goto(url + "#design");
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "error");
       const words = await phone.textContent("#save-status");
-      assert.match(words, /^Not saved: browser storage is full: can't save "project\/.+" \(use Save to keep your work as a file\)$/);
+      assert.match(words, /^Not saved: browser storage is full: can't save this project \(use Save to keep your work as a file\)$/);
       const shown = await phone.$eval("#save-status", (el) => ({ ...el.getBoundingClientRect().toJSON(), size: getComputedStyle(el).fontSize, cut: el.scrollWidth > el.clientWidth }));
       assert.ok(shown.width > 0 && shown.left >= 0 && shown.right <= 375 && shown.size === "12px" && !shown.cut, JSON.stringify(shown));
       assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");
