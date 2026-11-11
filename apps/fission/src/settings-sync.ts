@@ -42,14 +42,19 @@ export function startSettings(client: AuthClient, store: SmallStore, host: Setti
     const s = client.state();
     return s.kind === "signed-in" ? s.user.id : null;
   };
-  const syncFor = (user: string) =>
-    settingsSync({
+  // Goes up on every sign out (and account deletion), so a round still running for the person before writes nothing.
+  let generation = 0;
+  const syncFor = (user: string) => {
+    const started = generation;
+    return settingsSync({
       api,
       userId: user,
       store,
       specs: SYNCED_SETTINGS,
       lock: (fn) => (globalThis.navigator?.locks ? navigator.locks.request("spindle-settings-sync", fn) : fn()),
+      current: () => generation === started && userId() === user,
     });
+  };
 
   let last: SettingsReport | null = null;
   let lastPull = 0;
@@ -126,11 +131,21 @@ export function startSettings(client: AuthClient, store: SmallStore, host: Setti
       off = !on;
       if (on) await now();
     },
-    /** Signing out or deleting the account: what this browser and the account last agreed on goes; settings here stay. */
+    /**
+     * Signing out (called while still signed in) or deleting the account (called after): what this browser and the
+     * account last agreed on goes, and a round still running writes nothing; settings here stay. Signing out notes a
+     * setting changed here but not sent yet, so it is sent the next time this person signs in here (settings.ts signOut).
+     */
     forget(user: string): void {
       if (timer) clearTimeout(timer);
       timer = null;
-      forgetSettingsBase(store, user);
+      generation++;
+      try {
+        if (userId() === user) syncFor(user).signOut();
+        else syncFor(user).forgetAll();
+      } catch {
+        // Storage blocked: nothing was kept.
+      }
     },
   };
 }

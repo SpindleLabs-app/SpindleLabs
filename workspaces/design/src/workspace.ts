@@ -18,6 +18,8 @@ import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore,
 import { movePanel } from "./move-panel.ts";
 import { changedCombine, COMBINE_STEP, forgetPieces, insertCombine } from "./combine.ts";
 import { combinePanel } from "./combine-panel.ts";
+import { askWords, bodyNamer, checkedItem, cutAsk, type Checked } from "./cut-ask.ts";
+import type { Miss } from "./misses.ts";
 import { combineShown } from "./combine-flag.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
@@ -585,6 +587,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
+  // A Cut or Join whose tools change nothing asks before OK records it (Ben, 11 Nov).
+  const missAsk = cutAsk(ctx.toolbar);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
   /** Slice for printing's warm-up loop and Better grip as last ticked (null: as remembered); the build area counts them. */
   let printExtras: FirstLayerExtras | null = null;
@@ -968,6 +972,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.constraints) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.constraints.message}.` });
       // A Combine whose numbered pieces changed with an earlier edit (hunt 11-06): on its row, never a silent switch.
       if (r.pieces) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.pieces.message}.` });
+      // A Cut or Join whose tools change nothing (Ben 11 Nov): OK asked first; an earlier edit since can't ask, so the row says it.
+      if (r.misses) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.misses.message}.` });
     }
     return out;
   }
@@ -3002,16 +3008,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const choice = operation === "new" ? null : { operation, bodies: tickedBodies(extruding?.choices ?? []) };
     if (choice !== null && choice.bodies.length === 0) return extrudeBox.showError(`Tick a body to ${operation === "join" ? "join to" : operation} first.`);
     let made: ReturnType<typeof extrudeSketch>;
+    let misses: Miss[] = [];
     try {
       made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined, choice);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
       if (choice !== null) {
-        const refused = await onceMoreAfterRestart(() => refusedMove(kernel, made.doc, made.id));
-        if (refused !== null) throw new Error(refused);
+        const checked = await onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id));
+        if (checked.refused !== null) throw new Error(checked.refused);
+        misses = checked.misses;
       }
     } catch (e) {
       if (extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region) extrudeBox.showError(e instanceof Error ? e.message : String(e));
       return;
+    }
+    // A Cut or Join that reaches nothing (#521): asked first, as a Combine's; Cancel leaves the panel open.
+    if (choice !== null && choice.operation !== "intersect" && misses.length > 0 && extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region && designDoc() === before) {
+      if (!(await askExtrudeMisses(made.doc, made.id, choice.operation, misses))) return;
     }
     // Closed or opened again, another sketch chosen, or something else changed the design, while the kernel worked: this extrude is out of date.
     // Another region of the sketch picked meanwhile is another sketch chosen (48d hunt): the one picked last is what OK makes.
@@ -3022,6 +3034,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     boxesPart = made.id;
     // Recorded as update starts (before its first wait), so the Undo held for this OK (`hold`) can go while it shows.
     void update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, usedSketchHidden(made.doc, source.sketch));
+  }
+
+  /** Asks whether to record operation extrude `id` of `doc` whose Cut or Join changes nothing (#521); true to record. */
+  function askExtrudeMisses(doc: DesignDocument, id: string, op: "cut" | "join", misses: readonly Miss[]): Promise<boolean> {
+    const f = doc.timeline.features.find((x) => x.id === id)!;
+    const own = bodyIdOf(id);
+    const label = f.provenance.self.label;
+    const name = bodyNamer(doc, (b) => {
+      if (b === own) return label;
+      const item = doc.timeline.features.find((x) => x.id === bodyItem(b));
+      return item === undefined ? b : isPiece(b) ? `a piece of ${itemName(item)}` : itemName(item);
+    });
+    return missAsk.ask(askWords(op, misses, name, { kind: "extrude", label, own }));
   }
 
   /** What the bodies list says before the preview shows where the extrude reaches. */
@@ -3411,18 +3436,26 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // What OK was pressed on: a pick, operation or Keep tools changed while the kernel looked is not recorded unseen (hunt 11-06).
     const asked = combineAsked();
     combineBox.busy(true);
-    let refused: string | null;
+    let checked: Checked;
     try {
-      refused = await onceMoreAfterRestart(() => refusedMove(kernel, next, made));
+      checked = await onceMoreAfterRestart(() => checkedItem(kernel, next, made));
     } catch (e) {
-      refused = e instanceof Error ? e.message : String(e);
+      checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
     }
     // Closed, or opened again, while the kernel looked: this OK is out of date.
     if (combineOpenings !== opened) return;
     combineBox.busy(false);
     if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
     if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
-    if (refused !== null) return combineBox.showError(refused);
+    if (checked.refused !== null) return combineBox.showError(checked.refused);
+    // A Cut or Join whose tools change nothing (Ben, 11 Nov): asked first; Cancel leaves the panel open, nothing recorded.
+    const op = combineBox.operation;
+    if (checked.misses.length > 0 && op !== "intersect") {
+      const yes = await missAsk.ask(askWords(op, checked.misses, combineLabel, { kind: "combine", keepTools: combineBox.keepTools }));
+      if (!yes || combineOpenings !== opened) return;
+      if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
+      if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
+    }
     if (id === null) ctx.selection.clear();
     menuHost.record(id === null ? COMBINE_STEP : editStep(before, id), next);
   }
@@ -3578,11 +3611,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     next = forgetPieces(next, id, resultsNow[id]?.pieces?.renumbered ?? []);
     editBox.busy(true);
     let refused: string | null;
+    let misses: Miss[] = [];
     try {
       refused = await refusedSizes(kernel, before, next, id);
       // An extrude that joins, cuts or intersects: its boolean must work too, or the edit says why and records nothing.
       const now = next.timeline.features.find((f) => f.id === id);
-      if (refused === null && now !== undefined && isOperationExtrude(now)) refused = await onceMoreAfterRestart(() => refusedMove(kernel, next, id));
+      if (refused === null && now !== undefined && isOperationExtrude(now)) ({ refused, misses } = await onceMoreAfterRestart(() => checkedItem(kernel, next, id)));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
@@ -3591,6 +3625,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     editBox.busy(false);
     if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
     if (refused !== null) return editBox.showError(refused);
+    // Its Cut or Join now reaches nothing (#521): asked first; Cancel leaves the panel open.
+    const op = extrudeOperation(next.timeline.features.find((f) => f.id === id)!)?.operation;
+    if (misses.length > 0 && (op === "cut" || op === "join")) {
+      if (!(await askExtrudeMisses(next, id, op, misses)) || editBox.editing !== id) return;
+      if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
+    }
     menuHost.record(editStep(before, id), next);
   }
 
