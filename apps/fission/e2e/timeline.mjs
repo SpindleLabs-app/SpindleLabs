@@ -477,7 +477,7 @@ try {
       for (let k = 0; k < 3; k++) await redo();
       await undoIs(page, "Delete Box 1");
       await until(page, () => document.querySelector("#save-status")?.dataset.state === "saved", null, "the empty design saved");
-      await page.waitForTimeout(600); // the undo steps' quiet moment (300 ms, step 89) past
+      await page.waitForTimeout(600); // the undo steps, written as the save lands (step 89), given time to land too
       await page.reload();
       await until(page, () => document.querySelector("#viewport")?.dataset.shape === "none", null, "the empty design reopened");
       assert.deepEqual(await bar(page), ["|"]);

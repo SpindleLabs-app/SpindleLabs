@@ -118,6 +118,17 @@ test("only the projects written most recently keep their steps (two here, ten in
   assert.notEqual(await roomy.read("a"), null);
 });
 
+test("the project just written always keeps its steps, even with the clock set back (save/load hunt C8)", async () => {
+  const kv = memoryKeyValue();
+  const steps = stepsStore(kv, { projects: 2 });
+  await steps.write("a", abcd, 10_000);
+  await steps.write("b", abcd, 10_001);
+  await steps.write("now", abcd, 6_400); // an hour back: the oldest by the clock, but just written
+  assert.notEqual(await steps.read("now"), null);
+  assert.equal(await steps.read("a"), null); // a, the oldest of the others, goes
+  assert.notEqual(await steps.read("b"), null);
+});
+
 test("a write that fails forgets that project's older steps, so they can't come back over newer work; never thrown", async () => {
   const kv = memoryKeyValue();
   const steps = stepsStore(kv);
@@ -179,6 +190,27 @@ function sized(room: number) {
   };
   return { kv: limited, entries: kv.entries };
 }
+
+test("storage full: this project's own steps give way first; the other projects' stay when that made room (save/load hunt C7)", async () => {
+  const one = projectToJson(part(1)).length;
+  const { kv, entries } = sized(one * 8);
+  const store = versionedStore(projectStore(kv, [design]), kv, [design]);
+  await store.save("p", part(1));
+  const big = (n: number): SavedHistory => ({ kept: [entry("x".repeat(one * 2) + n, "")], index: 0 });
+  await store.steps.write("p", big(1), 1);
+  await store.steps.write("q", big(2), 2);
+  assert.deepEqual([await store.steps.has("p"), await store.steps.has("q")], [true, true], "both kept while there was room");
+  // What is held now, and p's own steps' share of it; p grown by `note` characters then needs used + note. A note of
+  // room − used + half of p's steps is too big beside both sets of steps, and fits once p's steps go (half of them spare).
+  const used = [...entries.values()].reduce((n, v) => n + v.length, 0);
+  const own = entries.get("steps/p")!.length + entries.get("steps-at/p")!.length;
+  const note = one * 8 - used + Math.floor(own / 2);
+  const bigger: Project = { ...part(1), workspaces: { design: { version: 1, width: 1, note: "y".repeat(note) } } };
+  await store.save("p", bigger);
+  assert.deepEqual(await store.open("p"), bigger);
+  assert.equal(await store.steps.has("p"), false, "p's own steps gave way");
+  assert.equal(await store.steps.has("q"), true, "q's steps stayed: p's were enough");
+});
 
 test("storage full: every project's kept steps give way to a save, which goes through", async () => {
   const one = projectToJson(part(1)).length;

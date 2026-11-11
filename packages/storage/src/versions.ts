@@ -90,13 +90,28 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
         await store.save(id, project, read, unchangedSince, behind, writer);
       } catch (e) {
         if (e instanceof ProjectChangedError || !storageFull(e)) throw e;
+        // Refused for want of room, perhaps: this project's versions and kept undo steps give way to its work first, and
+        // the save is tried once more; only if that still fails do the other projects' undo steps go too, for one last
+        // try (save/load hunt C7: every project's steps went at the first refusal).
         const versionsKept = (await times(kv, id).catch(() => [])).length > 0;
-        if (!versionsKept && !(await steps.any())) throw e;
-        // Refused for want of room, perhaps: this project's versions and every kept undo step give way to its work, and
-        // the save is tried once more.
-        await forgetVersions(id).catch(() => {});
-        await steps.forgetAll();
-        await store.save(id, project, read, unchangedSince, behind, writer);
+        let refusal: unknown = e;
+        let saved = false;
+        if (versionsKept || (await steps.has(id))) {
+          await forgetVersions(id).catch(() => {});
+          await steps.forget(id);
+          try {
+            await store.save(id, project, read, unchangedSince, behind, writer);
+            saved = true;
+          } catch (again) {
+            if (again instanceof ProjectChangedError || !storageFull(again)) throw again;
+            refusal = again;
+          }
+        }
+        if (!saved) {
+          if (!(await steps.any())) throw refusal;
+          await steps.forgetAll();
+          await store.save(id, project, read, unchangedSince, behind, writer);
+        }
       }
       if (before === undefined || at === null) return;
       let now: string;

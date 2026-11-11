@@ -592,7 +592,8 @@ if (everyWorkspace) {
 // project rather than overwriting the one that was open.
 const store = localStore(workspaces);
 // The kept project's undo steps, kept beside it in this browser (step 89), so a reload carries on where it was.
-const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project));
+// Written as each save lands, never by a tab whose saves are refused (another tab stored the project since).
+const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), { refused: () => autosave?.refused() ?? false });
 /** The browser's localStorage, or null when storage is turned off (then the guard and the journal keep nothing). */
 const local = (() => {
   try {
@@ -683,7 +684,7 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
   steps.follow(id); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
-  autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
+  autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (steps.saved(), openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
   tabs?.sync();
 }

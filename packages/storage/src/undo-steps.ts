@@ -98,6 +98,8 @@ export interface StepsStore {
   forget(id: string): Promise<void>;
   /** Forgets every project's steps (no room for a save). Never throws. */
   forgetAll(): Promise<void>;
+  /** Whether `id` has steps kept. Never throws. */
+  has(id: string): Promise<boolean>;
   /** Whether any project has steps kept (so forgetting them could make room). Never throws. */
   any(): Promise<boolean>;
 }
@@ -133,7 +135,9 @@ export function stepsStore(kv: KeyValue, { charLimit = STEPS_CHAR_LIMIT, project
           const t = Number(await kv.get(key));
           written.push([key.slice(STEPS_AT.length), Number.isFinite(t) ? t : -Infinity]);
         }
-        written.sort((a, b) => b[1] - a[1] || (a[0] === id ? -1 : b[0] === id ? 1 : 0));
+        // The project just written always stays, whatever the clock says (save/load hunt C8: a clock set back made its
+        // steps the oldest and forgot them as soon as written); the others newest first.
+        written.sort((a, b) => (a[0] === id ? -1 : b[0] === id ? 1 : b[1] - a[1]));
         for (const [old] of written.slice(projects)) await forget(old);
       } catch {
         // the steps are written; trimming the others waits for the next write
@@ -146,6 +150,13 @@ export function stepsStore(kv: KeyValue, { charLimit = STEPS_CHAR_LIMIT, project
         for (const key of await kv.keys(STEPS)) await kv.delete(key);
       } catch {
         // nothing more can be done
+      }
+    },
+    async has(id) {
+      try {
+        return (await kv.get(STEPS_AT + id)) !== undefined;
+      } catch {
+        return false;
       }
     },
     async any() {

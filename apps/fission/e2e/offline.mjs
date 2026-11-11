@@ -209,7 +209,7 @@ try {
         await privacy.close();
         // The undo steps are kept offline too (step 89): saved, reloaded with no network, the box is still a step to undo.
         await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
-        await page.waitForTimeout(600); // the steps' quiet moment (300 ms) past
+        await page.waitForTimeout(600); // the steps, written as the save lands, given time to land too
         await page.reload();
         await kernelUp(page);
         await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");

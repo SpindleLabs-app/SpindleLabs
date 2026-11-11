@@ -48,7 +48,7 @@ async function closeHistory(page) {
 }
 const rows = (page) => page.$$eval("#history-panel .history-list li", (li) => li.map((l) => [l.dataset.state, l.querySelector(".history-name").textContent]));
 const press = (page, id, tap) => (tap ? page.tap(id) : page.click(id));
-/** Saved, and the steps' quiet moment (300 ms) past, so what a reload finds is settled. */
+/** Saved, and the steps written as that save landed given time to land too, so what a reload finds is settled. */
 async function settled(page) {
   await until(page, () => document.querySelector("#save-status")?.dataset.state === "saved", null, "Saved");
   await page.waitForTimeout(600);
