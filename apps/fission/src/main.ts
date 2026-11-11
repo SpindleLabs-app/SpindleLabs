@@ -11,6 +11,7 @@
 // each pane's viewport, for the workspace in that pane.
 /// <reference types="vite/client" />
 // First, before any module that starts work: a framed page stops here (audit S10).
+import { pageShareSwitch } from "./share-switch.ts";
 import "./frame-guard.ts";
 import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
@@ -756,6 +757,7 @@ const file = fileMenu(document, {
   ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
+  ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, key: fileKey("Mod+S"), run: () => void save() },
   saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, key: fileKey("Mod+Shift+S"), run: () => void save(true) },
@@ -1305,6 +1307,14 @@ if (__ACCOUNTS__)
           chooseMouse(readMouseChoice(settings()));
           // Open meanwhile: it shows the new choices.
           if (settingsDialog.open) fillSettingsNow(() => settingsDialog.showModal());
+        },
+      }, {
+        // Sharing links (community C2): the open design's text, a picture of it, and a link's copy opened as a new project.
+        current: () => (ctx.project ? { name: ctx.project.name || "Untitled", text: projectToJson(ctx.project) } : null),
+        picture: pictureOfView,
+        openText: async (text) => {
+          await started;
+          openProject(text, "");
         },
       })) ?? null;
   });
