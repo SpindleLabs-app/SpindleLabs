@@ -68,6 +68,16 @@ export function syncGraph(graph: DependencyGraph, doc: DesignDocument, before: D
   const oldOwn = new Map<string, string>(before ? [...before.profiles, ...before.timeline.features].map((x) => [x.id, JSON.stringify(own(beforeSketches, x))]) : []);
   const oldItems = new Map<string, Feature>(before ? before.timeline.features.map((f) => [f.id, f]) : []);
   const ownDiffers = (x: { id: string }) => oldOwn.get(x.id) !== JSON.stringify(own(nowSketches, x));
+  /**
+   * An extrude that differs from `was` only in the region saved for it, in an edit that changed its sketch: the region
+   * followed the sketch (settling saves it as it lies now, regions.ts `regionNow`), so the edit is the sketch's, and
+   * the extrude changed through the build. With its sketch as it was, the region is the user's own pick (Edit feature).
+   */
+  const differing = new Set(doc.timeline.features.filter(ownDiffers).map((f) => f.id));
+  const followsSketch = (f: Feature, was: Feature) => {
+    const bare = (x: Feature) => JSON.stringify({ ...x, intent: { ...x.intent, parameters: { ...x.intent.parameters, region: undefined } } });
+    return isSketchExtrude(f) && differing.has(f.intent.parameters.sketch as string) && bare(f) === bare(was);
+  };
   const direct: { id: string; label: string; words: string }[] = [];
   const derived: { id: string; label: string }[] = [];
   for (const p of doc.profiles) {
@@ -80,9 +90,9 @@ export function syncGraph(graph: DependencyGraph, doc: DesignDocument, before: D
     graph.set({ id: f.id, label: f.intent.summary, workspace: "design", cost: "cheap" }, f.dependsOn.filter((d) => present.has(d)));
     const was = oldItems.get(f.id);
     if (!was) direct.push({ id: f.id, label: f.intent.summary, words: `you added ${itemCalled(f)}` });
-    else if (ownDiffers(f))
+    else if (ownDiffers(f) && !followsSketch(f, was))
       direct.push({ id: f.id, label: f.intent.summary, words: was.suppressed !== f.suppressed ? `you ${f.suppressed ? "suppressed" : "unsuppressed"} ${itemCalled(f)}` : `you changed ${itemCalled(f)}` });
-    else if (JSON.stringify(built(before!, beforeBuilding, was)) !== JSON.stringify(built(doc, nowBuilding, f))) derived.push({ id: f.id, label: f.intent.summary });
+    else if (ownDiffers(f) || JSON.stringify(built(before!, beforeBuilding, was)) !== JSON.stringify(built(doc, nowBuilding, f))) derived.push({ id: f.id, label: f.intent.summary });
   }
   // A design with no body (24f4): the numbers read nothing.
   const part = partFeature(doc);

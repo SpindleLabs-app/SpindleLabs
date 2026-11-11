@@ -236,8 +236,10 @@ try {
       const page = await fresh(width, tap);
       try {
         // Construct ▾ holds only tools to come: its button greyed (coming-soon.css), still opening to show them; Modify ▾ has Move (35e2b).
-        const faded = await page.$$eval("#modify-menu, #construct-menu, #inspect-menu", (bs) => bs.map((b) => [b.id, getComputedStyle(b).opacity, b.disabled]));
-        assert.deepEqual(faded, [["modify-menu", "1", false], ["construct-menu", "0.5", false], ["inspect-menu", "1", false]]);
+        // Marked by a dashed underline, not half opacity (accessibility pass 2026-11-11: half opacity was 1.9 : 1 in the light
+        // theme, yet the menu still opens): only Construct's name is underlined dashed, and every group stays opaque.
+        const faded = await page.$$eval("#modify-menu, #construct-menu, #inspect-menu", (bs) => bs.map((b) => [b.id, getComputedStyle(b).opacity, getComputedStyle(b).textDecorationStyle === "dashed" && getComputedStyle(b).textDecorationLine.includes("underline"), b.disabled]));
+        assert.deepEqual(faded, [["modify-menu", "1", false, false], ["construct-menu", "1", true, false], ["inspect-menu", "1", false, false]]);
         const lists = {};
         for (const menu of ["create-menu", "modify-menu", "construct-menu", "inspect-menu"]) {
           await press(page, `#${menu}`, tap);
@@ -257,7 +259,7 @@ try {
         await until(page, () => !document.getElementById("modify-menu-menu").hidden, null, "Modify ▾ opens");
         assert.deepEqual(await comingProblems(page), []);
         const fillet = await page.$eval("#coming-fillet", (b) => [b.title, b.getAttribute("aria-disabled"), getComputedStyle(b).color, b.querySelector(".menu-button-note")?.textContent]);
-        assert.deepEqual(fillet, ["Fillet is coming soon: it will round the edges you pick.", "true", "rgb(138, 145, 156)", "Coming soon"]);
+        assert.deepEqual(fillet, ["Fillet is coming soon: it will round the edges you pick.", "true", "rgb(154, 161, 172)", "Coming soon"]); // --text-dim, dark (#9aa1ac since the accessibility pass)
         if (shots) await page.screenshot({ path: `${shots}/coming-soon-${width}.png`, clip: { x: 0, y: 0, width, height: width > 640 ? 520 : 667 } });
         // Choosing one does nothing: the list stays open, nothing opens, no undo step, nothing in the timeline.
         const before = [await page.textContent("#properties"), await page.getAttribute("#undo", "title"), await page.$$eval("#browser .tree-row", (rs) => rs.length)];
@@ -301,11 +303,62 @@ try {
         const numbers = await rect(page, "#volume");
         assert.ok(numbers.top >= 0 && numbers.bottom <= (width > 640 ? 800 : 667) && numbers.width > 0, `the volume on screen: ${JSON.stringify(numbers)}`);
         assert.equal(await page.textContent("#volume"), "24,000 mm³");
-        // The menu's Body facts does the same: on now, and the panel stays open.
+        // Button toggles (Ben, 2026-11-11): Body facts is lit while its press shows the numbers, and the menu says so.
+        assert.equal(await page.getAttribute("#inspect-facts", "aria-pressed"), "true", "Body facts lit while it shows the numbers");
         await press(page, "#inspect-menu", tap);
         assert.equal(await page.getAttribute("#inspect-menu-facts", "aria-disabled"), null);
+        assert.equal((await page.textContent("#inspect-menu-facts")).includes("Body facts: on"), true, "the menu says it is on");
+        // Pressed again (here from the menu) it puts away what it opened: the folded panel folds again, the phone's sheet shuts.
         await press(page, "#inspect-menu-facts", tap);
-        assert.equal(await page.$eval("#properties", (p) => p.hasAttribute("data-folded")), false);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "false", null, "Body facts goes out");
+        if (tap) await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "false", null, "the sheet it opened shuts");
+        else await until(page, () => document.getElementById("properties").hasAttribute("data-folded"), null, "the panel it opened folds");
+        // And on again with the button, off again with the button.
+        await press(page, "#inspect-facts", tap);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "true", null, "on again");
+        if (shots) await page.screenshot({ path: `${shots}/body-facts-on-${width}.png` });
+        await press(page, "#inspect-facts", tap);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "false", null, "off again");
+        if (tap) assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet shut again");
+        else assert.equal(await page.$eval("#properties", (p) => p.hasAttribute("data-folded")), true, "folded again");
+        if (shots) await page.screenshot({ path: `${shots}/body-facts-off-${width}.png` });
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    await check(`${at}: Body facts pressed again leaves alone what it did not open, and goes out when its numbers are put away some other way`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        await insertPreset(page, "box", tap);
+        await until(page, () => !document.getElementById("inspect-facts").disabled, null, "Body facts on once a body is built");
+        // Opened by the person first (the phone's Properties toggle, the wide panel's pin): Body facts opens nothing, so it is not lit
+        // and a second press shuts nothing.
+        if (tap) await page.tap("#properties-toggle");
+        else {
+          if ((await page.getAttribute("#properties-handle", "aria-expanded")) === "true") await page.click("#properties-handle");
+          await page.click("#properties-handle"); // pinned
+        }
+        const open = () => page.evaluate((t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true" : !document.getElementById("properties").hasAttribute("data-folded")), tap);
+        await until(page, (t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true" : !document.getElementById("properties").hasAttribute("data-folded")), tap, "opened by the person");
+        for (let i = 0; i < 2; i++) {
+          await press(page, "#inspect-facts", tap);
+          await page.waitForTimeout(200);
+          assert.equal(await page.getAttribute("#inspect-facts", "aria-pressed"), "false", `press ${i + 1}: not lit, it opened nothing`);
+          assert.equal(await open(), true, `press ${i + 1}: still open, as the person left it`);
+        }
+        // Put away by the person: Body facts opens it and is lit; then shut some other way, it goes out.
+        if (tap) await page.tap("#properties-toggle");
+        else await page.click("#properties-handle"); // unpinned and folded
+        await until(page, (t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "false" : document.getElementById("properties").hasAttribute("data-folded")), tap, "put away");
+        await press(page, "#inspect-facts", tap);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "true", null, "lit");
+        if (tap) await page.tap("#properties-toggle"); // the sheet shut by its own toggle
+        else await page.click("#properties-handle"); // the panel folded by its own button
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "false", null, "out once its numbers are put away another way");
+        // So the next press opens them again rather than shutting nothing.
+        await press(page, "#inspect-facts", tap);
+        await until(page, (t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true" : !document.getElementById("properties").hasAttribute("data-folded")), tap, "the next press opens them again");
       } finally {
         await page.context().close();
       }

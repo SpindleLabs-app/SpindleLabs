@@ -172,6 +172,26 @@ try {
     }
   });
 
+  // #583 item 4: at 375 px the Bodies list rows were 27 px tall, under the app's 44 px touch size (--look-target-touch in theme.css).
+  await check("375 px, taps: the Bodies list rows are at least 44 px tall and the Combine tools field says Tap", async () => {
+    const page = await fresh(375, 667, true, "&combine");
+    try {
+      await openPanel(page, "browser", true);
+      const rows = await page.$$eval("#browser .tree-row", (rs) => rs.filter((r) => /^Body/.test(r.textContent.trim()) && r.getBoundingClientRect().height > 0).map((r) => ({ text: r.textContent.trim(), h: r.getBoundingClientRect().height })));
+      assert.ok(rows.length >= 3, JSON.stringify(rows));
+      for (const r of rows) assert.ok(r.h >= 44, `row ${r.text} is ${r.h} px tall, want at least 44`);
+      await page.waitForTimeout(800);
+      if (shots) await page.screenshot({ path: `${shots}/combine-375-bodies.png` });
+      await closePanels(page, true);
+      await press(page, "#modify-menu", true);
+      await press(page, "#modify-menu-combine", true);
+      await opened(page);
+      await fields(page, "Tap the body to change | Tap the bodies to use as tools", "touch words");
+    } finally {
+      await page.context().close();
+    }
+  });
+
   for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
     await check(`${width} px${tap ? ", taps" : ""}: Combine cuts Box 2 from Box 1, picked target then tool, as one undo step`, async () => {
       const page = await fresh(width, height, tap, "&combine");
@@ -186,13 +206,15 @@ try {
         await press(page, "#modify-menu-combine", tap);
         await opened(page);
         // Nothing picked: the target field picks, the hint over the view says what to do, OK is off.
-        await fields(page, "Click the body to change | Click the bodies to use as tools", "both fields empty");
+        // On a touch screen the words say Tap, as the app's other touch words do (#583 item 4).
+        const verb = tap ? "Tap" : "Click";
+        await fields(page, `${verb} the body to change | ${verb} the bodies to use as tools`, "both fields empty");
         assert.equal(await page.$eval("#combine-target", (b) => b.getAttribute("aria-pressed")), "true");
         assert.equal(await page.$eval("#combine-ok", (b) => b.disabled), true);
         assert.equal(await page.$eval("#combine-hint", (h) => [h.hidden, h.textContent].join()), "false,Combine: click or tap the body to change");
         if (shots) await page.screenshot({ path: `${shots}/combine-${width}-empty.png` });
         await at(page, TOP1, tap);
-        await fields(page, "Body 1 | Click the bodies to use as tools", "Box 1 the target");
+        await fields(page, `Body 1 | ${verb} the bodies to use as tools`, "Box 1 the target");
         const sheetOpen = () => page.evaluate(() => [document.getElementById("properties-toggle")?.getAttribute("aria-expanded") === "true", (document.getElementById("combine-operation")?.getBoundingClientRect().height ?? 0) > 0]);
         // At phone width the view stays clear while the bodies are picked: the sheet is still shut with only the target.
         if (tap) assert.deepEqual(await sheetOpen(), [false, false], "the sheet waits for a tool");

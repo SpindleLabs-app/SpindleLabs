@@ -18,7 +18,7 @@ import { app, chooseShape } from "./design-app.ts";
 import { insert, row, type } from "./selection-hunt-helpers.ts";
 
 type A = Awaited<ReturnType<typeof app>>;
-const empty = (): DesignDocument => ({ version: 16, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 }) as DesignDocument;
+const empty = (): DesignDocument => ({ version: 17, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 }) as DesignDocument;
 
 const box = (a: A, key: string) => (a.$(`#${key}`) as HTMLInputElement).value;
 const shown = (a: A, key: string) => a.$(`#${key}-row`)!.hidden === false;

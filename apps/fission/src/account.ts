@@ -7,7 +7,10 @@
 
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { type AccountVersions, withIcon } from "@fission/ui";
+import { displayNameRow } from "./display-name.ts";
 import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
+import { pageShareSwitch } from "./share-switch.ts";
+import { type ShareHost, startShares } from "./share.ts";
 import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
 import "./styles/account.css";
 
@@ -55,9 +58,11 @@ export interface AccountHooks {
   versionsOf(localId: string): Promise<AccountVersions | null>;
   /** The file text of the account's version of `localId` saved `at`; throws the words to say when it can't. */
   versionText(localId: string, at: Date): Promise<string>;
+  /** File > Share… (only with the ?share switch on): the sharing dialog, or Sign in when signed out. */
+  share(): void;
 }
 
-export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost): Promise<AccountHooks | undefined> {
+export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost, shareHost?: ShareHost): Promise<AccountHooks | undefined> {
   const redirectTo = location.origin + location.pathname;
   const checked = checkConfig({ ...service, redirectTo });
   if (!checked.ok) return; // a build with broken settings simply has no sign-in
@@ -72,7 +77,12 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const data = accountData(client, store);
   const designs = host ? startDesigns(client, host, store) : null;
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
-  const ui = accountUi(client, data, store, designs, settings);
+  const links = { show: null as (() => void) | null }; // My links, once sharing is on (below)
+  const ui = accountUi(client, data, store, designs, settings, links);
+  // Sharing links (community C2): only with ?share in the address, until the legal check.
+  const switched = pageShareSwitch();
+  const shares = shareHost && switched.on ? startShares(client, shareHost, (w) => ui.open(w)) : null;
+  if (shares) links.show = () => shares.links();
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
@@ -104,6 +114,8 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   else void designs?.sendNow();
   // Settings that follow you: the account's are brought here and this browser's sent, signed in now or from before.
   void settings?.now();
+  // A sharing link in the address opens as a frozen copy, signed in or not.
+  if (shares && switched.id) void shares.openLink(switched.id);
   // Another tab signing in or out shows here too.
   addEventListener("storage", (e) => {
     if (e.key === SESSION_KEY || e.key === null) ui.render();
@@ -114,6 +126,7 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
       if (client.state().kind === "signed-in" && designs) void designs.show();
       else ui.open("Sign in to keep your designs in your account and open them on any device.");
     },
+    share: () => shares?.show(),
     versionsOf: async (localId) => (designs ? designs.versionsOf(localId) : null),
     versionText: async (localId, at) => {
       if (!designs) throw new Error("This build keeps no versions in an account.");
@@ -129,7 +142,7 @@ function dataWords(r: Exclude<DataResult<unknown>, { kind: "ok" }>): string {
   return r.kind === "signed-out" ? "You're signed out. Sign in again to do that." : FAILURE_WORDS[r.reason];
 }
 
-function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null) {
+function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null, links: { show: (() => void) | null }) {
   const doc = document;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
     const e = doc.createElement(tag);
@@ -221,8 +234,10 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         out.disabled = true;
         data.forgetEmailChoice();
         settings?.forget(state.user.id);
-        const { ended } = await client.signOut();
-        note = ended ? "Signed out." : "Signed out on this device. The sign-in service couldn't be reached, so the old session stops working by itself within the hour.";
+        const result = await client.signOut();
+        // Signed out on this device either way: nothing here can use the old session any more.
+        const why = { offline: "couldn't be reached", unavailable: "is having trouble right now", rejected: "didn't accept the request" };
+        note = result.ended ? "Signed out." : `Signed out on this device. The sign-in service ${why[result.reason]}, so it couldn't end the session there too; nothing on this device can use it any more.`;
         render();
       });
       const plan = planBox();
@@ -245,7 +260,29 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       del.addEventListener("click", () => confirmDelete());
       yours.append(copy, del);
       const kept = settings ? settingsBox(settings) : null;
-      const rows = [emails.row, ...(kept ? [kept] : []), out, yours];
+      const rows = [displayNameRow(client), emails.row, ...(kept ? [kept] : []), out, yours];
+      // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
+      if (links.show) {
+        const show = links.show;
+        const mine = el("button", "account-action account-my-links", "My links");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          show();
+        });
+        rows.unshift(mine);
+      }
+      // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
+      if (links.show) {
+        const show = links.show;
+        const mine = el("button", "account-action account-my-links", "My links");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          show();
+        });
+        rows.unshift(mine);
+      }
       if (designs) {
         const mine = el("button", "account-action account-my-designs", "My designs");
         mine.type = "button";

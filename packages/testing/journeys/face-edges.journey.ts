@@ -228,9 +228,9 @@ const WORKSPACE = new URL("../../../workspaces/design/src/workspace.ts", import.
 
 const PLANTS: { name: string; find: string; replace: string }[] = [
   // The face's edges never offered.
-  { name: "no-edge-targets", find: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, lastScene, sketchPlane(designDoc(), id, placedNow));", replace: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, lastScene, sketchPlane(designDoc(), id, placedNow)).slice(0, 0);" },
+  { name: "no-edge-targets", find: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, sceneFor(id), sketchPlane(designDoc(), id, placedNow));", replace: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, sceneFor(id), sketchPlane(designDoc(), id, placedNow)).slice(0, 0);" },
   // A sketch just made on a face (not rebuilt since) offers no edges: the 26f bug this journey found, the targets looked only at the rebuild's placements.
-  { name: "new-sketch-no-edges", find: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, lastScene, sketchPlane(designDoc(), id, placedNow));", replace: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, lastScene, placedNow.get(id));" },
+  { name: "new-sketch-no-edges", find: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, sceneFor(id), sketchPlane(designDoc(), id, placedNow));", replace: "const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, sceneFor(id), placedNow.get(id));" },
   // A click snaps onto the edges but its point is never pinned.
   { name: "click-not-pinned", find: "      let next = pinNewPoints(before, done.doc, done.tool.sketch, edges);", replace: "      let next = done.doc;" },
   // The hover shows the edge's snap, but the click ignores it.
