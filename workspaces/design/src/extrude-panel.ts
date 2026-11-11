@@ -33,6 +33,8 @@ export interface ExtrudePanelEvents {
   operation?(operation: ExtrudeOperation): void;
   /** A body in the list ticked or unticked. */
   tick?(body: string, on: boolean): void;
+  /** Pick several turned on or off (a phone's Ctrl: each tap adds or takes away a profile). */
+  several?(on: boolean): void;
 }
 
 export interface ExtrudePanel {
@@ -62,6 +64,9 @@ export interface ExtrudePanel {
 
 /** What the panel says an extrude makes with New body chosen (or no Operation row). */
 export const NEW_BODY_NOTE = "The extrude is a new body, put in the timeline at the marker.";
+
+/** Pick several's tooltip: what it does, and the keys that do the same with a mouse. */
+export const SEVERAL_TITLE = "Pick several profiles: each click or tap adds a profile, or takes one away. With a mouse, hold Ctrl (⌘ on a Mac) or Shift while clicking to do the same.";
 
 /** What the profile row says while none is chosen. */
 export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
@@ -98,8 +103,18 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       clear.title = "Clear the profile: click another closed sketch in the view";
       clear.setAttribute("aria-label", "Clear the profile");
       clear.addEventListener("click", () => on.clear());
-      const profileRow = el("div", "", "extrude-row extrude-profile-row");
-      profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear);
+      // Pick several (version 18): Ctrl, Cmd or Shift with a click does the same; a phone has only this.
+      const several = el("button", "extrude-several", "extrude-several", "Pick several");
+      several.type = "button";
+      several.title = SEVERAL_TITLE;
+      several.setAttribute("aria-pressed", "false");
+      several.addEventListener("click", () => {
+        const pressed = several.getAttribute("aria-pressed") !== "true";
+        several.setAttribute("aria-pressed", String(pressed));
+        on.several?.(pressed);
+      });
+      const profileRow = el("div", "", "extrude-row extrude-profile-row extrude-several-row");
+      profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear, several);
       const input = el("input", "extrude-distance");
       Object.assign(input, { type: "number", step: "any" });
       const field = sizeBox(input, () => currentUnit(document));

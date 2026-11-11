@@ -8,6 +8,7 @@ import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, numberedWhenBuilt, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
+import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
 import { bodyChoices, operationNote, tickedBodies, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
@@ -2583,6 +2584,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     /** The bodies listed for Join, Cut or Intersect (those the preview reaches), and those unticked while the panel is open. */
     choices: BodyChoice[];
     unticked: Set<string>;
+    /** The profiles picked after the first (Ctrl, Cmd or Shift click, or Pick several; Design data version 18), each a new array when they change. */
+    more: PickedProfile[];
+    /** Each of those profiles' extrude going 1 mm, by its id in the view, in the design it was worked out in. */
+    moreBases: Map<string, { doc: DesignDocument; spec: BodySpec }>;
+    /** Pick several is on (a phone's Ctrl): every tap adds or takes away a profile. */
+    pickMany: boolean;
   } | null = null;
   const extrudeBox = extrudePanel(ctx.properties, {
     distance: (typed) => extrudeDistance(signedDistance(typed)),
@@ -2602,6 +2609,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (on) extruding.unticked.delete(body);
       else extruding.unticked.add(body);
       showOperationBodies();
+    },
+    several: (on) => {
+      if (extruding) extruding.pickMany = on;
     },
   });
   /**
@@ -2648,7 +2658,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A flat face selected first is chosen once it is offered (UX1c); meanwhile nothing is.
     const wanted = editing === null && ctx.selection.items.length === 1 && ctx.selection.items[0].kind === "face" ? String(ctx.selection.items[0].id) : null;
     const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? (wanted ? undefined : items.at(-1)?.id) ?? null;
-    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], regions: new Map(), offer: null, region: null, distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null, operation: "new", choices: [], unticked: new Set() };
+    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], regions: new Map(), offer: null, region: null, distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null, operation: "new", choices: [], unticked: new Set(), more: [], moreBases: new Map(), pickMany: false };
     leaveExplode(); // a tool works on the bodies where they are
     extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE), combineShown());
     // No usable sketch: say why (a body's flat faces are still offered to click, UX1c); with no sketch at all and a body, just how to pick.
@@ -2676,10 +2686,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Edit feature's regions (48d4) stay drawn while it is open.
     if (!e) return editRegions !== null ? showEditRegions() : viewport.showExtrude(null);
     const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
-    viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, preview: e.preview?.mesh ?? null, arrow, ...(e.operation === "cut" ? { cut: true } : {}) });
+    viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, ...(e.more.length > 0 ? { alsoChosen: e.more.map((m) => m.id) } : {}), preview: e.preview?.mesh ?? null, arrow, ...(e.operation === "cut" ? { cut: true } : {}) });
     // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
-    if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), faces: [...e.faces.keys()].join(" "), chosen: e.sketch ?? "", region: e.offer ?? "", previewVolume: e.preview ? String(e.preview.volume) : "" });
+    if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), faces: [...e.faces.keys()].join(" "), chosen: e.sketch ?? "", region: e.offer ?? "", more: e.more.map((m) => m.id).join(" "), previewVolume: e.preview ? String(e.preview.volume) : "" });
   }
 
   /**
@@ -2732,6 +2742,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extruding.regions = new Map(offered.map((o) => [o.id, o]));
     // The region picked keeps its place in the view by its curves (an id in the view can move when a region comes or goes).
     if (extruding.sketch !== null && extruding.region !== null) extruding.offer = offerOf(offered, extruding.sketch, extruding.region)?.id ?? null;
+    // So do the others picked (version 18); one gone from the design is let go.
+    const more = extruding.more.flatMap((m) => {
+      const o = m.region === null ? undefined : offerOf(offered, m.sketch, m.region);
+      return o === undefined || o.refused !== undefined ? [] : [{ ...m, id: o.id }];
+    });
+    if (more.length !== extruding.more.length || more.some((m, k) => m.id !== extruding!.more[k].id)) {
+      extruding.more = more;
+      showPicks();
+      refreshPreview();
+    }
     const before = extruding.faces;
     extruding.faces = new Map(facesOffered.map((p) => [p.id, faces.get(p.id)!]));
     extruding.refusedFaces = refusedFaces;
@@ -2754,18 +2774,28 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showExtrudeView();
   }
 
-  /** Another sketch chosen (a click in the view, its row in the browser, or ✕ for none): its preview and arrow start again. */
-  function chooseProfile(id: string | null) {
+  /**
+   * Another sketch chosen (a click in the view, its row in the browser, or ✕ for none): its preview and arrow start
+   * again. The other profiles picked go (a plain click picks one, as Fusion's), unless `keepMore` (the first of
+   * several taken away, `addProfile`).
+   */
+  function chooseProfile(id: string | null, keepMore = false) {
     const e = extruding;
     // A sketch region (step 48): its sketch is chosen with it; one that can't be extruded says why and changes nothing.
     const offer = id === null ? undefined : e?.regions.get(id);
     if (e && offer?.refused !== undefined) return void extrudeBox.showError(regionRefusedWords(sketchLabel(offer.sketch), offer.refused));
     const sketch = offer?.sketch ?? id;
-    if (!e || (e.sketch === sketch && (offer === undefined || e.offer === offer.id)) || (sketch !== null && !e.usable.has(sketch) && !e.faces.has(sketch))) return;
+    if (!e || (sketch !== null && !e.usable.has(sketch) && !e.faces.has(sketch))) return;
+    const dropMore = !keepMore && e.more.length > 0;
+    if (dropMore) e.more = [];
+    if (e.sketch === sketch && (offer === undefined || e.offer === offer.id)) {
+      if (dropMore) showPicks(), refreshPreview();
+      return;
+    }
     // A face with holes extrudes its region (48d2), saved like a sketch region's.
     Object.assign(e, { sketch, offer: offer?.id ?? null, region: offer?.ref ?? (sketch === null ? null : e.faces.get(sketch)?.region) ?? null, closed: false, checked: null, base: null, preview: null, arrow: null });
     id = sketch;
-    extrudeBox.showProfile(id ? sourceOf(id).label : null);
+    extrudeBox.showProfile(picksLabel());
     extrudeBox.showError("");
     if (id) void checkExtrude(id);
     else extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
@@ -2794,6 +2824,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return;
     }
     if (pointer.kind === "pick") {
+      // Ctrl, Cmd or Shift held, or Pick several on: adds the profile, or takes it away (version 18).
+      if (pointer.profile !== null && (pointer.add === true || extruding.pickMany)) return void addProfile(pointer.profile);
       if (pointer.profile !== null) return void chooseProfile(pointer.profile);
       // On no outline but on a face that can't be extruded (a curved one, one with holes): say why, keeping the choice.
       const made = pointer.face != null ? faceProfile(designDoc(), lastScene, pointer.face) : null;
@@ -2844,10 +2876,27 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         e.base = { doc, sketch: id, region, spec };
       }
       // At 0 mm (where Extrude starts) nothing is drawn, but the arrow still stands on the profile: it is found from a 1 mm build.
-      const handle = await kernel.call("body_build", previewSpec(e.base.spec, d === 0 ? 1 : d));
-      const view = await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
+      const at = d === 0 ? 1 : d;
+      const viewOf = async (spec: BodySpec) => {
+        const handle = await kernel.call("body_build", previewSpec(spec, at));
+        return await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
+      };
+      const first = await viewOf(e.base.spec);
+      // The other profiles picked (version 18), each built as its own extrude and drawn with the first.
+      const extras = e.more;
+      const views = [first];
+      for (const m of extras) {
+        let b = e.moreBases.get(m.id);
+        if (b?.doc !== doc) {
+          const made = extrudeSketch(doc, m.sketch, 1, false, m.region ?? undefined);
+          b = { doc, spec: await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!) };
+          e.moreBases.set(m.id, b);
+        }
+        views.push(await viewOf(b.spec));
+      }
+      const view = joinedView(views);
       // Out of date: another sketch or region chosen or the panel closed. A newer distance only means another build follows.
-      if (extruding !== e || e.sketch !== id || e.region !== region) return;
+      if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras) return;
       // A distance refused since this build began (extrudeDistance said why) shows no preview under the words.
       e.preview = e.distance === null || d === 0 || distanceRefused(e.distance) !== null ? null : view;
       e.arrow = arrowOf(view, d === 0 ? 1 : d) ?? e.arrow;
@@ -2855,6 +2904,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     } catch (err) {
       // Out of date too when another region was picked since (48d hunt): its words are not this one's.
       if (extruding !== e || e.sketch !== id || e.region !== region || e.distance !== d) return;
+      // A profile picked after the first that can't be built: let go of it, saying why (the first's preview builds again).
+      if (e.more.length > 0) {
+        e.more = [];
+        showPicks();
+        refreshPreview();
+      }
       e.preview = null;
       extrudeBox.showError(err instanceof Error ? err.message : String(err));
     }
@@ -2916,11 +2971,55 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (offer?.refused !== undefined) extrudeBox.showStatus(regionRefusedWords(name, offer.refused), false);
     else if (offer !== undefined) {
       Object.assign(e, { offer: offer.id, region: offer.ref, closed: true });
-      extrudeBox.showStatus(offers.length === 1 ? `${name} makes a closed outline.` : regionChosenWords(name), true);
+      extrudeBox.showStatus(e.more.length > 0 ? severalWords(e.more.length + 1) : offers.length === 1 ? `${name} makes a closed outline.` : regionChosenWords(name), true);
       refreshPreview();
     } else if (offers.length === 0) extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${why ?? "it has no closed region"}).`, false);
     else extrudeBox.showStatus(pickRegionWords(name, offers.length), false);
     showExtrudeView();
+  }
+
+  /** The panel's profile row: the one profile's name, or "3 selected" for several (version 18). */
+  function picksLabel(): string | null {
+    const e = extruding;
+    if (!e) return null;
+    return pickedWords({ first: e.sketch === null ? null : { id: e.offer ?? e.sketch, sketch: e.sketch, region: e.region }, more: e.more }, e.sketch === null ? null : sourceOf(e.sketch).label);
+  }
+
+  /** The profiles picked shown again: the panel's row and, with several all closed, the status line. */
+  function showPicks() {
+    const e = extruding;
+    if (!e) return;
+    extrudeBox.showProfile(picksLabel());
+    if (e.more.length > 0 && e.closed) extrudeBox.showStatus(severalWords(e.more.length + 1), true);
+    showExtrudeView();
+  }
+
+  /**
+   * A click with Ctrl, Cmd or Shift held, or any while Pick several is on
+   * (version 18, Fusion's Ctrl-click): the sketch region is added to the
+   * profiles picked, or taken away when picked already (`togglePick`); the
+   * first taken away makes the next one first. A flat face extrudes alone
+   * for now (`FACE_ALONE`), and a region that can't be extruded says why.
+   */
+  function addProfile(id: string) {
+    const e = extruding;
+    if (!e) return;
+    const offer = e.regions.get(id);
+    const faceFirst = e.sketch !== null && e.faces.has(e.sketch);
+    if (offer === undefined || faceFirst) {
+      if (e.sketch === null || (faceFirst && e.sketch === id)) return chooseProfile(e.sketch === id ? null : id);
+      return void extrudeBox.showError(FACE_ALONE);
+    }
+    if (offer.refused !== undefined) return void extrudeBox.showError(regionRefusedWords(sketchLabel(offer.sketch), offer.refused));
+    if (!e.usable.has(offer.sketch)) return;
+    // A sketch chosen whose region isn't picked yet (it has several) counts as nothing picked.
+    const first: PickedProfile | null = e.sketch === null || e.offer === null ? null : { id: e.offer, sketch: e.sketch, region: e.region };
+    const next = togglePick({ first, more: e.more }, { id: offer.id, sketch: offer.sketch, region: offer.ref });
+    extrudeBox.showError("");
+    e.more = next.more;
+    if (next.first?.id !== first?.id) return chooseProfile(next.first?.id ?? null, true);
+    showPicks();
+    refreshPreview();
   }
 
   /**
@@ -2949,22 +3048,26 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Join, Cut or Intersect (with Combine shown): the bodies ticked, which the kernel's boolean must take (else the panel says why).
     const operation = extruding?.operation ?? "new";
     const choice = operation === "new" ? null : { operation, bodies: tickedBodies(extruding?.choices ?? []) };
+    // The other profiles picked (version 18), as the extrude saves them.
+    const picked = extruding?.more ?? [];
+    if (choice !== null && picked.length > 0) return extrudeBox.showError(ONE_PROFILE_OPERATION);
+    const more = picked.map((m) => ({ sketch: m.sketch, ...(m.region ? { region: m.region } : {}) }));
     if (choice !== null && choice.bodies.length === 0) return extrudeBox.showError(`Tick a body to ${operation === "join" ? "join to" : operation} first.`);
     let made: ReturnType<typeof extrudeSketch>;
     try {
-      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined, choice);
+      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined, choice, more);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
       if (choice !== null) {
         const refused = await onceMoreAfterRestart(() => refusedMove(kernel, made.doc, made.id));
         if (refused !== null) throw new Error(refused);
       }
     } catch (e) {
-      if (extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region) extrudeBox.showError(e instanceof Error ? e.message : String(e));
+      if (extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region && extruding.more === picked) extrudeBox.showError(e instanceof Error ? e.message : String(e));
       return;
     }
     // Closed or opened again, another sketch chosen, or something else changed the design, while the kernel worked: this extrude is out of date.
     // Another region of the sketch picked meanwhile is another sketch chosen (48d hunt): the one picked last is what OK makes.
-    if (extrudeOpenings !== opened || extruding?.sketch !== id || extruding.region !== region || designDoc() !== before) return;
+    if (extrudeOpenings !== opened || extruding?.sketch !== id || extruding.region !== region || extruding.more !== picked || designDoc() !== before) return;
     leaveExtrude();
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));

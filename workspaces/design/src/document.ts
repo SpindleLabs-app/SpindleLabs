@@ -20,6 +20,7 @@ import { isHeldDesignName } from "./design-edges.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
+import { extrudeSketches, hasMoreProfiles, keptKey, MORE_PROFILES_LIMIT, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /** A ready-made outline on a plane (until the sketcher, step 21, adds sketches next to these). */
 export interface ReadyProfile {
@@ -554,7 +555,7 @@ export function extrudeOperation(f: Feature): { operation: CombineOperation; bod
 export const operationMakers = (f: Feature): string[] => [...new Set((extrudeOperation(f)?.bodies ?? []).map((b) => bodyItem(b)!))];
 
 /** Whether an item can leave pieces (`body:<it>/piece:<k>`): a Combine, or an extrude with an operation. */
-export const makesPieces = (f: Feature) => isCombineItem(f) || isOperationExtrude(f);
+export const makesPieces = (f: Feature) => isCombineItem(f) || isOperationExtrude(f) || (isSketchExtrude(f) && hasMoreProfiles(f));
 
 /** Whether an item is an Extrude Join (version 10), whose own body (version 16) is the piece of its result holding only the extrude. */
 export const isExtrudeJoin = (f: Feature) => isOperationExtrude(f) && f.intent.parameters.operation === "join";
@@ -1613,6 +1614,30 @@ function checkRegion(region: unknown, id: string): void {
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
+/**
+ * Checks an extrude's other profiles (version 18): a list of one to
+ * MORE_PROFILES_LIMIT `{ sketch, region? }`, each sketch a sketch before
+ * the extrude (or one deleted since: its kept shape stands in), its region
+ * as `checkRegion` checks one, no profile the first or another again, and
+ * no operation with them (one profile for Join, Cut and Intersect for now).
+ */
+function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const where = `Design feature ${f.id}'s more profiles`;
+  if (!Array.isArray(more) || more.length === 0 || more.length > MORE_PROFILES_LIMIT) throw new Error(`${where} are not a list of 1 to ${MORE_PROFILES_LIMIT} profiles`);
+  if (Object.hasOwn(f.intent.parameters, "operation")) throw new Error(`${where} come with an operation, which takes one profile`);
+  const seen: ProfileRef[] = [{ sketch: f.intent.parameters.sketch as string, ...(Object.hasOwn(f.intent.parameters, "region") ? { region: f.intent.parameters.region as ProfileRef["region"] } : {}) }];
+  for (const p of more) {
+    if (!isRecord(p) || typeof p.sketch !== "string") throw new Error(`${where} hold ${shown(p)}, not a sketch and its region`);
+    for (const key of Object.keys(p)) if (key !== "sketch" && key !== "region") throw new Error(`${where} hold ${shown(key)}, which a profile never holds`);
+    const there = byId.get(p.sketch);
+    if (there !== undefined ? there.at > i || !isSketchItem(there.item) : !ID_SHAPE.test(p.sketch)) throw new Error(`${where} hold ${shown(p.sketch)}, which is not a sketch before it in the timeline`);
+    if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
+    const ref = p as unknown as ProfileRef;
+    if (seen.some((q) => sameProfile(q, ref))) throw new Error(`${where} hold a profile of ${p.sketch} twice`);
+    seen.push(ref);
+  }
+}
+
 export const DESIGN_VERSION = 16;
 
 export function readDesignDocument(data: unknown): DesignDocument {
@@ -1747,7 +1772,11 @@ export function readDesignDocument(data: unknown): DesignDocument {
     const there = byId.get(p.sketch as string)?.at ?? -1;
     if (typeof p.sketch !== "string" || (there >= 0 && (there > i || !isSketchItem(d.timeline.features[there]))))
       throw new Error(`Design feature ${f.id} extrudes ${shown(p.sketch)}, which is not a sketch before it in the timeline`);
-    if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.sketch as string) || (!Object.hasOwn(p, "operation") && f.dependsOn.length !== 1)) throw new Error(`Design feature ${f.id} extrudes ${p.sketch} but does not depend on it`);
+    // Its other profiles (version 18), each of a sketch before it (or deleted), none twice, none with an operation.
+    if (Object.hasOwn(p, "more")) checkMore(p.more, f, i, byId);
+    const extruded = extrudeSketches(f);
+    if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.sketch as string) || (!Object.hasOwn(p, "operation") && (f.dependsOn.length !== extruded.length || extruded.some((s, k) => f.dependsOn[k] !== s))))
+      throw new Error(extruded.length === 1 ? `Design feature ${f.id} extrudes ${p.sketch} but does not depend on it` : `Design feature ${f.id} extrudes ${extruded.join(" and ")} but does not depend on exactly them, in that order`);
     if (!isFiniteNumber(p.distance)) throw new Error(`Design feature ${f.id}: distance ${shown(p.distance)} is not a number of mm`);
     if (Object.hasOwn(p, "flip") && p.flip !== true) throw new Error(`Design feature ${f.id}: flip must be true or left out, not ${shown(p.flip)}`);
     if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
@@ -1755,8 +1784,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
   if (Object.hasOwn(d, "kept")) {
     if (!isRecord(d.kept)) throw new Error("Design data's kept shapes are not an object of extrude ids");
     for (const [id, kept] of Object.entries(d.kept)) {
-      const f = byId.get(id)?.item;
-      if (!f || !isSketchExtrude(f)) throw new Error(`Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline`);
+      // An extrude's id, or (version 18) its id and another sketch of its profiles' (`keptKey`).
+      const slash = id.indexOf("/");
+      const f = byId.get(slash < 0 ? id : id.slice(0, slash))?.item;
+      if (!f || !isSketchExtrude(f) || (slash >= 0 && !extrudeSketches(f).slice(1).some((s) => keptKey(f, s) === id))) throw new Error(slash < 0 ? `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline` : `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline and another sketch of its profiles`);
       checkKept(kept, id);
       content += (kept as KeptShape).points.length + (kept as KeptShape).curves.length;
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
@@ -1898,8 +1929,9 @@ function asking(document: DesignDocument): Asked {
 function inputsOf(a: Asked, f: Feature): Feature[] {
   if (isSketchItem(f)) return sketchInputs(f, a.contents.get(f.id)).flatMap((id) => a.byId.get(id) ?? []);
   if (onBodies(f)) return f.dependsOn.flatMap((id) => a.byId.get(id) ?? []);
-  const sketch = isSketchExtrude(f) ? a.sketches.get(f.intent.parameters.sketch) : undefined;
-  return [...(sketch === undefined ? [] : [sketch]), ...makersOf(a.byId, f)];
+  // Every sketch it extrudes a profile of (version 18: several), the first profile's first.
+  const sketches = isSketchExtrude(f) ? extrudeSketches(f).flatMap((id) => a.sketches.get(id) ?? []) : [];
+  return [...sketches, ...makersOf(a.byId, f)];
 }
 
 /** The items that made an operation extrude's bodies, those still in the timeline (none for any other item). */
@@ -1936,10 +1968,11 @@ function buildsNow(a: Asked, f: Feature): boolean {
   if (isSketchItem(f) || !isSketchExtrude(f)) return true;
   // An extrude with an operation also needs every body it works on (version 10).
   if (!makersOf(a.byId, f).every((x) => buildsIn(a, x))) return false;
-  const sketch = a.sketches.get(f.intent.parameters.sketch);
-  // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2).
-  if (sketch === undefined) return keptOf(document, f) !== undefined;
-  return buildsIn(a, sketch);
+  // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2); so for each sketch of its profiles (version 18).
+  return extrudeSketches(f).every((id) => {
+    const sketch = a.sketches.get(id);
+    return sketch === undefined ? keptOf(document, { ...f, id: keptKey(f, id) }) !== undefined : buildsIn(a, sketch);
+  });
 }
 
 /**
@@ -1984,9 +2017,14 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
   // In timeline order, so what an item is built on (always before it; a file that puts it later is refused when opened) is decided first.
   for (const f of open) {
     // A sketch: its face's feature, then each feature a pin (27c) or a projection (27d) names, as `inputsOf` (one lookup each, audit S2).
-    const sketch = isSketchExtrude(f) ? sketches.get(f.intent.parameters.sketch) : undefined;
-    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...(sketch === undefined ? [] : [sketch]), ...makersOf(byId, f)];
-    const input = sketch;
+    // An extrude's sketches: one per profile's sketch, each once (version 18), the first profile's first.
+    const extruded = isSketchExtrude(f) ? extrudeSketches(f) : [];
+    const own = extruded.flatMap((id) => sketches.get(id) ?? []);
+    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...own, ...makersOf(byId, f)];
+    const sketchBuilds = (id: string) => {
+      const input = sketches.get(id);
+      return input === undefined ? keptOf(document, { ...f, id: keptKey(f, id) }) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input));
+    };
     // An extrude with an operation builds only when every body it works on does (version 10).
     const bodiesBuild = makersOf(byId, f).every((x) => building.has(x));
     let by: string | null = null;
@@ -1995,7 +2033,7 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
     // A sketch builds, on a face followed or held (26c); an extrude when its sketch does (a sketch on an origin plane
     // whenever it is in range and on, wherever it is), or from its kept shape when it is gone.
     // A Move when every body it moves builds (step 35e2), a Combine when its target and tools do (35f1), a Duplicate when its body does.
-    else if (onBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (bodiesBuild && (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input))))) building.add(f);
+    else if (onBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (bodiesBuild && extruded.every(sketchBuilds))) building.add(f);
   }
   return { building, greyed };
 }
