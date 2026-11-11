@@ -74,6 +74,11 @@ test("hand-worked (#545 item 1): the box made 24 wide would turn the pinned quar
   near(xy(drawn, id, arc.centre), [30, 30], "the centre, left");
   near(xy(drawn, id, arc.end), [30, 40], "the end, left");
   assert.match(warning(build, id) ?? "none", /^Sketch 1's constraints can't all hold where its points on the body are now \(an arc would turn inside out\)/);
+  // Rebuilt again as stored (any later edit, or a reload): the start is 6 from the centre and the end 10, so the arc is
+  // still off its circle: still said, and the solve that would turn it over is still not taken.
+  const again = await rebuilt(drawn);
+  assert.match(warning(again.build, id) ?? "none", /^Sketch 1's constraints can't all hold where its points on the body are now/);
+  assert.deepEqual(sketchOf(again.doc, id).points, sketchOf(drawn, id).points);
 });
 
 test("control (#545 item 1): the box made 36 wide keeps the corner right of the centre: solved, no warning, the arc still under half a turn", async () => {
@@ -84,4 +89,58 @@ test("control (#545 item 1): the box made 36 wide keeps the corner right of the 
   assert.ok(turnOf(drawn, id, arc) > 0, "still turning anticlockwise under half a turn");
   const r = build.results[id];
   assert.ok(r.status === "built" && r.solved !== undefined, "the solve moved the free points");
+});
+
+test("hand-worked (#545 item 2): a sketch left unsolved by a body's edit keeps its warning on every rebuild, and its separate line can still be constrained and dragged", async () => {
+  const fixed = await quarterArc(["centre", "end"]);
+  const { id, arc } = fixed;
+  // A separate line far from the arc, tied to nothing.
+  const line = drawLine(fixed.doc, id, [0, 0], [10, 3]);
+  const l = sketchOf(line.doc, id).curves.find((c) => c.id === line.id) as { start: string; end: string };
+  const first = await rebuilt(editFeature(line.doc, "feature-1", { width: 60 }));
+  // The start follows the corner to (60, 30): 30 from the fixed centre
+  // (30, 30), the fixed end (30, 40) 10 from it, so the arc is |30 - 10| =
+  // 20 mm off its circle, and no solve can mend that.
+  const [c, s, e] = [xy(first.doc, id, arc.centre), xy(first.doc, id, arc.start), xy(first.doc, id, arc.end)];
+  assert.equal(Math.abs(Math.hypot(s[0] - c[0], s[1] - c[1]) - Math.hypot(e[0] - c[0], e[1] - c[1])), 20);
+  const words = /^Sketch 1's constraints can't all hold where its points on the body are now/;
+  assert.match(warning(first.build, id) ?? "none", words, "the first rebuild says so");
+  // The same design rebuilt again (any later edit, or a reload): still 20 mm off, so still said.
+  const second = await rebuilt(first.doc);
+  assert.match(warning(second.build, id) ?? "none", words, "the second rebuild still says so");
+  assert.deepEqual(sketchOf(second.doc, id).points, sketchOf(first.doc, id).points, "and moves nothing");
+  // Horizontal on the separate line, its start (0, 0) picked first and held:
+  // its end goes straight down to the start's height, (10, 3) -> (10, 0).
+  const h = await addConstraint(kernel, first.doc, id, { kind: "horizontal", a: l.start, b: l.end });
+  assert.ok("doc" in h, `the Horizontal is taken, not refused: ${"refused" in h ? h.refused : ""}`);
+  near(xy(h.doc, id, l.start), [0, 0], "the line's start, held");
+  near(xy(h.doc, id, l.end), [10, 0], "the line's end, made level");
+  // Its end dragged to (12, 5): nothing ties it, so it goes there.
+  const d = await dragTo(kernel, first.doc, id, l.end, [12, 5], 0.2);
+  assert.equal(d.refused, null);
+  near(xy(d.doc, id, l.end), [12, 5], "the dragged end");
+});
+
+test("control (#545 item 2): a line tied to the broken arc is still judged with it, so its Horizontal is refused and the arc shown red", async () => {
+  const fixed = await quarterArc(["centre", "end"]);
+  const { id, arc } = fixed;
+  // A line from the arc's end (30, 40) to (40, 45), its start coincident with the arc's end.
+  const line = drawLine(fixed.doc, id, [30, 40], [40, 45]);
+  const l = sketchOf(line.doc, id).curves.find((c) => c.id === line.id) as { start: string; end: string };
+  const tied = await addConstraint(kernel, line.doc, id, { kind: "coincident", a: l.start, b: arc.end });
+  assert.ok("doc" in tied);
+  const first = await rebuilt(editFeature(tied.doc, "feature-1", { width: 60 }));
+  const h = await addConstraint(kernel, first.doc, id, { kind: "horizontal", a: l.end, b: l.start });
+  assert.ok("refused" in h, "refused: it is in the arc's part, which can't hold");
+  assert.match(h.refused, /fights the ones shown in red/);
+  assert.ok(h.fighting.includes(arc.id), "the arc is among the ones shown red");
+});
+
+test("control (#545 item 2): a solved sketch rebuilt unchanged says nothing and moves nothing", async () => {
+  const { doc, id } = await quarterArc(["centre"]);
+  const first = await rebuilt(editFeature(doc, "feature-1", { width: 60 }));
+  assert.equal(warning(first.build, id), undefined);
+  const second = await rebuilt(first.doc);
+  assert.equal(warning(second.build, id), undefined);
+  assert.deepEqual(sketchOf(second.doc, id).points, sketchOf(first.doc, id).points);
 });

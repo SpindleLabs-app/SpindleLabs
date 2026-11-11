@@ -48,7 +48,7 @@ import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
-import { turnedOver } from "./point-drag.ts";
+import { HELD_STILL, turnedOver } from "./point-drag.ts";
 import { findRegion, refusalReason, regionCurveIds, regionName, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
@@ -1073,7 +1073,10 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
   const followed = movedTo(content, [...pinned, ...projected.flatMap((q) => q.points)], projected.flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
   // Step 47d4: a sketch with constraints or arcs is solved again when a followed point moved (an arc through it is off its
   // circle now; the solver bug hunt, 2026-11-06: an arc with no constraint in the sketch was left off its circle, unsaid).
-  const again = followed !== content && (content.constraints.length > 0 || content.curves.some((c) => c.kind === "arc")) ? await solvedAgain(kernel, followed, content, label) : null;
+  // #545 item 2: one whose followed points stayed is judged as stored, on every rebuild, so a sketch an earlier edit left
+  // unsolved keeps saying so; nothing is moved then (the edit that left it so already decided where its points are).
+  const solving = content.constraints.length > 0 || content.curves.some((c) => c.kind === "arc");
+  const again = !solving ? null : followed !== content ? await solvedAgain(kernel, followed, content, label) : await stillSolved(kernel, content, label);
   const settled = again !== null && "solved" in again ? movedTo(followed, again.solved, []) : followed;
   if (settled !== content) index.sketches.set(f.id, settled);
   const n = held["point-lost"] + held["point-ambiguous"];
@@ -1118,6 +1121,20 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch
     const [x, y] = at.get(p.id)!;
     return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
   }) };
+}
+
+/**
+ * Sketch `stored`, whose followed points stayed where they were, judged as
+ * it is (#545 item 2): null when it is solved there (no point of it more
+ * than HELD_STILL from where the solve puts it), else why not. Its points
+ * are never moved here.
+ */
+async function stillSolved(kernel: KernelCalls, stored: Sketch, label: string): Promise<{ message: string } | null> {
+  const got = await solvedAgain(kernel, stored, stored, label);
+  if ("message" in got) return got;
+  const at = new Map(stored.points.map((p) => [p.id, p] as const));
+  const off = got.solved.some(({ point, at: [x, y] }) => Math.hypot(x - at.get(point)!.x, y - at.get(point)!.y) > HELD_STILL);
+  return off ? { message: constraintsWords(label, "an earlier change left them unsolved") } : null;
 }
 
 async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, kernel: KernelCalls, index: DocIndex): Promise<FeatureResult> {
