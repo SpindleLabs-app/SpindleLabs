@@ -22,3 +22,6 @@
 @media (max-width: 640px) {
   .menu-button .menu-button-item:not(#none) { min-height: 44px; }
 }
+/* A phone held sideways (or any window 500 px tall or less, wider than a phone): a long menu (Modify ▾, Insert ▾) is kept
+   under the toolbar and scrolls, rather than running the screen's full height over the button that opened it. */
+@media (min-width: 641px) and (max-height: 500px) { .menu-button > .menu-button-menu:not(#none) { max-height: calc(100dvh - 96px); overflow-y: auto; } }
