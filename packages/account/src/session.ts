@@ -13,7 +13,7 @@ export interface AccountUser {
 export interface Session {
   readonly accessToken: string;
   readonly refreshToken: string;
-  /** When the access token stops working, in seconds since 1970 (the service's own unit). */
+  /** When the access token stops working, in seconds since 1970 by this computer's clock (from the reply's expires_in). */
   readonly expiresAt: number;
   readonly user: AccountUser;
 }
@@ -34,14 +34,16 @@ function user(v: unknown): AccountUser | undefined {
   const email = typeof r.email === "string" && r.email.length <= EMAIL_MAX ? r.email : "";
   const meta = (r.user_metadata ?? {}) as Record<string, unknown>;
   const raw = typeof meta.full_name === "string" ? meta.full_name : typeof meta.name === "string" ? meta.name : "";
-  // Control and direction-changing characters could spoof the UI; drop them before cutting the length.
-  const name = [...raw.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim()].slice(0, NAME_MAX).join("");
+  // Control and direction-changing characters could spoof the UI; drop them before cutting the length. Trimmed again
+  // after the cut, which may end on a space: cleaning a cleaned name must change nothing, or the stored session would
+  // read back different and be refused.
+  const name = [...raw.replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim()].slice(0, NAME_MAX).join("").trim();
   return { id, email, name };
 }
 
 /**
  * The session in a token reply from the service, or undefined when the reply is not one.
- * `nowS` is the time now in seconds, used when the reply gives only `expires_in`.
+ * `nowS` is this computer's time now in seconds, which `expires_in` counts from; `expires_at` is used only without it.
  */
 export function sessionFromReply(reply: unknown, nowS: number): Session | undefined {
   if (reply === null || reply === undefined) return undefined;
@@ -50,8 +52,10 @@ export function sessionFromReply(reply: unknown, nowS: number): Session | undefi
   const refreshToken = token(r.refresh_token);
   const u = user(r.user);
   let expiresAt: number | undefined;
-  if (Number.isFinite(r.expires_at)) expiresAt = r.expires_at as number;
-  else if (Number.isFinite(r.expires_in) && (r.expires_in as number) >= 0) expiresAt = nowS + (r.expires_in as number);
+  // expires_in counted from this computer's clock comes first: expires_at is by the service's clock, and a computer
+  // clock that differs from it by more than the token's life would renew on every request, or never.
+  if (Number.isFinite(r.expires_in) && (r.expires_in as number) >= 0) expiresAt = nowS + (r.expires_in as number);
+  else if (Number.isFinite(r.expires_at)) expiresAt = r.expires_at as number;
   if (!accessToken || !refreshToken || !u || expiresAt === undefined) return undefined;
   return { accessToken, refreshToken, expiresAt, user: u };
 }

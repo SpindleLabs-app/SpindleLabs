@@ -94,6 +94,25 @@ export function saveAnswerFrom(v: unknown): SaveAnswer | null {
 
 const malformed = { kind: "failed", reason: "malformed" } as const;
 
+/** The longest name kept, in characters (code points), as the database's check allows (char_length <= 200). */
+export const MAX_NAME = 200;
+
+/**
+ * A name as it can be sent: the database can't keep a NUL character (PostgreSQL's text refuses U+0000) or half of a
+ * character written as two UTF-16 units (a lone surrogate is not valid JSON text to it), so NULs go, a lone half is
+ * replaced by U+FFFD, and the name is cut to MAX_NAME whole characters, never inside one.
+ */
+export function cleanName(name: string): string {
+  const out: string[] = [];
+  for (const ch of name) {
+    if (out.length === MAX_NAME) break;
+    if (ch === "\u0000") continue;
+    const c = ch.codePointAt(0) ?? 0;
+    out.push(c >= 0xd800 && c <= 0xdfff ? "\ufffd" : ch); // iterating a string gives a pair whole, a lone half alone
+  }
+  return out.join("");
+}
+
 export function designsApi(client: AuthClient) {
   return {
     /** The person's designs, newest first. */
@@ -121,7 +140,7 @@ export function designsApi(client: AuthClient) {
       const r = await client.asPerson("POST", "rpc/save_design", {
         p_id: d.id,
         p_expected: d.id === null ? null : d.expected,
-        p_name: d.name.slice(0, 200),
+        p_name: cleanName(d.name),
         p_source: d.source,
         p_body: d.body,
         p_picture: d.picture,

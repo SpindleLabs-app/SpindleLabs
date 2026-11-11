@@ -106,6 +106,7 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   const filter = el("select", { id: "home-filter", className: "home-filter" });
   filter.setAttribute("aria-label", "Show projects with work in");
   const status = el("p", { id: "home-status", className: "home-status" });
+  status.setAttribute("role", "status"); // read out as it changes
   status.setAttribute("role", "status");
   const items = el("ul", { id: "home-items", className: "home-items" });
   const find = el("div", { className: "home-find" });
