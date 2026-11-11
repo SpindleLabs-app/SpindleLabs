@@ -72,18 +72,35 @@ export function namedBody(id: string, b: BuiltBody, view: BodyView, place: numbe
  * "face:feature-1/top" as "face:<dup>/top:feature-1",
  * "face:feature-2/side:line-4" as "face:<dup>/side:feature-2~line-4". "~"
  * is in no feature id, so no two names read the same.
+ *
+ * A face of the copied body's own item (`source`, its BuiltBody `feature`)
+ * that holds no other item's id (`isItem`: a copy's face from another
+ * body holds that body's item after its role) is named as a plain copy
+ * names it (SL #538 item 5): "face:feature-1/top" as "face:<dup>/top",
+ * "face:feature-1/side:line-4" as "face:<dup>/side:line-4", so the copy's
+ * face keeps its name whether or not a Cut or Join changed its source. No
+ * other name reads so: the others hold an item's id where these hold a
+ * curve's or nothing, and ids are never shared between items and curves.
  */
-export function copiedFaceName(name: string, dup: string): string {
+export function copiedFaceName(name: string, dup: string, source?: string, isItem: (id: string) => boolean = () => false): string {
   const m = /^face:([^/]+)\/([a-z]+)(?::(.+))?$/.exec(name);
   if (m === null) throw new Error(`not a face name Design makes: ${JSON.stringify(name)}`);
   const [, feature, role, curve] = m;
+  if (feature === source && (curve === undefined || !isItem(curve.split("~")[0]))) return `face:${dup}/${role}${curve === undefined ? "" : `:${curve}`}`;
   return `face:${dup}/${role}:${curve === undefined ? feature : `${feature}~${curve}`}`;
 }
 
-/** A Combine's result's names (BuiltBody `named`) as Duplicate `dup`'s copy of it holds them (`copiedFaceName`). */
-export function copiedNames(named: NonNullable<BuiltBody["named"]>, dup: string): NonNullable<BuiltBody["named"]> {
+/**
+ * A Combine's result's names (BuiltBody `named`) as Duplicate `dup`'s copy
+ * of it holds them (`copiedFaceName`, the result's own item `source`). A
+ * face of the source's own renamed as a plain copy's also keeps, second,
+ * the name copies gave it before SL #538 item 5 ("face:<dup>/top:feature-1"),
+ * so a file saved then still finds it.
+ */
+export function copiedNames(named: NonNullable<BuiltBody["named"]>, dup: string, source?: string, isItem?: (id: string) => boolean): NonNullable<BuiltBody["named"]> {
+  const names = (n: string) => [...new Set([copiedFaceName(n, dup, source, isItem), copiedFaceName(n, dup)])];
   return {
-    faces: named.faces.map((f) => ({ ...f, names: f.names.map((n) => copiedFaceName(n, dup)) })),
-    made: new Map([...named.made].map(([n, order]) => [copiedFaceName(n, dup), order])),
+    faces: named.faces.map((f) => ({ ...f, names: [...new Set(f.names.flatMap(names))] })),
+    made: new Map([...named.made].flatMap(([n, order]) => names(n).map((x) => [x, order] as const))),
   };
 }

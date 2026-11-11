@@ -797,8 +797,11 @@ function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: Re
  * it is here with every face and edge named by the Duplicate instead, so
  * its volume, areas, lengths and centroids are the source's. A Combine's
  * result (35f1f2c) is copied so too, each face keeping its role with the
- * feature it came from (and its curve) as its curve: "face:feature-1/top"
- * as "face:<dup>/top:feature-1" (Design's built-body.ts `copiedFaceName`).
+ * feature it came from (and its curve) as its curve: a tool's
+ * "face:feature-2/top" as "face:<dup>/top:feature-2"; a face of the
+ * source's own item as a plain copy's, "face:<dup>/top", with the old
+ * "face:<dup>/top:feature-1" held after it (SL #538 item 5; Design's
+ * built-body.ts `copiedFaceName`, `copiedNames`).
  * What is done to the source after it never reaches it.
  */
 function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
@@ -814,16 +817,28 @@ function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults:
   // Planted bug ("combine-copy-roles-merged"): a Combine's result's copy names each face by its role alone, as a plain copy's,
   // so two inputs' faces of one role (both cubes' tops) read the same.
   const keep = r.body.combined && owner !== null && !faults.has("combine-copy-roles-merged");
-  const name = (n: FaceName): FaceName => ({
+  // SL #538 item 5: a face of the source's own item (item.body) whose curve names no item is named as a plain copy's
+  // ("face:<dup>/top"), so it keeps its name whether or not a Combine changed the source; the old name stays held after it.
+  const own = (n: FaceName) => keep && n.feature === item.body && (n.curve === undefined || !Object.hasOwn(done, n.curve.split("~")[0]));
+  const old = (n: FaceName): FaceName => ({
     ...n,
     feature: owner ?? n.feature,
     ...(keep ? { curve: n.curve === undefined ? n.feature : `${n.feature}~${n.curve}` } : {}),
     ...(n.tag ? { tag: n.tag.map(name) } : {}),
   });
+  function name(n: FaceName): FaceName {
+    return own(n) ? { ...n, feature: owner!, ...(n.tag ? { tag: n.tag.map(name) } : {}) } : old(n);
+  }
+  // Each name copied, then the old name of a renamed own face after it (built-body.ts `copiedNames`'s order).
+  const names = (n: FaceName): FaceName[] => (own(n) ? [name(n), old(n)] : [name(n)]);
   const copy: ModelBody = {
     ...r.body,
     // A face two inputs' faces made keeps every name, each copied so (rule 4).
-    faces: r.body.faces.map((f) => ({ ...f, name: name(f.name), ...(f.also ? { also: f.also.map(name) } : {}) })),
+    faces: r.body.faces.map((f) => {
+      const seen = new Set<string>();
+      const [shown, ...rest] = [f.name, ...(f.also ?? [])].flatMap(names).filter((n) => !seen.has(faceKey({ ...n, tag: undefined })) && !!seen.add(faceKey({ ...n, tag: undefined })));
+      return { ...f, name: shown, ...(rest.length > 0 ? { also: rest } : {}) };
+    }),
     edges: r.body.edges.map((e) => ({ ...e, name: { ...e.name, feature: owner ?? e.name.feature, faces: [name(e.name.faces[0]), name(e.name.faces[1])] } })),
   };
   // Planted bug ("duplicate-no-body"): the Duplicate builds but makes no body, as a Move.
