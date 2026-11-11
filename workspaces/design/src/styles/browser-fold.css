@@ -51,6 +51,9 @@
 .browser-fold .browser-row-hidden > .tree-row { opacity: 0.55; }
 @media (max-width: 640px) {
   .browser-fold .browser-row-eye:not(#none) { min-height: 44px; min-width: 44px; }
+  /* Every row is a full touch target, as the eye beside it is (#583 item 4: the Bodies rows were 27 px). Padding rather than
+     flex centring, so a long label still ends in "…". */
+  .browser-fold .tree-row:not(#none) { box-sizing: border-box; min-height: var(--look-target-touch); padding-block: 12px; }
 }
 
 /* With a mouse, a row's ⋯ shows only while the pointer is on its row or
