@@ -26,7 +26,7 @@ const light = new Map([...dark, ...lightOnly]);
  * chips whose dark words sit on them (the pointer's hint and its error note);
  * and the print preview's "support" green, a data colour.
  */
-const SAME = ["accent-bright", "accent-deep", "fill-240-242-245-095", "fill-255-244-242-097", "fill-2f63ad", "fill-6b2328", "fill-82292f", "line-9aa3ad", "misc-3fbf7f", "on-accent", "text-1d2228", "text-8a1c12", "white"];
+const SAME = ["accent-bright", "accent-deep", "fill-240-242-245-095", "fill-255-244-242-097", "fill-2f63ad", "fill-6b2328", "fill-82292f", "guide-sink", "line-9aa3ad", "misc-3fbf7f", "on-accent", "text-1d2228", "text-8a1c12", "white"];
 
 type Rgba = [number, number, number, number];
 const colour = (text: string): Rgba => {
