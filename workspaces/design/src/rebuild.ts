@@ -35,7 +35,7 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -795,7 +795,8 @@ function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls
   const slow = new Set<Feature>();
   const building = buildingItems(doc);
   for (const f of doc.timeline.features) {
-    if (!ownShape(f) || !building.has(f) || skipped.has(f)) continue;
+    // A profile size outside the limits is never asked for (the kernel built a negative one mirrored): `buildFeature` fails it.
+    if (!ownShape(f) || !building.has(f) || skipped.has(f) || profileSizeRefused(doc, f) !== null) continue;
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
     if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
@@ -1066,6 +1067,9 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
+      // Save-load hunt B4: failed in words as a size the kernel refuses is, never built (a negative one came out mirrored).
+      const refused = profileSizeRefused(doc, f);
+      if (refused !== null) return { status: "failed", cause: "error", message: refused };
       const spec = specOf(doc, f);
       return made({ handle: await cache.body(spec), spec });
     }

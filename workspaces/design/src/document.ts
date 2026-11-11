@@ -200,12 +200,43 @@ export const DESIGN_LIMITS = { items: 5_000, profiles: 5_000, sketch: 20_000, co
 export const MAX_NEXT_ID = 2 ** 52;
 
 /**
+ * The sizes a ready-made profile keeps (its width and depth), in mm: the panel's typed limits (typed-entry.ts
+ * MIN_TYPED, MAX_TYPED), the kernel's MIN_FEATURE and MAX_SIZE. Kept here, not imported, so the reader loads without
+ * the typing code; a test checks the two agree (save-load hunt B4). A box's, cylinder's or sphere's sizes and an
+ * extrude's distance stay the kernel's to judge when it builds (the item fails in its words: reader-every-feature.test.ts);
+ * a profile's are judged by `profileSizeRefused` (the rebuild fails the item in ours) and refused by edits, because the kernel builds a negative
+ * width or depth, as a mirrored body. The reader takes them: Edit feature could save one before.
+ */
+export const PRESET_SIZE_LIMITS = { min: 1e-3, max: 1e6 } as const;
+
+/** Whether `v` is a size a profile may keep: a number from PRESET_SIZE_LIMITS.min to .max mm (so above 0, never negative). */
+const presetSized = (v: unknown): boolean => typeof v === "number" && v >= PRESET_SIZE_LIMITS.min && v <= PRESET_SIZE_LIMITS.max;
+
+/**
+ * An edit's profile sizes checked as `profileSizeRefused` checks a build's (save-load hunt B4): Edit feature passes a typed sign
+ * on, and the kernel built a negative profile width as a mirrored body (the rebuild now fails such an item instead: `profileSizeRefused`).
+ */
+function checkProfileSizes(kind: ShapeKind, w: number, d: number): void {
+  if (isPrimitive(kind)) return;
+  for (const [name, v] of [["width", w], ["depth", d]] as const) if (!presetSized(v)) throw new Error(`The ${name} must be from ${PRESET_SIZE_LIMITS.min} to ${PRESET_SIZE_LIMITS.max} mm, not ${shown(v)}`);
+}
+
+/**
  * `nextId`, the counter after an edit took its ids, refused past MAX_NEXT_ID: every design that opens still opens
  * after any edit, and one at the top says so instead of saving a file that would not open again (real-use hunt S3).
  */
 export function counted(nextId: number): number {
   if (!(nextId <= MAX_NEXT_ID)) throw new Error(`This design has used every id it can hold (${MAX_NEXT_ID}), so nothing more can be added to it`);
   return nextId;
+}
+
+/**
+ * `nextBody` after an edit numbered its bodies, refused past MAX_NEXT_ID as `counted` refuses ids: the reader takes
+ * no more, so a design that opens still opens after adding bodies (save-load hunt B1).
+ */
+export function countedBodies(nextBody: number): number {
+  if (!(nextBody <= MAX_NEXT_ID)) throw new Error(`This design has numbered every body it can hold (${MAX_NEXT_ID}), so no more bodies can be added to it`);
+  return nextBody;
 }
 
 /**
@@ -432,6 +463,7 @@ export function insertItem(doc: DesignDocument, item: Feature): DesignDocument["
  * takes a second id for its ready-made profile.
  */
 export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d: number, h: number): { doc: DesignDocument; id: string } {
+  checkProfileSizes(kind, w, d);
   let nextId = doc.nextId;
   const id = `feature-${nextId++}`;
   const { feature, profile } = presetFeature(id, presetName(doc, kind), isPrimitive(kind) ? undefined : `profile-${nextId++}`, kind, w, d, h);
@@ -450,6 +482,7 @@ export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d:
 export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const old = doc.timeline.features.find((f) => f.id === id);
   if (!old || !ownShape(old) || isSketchExtrude(old)) throw new Error(`there is no preset ${shown(id)} in the design`);
+  checkProfileSizes(kind, w, d);
   let nextId = doc.nextId;
   const oldProfile = old.dependsOn.find((p) => doc.profiles.some((x) => x.id === p));
   const oldKind = presetKinds(doc)(old);
@@ -663,7 +696,8 @@ export function numberBodies(doc: DesignDocument): DesignDocument {
   const fresh = building === null ? [] : [...missing.filter((f) => building.has(f)), ...missing.filter((f) => !building.has(f))].map((f) => bodyIdOf(f.id));
   if (fresh.length === 0 && kept.length === old.length && doc.bodies !== undefined && doc.nextBody !== undefined) return doc;
   let next = Math.max(doc.nextBody ?? 1, ...kept.map((b) => b.number + 1));
-  return { ...doc, bodies: [...kept, ...fresh.map((id) => ({ id, number: next++ }))], nextBody: next };
+  const bodies = [...kept, ...fresh.map((id) => ({ id, number: next++ }))];
+  return { ...doc, bodies, nextBody: countedBodies(next) };
 }
 
 /**
@@ -691,7 +725,8 @@ export function numberPieces(doc: DesignDocument, pieces: readonly string[], fac
   const changed = filled.some((b, i) => b.faces !== numbered.bodies![i].faces);
   if (fresh.length === 0 && !changed) return numbered;
   let next = numbered.nextBody!;
-  return { ...numbered, bodies: [...(changed ? filled : numbered.bodies!), ...fresh.map((id) => ({ id, number: next++, ...facesOf(id) }))], nextBody: next };
+  const bodies = [...(changed ? filled : numbered.bodies!), ...fresh.map((id) => ({ id, number: next++, ...facesOf(id) }))];
+  return { ...numbered, bodies, nextBody: countedBodies(next) };
 }
 
 /** Each body's number by its id, numbered as `numberBodies` would. */
@@ -757,6 +792,21 @@ export function specOf(document: DesignDocument, feature: Feature): BodySpec {
     default:
       throw new Error(`unknown feature type ${feature.intent.type}`);
   }
+}
+
+/**
+ * Why a preset's ready-made profile can't be built, in words naming the size and the limits, or null (save-load hunt
+ * B4): a width or depth outside PRESET_SIZE_LIMITS, which the kernel built mirrored when negative. The rebuild fails
+ * the item with these words, as it does with a size the kernel refuses; a file holding one still opens (Edit feature
+ * could save one before edits refused them). Null for anything but a preset's extrude of a profile.
+ */
+export function profileSizeRefused(document: DesignDocument, feature: Feature): string | null {
+  if (feature.intent.type !== "extrude" || isSketchExtrude(feature)) return null;
+  const profile = document.profiles.find((x) => x.id === feature.intent.parameters.profile);
+  if (!profile) return null;
+  for (const key of ["width", "depth"] as const)
+    if (!presetSized(profile[key])) return `${feature.provenance.self.label}'s ${key} ${shown(profile[key])} mm is outside ${PRESET_SIZE_LIMITS.min} to ${PRESET_SIZE_LIMITS.max} mm, the sizes a profile can have`;
+  return null;
 }
 
 /** The sizes the panel edits, keyed like its inputs; a shape fills only the ones it uses. */
@@ -1454,6 +1504,7 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
   if (!Array.isArray(bodies)) throw new Error("Design data has no bodies list (each body's id and number)");
   notTooMany(bodies.length, DESIGN_LIMITS.items, "Design data has", "bodies");
   if (!Number.isSafeInteger(nextBody) || nextBody! < 1) throw new Error(`Design data's nextBody ${shown(nextBody)} is not a counting number`);
+  if (nextBody! > MAX_NEXT_ID) throw new Error(`Design data's nextBody ${nextBody} is above ${MAX_NEXT_ID}, more bodies than a design can number`);
   const ids = new Set<string>();
   const numbers = new Set<number>();
   let faceCount = 0;
@@ -1606,6 +1657,31 @@ function checkRegion(region: unknown, id: string): void {
       throw new Error(`${where}'s curve ${k + 1} is not { curve: an id, reversed: true or false }`);
   }
   if (!Array.isArray(centroid) || centroid.length !== 2 || !centroid.every(isFiniteNumber)) throw new Error(`${where}'s centroid ${shown(centroid)} is not two numbers of mm`);
+}
+
+/**
+ * Each preset's profile (save-load hunt B2): the extrude depending on exactly its own profile, which no other preset
+ * extrudes. The app always makes them so (`presetFeature`); a shared profile let a
+ * size typed for one item change another's shape.
+ * Run after `shapeWith`, so each profile is there with its kind and number sizes.
+ */
+function checkPresets(features: readonly Feature[], profiles: ReadonlyMap<unknown, ReadyProfile>): void {
+  const usedBy = new Map<string, string>();
+  for (const f of features) {
+    if (!ownShape(f) || isSketchExtrude(f)) continue;
+    const p = f.intent.parameters;
+    const at = `Design feature ${f.id}`;
+    if (f.intent.type === "extrude") {
+      const profile = profiles.get(p.profile)!;
+      const other = usedBy.get(profile.id);
+      if (other !== undefined) throw new Error(`Design profile ${profile.id} is used by both ${other} and ${f.id}, but each preset extrudes a profile of its own`);
+      usedBy.set(profile.id, f.id);
+      if (f.dependsOn.length !== 1 || f.dependsOn[0] !== profile.id) {
+        const on = f.dependsOn.length === 0 ? "nothing" : f.dependsOn.length === 1 ? shown(f.dependsOn[0]) : `${f.dependsOn.slice(0, -1).map(shown).join(", ")} and ${shown(f.dependsOn.at(-1))}`;
+        throw new Error(`${at} extrudes profile ${profile.id} but depends on ${on}, not exactly on that profile`);
+      }
+    }
+  }
 }
 
 export function readDesignDocument(data: unknown): DesignDocument {
@@ -1816,6 +1892,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
   for (const f of d.timeline.features) if (ownShape(f) || isOperationExtrude(f)) shapeWith(f, (id) => profiles.get(id));
+  checkPresets(d.timeline.features, profiles);
   // A Move's numbers and bodies (step 35e2).
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
   // A Combine's bodies and operation (step 35f1).
