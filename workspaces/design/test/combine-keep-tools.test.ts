@@ -6,7 +6,7 @@ import { insertCombine } from "../src/combine.ts";
 import { bodyItem, insertPreset, isPiece, numberPieces, partDocument, type DesignDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { deleteItem, suppressItem, moveMarker } from "../src/timeline-edits.ts";
-import { designBodies } from "../src/browser.ts";
+import { designBodies, failedIds } from "../src/browser.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 
 const kernel = nodeKernel();
@@ -32,8 +32,7 @@ async function agree(doc0: DesignDocument, label: string) {
   const build = await rebuildTimeline(doc0, cache, kernel);
   const doc = numberPieces(doc0, Object.keys(build.bodies));
   const build2 = await rebuildTimeline(doc, cache, kernel);
-  const absent = (doc.bodies ?? []).flatMap((b) => (isPiece(b.id) && build2.results[bodyItem(b.id)!]?.status === "built" && !(b.id in build2.bodies) ? [b.id] : []));
-  const failed = new Set([...Object.keys(build2.results).filter((id) => build2.results[id].status === "failed"), ...absent]);
+  const failed = failedIds(doc, build2.results, new Set(Object.keys(build2.bodies)));
   const browser = designBodies(doc, failed).map((b) => b.body).sort();
   const held = Object.keys(build2.bodies).sort();
   await cache.close();
