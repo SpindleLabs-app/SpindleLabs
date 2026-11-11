@@ -8,6 +8,8 @@
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { type AccountVersions, withIcon } from "@fission/ui";
 import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
+import { pageShareSwitch } from "./share-switch.ts";
+import { type ShareHost, startShares } from "./share.ts";
 import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
 import "./styles/account.css";
 
@@ -55,9 +57,11 @@ export interface AccountHooks {
   versionsOf(localId: string): Promise<AccountVersions | null>;
   /** The file text of the account's version of `localId` saved `at`; throws the words to say when it can't. */
   versionText(localId: string, at: Date): Promise<string>;
+  /** File > Share… (only with the ?share switch on): the sharing dialog, or Sign in when signed out. */
+  share(): void;
 }
 
-export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost): Promise<AccountHooks | undefined> {
+export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost, shareHost?: ShareHost): Promise<AccountHooks | undefined> {
   const redirectTo = location.origin + location.pathname;
   const checked = checkConfig({ ...service, redirectTo });
   if (!checked.ok) return; // a build with broken settings simply has no sign-in
@@ -73,6 +77,9 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const designs = host ? startDesigns(client, host, store) : null;
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
   const ui = accountUi(client, data, store, designs, settings);
+  // Sharing links (community C2): only with ?share in the address, until the legal check.
+  const switched = pageShareSwitch();
+  const shares = shareHost && switched.on ? startShares(client, shareHost, (w) => ui.open(w)) : null;
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
@@ -104,6 +111,8 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   else void designs?.sendNow();
   // Settings that follow you: the account's are brought here and this browser's sent, signed in now or from before.
   void settings?.now();
+  // A sharing link in the address opens as a frozen copy, signed in or not.
+  if (shares && switched.id) void shares.openLink(switched.id);
   // Another tab signing in or out shows here too.
   addEventListener("storage", (e) => {
     if (e.key === SESSION_KEY || e.key === null) ui.render();
@@ -114,6 +123,7 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
       if (client.state().kind === "signed-in" && designs) void designs.show();
       else ui.open("Sign in to keep your designs in your account and open them on any device.");
     },
+    share: () => shares?.show(),
     versionsOf: async (localId) => (designs ? designs.versionsOf(localId) : null),
     versionText: async (localId, at) => {
       if (!designs) throw new Error("This build keeps no versions in an account.");
