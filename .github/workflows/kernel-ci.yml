@@ -212,7 +212,7 @@ jobs:
   checks-report:
     needs: [checks-plan, checks]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: kernel
     timeout-minutes: 10
     steps:
@@ -352,7 +352,7 @@ jobs:
   mutants:
     needs: [mutants-plan, mutants-shard]
     if: always() && inputs.base != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: kernel
     timeout-minutes: 10
     steps:
