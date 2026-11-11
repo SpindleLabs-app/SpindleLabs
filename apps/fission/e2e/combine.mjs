@@ -247,6 +247,44 @@ try {
     });
   }
 
+  // #504: on a phone the sheet shuts by a tap on the view, a drag or a finger orbiting, and then nothing said Combine was open.
+  // The bar over the view (phone-float.ts) now holds Finish Combine and Cancel, whatever the sheet does.
+  for (const finish of [true, false]) {
+    await check(`375 px, taps: with the Combine sheet shut the bar over the view has Finish Combine and Cancel, and ${finish ? "Finish records the Combine" : "Cancel records nothing"}`, async () => {
+      const page = await fresh(375, 667, true, "&combine");
+      try {
+        await press(page, '[data-view="top"]', true);
+        await settle(page);
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+        const bar = () => page.evaluate(() => {
+          const b = document.getElementById("phone-float");
+          return b && !b.hidden ? { kind: b.dataset.kind, finish: document.getElementById("float-finish")?.textContent, off: document.getElementById("float-finish")?.disabled, cancel: !!document.getElementById("float-cancel") } : null;
+        });
+        await at(page, TOP1, true);
+        await at(page, TOP2, true);
+        await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+        await page.waitForTimeout(300);
+        // The sheet opened by itself on the operation and OK; a tap on the view puts it away (a tap on empty space).
+        await closePanels(page, true);
+        assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet is shut");
+        assert.deepEqual(await bar(), { kind: "combine", finish: "Finish Combine", off: false, cancel: true }, "the bar says Combine is open and what ends it");
+        // It never covers most of the view: one row along the top.
+        const [barBox, view] = await Promise.all([page.locator("#phone-float").boundingBox(), page.locator("#viewport").boundingBox()]);
+        assert.ok(barBox.height / view.height < 0.2, `the bar covers ${((barBox.height / view.height) * 100).toFixed(0)}% of the view`);
+        if (shots) await page.screenshot({ path: `${shots}/combine-375-bar.png` });
+        await page.tap(finish ? "#float-finish" : "#float-cancel");
+        await closed(page);
+        await rebuilt(page);
+        assert.equal(await bar(), null, "the bar goes with the tool");
+        await until(page, (n) => document.querySelectorAll("#timeline li[data-item]").length === n, finish ? 6 : 5, finish ? "Combine 1 in the timeline" : "no Combine recorded");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
   await check("1280 px: Combine 1 edited to Intersect, Escape leaves without a change, an Intersect of bodies apart is refused, and the flag stays for the tab", async () => {
     const page = await fresh(1280, 800, false, "&combine");
     try {
