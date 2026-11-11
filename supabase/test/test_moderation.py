@@ -1,4 +1,4 @@
-"""Moderation (supabase/migrations/20261111140000_moderation.sql), checked on a real PostgreSQL.
+"""Moderation (supabase/migrations/20261111160000_moderation.sql), checked on a real PostgreSQL.
 
 Same throwaway cluster and roles as test_database.py. These check that only the server can moderate, that the review
 list counts open reports correctly, that each decision does exactly what it says and is kept in the record, that a
