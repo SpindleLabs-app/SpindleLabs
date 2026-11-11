@@ -277,6 +277,8 @@ The outer project's `units.length` (section 10.1) is stored and checked but does
 | `CC0-1.0` | Creative Commons Zero: no rights reserved. |
 | `none` | All rights reserved. |
 
+A writer MUST write `none` for a design that has never been shared; the author picks a licence when they share it.
+
 The values are SPDX licence identifiers, plus `none`. Whether one licence may be used for a remix of another is guidance for programs and people (for example, a remix of a ShareAlike design keeps ShareAlike). The file only records the choice; it does not enforce it.
 
 ### 8.3 Author
@@ -1011,7 +1013,7 @@ Design data (`workspaces.design.version`). From version 8 on, most versions add 
 
 ## 22. Open questions for Ben
 
-1. **Default licence.** `document.licence` is required. Which value should the app write for a design that has never been shared: `none` (all rights reserved, until the author chooses) or `CC-BY-4.0` (the library's default)?
+1. **Default licence (decided, Ben 2026-11-11).** A design that has never been shared is written with `none` (all rights reserved). The author picks a licence when they share it. This is a placeholder until the legal check before launch.
 2. **The whole view part is personal.** A shared copy then loses its camera and colours too. Should only some view fields be personal (device names) so a shared copy keeps its look?
 3. **Personal data inside the history.** Nothing in the history part is personal today. If something ever is (for example a printer's name in a fit), should it be moved to a `spindlelabs.local.` extension before it ships, so the share export never has to change the history?
 4. **Which Design version to write.** Versions 8 to 15, 17 and 18 only mark that new values may appear. Should a writer write the lowest version its data needs, so older programs open more files, or always the newest, as the app does now?
