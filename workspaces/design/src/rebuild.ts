@@ -248,6 +248,8 @@ export class BodyCache {
   private moves = new Map<string, { from: BodyHandle; to: BodyHandle }>();
   /** Bodies asked of the kernel and not answered yet: the same spec asked again waits for the same answer, so asking ahead never builds twice. */
   private building = new Map<string, Promise<BodyHandle>>();
+  /** Booleans and moves asked of the kernel and not answered yet (`once`), by their keys. */
+  private asking = new Map<string, Promise<unknown>>();
   /** Set by `close`: nothing more is built, and a body answered after it is freed at once, not kept. */
   private closed = false;
   /** Uses running now (`using`): while any is, `keepOnly` only says what to keep, and the last to end frees the rest. */
@@ -259,6 +261,39 @@ export class BodyCache {
   private kernel: KernelCalls;
   constructor(kernel: KernelCalls) {
     this.kernel = kernel;
+  }
+
+  /**
+   * Keeps `handle` at `at`. A body already kept there that is another one
+   * (an answer asked again because one of its pieces was freed) moves to a
+   * key of its own, so `freeUnwanted` still frees it: a body leaves the map
+   * only by being freed.
+   */
+  private keep(at: string, handle: BodyHandle): void {
+    const old = this.bodies.get(at);
+    if (old !== undefined && old.handle !== handle) {
+      const moved = `${at}~${old.handle}`;
+      this.bodies.set(moved, old);
+      this.keys.set(old.handle, moved);
+    }
+    this.bodies.set(at, { handle });
+    this.keys.set(handle, at);
+  }
+
+  /**
+   * `ask()` once for `key` while it is on its way: the same key asked again
+   * meanwhile waits for the same answer (issue #487: two settles asking one
+   * Combine's boolean at once each got their own, and the first was never
+   * freed).
+   */
+  private once<T>(key: string, ask: () => Promise<T>): Promise<T> {
+    const on = this.asking.get(key);
+    if (on !== undefined) return on as Promise<T>;
+    const asked: Promise<T> = ask().finally(() => {
+      if (this.asking.get(key) === asked) this.asking.delete(key);
+    });
+    this.asking.set(key, asked);
+    return asked;
   }
 
   /**
@@ -280,8 +315,7 @@ export class BodyCache {
         void this.kernel.call("body_free", handle).catch(() => {});
         throw new Error(CLOSED);
       }
-      this.bodies.set(at, { handle });
-      this.keys.set(handle, at);
+      this.keep(at, handle);
       return handle;
     });
     this.building.set(at, build);
@@ -306,18 +340,16 @@ export class BodyCache {
     const key = JSON.stringify(copy === 0 ? ["boolean", target, tools, op] : ["boolean", target, tools, op, copy]);
     const hit = this.booleans.get(key);
     if (hit && hit.bodies.every((h) => this.keys.has(h))) return hit;
-    const result = await this.kernel.call("body_boolean", target, [...tools], op);
-    if (this.closed) {
-      for (const h of result.bodies) void this.kernel.call("body_free", h).catch(() => {});
-      throw new Error(CLOSED);
-    }
-    result.bodies.forEach((handle, i) => {
-      const k = `${key}#${i}`;
-      this.bodies.set(k, { handle });
-      this.keys.set(handle, k);
+    return this.once(key, async () => {
+      const result = await this.kernel.call("body_boolean", target, [...tools], op);
+      if (this.closed) {
+        for (const h of result.bodies) void this.kernel.call("body_free", h).catch(() => {});
+        throw new Error(CLOSED);
+      }
+      result.bodies.forEach((handle, i) => this.keep(`${key}#${i}`, handle));
+      this.booleans.set(key, result);
+      return result;
     });
-    this.booleans.set(key, result);
-    return result;
   }
 
   /**
@@ -332,15 +364,16 @@ export class BodyCache {
     const key = JSON.stringify(["moved", handle, motions]);
     const hit = this.moves.get(key);
     if (hit && this.keys.has(hit.from) && this.keys.has(hit.to)) return hit.to;
-    const to = await this.kernel.call("body_move", handle, [...motions]);
-    if (this.closed) {
-      void this.kernel.call("body_free", to).catch(() => {});
-      throw new Error(CLOSED);
-    }
-    this.bodies.set(key, { handle: to });
-    this.keys.set(to, key);
-    this.moves.set(key, { from: handle, to });
-    return to;
+    return this.once(key, async () => {
+      const to = await this.kernel.call("body_move", handle, [...motions]);
+      if (this.closed) {
+        void this.kernel.call("body_free", to).catch(() => {});
+        throw new Error(CLOSED);
+      }
+      this.keep(key, to);
+      this.moves.set(key, { from: handle, to });
+      return to;
+    });
   }
 
   /** A kept body's view, asked of the kernel once it answers (a failed ask is forgotten, so the next look asks again: T6b). */
@@ -458,6 +491,7 @@ export class BodyCache {
     this.bodies.clear();
     this.keys.clear();
     this.building.clear();
+    this.asking.clear();
     this.booleans.clear();
     this.moves.clear();
     this.unfreed = [];
