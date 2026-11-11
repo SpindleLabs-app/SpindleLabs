@@ -9,9 +9,11 @@ check TypeScript mutants: survivors no test kills in packages/ai/src/http.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/local.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/ollama.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/prompt.ts
+check TypeScript mutants: survivors no test kills in packages/core/src/model/files.ts
 check TypeScript mutants: survivors no test kills in packages/core/src/model/history.ts
 check TypeScript mutants: survivors no test kills in packages/core/src/model/shortcuts.ts
 check TypeScript mutants: survivors no test kills in packages/storage/src/autosave.ts
+check TypeScript mutants: survivors no test kills in packages/storage/src/store.ts
 check TypeScript mutants: survivors no test kills in packages/storage/src/unsaved.ts
 check TypeScript mutants: survivors no test kills in packages/testing/src/boolean-naming-model.ts
 check TypeScript mutants: survivors no test kills in packages/viewport/src/framing.ts
@@ -24,6 +26,8 @@ check soak: cycle #: phone: Body # (# × # × #) shows a volume of #,# mm³, the
 check soak: listeners keeps growing: # by cycle #, # at cycle #, # at cycle #
 check soak: nodes keeps growing: # by cycle #, # at cycle #, # at cycle #
 check soak: the soak's cycle stopped (seed #): page.waitForFunction: Timeout #ms exceeded.
+check the journeys job failed with nothing more specific reported
+check the monkey job failed with nothing more specific reported
 check the ts-mutants job failed with nothing more specific reported
 monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body# Body #","body# Body #","body# Body #"], the file builds ["body# Body #","bod
 monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body# Body #","body# Body #"], the file builds ["body# Body #","body# Body #","bod

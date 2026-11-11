@@ -1,6 +1,2 @@
-tested commit be12451 on main, 2026-11-11 14:29 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42986701438)
-Monkey, seeds 359813220-359813223: 4 session(s) of 2000 actions in Chromium; 8 Combines made of 56 tried; 2 FAILED
-seed 359813220: pass (2000 actions)
-seed 359813221: pass (2000 actions)
-seed 359813222: FAIL: combine reachable: Combine's operation is out of reach with its bodies picked
-seed 359813223: FAIL: combine reachable: Combine's operation is out of reach with its bodies picked
+tested commit 880d9fb on main, 2026-11-11 18:11 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43043945540)
+no report: the monkey job stopped before the sessions
