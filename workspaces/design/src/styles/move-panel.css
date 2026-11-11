@@ -48,3 +48,9 @@
    changing value in the properties glow a lil bit to avoid confusion"). */
 .move-panel .move-panel-box input { transition: box-shadow 0.3s, border-color 0.3s, background-color 0.3s; }
 .move-panel .move-panel-box input.move-panel-dragged { border-color: var(--look-accent, var(--accent)); background-color: color-mix(in srgb, var(--look-accent, var(--accent)) 12%, var(--look-field, var(--page))); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, var(--accent)) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, var(--accent)) 45%, transparent); }
+/* Scale's slider (scale-slider.ts) beside the factor's box, over the other two columns. theme.css styles text boxes in
+   labels; the slider is not in one, and is given no box look of its own (the explode bar's lesson, issue #470). */
+.move-panel .move-panel-slider { grid-column: span 2; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; accent-color: var(--look-accent, var(--accent)); }
+@media (max-width: 700px) {
+  .move-panel .move-panel-slider { min-height: 44px; }
+}

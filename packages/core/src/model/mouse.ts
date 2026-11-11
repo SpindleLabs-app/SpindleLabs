@@ -42,7 +42,7 @@ export const MOUSE_PRESETS: readonly MousePresetInfo[] = [
   {
     id: "fusion",
     label: "Fusion-style",
-    summary: "The left button only picks; turn the view with Shift + middle drag, the view cube or the bar's Orbit.",
+    summary: "The left button only picks; turn the view with Shift + middle drag, the orientation cube or the bar's Orbit.",
     leftDrag: "select",
     rows: [
       { gesture: "Left click", does: "Picks what is under the pointer" },

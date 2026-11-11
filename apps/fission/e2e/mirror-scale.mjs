@@ -7,7 +7,11 @@
 // Undo takes it back, Redo puts it back. On a fresh box, Scale: the panel
 // opens as Scale with its factor box (and no distances), 2 about the origin
 // typed and OK makes "Scale 1", and the STL is x 0..80, y 0..60, z 0..40
-// (the box twice its size, by hand). At 1280 px with
+// (the box twice its size, by hand). Scale's slider (Ben 11-09): dragged
+// (arrow keys with the mouse, a finger at its right end) it sets the factor
+// box and the view shows the bigger box at once, before OK (pixel probe off
+// the old box's corner); back in the middle it is 1 and drawn as it was;
+// OK on 2 from the slider gives the same STL as 2 typed. At 1280 px with
 // a mouse and at 375 px with taps. Screenshots go to E2E_SHOTS when set.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -15,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { HOME, screenPoint } from "./sketch-screen.mjs";
 import { preview } from "vite";
-import { closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4627, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4627/";
@@ -76,6 +80,28 @@ async function modifyItems(page, tap) {
 async function pickBox(page, tap) {
   await pressAt(page, [20, 15, 20], tap);
   await until(page, () => document.body.dataset.selection === "face:feature-1/top", null, "the box's top picked").catch(async (e) => assert.fail(`${e.message} (picked: ${await page.evaluate(() => document.body.dataset.selection)})`));
+}
+
+/** The 3D view's pixels (every 4th in each direction, RGB), after a frame or two to paint. */
+async function viewPixels(page) {
+  await page.waitForTimeout(250);
+  return page.evaluate(() => {
+    const src = document.querySelector("#viewport canvas");
+    const c = document.createElement("canvas");
+    [c.width, c.height] = [src.width, src.height];
+    const ctx = c.getContext("2d");
+    ctx.drawImage(src, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const out = [];
+    for (let y = 0; y < c.height; y += 4) for (let x = 0; x < c.width; x += 4) out.push(...d.slice((y * c.width + x) * 4, (y * c.width + x) * 4 + 3));
+    return out;
+  });
+}
+/** The share of the view's pixels that differ by more than 12 in a channel. */
+function changed(a, b) {
+  let n = 0;
+  for (let i = 0; i < a.length; i += 3) if ([0, 1, 2].some((k) => Math.abs(a[i + k] - b[i + k]) > 12)) n++;
+  return n / (a.length / 3);
 }
 
 const items = (page) => page.$$eval("#timeline [data-item]", (els) => els.map((e) => e.dataset.item));
@@ -165,6 +191,61 @@ try {
         // The box twice its size about the origin: x 0..80, y 0..60, z 0..40.
         near(await stlBounds(page, tap), [[0, 80], [0, 60], [0, 40]], "the STL after Scale");
         if (shots) await page.screenshot({ path: `${shots}/scale-done-${width}.png` });
+      } finally {
+        await page.context().close();
+      }
+    });
+    await check(`${at}: Scale's slider sets the factor and the view shows it at once, before OK; back to the middle is 1`, async () => {
+      const page = await fresh(width, height, tap);
+      try {
+        await pickBox(page, tap);
+        await modifyItems(page, tap);
+        await press(page, "#modify-menu-scale", tap);
+        await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the panel open as Scale");
+        if (tap) await closePanels(page, tap); // the sheet put away, the tool still open
+        // Before any drag (1×): the view as it is now, the box as it was.
+        const before = await viewPixels(page);
+        if (tap) {
+          // A finger at the slider's right end: well over 5×.
+          await openPanel(page, "properties", tap);
+          const b = await page.locator("#scale-slider").boundingBox();
+          await page.tap("#scale-slider", { position: { x: b.width - 4, y: b.height / 2 } });
+          await until(page, () => Number(document.getElementById("move-scale")?.value) > 5, null, "the factor set by the finger");
+          if (shots) await page.screenshot({ path: `${shots}/scale-slider-sheet-${width}.png` });
+          await closePanels(page, tap);
+        } else {
+          // 30 steps right is 10^0.3, two decimals 2 (scale-slider.ts, by hand).
+          await page.focus("#scale-slider");
+          for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowRight");
+          assert.equal(await page.inputValue("#move-scale"), "2");
+        }
+        if (shots) await page.screenshot({ path: `${shots}/scale-slider-${width}.png` });
+        // The box twice (or, by the finger, over five times) its size about its middle covers far more of the view: at 2× its
+        // drawn outline is four times the area, at 1280 × 800 about a sixth of the view before, so well over 10% of the pixels change.
+        const grown = changed(await viewPixels(page), before);
+        assert.ok(grown > 0.1, `previewed before OK: ${(grown * 100).toFixed(1)}% of the view changed`);
+        assert.equal(await items(page).then((l) => l.length), 1, "nothing recorded yet");
+        // Back to the middle: 1, drawn as it was.
+        await page.evaluate(() => {
+          const s = document.getElementById("scale-slider");
+          s.value = "0";
+          s.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        assert.equal(await page.inputValue("#move-scale"), "1");
+        if (tap) await closePanels(page, tap);
+        const back = changed(await viewPixels(page), before);
+        assert.ok(back < 0.005, `back to 1×: drawn as it was (${(back * 100).toFixed(2)}% of the view changed)`);
+        if (!tap) {
+          // 2 from the slider about the origin, OK: the same STL as 2 typed (x 0..80, y 0..60, z 0..40 by hand).
+          await page.evaluate(() => (document.getElementById("move-pivot-fold").open = true));
+          for (const k of ["X", "Y", "Z"]) await page.fill(`#move-pivot${k}`, "0");
+          await page.focus("#scale-slider");
+          for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowRight");
+          await press(page, "#move-ok", tap);
+          await until(page, () => document.getElementById("move-panel")?.hidden === true, null, "the panel closed");
+          await rebuilt(page);
+          near(await stlBounds(page, tap), [[0, 80], [0, 60], [0, 40]], "the STL after Scale by the slider");
+        }
       } finally {
         await page.context().close();
       }

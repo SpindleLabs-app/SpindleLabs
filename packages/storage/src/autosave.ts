@@ -10,8 +10,11 @@
 //   - Given the stored project's save time (`storedAt`), each save expects
 //     the store still to hold that or this autosave's own last save; when
 //     another tab saved since, the save is refused and reported ("This
-//     project was changed in another tab…"), and nothing of this tab's is
-//     journalled to be put back over that tab's work (app sweep, finding 2).
+//     project was changed in another tab…", or "…deleted in another tab…"),
+//     and nothing of this tab's is put back over that tab's work (app sweep,
+//     finding 2): `leaving()` journals it naming the stale state it was made
+//     from, so the next visit keeps it apart as "(kept copy)", and `finish()`
+//     stores it apart at once (save/load hunt C1, C2).
 //   - When the page may be going (hidden, reloaded, closed), `leaving()`
 //     writes the latest state to the unsaved-changes journal at once
 //     (unsaved.ts; localStorage, which is written before the call returns,
@@ -92,7 +95,11 @@ export interface Autosave {
    * returning, and starts the store's save now. True when every change is
    * kept (in the store or the journal); false when one would be lost (the
    * journal can't be written: storage off or full), so the page should ask
-   * before going.
+   * before going. When this tab's saves are refused (another tab saved or
+   * deleted the project since), the entry names the stale state it was made
+   * from, so the next visit keeps it apart as "(kept copy)" (unsaved.ts),
+   * never over the other tab's work; while the last visit's kept changes
+   * are here, it goes aside (`asideKey`), never over them (hunt C1).
    */
   leaving(): boolean;
   /** Stops for good: a waiting save is dropped, one in flight finishes. */
@@ -118,6 +125,8 @@ export interface Autosave {
    * landed (nightly issue #331: Save, New, then Open of that same file said another tab had changed it).
    */
   settled(): Promise<void>;
+  /** True once a save was refused because another tab stored the project since: this tab's state is no longer the project's (step 89 keeps no undo steps for it). */
+  refused(): boolean;
 }
 
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
@@ -157,7 +166,7 @@ export function startAutosave(
   let stopped = false;
   /** The save time of the stored project as this autosave last read or wrote it: a save expects the store to hold it still. */
   let base: Date | undefined = storedAt ?? undefined;
-  /** Another tab stored the project since: this one's changes can't be stored, nor kept to be put back over that. */
+  /** Another tab stored (or deleted) the project since: this one's changes can't be stored under it, only kept apart. */
   let conflicted = false;
   /** When the text last written was read (null: not written by this autosave), for the journal's times. */
   let writtenAt: Date | null = null;
@@ -365,18 +374,39 @@ export function startAutosave(
     return { name, kept: store.save(newId(), { ...project, name }, at, undefined, true).then(() => true, () => false) };
   };
 
+  /** Removes this autosave's own journal entries for the project (its key, when it holds this writer's, and aside). */
+  const dropOwnEntries = () => {
+    try {
+      const entry = journal?.getItem(key);
+      if (entry != null && ownName !== "" && readJournalEntry(entry).writer === ownName) journal?.removeItem(key);
+      journal?.removeItem(asideKey(id, ownName));
+      journalVersion = null;
+    } catch {
+      // left in place: the next visit keeps it apart again, a second copy rather than a loss
+    }
+  };
+
   return {
     changed,
     leaving() {
       if (stopped || storedVersion === version) return true;
-      // Kept in the journal, it would be put back over the other tab's work on the next visit: the page asks instead.
-      if (conflicted || keptFromLastVisit()) return false;
+      // Refused as another tab's change, or held back by the last visit's kept changes: journalled all the same (hunt
+      // C1: a reload, which the refusal's words ask for, lost it), naming the stale state it was made from, so the next
+      // visit keeps it apart as "(kept copy)" and never puts it over the other tab's work. Never marked kept (that is
+      // put back whatever the store holds), and never over the last visit's kept entry: aside, under this writer.
+      const refused = conflicted || keptFromLastVisit();
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
-          // Another tab's entry there, not stored yet, is moved aside first, never written over (clumsy hunt 2026-11-04).
-          putAsideOthers(journal, id, writer);
-          journal.setItem(key, journalEntry(projectToJson(project()), stamp(), owner, base, writer));
+          // Refused with no stored state known to name, an entry would be put back over anything: the page asks instead.
+          if (refused && base === undefined) throw new Error("no stale state to name");
+          const text = projectToJson(project());
+          if (keptFromLastVisit()) journal.setItem(asideKey(id, ownName), journalEntry(text, stamp(), false, base, writer));
+          else {
+            // Another tab's entry there, not stored yet, is moved aside first, never written over (clumsy hunt 2026-11-04).
+            putAsideOthers(journal, id, writer);
+            journal.setItem(key, journalEntry(text, stamp(), owner && !refused, base, writer));
+          }
           journalVersion = version;
           kept = true;
         } catch {
@@ -405,8 +435,13 @@ export function startAutosave(
       }
       stop();
       if (text === null) return null;
-      // After another tab's save, nothing of this one's can be stored under its id: kept apart instead.
-      if (conflicted || keptFromLastVisit()) return keepApart(text, at).name;
+      // After another tab's save, nothing of this one's can be stored under its id: kept apart instead. This tab's
+      // own entry, journalled by `leaving()` (C1), goes once the copy is stored, so the next visit makes no second one.
+      if (conflicted || keptFromLastVisit()) {
+        const apart = keepApart(text, at);
+        if (journalVersion !== null) flight = flight.then(async () => ((await apart.kept) ? dropOwnEntries() : undefined));
+        return apart.name;
+      }
       // The store holds it already, unless a save of another state is running: that one lands after, so this
       // state is stored again behind it (app sweep 2026-10-28, finding 14).
       if (text === written && !inFlight) return (stored(v, writtenAt), null);
@@ -445,6 +480,7 @@ export function startAutosave(
       });
       return null;
     },
+    refused: () => conflicted,
     settled: () => flight.then(
       () => {},
       () => {},

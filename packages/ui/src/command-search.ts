@@ -67,6 +67,7 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
     const list = doc.createElement("ul");
     list.id = "command-search-list";
     list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Commands");
     const empty = doc.createElement("p");
     empty.className = "command-search-none";
     empty.textContent = "No command by that name.";
@@ -133,6 +134,8 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
       } else if (e.key === "Escape") {
         e.preventDefault();
         close();
+      } else if (e.key === "Tab") {
+        e.preventDefault(); // the box is modal (aria-modal): Tab never leaves it for the page behind; Escape or a press outside closes it
       }
       // No key in the box reaches the app's shortcuts (S, M, ? typed as words).
       e.stopPropagation();

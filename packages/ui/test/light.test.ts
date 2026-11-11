@@ -94,3 +94,46 @@ test("the check fails on a washed-out word: the dark theme's accent text on a li
   const washed = contrast(solid(dark, "accent-text", raised(light)), raised(light));
   assert.ok(washed < 3, `the dark accent text on the light card is ${washed.toFixed(2)}`);
 });
+
+/**
+ * The tinted rows words sit on (accessibility pass 2026-11-11): a picked command-search row (fill-1e3350), an open toolbar
+ * group (fill-263142), a status chip (fill-1b2332) and the toolbar itself (fill-121824), each over the page. The dim words
+ * (keys, reasons, group names, "now") must read at 4.5 : 1 on every one of them in both themes.
+ */
+const TINTS = ["fill-1e3350", "fill-263142", "fill-1b2332", "fill-121824"];
+
+test("hand-worked: the light dim words on the toolbar's tint", () => {
+  // --text-dim #4a4f57 = (74, 79, 87): linear (0.0685, 0.0782, 0.0953), L = 0.2126 × 0.0685 + 0.7152 × 0.0782 + 0.0722 × 0.0953 = 0.0773.
+  // --fill-121824 light #dde2eb = (221, 226, 235): linear (0.7230, 0.7605, 0.8308), L = 0.1537 + 0.5439 + 0.0600 = 0.7576.
+  // (0.7576 + 0.05) / (0.0773 + 0.05) = 0.8076 / 0.1273 = 6.34 : 1.
+  const page = colour(light.get("page")!);
+  const tint = solid(light, "fill-121824", page);
+  assert.ok(Math.abs(contrast(solid(light, "text-dim", tint), tint) - 6.34) < 0.02, `${contrast(solid(light, "text-dim", tint), tint)}`);
+});
+
+test("dim words meet 4.5 : 1 on every tinted row, both themes; the accent words on the picked (active) fill too", () => {
+  const short: string[] = [];
+  for (const [name, theme] of [["dark", dark], ["light", light]] as const) {
+    const page = colour(theme.get("page")!);
+    for (const t of TINTS) {
+      const bg = solid(theme, t, page);
+      const r = contrast(solid(theme, "text-dim", bg), bg);
+      if (r < 4.5) short.push(`${name} text-dim on ${t}: ${r.toFixed(2)}`);
+    }
+    // The picked choice in Settings and the current History row: the accent words on the active fill over the page and the card.
+    for (const under of ["page", "surface"]) {
+      const base = under === "page" ? page : solid(theme, "surface", page);
+      const bg = solid(theme, "shade-74-168-255-016", base);
+      const r = contrast(solid(theme, "accent-text", bg), bg);
+      if (r < 4.5) short.push(`${name} accent-text on the active fill over ${under}: ${r.toFixed(2)}`);
+    }
+  }
+  assert.deepEqual(short, []);
+});
+
+test("the tint check fails on the old dim words: light #656a73 on the picked command row is 3.1 : 1", () => {
+  const page = colour(light.get("page")!);
+  const bg = solid(light, "fill-1e3350", page);
+  const old = contrast(colour("#656a73"), bg);
+  assert.ok(old < 4.5 && Math.abs(old - 3.1) < 0.05, `${old}`);
+});
