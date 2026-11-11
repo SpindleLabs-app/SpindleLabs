@@ -75,10 +75,33 @@ class DisplayNamesDatabase(unittest.TestCase):
         self.assertEqual((ok, out), (True, "7 days"))
 
     def test_the_comparison_key_worked_by_hand(self):
-        # Lower case, letters and digits only: "Ben_P.3D" -> "benp3d"; "Zoë-Ann" keeps its ë -> "zoëann".
-        for name, key in [("Ben_P.3D", "benp3d"), ("ben p 3d", "benp3d"), ("Zoë-Ann", "zoëann")]:
+        # Accents off, lower case, letters and digits only, then 0->o, 1 and i->l, 3->e, 4->a, 5->s:
+        # "Ben_P.3D" -> "benp3d" -> "benped"; "Zoë-Ann" -> "zoeann"; "Spind1eLabs" -> "splndlelabs" (as "SpindleLabs" itself).
+        for name, key in [("Ben_P.3D", "benped"), ("ben p 3d", "benped"), ("Zoë-Ann", "zoeann"), ("Spind1eLabs", "splndlelabs"),
+                          ("SpindIeLabs", "splndlelabs")]:
             ok, out = self.as_role("anon", f"select display_name_key('{name}');")
             self.assertEqual((ok, out), (True, key), name)
+
+    def test_look_alike_letters_cannot_copy_a_name_or_pass_as_spindlelabs(self):
+        # Security review 2026-11-11: each of these got past the first version.
+        self.assertEqual(self.name(ADA, "Ben"), "saved")
+        self.assertEqual(self.name(BO, "B\u0435n"), "bad")  # Cyrillic e among Latin
+        for bad in ["\u0405pindleLabs", "\uff33pindle", "\u0661\u0662\u0663"]:  # Cyrillic S, full-width S, Arabic digits
+            self.assertEqual(self.name(BO, bad), "bad", bad)
+        for blocked in ["Spind1eLabs", "SpindIeLabs", "Adm1n", "TheSpindleLabsTeam"]:
+            self.assertEqual(self.name(BO, blocked), "blocked", blocked)
+
+    def test_an_accented_look_alike_is_taken(self):
+        self.assertEqual(self.name(ADA, "Zoe"), "saved")
+        self.assertEqual(self.name(BO, "Zoë"), "taken")
+        self.assertEqual(self.name(BO, "Zoë Two"), "saved")
+
+    def test_names_in_one_other_writing_system_are_welcome(self):
+        # A whole name in Cyrillic, Greek, Japanese or Arabic letters is fine; only mixing two is refused.
+        for i, good in enumerate(["\u0410\u043d\u043d\u0430", "\u0395\u03bb\u03ad\u03bd\u03b7", "\u3055\u304f\u3089\u82b1", "\u0633\u0627\u0631\u0629"]):
+            uid = [ADA, BO][i % 2]
+            self.owner("delete from public.display_names;")
+            self.assertEqual(self.name(uid, good), "saved", good)
 
     def test_names_that_differ_only_in_capitals_or_punctuation_are_taken(self):
         self.assertEqual(self.name(ADA, "Ben_P"), "saved")
