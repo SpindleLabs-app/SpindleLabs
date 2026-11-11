@@ -1,0 +1,40 @@
+{
+ "seed": "4619667309898518615",
+ "check": "the rebuild differs from the model",
+ "issue": "SpindleLabs-app/SpindleLabs#430",
+ "what": "Made by hand from what fuzzing seeds 4619667309898518615 and 4619667309898518617 found (8 Nov on, after PR #460): Design's starting 40 x 30 x 20 box joined with an 8 x 55 x 8 bar, the join duplicated, and a sketch drawn on the copy's face that came from the bar's top (item-4/top:item-2, z 8). Design held the whole name and found the face; the model kept only item-4/top, which names no face of the copy, and said the plane was lost. Fixed in the model (OnFace curve); hand test in test/timeline-combine.test.ts.",
+ "steps": [
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    8,
+    55,
+    8
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.1,
+   "tool": 0.9,
+   "operation": "join",
+   "keep": false
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.1
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.9,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     10,
+     10
+    ],
+    "radius": 2
+   }
+  }
+ ]
+}

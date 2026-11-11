@@ -1044,20 +1044,6 @@
   },
   {
     "file": "workspaces/design/src/document.ts",
-    "mutator": "MethodExpression",
-    "original": "cleaned.filter((n) => n !== \"\")",
-    "replacement": "cleaned",
-    "why": "withRuledNames (issue #220): an empty name's key in the used set changes nothing: every name tried against it has a \" (n)\" suffix, and empty names get theirs from freshName against kept, not used."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "n !== \"\"",
-    "replacement": "true",
-    "why": "withRuledNames (issue #220): the same as keeping the filter out: an empty key in the used set is never looked up (every name tried has a suffix)."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
     "mutator": "StringLiteral",
     "original": "\"\"",
     "replacement": "\"Stryker was here!\"",
@@ -1104,13 +1090,6 @@
     "original": "maker === null",
     "replacement": "false",
     "why": "isBodyOf (issue #220): with no maker, byId.get(null) is undefined and isPiece(id) is false (it asks bodyItem, which gave null), so the function still returns false."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15",
-    "replacement": "true",
-    "why": "readDesignDocument (issues #220, #246): unnumbered then also holds for data of a version other than 5 to 15 leaving the numbers out; versions 1 to 4 are unnumbered already (old or version 4), and any other is refused by the version check (d.version !== 15) before unnumbered is read."
   },
   {
     "file": "packages/storage/src/autosave.ts",
@@ -2816,9 +2795,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
-    "original": "d.version! > 15",
-    "replacement": "d.version! >= 15",
-    "why": "Reached only when d.version !== 15, so the two differ only at 15, which never gets here."
+    "original": "d.version! > DESIGN_VERSION",
+    "replacement": "d.version! >= DESIGN_VERSION",
+    "why": "readDesignDocument: reached only when d.version !== DESIGN_VERSION, so > and >= differ only at DESIGN_VERSION itself, which never gets here. Named by the constant, so a new data version leaves this explanation standing (issue #246)."
   },
   {
     "file": "workspaces/design/src/document.ts",

@@ -154,6 +154,7 @@ function ownClicks(sketch: Sketch, tool: SketchTool): SketchXY[] {
     const p = sketch.points.find((x) => x.id === tool.from);
     return p ? [[p.x, p.y]] : [];
   }
+  if ("clicks" in tool) return [...tool.clicks];
   const at = tool.kind === "rectangle" ? tool.corner : tool.kind === "circle" ? tool.centre : null;
   return at ? [at] : [];
 }

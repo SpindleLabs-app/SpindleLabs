@@ -26,4 +26,5 @@ export function localStore(readers: readonly DataReader[]): VersionedStore {
   return versionedStore(projectStore(kv, readers), kv, readers);
 }
 export { bringForward, forget, MAX_PROJECT_NAME, rename } from "./projects.ts";
+export { alignSteps, decodeSteps, encodeSteps, stepsStore, STEPS_CHAR_LIMIT, STEPS_FORMAT, STEPS_PROJECTS, type StepsStore } from "./undo-steps.ts";
 export { storageFull, versionedStore, VERSION_GAP_MS, VERSION_LIMIT, type VersionedStore } from "./versions.ts";

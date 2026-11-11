@@ -102,6 +102,11 @@ export type CapRole = "top" | "end";
 export interface OnFace {
   feature: string;
   role: CapRole;
+  /**
+   * SL #430: the face's curve when its name has one: a Duplicate's copy of a Combine's result names each face by its
+   * role and the feature (and curve) it came from (built-body.ts `copiedFaceName`), and the app's pick holds that name.
+   */
+  curve?: string;
   /** 35f1d2: the tag of the piece it was drawn on, when its face was split then (rule 3). */
   tag?: FaceName[];
   drawn: number;
@@ -430,6 +435,9 @@ export function edgeName(a: FaceName, b: FaceName, ordered: boolean): EdgeName {
 /** "item-3/side:curve-5>side:curve-6", "item-3/side:curve-5+start": an edge name as one string. */
 export const edgeKey = (n: EdgeName): string =>
   n.pair ? `edge:${[faceKey(n.faces[0]), faceKey(n.faces[1])].sort().join("+")}` : `${n.feature}/${facePart(n.faces[0])}${n.ordered ? ">" : "+"}${facePart(n.faces[1])}`;
+
+/** The name a face sketch holds its face by (26e; its curve, SL #430; its tag, 35f1d2). */
+export const onFaceName = (on: OnFace): FaceName => ({ feature: on.feature, role: on.role, ...(on.curve !== undefined && { curve: on.curve }), ...(on.tag && { tag: on.tag }) });
 
 /** The ids an item reads: an extrude its sketch, a sketch on a face that face's feature (26e). */
 export const dependsOn = (item: ModelItem): string[] =>
@@ -931,7 +939,7 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
   // 35f1d2: its face found by name on every body built so far (rule 3; one face before any Combine, on its feature's
   // own body), from the origin it was drawn with: the face plane's nearest point to the world's, over the origin.
   const bodies = bodiesNow(done);
-  const ref: FaceName = { feature: item.on.feature, role: item.on.role, ...(item.on.tag && { tag: item.on.tag }) };
+  const ref: FaceName = onFaceName(item.on);
   const found = findFace(bodies, ref, [0, 0, item.on.drawn], { firstPiece: faults.has("combine-first-piece") });
   if (found !== null && "body" in found) {
     const body = bodies[found.body];
@@ -1236,6 +1244,7 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
       const on: OnFace = {
         feature: op.face.feature,
         role: op.face.role,
+        ...(op.face.curve !== undefined && { curve: op.face.curve }),
         ...(op.face.tag && { tag: op.face.tag.map((n) => ({ ...n })) }),
         drawn: face.centroid[2],
         ...(motion && { motion: { a: motion.a, t: [...motion.t] as [number, number] } }),

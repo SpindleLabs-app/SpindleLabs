@@ -5,7 +5,7 @@
 import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, numberedWhenBuilt, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { bodyChoices, operationNote, tickedBodies, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
@@ -30,10 +30,10 @@ import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
-import { bodyRows, browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
-import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
+import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "@fission/print";
@@ -124,7 +124,16 @@ let foldKept: FoldState | null = null;
 /** How many times Design has framed the part, read by the e2e test (an undo must not add one). */
 let fits = 0;
 
-/** What Inspect ▾ does (U0f): show the body facts, and why there are none yet (null once a body is built). */
+/**
+ * The `detail` of the "properties-reveal" event Body facts sends: the shell (apps/fission main.ts) sets `phone` at phone
+ * width, where the panel is a sheet, and `opened` when it opened that sheet for it, so a second press can shut only that.
+ */
+export interface FactsReveal {
+  opened: boolean;
+  phone: boolean;
+}
+
+/** What Inspect ▾ does (U0f): show the body facts (pressed again, put them away), and why there are none yet (null once a body is built). */
 interface Inspecting {
   facts(): void;
   none(): string | null;
@@ -217,6 +226,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // The body facts (volume, area, faces), from the properties panel, folded since U0b.
   const facts = button("inspect-facts", "Body facts", "Body facts: the volume, area and faces of what is built, in the properties.", () => inspect.facts());
   facts.disabled = true; // until a body is built (workspace: after each build)
+  facts.setAttribute("aria-pressed", "false"); // lit while its press shows the numbers; pressed again puts them away
   // The print check (H1, Ben 2026-11-05): a switch, lit while on (print-check-view.ts).
   const printCheckTitle = "Print check: colours what would go wrong printing it as modelled on the P1S. Red needs supports, amber is too thin, violet is a bridge that may sag, and a red ring marks the weakest spot. Updates as you model.";
   const printCheck = button("inspect-print-check", "Print check", printCheckTitle, () => inspect.printCheck());
@@ -232,7 +242,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const inspectSections = (): MenuSection[] => [
     {
       items: [
-        { id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() },
+        { id: "inspect-menu-facts", label: facts.getAttribute("aria-pressed") === "true" ? "Body facts: on" : "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() },
         { id: "inspect-menu-print-check", label: printCheck.getAttribute("aria-pressed") === "true" ? "Print check: on" : "Print check", icon: "print-check", title: printCheckTitle, run: () => inspect.printCheck() },
         { id: "inspect-menu-measure", label: "Measure", icon: "measure", title: measureTitle, run: () => inspect.measure() },
         { id: "inspect-menu-explode", label: inspect.exploded() ? "Exploded view: off" : "Exploded view", icon: "explode", title: EXPLODE_TITLE, off: (inspect.exploded() ? null : inspect.noExplode()) ?? undefined, run: () => inspect.explode() },
@@ -526,17 +536,38 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   if (putAwayByRestore !== null && !restored) editingSketch = null; // that sketch was the old project's
   let keepCamera = ctx.history.restoring() || restored;
   putAwayByRestore = null;
+  /** Whether Body facts' press is what shows the numbers now, on a wide screen (the fold's reveal) or a phone (the sheet). */
+  let factsByFold = false;
+  let factsBySheet = false;
+  /** Whether a tool's box was in the panel when Body facts opened it: a change is the user moving on, so it goes out. */
+  let factsTool: boolean | null = null;
+  const factsOn = () => factsByFold || factsBySheet;
+  const drawFacts = () => factsButton.setAttribute("aria-pressed", String(factsOn()));
   const inspecting: Inspecting = {
-    // Opens the folded panel until the user moves on (U0b), at the numbers.
+    // Opens the folded panel until the user moves on (U0b), at the numbers; pressed again it puts away what it opened
+    // (button toggles, Ben 2026-11-11): the panel's reveal on a wide screen, the Properties sheet on a phone.
     facts() {
       if (inspecting.none()) return;
+      const foldedBefore = fold !== null && !panelShown(fold.state); // only a press that opens the panel can shut it again
+      if (factsByFold || factsBySheet) {
+        factsByFold = factsBySheet = false;
+        fold?.conceal();
+        ctx.properties?.dispatchEvent(new Event("properties-conceal", { bubbles: true })); // a phone shuts the sheet (main.ts)
+        return drawFacts();
+      }
       // A new Move with nothing moved yet (as an inserted preset starts, Ben 2026-11-04) is put away first: a phone's
       // sheet shows the Move alone (move-panel.css), so the numbers would stay out of sight behind it, and nothing is lost.
       // A phone's sheet that opened for the Move shuts as it goes (main.ts watches for that in a microtask), so the
       // numbers are shown in the microtask after it, opening the sheet again for them.
       const reveal = () => {
         fold?.reveal();
-        ctx.properties?.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a phone opens its Properties sheet (main.ts)
+        // A phone opens its Properties sheet (main.ts), saying so in `detail`; there the fold is not drawn, so only the sheet counts.
+        const asked: FactsReveal = { opened: false, phone: false };
+        ctx.properties?.dispatchEvent(new CustomEvent("properties-reveal", { bubbles: true, detail: asked }));
+        factsByFold = !asked.phone && foldedBefore && fold !== null && panelShown(fold.state);
+        factsTool = fold ? fold.state.tool : null;
+        factsBySheet = asked.opened;
+        drawFacts();
         ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
       };
       if (!moveUntouched()) return reveal();
@@ -811,7 +842,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!action) return panel.showActionNote(`No action ${id} is registered.`, true);
     // Design's own runs know the bodies drawn (actions.ts, DesignRun: the precision overlay marks only those that warned);
     // the shell's context stays the prototype, so its getters (the project, the graph) read live as ever.
-    const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene });
+    const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene, failed: failedNow });
     const outcome = await action.run(targets, run);
     if (outcome.solid && shown) {
       solidCard.show(outcome.solid);
@@ -904,9 +935,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return r !== undefined ? [r.handle] : [];
     }));
     // 35f1: a Combine's numbered piece this rebuild didn't make counts as failed, so no row or STL offers it.
-    const makers = new Map(doc.timeline.features.map((f) => [f.id, f] as const));
-    const absent = (doc.bodies ?? []).flatMap((b) => (numberedWhenBuilt(b.id, makers.get(bodyItem(b.id)!)) && build.results[bodyItem(b.id)!]?.status === "built" && !(b.id in build.bodies) ? [b.id] : []));
-    failedNow = new Set([...Object.keys(build.results).filter((id) => build.results[id].status === "failed"), ...absent]);
+    failedNow = failedIds(doc, build.results, new Set(Object.keys(build.bodies)));
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
     handlesNow = Object.fromEntries(Object.entries(build.bodies).map(([id, b]) => [id, b.handle]));
@@ -1821,6 +1850,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A dimension's box stays by its label: the next thing is typing, not a tap on a point, and moving it off the points sent it
     // to the view's far corner on almost any small sketch (the solver bug hunt, 2026-11-06).
     fitList.set(fitNow());
+    // The fit list tags a circle: a polygon's Diameter box (52c) takes no fit, so the list stays under circles' boxes only.
+    typed.under("diameter", tool.kind === "circle" || pending?.kind === "diameter" ? fitList.element : null);
     typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, pending ? undefined : viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
@@ -3187,7 +3218,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       showCombineHint();
     },
     changed: () => combineBox.showError(""),
-    ok: () => void finishCombine(),
+    ok: () => void ctx.history.hold(finishCombine()), // held like Move's and Extrude's OK: an Undo pressed while the kernel checks waits, then takes this back (#503)
     cancel: () => leaveCombine(),
   });
   // Measure (35e2l2, measure-view.ts): Inspect ▾ Measure's panel; while open the view's clicks pick what to measure, and select nothing.
@@ -3381,6 +3412,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     foldKept ?? { ...FOLDED_AT_START, pinned: readPinned() },
   );
   fold.update({ selected: ctx.selection.items.length > 0 });
+  // Body facts goes out once the panel it opened folds some other way or a tool's box comes or goes, or the sheet it opened shuts.
+  fold.onChange((state) => {
+    // A tool's box coming or going is the user moving on (Body facts must never fold a tool's box away); a selection that
+    // changes either folds the panel (caught here as not shown) or leaves the numbers up, still Body facts' to put away.
+    const movedOn = factsTool !== null && state.tool !== factsTool;
+    if (factsByFold && (!panelShown(state) || movedOn)) (factsByFold = false), drawFacts();
+  });
+  ctx.properties.addEventListener("properties-sheet", (e) => {
+    if (factsBySheet && !(e as CustomEvent<{ open: boolean }>).detail?.open) (factsBySheet = false), drawFacts();
+  });
 
   /** Opens item `id`'s sizes in the Edit feature panel, out of any sketch or Extrude panel first. */
   function openEdit(id: string) {
@@ -4321,7 +4362,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // And the Combine panel's (35f1c).
         if (combineBox.shown && !extrudeBox.shown) {
           if (!onView) return false;
-          if (combineBox.ready) void finishCombine();
+          if (combineBox.ready) void ctx.history.hold(finishCombine());
           return true;
         }
         if (!extrudeBox.shown || !onView) return false;
