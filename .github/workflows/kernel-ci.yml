@@ -133,8 +133,11 @@ jobs:
           python-version: "3.12"
       - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       # SolveSpace, the sketch solver's outside judge: built from its pinned
-      # source (about a minute), with pinned build tools.
-      - run: |
+      # source (30 to 50 seconds), with pinned build tools. Only the part whose
+      # checks use it (solver: solver-solvespace; a kernel commit from before
+      # the parts: all); a check that lacks it fails, never skips.
+      - if: contains(fromJSON('["solver","all"]'), matrix.part)
+        run: |
           pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/solver-build-requirements.txt" >/dev/null 2>&1
           pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >/dev/null 2>&1
       # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
