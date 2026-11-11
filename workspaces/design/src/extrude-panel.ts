@@ -184,8 +184,8 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       box.replaceChildren(
         el("h2", "", "", "Extrude"),
         profileRow,
-        severalRow,
         distanceRow,
+        severalRow,
         el("p", "", "extrude-note", "Drag the arrow in the view or type the distance; a negative one goes the other way."),
         ...rows,
         status,
