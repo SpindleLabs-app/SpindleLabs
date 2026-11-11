@@ -189,8 +189,10 @@ test("a stale tab's save is refused, and says so, instead of overwriting another
   // t = 1100; its save at t = 2100 expects save time 0 but finds 1000, so
   // it is refused: the store keeps 45 and B says another tab changed it.
   // A's next change still saves (it expects 1000, finds 1000). B leaving
-  // keeps nothing in the journal (a next visit would put 25 back over A's
-  // work) and asks before going instead.
+  // journals 26 naming save time 0, the state it was made from, so a next
+  // visit keeps it apart as "(kept copy)", never over A's work, and the page
+  // need not ask (save/load hunt C1: before, B kept nothing and asked, and a
+  // reload, which B's own words ask for, lost its edit).
   const clock = fakeClock();
   const store = projectStore(memoryKeyValue(), [], clock.now);
   const journal = fakeStorage();
@@ -214,8 +216,9 @@ test("a stale tab's save is refused, and says so, instead of overwriting another
   tabB.changed();
   await clock.advance(1000);
   assert.equal(widthOf(await store.open("p")), 45, "nor with its next change");
-  assert.equal(tabB.leaving(), false, "B asks before going");
-  assert.equal(journal.items.size, 0, "B's stale change isn't journalled to be put back over A's");
+  assert.equal(tabB.leaving(), true, "B's change is kept, so B needn't ask (C1)");
+  const kept = readJournalEntry(journal.items.get(unsavedKey("p"))!);
+  assert.deepEqual([widthOf(JSON.parse(kept.text)), kept.base?.getTime()], [26, 0], "journalled naming the stale state, so it is never put back over A's");
   a = part(50);
   tabA.changed();
   await clock.advance(1000);

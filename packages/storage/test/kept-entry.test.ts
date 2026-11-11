@@ -108,7 +108,14 @@ test("a tab that didn't open the kept entry still won't save over it, and says a
   await settle();
   assert.equal(widthOf(await real.open("p")), 40, "nothing saved over the kept 50");
   assert.equal(statuses.at(-1), "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload the page to see them.");
-  assert.equal(a.leaving(), false);
+  // Leaving keeps the rename aside, never over the kept entry, so the page need not ask (save/load hunt C1: before,
+  // nothing was kept and the page asked; a phone never asks, so a reload lost the rename).
+  const before = journal.getItem(unsavedKey("p"));
+  assert.equal(a.leaving(), true);
+  assert.equal(journal.getItem(unsavedKey("p")), before, "the kept entry as it was");
+  const aside = [...journal.m.keys()].filter((k) => k !== unsavedKey("p"));
+  assert.equal(aside.length, 1);
+  assert.equal(JSON.parse(readJournalEntry(journal.getItem(aside[0]!)!).text).name, "Renamed");
 });
 
 test("that tab finished (a file opened) keeps its change as a separate project beside the kept entry (round 2 hunt A5)", async () => {

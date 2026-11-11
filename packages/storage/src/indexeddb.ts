@@ -6,7 +6,10 @@ import type { KeyValue } from "./key-value.ts";
 
 const STORE = "kv";
 
-/** Turns an IndexedDB failure into an Error with a message a person can read. */
+/**
+ * Turns an IndexedDB failure into an Error with a message a person can read. `doing` says what in plain words ("save
+ * this project"), never the store's own keys, which mean nothing to the person reading the status (hunt C5).
+ */
 function failure(e: DOMException | null, doing: string): Error {
   if (e?.name === "QuotaExceededError") return new Error(`browser storage is full: can't ${doing} (use Save to keep your work as a file)`);
   return new Error(`browser storage failed: can't ${doing}${e ? ` (${e.name}: ${e.message})` : ""}`);
@@ -75,7 +78,7 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
   };
   /** KeyValue.update: the reads, `change` and the writes in one readwrite transaction, which IndexedDB runs alone among those touching this store, in every tab. */
   const update: KeyValue["update"] = async (keys, change) => {
-    let doing = `save "${keys.join('", "')}"`;
+    const doing = "save this project";
     const tx = transaction(await open(), "readwrite", doing);
     const store = tx.objectStore(STORE);
     const values: (string | undefined)[] = [];
@@ -88,8 +91,7 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
       const puts: Promise<unknown>[] = [];
       try {
         const changes = Object.entries(change(values));
-        if (changes.length > 0) doing = `save "${changes.map(([k]) => k).join('", "')}"`; // a refusal names what was being written
-        for (const [k, v] of changes) puts.push(request(store.put(v, k), doing));
+        for (const [k, v] of changes) puts.push(v === null ? request(store.delete(k), doing) : request(store.put(v, k), doing)); // null: deleted in this transaction
         written(puts);
       } catch (error) {
         try {
@@ -121,11 +123,11 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
   return {
     update,
     get: async (key) => {
-      const v = await run("readonly", `read "${key}"`, (s) => s.get(key));
+      const v = await run("readonly", "read this project", (s) => s.get(key));
       return typeof v === "string" ? v : undefined;
     },
-    set: (key, value) => run("readwrite", `save "${key}"`, (s) => s.put(value, key)).then(() => undefined),
-    delete: (key) => run("readwrite", `remove "${key}"`, (s) => s.delete(key)).then(() => undefined),
+    set: (key, value) => run("readwrite", "save this project", (s) => s.put(value, key)).then(() => undefined),
+    delete: (key) => run("readwrite", "remove this project", (s) => s.delete(key)).then(() => undefined),
     keys: async (prefix) => {
       // Every string starting with prefix sorts between prefix and prefix + U+FFFF.
       const keys = await run("readonly", "list projects", (s) => s.getAllKeys(IDBKeyRange.bound(prefix, prefix + "￿")));
