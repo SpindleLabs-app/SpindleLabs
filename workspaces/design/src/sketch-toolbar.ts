@@ -337,6 +337,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   const snapGroup = group("sketchbar-snap", "Snapping");
   const snap = withIcon(button("Snap on", "sketch-snap"), "snap");
   const snapWord = snap.querySelector(".tool-word")!;
+  snap.setAttribute("aria-label", "Snap"); // aria-pressed says on or off; the words saying it too would read it twice
   snap.addEventListener("click", () => on.snap(snap.getAttribute("aria-pressed") !== "true"));
   snapGroup.append(snap);
   const showSnap = (on: boolean) => {

@@ -2,7 +2,7 @@
    of at most 45 % of the screen, Close always at its top, so one tap never covers most of the view (Ben, 2026-10-28). */
 .history-panel { position: fixed; top: 44px; right: var(--look-space-3); z-index: 30; width: min(340px, calc(100vw - 16px)); max-height: min(60vh, 520px); display: flex; flex-direction: column; background: var(--look-float); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); overflow: hidden; }
 .history-panel[hidden] { display: none; }
-.history-panel header { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-2) var(--look-space-3); border-bottom: 1px solid var(--look-edge); }
+.history-panel .history-head { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-2) var(--look-space-3); border-bottom: 1px solid var(--look-edge); }
 .history-panel h2 { margin: 0; font-size: 14px; }
 .history-panel .history-close { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-3); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 .history-panel .history-hint, .history-panel .history-empty { margin: 0; padding: var(--look-space-2) var(--look-space-3); font-size: 12px; line-height: 1.4; color: var(--text-dim); }

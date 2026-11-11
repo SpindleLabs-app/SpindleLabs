@@ -67,6 +67,7 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
     const list = doc.createElement("ul");
     list.id = "command-search-list";
     list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Commands");
     const empty = doc.createElement("p");
     empty.className = "command-search-none";
     empty.textContent = "No command by that name.";
