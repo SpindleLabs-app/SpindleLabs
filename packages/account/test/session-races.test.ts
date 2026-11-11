@@ -18,7 +18,9 @@ function setup(skewMs = 0) {
   const svc = fakeService(() => ms / 1000);
   const store = memoryStore();
   const tab = (seed: number, f: typeof fetch = svc.fetch) =>
-    authClient({ config: { url: SERVICE, anonKey: KEY, redirectTo: APP }, fetch: f, store, now: clock.now, random: seededRandom(seed) });
+    // lock: undefined, so these tabs take no lock whatever the Node version (newer ones have navigator.locks, and a
+    // held renewal there would block another tab of the test forever); the two-tab lock tests give their own.
+    authClient({ config: { url: SERVICE, anonKey: KEY, redirectTo: APP }, fetch: f, store, now: clock.now, random: seededRandom(seed), lock: undefined });
   return { clock, svc, store, tab, client: tab(1) };
 }
 
