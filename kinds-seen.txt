@@ -44,4 +44,5 @@ monkey selection agrees: with Body # (Sphere: ⌀# mm) selected the Body panel s
 monkey settles: the page was still changing # s after the action
 monkey the monkey never said how many Combines it made (no "monkey: N Combines made, M tried" line)
 monkey the tester itself: locator.click: Timeout #ms exceeded.
+monkey the tester itself: page.evaluate: Execution context was destroyed, most likely because of a navigation
 monkey timeline bar matches the file: shown [{"id":"feature#","suppressed":false,"rolledBack":false},{"id":"sketch#","suppressed":true,"rolledBack":false},{"

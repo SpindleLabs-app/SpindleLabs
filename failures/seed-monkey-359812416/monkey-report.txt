@@ -1,0 +1,3 @@
+Monkey, seeds 359812416-359812419: 4 session(s) of 2000 actions in Chromium; 12 Combines made of 41 tried; 2 FAILED
+failure: the tester itself: page.evaluate: Execution context was destroyed, most likely because of a navigation | seed 359812416 at action 1192; replay: cd apps/fission && npm run build && FISSION_SEED=359812416 MONKEY_STEPS=2000 node e2e/monkey.mjs
+actions.json: the whole session; the job ended before it was replayed

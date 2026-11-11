@@ -1,6 +1,6 @@
-tested commit f8483c2 on main, 2026-11-11 02:45 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42919906527)
-Monkey, seeds 359811726-359811729: 4 session(s) of 2000 actions in Chromium; 5 Combines made of 62 tried; 2 FAILED
-seed 359811726: pass (2000 actions)
-seed 359811727: pass (2000 actions)
-seed 359811728: FAIL: selection agrees: with Body 12 (Cylinder: ⌀999999 × 30 mm) selected the Body panel shows 2.356189778 × 10¹³ mm³, but that body is 2.35619e+13 mm³
-seed 359811729: FAIL: no kernel body leaks: the kernel holds 3 bodies, the Bodies group lists 1
+tested commit f8483c2 on main, 2026-11-11 07:19 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42928191838)
+Monkey, seeds 359812416-359812419: 4 session(s) of 2000 actions in Chromium; 12 Combines made of 41 tried; 2 FAILED
+seed 359812416: FAIL: the tester itself: page.evaluate: Execution context was destroyed, most likely because of a navigation
+seed 359812417: pass (2000 actions)
+seed 359812418: pass (2000 actions)
+seed 359812419: FAIL: no kernel body leaks: the kernel holds 4 bodies, the Bodies group lists 3
