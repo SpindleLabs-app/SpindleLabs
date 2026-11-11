@@ -186,8 +186,13 @@ export function solidBadge(host: HTMLElement, onClose: () => void): SolidBadge {
       list.hidden = b.items.length === 0;
       el.hidden = false;
     },
+    // Hidden, it keeps nothing of the last report: the same few nodes whatever was saved (the soak counts them, #198).
     hide() {
       el.hidden = true;
+      delete el.dataset.state;
+      for (const part of [mark, title, why, facts]) part.textContent = "";
+      list.replaceChildren();
+      list.hidden = true;
     },
   };
   close.addEventListener("click", () => {

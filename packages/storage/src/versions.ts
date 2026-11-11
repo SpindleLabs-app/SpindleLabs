@@ -3,11 +3,13 @@
 // earlier today even after the undo history is gone (a reload, another project opened). Each version is one entry:
 //   version/<id>/<ms>  the exact .spindlelabs.json text the project had, <ms> its save time (the summary's `modified`)
 // Versions are an extra and never cost a save: one that can't be written is passed over, and a save refused for want
-// of room is tried once more after this project's versions are given up. Deleting the project deletes its versions.
+// of room is tried once more after this project's versions, and every project's kept undo steps (undo-steps.ts), are
+// given up. Deleting the project deletes its versions and its undo steps.
 
 import { projectFromJson, projectToJson, type DataReader, type Project } from "@fission/core";
 import type { KeyValue } from "./key-value.ts";
 import { ProjectChangedError, type ProjectStore } from "./store.ts";
+import { stepsStore, type StepsStore } from "./undo-steps.ts";
 
 /** Ten minutes: a version at most this often, so a burst of edits is one version, not twenty. */
 export const VERSION_GAP_MS = 10 * 60_000;
@@ -26,6 +28,8 @@ export interface VersionedStore extends ProjectStore {
   versions(id: string): Promise<Date[]>;
   /** Reads and upgrades version `at` of `id`, as `open` does; refuses one that is not kept or can't be read. */
   openVersion(id: string, at: Date): Promise<Project>;
+  /** Each kept project's undo steps (step 89), in the same store. */
+  readonly steps: StepsStore;
 }
 
 /** The save time a summary entry holds, or null when it can't be read. */
@@ -52,7 +56,7 @@ async function times(kv: KeyValue, id: string): Promise<number[]> {
  * `store`, written over `kv`, keeping earlier versions (`gapMs` apart at most, the newest `limit`). `readers` open a
  * version as `open` does.
  */
-export function versionedStore(store: ProjectStore, kv: KeyValue, readers: readonly DataReader[], { gapMs = VERSION_GAP_MS, limit = VERSION_LIMIT } = {}): VersionedStore {
+export function versionedStore(store: ProjectStore, kv: KeyValue, readers: readonly DataReader[], { gapMs = VERSION_GAP_MS, limit = VERSION_LIMIT, steps = stepsStore(kv) } = {}): VersionedStore {
   /** Keeps `text`, saved at `at`, as a version of `id` when the newest is at least `gapMs` older; then the newest `limit` only. Never throws. */
   async function keep(id: string, text: string, at: number) {
     try {
@@ -85,10 +89,29 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
       try {
         await store.save(id, project, read, unchangedSince, behind, writer);
       } catch (e) {
-        if (e instanceof ProjectChangedError || !storageFull(e) || (await times(kv, id).catch(() => [])).length === 0) throw e;
-        // Refused for want of room, perhaps: this project's versions give way to its work, and the save is tried once more.
-        await forgetVersions(id).catch(() => {});
-        await store.save(id, project, read, unchangedSince, behind, writer);
+        if (e instanceof ProjectChangedError || !storageFull(e)) throw e;
+        // Refused for want of room, perhaps: this project's versions and kept undo steps give way to its work first, and
+        // the save is tried once more; only if that still fails do the other projects' undo steps go too, for one last
+        // try (save/load hunt C7: every project's steps went at the first refusal).
+        const versionsKept = (await times(kv, id).catch(() => [])).length > 0;
+        let refusal: unknown = e;
+        let saved = false;
+        if (versionsKept || (await steps.has(id))) {
+          await forgetVersions(id).catch(() => {});
+          await steps.forget(id);
+          try {
+            await store.save(id, project, read, unchangedSince, behind, writer);
+            saved = true;
+          } catch (again) {
+            if (again instanceof ProjectChangedError || !storageFull(again)) throw again;
+            refusal = again;
+          }
+        }
+        if (!saved) {
+          if (!(await steps.any())) throw refusal;
+          await steps.forgetAll();
+          await store.save(id, project, read, unchangedSince, behind, writer);
+        }
       }
       if (before === undefined || at === null) return;
       let now: string;
@@ -102,7 +125,9 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
     async remove(id) {
       await store.remove(id);
       await forgetVersions(id).catch(() => {}); // left behind, they are only unreachable: the project is gone either way
+      await steps.forget(id);
     },
+    steps,
     async versions(id) {
       return (await times(kv, id)).map((t) => new Date(t));
     },
