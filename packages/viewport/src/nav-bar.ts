@@ -61,15 +61,33 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
   slider.setAttribute("aria-hidden", "true");
   const modeButtons = new Map<BarNavMode, HTMLButtonElement>();
   let shown: NavMode = "orbit";
+  const calm = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   /** Puts the highlight on `shown`'s button: where it sits in the group, as laid out now. */
   const place = () => {
     const b = modeButtons.get(shown as BarNavMode);
     slider.hidden = b === undefined; // no tool lit (the Fusion-style preset at rest): no highlight
     if (!b || !b.offsetWidth) return; // not laid out (asleep, hidden): placed when it is
-    slider.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
-    slider.style.width = `${b.offsetWidth}px`;
+    const x = b.offsetLeft, w = b.offsetWidth;
+    // Where it is drawn now (mid-slide included), so a press during a slide carries on from there.
+    let fromX = x, fromW = w;
+    const moving = slider.dataset.placed !== undefined && !slider.hidden && !slider.classList.contains("nav-slider-still") && typeof slider.animate === "function" && !calm();
+    if (moving) {
+      const now = getComputedStyle(slider);
+      fromX = new DOMMatrix(now.transform).m41;
+      fromW = parseFloat(now.width) || w;
+    }
+    slider.getAnimations?.().forEach((a) => a.cancel());
+    slider.style.transform = `translate(${x}px, ${b.offsetTop}px)`;
+    slider.style.width = `${w}px`;
     slider.style.height = `${b.offsetHeight}px`;
     slider.dataset.placed = shown;
+    // The slide: the highlight stretches out toward the new button and then draws in behind it, like a drop of water
+    // running along the bar, instead of a plain shift (U9c). Under reduced motion, or on a new layout, it is simply there.
+    if (moving && (Math.abs(fromX - x) > 0.5 || Math.abs(fromW - w) > 0.5)) {
+      const left = Math.min(fromX, x), reach = Math.max(fromX + fromW, x + w) - left;
+      const at = (px: number, pw: number) => ({ transform: `translate(${px}px, ${b.offsetTop}px)`, width: `${pw}px` });
+      slider.animate([at(fromX, fromW), { ...at(left, reach), offset: 0.42, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }, at(x, w)], { duration: 380, easing: "cubic-bezier(0.45, 0, 0.2, 1)" });
+    }
   };
   // A new layout (the bar wrapping, the phone's 44 px buttons, a first show) moves the highlight at once, never sliding.
   const settle = () => {
