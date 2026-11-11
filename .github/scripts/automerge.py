@@ -52,6 +52,7 @@ DEQUEUED_HEAD, DEQUEUED_REASON with --dequeued).
 """
 
 import calendar
+import io
 import json
 import os
 import subprocess
@@ -305,6 +306,35 @@ def conflicted_files(head_ref):
     return [line for line in res.stdout.splitlines()[1:] if line]
 
 
+class RateLimited(Exception):
+    """GitHub refused a call because this token has used its hourly allowance
+    (the workflow's token gets 1,000 REST calls an hour for the whole
+    repository, and one run here makes several calls per open pull request).
+    Not an error of the pull requests: the next run (CI finishing, a pull
+    request event or the half-hourly one) goes on from the same state, so the
+    run ends green instead of putting a red merge check on every new pull
+    request. Not an HTTPError, so no `refused` handler skips a pull request
+    for it and `queue_required` doesn't mistake it for a missing rule."""
+
+
+def open_url(req):
+    """urlopen, but a refusal for the rate limit becomes RateLimited. Any other
+    refusal is raised as it was, its body still readable."""
+    try:
+        return urllib.request.urlopen(req)
+    except urllib.error.HTTPError as e:
+        if e.code not in (403, 429):
+            raise
+        body = e.read()
+        headers = e.headers or {}
+        limited = (e.code == 429 or headers.get("x-ratelimit-remaining") == "0" or headers.get("retry-after") is not None
+                   or b"rate limit" in body.lower())
+        if not limited:
+            raise urllib.error.HTTPError(e.url, e.code, e.msg, e.headers, io.BytesIO(body)) from None
+        raise RateLimited(f"HTTP {e.code}: {body.decode(errors='replace')[:200]} "
+                          f"(allowance returns at epoch second {headers.get('x-ratelimit-reset', 'unknown')})") from e
+
+
 def iso_seconds(stamp):
     return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
 
@@ -326,7 +356,7 @@ class GitHub:
             data=json.dumps({"query": query, "variables": variables}).encode(),
             headers={"Authorization": f"Bearer {token}"} if token else {},
         )
-        with urllib.request.urlopen(req) as res:
+        with open_url(req) as res:
             out = json.loads(res.read())
         if out.get("errors"):
             raise RuntimeError(f"GraphQL: {out['errors']}")
@@ -343,7 +373,7 @@ class GitHub:
                 **({"Authorization": f"Bearer {self.token}"} if self.token else {}),
             },
         )
-        with urllib.request.urlopen(req) as res:
+        with open_url(req) as res:
             text = res.read()
             return json.loads(text) if text else None
 
@@ -594,4 +624,12 @@ if __name__ == "__main__":
         note_dequeued(gh, int(os.environ["DEQUEUED_PR"]), os.environ["DEQUEUED_HEAD"],
                       os.environ.get("DEQUEUED_REASON", ""))
     else:
-        run(gh, dry_run="--dry-run" in sys.argv)
+        try:
+            run(gh, dry_run="--dry-run" in sys.argv)
+        except RateLimited as e:
+            # Green on purpose: see RateLimited. The next run goes on.
+            print(f"GitHub's rate limit for this token is used up ({e}); the next run goes on from here")
+        except urllib.error.HTTPError as e:
+            # The traceback alone says only "403 Forbidden": say what GitHub said.
+            print(f"GitHub refused {e.url}: {e.code} {e.read().decode(errors='replace')[:300]}")
+            raise
