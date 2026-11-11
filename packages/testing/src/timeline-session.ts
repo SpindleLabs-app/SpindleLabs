@@ -48,6 +48,7 @@ import {
   insertAt,
   outlineProblem,
   rebuild,
+  takeIn,
   resolveFace,
   sizeKeys,
   type Applied,
@@ -843,6 +844,8 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
   const count = (k: string) => (counts[k] = (counts[k] ?? 0) + 1);
   let refs: FaceName[] = [];
   let prev: Rebuild = await subject.rebuild();
+  // What a rebuild settles is taken into the design, as Design takes it in after each rebuild (SL #583 item 2).
+  model.doc = takeIn(model.doc);
   let held = [...bodyKeys(model.doc, rebuild(model.doc)).values()];
   let built = subject.builds ? await subject.builds() : 0;
 
@@ -906,6 +909,7 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
 
     const now = await subject.rebuild();
     const builtNow = subject.builds ? (await subject.builds()) - built : 0;
+    model.doc = takeIn(model.doc);
     const expected = rebuild(model.doc);
     const translated = translateRebuild(expected, to);
     // Two faces (or edges) under one name only where the model has them too (35f1d2: pieces whose tags are alike, rule 3;

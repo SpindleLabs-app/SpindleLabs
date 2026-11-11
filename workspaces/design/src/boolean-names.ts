@@ -30,13 +30,22 @@
 // boolean-naming-model.ts (`rebuildBooleans`); the tests compare the two
 // on the real kernel (test/boolean-names.test.ts).
 
-import type { BodyHandle, BodyView, BooleanOp, BooleanResult, FaceRole } from "@fission/core";
+import type { BodyHandle, BodyView, BooleanOp, BooleanResult, FaceRole, Plane } from "@fission/core";
 import type { BodyNames } from "./naming.ts";
 
 /** A face's names, the one shown first. */
 export interface FaceNames {
   /** Every full face name it answers to, the one shown first; empty when it has none (a name two faces would share). */
   names: readonly string[];
+  /**
+   * A face merged from several input faces lying level (kernel 36c1, the history's `also`; SL #502): each input face it
+   * lies on, first origin first, with that face's names and its input body's view as the boolean saw it, so a click on
+   * the merged face can name the input face under it (face-pick.ts `clickedName`). `frame` is the face's frame then
+   * (rebuild.ts `BuiltBody.frames`; absent: the world's), so a later Move's motion can be taken off the click first.
+   * Dropped by a copy (built-body.ts `copiedNames`), which then names the face by its first name as before.
+   */
+  origins?: readonly { names: readonly string[]; view: BodyView; face: number }[];
+  frame?: Plane;
 }
 
 /** A body with a name on each face, by kernel face index: what a boolean takes in and gives. */

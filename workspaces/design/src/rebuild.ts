@@ -35,21 +35,22 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
-import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
-import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type NamedBody } from "./boolean-names.ts";
+import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
-import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
-import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
+import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
+import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
-import { findRegion, refusalReason, regionOutline, type RegionRef } from "./regions.ts";
-import { missedTools, missWords, type Miss } from "./misses.ts";
+import { HELD_STILL, turnedOver } from "./point-drag.ts";
+import { findRegion, refusalReason, regionCurveIds, regionName, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
+import { leavesNoFace, missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -100,6 +101,8 @@ export type FeatureResult =
       constraints?: { message: string };
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
+      /** A Move's (SL #583 item 2): the pieces it moved that it doesn't hold yet, new pieces of a body it holds; `followedDoc` adds them to it. */
+      takes?: string[];
       /** A Combine's or an operation extrude's pieces (35f1) by id, each with the shown names of its faces as the item made them: what the data remembers a piece by when it is first numbered (hunt 11-06). */
       pieceFaces?: Record<string, string[]>;
       /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
@@ -208,6 +211,8 @@ export interface BuiltBody {
    * tool's (built-body.ts `frameOfFace`).
    */
   frames?: readonly (Plane | null)[];
+  /** A piece (SL #583 item 2): the body whose boolean it split from (its item's target), so a Move holding that body finds it. */
+  from?: string;
 }
 
 
@@ -617,6 +622,48 @@ function outlinesAtOnce(kernel: KernelCalls, docs: DesignDocument[]): KernelCall
   return { call: ((op: string, ...args: unknown[]) => (op === "sketch_outline" || op === "sketch_regions" ? ask(args, op) : (kernel.call as (op: string, ...a: unknown[]) => unknown)(op, ...args))) as KernelCalls["call"] };
 }
 
+/**
+ * The region an extrude of a sketch's one outline (no `region`: Design
+ * data before version 9, or an assistant's extrude) takes when an edit
+ * from `before` to `after` stops the sketch making one outline but leaves
+ * that outline whole as a region's outside, every curve of the sketch
+ * round some region (issue #541: a circle drawn inside the square, or a
+ * loop beside it; a stray or loose curve is not): the one region `before` made,
+ * found in `after` by the very same loop of curves and extrudable, so the
+ * extrude goes on as an extrude with that region picked does (the hole
+ * cut, the loop beside it left out). Undefined otherwise (the loop broken,
+ * crossed or changed: the extrude keeps its last shape as before), and
+ * for curves the kernel refuses outright.
+ */
+async function outlineRegion(kernel: KernelCalls, before: DesignDocument, after: DesignDocument, sketchId: string): Promise<RegionRef | undefined> {
+  const was = contentOf(before, sketchId);
+  const now = contentOf(after, sketchId);
+  if (was === undefined || now === undefined || !(await makesOutline(kernel, before, sketchId))) return undefined;
+  const regions = async (content: Sketch) => {
+    const c = sketchCurves(content);
+    return (await kernel.call("sketch_regions", c.lines, c.circles, c.arcs)).regions;
+  };
+  try {
+    const one = await regions(was);
+    if (one.length !== 1 || !one[0].extrudes) return undefined;
+    const ref = regionRef(one[0], regionCurveIds(was));
+    const ids = regionCurveIds(now);
+    const all = await regions(now);
+    // Only a sketch made wholly of closed loops: a loose or stray curve still breaks the one outline, as before (the owner's rule, 25a).
+    const round = new Set(all.flatMap((r) => regionName(r, ids) ?? []).map((p) => p.curve));
+    if (![...ids.line, ...ids.arc, ...ids.circle].every((id) => round.has(id))) return undefined;
+    const found = findRegion(all, ids, ref);
+    const name = found === undefined ? null : regionName(found, ids);
+    return found?.extrudes === true && name !== null && sameLoop(name, ref.outer) ? ref : undefined;
+  } catch (e) {
+    if (e instanceof KernelError && e.kind === "invalid-input") return undefined;
+    throw e;
+  }
+}
+
+/** Extrude `f` extruding `region` (`outlineRegion`), or `f` itself when there is none. */
+const withRegion = (f: Feature, region: RegionRef | undefined): Feature => (region === undefined ? f : { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, region } } });
+
 /** Whether a sketch makes an outline now, or the extrude's region (suppression and the marker don't count): the owner's "lost" is its opposite. */
 async function makesOutline(kernel: KernelCalls, doc: DesignDocument, sketchId: string, region?: RegionRef): Promise<boolean> {
   const content = contentOf(doc, sketchId);
@@ -636,7 +683,9 @@ async function makesOutline(kernel: KernelCalls, doc: DesignDocument, sketchId: 
  * where it was when the edge is gone; from 27d each projection likewise. The same rules as the model's `settle`: suppression
  * and the marker don't count, so a greyed sketch keeps nothing while its
  * face is there, and one whose face went while it was greyed keeps where
- * it was. `after` itself when nothing changes.
+ * it was. Only a followed point of a sketch that builds with the
+ * suppressed items off follows its edge as built so, as the rebuild draws
+ * it (hunt 11-11, #540 item 2). `after` itself when nothing changes.
  *
  * Placing face sketches builds bodies: on `cache` when given (it may be
  * the one drawn from, even while it rebuilds: bodies built already are
@@ -675,13 +724,17 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
      */
     const keepLost = async (doc: DesignDocument): Promise<DesignDocument> => {
       const next: Record<string, KeptShape> = {};
+      const regions = new Map<string, RegionRef>();
       for (const f of doc.timeline.features) {
         if (!isSketchExtrude(f)) continue;
         const sketch = f.intent.parameters.sketch as string;
         if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;
         const had = keptOf(after, f);
         const was = contentOf(before, sketch);
-        if (had !== undefined) next[f.id] = had;
+        // Issue #541: an extrude of the one outline whose outline is still there whole, as a region's outside, takes that region.
+        const region = had === undefined && regionOf(f) === undefined ? await outlineRegion(kernel, before, doc, sketch) : undefined;
+        if (region !== undefined) regions.set(f.id, region);
+        else if (had !== undefined) next[f.id] = had;
         else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f)))) {
           const item = beforeItems.get(sketch)!;
           const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
@@ -689,8 +742,8 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
           next[f.id] = placement ? { ...shape, placement } : shape;
         }
       }
-      const { kept: old, ...rest } = doc;
-      if (JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
+      const { kept: old, ...rest } = regions.size === 0 ? doc : { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => withRegion(f, regions.get(f.id))) } };
+      if (regions.size === 0 && JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
       return Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
     };
     let doc = await keepLost(after);
@@ -703,13 +756,18 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
     // per face sketch, and a last to see nothing change. The kept shapes are decided again on each pass's design.
     for (let pass = 0; pass <= faces; pass++) {
       const now = await placed(doc);
+      // Pinned points follow their bodies as the rebuild draws them, an earlier suppressed Move left off (hunt 11-11, #540
+      // item 2: followed with it on, every edit in the sketch threw a point to where the Move would put it, and the rebuild
+      // put it back); a sketch that isn't built that way (itself suppressed or greyed) as it would be with everything on.
+      const drawn = doc.timeline.features.some((f) => f.suppressed) ? await placeOpen(doc, bodies, kernel, true) : now;
+      const pinsOf = (id: string) => (drawn[id]?.status === "built" ? drawn[id] : now[id]);
       let changed = false;
       const sketches: Sketch[] = [];
       for (const content of doc.sketches) {
         const r = now[content.id];
         if (content.face === undefined || r?.status !== "built") {
           // 27c: a sketch on an origin plane with pinned points follows them too.
-          const followed = content.face === undefined ? followedSketch(content, r) : content;
+          const followed = content.face === undefined ? followedSketch(content, pinsOf(content.id)) : content;
           changed ||= followed !== content;
           sketches.push(followed);
           continue;
@@ -722,7 +780,7 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         changed ||= keep !== held;
         const settled = keep === held ? content : { ...content, face: keep ? { ...face, held: keep } : face };
         // Step 26f: each pinned point that found its edge goes where the edge is now; one that didn't stays where it was.
-        const followed = followedSketch(settled, r);
+        const followed = followedSketch(settled, pinsOf(content.id));
         changed ||= followed !== settled;
         sketches.push(followed);
       }
@@ -758,12 +816,14 @@ export const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFa
  * Every item of `doc` up to its last sketch on a face or with pins,
  * built with nothing suppressed and no marker, without freeing anything:
  * where each face sketch would lie, and each pinned point would be, with
- * everything on (none for a document without one).
+ * everything on (none for a document without one). With `suppressed`
+ * the suppressed items stay off (the marker still doesn't count): where
+ * each pinned point is drawn (hunt 11-11, #540 item 2).
  */
-async function placeOpen(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls): Promise<Record<string, FeatureResult>> {
+async function placeOpen(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls, suppressed = false): Promise<Record<string, FeatureResult>> {
   const last = doc.timeline.features.filter((f) => placedOnBodies(doc, f)).at(-1);
   if (last === undefined) return {};
-  const features = doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));
+  const features = suppressed ? doc.timeline.features : doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));
   return (await buildTimeline({ ...doc, timeline: { features, marker: last.id } }, cache, kernel)).results;
 }
 
@@ -852,6 +912,12 @@ const originPlacement = (item: Feature): SketchPlacement | null => (item.intent.
 
 const XY_PLACEMENT: SketchPlacement = { plane: planeOf("XY"), side: 1 };
 
+/** A sketch's points that are its own (SL #539): neither pinned to an edge or corner nor made by a projection, so only an edit of the sketch moves them. */
+export function ownPoints(content: Sketch): Sketch["points"] {
+  const followed = new Set([...(content.pins ?? []).map((p) => p.point), ...(content.projected ?? []).flatMap((p) => madePoints(content, p))]);
+  return followed.size === 0 ? content.points : content.points.filter((p) => !followed.has(p.id));
+}
+
 /**
  * A sketch item's result: where it lies. On an origin plane, that plane.
  * On a face (rule 8): greyed while the face's feature is suppressed or
@@ -884,8 +950,10 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const p = content.face!;
   let cause: PlaneWarning["cause"] = "plane-lost";
   const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false): Promise<FeatureResult> => {
-    // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
-    const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined);
+    // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried);
+    // SL #539: a change of size since by a Scale carries the middle of its own points (not those pinned or projected, which follow
+    // edges by name and are written back after: the middle never moves by settling) as the body's point under it, its sizes kept.
+    const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
@@ -951,7 +1019,8 @@ function movedTo(content: Sketch, points: readonly { point: string; at: SketchXY
  * `doc` with every pinned point where `build` (a rebuild of `doc`) found
  * it (26f), or `doc` itself when none moved: what the app takes into the
  * edit's undo step once the edit has rebuilt, so the sketch is drawn, and
- * a point whose edge goes later held, where the point followed to.
+ * a point whose edge goes later held, where the point followed to. And
+ * each Move holding the new pieces it moved (`takes`, SL #583 item 2).
  */
 export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDocument {
   let moved = false;
@@ -960,7 +1029,18 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
     moved ||= next !== s;
     return next;
   });
-  return moved ? { ...doc, sketches } : doc;
+  const followed = moved ? { ...doc, sketches } : doc;
+  // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
+  // workspace numbers them (`numberPieces`; its own call after this one gives them their remembered faces), so they
+  // stay moved after this rebuild.
+  const takers = followed.timeline.features.flatMap((f) => {
+    const r = build.results[f.id];
+    return isMoveItem(f) && r?.status === "built" && r.takes !== undefined ? [[f, r.takes] as const] : [];
+  });
+  if (takers.length === 0) return followed;
+  let next = numberPieces(followed, Object.keys(build.bodies));
+  for (const [f, takes] of takers) next = changedMove(next, f.id, moveValues(f), [...movedBodies(f), ...takes]);
+  return next;
 }
 
 /**
@@ -1049,7 +1129,10 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
   const followed = movedTo(content, [...pinned, ...projected.flatMap((q) => q.points)], projected.flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
   // Step 47d4: a sketch with constraints or arcs is solved again when a followed point moved (an arc through it is off its
   // circle now; the solver bug hunt, 2026-11-06: an arc with no constraint in the sketch was left off its circle, unsaid).
-  const again = followed !== content && (content.constraints.length > 0 || content.curves.some((c) => c.kind === "arc")) ? await solvedAgain(kernel, followed, label) : null;
+  // #545 item 2: one whose followed points stayed is judged as stored, on every rebuild, so a sketch an earlier edit left
+  // unsolved keeps saying so; nothing is moved then (the edit that left it so already decided where its points are).
+  const solving = content.constraints.length > 0 || content.curves.some((c) => c.kind === "arc");
+  const again = !solving ? null : followed !== content ? await solvedAgain(kernel, followed, content, label) : await stillSolved(kernel, content, label);
   const settled = again !== null && "solved" in again ? movedTo(followed, again.solved, []) : followed;
   if (settled !== content) index.sketches.set(f.id, settled);
   const n = held["point-lost"] + held["point-ambiguous"];
@@ -1073,7 +1156,7 @@ export const constraintsWords = (label: string, why: string): string => `${label
  * conflict, a refusal, a line or arc shrunk below MIN_FEATURE, or the
  * solver failing or taking too long).
  */
-async function solvedAgain(kernel: KernelCalls, followed: Sketch, label: string): Promise<{ solved: { point: string; at: SketchXY }[] } | { message: string }> {
+async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch, label: string): Promise<{ solved: { point: string; at: SketchXY }[] } | { message: string }> {
   const request = solverRequest(followed);
   let answer: ReturnType<typeof readAnswer>;
   try {
@@ -1087,10 +1170,27 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, label: string)
   const at = solvedPoints(followed, request, answer.points);
   const tiny = shrunk(followed, at);
   if (tiny !== null) return { message: constraintsWords(label, `${curveWord(followed, tiny, "a")} would shrink below the smallest size`) };
+  // #545 item 1: an arc the solve would turn inside out (its sweep past half a turn), refused as a drag refuses it.
+  const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
+  if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
   return { solved: followed.points.flatMap((p) => {
     const [x, y] = at.get(p.id)!;
     return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
   }) };
+}
+
+/**
+ * Sketch `stored`, whose followed points stayed where they were, judged as
+ * it is (#545 item 2): null when it is solved there (no point of it more
+ * than HELD_STILL from where the solve puts it), else why not. Its points
+ * are never moved here.
+ */
+async function stillSolved(kernel: KernelCalls, stored: Sketch, label: string): Promise<{ message: string } | null> {
+  const got = await solvedAgain(kernel, stored, stored, label);
+  if ("message" in got) return got;
+  const at = new Map(stored.points.map((p) => [p.id, p] as const));
+  const off = got.solved.some(({ point, at: [x, y] }) => Math.hypot(x - at.get(point)!.x, y - at.get(point)!.y) > HELD_STILL);
+  return off ? { message: constraintsWords(label, "an earlier change left them unsolved") } : null;
 }
 
 async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, kernel: KernelCalls, index: DocIndex): Promise<FeatureResult> {
@@ -1102,7 +1202,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
   };
   try {
     if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index, kernel);
-    if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
+    if (isMoveItem(f)) return await moveBodies(doc, f, done, bodies, cache);
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
@@ -1152,8 +1252,17 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
  * were (`holds`), so the next rebuild finds them built. Its bodies are
  * stored by body id (`movedBodies`, Design data version 6, 35ec), each
  * made by an item it depends on (`bodyItem`).
+ *
+ * A body it holds that an earlier item's boolean has split since the Move
+ * was made (SL #583 item 2: an upstream edit makes a Cut go right
+ * through) is moved whole: every new piece split from it (`from`), one
+ * the design hasn't numbered yet, is moved too and named in `takes`, so
+ * the design takes it into the Move (`followedDoc`) and it stays moved.
+ * A piece it holds that its item no longer makes (that edit undone) is
+ * no failure while the Move holds the body it split from: that body has
+ * it again.
  */
-async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
+async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   for (const id of f.dependsOn) {
     const r = done[id];
     if (r?.status === "suppressed") return { status: "greyed", by: id };
@@ -1166,13 +1275,16 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   // SL #506 item 4: a body that is no longer there is left out, and the Move moves the rest with a warning naming it,
   // so a body it also moves never jumps back for it. With none left the Move fails, naming the first as before.
   const gone: { body: string; said: string; failed: Extract<FeatureResult, { status: "failed" }> }[] = [];
-  for (const body of movedBodies(f)) {
+  const held = movedBodies(f);
+  for (const body of held) {
     const id = bodyItem(body)!;
     const r = done[id];
     const b = r?.status === "built" ? bodies[body] : undefined;
     const what = body === bodyIdOf(id) ? label(id) : `a piece of ${label(id)}`;
     if (r === undefined) gone.push({ body, said: `${label(id)} was deleted`, failed: { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${name} has nothing to move` } });
     else if (r.status !== "built") gone.push({ body, said: `${label(id)} is not built`, failed: { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${name} can't move it` } });
+    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again (SL #583 item 2).
+    else if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
     // Built, but gone from here on: an earlier Combine or extrude used it up, or left no such piece (as `booleanSteps` says it; hunts 11-06, 11-08).
     else if (b === undefined) gone.push({ body, said: `an earlier Combine or extrude used up ${what} or left no such piece`, failed: { status: "failed", cause: "failed-input", input: id, message: `${name} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` } });
     else from.push([body, b]);
@@ -1181,6 +1293,18 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   const list = (names: readonly string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
   const words = (body: string) => (isPiece(body) ? `a piece of ${label(bodyItem(body)!)}` : label(bodyItem(body)!));
   const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
+  // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
+  const numbered = doc.bodies === undefined ? null : new Set(doc.bodies.map((b) => b.id));
+  const takes: string[] = [];
+  for (let grew = numbered !== null; grew; ) {
+    grew = false;
+    for (const [id, b] of Object.entries(bodies))
+      if (b.from !== undefined && !numbered!.has(id) && !from.some(([x]) => x === id) && from.some(([x]) => x === b.from)) {
+        from.push([id, b]);
+        takes.push(id);
+        grew = true;
+      }
+  }
   // Built only once every body is there, so a Move that fails builds nothing.
   // A Combine's result has no spec (35f1f2a): the kernel moves the body it keeps (body_move), and each face's frame is
   // carried on from where its input body's was, so a sketch on it goes where the face went. A refusal (out past model
@@ -1203,7 +1327,15 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   }
   const holds = from.map(([, b]) => b.handle);
   for (const [id, b] of moved) bodies[id] = b;
-  return { status: "built", holds, ...missing };
+  return { status: "built", holds, ...missing, ...(takes.length > 0 ? { takes } : {}) };
+}
+
+/** The bodies item `id`'s booleans split pieces from (SL #583 item 2): a Combine's target, an operation extrude's bodies. */
+function splitBy(doc: DesignDocument, id: string): string[] {
+  const item = doc.timeline.features.find((x) => x.id === id);
+  if (item === undefined) return [];
+  if (isCombineItem(item)) return [combineBodies(item).target];
+  return isOperationExtrude(item) ? [...extrudeOperation(item)!.bodies] : [];
 }
 
 /**
@@ -1234,12 +1366,13 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
   const plane = mirrorOf(f);
   if (b.spec === null) {
     // 35f1f2c: a Combine's result copied as it is (the same kernel body), or mirrored by the kernel's body_move; its faces the
-    // Duplicate's, each keeping its role with the feature it came from (built-body.ts `copiedFaceName`), in the same order
+    // Duplicate's, each keeping its role with the feature it came from (built-body.ts `copiedFaceName`; the source's own as a
+    // plain copy's, SL #538 item 5), in the same order
     // (a move or a mirror keeps every face and its order), each frame carried across the plane with it.
     const motions = plane === undefined ? [] : [mirrorMotion(plane)];
     const handle = motions.length === 0 ? b.handle : await cache.moved(b.handle, motions);
     const frames = motions.length === 0 ? b.frames : b.named!.faces.map((_, k) => movedFrame(b.frames?.[k] ?? null, motions));
-    bodies[id] = { feature: f.id, handle, spec: null, named: copiedNames(b.named!, f.id), ...(frames && { frames }) };
+    bodies[id] = { feature: f.id, handle, spec: null, named: copiedNames(b.named!, f.id, b.feature, (id) => Object.hasOwn(done, id)), ...(frames && { frames }) };
     return { status: "built", bodies: [id] };
   }
   const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane)]);
@@ -1358,7 +1491,9 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       throw e;
     }
     const missed = missedTools(operation, t.handle, ts.map((x) => x.handle), result);
-    if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]) });
+    // SL #583 item 3: a Join's tool none of whose faces is left lies wholly inside, so its words never say it doesn't reach.
+    const inside = operation === "join" ? missed.filter((i) => leavesNoFace(ts[i].handle, result)).map((i) => step.tools[i]) : [];
+    if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]), ...(inside.length > 0 && { inside }) });
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
     const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
@@ -1368,10 +1503,13 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];
     for (const nb of named.bodies) {
-      const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
-      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
+      const h = result.history[result.bodies.indexOf(nb.handle)];
+      const frames = framesOfResult(h, built);
+      const faces = withOrigins(nb.faces, h, inputs, frames);
+      const piece = !featureOf.has(nb.id) || nb.id === own;
+      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces, made: nb.made }, by: f.id, ...(frames && { frames }), ...(piece && { from: step.target }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
-      if (!featureOf.has(nb.id) || nb.id === own) {
+      if (piece) {
         firstPiece++;
         if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
       }
@@ -1393,6 +1531,26 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // Extrude Join that reaches nothing still warns (#521).
   const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, message: missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined) } };
   return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn, ...missing };
+}
+
+/**
+ * A boolean result's face names with, on each face merged from several
+ * input faces lying level (the history's `also`), the input faces it lies on
+ * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then.
+ */
+function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined): readonly FaceNames[] {
+  if (h?.also === undefined || !h.also.some((a) => a.length > 0)) return faces;
+  const byHandle = new Map(inputs.map((x) => [x.handle, x] as const));
+  return faces.map((face, i) => {
+    const more = h.also![i] ?? [];
+    if (more.length === 0) return face;
+    const origins = [h.faces[i], ...more].flatMap((from) => {
+      const input = from === undefined ? undefined : byHandle.get(from.body);
+      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face }];
+    });
+    const frame = frames?.[i] ?? null;
+    return { ...face, origins, ...(frame !== null && { frame }) };
+  });
 }
 
 /** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */

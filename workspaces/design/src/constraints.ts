@@ -33,7 +33,7 @@
 // changed later (`changeDimension`), solved again the same way.
 
 import type { KernelCalls } from "@fission/core";
-import { constraintPoints, counted, DIMENSION_LIMITS, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
+import { constraintPoints, counted, curvePoints, DIMENSION_LIMITS, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
 import { madePoints } from "./projection.ts";
 
 /** The smallest feature the kernel builds (the kernel's MIN_FEATURE, mm): no constraint may shrink a line or an arc below it. */
@@ -74,9 +74,12 @@ export function followingPoints(sketch: Sketch): Set<string> {
  * nothing ties stays where it is in any least change, so a big sketch with
  * few constraints is not refused for its size (the solver bug hunt,
  * 2026-11-06: 1,001 lines could take no constraint and no drag).
- * `solvedPoints` gives every point's place from the answer.
+ * `solvedPoints` gives every point's place from the answer. With `part`,
+ * only the connected part of the sketch round `part` and `held` is sent
+ * (points tied through any chain of equations): a constraint or drag is
+ * judged against its own part (#545 item 2).
  */
-export function solverRequest(sketch: Sketch, held: readonly string[] = []): SolverRequest {
+export function solverRequest(sketch: Sketch, held: readonly string[] = [], part?: readonly string[]): SolverRequest {
   const all = new Set(sketch.points.map((p) => p.id));
   const known = (id: string): string => {
     if (!all.has(id)) throw new Error(`sketch ${sketch.id} has no point ${id}`);
@@ -100,7 +103,29 @@ export function solverRequest(sketch: Sketch, held: readonly string[] = []): Sol
     equations.push(c.kind === "fix" ? ["fix", known(c.point)] : c.kind === "distance" ? ["distance", known(c.a), known(c.b), c.value] : [c.kind, known(c.a), known(c.b)]);
     sources.push({ constraint: c.id });
   }
-  const tied = new Set([...equations.flatMap((q) => q.slice(1).filter((x): x is string => typeof x === "string")), ...held.map(known)]);
+  const named = (q: (string | number)[]) => q.slice(1).filter((x): x is string => typeof x === "string");
+  if (part !== undefined) {
+    // #545 item 2: only the connected part of the sketch round `part` and the held points (every point an equation ties to
+    // them, through any chain); the rest can't change the answer there, and a part an earlier edit left unsolved must not
+    // refuse a constraint or a drag on curves that have nothing to do with it.
+    const parent = new Map<string, string>();
+    const root = (p: string): string => {
+      let r = p;
+      while (parent.has(r)) r = parent.get(r)!;
+      return r;
+    };
+    for (const q of equations) {
+      const [first, ...rest] = named(q).map(root);
+      for (const r of rest) if (r !== root(first)) parent.set(r, root(first));
+    }
+    const roots = new Set([...part, ...held].map((p) => root(known(p))));
+    for (let k = equations.length - 1; k >= 0; k--) {
+      if (roots.has(root(named(equations[k])[0]))) continue;
+      equations.splice(k, 1);
+      sources.splice(k, 1);
+    }
+  }
+  const tied = new Set([...equations.flatMap(named), ...held.map(known)]);
   const kept = sketch.points.filter((p) => tied.has(p.id));
   const at = new Map(kept.map((p, i) => [p.id, i]));
   const constraints = equations.map((q) => q.map((x, k) => (k > 0 && typeof x === "string" ? at.get(x)! : x)));
@@ -208,7 +233,8 @@ async function solvedWith(kernel: KernelCalls, trial: Sketch, made: SketchConstr
     // The circle takes the size; the solver is still asked, so a sketch it can't solve is refused as any constraint's is.
     trial = { ...trial, curves: trial.curves.map((q) => (q.id === made.circle && q.kind === "circle" ? { ...q, radius: made.value / 2 } : q)) };
   }
-  const request = solverRequest(trial, held);
+  const part = made.kind === "diameter" ? trial.curves.filter((q) => q.id === made.circle).flatMap(curvePoints) : constraintPoints(made);
+  const request = solverRequest(trial, held, part);
   const answer = readAnswer(await kernel.call("solve_sketch", request.text));
   if (answer.result === "refused") return { refused: `The sketch can't be solved: ${answer.message}.`, fighting: [] };
   if (answer.result === "conflict") {
@@ -227,7 +253,7 @@ async function solvedWith(kernel: KernelCalls, trial: Sketch, made: SketchConstr
     // that leaves as many freedoms as before adds nothing. The same points are told both times (`held` ties them), so the
     // counts compare.
     const before: Sketch = { ...trial, constraints: trial.constraints.filter((c) => c !== made) };
-    const was = readAnswer(await kernel.call("solve_sketch", solverRequest(before, [...held, ...constraintPoints(made)]).text));
+    const was = readAnswer(await kernel.call("solve_sketch", solverRequest(before, [...held, ...constraintPoints(made)], part).text));
     if (was.result === "solved" && answer.free >= was.free) {
       const why = made.kind === "fix" ? "the others already hold that point" : "the others already hold it";
       return { refused: `That ${named(made.kind)} would add nothing: ${why}.`, fighting: [] };

@@ -4,14 +4,20 @@
 //   * the page lists the reports, opens a link, and sends a take-down with the moderator's note;
 //   * text from a report (a reason that is HTML with a script) is shown as text, and never runs;
 //   * a decision without a note is refused on the page before anything is sent;
-//   * an account the function says is not a moderator sees only that, and no list.
+//   * an account the function says is not a moderator sees only that, and no list;
+//   * all of that both from serve.mjs (its policy a header) and as the plain files build.mjs writes for the mirror's
+//     /review/ (no headers at all, as GitHub Pages serves them: the policy in the page), and there the page refuses
+//     to run inside a frame.
 // The page runs under its real content security policy here. Run with `npm run e2e`, after `npm run build`;
 // E2E_SHOTS=<dir> saves screenshots.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
 import { createServer } from "node:http";
 import { launch } from "./browser.mjs";
 import { handler, pageConfig } from "../../../supabase/review/serve.mjs";
+import { buildReview } from "../../../supabase/review/build.mjs";
 
 // 1. Not in the public build: no file of dist/ names the moderation function or the review page's script.
 const dist = new URL("../dist/", import.meta.url);
@@ -35,6 +41,26 @@ for (const f of files) {
 const server = createServer(handler);
 await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
 const base = `http://127.0.0.1:${server.address().port}`;
+// The plain files, served as GitHub Pages would: from /review/, with a content type and nothing else.
+const folder = mkdtempSync(join(tmpdir(), "review-"));
+buildReview(folder);
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" };
+const plain = createServer((req, res) => {
+  const path = new URL(req.url ?? "/", "http://x").pathname;
+  const name = path === "/review/" ? "index.html" : path.startsWith("/review/") ? path.slice(8) : "";
+  if (path === "/frame.html") return res.writeHead(200, { "content-type": TYPES[".html"] }).end('<iframe src="/review/" width="600" height="300"></iframe>');
+  try {
+    const body = readFileSync(join(folder, name));
+    res.writeHead(200, { "content-type": TYPES[extname(name)] ?? "application/octet-stream" }).end(body);
+  } catch {
+    res.writeHead(404).end();
+  }
+});
+await new Promise((ok) => plain.listen(0, "127.0.0.1", ok));
+const plainBase = `http://127.0.0.1:${plain.address().port}`;
+const html = readFileSync(join(folder, "index.html"), "utf8");
+assert.ok(!html.includes("SERVICE_ORIGIN"), "the service's address is filled into the page's policy");
+assert.match(html, new RegExp(`connect-src 'self' ${new URL(pageConfig().url).origin};`));
 const { functionUrl } = pageConfig();
 const LINK = "6f1d2c3b-4a59-4e6f-8a7b-9c0d1e2f3a4b";
 const OWNER = "0b7c1d2e-3f40-4a5b-8c6d-7e8f9a0b1c2d";
@@ -43,6 +69,7 @@ const EVIL = '<img src=x onerror="window.__ran=1"><script>window.__ran=1</script
 const shots = process.env.E2E_SHOTS;
 const browser = await launch();
 try {
+  for (const [host, address] of [["serve.mjs", `${base}/`], ["plain files", `${plainBase}/review/`]])
   for (const moderator of [true, false]) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: false });
     const page = await context.newPage();
@@ -67,20 +94,20 @@ try {
       };
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answers[ask.do] ?? {}) });
     });
-    await page.goto(`${base}/`);
+    await page.goto(address);
     if (!moderator) {
       await page.waitForSelector("#status.error");
       assert.equal(await page.textContent("#status"), "This account is not on the moderators' list.");
       assert.equal(await page.isVisible("#tabs"), false, "no tabs for an account that isn't a moderator");
       assert.equal(await page.locator("table").count(), 0, "no list shown");
-      console.log("PASS an account that isn't a moderator sees only that");
+      console.log(`PASS (${host}) an account that isn't a moderator sees only that`);
       await context.close();
       continue;
     }
     await page.waitForSelector("tr.pick");
     assert.equal(await page.textContent("#who"), "Signed in as Ben");
     assert.equal(asked[0].auth, "Bearer test-token", "the sign-in goes with every request");
-    if (shots) await page.screenshot({ path: `${shots}/review-queue-1280.png` });
+    if (shots) await page.screenshot({ path: `${shots}/review-queue-${host === "serve.mjs" ? "local" : "hosted"}-1280.png` });
     await page.click("tr.pick");
     await page.waitForSelector("text=Reports (1)");
     // The reason is on the page as the characters typed, and nothing in it ran.
@@ -99,9 +126,27 @@ try {
     const decide = asked.find((a) => a.ask.do === "decide");
     // Only what the moderator chose: the moderator's name is never sent (the function takes it from its list).
     assert.deepEqual(decide.ask, { do: "decide", share: LINK, decision: "take-down", note: "Rude words in the name" });
-    if (shots) await page.screenshot({ path: `${shots}/review-link-1280.png`, fullPage: true });
+    if (shots) await page.screenshot({ path: `${shots}/review-link-${host === "serve.mjs" ? "local" : "hosted"}-1280.png`, fullPage: true });
     assert.deepEqual(errors, []);
-    console.log("PASS the review page lists, opens and takes down, shows report text as text, and needs a note");
+    console.log(`PASS (${host}) the review page lists, opens and takes down, shows report text as text, and needs a note`);
+    await context.close();
+  }
+  // Inside a frame the plain page refuses and asks nothing of the function (GitHub Pages can't forbid framing).
+  {
+    const context = await browser.newContext({ bypassCSP: false });
+    const page = await context.newPage();
+    let asked = 0;
+    await page.route(functionUrl, (route) => {
+      asked += 1;
+      return route.fulfill({ status: 200, contentType: "application/json", body: '{"moderator":"Ben"}' });
+    });
+    await page.addInitScript(() => sessionStorage.setItem("review.token", "test-token"));
+    await page.goto(`${plainBase}/frame.html`);
+    const frame = page.frameLocator("iframe");
+    await frame.locator("body", { hasText: "can't be shown inside another page" }).waitFor();
+    assert.equal(await frame.locator("button").count(), 0, "no Sign in, no tabs");
+    assert.equal(asked, 0, "nothing asked of the function from a frame");
+    console.log("PASS the plain page refuses to run inside a frame");
     await context.close();
   }
   // The page's headers: only its own script may run, and it talks only to the account service.
@@ -117,4 +162,5 @@ try {
 } finally {
   await browser.close();
   server.close();
+  plain.close();
 }

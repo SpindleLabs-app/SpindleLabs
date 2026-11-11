@@ -52,6 +52,8 @@ import {
   combineBodies,
   isSketchExtrude,
   moveMarker,
+  followedDoc,
+  numberPieces,
   movePoint,
   nameBody,
   outlineCurves,
@@ -527,6 +529,13 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
   async function build(): Promise<TimelineBuild> {
     if (fs.has("leak-bodies")) cache = new BodyCache(counted);
     if (fs.has("full-replay")) await cache.clear();
+    const b = await rebuildTimeline(state.doc, cache, kernel);
+    // As the app takes in what a rebuild settles into the edit's own step (workspace.ts `takeIn`): each piece numbered
+    // when it first appears (its faces not remembered: the model numbers pieces by rank order alone), a Move holding
+    // the new pieces of a body it holds (SL #583 item 2). A Move put in later then holds only what was picked.
+    const next = numberPieces(followedDoc(state.doc, b), Object.keys(b.bodies));
+    if (next === state.doc) return b;
+    state = { ...state, doc: next };
     return rebuildTimeline(state.doc, cache, kernel);
   }
 
