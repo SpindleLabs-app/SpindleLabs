@@ -3625,7 +3625,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (snapping && picked.length === 0) snapping = null;
     showMoveHint();
     moveBox.setBodies(edited ? heldLabels(moveBodies) : bodyLabels(picked));
-    moveBox.setPivot(startPivot(picked, lastScene));
+    // The pivot follows the bodies unless typed. A new Move's are where the scene shows them. An edited Move's, once its
+    // Centre of the bodies was pressed, are found where they were before it, as the button finds them (hunt 11-11, E1:
+    // read off the scene here, a click on a body or a rebuild put the pivot where the bodies end up).
+    if (id === null) moveBox.setPivot(startPivot(picked, lastScene));
+    else if (!moveBox.pivotTyped) void centreOfBodies();
     previewMove();
   }
 
