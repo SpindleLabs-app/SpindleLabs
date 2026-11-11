@@ -119,6 +119,29 @@ export const DIMENSION_LIMITS = { min: 1e-3, max: 2e8 } as const;
 /** The points a constraint names: two, one for a fix, none for a diameter (it names its circle). */
 export const constraintPoints = (c: SketchConstraint): string[] => (c.kind === "fix" ? [c.point] : c.kind === "diameter" ? [] : [c.a, c.b]);
 
+/**
+ * Whether constraint `c` names only points in `follows` (points that follow a body: pinned or projected). From version 17
+ * (issue #517) a constraint may name a followed point beside a point of the sketch's own, the solver fixing the followed one
+ * where the body puts it; one naming only followed points (a side lying on the body, a Fix on a pinned point) holds nothing
+ * the body doesn't and could only fight it, so none is kept.
+ */
+export const heldByBody = (c: SketchConstraint, follows: ReadonlySet<string>): boolean => {
+  const points = constraintPoints(c);
+  return points.length > 0 && points.every((p) => follows.has(p));
+};
+
+/** The points of sketch `s` that follow a body, read from data that may not be checked yet: pinned, or made by a projection. */
+function followedIn(s: Sketch): Set<string> {
+  const curves = new Map(s.curves.map((c) => [c.id, c]));
+  // Read with ?. rather than "?? []" (mutation survivors 11-08: an empty list stood in by anything gives the same set).
+  const follows = new Set(s.pins?.map((p) => p.point));
+  s.projected?.forEach((p) => {
+    const c = curves.get(p.made);
+    for (const q of c === undefined ? [p.made] : c.kind === "line" ? [c.start, c.end] : c.kind === "circle" ? [c.centre] : [c.start, c.end, c.centre]) follows.add(q);
+  });
+  return follows;
+}
+
 /** The most constraints one sketch may hold: the solver's own limit (four a point at its 2,000 points). */
 export const MAX_SKETCH_CONSTRAINTS = 8000;
 
@@ -216,7 +239,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 16;
+  version: 17;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -408,7 +431,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 16, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 17, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -1536,6 +1559,18 @@ function hasVersion14Fields(d: Record<string, unknown>): boolean {
 }
 
 /** Whether version 14 data holds what only version 15 brought (35f1f2b): a pin or projection by a Combine result's edge name (design-edges.ts). */
+/** Whether version 16 data has a constraint naming a point that follows a body, which only version 17 (#517) allows. */
+function hasVersion17Fields(d: Record<string, unknown>): boolean {
+  // Read before the data is checked (the fuzzer's saved inputs: a projected list that is text), so only lists of records
+  // count; anything else is refused by the checks after, in their own words.
+  const list = (x: unknown): Record<string, unknown>[] => (Array.isArray(x) ? x.filter(isRecord) : []);
+  return list(d.sketches).some((s) => {
+    if (!Array.isArray(s.curves) || !Array.isArray(s.constraints) || (s.pins !== undefined && !Array.isArray(s.pins)) || (s.projected !== undefined && !Array.isArray(s.projected))) return false;
+    const follows = followedIn({ ...s, curves: list(s.curves), pins: list(s.pins), projected: list(s.projected) } as unknown as Sketch);
+    return list(s.constraints).some((c) => (c.kind === "fix" ? [c.point] : [c.a, c.b]).some((p) => typeof p === "string" && follows.has(p)));
+  });
+}
+
 function hasVersion15Fields(d: Record<string, unknown>): boolean {
   const sketches = Array.isArray(d.sketches) ? d.sketches.filter(isRecord) : [];
   const held = (list: unknown, key: string) => Array.isArray(list) && list.some((x) => isRecord(x) && typeof x[key] === "string" && isHeldDesignName(x[key]));
@@ -1613,7 +1648,7 @@ function checkRegion(region: unknown, id: string): void {
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 16;
+export const DESIGN_VERSION = 17;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1668,10 +1703,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const v15 = v14.version === 14 ? { ...v14, version: 15 } : v14;
   // Version 16 (hunt 11-08) names an Extrude Join's piece holding only the extrude by the extrude's own id, which version
   // 15 named piece 1: renamed everywhere the data names it (`migrateDesignV15`).
-  const d = (v15.version === 15 ? migrateDesignV15(v15) : v15) as Partial<DesignDocument>;
+  const v16 = v15.version === 15 ? migrateDesignV15(v15) : v15;
+  // Version 17 (#517) lets a constraint name a point that follows a body beside one of the sketch's own, which version 16
+  // refused; other version 16 data is read as it is.
+  if (v16.version === 16 && hasVersion17Fields(v16)) throw new Error(`Design data says version ${shown(given)} but has a constraint on a point that follows a body, which version 17 brought`);
+  const d = (v16.version === 16 ? { ...v16, version: 17 } : v16) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 16 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 or 16)`);
+  // A whole number above 17 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 or 17)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1808,17 +1847,12 @@ export function readDesignDocument(data: unknown): DesignDocument {
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
   }
-  // No constraint names a point that follows a body (47d4 review): a body's edit moves it without a solve, so the constraint would stop holding.
+  // No constraint names only points that follow a body (47d4 review; from version 17, #517, one beside a point of the sketch's
+  // own is solved with the followed one fixed where the body puts it, rebuild.ts `follow`).
   for (const s of d.sketches) {
     if (s.constraints.length === 0) continue;
-    const curves = new Map(s.curves.map((c) => [c.id, c]));
-    // Read with ?. rather than "?? []" (mutation survivors 11-08: an empty list stood in by anything gives the same set).
-    const follows = new Set(s.pins?.map((p) => p.point));
-    s.projected?.forEach((p) => {
-      const c = curves.get(p.made);
-      for (const q of c === undefined ? [p.made] : c.kind === "line" ? [c.start, c.end] : c.kind === "circle" ? [c.centre] : [c.start, c.end, c.centre]) follows.add(q);
-    });
-    for (const c of s.constraints) for (const q of constraintPoints(c)) if (follows.has(q)) throw new Error(`Design sketch ${s.id}: constraint ${c.id} names ${q}, which follows a body's edge, so a constraint can't hold it`);
+    const follows = followedIn(s);
+    for (const c of s.constraints) if (heldByBody(c, follows)) throw new Error(`Design sketch ${s.id}: constraint ${c.id} names only points that follow a body's edge (${constraintPoints(c).join(", ")}), so the body holds them and the constraint could only fight it`);
     // A projected circle's size is the body's (47e).
     for (const c of s.constraints) if (c.kind === "diameter" && s.projected?.some((p) => p.made === c.circle) === true) throw new Error(`Design sketch ${s.id}: dimension ${c.id} sizes ${c.circle}, which is projected from a body, so the body says its size`);
   }
