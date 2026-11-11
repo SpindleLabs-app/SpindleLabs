@@ -1,8 +1,9 @@
 """save_design's save time and revision checks (supabase/migrations/20261111150000_design_versions_server_time.sql).
 
-Same throwaway cluster and helpers as test_design_versions.py. The points: a save time that is not finite, or more
-than a day ahead of the server's clock, is refused as "too-big" (0.9 and 1.1 days, and the exact day) and writes
-nothing; a design already holding such a time can still be saved over; and a save over an existing design that names
+Same throwaway cluster and helpers as test_design_versions.py. The points: versions are decided by the server's clock,
+whatever the devices' clocks say (a device a day fast, the 10-minute gap at 0.9x/1.1x of server time, labels 0.9 and
+1.1 days ahead); a save time that is not finite is refused as "too-big" and writes nothing; a design already holding
+one can still be saved over; and a save over an existing design that names
 no revision is "changed", never "gone".
 Run: python3 -m unittest discover -s supabase/test
 """
@@ -26,8 +27,9 @@ class DesignSaveTimeDatabase(unittest.TestCase):
     as_user = test_design_versions.DesignVersionsDatabase.as_user
     denied = test_design_versions.DesignVersionsDatabase.denied
     save = test_design_versions.DesignVersionsDatabase.save
-    history = test_design_versions.DesignVersionsDatabase.history
     kept = test_design_versions.DesignVersionsDatabase.kept
+    pass_time = test_design_versions.DesignVersionsDatabase.pass_time
+    history_in_time = test_design_versions.DesignVersionsDatabase.history_in_time
 
     def save_at(self, when_sql, body="'A'", design_id=None, expected=None):
         """save_design with saved_at given as an SQL expression (so it can use the server's now())."""
@@ -52,20 +54,62 @@ class DesignSaveTimeDatabase(unittest.TestCase):
         self.assertEqual(self.owner(f"select revision || ' ' || body from designs where id = '{first['id']}';"), "1 A")
         self.assertEqual(self.kept(ADA, first["id"]), [])
 
-    def test_a_save_time_ahead_of_the_server_at_0_9_and_1_1_days(self):
-        # One day is 86400 s: 0.9 x = 77760 s ahead is a clock a little wrong, kept; 1.1 x = 95040 s is refused.
+    def labels(self, did):
+        """The design's version labels (device times) as text, newest label first."""
+        ok, out = self.as_user(ADA, f"select string_agg(saved_at::text, ',') from design_versions('{did}');")
+        self.assertTrue(ok, out)
+        return out.split(",") if out else []
+
+    # The server's clock decides, whatever the devices' clocks say
+
+    def test_a_device_a_day_fast_then_a_right_one_every_30_minutes_for_2_hours(self):
+        # Real time 09:00: device A, its clock a day fast, saves the design (label 2026-11-06 09:00).
+        # Device B, its clock right, saves over it at 09:30, 10:00, 10:30 and 11:00 (real and device time).
+        # Each of B's saves replaces a state that reached the server 30 min (>= 10) after the newest version did,
+        # or the design has none yet, so each replaced state is kept: A's (09:00 server), B's 09:30, 10:00 and 10:30.
+        # 4 versions. (With the device clocks deciding, A's label a day ahead kept every one of B's out: 1 version.)
+        first = self.save_at("'2026-11-06 09:00+00'")
+        did, rev = first["id"], first["revision"]
+        for when in ["09:30", "10:00", "10:30", "11:00"]:
+            self.pass_time(30 * 60)
+            answer = self.save_at(f"'2026-11-05 {when}+00'", f"'B {when}'", did, rev)
+            self.assertEqual(answer["status"], "saved", answer)
+            rev = answer["revision"]
+        # Listed newest label first: A's label a day ahead is still its label.
+        self.assertEqual(self.labels(did), ["2026-11-06 09:00:00+00", "2026-11-05 10:30:00+00", "2026-11-05 10:00:00+00", "2026-11-05 09:30:00+00"])
+
+    def test_the_ten_minute_gap_by_the_servers_clock_at_0_9x_and_1_1x(self):
+        # The labels are deliberately wrong and out of order (a year back, a day ahead, now): only server time counts.
+        # A reaches the server at 0 s; 540 s later (0.9 x 600 s) B replaces it: no version yet, so A is kept (0 s).
+        # 100 s later C replaces B, which reached the server at 540 s: 540 - 0 = 540 < 600, so B is not kept.
+        first = self.save_at("now() - interval '1 year'")
+        self.pass_time(540)
+        self.save_at("now() + interval '1 day'", "'B'", first["id"], 1)
+        self.pass_time(100)
+        self.save_at("now()", "'C'", first["id"], 2)
+        self.assertEqual(len(self.labels(first["id"])), 1)
+        # The same at 660 s (1.1 x 600 s): 660 - 0 = 660 >= 600, so B is kept too.
+        first = self.save_at("now() - interval '1 year'")
+        self.pass_time(660)
+        self.save_at("now() + interval '1 day'", "'B'", first["id"], 1)
+        self.pass_time(100)
+        self.save_at("now()", "'C'", first["id"], 2)
+        self.assertEqual(len(self.labels(first["id"])), 2)
+
+    def test_a_save_time_0_9_or_1_1_days_ahead_is_kept_as_its_label_and_blocks_nothing(self):
+        # One day is 86400 s: 0.9 x = 77760 s and 1.1 x = 95040 s ahead are both saved (only the label is wrong).
         self.assertEqual(round(0.9 * DAY_SECONDS), 77760)
         self.assertEqual(round(1.1 * DAY_SECONDS), 95040)
         self.assertEqual(self.save_at("now() + interval '77760 seconds'")["status"], "saved")
-        self.assertEqual(self.save_at("now() + interval '95040 seconds'"), {"status": "too-big"})
-        self.assertEqual(self.designs(), "1")
-
-    def test_exactly_one_day_ahead_is_the_last_time_kept(self):
-        # now() is the same within one statement, so these compare against the very now() save_design sees.
-        self.assertEqual(self.save_at("now() + interval '1 day'")["status"], "saved")
-        self.assertEqual(self.save_at("now() + interval '1 day 1 microsecond'"), {"status": "too-big"})
-        # A clock behind the server is never refused: a year back still saves.
-        self.assertEqual(self.save_at("now() - interval '1 year'")["status"], "saved")
+        first = self.save_at("now() + interval '95040 seconds'")
+        self.assertEqual(first["status"], "saved")
+        # A right clock then saves over it twice, 11 min of server time apart: the 1.1-day copy is kept (the first
+        # version), and the right clock's own copy too (11 >= 10 min after the first by the server), so 2.
+        self.pass_time(11 * 60)
+        self.assertEqual(self.save_at("now()", "'B'", first["id"], 1)["status"], "saved")
+        self.pass_time(11 * 60)
+        self.assertEqual(self.save_at("now()", "'C'", first["id"], 2)["status"], "saved")
+        self.assertEqual(len(self.labels(first["id"])), 2)
 
     def test_a_design_already_holding_an_infinite_time_can_still_be_saved_over(self):
         # A design kept before this check with saved_at 'infinity' (made by hand here): saving over it used to raise
@@ -84,7 +128,8 @@ class DesignSaveTimeDatabase(unittest.TestCase):
     def test_an_infinite_newest_version_does_not_stop_versions(self):
         # A version labelled 'infinity' (kept before this check, made by hand here) is the newest; the next replaced
         # copy is still kept instead of the save raising.
-        did = self.history(ADA, [("'A'", "2026-11-05 09:00+00"), ("'B'", "2026-11-05 09:20+00")])
+        did, _ = self.history_in_time(ADA, [("'A'", "2026-11-05 09:00+00"), ("'B'", "2026-11-05 09:20+00")])
+        self.pass_time(20 * 60)
         self.owner(f"update design_versions set saved_at = 'infinity' where design_id = '{did}';")
         self.assertEqual(self.save_at("'2026-11-05 09:40+00'", "'C'", did, 2)["status"], "saved")
         ok, out = self.as_user(ADA, f"select string_agg(saved_at::text, ',') from design_versions('{did}');")

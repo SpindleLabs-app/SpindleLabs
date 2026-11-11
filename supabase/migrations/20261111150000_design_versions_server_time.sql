@@ -1,15 +1,18 @@
--- save_design refuses save times no clock gives, and never mistakes a missing revision for a deleted design (issue
--- #546, items 11 and 12). Replaces save_design from 20261105180000_design_versions.sql with the same signature,
--- grants, security definer and search_path; changes:
---  * A saved_at that is not a finite time, or more than a day ahead of the server's now(), is refused as "too-big"
---    (the browser then leaves that one project unsent until it changes, and carries on with the others) instead of
---    being kept: an 'infinity' saved_at used to make every later save over that design raise an error.
---  * A design whose saved_at is already not finite (kept before this migration) no longer makes a save over it raise:
---    the replaced copy is then not kept as a version, and a non-finite newest version lets the next copy be kept.
+-- Earlier versions decided by the server's own clock, and save_design's last two unchecked inputs (issue #546, items
+-- 10-12). Replaces save_design from 20261105180000_design_versions.sql with the same signature, grants, security
+-- definer and search_path; changes:
+--  * A version's kept_at is now the server's time when that state reached the account (the replaced design's
+--    updated_at), and the 10-minute gap is measured by it: the copy a save replaces is kept when the design has no
+--    version yet or the copy reached the account at least version_gap_seconds after the newest version did. The
+--    newest versions_kept, and the versions given up first when the space is over, are by kept_at too. saved_at,
+--    the device's own clock, is only the version's label: a device with its clock ahead (or behind) no longer stops
+--    versions being kept, nor makes its version the last ever given up.
+--  * A saved_at that is null or not a finite time (only a hand-made request can send one) is refused as "too-big"
+--    instead of being kept; a design that already holds one can be saved over (its copy is not kept as a version).
+--    A time far ahead is kept as the device's label, as before: it no longer harms anything.
 --  * An existing design saved with p_expected null answers "changed" (is distinct from), not "gone".
--- The 10-minute gap and the oldest-first order are still by saved_at, as before.
 -- Safe to run more than once (create or replace; the grants are the same as before).
--- supabase/test/test_design_versions_time.py checks these on a real PostgreSQL.
+-- supabase/test/test_design_versions_time.py and test_design_versions.py check these on a real PostgreSQL.
 
 create or replace function public.save_design(p_id uuid, p_expected integer, p_name text, p_source text, p_body text, p_picture text, p_saved_at timestamptz) returns jsonb
 language plpgsql security definer set search_path = '' as $$
@@ -21,6 +24,7 @@ declare
   old_bytes integer := 0;
   old_body text;
   old_saved timestamptz;
+  old_written timestamptz;
   newest timestamptz;
   new_bytes integer;
   used bigint;
@@ -41,11 +45,11 @@ begin
     return jsonb_build_object('status', 'too-big');
   end if;
   -- A save time no clock gives: refused like a file the account can't keep, so it never reaches a design.
-  if p_saved_at is null or not isfinite(p_saved_at) or p_saved_at > now() + interval '1 day' then
+  if p_saved_at is null or not isfinite(p_saved_at) then
     return jsonb_build_object('status', 'too-big');
   end if;
   if p_id is not null then
-    select revision, bytes, body, saved_at into current_rev, old_bytes, old_body, old_saved from public.designs where id = p_id and user_id = me;
+    select revision, bytes, body, saved_at, updated_at into current_rev, old_bytes, old_body, old_saved, old_written from public.designs where id = p_id and user_id = me;
     if not found then
       return jsonb_build_object('status', 'gone');
     end if;
@@ -78,25 +82,24 @@ begin
     if not found then
       return jsonb_build_object('status', 'gone'); -- deleted by another request since it was read above
     end if;
-    -- The copy just replaced, kept as a version when it is a different state and the newest is old enough (a time
-    -- that is not finite is never subtracted: PostgreSQL raises on it).
-    if old_body is distinct from p_body then
-      select max(saved_at) into newest from public.design_versions where design_id = p_id;
-      if isfinite(old_saved) and (newest is null or not isfinite(newest)
-          or old_saved - newest >= make_interval(secs => (lim->>'version_gap_seconds')::integer)) then
-        insert into public.design_versions (design_id, user_id, saved_at, body) values (p_id, me, old_saved, old_body)
+    -- The copy just replaced, kept as a version when it is a different state and it reached the account (server
+    -- time) long enough after the newest version did. A copy labelled with no real time is not kept.
+    if old_body is distinct from p_body and isfinite(old_saved) then
+      select max(kept_at) into newest from public.design_versions where design_id = p_id;
+      if newest is null or old_written - newest >= make_interval(secs => (lim->>'version_gap_seconds')::integer) then
+        insert into public.design_versions (design_id, user_id, saved_at, body, kept_at) values (p_id, me, old_saved, old_body, old_written)
           on conflict (design_id, saved_at) do nothing;
       end if;
       delete from public.design_versions where design_id = p_id and saved_at not in
-        (select v.saved_at from public.design_versions v where v.design_id = p_id order by v.saved_at desc limit (lim->>'versions_kept')::integer);
+        (select v.saved_at from public.design_versions v where v.design_id = p_id order by v.kept_at desc, v.saved_at desc limit (lim->>'versions_kept')::integer);
     end if;
   end if;
-  -- Over the space with the versions: the person's oldest versions go first.
+  -- Over the space with the versions: the person's versions that reached the account first go first.
   loop
     select (select coalesce(sum(bytes), 0) from public.designs where user_id = me)
          + (select coalesce(sum(bytes), 0) from public.design_versions where user_id = me) into used;
     exit when used <= (lim->>'max_bytes')::bigint;
-    select design_id, saved_at into oldest from public.design_versions where user_id = me order by saved_at, design_id limit 1;
+    select design_id, saved_at into oldest from public.design_versions where user_id = me order by kept_at, saved_at, design_id limit 1;
     exit when not found;
     delete from public.design_versions where design_id = oldest.design_id and saved_at = oldest.saved_at;
   end loop;
