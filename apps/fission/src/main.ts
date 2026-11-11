@@ -18,7 +18,7 @@ import "@fission/ui/theme.css";
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -745,7 +745,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 // Save the shell's. Save also stays one click, as the icon beside it.
 /** A shell key as the user reads it here (Ctrl+S, or ⌘S on a Mac), for the File menu. */
 const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/.test(navigator.platform));
-const file = fileMenu(document, {
+const fileParts: FileMenuParts = {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
   ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
@@ -764,8 +764,17 @@ const file = fileMenu(document, {
     }
     return null;
   },
-});
+};
+const file = fileMenu(document, fileParts);
 $("file-bar").prepend(file.element);
+// The command search box (S) lists the shell's own commands after the workspace's (issue #523): Undo and Redo, File ▾'s
+// entries as File ▾ has them now (Export STL off with File ▾'s reason on an empty design) and Settings.
+shellCommands(document, () => [
+  { id: "shell-undo", label: "Undo", key: fileKey("Mod+Z"), off: ctx.history.undoLabel() === null ? "Nothing to undo" : undefined, run: () => undoRedo("undo") },
+  { id: "shell-redo", label: "Redo", key: fileKey("Mod+Shift+Z"), off: ctx.history.redoLabel() === null ? "Nothing to redo" : undefined, run: () => undoRedo("redo") },
+  ...fileSections(fileParts).flatMap((sec) => sec.items).map((i) => ({ id: `shell-${i.id}`, label: i.label, key: i.key, off: i.off, run: i.run })),
+  { id: "shell-settings", label: "Settings", run: () => $("settings-open").click() },
+]);
 /** What Open says when the last project's changes, refused because another tab saved, were kept as project `name`. */
 const keptApartWords = (name: string) => `Your changes in this tab couldn't be saved, because the project was changed in another tab meanwhile. Nothing is lost: they're kept in this browser as a separate project, “${name}” (File > Projects in this browser opens it).`;
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */

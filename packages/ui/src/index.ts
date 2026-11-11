@@ -16,7 +16,7 @@ export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } fr
 export { toolGroup, TOOL_ICON_SIZE, type ToolGroup, type ToolGroupOptions } from "./tool-group.ts";
 export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type FileMenuEntry, type FileMenuParts } from "./file-menu.ts";
 export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-elsewhere.ts";
-export { commandSearch, matchCommands, type Command, type CommandSearch } from "./command-search.ts";
+export { commandSearch, matchCommands, shellCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { REPEAT_MS, repeatGuard, type RepeatGuard } from "./press-guard.ts";
 export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visible.ts";
 export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";

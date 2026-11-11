@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, numberedWhenBuilt, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -266,7 +266,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
         { id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove },
         { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate },
         { id: "modify-menu-scale", label: "Scale", icon: "scale", title: SCALE_TITLE, run: duplicate.scale },
-        { id: "modify-menu-duplicate", label: "Duplicate", icon: "duplicate", title: DUPLICATE_TITLE, off: duplicate.off() ?? undefined, run: duplicate.run },
+        { id: "modify-menu-duplicate", label: "Duplicate", icon: "duplicate", key: chordLabel(parseChord("Mod+D"), /Mac|iPhone|iPad/.test(document.defaultView?.navigator.platform ?? "")), title: DUPLICATE_TITLE, off: duplicate.off() ?? undefined, run: duplicate.run },
         ...(combining ? [{ id: "modify-menu-combine", label: "Combine", icon: "combine" as const, title: combineTitle, run: onCombine }] : []),
       ],
     },
@@ -295,14 +295,12 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
     }
     slot.append(g.element);
   }
-  // The command search box (S, Ben's keys 10-29): every menu's items as they are now, in the toolbar's order, then the
-  // toolbar's own buttons (Export STL…), each off with its reason exactly when its menu item or button is.
+  // The command search box (S, Ben's keys 10-29): every menu's items as they are now, in the toolbar's order, each off
+  // with its reason exactly when its menu item is; the mirror rows named with their heading ("Mirror body: Across XY").
+  // Export STL is File ▾'s, with File ▾'s reason when off, listed by the shell with Undo and Save (issue #523).
   const commands = (): SearchCommand[] => {
-    const items = [createSections(), modifySections(), [{ items: comingItems("Construct") }], inspectSections(), insertSections(onInsert)].flatMap((ss) => ss.flatMap((sec) => sec.items));
-    return [
-      ...items.map((i) => ({ id: i.id, label: i.label, key: i.key, off: i.off, run: i.run })),
-      ...named.map(([label, el]) => ({ id: el.id, label, off: el.disabled ? `${label} is off now` : undefined, run: () => el.click() })),
-    ];
+    const items = [createSections(), modifySections(), [{ items: comingItems("Construct") }], inspectSections(), insertSections(onInsert)].flatMap((ss) => ss.flatMap((sec) => sec.items.map((i) => (sec.heading === "Mirror body" ? { ...i, label: `${sec.heading}: ${i.label}` } : i))));
+    return items.map((i) => ({ id: i.id, label: i.label, key: i.key, off: i.off, run: i.run }));
   };
   return { made, insert: inserting.menu!, facts, printCheck, explode, measure, commands };
 }
