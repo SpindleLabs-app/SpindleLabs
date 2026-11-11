@@ -363,6 +363,8 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       case "reorder": {
         const r = reorderItem(doc, op.item, op.to);
         if ("refused" in r) {
+          // The timeline model has no Extrude Join, so its sessions never meet a drag refused for one (SL #538 item 3).
+          if (r.refused === "join-order") throw new Error(`a drag refused for an Extrude Join the timeline model has none of: ${r.message}`);
           // Planted bug: the refusal is ignored and the item is moved anyway, as the data was written before 24e.
           if (!fs.has("reorder-unchecked")) return { kind: "refused", cause: r.refused };
           const features = doc.timeline.features.filter((f) => f.id !== op.item);

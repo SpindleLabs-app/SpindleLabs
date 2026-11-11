@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ActionRegistry, emptyProject, RepresentationRegistry, type WorkspaceContext } from "@fission/core";
-import { addSketch, BodyCache, builtPieceFaces, designWorkspace, DOWNLOAD_STL, drawRectangle, extrudeSketch, insertMove, insertPreset, numberPieces, partDocument, rebuildTimeline, registerDesignActions, reorderItem, shownBodyRefs, type DesignDocument } from "@fission/design";
+import { addSketch, BodyCache, builtPieceFaces, designWorkspace, DOWNLOAD_STL, drawRectangle, extrudeSketch, insertMove, insertPreset, numberPieces, partDocument, rebuildTimeline, registerDesignActions, shownBodyRefs, type DesignDocument } from "@fission/design";
 import { failedIds } from "../../../workspaces/design/src/browser.ts";
 import { app, close, kernel } from "./design-app.ts";
 
@@ -30,11 +30,14 @@ function joined(bx: number) {
   return { doc: e.doc, box1, move: move.id };
 }
 
-/** `doc` with Box 1 dragged to after Move 1, so Box 2 is made first. */
+/**
+ * `doc` with Box 1 put after Move 1, so Box 2 is made first, as a file holds it (a drag there is refused since SL #538
+ * item 3, but Box 2 and its Move put in at the marker before Box 1 make this order, and a file may hold it).
+ */
 function box2First(doc: DesignDocument, box1: string): DesignDocument {
-  const r = reorderItem(doc, box1, 2);
-  assert.ok("doc" in r, JSON.stringify(r));
-  return r.doc;
+  const [first, ...rest] = doc.timeline.features;
+  assert.equal(first.id, box1);
+  return { ...doc, timeline: { ...doc.timeline, features: [rest[0], rest[1], first, ...rest.slice(2)] } };
 }
 
 type App = Awaited<ReturnType<typeof app>>;

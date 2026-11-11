@@ -20,7 +20,7 @@ import { changedMove, insertMove, NO_MOVE } from "../src/move.ts";
 import { BodyCache, builtPieceFaces, rebuildTimeline } from "../src/rebuild.ts";
 import { showAllBodies } from "../src/show-only.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
-import { hideBody, reorderItem } from "../src/timeline-edits.ts";
+import { hideBody } from "../src/timeline-edits.ts";
 
 const kernel = nodeKernel();
 const near = (got: number, want: number) => assert.ok(Math.abs(got - want) <= 1e-6 * Math.max(1, want), `${got}, expected ${want}`);
@@ -58,6 +58,16 @@ function joined(bx: number, order: number[] = [1, 2], cx?: number) {
   const s = addSketch(doc);
   const e = extrudeSketch(drawRectangle(s.doc, s.id, [6, 2], [14, 6]).doc, s.id, 20, false, undefined, { operation: "join", bodies: order.map((n) => `body:${ids[n - 1]}`) });
   return { doc: e.doc, e: e.id, move: move.id, box1, bodies: ids.map((id) => `body:${id}`) };
+}
+
+/**
+ * `doc` with Box 1 put after Move 1, so Box 2 is made first, as a file holds it (a drag there is refused since SL #538
+ * item 3, but Box 2 and its Move put in at the marker before Box 1 make this order, and a file may hold it).
+ */
+function box1AfterMove(doc: DesignDocument, box1: string): DesignDocument {
+  const [first, ...rest] = doc.timeline.features;
+  assert.equal(first.id, box1);
+  return { ...doc, timeline: { ...doc.timeline, features: [rest[0], rest[1], first, ...rest.slice(2)] } };
 }
 
 test("the control: a Join reaching both cubes, the earliest made picked first, leaves one body, one row and one body in the STL", async () => {
@@ -104,12 +114,10 @@ test("hand-worked: a Join that no longer reaches the second cube: both bodies bu
 });
 
 test("hand-worked: the first cube picked is not the earliest made: the one row and the STL name the body really there", async () => {
-  // Box 1 dragged to after Move 1, so Box 2 is made first; the Join still lists Box 1 first. The joined body (2,320, as
+  // Box 1 after Move 1, so Box 2 is made first; the Join still lists Box 1 first. The joined body (2,320, as
   // in the control) keeps the earliest made cube's id, Box 2's, whose number is 2: the row is Body 2.
   const j = joined(10);
-  const moved = reorderItem(j.doc, j.box1, 2);
-  assert.ok("doc" in moved, JSON.stringify(moved));
-  const s = await state(moved.doc);
+  const s = await state(box1AfterMove(j.doc, j.box1));
   assert.deepEqual(s.built, [j.bodies[1]]);
   near(s.volumes[j.bodies[1]], 2320);
   assert.deepEqual(s.rows, s.built);
@@ -153,9 +161,7 @@ test("before any rebuild has answered, the list takes a Join's bodies as all joi
   // Read from the data alone (other workspaces' list of bodies, the browser's first draw): one body, the earliest made.
   const j = joined(50);
   assert.deepEqual(designBodies(j.doc).map((b) => b.body), [j.bodies[0]]);
-  const moved = reorderItem(joined(10).doc, j.box1, 2);
-  assert.ok("doc" in moved);
-  assert.deepEqual(designBodies(moved.doc).map((b) => b.body), [j.bodies[1]]);
+  assert.deepEqual(designBodies(box1AfterMove(joined(10).doc, j.box1)).map((b) => b.body), [j.bodies[1]]);
   // What the rebuild said names each picked body the Join left a body, and nothing else: no id of an item or a body.
   const s = await state(j.doc);
   assert.deepEqual([...s.said].sort(), j.bodies.map((b) => `stays:${j.e}>${b}`).sort());
