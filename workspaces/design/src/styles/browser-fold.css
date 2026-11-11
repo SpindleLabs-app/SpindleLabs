@@ -49,7 +49,8 @@
 .browser-fold .browser-row-eye:not(#none):hover, .browser-fold .browser-row-eye:not(#none):focus-visible { border-color: var(--line-strong); color: var(--text); }
 .browser-fold .browser-row-eye[aria-pressed="false"]:not(#none) { color: var(--text-6f7680); }
 .browser-fold .browser-row-hidden > .tree-row { opacity: 0.55; }
-@media (max-width: 640px) {
+/* A phone, or a touch screen of any width (a tablet; Ben's OK 2026-11-11): the eye is a finger's size. */
+@media (max-width: 640px), (pointer: coarse) {
   .browser-fold .browser-row-eye:not(#none) { min-height: 44px; min-width: 44px; }
 }
 
