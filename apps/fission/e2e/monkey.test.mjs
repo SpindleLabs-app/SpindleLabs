@@ -73,7 +73,7 @@ test("what a file should show, worked by hand", () => {
   const added = { workspaces: { design: { ...numbered, version: 16, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.nextBody, 5);
-  const fresh = { workspaces: { design: { ...design(), version: 16, bodies: [], nextBody: 1 } } };
+  const fresh = { workspaces: { design: { ...design(), version: 17, bodies: [], nextBody: 1 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(fresh))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(settledText("not json"), "not json");
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
