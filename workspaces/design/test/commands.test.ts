@@ -117,9 +117,9 @@ const rectangleSketch = () => documentFor({ op: "draw_rectangle", width: 30, hei
 
 test("hand-worked: extrude_sketch (AI7c) puts an extrude of the newest sketch at the marker, the other way when negative", () => {
   const doc = documentFor({ op: EXTRUDE_OP, distance: 10 }, rectangleSketch());
-  // Sketch 1 is item 1 (id 1) and its 4 points and 4 lines take ids 2 to 9, so the extrude is feature-10, item 2: it depends on the sketch and names it, as the Extrude tool's OK records it.
+  // Sketch 1 is item 1 (id 1), its 4 points and 4 lines take ids 2 to 9 and the rectangle's Horizontal and Vertical constraints (one a side, solver hunt 2026-11-11) ids 10 to 13, so the extrude is feature-14, item 2: it depends on the sketch and names it, as the Extrude tool's OK records it.
   const [sketch, extrude] = doc.timeline.features;
-  assert.deepEqual([sketch.id, extrude.id, extrude.intent.summary, extrude.provenance.self.label], ["sketch-1", "feature-10", "Extrude Sketch 1 by 10 mm", "Extrude 1"]);
+  assert.deepEqual([sketch.id, extrude.id, extrude.intent.summary, extrude.provenance.self.label], ["sketch-1", "feature-14", "Extrude Sketch 1 by 10 mm", "Extrude 1"]);
   assert.deepEqual(extrude.intent.parameters, { sketch: "sketch-1", distance: 10 });
   assert.deepEqual(extrude.dependsOn, ["sketch-1"]);
   // −10 is 10 mm the other way: the distance stays positive and the extrude is flipped (Fusion's Flip).
@@ -130,17 +130,17 @@ test("hand-worked: extrude_sketch (AI7c) puts an extrude of the newest sketch at
 });
 
 test("which sketch an extrude means: the one named, else the open one, else the newest before the marker", () => {
-  // Sketch 1 (sketch-1, its rectangle taking ids 2 to 9) and Sketch 2 (sketch-10), both before the marker.
+  // Sketch 1 (sketch-1, its rectangle taking ids 2 to 13: 4 points, 4 lines, 4 constraints) and Sketch 2 (sketch-14), both before the marker.
   const two = addSketch(rectangleSketch(), "XZ").doc;
   const id = (command: object, open: string | null = null) => extrudeTarget(two, { op: EXTRUDE_OP, distance: 5, ...command }, open);
-  assert.equal(id({}), "sketch-10", "the newest");
+  assert.equal(id({}), "sketch-14", "the newest");
   assert.equal(id({ sketch: "Sketch 1" }), "sketch-1", "named");
   assert.equal(id({}, "sketch-1"), "sketch-1", "the open one beats the newest");
-  assert.equal(id({ sketch: "Sketch 2" }, "sketch-1"), "sketch-10", "a name beats the open one");
+  assert.equal(id({ sketch: "Sketch 2" }, "sketch-1"), "sketch-14", "a name beats the open one");
   assert.throws(() => id({ sketch: "Sketch 3" }), /no sketch "Sketch 3" before the marker/);
   // Suppressed, or after the marker: not usable. Suppressing Sketch 2 leaves Sketch 1.
-  assert.deepEqual(extrudable(suppressItem(two, "sketch-10", true)).map((f) => f.id), ["sketch-1"]);
-  assert.equal(extrudeTarget(suppressItem(two, "sketch-10", true), { op: EXTRUDE_OP, distance: 5 }), "sketch-1");
+  assert.deepEqual(extrudable(suppressItem(two, "sketch-14", true)).map((f) => f.id), ["sketch-1"]);
+  assert.equal(extrudeTarget(suppressItem(two, "sketch-14", true), { op: EXTRUDE_OP, distance: 5 }), "sketch-1");
   // A box, then a sketch, with the marker back on the box: the sketch is after the marker, so an extrude put in there can't use it.
   const behind = moveMarker(addSketch(documentFor({ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 })).doc, "feature-1");
   assert.deepEqual(extrudable(behind), []);
@@ -169,13 +169,13 @@ test("an extrude in words, for the preview and its undo step", () => {
 const extruded = () => documentFor({ op: EXTRUDE_OP, distance: 10 }, rectangleSketch());
 
 test("hand-worked: rename_item changes a name and the copies of it in the items built from it, and nothing else (AI7d)", () => {
-  // Sketch 1 (sketch-1) and the extrude built from it (feature-10, "Extrude 1", its `from` naming Sketch 1).
+  // Sketch 1 (sketch-1) and the extrude built from it (feature-14, "Extrude 1", its `from` naming Sketch 1).
   const before = extruded();
   const after = documentFor({ op: RENAME_OP, item: "Sketch 1", name: "base" }, before);
   const [sketch, extrude] = after.timeline.features;
   assert.deepEqual([sketch.provenance.self.label, extrude.provenance.self.label, extrude.provenance.from.map((p) => p.label)], ["base", "Extrude 1", ["base"]]);
   // Nothing else moves: the same ids and order, the same drawing, the same extrude parameters and description.
-  assert.deepEqual(after.timeline.features.map((f) => f.id), ["sketch-1", "feature-10"]);
+  assert.deepEqual(after.timeline.features.map((f) => f.id), ["sketch-1", "feature-14"]);
   assert.deepEqual(after.sketches, before.sketches);
   assert.deepEqual([extrude.intent.parameters, extrude.intent.summary], [before.timeline.features[1].intent.parameters, before.timeline.features[1].intent.summary]);
   // Parsed first, as the assistant gets it: the same result.
@@ -188,7 +188,7 @@ test("which item a rename means: the one named, else the one just before the mar
   const doc = extruded();
   const target = (command: object, d = doc) => renameTarget(d, { op: RENAME_OP, name: "x", ...command });
   assert.equal(target({ item: "Sketch 1" }), "sketch-1", "named");
-  assert.equal(target({}), "feature-10", "the newest item before the marker: Extrude 1");
+  assert.equal(target({}), "feature-14", "the newest item before the marker: Extrude 1");
   assert.equal(target({}, rectangleSketch()), "sketch-1", "…which is the sketch when nothing is built from it yet");
   // The marker back on the sketch: the item just before it is the sketch, though the extrude still exists after it.
   assert.equal(target({}, moveMarker(doc, "sketch-1")), "sketch-1");
