@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { projectFromJson, projectToJson } from "@fission/core";
 import { BodyCache, bodyReference, builtBody, designWorkspace, insertPreset, moveMarker, rebuildTimeline, readDesignDocument, type DesignDocument } from "@fission/design";
-import { app, kernel } from "./design-app.ts";
+import { app, chooseShape, kernel } from "./design-app.ts";
 
 const DIR = new URL("../old-files/", import.meta.url);
 const PI = Math.PI;
@@ -34,6 +34,8 @@ interface OldFile {
   version: 1 | 2 | 3;
   /** Each timeline item after the upgrade, in order: id, type, suppressed. */
   items: [string, string, boolean][];
+  /** Each item's name after the upgrade, in order: a ready-made shape's short name, "Box 1" (U0e1), as a design made today names it. */
+  names: string[];
   nextId: number;
   marker?: string;
   /** What each item builds on today's kernel. */
@@ -53,6 +55,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "63113192, step 19d",
     version: 1,
     items: [["feature-1", "extrude", false]],
+    names: ["Plate 1"],
     nextId: 2,
     // Plate 60 × 40 × 5 with two holes of radius 0.15 · min(60, 40) = 6: 5 · (60 · 40 − 2 · 36π) = 12000 − 360π.
     // Symmetric about its middle (30, 20): the holes sit at x = 15 and 45, both on y = 20.
@@ -63,6 +66,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "63113192, step 19d",
     version: 1,
     items: [["feature-1", "extrude", false]],
+    names: ["Slot 1"],
     nextId: 2,
     // Slot 50 × 20: a 30 × 20 rectangle and two half circles of radius 10, so 600 + 100π; × 10 = 6000 + 1000π. Middle (25, 10).
     build: { "feature-1": { volume: 6000 + 1000 * PI, caps: [[25, 10, 0], [25, 10, 10]] } },
@@ -72,6 +76,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "63113192, step 19d",
     version: 1,
     items: [["feature-1", "extrude", false]],
+    names: ["Star 1"],
     nextId: 2,
     // Star in 40 × 40: R = 20, inner corners at 0.4R = 8, ten triangles from the middle, each ½ · 20 · 8 · sin 36°:
     // area 800 sin 36°, × 10 = 8000 sin 36°. Symmetric under a fifth of a turn about (20, 20), so its centroid is there.
@@ -82,6 +87,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "63113192, step 19d",
     version: 1,
     items: [["feature-1", "sphere", false]],
+    names: ["Sphere 1"],
     nextId: 2,
     // ⌀30: 4/3 · π · 15³ = 4500π.
     build: { "feature-1": { volume: 4500 * PI } },
@@ -92,6 +98,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "5f7a1d32, step 21d",
     version: 2,
     items: [["sketch-2", "sketch", false], ["feature-11", "extrude", false]],
+    names: ["Sketch 1", "Extrude 1"],
     nextId: 12,
     // A right triangle (0,0), (30,0), (0,40) on XZ (a stray line drawn and deleted, a corner dragged from x = 25), extruded 10 then
     // edited to 12: ½ · 30 · 40 · 12 = 7200. Its centroid (10, 40/3) in the sketch is X = 10, Z = 40/3 in the world;
@@ -103,6 +110,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "9de34d8a, step 22b",
     version: 2,
     items: [["sketch-2", "sketch", false], ["feature-13", "extrude", false]],
+    names: ["Sketch 1", "Extrude 1"],
     nextId: 14,
     // A 60 × 40 rectangle with a circle inside: two loops, which a sketch can't make one outline of yet. That SpindleLabs refused it
     // in the same words (checked at 9de34d8a on its own kernel), so the file opens and the extrude fails, naming why.
@@ -113,6 +121,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "9de34d8a, step 22b",
     version: 2,
     items: [["sketch-2", "sketch", false], ["sketch-14", "sketch", false], ["feature-17", "extrude", false]],
+    names: ["Sketch 1", "Sketch 2", "Extrude 1"],
     nextId: 18,
     // The second sketch's circle r 5 round (0, 50) on YZ (sketch x = Y, y = Z, normal Y × Z = +X), extruded 20: 25π · 20 = 500π,
     // caps round (0, 0, 50) and (20, 0, 50). That SpindleLabs only extruded XY sketches; today's builds this one.
@@ -123,6 +132,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "087917ce, step 23a",
     version: 2,
     items: [["sketch-2", "sketch", false], ["feature-13", "extrude", false]],
+    names: ["Sketch 1", "Extrude 1"],
     nextId: 14,
     // Lines (0,0)–(30,0) and (30,20)–(0,20), half circles counter-clockwise round (30, 10) and (0, 10), bulging out to x = 40 and −10:
     // 30 · 20 + π · 10² = 600 + 100π; × 5 = 3000 + 500π. Symmetric about (15, 10).
@@ -133,6 +143,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "087917ce, step 23a",
     version: 2,
     items: [["sketch-2", "sketch", false], ["feature-14", "cylinder", false]],
+    names: ["Sketch 1", "Cylinder 1"],
     nextId: 15,
     // The slot above, then the part changed to a cylinder ⌀20 × 30 (it replaced the extrude): π · 10² · 30 = 3000π; the sketch stays.
     build: { "sketch-2": "sketch", "feature-14": { volume: 3000 * PI } },
@@ -143,6 +154,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "453785dd, step 24d1",
     version: 3,
     items: [["feature-1", "box", false], ["feature-2", "cylinder", false], ["sketch-3", "sketch", false], ["feature-12", "extrude", false]],
+    names: ["Box 1", "Cylinder 1", "Sketch 1", "Extrude 1"],
     nextId: 13,
     // Box made 50 × 30 × 20 = 30000; cylinder ⌀20 × 30 = 3000π; a 10 × 10 square at x 100 to 110, z 0 to 10 on XZ, extruded 10
     // towards −Y: 1000, caps round (105, 0, 5) and (105, −10, 5).
@@ -153,6 +165,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "498923df, step 24e",
     version: 3,
     items: [["feature-1", "box", false], ["feature-2", "cylinder", true], ["feature-3", "sphere", false], ["sketch-4", "sketch", false], ["feature-7", "extrude", false]],
+    names: ["Box 1", "Cylinder 1", "Sphere 1", "Sketch 1", "Extrude 1"],
     nextId: 8,
     marker: "feature-3",
     // Box 40 · 30 · 20 = 24000; the cylinder suppressed; sphere ⌀30 = 4500π; the disc after the marker isn't built.
@@ -163,6 +176,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "498923df, step 24e",
     version: 3,
     items: [["feature-1", "box", false], ["feature-2", "cylinder", true], ["feature-3", "sphere", false], ["sketch-4", "sketch", false], ["feature-7", "extrude", false]],
+    names: ["Box 1", "Cylinder 1", "Sphere 1", "Sketch 1", "Extrude 1"],
     nextId: 8,
     marker: "start",
     // The same design rolled back to the start: nothing built.
@@ -173,6 +187,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "b356a35a, step 25 (its own kernel)",
     version: 3,
     items: [["feature-1", "box", false], ["feature-15", "extrude", false]],
+    names: ["Box 1", "Extrude 1"],
     nextId: 16,
     // The L (50,0) (80,0) (80,10) (60,10) (60,30) (50,30), its sketch deleted, so the extrude keeps it: a 30 × 10 bar (centroid (65, 5))
     // and a 10 × 20 upright (centroid (55, 20)): area 300 + 200 = 500, × 6 = 3000; centroid ((300 · 65 + 200 · 55) / 500,
@@ -184,6 +199,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "acc1385f, step 26e (its Design app and kernel)",
     version: 3,
     items: [["feature-1", "box", false], ["sketch-2", "sketch", false], ["feature-5", "extrude", false]],
+    names: ["Box 1", "Sketch 1", "Extrude 1"],
     nextId: 6,
     // Box 24000. A circle r 5 round the top face's middle (20, 15) at z = 20, extruded 8 with Flip: down into the box, so the start cap
     // at z = 20 and the end at z = 12: 25π · 8 = 200π (the bodies overlap: no booleans yet).
@@ -194,6 +210,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "ddbb27ca, step 26f (its Design app and kernel)",
     version: 3,
     items: [["feature-1", "box", false], ["sketch-2", "sketch", false], ["feature-5", "extrude", false]],
+    names: ["Box 1", "Sketch 1", "Extrude 1"],
     nextId: 6,
     // A circle r 5 on the box's top, pinned to its back right corner, extruded 10, then the box made 60 wide: the corner is at
     // (60, 30, 20). Box 60 · 30 · 20 = 36000; cylinder 25π · 10 = 250π from z 20 to 30.
@@ -204,6 +221,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "998ebb8c, step 27c (its Design app and kernel)",
     version: 3,
     items: [["feature-1", "box", false], ["sketch-2", "sketch", false], ["feature-5", "extrude", false]],
+    names: ["Box 1", "Sketch 1", "Extrude 1"],
     nextId: 6,
     // A circle r 2 on the ground plane pinned to the box's bottom back right corner, extruded 5, the box made 60 wide: centre (60, 30).
     // Box 36000; cylinder 4π · 5 = 20π.
@@ -214,6 +232,7 @@ const CORPUS: Record<string, OldFile> = {
     savedBy: "998ebb8c, step 27c (its Design app and kernel)",
     version: 3,
     items: [["sketch-2", "sketch", false], ["feature-5", "extrude", false]],
+    names: ["Sketch 1", "Extrude 1"],
     nextId: 6,
     // The same with the box deleted: the pinned point has lost its edge and stays at (60, 30); the cylinder alone, 20π.
     build: { "sketch-2": "sketch", "feature-5": { volume: 20 * PI, caps: [[60, 30, 0], [60, 30, 5]] } },
@@ -322,7 +341,7 @@ test("every old file is as its SpindleLabs saved it: the outer format 2 and Desi
   }
 });
 
-test("every old file opens through today's reader, upgraded to version 16 with its items, flags, marker and counter as worked out", () => {
+test("every old file opens through today's reader, upgraded to version 16 with its items, names, flags, marker and counter as worked out", () => {
   for (const file of files()) {
     const want = CORPUS[file];
     const doc = open(text(file)).workspaces.design as DesignDocument;
@@ -332,6 +351,8 @@ test("every old file opens through today's reader, upgraded to version 16 with i
     assert.deepEqual(doc.bodies!.map((b) => b.number).sort((x, y) => x - y), Array.from({ length: solids }, (_, i) => i + 1), file);
     assert.equal(doc.nextBody, solids + 1, file);
     assert.deepEqual(doc.timeline.features.map((f) => [f.id, f.intent.type, f.suppressed]), want.items, file);
+    // The names: the old app's "Feature 1 (cylinder)" (by version 2 on a part of any id, issue #541) is "Cylinder 1", and so on.
+    assert.deepEqual(doc.timeline.features.map((f) => f.provenance.self.label), want.names, file);
     assert.equal(doc.nextId, want.nextId, file);
     assert.equal(doc.timeline.marker, want.marker, file);
   }
@@ -483,5 +504,19 @@ test("issue #541 item 2, control: a side deleted from a version 3 file's extrude
   assert.equal(a.volume(), before);
   assert.match(a.warning() ?? "", /^Extrude 1 keeps its last shape\. Sketch 1 has no closed outline/);
   assert.equal(Object.hasOwn(a.doc().timeline.features.at(-1)!.intent.parameters, "region"), false);
+  assert.ok(await a.close());
+});
+
+test("issue #541 item 3: a version 2 file's cylinder part is Cylinder 1 after the upgrade, and Box 1 once made a box", async () => {
+  // v2-sketch-then-cylinder: the old app labelled its one part "Feature 1 (cylinder)" though its id is feature-14. A design made
+  // today calls it Cylinder 1 (the first cylinder), and a preset made another shape takes that shape's next name: Box 1.
+  const doc = open(text("v2-sketch-then-cylinder.panosolid.json")).workspaces.design as DesignDocument;
+  assert.deepEqual(doc.timeline.features.map((f) => f.provenance.self.label), ["Sketch 1", "Cylinder 1"]);
+  const a = await app(doc);
+  chooseShape(a, "Box");
+  await a.settle();
+  const part = a.doc().timeline.features.at(-1)!;
+  assert.equal(part.intent.type, "box");
+  assert.deepEqual(a.doc().timeline.features.map((f) => f.provenance.self.label), ["Sketch 1", "Box 1"]);
   assert.ok(await a.close());
 });

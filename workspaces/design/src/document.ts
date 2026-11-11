@@ -811,6 +811,16 @@ function shapeWith(f: Feature, profileOf: (id: unknown) => ReadyProfile | undefi
  * so each solid feature but the last becomes suppressed: the design opens
  * looking as it did, and nothing is lost (unsuppressing one brings it
  * back). Ids, sizes and the counter are kept as they were.
+ *
+ * Version 2 replaced its part on every change of shape, giving it a new
+ * id from the counter ("feature-14") but naming it "Feature 1 (cylinder)"
+ * all the same, where version 3 names a preset by its id's number
+ * (`oldPresetName`). So a ready-made shape's name of that form, any
+ * number, with its own type, is read as version 3 names it, and renamed
+ * with the others (`withShortNames`, issue #541: it kept the old name,
+ * then named a box made of it as a cylinder). Names could not be typed
+ * before version 4, and nothing in version 2 was made from a part (no
+ * face sketches, no pins), so no copy of the name is anywhere else.
  */
 export function migrateDesignV2(d: Record<string, unknown>): Record<string, unknown> {
   const timeline = d.timeline as Record<string, unknown> | undefined;
@@ -818,8 +828,18 @@ export function migrateDesignV2(d: Record<string, unknown>): Record<string, unkn
   if (!isRecord(timeline) || !Array.isArray(timeline.features)) return { ...d, version: 3 };
   const solids = new Set(timeline.features.filter((f) => !(isRecord(f) && isRecord(f.intent) && f.intent.type === "sketch")));
   const last = [...solids].at(-1);
-  const features = timeline.features.map((f) => (solids.has(f) && f !== last && isRecord(f) ? { ...f, suppressed: true } : f));
+  const features = timeline.features.map((f) => version3Named(solids.has(f) && f !== last && isRecord(f) ? { ...f, suppressed: true } : f));
   return { ...d, version: 3, timeline: { ...timeline, features } };
+}
+
+/** A version 2 ready-made shape's name, "Feature <n> (<its type>)", as version 3 gave it (`oldPresetName`); anything else as it is. */
+function version3Named(f: unknown): unknown {
+  if (!isRecord(f) || !isRecord(f.intent) || typeof f.intent.type !== "string" || f.intent.type === "sketch" || !isRecord(f.intent.parameters) || Object.hasOwn(f.intent.parameters, "sketch")) return f;
+  const provenance = f.provenance;
+  if (!isRecord(provenance) || !isRecord(provenance.self) || typeof provenance.self.label !== "string") return f;
+  const form = /^Feature [1-9]\d* \((.*)\)$/.exec(provenance.self.label);
+  if (form === null || form[1] !== f.intent.type) return f;
+  return { ...f, provenance: { ...provenance, self: { ...provenance.self, label: oldPresetName(f as unknown as Feature) } } };
 }
 
 /**
