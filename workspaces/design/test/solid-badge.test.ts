@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SolidReport } from "@fission/core";
-import { badgeFor, CHECKED_HEADER, problemWords, SOLID_OVERLAY, solidOverlay, stampChecked, volumeWords } from "../src/solid-badge.ts";
+import { badgeFor, CHECKED_HEADER, problemWords, SOLID_OVERLAY, solidBadge, solidOverlay, stampChecked, volumeWords } from "../src/solid-badge.ts";
 
 const solid = (volume: number, triangles = 12, shells = 1): SolidReport => ({ verdict: "solid", triangles, shells, volume, problems: [] });
 
@@ -83,4 +83,28 @@ test("stamping writes only the 80-byte header, in ASCII, and never starts it wit
   assert.equal(long, (CHECKED_HEADER + "?".repeat(48)).slice(0, 80));
   // A file too short to have a header is left as it is.
   assert.deepEqual([...stampChecked(new Uint8Array([1, 2, 3]), "x")], [1, 2, 3]);
+});
+
+test("hidden, the card keeps nothing of the last report, so it is the same nodes whatever was saved (issue #198)", async () => {
+  const { Window } = await import("happy-dom");
+  const doc = new Window().document as unknown as Document;
+  const host = doc.createElement("div");
+  doc.body.append(host);
+  const card = solidBadge(host, () => {});
+  // Every node under the card (elements and text), as the soak counts the page.
+  const nodes = (n: Node): number => [...n.childNodes].reduce((s, c) => s + 1 + nodes(c), 0);
+  const count = () => nodes(card.element);
+  const fresh = count();
+  // Three problems: three list rows, each a <strong> and its words.
+  card.show({ verdict: "problems", triangles: 30, shells: 2, volume: 0, problems: [{ kind: "gap", count: 3, places: [] }, { kind: "flipped", count: 1, places: [] }, { kind: "crossing", count: 5, places: [] }] });
+  assert.equal(card.element.querySelectorAll("li").length, 3);
+  assert.ok(count() > fresh);
+  card.hide();
+  assert.equal(card.element.hidden, true);
+  assert.equal(card.element.querySelectorAll("li").length, 0);
+  assert.equal(count(), fresh, "a hidden card is as small as a new one");
+  // Shown again it has the new report's words, nothing of the old.
+  card.show(solid(24000));
+  assert.equal(card.element.dataset.state, "solid");
+  assert.equal(card.element.querySelectorAll("li").length, badgeFor(solid(24000)).items.length);
 });
