@@ -2421,6 +2421,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       let got: Awaited<ReturnType<typeof changeDimension>>;
       try {
         got = await changeDimension(kernel, before, tool.sketch, id, value);
+        // Settled as a constraint is (`constrain`): an extrude whose outline the new size spoils keeps its last shape.
+        if (!("refused" in got)) got = { ...got, doc: await settleKept(kernel, before, got.doc, bodies) };
       } catch (e) {
         return sketchBox.showError(e instanceof Error ? e.message : String(e));
       }
@@ -2489,6 +2491,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       let got: Awaited<ReturnType<typeof addConstraint>>;
       try {
         got = await addConstraint(kernel, before, sketchId, add);
+        // Settled as a drag or a delete is before it is recorded (timeline hunt 2026-11-11): an extrude whose outline
+        // the solved sketch no longer makes keeps its last shape, and one whose outline it closes again forgets it.
+        if (!("refused" in got)) got = { ...got, doc: await settleKept(kernel, before, got.doc, bodies) };
       } catch (e) {
         return sketchBox.showError(e instanceof Error ? e.message : String(e));
       }
