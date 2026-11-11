@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FOLDED_AT_START, HANDLE_ID, PIN_KEY, propertiesFold, panelShown, pressed, readPinned, revealed, withReasons, writePinned, type FoldState, type PinStorage } from "../src/properties-fold.ts";
+import { CROWDED, FOLDED_AT_START, HANDLE_ID, PIN_KEY, propertiesFold, panelShown, pressed, readPinned, revealed, withReasons, writePinned, type FoldState, type PinStorage } from "../src/properties-fold.ts";
 
 const at = (s: Partial<FoldState>): FoldState => ({ ...FOLDED_AT_START, ...s });
 
@@ -164,4 +164,63 @@ test("regression (full e2e run, image.mjs): closed when Design is put away, the 
   assert.equal(slot.hasAttribute("data-folded"), false, "folded is Design's: the next workspace shows its page");
   assert.equal(slot.hasAttribute("data-problem"), false, "and no ⚠ of Design's stays");
   assert.equal(slot.querySelector(`#${HANDLE_ID}`), null, "the button goes too");
+});
+
+test("issue #522: on a crowded screen (sideways phone, touch tablet in portrait) only a needed tool or asked-for words open the card", async () => {
+  // By hand from the rule: crowded, a selection alone is not a reason; a tool's box still is; pinned or revealed still show.
+  assert.equal(panelShown(at({ selected: true }), true), false, "a selection leaves it folded");
+  assert.equal(panelShown(at({ tool: true }), true), true, "a tool's boxes open it");
+  assert.equal(panelShown(at({ selected: true, pinned: true }), true), true);
+  assert.equal(pressed(at({ selected: true }), true).pinned, true, "the button on the folded card (selected, crowded) opens and pins it");
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  // The screen's answer to CROWDED, changed by hand as a phone turning would.
+  const listeners: (() => void)[] = [];
+  const screen = { matches: true, addEventListener: (_: string, f: () => void) => void listeners.push(f), removeEventListener() {} };
+  const asked: string[] = [];
+  (window as unknown as { matchMedia: (q: string) => unknown }).matchMedia = (q: string) => (asked.push(q), screen);
+  const slot = doc.createElement("aside");
+  slot.id = "properties";
+  const boxes = ["sketch-panel", "move-panel"].map((id) => {
+    const b = doc.createElement("section");
+    b.id = id;
+    b.hidden = true;
+    slot.append(b);
+    return b;
+  });
+  doc.body.append(slot);
+  const fold = propertiesFold(slot, boxes, FOLDED_AT_START, null);
+  assert.deepEqual(asked, [CROWDED]);
+  const folded = () => slot.hasAttribute("data-folded");
+  fold.update({ selected: true });
+  assert.equal(folded(), true, "a selection (the inserted box, picked) leaves the card folded");
+  fold.reveal(true);
+  assert.equal(folded(), true, "an inserted body's sizes leave it folded");
+  boxes[1].hidden = false; // Move opens: its boxes are needed
+  await settle();
+  assert.equal(folded(), false, "a tool's boxes open it");
+  boxes[1].hidden = true; // Move cancelled
+  await settle();
+  fold.reveal(true);
+  assert.equal(folded(), true, "after the Move's Cancel the card is folded, though the box is selected");
+  fold.update({ selected: false });
+  // Create sketch: the plane picker is needed; once drawing, the sketch's notes and grid wait behind the button.
+  boxes[0].replaceChildren(Object.assign(doc.createElement("div"), { className: "sketch-planes" }));
+  boxes[0].hidden = false;
+  await settle();
+  assert.equal(folded(), false, "the plane picker opens it");
+  boxes[0].replaceChildren(doc.createElement("h2"));
+  await settle();
+  assert.equal(folded(), true, "drawing on the plane leaves the drawing area clear");
+  slot.querySelector<HTMLButtonElement>(`#${HANDLE_ID}`)!.click();
+  assert.equal(folded(), false, "one tap on its button opens it");
+  slot.querySelector<HTMLButtonElement>(`#${HANDLE_ID}`)!.click();
+  assert.equal(folded(), true);
+  fold.reveal();
+  assert.equal(folded(), false, "words the user must see still open it");
+  // Turned to a roomy screen: the sketch's panel is a reason again.
+  screen.matches = false;
+  for (const f of listeners) f();
+  assert.equal(fold.state.tool, true, "the sketch's panel opens it on a roomy screen");
+  fold.close();
 });

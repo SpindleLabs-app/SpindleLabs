@@ -1157,7 +1157,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const added = inserted(doc, kind);
     boxesPart = added.id;
     const made = update(insertStep(kind), undefined, added.doc);
-    fold?.reveal();
+    fold?.reveal(true); // its sizes; not on a crowded screen (issue #522: a sideways phone's card covered most of the view)
     await made;
     const body = bodyIdOf(added.id);
     const built = (lastScene?.bodies ?? []).some((b) => b.body === body);
@@ -3763,7 +3763,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (edited) ctx.selection.clear();
     // And the panel stays open at the new body's sizes, as Insert left it (U0d): the fold sees the Move's box go in a
     // microtask (properties-fold.ts), queued as it hid above, so it is opened again in the one after.
-    if (fromInsert) queueMicrotask(() => fold?.reveal());
+    if (fromInsert) queueMicrotask(() => fold?.reveal(true));
   }
 
   /** OK's words when the design changed while the kernel checked the Move: nothing was recorded. */
