@@ -1609,9 +1609,13 @@ function hasVersion15Fields(d: Record<string, unknown>): boolean {
  * wrote one.
  */
 export function migrateDesignV15(d: Record<string, unknown>): Record<string, unknown> {
-  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
-  const joins = new Set(features.flatMap((f) => (isRecord(f) && typeof f.id === "string" && isRecord(f.intent) && f.intent.type === "extrude" && isRecord(f.intent.parameters) && f.intent.parameters.operation === "join" ? [f.id] : [])));
-  if (joins.size === 0) return { ...d, version: 16 };
+  if (!isRecord(d.timeline) || !Array.isArray(d.timeline.features)) return { ...d, version: 16 };
+  const features: unknown[] = d.timeline.features;
+  // An id that is not text names no body (bodyItem gives text), so it is left in: the checks refuse it.
+  const isJoin = (f: unknown): f is { id: unknown } => isRecord(f) && isRecord(f.intent) && f.intent.type === "extrude" && isRecord(f.intent.parameters) && f.intent.parameters.operation === "join";
+  // No join leaves every name as it was, so data with none goes through the same renaming (a shortcut here would be
+  // a mutant no test can tell apart).
+  const joins = new Set<unknown>(features.filter(isJoin).map((f) => f.id));
   const renamed = (id: unknown): unknown => {
     if (typeof id !== "string") return id;
     const item = bodyItem(id);
@@ -1621,7 +1625,7 @@ export function migrateDesignV15(d: Record<string, unknown>): Record<string, unk
     return k === 1 ? bodyIdOf(item) : `${bodyIdOf(item)}/piece:${k - 1}`;
   };
   const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(renamed) : ids);
-  const timeline = d.timeline as Record<string, unknown>;
+  const timeline = d.timeline;
   const out = features.map((f) => {
     if (!isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters)) return f;
     const p = f.intent.parameters;
@@ -1631,7 +1635,7 @@ export function migrateDesignV15(d: Record<string, unknown>): Record<string, unk
       : type === "combine" ? { ...p, ...(Object.hasOwn(p, "target") && { target: renamed(p.target) }), ...(Object.hasOwn(p, "tools") && { tools: list(p.tools) }) }
       : type === "duplicate" && Object.hasOwn(p, "body") ? { ...p, body: renamed(p.body) }
       : p;
-    return parameters === p ? f : { ...f, intent: { ...f.intent, parameters } };
+    return { ...f, intent: { ...f.intent, parameters } };
   });
   const bodies = Array.isArray(d.bodies) ? { bodies: d.bodies.map((b) => (isRecord(b) && typeof b.id === "string" ? { ...b, id: renamed(b.id) } : b)) } : {};
   const hidden = Array.isArray(d.hidden) ? { hidden: list(d.hidden) } : {};
@@ -1684,6 +1688,9 @@ function checkPresets(features: readonly Feature[], profiles: ReadonlyMap<unknow
   }
 }
 
+/** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
+export const DESIGN_VERSION = 16;
+
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
   // Counted before migrating, which spreads every id of a version 1 file.
@@ -1699,7 +1706,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7 || v3.version === 8 || v3.version === 9 || v3.version === 10 || v3.version === 11 || v3.version === 12 || v3.version === 13 || v3.version === 14 || v3.version === 15 || v3.version === 16) && !numbered);
+  // Version 4 and older data with numbers was refused just above, and any version this SpindleLabs doesn't read is refused
+  // below before this is read, so only whether the data numbers its bodies decides it (issue #246: listing every version
+  // here left a mutant no test could tell apart, and its explanation went stale with each new version).
+  const unnumbered = !numbered;
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
@@ -1737,7 +1747,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const d = (v15.version === 15 ? migrateDesignV15(v15) : v15) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above 16 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== 16) throw new (Number.isSafeInteger(d.version) && d.version! > 16 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 or 16)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 or 16)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1844,9 +1854,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
   if (Object.hasOwn(d, "shownPlanes")) {
     const planes: unknown = (d as { shownPlanes?: unknown }).shownPlanes;
     if (!Array.isArray(planes) || planes.length === 0) throw new Error("Design data's shown planes are not a list of origin planes (left out when none shows)");
-    const once = new Set<string>();
+    const once = new Set<unknown>();
     for (const id of planes) {
-      if (typeof id !== "string" || !(ORIGIN_PLANES as readonly string[]).includes(id)) throw new Error(`Design data shows ${shown(id)}, which is not an origin plane`);
+      // includes is false for anything not text, so no type check first (one would leave a mutant no test can see).
+      if (!(ORIGIN_PLANES as readonly unknown[]).includes(id)) throw new Error(`Design data shows ${shown(id)}, which is not an origin plane`);
       if (once.has(id)) throw new Error(`Design data shows ${id} twice`);
       once.add(id);
     }
