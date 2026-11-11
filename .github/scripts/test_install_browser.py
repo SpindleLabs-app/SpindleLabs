@@ -56,7 +56,7 @@ class InstallBrowser(unittest.TestCase):
                 f'step=$(head -n 1 "{plan_file}"); tail -n +2 "{plan_file}" > "{plan_file}.next"; mv "{plan_file}.next" "{plan_file}"\n'
                 'case "$step" in sleep\\ *) sleep "${step#sleep }"; exit 0;; "") exit 99;; *) exit "$step";; esac\n',
             )
-            run_env = {**os.environ, "PATH": bins + os.pathsep + os.environ["PATH"], "APT_DIR": apt, "RETRY_SLEEP": "0"}
+            run_env = {**os.environ, "PATH": bins + os.pathsep + os.environ["PATH"], "APT_DIR": apt, "RETRY_SLEEP": "0", "MIRROR_PROBE": "true"}
             run_env.update(env or {})
             started = time.monotonic()
             p = subprocess.run([SCRIPT, browser], env=run_env, capture_output=True, text=True, timeout=120)
@@ -101,6 +101,18 @@ class InstallBrowser(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(calls[:2], ["npx playwright install-deps firefox", "npx playwright install firefox"])
         self.assertEqual(calls[-2:], ["npx playwright install-deps firefox", "npx playwright install firefox"])
+
+    def test_with_no_mirror_resolving_only_the_browser_is_installed(self):
+        code, err, files, calls = self.run_script(["0"], env={"MIRROR_PROBE": "false"})
+        self.assertEqual(code, 0, err)
+        self.assertEqual(calls, ["npx playwright install firefox"])      # no install-deps, no waiting
+        self.assertIn("no Ubuntu mirror resolves", err)
+        self.assertLess(self.elapsed, 5)
+
+    def test_with_no_mirror_resolving_a_browser_that_never_downloads_still_fails(self):
+        code, err, files, calls = self.run_script(["1", "1", "1"], env={"MIRROR_PROBE": "false"})
+        self.assertEqual(code, 1)
+        self.assertEqual(calls, ["npx playwright install firefox"] * 3)
 
     def test_three_failed_tries_fail_the_script(self):
         code, err, files, calls = self.run_script(["1", "1", "1"])

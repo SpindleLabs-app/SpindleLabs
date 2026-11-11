@@ -26,6 +26,13 @@
 # before the next try, and apt waits up to 120 s for a lock still held. The
 # browser itself downloads as the runner user, into its own cache, as before.
 #
+# If no Ubuntu mirror even resolves (on 2026-11-11 the new ubuntu-26.04 image
+# had no DNS for them: every try waited out its whole limit and the job failed
+# after 22 minutes), the system packages are skipped after a 10 s probe and
+# only the browser is installed. The runner image already holds the libraries
+# the browsers need; at most the extra fonts are missing, and a browser that
+# then cannot start or a golden image that differs fails the test loudly.
+#
 # APT_DIR (default /etc/apt) and RETRY_SLEEP (default 15 s between tries) are
 # for test_install_browser.py, which runs this script against a copy of a
 # runner's apt files with fake sudo, npx and dpkg programs.
@@ -39,6 +46,7 @@ total_seconds=${TOTAL_SECONDS:-1500}
 retry_sleep=${RETRY_SLEEP:-15}
 apt_dir=${APT_DIR:-/etc/apt}
 start=$SECONDS
+mirror_probe=${MIRROR_PROBE:-getent hosts}
 
 printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nDPkg::Lock::Timeout "120";\n' \
   | sudo tee "$apt_dir/apt.conf.d/80-retries" > /dev/null
@@ -57,6 +65,25 @@ limit() {
 other_mirror() {
   sudo sh -c "sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' '$apt_dir/apt-mirrors.txt' '$apt_dir/sources.list' '$apt_dir'/sources.list.d/* 2>/dev/null; true"
 }
+
+# Succeeds if any mirror host resolves (the Azure one first, then the plain ones).
+mirrors_resolve() {
+  local host
+  for host in azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
+    timeout 10 $mirror_probe "$host" > /dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+if ! mirrors_resolve; then
+  echo "install-browser: no Ubuntu mirror resolves; skipping the system packages (the runner image has the libraries)" >&2
+  for try in 1 2 3; do
+    timeout -k 15 "$(limit "$browser_seconds")" npx playwright install "$browser" && exit 0
+    echo "install-browser: browser try $try of 3 failed" >&2
+    [ "$try" = 3 ] && exit 1
+    sleep "$retry_sleep"
+  done
+fi
 
 for try in 1 2 3; do
   [ "$try" -gt 1 ] && other_mirror
