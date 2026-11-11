@@ -68,6 +68,9 @@ export const NEW_BODY_NOTE = "The extrude is a new body, put in the timeline at 
 /** Pick several's tooltip: what it does, and the keys that do the same with a mouse. */
 export const SEVERAL_TITLE = "Pick several profiles: each click or tap adds a profile, or takes one away. With a mouse, hold Ctrl (⌘ on a Mac) or Shift while clicking to do the same.";
 
+/** The words beside Pick several: the mouse's way of doing the same (Fusion's "Hold Ctrl to modify selection"). */
+export const SEVERAL_HINT = "or hold Ctrl (⌘) or Shift as you click";
+
 /** What the profile row says while none is chosen. */
 export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
 
@@ -113,8 +116,10 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
         several.setAttribute("aria-pressed", String(pressed));
         on.several?.(pressed);
       });
-      const profileRow = el("div", "", "extrude-row extrude-profile-row extrude-several-row");
-      profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear, several);
+      const profileRow = el("div", "", "extrude-row extrude-profile-row");
+      profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear);
+      const severalRow = el("div", "", "extrude-several-row");
+      severalRow.append(several, el("span", "", "extrude-several-hint", SEVERAL_HINT));
       const input = el("input", "extrude-distance");
       Object.assign(input, { type: "number", step: "any" });
       const field = sizeBox(input, () => currentUnit(document));
@@ -179,6 +184,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       box.replaceChildren(
         el("h2", "", "", "Extrude"),
         profileRow,
+        severalRow,
         distanceRow,
         el("p", "", "extrude-note", "Drag the arrow in the view or type the distance; a negative one goes the other way."),
         ...rows,
