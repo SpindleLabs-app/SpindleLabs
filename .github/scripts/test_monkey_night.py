@@ -69,6 +69,8 @@ class Night(unittest.TestCase):
             ({"shrunk": False, "replayed": False}, "actions.json: the whole session; its actions did not fail again when replayed, so it is a timing failure (a slow runner or a race)"),
             ({"shrunk": True, "replayed": True, "outOfTime": True}, "actions.json: the shortest list found before shrinking ran out of time, not the shortest there is"),
             ({"shrunk": False}, "actions.json: the whole session; the job ended before it was replayed"),
+            # The monkey's own time limit came before the replay (issue #476): the whole list, said as such.
+            ({"shrunk": False, "outOfTime": True}, "actions.json: the whole session; the run's time limit came before it was replayed"),
         ]
         for how, line in cases:
             with self.subTest(how=how):
@@ -100,6 +102,40 @@ class Night(unittest.TestCase):
         # Nothing at all (the tester crashed before its first line): both seeds.
         failed, _ = self.night("", first=5)
         self.assertEqual(failed, 2)
+
+    def test_a_session_the_time_limit_stopped_is_said_but_not_failed(self):
+        # Issues #476 and #477: the monkey stops itself on MONKEY_MINUTES, so a session it cut off and a seed it
+        # never began are said in the report, not filed as "no result"; a seed with no line at all still is.
+        log = ("seed 5: pass (2000 actions, 1 Combine made of 2 tried)\n"
+               "seed 6: cut off after 812 actions by the run's time limit (MONKEY_MINUTES 150), every check passed until then\n"
+               "seed 7: not started: the run's time limit (MONKEY_MINUTES 150) came first\n"
+               "monkey: 1 Combine made, 2 tried\nmonkey: all passed\n")
+        failed, files = self.night(log, first=5, count=3, combine=True)
+        self.assertEqual(failed, 0)
+        self.assertEqual(files["report.txt"],
+                         "Monkey, seeds 5-7: 3 session(s) of 2000 actions in Chromium; 1 Combine made of 2 tried; "
+                         "every check passed after every action; 1 cut off and 1 not started by the time limit\n"
+                         "seed 5: pass (2000 actions)\n"
+                         "seed 6: cut off after 812 actions by the time limit (every check passed until then)\n"
+                         "seed 7: not started (the time limit came first)\n")
+        self.assertEqual(sorted(files), ["report.txt"])
+        # The same night with seed 7's line missing (the job killed the monkey): seed 7 is a failure again.
+        failed, files = self.night(log.replace("seed 7: not started", "seed 9: not started"), first=5, count=3, combine=True)
+        self.assertEqual(failed, 1)
+        self.assertIn("failure: no result: the session never finished", files["seed-monkey-7/monkey-report.txt"])
+
+    def test_a_run_where_no_session_finished_fails(self):
+        # Every seed stopped by the time limit: nothing was tested to the end, which must not read as clean.
+        log = ("seed 5: cut off after 40 actions by the run's time limit (MONKEY_MINUTES 9), every check passed until then\n"
+               "seed 6: not started: the run's time limit (MONKEY_MINUTES 9) came first\nmonkey: all passed\n")
+        failed, files = self.night(log, first=5)
+        self.assertEqual(failed, 1)
+        self.assertIn("failure: no session finished in the run's time limit", files["seed-monkey-time/monkey-report.txt"])
+        # One session failing is a finished one: its failure is the night's only one.
+        failed, files = self.night(log.replace("seed 5: cut off after 40 actions by the run's time limit (MONKEY_MINUTES 9), every check passed until then",
+                                               "seed 5: FAIL at action 40: save: Save gave no file"), first=5)
+        self.assertEqual(failed, 1)
+        self.assertNotIn("seed-monkey-time/monkey-report.txt", files)
 
     def test_regression_and_replay_lines_are_not_seeds(self):
         # Only the night's own seeds count, not a kept regression's line.
