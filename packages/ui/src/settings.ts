@@ -37,7 +37,11 @@ export interface SettingsStorage {
 export type SettingValue = string | number | boolean;
 
 export class SettingsStore {
-  private values = new Map<string, SettingValue>();
+  /** Every stored entry, in order: the ones this app reads, and any other kept as it is (a newer app's), so writing the
+   * settings back never drops what another version of SpindleLabs put there. */
+  private values = new Map<string, unknown>();
+  /** Choices storage refused to keep (full): they still hold until the page closes, over what is read again. */
+  private readonly unsaved = new Map<string, SettingValue>();
   private readonly storage: SettingsStorage | null;
   constructor(storage: SettingsStorage | null) {
     this.storage = storage;
@@ -45,15 +49,17 @@ export class SettingsStore {
   }
   /** Reads the stored settings again, dropping what was read before (settings brought from the account were just written). */
   reload(): void {
-    this.values = new Map();
+    this.values = this.read() ?? new Map();
+    for (const [k, v] of this.unsaved) this.values.set(k, v);
+  }
+  /** The stored entries, or null when storage can't be read (blocked); damaged or not ours: none. */
+  private read(): Map<string, unknown> | null {
     try {
       const raw = this.storage?.getItem(SETTINGS_KEY);
       const parsed: unknown = raw ? JSON.parse(raw) : null;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        for (const [k, v] of Object.entries(parsed)) if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") this.values.set(k, v);
-      }
-    } catch {
-      // Damaged or unreadable: start empty rather than refuse to open.
+      return new Map(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? Object.entries(parsed) : []);
+    } catch (e) {
+      return e instanceof SyntaxError ? new Map() : null; // damaged: start empty rather than refuse to open
     }
   }
   get<T extends SettingValue>(key: string, fallback: T): T {
@@ -61,11 +67,20 @@ export class SettingsStore {
     return typeof v === typeof fallback ? (v as T) : fallback;
   }
   set(key: string, value: SettingValue): void {
+    // Read again first: another tab, or settings brought from the account, may have changed other entries since.
+    if (this.storage) {
+      const stored = this.read();
+      if (stored) {
+        this.values = stored;
+        for (const [k, v] of this.unsaved) this.values.set(k, v);
+      }
+    }
     this.values.set(key, value);
     try {
       this.storage?.setItem(SETTINGS_KEY, JSON.stringify(Object.fromEntries(this.values)));
+      this.unsaved.clear();
     } catch {
-      // Not kept this time; the choice still holds until the page closes.
+      this.unsaved.set(key, value); // not kept this time; the choice still holds until the page closes
     }
   }
 }
