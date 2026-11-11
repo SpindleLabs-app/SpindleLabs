@@ -21,7 +21,7 @@ import { keptConstraints, withoutCurveConstraints } from "./constraints.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
-export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", dimension: "Dimension", redimension: "Change dimension", unconstrain: "Delete constraint", fit: "Tag fit", unfit: "Remove fit" } as const;
+export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", polygon: "Draw polygon", slot: "Draw slot", point: "Draw point", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", dimension: "Dimension", redimension: "Change dimension", unconstrain: "Delete constraint", fit: "Tag fit", unfit: "Remove fit" } as const;
 
 /**
  * Each origin plane's frame: the sketch's x along `xAxis`, its y along
@@ -242,6 +242,30 @@ export function drawArc(doc: DesignDocument, sketchId: string, start: LineEnd, e
   return { id, doc: withSketch(after, sketch) };
 }
 
+/**
+ * A sketch point at `at` with no curve (step 52c, Fusion's Point): a hole's
+ * centre to dimension to, or a place to snap to. It stays until it is
+ * deleted itself (`deletePoint`): `deleteCurve` takes only the points the
+ * deleted curve leaves unused, never one that was alone already.
+ */
+export function drawPoint(doc: DesignDocument, sketchId: string, at: readonly [number, number]): { doc: DesignDocument; id: string } {
+  const [id, drawn] = pointFor({ doc, sketch: sketchIn(doc, sketchId) }, at);
+  return { id, doc: withSketch(drawn.doc, drawn.sketch) };
+}
+
+/** The sketch points no curve is drawn from and no projection made (`drawPoint`'s). */
+export function lonePoints(sketch: Pick<Sketch, "points" | "curves" | "projected">): Set<string> {
+  const used = usedPoints(sketch.curves, sketch.projected);
+  return new Set(sketch.points.filter((p) => !used.has(p.id)).map((p) => p.id));
+}
+
+/** The sketch without lone point `pointId` (`lonePoints`), its pins and the constraints naming it. A point a curve is drawn from goes only with its curves. */
+export function deletePoint(doc: DesignDocument, sketchId: string, pointId: string): DesignDocument {
+  const sketch = sketchIn(doc, sketchId);
+  if (!lonePoints(sketch).has(pointId)) throw new Error(`point ${pointId} of sketch ${sketchId} is not a point on its own`);
+  return withRefs(doc, { ...sketch, points: sketch.points.filter((p) => p.id !== pointId) }, (sketch.pins ?? []).filter((p) => p.point !== pointId));
+}
+
 /** The sketch's point exactly at `at`, by id, or null. */
 export function pointAt(sketch: Sketch, at: readonly [number, number]): string | null {
   return sketch.points.find((p) => p.x === at[0] && p.y === at[1])?.id ?? null;
@@ -323,7 +347,8 @@ export function deleteCurve(doc: DesignDocument, sketchId: string, curveId: stri
   const projection = sketch.projected?.find((p) => p.made === curveId);
   if (projection) return unproject(doc, sketchId, projection.id);
   const curves = sketch.curves.filter((c) => c.id !== curveId);
-  const used = usedPoints(curves, sketch.projected);
+  // A sketch point (`drawPoint`) that was alone before stays: only the points the deleted curve leaves unused go.
+  const used = new Set([...usedPoints(curves, sketch.projected), ...lonePoints(sketch)]);
   // Its length, radius or level goes with it, though its ends may stay with the curves next to it (the solver bug hunt, 2026-11-06).
   const constraints = withoutCurveConstraints(sketch.constraints, sketch.curves.find((c) => c.id === curveId)!, curves);
   return withRefs(doc, { ...sketch, curves, constraints, points: sketch.points.filter((p) => used.has(p.id)) }, (sketch.pins ?? []).filter((p) => used.has(p.point)));

@@ -143,7 +143,10 @@ jobs:
           # the step once failed on every part for days with nothing to read.
           log=$(mktemp)
           pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/solver-build-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
-          pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
+          # -std=gnu17: the runners' compiler now defaults to C23, which removed
+          # ATOMIC_VAR_INIT, and SolveSpace's bundled mimalloc still uses it
+          # (the build failed on every part from 2026-11-11 about 01:40Z).
+          CFLAGS="-std=gnu17" pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
       # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
       # slicing engine's oracle (Ubuntu noble ships 2.7.2).
       # Only the parts whose checks use them (baseline: release; the slicer

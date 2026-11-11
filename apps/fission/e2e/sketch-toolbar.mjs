@@ -141,8 +141,13 @@ await check("the Create menu: every tool with its key, the tool in use ticked an
     assert.equal(await visible(page, "#sketch-create-menu"), true);
     assert.equal(await page.getAttribute("#sketch-create", "aria-expanded"), "true");
     const rows = await page.$$eval("#sketch-create-menu [role=menuitemradio]", (els) => els.map((e) => [e.querySelector("span").textContent, e.querySelector("kbd").textContent, e.getAttribute("aria-checked")]));
-    // The three arcs sit in the Arc row's own menu (centre-arc.mjs checks it opening).
-    assert.deepEqual(rows, [["Line", "L", "true"], ["Rectangle", "R", "false"], ["Circle", "C", "false"], ["3-point arc", "A", "false"], ["Centre arc", "", "false"], ["Tangent arc", "", "false"], ["Project", "P", "false"]]);
+    // The three arcs sit in the Arc row's own menu (centre-arc.mjs checks it opening), the polygons and slots in theirs (52c).
+    assert.deepEqual(rows, [
+      ["Line", "L", "true"], ["Rectangle", "R", "false"], ["Centre rectangle", "", "false"], ["3-point rectangle", "", "false"],
+      ["Circle", "C", "false"], ["3-point circle", "", "false"], ["3-point arc", "A", "false"], ["Centre arc", "", "false"], ["Tangent arc", "", "false"],
+      ["Inscribed polygon", "", "false"], ["Circumscribed polygon", "", "false"], ["Centre to centre slot", "", "false"], ["Overall slot", "", "false"],
+      ["Point", "", "false"], ["Project", "P", "false"],
+    ]);
     assert.equal(await page.evaluate(() => document.activeElement.id), "sketch-menu-line");
     // The menu hangs under its button, over the view.
     const button = await rect(page, "#sketch-create");
@@ -158,11 +163,11 @@ await check("the Create menu: every tool with its key, the tool in use ticked an
     assert.equal(await page.getAttribute("#sketch-tool-rectangle", "aria-pressed"), "true");
     assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "false");
     assert.match(await page.textContent("#sketch-help"), /^Click one corner, then the opposite corner/);
-    // Arrows: from Rectangle (row 1) Down twice is the Arc row (row 3); Enter opens the arcs on 3-point arc, and Enter chooses it.
+    // Arrows: from Rectangle (row 1) Down five times, past the centre and 3-point rectangles, Circle and the 3-point circle
+    // (52c), is the Arc row (row 6); Enter opens the arcs on 3-point arc, and Enter chooses it.
     await page.click("#sketch-create");
     assert.equal(await page.evaluate(() => document.activeElement.id), "sketch-menu-rectangle");
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
+    for (let k = 0; k < 5; k++) await page.keyboard.press("ArrowDown");
     assert.equal(await page.evaluate(() => document.activeElement.id), "sketch-menu-group-arc");
     await page.keyboard.press("Enter");
     assert.equal(await page.evaluate(() => document.activeElement.id), "sketch-menu-arc");

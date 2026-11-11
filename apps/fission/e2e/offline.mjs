@@ -207,6 +207,13 @@ try {
         await privacy.goto(`${app}privacy.html`);
         assert.match(await privacy.title(), /privacy/i);
         await privacy.close();
+        // The undo steps are kept offline too (step 89): saved, reloaded with no network, the box is still a step to undo.
+        await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+        await page.waitForTimeout(600); // the steps, written as the save lands, given time to land too
+        await page.reload();
+        await kernelUp(page);
+        await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+        assert.equal(await page.isDisabled("#undo"), false, "the box inserted is still a step to undo after an offline reload");
         // Back online: Ask comes back on, the note goes.
         await context.setOffline(false);
         await page.waitForFunction(() => !document.querySelector("#ai-ask-button").disabled);
