@@ -107,7 +107,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       clear.setAttribute("aria-label", "Clear the profile");
       clear.addEventListener("click", () => on.clear());
       // Pick several (version 18): Ctrl, Cmd or Shift with a click does the same; a phone has only this.
-      const several = el("button", "extrude-several", "extrude-several", "Pick several");
+      const several = el("button", "extrude-several", "extrude-several-pick", "Pick several");
       several.type = "button";
       several.title = SEVERAL_TITLE;
       several.setAttribute("aria-pressed", "false");
@@ -118,7 +118,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       });
       const profileRow = el("div", "", "extrude-row extrude-profile-row");
       profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear);
-      const severalRow = el("div", "", "extrude-several-row");
+      const severalRow = el("div", "", "extrude-several");
       severalRow.append(several, el("span", "", "extrude-several-hint", SEVERAL_HINT));
       const input = el("input", "extrude-distance");
       Object.assign(input, { type: "number", step: "any" });
