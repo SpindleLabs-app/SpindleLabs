@@ -1,0 +1,3 @@
+Monkey, seeds 359811726-359811729: 4 session(s) of 2000 actions in Chromium; 5 Combines made of 62 tried; 2 FAILED
+failure: selection agrees: with Body 12 (Cylinder: ⌀999999 × 30 mm) selected the Body panel shows 2.356189778 × 10¹³ mm³, but that body is 2.35619e+13 mm³ | seed 359811728 at action 1953; replay: cd apps/fission && npm run build && FISSION_SEED=359811728 MONKEY_STEPS=2000 node e2e/monkey.mjs
+actions.json: the shortest list found before shrinking ran out of time, not the shortest there is
