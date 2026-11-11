@@ -48,7 +48,7 @@ import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
-import { findRegion, refusalReason, regionOutline, type RegionRef } from "./regions.ts";
+import { findRegion, refusalReason, regionNow, regionOutline, type RegionRef } from "./regions.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -557,6 +557,17 @@ async function outlineOf(kernel: KernelCalls, content: KeptShape & Pick<Sketch, 
   }
 }
 
+/**
+ * Region `region` of a sketch as its points and curves make it now
+ * (regions.ts `regionNow`): `region` itself when it already says so, or
+ * when it is not found. Asked of the kernel as `outlineOf` asks, so a
+ * settle that asked for the outline already has the answer.
+ */
+async function regionToday(kernel: KernelCalls, content: KeptShape & Pick<Sketch, "projected">, region: RegionRef): Promise<RegionRef> {
+  const c = sketchCurves(content);
+  return regionNow((await kernel.call("sketch_regions", c.lines, c.circles, c.arcs)).regions, idsOf(content), region) ?? region;
+}
+
 /** A sketch's content as it is now, or undefined when it is gone. */
 const contentOf = (doc: DesignDocument, id: string): Sketch | undefined => doc.sketches.find((s) => s.id === id);
 
@@ -623,7 +634,9 @@ async function makesOutline(kernel: KernelCalls, doc: DesignDocument, sketchId: 
  * rule applied: an extrude whose sketch is lost in `after` keeps the
  * sketch's points and curves from `before` (if it made an outline there
  * and the extrude has no kept shape yet), and where it lay when not on XY;
- * one whose sketch makes an outline forgets its kept shape. From step 26c
+ * one whose sketch makes an outline forgets its kept shape, and saves its
+ * region (step 48) as the sketch makes it now, its curves and centroid
+ * (`regionNow`: the timeline hunt of 2026-11-11). From step 26c
  * a sketch on a face whose name finds no face or two in `after` holds the
  * placement it had in `before` (if it holds none yet), and forgets it once
  * its face is back; from 26f, each point pinned to its face's edge goes
@@ -670,10 +683,17 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
      */
     const keepLost = async (doc: DesignDocument): Promise<DesignDocument> => {
       const next: Record<string, KeptShape> = {};
+      // Each extrude whose sketch makes its region saves the region as it is now (regions.ts `regionNow`).
+      const regions = new Map<string, RegionRef>();
       for (const f of doc.timeline.features) {
         if (!isSketchExtrude(f)) continue;
         const sketch = f.intent.parameters.sketch as string;
-        if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;
+        if (await makesOutline(kernel, doc, sketch, regionOf(f))) {
+          const region = regionOf(f);
+          const now = region && (await regionToday(kernel, contentOf(doc, sketch)!, region));
+          if (now !== undefined && now !== region) regions.set(f.id, now);
+          continue;
+        }
         const had = keptOf(after, f);
         const was = contentOf(before, sketch);
         if (had !== undefined) next[f.id] = had;
@@ -685,8 +705,13 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         }
       }
       const { kept: old, ...rest } = doc;
-      if (JSON.stringify(old ?? {}) === JSON.stringify(next)) return doc;
-      return Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
+      const settled = JSON.stringify(old ?? {}) === JSON.stringify(next) ? doc : Object.keys(next).length === 0 ? rest : { ...rest, kept: next };
+      if (regions.size === 0) return settled;
+      const features = doc.timeline.features.map((f): Feature => {
+        const region = regions.get(f.id);
+        return region === undefined ? f : { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, region } } };
+      });
+      return { ...settled, timeline: { ...doc.timeline, features } };
     };
     let doc = await keepLost(after);
     const faces = doc.timeline.features.filter((f) => placedOnBodies(doc, f)).length;
