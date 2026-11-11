@@ -732,3 +732,22 @@ test("load is refused inside an undo step and for an empty save", () => {
   assert.throws(() => h.step("x", () => h.load(saved)), /can't load steps while an undo step is running/);
   assert.equal(h.load({ kept: [], index: 0 }), false);
 });
+
+test("load never keeps more than the limit (save/load hunt C9): the oldest go first, then the furthest redo", () => {
+  let doc = "s5";
+  const h = createHistory({ capture: () => doc, restore: (s) => (doc = s), limit: 3 });
+  const kept = (n: number) => Array.from({ length: n }, (_, i) => ({ snapshot: `s${i}`, label: `Step ${i}`, mergeKey: undefined, at: i }));
+  // Eight states s0..s7, the present s5 (index 5); limit 3 keeps 4 entries. Oldest first: drop s0, s1 (index 3, 6 left),
+  // drop s2 (index 2, 5 left), drop s3 (index 1, 4 left): s4, s5, s6, s7 with the present at 1.
+  assert.equal(h.load({ kept: kept(8), index: 5 }), true);
+  assert.deepEqual(h.steps().map((s) => [s.label, s.state]), [["Step 4", "done"], ["Step 5", "current"], ["Step 6", "undone"], ["Step 7", "undone"]]);
+  // The present at the very start: nothing older to drop, so the furthest redos go: s0..s3 kept, the present first.
+  doc = "s0";
+  assert.equal(h.load({ kept: kept(8), index: 0 }), true);
+  assert.deepEqual(h.steps().map((s) => s.label), ["Step 0", "Step 1", "Step 2", "Step 3"]);
+  // Exactly at the limit (4 entries): all kept.
+  doc = "s3";
+  assert.equal(h.load({ kept: kept(4), index: 3 }), true);
+  assert.equal(h.steps().length, 4);
+  assert.equal(h.undo(), "Step 3");
+});

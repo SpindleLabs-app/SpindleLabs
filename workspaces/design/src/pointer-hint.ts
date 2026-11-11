@@ -7,9 +7,11 @@
 
 import type { SketchTool } from "./sketch-tool.ts";
 import { constraintHint } from "./constraint-tool.ts";
+import { isShapeTool, shapeHint } from "./sketch-shapes.ts";
 
 /** What the tool's next click places, in a few words. */
 export function hintOf(tool: SketchTool): string {
+  if (isShapeTool(tool)) return shapeHint(tool);
   switch (tool.kind) {
     case "line":
       return tool.from === null ? "Place start point" : "Specify next point";
