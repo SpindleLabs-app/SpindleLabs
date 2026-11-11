@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { repoFile } from "./repo-file.ts";
 
-const { bugReport, ipv6Prefix, quiet, senderAddress, MAX_DESIGN_BYTES, MAX_BODY_CHARS, MAX_TITLE_CHARS } = (await import(repoFile("supabase/functions/bug-report/index.ts").href)) as typeof import("../../../supabase/functions/bug-report/index.ts");
+const { addressHeaders, bugReport, ipv6Prefix, quiet, senderAddress, MAX_DESIGN_BYTES, MAX_BODY_CHARS, MAX_TITLE_CHARS } = (await import(repoFile("supabase/functions/bug-report/index.ts").href)) as typeof import("../../../supabase/functions/bug-report/index.ts");
 
 const APP = "https://spindlelabs.app";
 const IP = "203.0.113.7";
@@ -159,4 +159,18 @@ test("hand-worked: a filed body pings nobody, and a design's name is only its na
   const body = JSON.parse(calls.at(-1)!.body).body as string;
   // Every [ ] ( ) is escaped, so the only link on the line is the stored file's.
   assert.ok(body.includes("Design file: [x\\]\\(http:evil.example\\) \\[a.spindle.json](https://github.com/x/blob/main/f)"), body);
+});
+
+test("each report logs which address headers came, never an address; a forged cf-connecting-ip is only trusted with Cloudflare in front", async () => {
+  const env = { GITHUB_BUG_TOKEN: "t", BUG_REPORT_REPO: "o/r", BUG_REPORT_SALT: "pepper", SUPABASE_URL: "https://db.test", SUPABASE_SERVICE_ROLE_KEY: "s" };
+  const lines: string[] = [];
+  const f = (async (input: string | URL | Request) => (String(input).startsWith("https://db.test/") ? new Response("true") : new Response(JSON.stringify({ number: 1 }), { status: 201 }))) as typeof fetch;
+  const handle = bugReport({ env, fetch: f, now: () => NOW, log: (l) => lines.push(l) });
+  await handle(post(report()));
+  assert.deepEqual(lines, ["address headers: cf-connecting-ip; x-forwarded-for entries: 2"]);
+  assert.ok(!lines.join().includes(IP));
+  assert.equal(addressHeaders(new Headers({ "x-forwarded-for": "1.1.1.1, 2.2.2.2, 3.3.3.3" })), "address headers: none; x-forwarded-for entries: 3");
+  // What a forged cf-connecting-ip does: it is taken as given. Safe only because Cloudflare replaces it before the
+  // function sees it; Ben's first live report's log line confirms the header is there (supabase/CLAUDE.md).
+  assert.equal(senderAddress(new Headers({ "cf-connecting-ip": "6.6.6.6", "x-forwarded-for": "203.0.113.7" })), "6.6.6.6");
 });

@@ -24,7 +24,18 @@
 // Tested in node by packages/account/test/bug-report-function.test.ts against a fake GitHub and database.
 
 export type Env = Record<string, string | undefined>;
-export type Deps = { env: Env; fetch: typeof fetch; now: () => number; id?: () => string };
+export type Deps = { env: Env; fetch: typeof fetch; now: () => number; id?: () => string; log?: (line: string) => void };
+
+/**
+ * Which address headers a request carried and how many x-forwarded-for entries, never their values: logged for each
+ * report (Supabase's function logs, seen only by the owner) to confirm which header the platform sets, since
+ * `senderAddress` trusts cf-connecting-ip only if Cloudflare really overwrites it in front of the function.
+ */
+export function addressHeaders(headers: Headers): string {
+  const xff = (headers.get("x-forwarded-for") ?? "").split(",").filter((s) => s.trim()).length;
+  const present = ["cf-connecting-ip", "x-real-ip", "true-client-ip", "cf-ray"].filter((h) => headers.has(h));
+  return `address headers: ${present.join(" ") || "none"}; x-forwarded-for entries: ${xff}`;
+}
 
 /** The addresses the app is served from; only these may send a report. */
 export const APP_ORIGINS = ["https://spindlelabs.app", "https://www.spindlelabs.app", "https://spindlelabs-app.github.io"];
@@ -187,6 +198,7 @@ export function bugReport(deps: Deps) {
     if (raw === null) return reply(req, 413, { error: "too-big" });
     const r = readReport(raw);
     if ("status" in r) return reply(req, r.status, { error: r.error });
+    deps.log?.(addressHeaders(req.headers));
     const sender = hex(await crypto.subtle.digest("SHA-256", enc.encode(`${env.BUG_REPORT_SALT}|${senderAddress(req.headers)}`)));
     const ok = await allowed(sender, r.design ? enc.encode(r.design.text).length : 0);
     if (ok === undefined) return reply(req, 502, { error: "unavailable" });
@@ -208,4 +220,4 @@ export function bugReport(deps: Deps) {
 
 // In Supabase (Deno) only: serve. Node's tests import bugReport() without starting anything.
 const deno = (globalThis as { Deno?: { serve(h: (r: Request) => Promise<Response>): void; env: { toObject(): Env } } }).Deno;
-if (deno) deno.serve(bugReport({ env: deno.env.toObject(), fetch: (i, o) => fetch(i, o), now: () => Date.now() }));
+if (deno) deno.serve(bugReport({ env: deno.env.toObject(), fetch: (i, o) => fetch(i, o), now: () => Date.now(), log: (line) => console.log(line) }));
