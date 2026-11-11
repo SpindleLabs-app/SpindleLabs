@@ -35,8 +35,9 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
-      # The live build drops the ?test-hooks debug surface (window.fissionTest); the test
-      # build keeps it (vite.config.ts __TEST_HOOKS__, audit S12).
+      # The live build drops the ?test-hooks debug surface (window.fissionTest) and the
+      # browser checks' switch for tooltips and timeline cards (window.__noTooltips); the
+      # test build keeps both (vite.config.ts __TEST_HOOKS__, audit S12).
       - run: npm run build
         working-directory: apps/fission
         env:
@@ -44,7 +45,7 @@ jobs:
           SPINDLE_WHATS_NEW_EXACT: "1"
       - name: The live bundle carries no debug surface
         run: |
-          if grep -rl 'fissionTest' apps/fission/dist; then
+          if grep -rlE 'fissionTest|__noTooltips' apps/fission/dist; then
             echo "The ?test-hooks debug surface leaked into the live build (audit S12)." >&2
             exit 1
           fi
