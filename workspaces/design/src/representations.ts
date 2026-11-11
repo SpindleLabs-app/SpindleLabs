@@ -8,7 +8,7 @@
 
 import type { BodySpec, KernelCalls, Outline, Plane, Producible, Producer, RepresentationRegistry, SourceLookup } from "@fission/core";
 import { bodyFeatures, designBodies } from "./browser.ts";
-import { bodyHidden, bodyIdOf, bodyNumbers, makesPieces, readDesignDocument, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, makesPieces, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { outline } from "./profiles.ts";
@@ -129,6 +129,9 @@ export function designLookup(document: DesignDocument, scene: Scene | null, kern
   };
 }
 
+/** The name Design's flat outlines (profiles and sketches) are listed under, for Laser: `registry.objectsOf(DESIGN_OUTLINES, project)`. */
+export const DESIGN_OUTLINES = "design:outlines";
+
 /** Says what Design produces. `kernel` builds meshes. */
 export function registerDesign(registry: RepresentationRegistry, kernel: KernelCalls): void {
   registry.registerProducer("design.profile", "outline", outlineProducer);
@@ -158,6 +161,29 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
       if (bodyHidden(doc, body) || seen.has(key)) return [];
       seen.add(key);
       return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}`, ...(pieces && { body }) }];
+    });
+  });
+  // What Laser (and any workspace that takes flat shapes) can list: every ready-made profile and every sketch with
+  // curves that is not suppressed, by its name in the browser, as exact outlines (a sketch's found by the kernel when
+  // delivered, so an open one is refused then, in words). A lister of its own, so the bodies' list stays bodies.
+  registry.registerLister(DESIGN_OUTLINES, (project) => {
+    let doc: DesignDocument;
+    try {
+      doc = readDesignDocument(project.workspaces.design);
+    } catch {
+      return [];
+    }
+    const items = new Map(doc.timeline.features.map((f) => [f.id, f]));
+    return designObjects(doc, kernel).flatMap((o) => {
+      if (o.type === "design.profile") {
+        const p = doc.profiles.find((x) => x.id === o.id);
+        return p ? [{ ...o, label: profileLabel(p) }] : [];
+      }
+      if (o.type !== "design.sketch") return [];
+      const sketch = doc.sketches.find((x) => x.id === o.id);
+      const item = items.get(o.id);
+      if (!sketch || sketch.curves.length === 0 || !item || item.suppressed) return [];
+      return [{ ...o, label: item.provenance.self.label }];
     });
   });
   registry.registerProducer("design.feature", "solid", async (o) => ({ kind: "solid", spec: await spec(o) }));

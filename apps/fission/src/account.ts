@@ -7,6 +7,7 @@
 
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { type AccountVersions, withIcon } from "@fission/ui";
+import { displayNameRow } from "./display-name.ts";
 import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
 import { pageShareSwitch } from "./share-switch.ts";
 import { type ShareHost, startShares } from "./share.ts";
@@ -76,10 +77,12 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const data = accountData(client, store);
   const designs = host ? startDesigns(client, host, store) : null;
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
-  const ui = accountUi(client, data, store, designs, settings);
+  const links = { show: null as (() => void) | null }; // My links, once sharing is on (below)
+  const ui = accountUi(client, data, store, designs, settings, links);
   // Sharing links (community C2): only with ?share in the address, until the legal check.
   const switched = pageShareSwitch();
   const shares = shareHost && switched.on ? startShares(client, shareHost, (w) => ui.open(w)) : null;
+  if (shares) links.show = () => shares.links();
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
@@ -139,7 +142,7 @@ function dataWords(r: Exclude<DataResult<unknown>, { kind: "ok" }>): string {
   return r.kind === "signed-out" ? "You're signed out. Sign in again to do that." : FAILURE_WORDS[r.reason];
 }
 
-function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null) {
+function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null, links: { show: (() => void) | null }) {
   const doc = document;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
     const e = doc.createElement(tag);
@@ -257,7 +260,29 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       del.addEventListener("click", () => confirmDelete());
       yours.append(copy, del);
       const kept = settings ? settingsBox(settings) : null;
-      const rows = [emails.row, ...(kept ? [kept] : []), out, yours];
+      const rows = [displayNameRow(client), emails.row, ...(kept ? [kept] : []), out, yours];
+      // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
+      if (links.show) {
+        const show = links.show;
+        const mine = el("button", "account-action account-my-links", "My links");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          show();
+        });
+        rows.unshift(mine);
+      }
+      // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
+      if (links.show) {
+        const show = links.show;
+        const mine = el("button", "account-action account-my-links", "My links");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          show();
+        });
+        rows.unshift(mine);
+      }
       if (designs) {
         const mine = el("button", "account-action account-my-designs", "My designs");
         mine.type = "button";
