@@ -1505,6 +1505,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       void update(step, undefined, next);
     },
     ask: (q, go) => deleting.ask(q, go),
+    hold: (work) => ctx.history.hold(work), // a delete the kernel still plans, held like an OK it still checks (#537)
     refuse: (message) => panel.showError(message),
     edit: (id) => openEdit(id),
     editSketch: (id) => openSketch(id),
