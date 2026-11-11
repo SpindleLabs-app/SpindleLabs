@@ -12,7 +12,18 @@
 .bug-report .bug-report-tick { display: flex; align-items: center; justify-content: flex-start; gap: var(--look-space-2); font-size: 13px; }
 .bug-report .bug-report-tick span { flex: 1; text-align: left; }
 .bug-report .bug-report-tick input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--look-accent); }
-.bug-report .bug-report-status.bug-report-good { color: inherit; }
+.bug-report .bug-report-status.bug-report-calm { color: inherit; }
+.bug-report .bug-report-go:disabled { opacity: 0.5; cursor: progress; }
 @media (max-width: 640px) {
   .bug-report .bug-report-tick { min-height: var(--look-target-touch); }
+}
+/* The sending bar: a short block running along a track, over and over (bug-report.ts `progress`). */
+.bug-report .bug-report-progress { position: relative; height: 6px; overflow: hidden; border-radius: 3px; background: var(--look-edge); }
+.bug-report .bug-report-progress[hidden] { display: none; }
+.bug-report .bug-report-progress-run { position: absolute; top: 0; bottom: 0; left: 0; width: 35%; border-radius: 3px; background: var(--look-accent); animation: bug-report-run 1.2s ease-in-out infinite; }
+@keyframes bug-report-run { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+/* Without motion: the bar stays full and gently dims, so it still says "working". */
+@media (prefers-reduced-motion: reduce) {
+  .bug-report .bug-report-progress-run { width: 100%; animation: bug-report-wait 2s ease-in-out infinite alternate; }
+  @keyframes bug-report-wait { from { opacity: 1; } to { opacity: 0.5; } }
 }

@@ -11,7 +11,7 @@
 // These are pure document functions; workspace.ts drives the panel.
 
 import { KernelError, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
-import { changePreset, isOperationExtrude, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
+import { changePreset, isOperationExtrude, profileSizeRefused, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
 import { featureSpec, isFlipped, setExtrudeDistance, setExtrudeFlip, setExtrudeRegion } from "./extrude.ts";
 import type { RegionRef } from "./regions.ts";
 import type { Outline } from "./profiles.ts";
@@ -130,6 +130,10 @@ const namesASize = (e: unknown) => e instanceof KernelError && e.inputs.some((i)
  */
 export async function refusedSizes(kernel: KernelCalls, before: DesignDocument, next: DesignDocument, id: string): Promise<string | null> {
   const f = featureIn(next, id);
+  // A preset's profile outside the sizes a profile can have: refused in words, never handed to the kernel, which built
+  // a negative width as a mirrored body (save/load hunt B4).
+  const outside = profileSizeRefused(next, f);
+  if (outside !== null) return outside;
   const spec = await specIn(kernel, next, f);
   if (spec === null) {
     // No outline from its sketch: judge the distance alone.

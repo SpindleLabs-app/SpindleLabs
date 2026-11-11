@@ -1,12 +1,12 @@
 {
-  "version": "0.33.45",
-  "commit": "ebdbd36af31d2225d409c84b0d940b4c1f5cdb49",
-  "build": "d954d8044b5b8bd7",
-  "handshake_sha256": "68c142a147f3303fcdfcc2756ff9fab46e9a41985a51a7e80b82ef500f6ed580",
-  "sha256": "8da65675ae2d0532e4efd5f91031bcbddf9e2c8b8e98bc923b2bfb6007bcc31b",
+  "version": "0.33.49",
+  "commit": "218beba4c2eab28418abb365ca54a5712e73c924",
+  "build": "d463654520dfda0a",
+  "handshake_sha256": "a55fa1c183579419fecec5e1c3eab06ba69f0b962ed77f4ea18c999ec816a30b",
+  "sha256": "c6b95fd8cb82645bca2fad574b473d447e0ca325984522841cb99abfbd639853",
   "limits": {
     "LINEAR": 1e-05,
     "MAX_SIZE": 1000000.0
   },
-  "ledger_sha256": "32af65dee02c8618ec0e235d64b2e6709529057a88a89ecd06eb8393f06c0967"
+  "ledger_sha256": "4f51de36bbe7ed380206c0bf522b7288434cd11b3d2b157f82c4e13b23dd3248"
 }

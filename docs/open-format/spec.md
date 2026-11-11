@@ -2,7 +2,7 @@
 
 **Draft 0.1, not yet used by the app.** Written 2026-11-11. This draft can still change in any way. The app still saves the plain JSON project described in `docs/project-format.md`; nothing here changes that until phase 1 of the migration plan (section 21).
 
-JSON Schemas for this draft: `schema/manifest.schema.json` (the package manifest) and `schema/design-16.schema.json` (the history part with Design data version 16).
+JSON Schemas for this draft: `schema/manifest.schema.json` (the package manifest) `schema/design-17.schema.json` (the history part with Design data version 17, the current one) and `schema/design-16.schema.json` (version 16).
 
 ## Contents
 
@@ -331,7 +331,7 @@ An optional picture of the design for file browsers and the library: PNG or WebP
 
 The history part is the project itself: the recipe that builds the design. **Its bytes are exactly the plain project JSON the app saves today.** A plain `.spindle` file and the history part of a package are the same thing; converting one to the other changes no byte of it (section 21.1).
 
-This section describes that JSON field by field, for outer format 2 with Design data version 16, the current versions. The schema is `schema/design-16.schema.json`. `docs/project-format.md` and `docs/document-model.md` (section 8, names) hold the full history and reasons behind each rule; this section states what a reader needs.
+This section describes that JSON field by field, for outer format 2 with Design data version 17, the current versions. The schema is `schema/design-17.schema.json` (`schema/design-16.schema.json` for version 16, which differs only in the constraint rule of 10.4.3 and its version number). `docs/project-format.md` and `docs/document-model.md` (section 8, names) hold the full history and reasons behind each rule; this section states what a reader needs.
 
 ### 10.1 Outer layout (format 2)
 
@@ -364,7 +364,7 @@ How the app writes it, which every writer MUST follow so the same project gives 
 
 Limits the app enforces on open: at most 64 MiB, nesting at most 256 deep, no non-finite numbers. A reader MUST also refuse duplicate keys (the app's own parser keeps the last one today; see open question 7).
 
-### 10.2 Design data, version 16: top level
+### 10.2 Design data, version 17: top level
 
 ```json
 {
@@ -460,7 +460,7 @@ Shapes such as centre rectangles, polygons and slots are not stored as such: the
 | `distance` | `a`, `b`, `value` | A dimension: points `a` and `b` are `value` mm apart. Used for a line's length, two points' distance and an arc's radius (its centre and start). |
 | `diameter` | `circle`, `value` | A dimension: the circle's diameter is `value` mm. The circle's `radius` MUST equal `value` / 2 exactly. At most one per circle. |
 
-`a` and `b` are two different points of the same sketch. Dimension values are from 0.001 to 200,000,000 mm. A constraint MUST NOT name a point that is pinned or that a projection made (10.4.5), and a diameter MUST NOT size a projected circle: those points follow a body instead. (Design data version 17, SL #532, coming, relaxes this: a constraint may name such a point beside one of the sketch's own points.)
+`a` and `b` are two different points of the same sketch. Dimension values are from 0.001 to 200,000,000 mm. A point that is pinned or that a projection made (10.4.5) follows a body. From Design data version 17 a constraint may name such a point only beside at least one of the sketch's own points (so a rectangle drawn from a body's corner keeps its sides square); a constraint naming only such points, or a Fix on one, MUST be refused. Version 16 (and older) data holding any constraint on such a point MUST be refused. A diameter MUST NOT size a projected circle.
 
 #### 10.4.4 What "saved solved" means for a reader
 
@@ -1008,7 +1008,7 @@ Design data (`workspaces.design.version`). From version 8 on, most versions add 
 | 14 | A circle's `fit` may appear. | None. |
 | 15 | Design-wide edge names (`design:`) in pins and projections may appear. | None. |
 | 16 | An Extrude Join's piece holding only the extrude is `body:<the extrude>`. | Every `body:<join>/piece:1` becomes `body:<join>`, and `piece:k` becomes `piece:(k − 1)`, wherever a body is named. |
-| 17 (coming, SL #532) | A constraint may name a pinned or projected point beside one of the sketch's own points. | None. |
+| 17 (2026-11-11) | A constraint may name a pinned or projected point beside one of the sketch's own points. | None. |
 | 18 (coming, SL #531) | An extrude of a sketch may extrude several sketches together (`more`). | None. |
 
 ## 22. Open questions for Ben
