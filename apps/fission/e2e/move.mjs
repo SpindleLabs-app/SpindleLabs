@@ -93,7 +93,7 @@ const near = (got, want, what) => got.flat().forEach((x, i) => assert.ok(Math.ab
 const panel = (page) =>
   page.evaluate(() => {
     const $ = (id) => document.getElementById(id);
-    const boxes = Object.fromEntries([...document.querySelectorAll("#move-panel input[type=number]")].map((i) => [i.id.slice(5), i.value]));
+    const boxes = Object.fromEntries([...document.querySelectorAll("#move-panel input[inputmode=decimal]")].map((i) => [i.id.slice(5), i.value]));
     return { open: !$("move-panel").hidden, title: $("move-title").textContent, bodies: $("move-bodies").hidden ? null : $("move-bodies").textContent, pick: !$("move-pick").hidden, boxes, pivot: $("move-pivot-summary").textContent, error: $("move-error").hidden ? null : $("move-error").textContent };
   });
 const opened = (page) => until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the Move panel open");
