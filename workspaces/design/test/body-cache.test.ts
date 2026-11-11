@@ -13,6 +13,8 @@ function standIn() {
   const live = new Set<BodyHandle>();
   let next = 1;
   let gate: Promise<void> | null = null;
+  let pieces = 1;
+  const asked = { boolean: 0, move: 0 };
   const kernel: KernelCalls = {
     call: (async (op: string, arg: unknown) => {
       if (op === "body_build") {
@@ -23,6 +25,19 @@ function standIn() {
       if (op === "body_view") {
         if (!live.has(arg as BodyHandle)) throw new Error(`body ${arg} is not held`);
         return { handle: arg };
+      }
+      if (op === "body_boolean") {
+        // Each answer is `pieces` new bodies (the inputs stay held, as the real kernel's do).
+        const bodies = Array.from({ length: pieces }, () => next++ as BodyHandle);
+        for (const h of bodies) live.add(h);
+        asked.boolean++;
+        return { bodies, history: [] };
+      }
+      if (op === "body_move") {
+        const h = next++ as BodyHandle;
+        live.add(h);
+        asked.move++;
+        return h;
       }
       if (op === "body_free") {
         if (gate) await gate;
@@ -35,6 +50,11 @@ function standIn() {
   return {
     kernel,
     live: () => [...live].sort((a, b) => a - b),
+    asked,
+    /** How many bodies each body_boolean answers with. */
+    pieces(n: number) {
+      pieces = n;
+    },
     /** The kernel replaced by a fresh one (KernelCalls.onRestart): nothing held, handles counting from 1 again. */
     restart() {
       live.clear();
@@ -228,4 +248,50 @@ test("a fresh kernel: forget drops every old handle unfreed, and each body is bu
   // The 10 mm box is built anew too, as 2.
   assert.equal(await cache.body(box(10)), 2);
   assert.deepEqual(k.live(), [1, 2]);
+});
+
+// Issue #487 (the monkey's seed 202611100): typing a height in Properties settles each keystroke's design while the
+// last one still settles, so two uses asked the same Combine's boolean at once. Both asked the kernel, the second
+// answer was stored over the first under the same key, and the first answer's body was never freed (the kernel held
+// one body more than any rebuild kept). Worked by hand: target 1 and tool 2 built, then one answer, 3, for both asks.
+test("issue #487: the same boolean asked by two uses at once is asked of the kernel once, and every body is freed", async () => {
+  const k = standIn();
+  const cache = new BodyCache(k.kernel);
+  const [target, tool] = [await cache.body(box(20)), await cache.body(box(25))];
+  await cache.keepOnly([target, tool]);
+  const ask = () => cache.using(async () => (await cache.boolean(target, [tool], "intersect")).bodies);
+  const [a, b] = await Promise.all([ask(), ask()]);
+  assert.deepEqual([a, b, k.asked.boolean], [[3], [3], 1], "one answer, handed to both");
+  assert.deepEqual(k.live(), [1, 2], "the answer no keepOnly kept is freed when the uses end");
+  await cache.clear();
+  assert.deepEqual(k.live(), [], "nothing left in the kernel");
+});
+
+test("issue #487: the same move asked by two uses at once is asked of the kernel once, and every body is freed", async () => {
+  const k = standIn();
+  const cache = new BodyCache(k.kernel);
+  const body = await cache.body(box(20));
+  const motions = [{ shift: [5, 0, 0] }] as never;
+  const ask = () => cache.using(() => cache.moved(body, motions));
+  const [a, b] = await Promise.all([ask(), ask()]);
+  assert.deepEqual([a, b, k.asked.move], [2, 2, 1], "one answer, handed to both");
+  await cache.clear();
+  assert.deepEqual(k.live(), [], "nothing left in the kernel");
+});
+
+test("a boolean asked again after one of its two pieces was freed never loses the piece still held", async () => {
+  // Target 1, tool 2; the first answer is pieces 3 and 4. A rebuild keeps only piece 3 (4 is freed), so the answer is
+  // asked again: pieces 5 and 6. Piece 3 is still in the kernel and must still be freed once nothing keeps it.
+  const k = standIn();
+  k.pieces(2);
+  const cache = new BodyCache(k.kernel);
+  const [target, tool] = [await cache.body(box(20)), await cache.body(box(25))];
+  assert.deepEqual((await cache.boolean(target, [tool], "subtract")).bodies, [3, 4]);
+  await cache.keepOnly([1, 2, 3]);
+  assert.deepEqual(k.live(), [1, 2, 3]);
+  assert.deepEqual((await cache.boolean(target, [tool], "subtract")).bodies, [5, 6], "asked again: 4 is gone");
+  await cache.keepOnly([1, 2, 5, 6]);
+  assert.deepEqual(k.live(), [1, 2, 5, 6], "piece 3 freed once nothing keeps it");
+  await cache.clear();
+  assert.deepEqual(k.live(), []);
 });

@@ -564,11 +564,16 @@ AI assistant (owner's spec "AI assistant — architecture and placeholders"; opt
 - Report back to the owner when A1–A6 and A9 land: built vs placeholdered, test status, decisions needed
 
 Community (free sharing only; starts after CAD step 25, needs a server first, see docs/community.md)
-- [ ] C1. Decide the server questions in docs/community.md with the owner
+- [ ] C1. Decide the server questions in docs/community.md with the owner (proposed 2026-11-11 in `docs/progress/community.md`; the money items wait on the owner)
 - [ ] C2. Accounts and uploads: share a whole project (editable timeline and every workspace's data) or a mesh, with a free licence
 - [ ] C3. Search and browse; download into a new local project; open it in any workspace
 - [ ] C4. Remix: a downloaded copy links back to the original and credits its author
 - [ ] C5. Moderation and reporting
+- [ ] C6. Profiles: a display name only, no messages
+- [ ] C7. Likes
+- [ ] C8. Comments, only if the legal check allows them
+- [ ] C9. The monthly design contest, after launch
+- Steps, decisions and the order they are built in: `docs/progress/community.md` (C2 starts with sharing links).
 - Sign-in (owner's decision, 2026-11-04): browsing and searching the community needs no account; posting, downloading and remixing need a signed-in account (AC1 below).
 
 Money (owner's decisions, 2026-10-29 and 2026-10-30; nothing built yet, planned for launch). The core CAD stays free for everyone, with no limits on projects or exports, and nothing is ever paid inside community sharing. Money comes only from the extras below, priced fairly and never pushed with pop-ups. AI stays free with the user's own key or a local model; paid AI credits are an optional convenience, priced above what the provider charges us. A payment account needs an adult to hold it, so a parent holds it at first.
