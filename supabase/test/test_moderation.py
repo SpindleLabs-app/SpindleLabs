@@ -90,6 +90,13 @@ class ModerationDatabase(unittest.TestCase):
             self.denied(self.as_role("anon", sql))
             self.denied(self.as_user(ADA, sql))
 
+    def test_the_id_sequences_are_closed_to_the_browser(self):
+        # As for share_reports (security review 2026-11-11): Supabase's default grants would let the browser move
+        # them to their end and break every later decision or claim.
+        for seq in ["moderation_log_id_seq", "takedown_claims_id_seq"]:
+            for role in ["anon", "authenticated"]:
+                self.denied(self.as_role(role, f"select setval('public.{seq}', 9223372036854775807);"))
+
     # The review list
 
     def test_the_review_list_worked_by_hand(self):

@@ -24,6 +24,7 @@ create table public.moderation_log (
   note text not null check (char_length(note) <= 2000)
 );
 revoke all on public.moderation_log from anon, authenticated;
+revoke all on sequence public.moderation_log_id_seq from anon, authenticated;
 alter table public.moderation_log enable row level security;
 
 -- A hold on an account: no new links and no name changes until `until` (null: closed for good). One per person.
@@ -50,6 +51,7 @@ create table public.takedown_claims (
   decided_at timestamptz
 );
 revoke all on public.takedown_claims from anon, authenticated;
+revoke all on sequence public.takedown_claims_id_seq from anon, authenticated;
 alter table public.takedown_claims enable row level security;
 
 -- True when the account may not make links or change its name now.
