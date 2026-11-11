@@ -51,7 +51,7 @@ alter table public.share_reports enable row level security;
 create function public.share_limits() returns jsonb
 language sql immutable set search_path = '' as $$
   select jsonb_build_object('max_links', 50, 'max_bytes', 20971520, 'max_share_bytes', 5242880, 'max_picture_bytes', 32768,
-    'links_per_day', 20, 'reports_per_person', 5, 'reports_per_link', 200, 'signed_out_reports_per_link', 20, 'max_reason', 1000)
+    'links_per_day', 20, 'reports_per_person', 5, 'reports_per_link', 200, 'signed_out_reports_per_link', 20, 'reports_per_person_per_day', 50, 'max_reason', 1000)
 $$;
 
 -- Shares a frozen copy of a design. Answers, never raising for these:
@@ -88,7 +88,15 @@ begin
   if links >= (lim->>'max_links')::integer or used + new_bytes > (lim->>'max_bytes')::bigint then
     return jsonb_build_object('status', 'full');
   end if;
-  insert into public.shares (user_id, name, body, picture) values (me, coalesce(p_name, ''), p_body, p_picture) returning * into out_row;
+  begin
+    insert into public.shares (user_id, name, body, picture) values (me, coalesce(p_name, ''), p_body, p_picture) returning * into out_row;
+  exception when raise_exception then
+    -- A hold on the account (moderation, a later migration) refuses the row where it is written.
+    if sqlerrm = 'account held' then
+      return jsonb_build_object('status', 'held');
+    end if;
+    raise;
+  end;
   return jsonb_build_object('status', 'shared', 'id', out_row.id, 'created_at', out_row.created_at);
 end $$;
 
@@ -124,7 +132,9 @@ end $$;
 --   "kept"    the report is kept for review
 --   "gone"    no link that is on has this id (nothing kept)
 --   "own"     the person who shared the link reported it (nothing kept: they can turn it off)
---   "enough"  this person already reported it as often as allowed, or the link has as many reports of this kind
+--   "held"    the reporter's account is held by moderation
+--   "enough"  this person already reported it as often as allowed (5 times, or 50 reports in the last 24 hours across
+--             every link), or the link has as many reports of this kind
 --             (signed in, or signed out) as are kept
 --   "bad"     the kind is not one of the list, or the reason is too long (nothing kept)
 -- Signed-out reports have no person to count by, so they have their own small cap a link, and never count against
@@ -163,8 +173,20 @@ begin
     if n >= (lim->>'reports_per_person')::integer then
       return 'enough';
     end if;
+    -- Across every link too, so one account can't flood the review list (security review 2026-11-11).
+    select count(*) into n from public.share_reports where reporter = me and created_at > now() - interval '24 hours';
+    if n >= (lim->>'reports_per_person_per_day')::integer then
+      return 'enough';
+    end if;
   end if;
-  insert into public.share_reports (share_id, reporter, kind, reason) values (p_id, me, p_kind, coalesce(p_reason, ''));
+  begin
+    insert into public.share_reports (share_id, reporter, kind, reason) values (p_id, me, p_kind, coalesce(p_reason, ''));
+  exception when raise_exception then
+    if sqlerrm = 'account held' then
+      return 'held';
+    end if;
+    raise;
+  end;
   return 'kept';
 end $$;
 
