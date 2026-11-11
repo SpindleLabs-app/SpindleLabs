@@ -138,8 +138,12 @@ jobs:
       # the parts: all); a check that lacks it fails, never skips.
       - if: contains(fromJSON('["solver","all"]'), matrix.part)
         run: |
-          pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/solver-build-requirements.txt" >/dev/null 2>&1
-          pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >/dev/null 2>&1
+          # pip's own words go to the log when it fails (package names, files
+          # and hashes of public packages only; the kernel is not in this step):
+          # the step once failed on every part for days with nothing to read.
+          log=$(mktemp)
+          pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/solver-build-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
+          pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
       # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
       # slicing engine's oracle (Ubuntu noble ships 2.7.2).
       # Only the parts whose checks use them (baseline: release; the slicer
