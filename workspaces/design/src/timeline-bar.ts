@@ -574,8 +574,16 @@ export interface BarWiring {
 /** How the last press on each bar's items came (a finger shows the picked item's card, having no hover). */
 const pickedBy = new WeakMap<HTMLElement, string>();
 
-/** Whether the item cards are off: the browser checks switch them off with the app's tooltips (main.ts), so a hover covers nothing they probe. */
-const cardsOff = (page: Document) => (page.defaultView as unknown as { __noTooltips?: boolean } | null)?.__noTooltips === true;
+/** The app's build flag (apps/fission vite.config.ts): false in the live build, true in the test build; unset when these files run unbundled (the unit tests). */
+declare const __TEST_HOOKS__: boolean | undefined;
+const TEST_BUILD = typeof __TEST_HOOKS__ === "undefined" || __TEST_HOOKS__;
+
+/**
+ * Whether the item cards are off: the browser checks switch them off with the app's
+ * tooltips (main.ts), so a hover covers nothing they probe. Only the test build reads
+ * the switch; the live build drops it with the rest of the test hooks (audit S12).
+ */
+const cardsOff = (page: Document) => TEST_BUILD && (page.defaultView as unknown as { __noTooltips?: boolean } | null)?.__noTooltips === true;
 
 /**
  * Fills the timeline slot: an ordered list of the items, with the marker

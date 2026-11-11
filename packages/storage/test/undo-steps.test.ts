@@ -115,7 +115,7 @@ test("only the projects written most recently keep their steps (two here, ten in
   await roomy.write("a", abcd, 1);
   await roomy.write("b", abcd, 2);
   await roomy.write("c", abcd, 3);
-  assert.notEqual(await roomy.read("a"), null);
+  assert.deepEqual(await roomy.read("a"), abcd, "kept whole, as written");
 });
 
 test("the project just written always keeps its steps, even with the clock set back (save/load hunt C8)", async () => {
@@ -124,9 +124,9 @@ test("the project just written always keeps its steps, even with the clock set b
   await steps.write("a", abcd, 10_000);
   await steps.write("b", abcd, 10_001);
   await steps.write("now", abcd, 6_400); // an hour back: the oldest by the clock, but just written
-  assert.notEqual(await steps.read("now"), null);
+  assert.deepEqual(await steps.read("now"), abcd, "kept whole, as written");
   assert.equal(await steps.read("a"), null); // a, the oldest of the others, goes
-  assert.notEqual(await steps.read("b"), null);
+  assert.deepEqual(await steps.read("b"), abcd, "kept whole, as written");
 });
 
 test("a write that fails forgets that project's older steps, so they can't come back over newer work; never thrown", async () => {
@@ -162,7 +162,7 @@ test("deleting a kept project deletes its steps; another project's stay", async 
   await store.steps.write("q", abcd, 2);
   await store.remove("p");
   assert.equal(await store.steps.read("p"), null);
-  assert.notEqual(await store.steps.read("q"), null);
+  assert.deepEqual(await store.steps.read("q"), abcd, "kept whole, as written");
 });
 
 /** `kv` holding at most `room` characters of values: a write past that is refused as IndexedDB refuses it when full. */

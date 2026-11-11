@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spindlelabs.app/open-format/0.1/manifest.schema.json",
+  "title": "SpindleLabs package manifest, draft 0.1",
+  "description": "manifest.json, the second entry of a SpindleLabs package (docs/open-format/spec.md, section 'The manifest'). Rules this schema cannot express are listed in $comment fields and in the spec; a reader checks those in code.",
+  "$comment": "Not expressible here, checked by a reader: no duplicate keys; extensionsRequired is a subset of extensionsUsed; minReaderVersion is not above version; exactly one history part; at most one view, brep, mesh, mesh-data and thumbnail part; paths unique, also ignoring case; every listed part exists in the zip and every zip entry but mimetype and manifest.json is listed; size and sha256 match the bytes; an extension part's namespace is in extensionsUsed; a mesh-data part only together with a mesh part. Unknown top-level keys are allowed so a newer minor version still validates: a reader ignores them and keeps them on re-save.",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "minReaderVersion",
+    "generator",
+    "units",
+    "document",
+    "extensionsUsed",
+    "extensionsRequired",
+    "parts"
+  ],
+  "properties": {
+    "format": {
+      "const": "spindlelabs-project"
+    },
+    "version": {
+      "$ref": "#/$defs/formatVersion",
+      "$comment": "MAJOR.MINOR of the package format this file is written to. Draft 0.1 files say 0.1."
+    },
+    "minReaderVersion": {
+      "$ref": "#/$defs/formatVersion",
+      "$comment": "The oldest package reader version that reads this file correctly. Not above version."
+    },
+    "generator": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "$comment": "Informational only: a reader never changes behaviour by it. Unknown keys allowed (kept on re-save)."
+    },
+    "units": {
+      "type": "object",
+      "required": [
+        "length",
+        "angle",
+        "axes"
+      ],
+      "properties": {
+        "length": {
+          "const": "mm"
+        },
+        "angle": {
+          "const": "deg"
+        },
+        "axes": {
+          "const": "right-handed, Z up"
+        }
+      },
+      "additionalProperties": false,
+      "$comment": "Fixed in every 0.x file: any other value is refused. They describe the package's own geometry parts (brep, mesh). The history part keeps its own documented units (lengths mm, angles degrees)."
+    },
+    "document": {
+      "$ref": "#/$defs/document"
+    },
+    "extensionsUsed": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/namespace"
+      },
+      "uniqueItems": true,
+      "maxItems": 1000
+    },
+    "extensionsRequired": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/namespace"
+      },
+      "uniqueItems": true,
+      "maxItems": 1000
+    },
+    "parts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 9998,
+      "items": {
+        "$ref": "#/$defs/part"
+      },
+      "contains": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "const": "history"
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    }
+  },
+  "$defs": {
+    "formatVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$"
+    },
+    "namespace": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)+$",
+      "$comment": "Lower-case dotted name, at least two segments. 'spindlelabs.' is ours; 'spindlelabs.local.' marks personal data stripped from a shared copy; anyone else uses a reversed domain they control (org.example.thing)."
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,9})?Z$",
+      "$comment": "RFC 3339 in UTC, always with a capital Z. Leap seconds (60) are not written."
+    },
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "licence": {
+      "enum": [
+        "CC-BY-4.0",
+        "CC-BY-SA-4.0",
+        "CC-BY-NC-4.0",
+        "CC0-1.0",
+        "none"
+      ]
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 30,
+      "$comment": "Counted in Unicode code points. Uniqueness is the library's rule, not the file's."
+    },
+    "document": {
+      "type": "object",
+      "required": [
+        "id",
+        "revision",
+        "title",
+        "created",
+        "modified",
+        "licence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "revision": {
+          "$ref": "#/$defs/opaqueId",
+          "$comment": "Compared for equality only, never parsed or ordered."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "$comment": "SHOULD equal the history part's project name. The 200 limit is a draft choice."
+        },
+        "created": {
+          "$ref": "#/$defs/time"
+        },
+        "modified": {
+          "$ref": "#/$defs/time"
+        },
+        "licence": {
+          "$ref": "#/$defs/licence"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "displayName": {
+              "$ref": "#/$defs/displayName"
+            },
+            "accountId": {
+              "$ref": "#/$defs/opaqueId",
+              "$comment": "Written only by the community library. Personal: stripped from a copy shared by link."
+            }
+          },
+          "additionalProperties": false
+        },
+        "derivedFrom": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/source"
+          },
+          "$comment": "Nearest source first."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "where",
+        "documentId",
+        "revision",
+        "title",
+        "licence"
+      ],
+      "properties": {
+        "where": {
+          "type": "string",
+          "pattern": "^(library:[A-Za-z0-9._:-]{1,128}|link|file)$",
+          "$comment": "Never a sharing link's id."
+        },
+        "documentId": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "revision": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "licence": {
+          "$ref": "#/$defs/licence"
+        },
+        "author": {
+          "$ref": "#/$defs/displayName"
+        }
+      },
+      "additionalProperties": false
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*/$)(?!(.*/)?\\.\\.?(/|$))(?!.*//)[^\\\\\\u0000-\\u001f\\u007f]+$",
+      "not": {
+        "enum": [
+          "mimetype",
+          "manifest.json"
+        ]
+      },
+      "$comment": "UTF-8, relative, '/' separators, no '.' or '..' segment, no leading '/', no '\\', no drive letter, no control characters, no empty segment, not ending in '/'. maxLength counts characters here; the limit in the spec is 255 bytes of UTF-8, checked by a reader."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cacheSource": {
+      "type": "object",
+      "required": [
+        "historySha256",
+        "kernel"
+      ],
+      "properties": {
+        "historySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kernel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "part": {
+      "type": "object",
+      "required": [
+        "path",
+        "role",
+        "mediaType",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "$comment": "Known in 0.1: history, view, brep, mesh, mesh-data, thumbnail, extension. Any other role is ignored and kept."
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "personal": {
+          "type": "boolean",
+          "default": false
+        },
+        "extension": {
+          "$ref": "#/$defs/namespace"
+        },
+        "source": {
+          "$ref": "#/$defs/cacheSource"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "history"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mediaType": {
+                "const": "application/vnd.spindlelabs.project+json"
+              },
+              "personal": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": [
+                  "view",
+                  "brep",
+                  "mesh"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mediaType": {
+                "const": "application/json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "mesh-data"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mediaType": {
+                "const": "application/octet-stream"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "thumbnail"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mediaType": {
+                "enum": [
+                  "image/png",
+                  "image/webp"
+                ]
+              },
+              "size": {
+                "maximum": 32768
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": [
+                  "brep",
+                  "mesh"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "source"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "extension"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "extension"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "extension"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
