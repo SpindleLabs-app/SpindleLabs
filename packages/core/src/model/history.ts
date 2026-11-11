@@ -52,6 +52,7 @@ export interface History {
   /**
    * Puts back the steps `save` gave, when the project as it is now is exactly the present they ended at (the same text);
    * returns false and changes nothing otherwise (a different project, or one changed since: the caller starts afresh).
+   * Past the limit the oldest steps go first, then the steps furthest a redo away.
    * Refused inside an undo step, like reset.
    */
   load(saved: SavedHistory): boolean;
@@ -249,6 +250,13 @@ export function createHistory(options: HistoryOptions): History {
       if (!present || saved.kept.length === 0 || options.capture() !== present.snapshot) return false;
       entries = saved.kept.map((e) => ({ ...e }));
       index = saved.index;
+      // Never more than the limit, whatever was kept (a damaged store, or a build with a bigger limit: save/load hunt C9):
+      // the oldest go first, then the steps furthest a redo away, as record and step drop them.
+      while (entries.length > limit + 1 && index > 0) {
+        entries.shift();
+        index--;
+      }
+      if (entries.length > limit + 1) entries.length = limit + 1;
       lastWasRecord = false;
       changed();
       return true;
