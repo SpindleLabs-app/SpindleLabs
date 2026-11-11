@@ -347,7 +347,7 @@ try {
         assert.equal(await page.getAttribute("#sketch-tool-circle", "aria-pressed"), "true");
         await press(page, "#sketch-create", tap);
         const rows = await page.$$eval("#sketch-create-menu > button", (els) => els.map((e) => e.querySelector("svg.icon")?.dataset.icon));
-        assert.deepEqual(rows, ["line", "rectangle", "circle", "arc", "project"]);
+        assert.deepEqual(rows, ["line", "rectangle", "centre-rectangle", "three-rectangle", "circle", "three-circle", "arc", "polygon", "centre-slot", "point", "project"]);
         if (shots) await page.screenshot({ path: `${shots}/sketchbar-${width}.png`, clip: { x: 0, y: 0, width, height: 180 } });
         await page.keyboard.press("Escape");
         await press(page, "#finish-sketch", tap);
