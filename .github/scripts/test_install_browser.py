@@ -48,6 +48,8 @@ class InstallBrowser(unittest.TestCase):
             with open(plan_file, "w") as f:
                 f.write("\n".join(plan) + "\n")
             fake(bins, "sudo", 'exec "$@"\n')
+            # A probe that resolves only the host named in PROBE_OK (a stand-in for `getent hosts`).
+            fake(bins, "probe", 'test "$1" = "$PROBE_OK"\n')
             fake(bins, "dpkg", f'echo "dpkg $*" >> "{log}"\n')
             fake(
                 bins,
@@ -56,7 +58,7 @@ class InstallBrowser(unittest.TestCase):
                 f'step=$(head -n 1 "{plan_file}"); tail -n +2 "{plan_file}" > "{plan_file}.next"; mv "{plan_file}.next" "{plan_file}"\n'
                 'case "$step" in sleep\\ *) sleep "${step#sleep }"; exit 0;; "") exit 99;; *) exit "$step";; esac\n',
             )
-            run_env = {**os.environ, "PATH": bins + os.pathsep + os.environ["PATH"], "APT_DIR": apt, "RETRY_SLEEP": "0"}
+            run_env = {**os.environ, "PATH": bins + os.pathsep + os.environ["PATH"], "APT_DIR": apt, "RETRY_SLEEP": "0", "MIRROR_PROBE": "true"}
             run_env.update(env or {})
             started = time.monotonic()
             p = subprocess.run([SCRIPT, browser], env=run_env, capture_output=True, text=True, timeout=120)
@@ -101,6 +103,30 @@ class InstallBrowser(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(calls[:2], ["npx playwright install-deps firefox", "npx playwright install firefox"])
         self.assertEqual(calls[-2:], ["npx playwright install-deps firefox", "npx playwright install firefox"])
+
+    def test_with_no_mirror_resolving_only_the_browser_is_installed(self):
+        code, err, files, calls = self.run_script(["0"], env={"MIRROR_PROBE": "false"})
+        self.assertEqual(code, 0, err)
+        self.assertEqual(calls, ["npx playwright install firefox"])      # no install-deps, no waiting
+        self.assertIn("no Ubuntu mirror resolves", err)
+        self.assertLess(self.elapsed, 5)
+
+    def test_with_only_the_fallback_mirror_resolving_apt_is_pointed_at_it_and_the_packages_install(self):
+        code, err, files, calls = self.run_script(["0", "0"], env={"MIRROR_PROBE": "probe", "PROBE_OK": "mirrors.edge.kernel.org"})
+        self.assertEqual(code, 0, err)
+        self.assertEqual(calls, ["npx playwright install-deps firefox", "npx playwright install firefox"])
+        self.assertEqual(files["apt-mirrors.txt"], "http://mirrors.edge.kernel.org/ubuntu/\tpriority:1\n")
+        self.assertIn("using mirrors.edge.kernel.org", err)
+
+    def test_with_the_ubuntu_hosts_resolving_the_mirror_list_is_left_alone(self):
+        code, err, files, calls = self.run_script(["0", "0"], env={"MIRROR_PROBE": "probe", "PROBE_OK": "archive.ubuntu.com"})
+        self.assertEqual(code, 0, err)
+        self.assertEqual(files["apt-mirrors.txt"], MIRRORS)
+
+    def test_with_no_mirror_resolving_a_browser_that_never_downloads_still_fails(self):
+        code, err, files, calls = self.run_script(["1", "1", "1"], env={"MIRROR_PROBE": "false"})
+        self.assertEqual(code, 1)
+        self.assertEqual(calls, ["npx playwright install firefox"] * 3)
 
     def test_three_failed_tries_fail_the_script(self):
         code, err, files, calls = self.run_script(["1", "1", "1"])
