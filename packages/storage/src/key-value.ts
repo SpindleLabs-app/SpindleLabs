@@ -13,10 +13,11 @@ export interface KeyValue {
   keys(prefix: string): Promise<string[]>;
   /**
    * Reads `keys`, then writes what `change` returns for them, as one step: no other write (from this tab or another)
-   * lands between the read and the writes, and either every write lands or none does. `change` runs synchronously;
+   * lands between the read and the writes, and either every write lands or none does. A key given null is deleted in
+   * that same step (a project and its summary deleted at once, save/load hunt C3). `change` runs synchronously;
    * when it throws, nothing is written and the promise rejects with what it threw (real-use hunt B6, B7).
    */
-  update(keys: readonly string[], change: (values: (string | undefined)[]) => Record<string, string>): Promise<void>;
+  update(keys: readonly string[], change: (values: (string | undefined)[]) => Record<string, string | null>): Promise<void>;
 }
 
 /** A key-value store held in memory: for tests, and gone when the page closes. */
@@ -31,7 +32,8 @@ export function memoryKeyValue(): KeyValue & { readonly entries: Map<string, str
     update: async (keys, change) => {
       // Read, change and written with no await between: nothing else runs in between.
       const writes = Object.entries(change(keys.map((k) => entries.get(k))));
-      for (const [k, v] of writes) entries.set(k, v);
+      for (const [k, v] of writes) if (v === null) entries.delete(k);
+      else entries.set(k, v);
     },
   };
 }

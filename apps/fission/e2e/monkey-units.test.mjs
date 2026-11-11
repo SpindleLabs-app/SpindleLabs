@@ -30,3 +30,11 @@ test("the check can fail: a length left in millimetres, or a name converted, is 
   assert.notEqual(summaryShown("Box: 13 × 20 × 5 mm", "in"), "Box: 13 × 20 × 5 in");
   assert.notEqual(summaryShown("Extrude Sketch 1 by 25.4 mm", "in"), "Extrude Sketch 0.039 by 1 in");
 });
+
+test("a volume the model can't work out stays not judged in inches (issues #474, #483, #485, #486)", () => {
+  // modelVolume gives null for a preset profile or an arc; null / 25.4³ is 0, which read as "that body is 0.00000 in³".
+  assert.equal(volumeShown(null, "in"), null);
+  assert.equal(volumeShown(null, "mm"), null);
+  // 0 stays a number (a real answer), not "not judged".
+  assert.equal(volumeShown(0, "in"), 0);
+});

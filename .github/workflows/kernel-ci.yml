@@ -37,7 +37,7 @@ on:
         required: false
         default: ""
       label:
-        description: "pr-<number> or main"
+        description: "pr-<number>, train-<number> or main"
         required: true
 
 # A newer push to the same pull request cancels the older run; main's finish.
@@ -68,7 +68,7 @@ jobs:
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
@@ -96,7 +96,12 @@ jobs:
 
   checks:
     needs: checks-plan
-    runs-on: ubuntu-latest
+    # Pinned to the image the oracles were pinned on: ubuntu-latest moved to a
+    # newer one on 2026-11-11 (compiler defaulting to C23, PrusaSlicer 2.9.4
+    # instead of the 2.7.2 the slicer oracle's settings are pinned to), which
+    # broke the SolveSpace build and the slicer oracle on every part. Move it
+    # on purpose, with the oracles re-pinned, never by drift.
+    runs-on: ubuntu-24.04
     environment: kernel
     # The slowest part takes about 25 minutes; the whole checks once took 80
     # and one run on a slow runner was cancelled at 90 (2026-11-05). 150,
@@ -111,7 +116,7 @@ jobs:
     steps:
       - name: Inputs are commit ids, a label and a part, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
@@ -143,7 +148,10 @@ jobs:
           # the step once failed on every part for days with nothing to read.
           log=$(mktemp)
           pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/solver-build-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
-          pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
+          # -std=gnu17: the runners' compiler now defaults to C23, which removed
+          # ATOMIC_VAR_INIT, and SolveSpace's bundled mimalloc still uses it
+          # (the build failed on every part from 2026-11-11 about 01:40Z).
+          CFLAGS="-std=gnu17" pip install -q --require-hashes --no-build-isolation -r "$GITHUB_WORKSPACE/.github/scripts/solver-requirements.txt" >"$log" 2>&1 || { tail -n 25 "$log"; exit 1; }
       # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
       # slicing engine's oracle (Ubuntu noble ships 2.7.2).
       # Only the parts whose checks use them (baseline: release; the slicer
@@ -156,6 +164,8 @@ jobs:
       # 1, 2, then 4 minutes before the next of four (up to 10 minutes each).
       - if: contains(fromJSON('["release","rest","all"]'), matrix.part)
         run: |
+          # Ubuntu's mirrors stopped resolving on 2026-11-11: see the script.
+          .github/scripts/apt-mirror.sh
           apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
           for try in 1 2 3 4; do
             sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
