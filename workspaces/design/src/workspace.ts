@@ -3439,7 +3439,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch();
     leaveExplode(); // a tool works on the bodies where they are
     editBox.show(feature);
-    editRegions = null;
+    leaveEditRegions(); // another item's, still offered: its body is drawn again
     editOps = null;
     // Extrude's Operation row (with Combine shown), as Fusion's Extrude edited.
     if (combineShown() && isSketchExtrude(item)) {
@@ -3455,6 +3455,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function leaveEdit() {
     editBox.hide();
     editOps = null;
+    leaveEditRegions();
+  }
+
+  /**
+   * Out of the regions Edit feature offers (48d4), by whichever way they are left: the panel closed, or opened on
+   * another item (hunt 11-11, A2: that way forgot them without drawing, so the edited extrude's body stayed out of the
+   * view and the regions shaded after Cancel). None is shaded, and the body left out while they were is drawn again.
+   */
+  function leaveEditRegions() {
     if (editRegions === null) return;
     editRegions = null;
     viewport.showExtrude(null);
