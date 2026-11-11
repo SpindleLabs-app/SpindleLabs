@@ -193,9 +193,9 @@ test("version 15: version 14 data holding a Combine result's pin or projection i
   await cache.close();
   const pinned = JSON.parse(JSON.stringify(pinNewPoints(s.doc, drawCircle(s.doc, s.id, corner.at, 2).doc, s.id, [corner])));
   const projected = JSON.parse(JSON.stringify(projectEdges(s.doc, s.id, pick.edges.slice(0, 1)).doc));
-  assert.equal(pinned.version, 16);
+  assert.equal(pinned.version, 17);
   const words = "Design data says version 14 but has a point or edge taken from a Combine's result, which version 15 brought";
   assert.throws(() => readDesignDocument({ ...pinned, version: 14 }), { message: words });
   assert.throws(() => readDesignDocument({ ...projected, version: 14 }), { message: words });
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(s.doc)), version: 14 }).version, 16);
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(s.doc)), version: 14 }).version, 17);
 });
