@@ -14,6 +14,16 @@ test("a box, a cylinder and an extrude in inches, worked by hand", () => {
   assert.equal(summaryShown("Move Box 1 by (50.8, 0, -12.7) mm, turned 90° about Z", "in"), "Move Box 1 by (2, 0, -0.5) in, turned 90° about Z");
 });
 
+test("lengths under an inch keep 3 significant figures, worked by hand (issue #473)", () => {
+  // The nightly's Body 5: 1 / 25.4 = 0.039370… → 0.0394; 30 / 25.4 = 1.181102… → 1.181 (3 decimals from 1 in up);
+  // 0.5 / 25.4 = 0.019685… → 0.0197. Three decimals would have said 0.039 and 0.02.
+  assert.equal(summaryShown("Box: 1 × 30 × 0.5 mm", "in"), "Box: 0.0394 × 1.181 × 0.0197 in");
+  // 0.001 mm (the smallest length) is 0.0000393700… in → 0.0000394, never 1e-5 notation; 25.4 mm stays 1.
+  assert.equal(summaryShown("Box: 0.001 × 25.4 × 2.54 mm", "in"), "Box: 0.0000394 × 1 × 0.1 in");
+  // The check can fail: the old 3-decimal reading is not what the panel says.
+  assert.notEqual(summaryShown("Box: 1 × 30 × 0.5 mm", "in"), "Box: 0.039 × 1.181 × 0.02 in");
+});
+
 test("millimetres give the summary back as it is", () => {
   assert.equal(summaryShown("Box: 13 × 20 × 5 mm", "mm"), "Box: 13 × 20 × 5 mm");
   assert.equal(volumeShown(1300, "mm"), 1300);

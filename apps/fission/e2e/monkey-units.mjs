@@ -1,15 +1,17 @@
 // What the monkey expects the Feature line and the Body panel to say once Settings shows inches (U2c, issue #427): the
 // design keeps millimetres, the screens convert. Worked out here on its own (not with the app's units.ts), so a mistake
-// there shows as a disagreement: 1 inch is exactly 25.4 mm, and a length is shown to 3 decimals, trailing zeros dropped.
+// there shows as a disagreement: 1 inch is exactly 25.4 mm, and a length is shown to 3 decimals, or to 3 significant
+// figures under an inch (U2c2: a 0.5 mm wall is 0.0197 in, not 0.02), trailing zeros dropped.
 
 export const MM_PER_INCH = 25.4;
 const NUM = String.raw`-?\d+(?:\.\d+)?`;
 /** A run of lengths a summary ends in its unit: "13 × 20 × 5 mm", "⌀14 × 30 mm", "(10, 0, -5) mm". */
 const RUN = new RegExp(String.raw`\(?⌀?${NUM}(?:(?: × |, )⌀?${NUM})*\)? mm`, "g");
 
-/** A length in mm as the screens write it in inches: 13 → "0.512". */
+/** A length in mm as the screens write it in inches: 13 → "0.512", 30 → "1.181", 1 → "0.0394" (issue #473). */
 const inches = (mm) => {
-  const s = (mm / MM_PER_INCH).toFixed(3).replace(/\.?0+$/, "");
+  const v = mm / MM_PER_INCH;
+  const s = (Math.abs(v) >= 1 ? v.toFixed(3) : Number(v.toPrecision(3)).toFixed(10)).replace(/\.?0+$/, "");
   return s === "-0" ? "0" : s;
 };
 
