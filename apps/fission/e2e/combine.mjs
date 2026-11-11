@@ -190,6 +190,8 @@ try {
         assert.equal(await page.$eval("#combine-target", (b) => b.getAttribute("aria-pressed")), "true");
         assert.equal(await page.$eval("#combine-ok", (b) => b.disabled), true);
         assert.equal(await page.$eval("#combine-hint", (h) => [h.hidden, h.textContent].join()), "false,Combine: click or tap the body to change");
+        // #504 (a11y): a screen reader hears the hint change, as it is a live region.
+        assert.equal(await page.$eval("#combine-hint", (h) => h.getAttribute("role")), "status", "the hint is a live region");
         if (shots) await page.screenshot({ path: `${shots}/combine-${width}-empty.png` });
         await at(page, TOP1, tap);
         await fields(page, "Body 1 | Click the bodies to use as tools", "Box 1 the target");

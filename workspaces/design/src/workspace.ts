@@ -3243,6 +3243,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const combineHint = viewport.element.ownerDocument.createElement("p");
   combineHint.id = "combine-hint"; // read by the e2e test
   combineHint.className = "move-panel-hint";
+  combineHint.setAttribute("role", "status"); // read out as it changes (#504)
   combineHint.hidden = true;
   viewport.element.append(combineHint);
   function showCombineHint() {
