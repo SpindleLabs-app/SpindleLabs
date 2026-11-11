@@ -16,8 +16,33 @@
 // bigger than the bed, or one with no room left above, is left off and
 // said so in words, never placed over the edge or over another part.
 
-import { svgNumber, type Loop, type Outline } from "@fission/core";
-import { outlinePath, type OutlineBox } from "../../../packages/core/src/model/svg.ts";
+import { outlineToSvg, svgNumber, type Loop, type Outline } from "@fission/core";
+
+/** An outline's box in model coordinates (y up). */
+export interface OutlineBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * The outline's path data as core's `outlineToSvg` writes it (outer loop then
+ * holes, y flipped, arcs as quarter-turn pieces) and its exact box, read from
+ * that file: its viewBox starts at (min x, −max y), rounded to 1e-6 mm as the
+ * file writes it, and its width and height are the box's exact size. Read from core's public writer rather than
+ * worked out again here, so the arc maths stays in one place (it moves to
+ * the kernel's 2D curve library with K1). A malformed outline throws, in words.
+ */
+export function outlinePath(outline: Outline): { d: string; box: OutlineBox } {
+  const svg = outlineToSvg(outline);
+  const d = /<path d="([^"]*)"/.exec(svg.text)?.[1];
+  const view = /viewBox="(\S+) (\S+) /.exec(svg.text);
+  if (d === undefined || view === null) throw new Error("core's SVG writer gave no path");
+  const minX = Number(view[1]);
+  const maxY = -Number(view[2]);
+  return { d, box: { minX, minY: maxY - svg.height, maxX: minX + svg.width, maxY } };
+}
 
 /** A flat shape offered to the laser: its id and type (to find it again in Design), its name, its exact outline. */
 export interface SheetPart {
@@ -82,7 +107,7 @@ export function bedRefusal(bed: Bed, gap: number): string | null {
   return null;
 }
 
-/** The outline's exact box (y up): corners, circles and each arc's extremes. Throws, in words, for a malformed outline. */
+/** The outline's box (y up): corners, circles and each arc's extremes, its corner to 1e-6 mm (outlinePath). Throws, in words, for a malformed outline. */
 export function outlineBox(outline: Outline): OutlineBox {
   return outlinePath(outline).box;
 }

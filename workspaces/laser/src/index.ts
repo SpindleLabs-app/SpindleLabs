@@ -13,7 +13,7 @@ import { mountLaserPage } from "./page.ts";
 export { bulgeNumber, CUT_LAYER, sheetDxf } from "./dxf.ts";
 export { LASER_KEY, laserShown, readLaserFlag, setLaserShown } from "./flag.ts";
 export { BED_DROP, bedMesh, defaultLaserData, DXF_KIND, layoutWords, mountLaserPage, OUTLINES_LISTER, partMeshes, partsOn, readLaserData, readParts, SVG_KIND, type LaserData, type OfferedPart, type SaveText } from "./page.ts";
-export { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, MAX_BED, MAX_THICKNESS, thicknessRefusal, moveOutline, outlineBox, sheetSvg, type Bed, type Layout, type PlacedPart, type SheetPart } from "./sheet.ts";
+export { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, MAX_BED, MAX_THICKNESS, thicknessRefusal, moveOutline, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type PlacedPart, type SheetPart } from "./sheet.ts";
 
 const SUMMARY = "2D jobs for laser and vinyl cutters: cut, engrave and score layers, preview and machine control.";
 
@@ -22,7 +22,7 @@ export const laserWorkspace: WorkspacePlugin = {
   title: "Laser",
   summary: SUMMARY,
   status: "placeholder",
-  representations: { produces: [], accepts: ["outline"] },
+  representations: { produces: [], accepts: [] }, // a placeholder to the app until Ben releases the page; the page reads outlines through the registry
   commands: [],
   mount(ctx) {
     if (laserShown()) return mountLaserPage(ctx);
