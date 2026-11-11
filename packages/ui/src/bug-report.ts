@@ -204,6 +204,13 @@ export function bugReportDialog(doc: Document, hooks: BugDialogHooks): { show():
   const status = el("p", "bug-report-status");
   status.id = "bug-report-status";
   status.setAttribute("role", "status");
+  // While sending: a bar that keeps moving (how long the service takes isn't known), so the form never looks stuck.
+  const progress = el("div", "bug-report-progress");
+  progress.id = "bug-report-progress";
+  progress.setAttribute("role", "progressbar");
+  progress.setAttribute("aria-label", "Sending the report");
+  progress.hidden = true;
+  progress.append(el("span", "bug-report-progress-run"));
   const actions = el("div", "bug-report-actions");
   const cancel = el("button", "close", "Cancel");
   cancel.type = "button";
@@ -212,7 +219,7 @@ export function bugReportDialog(doc: Document, hooks: BugDialogHooks): { show():
   go.type = "button";
   go.id = "bug-report-go";
   actions.append(cancel, go);
-  body.append(field, tick, note, status);
+  body.append(field, tick, note, progress, status);
   dialog.append(header, body, actions);
   doc.body.append(dialog);
 
@@ -222,7 +229,7 @@ export function bugReportDialog(doc: Document, hooks: BugDialogHooks): { show():
     mode = m;
     go.textContent = m === "send" ? "Send" : m === "github" ? "Open on GitHub" : "Done";
     note.textContent = m === "github" ? NOTE_GITHUB : NOTE_SEND;
-    status.classList.toggle("bug-report-good", m === "done");
+    status.classList.toggle("bug-report-calm", m === "done");
   };
   const firstMode = () => (hooks.endpoint === "" ? "github" : "send");
 
@@ -265,10 +272,14 @@ export function bugReportDialog(doc: Document, hooks: BugDialogHooks): { show():
     }
     busy = true;
     go.disabled = true;
-    status.textContent = "Sending…";
+    status.textContent = "Sending… this can take a few seconds.";
+    status.classList.add("bug-report-calm"); // not in the warning colour: nothing is wrong
+    progress.hidden = false;
     const answer = await sendBugReport(hooks.endpoint, made.payload, hooks.fetch);
     busy = false;
     go.disabled = false;
+    progress.hidden = true;
+    status.classList.remove("bug-report-calm");
     if ("sent" in answer) {
       what.value = "";
       setMode("done");
