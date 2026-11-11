@@ -1,0 +1,41 @@
+/* Sharing links (share.ts, community C2c/C2d): the Share dialog and the shared view, cards like My designs. At phone
+   width a full-width sheet. Colours are tokens only (theme.css). */
+.share { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.share[open] { display: flex; }
+.share::backdrop { background: var(--fill-5-8-14-06); }
+.share .share-head { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-3) var(--look-space-4); border-bottom: 1px solid var(--look-edge); }
+.share .share-head h2 { margin: 0; font-size: 16px; }
+.share .share-body { overflow-y: auto; padding: var(--look-space-3) var(--look-space-4) var(--look-space-4); display: grid; gap: var(--look-space-3); }
+.share .share-note { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-dim); }
+.share .share-terms { font-style: italic; }
+.share .share-status { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.share .share-status:empty { display: none; }
+.share .share-status.bad { color: var(--danger); }
+.share .share-shared-name { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.share .share-picture { width: 192px; max-width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: cover; border-radius: var(--look-radius-s); background: var(--look-field); border: 1px solid var(--look-edge); }
+.share .share-result { display: grid; gap: var(--look-space-2); }
+.share .share-result:empty { display: none; }
+.share .share-address, .share .share-field { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-3); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); width: 100%; box-sizing: border-box; }
+.share textarea.share-field { padding: var(--look-space-2) var(--look-space-3); resize: vertical; }
+.share .share-report { display: grid; gap: var(--look-space-2); }
+.share .share-report[hidden] { display: none; }
+.share .share-items { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--look-space-2); }
+.share .share-item { display: flex; align-items: center; gap: var(--look-space-3); padding: var(--look-space-2) var(--look-space-3); background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); }
+.share .share-item-words { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.share .share-item-name { font-weight: 600; overflow-wrap: anywhere; }
+.share .share-item-when { font-size: 12px; color: var(--text-dim); }
+.share .share-item-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--look-space-2); }
+.share .share-item-question { flex-basis: 100%; font-size: 13px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.share .share-button:not(#none) { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
+.share .share-button:not(#none):hover { border-color: var(--look-accent); color: var(--look-accent-text); }
+.share .share-primary:not(#none) { border-color: var(--look-accent); }
+.share .share-item-off-sure:not(#none) { border-color: var(--danger); color: var(--danger); }
+.share[aria-busy="true"] .share-button { opacity: 0.6; pointer-events: none; }
+@media (max-width: 640px) {
+  .share { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; border-width: 0; }
+  .share .share-item { flex-wrap: wrap; }
+  .share .share-item-actions { flex-basis: 100%; justify-content: flex-start; }
+  .share .share-item-question { text-align: left; }
+  .share .share-button:not(#none), .share .share-address, .share .share-field { min-height: var(--look-target-touch); }
+  .share .share-field { font-size: 16px; }
+}

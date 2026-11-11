@@ -185,7 +185,9 @@ try {
         assert.equal(await page.getAttribute("#file-slice-print", "title"), NO_BODY);
         assert.deepEqual(await barProblems(page), [], "every item's icon drawn");
         // On the screen, and 44 px to tap at phone width.
-        for (const r of await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.getBoundingClientRect().toJSON()))) {
+        // At phone width the list is a bottom sheet of at most 40% of the view that scrolls inside itself (Ben's OK 2026-11-11,
+        // phone-menus.mjs): each item is scrolled into view, as a person would, before it is read.
+        for (const r of await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => { b.scrollIntoView({ block: "center" }); return b.getBoundingClientRect().toJSON(); }))) {
           assert.ok(r.left >= 0 && r.right <= width && r.bottom <= (width > 640 ? 800 : 667), `on screen: ${JSON.stringify(r)}`);
           if (tap) assert.ok(r.height >= 44, `44 px to tap: ${r.height}`);
         }
@@ -251,7 +253,8 @@ try {
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "undone");
         // Escape from the keyboard closes the menu, and from a press outside it.
         await press(page, "#file-menu", tap);
-        await page.mouse.click(width / 2, (width > 640 ? 800 : 667) - 120);
+        // Outside: low in the window on a wide screen, high in the view on a phone (the menu is a sheet along the bottom there).
+        await page.mouse.click(width / 2, width > 640 ? 800 - 120 : 200);
         assert.equal(await page.getAttribute("#file-menu", "aria-expanded"), "false", "a press outside closes it");
       } finally {
         await page.context().close();
@@ -308,7 +311,7 @@ try {
         assert.equal(new URL(page.url()).hash, "#image");
         await press(page, "#workspace-menu", tap);
         assert.deepEqual(await page.$$eval("#workspace-menu-menu [aria-current=true]", (bs) => bs.map((b) => b.dataset.workspace)), ["image"], "the one on screen marked");
-        await page.mouse.click(width / 2, (width > 640 ? 800 : 667) - 60);
+        await page.mouse.click(width / 2, width > 640 ? 800 - 60 : 200); // high in the view on a phone, above the menu's sheet
         assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false", "a press outside closes it");
         // A placeholder is chosen as before: its page says Coming soon.
         await switchTo(page, "laser", tap);
