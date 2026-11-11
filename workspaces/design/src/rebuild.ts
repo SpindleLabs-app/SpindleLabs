@@ -50,7 +50,7 @@ import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 import { HELD_STILL, turnedOver } from "./point-drag.ts";
 import { findRegion, refusalReason, regionCurveIds, regionName, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
-import { missedTools, missWords, type Miss } from "./misses.ts";
+import { leavesNoFace, missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -1476,7 +1476,9 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       throw e;
     }
     const missed = missedTools(operation, t.handle, ts.map((x) => x.handle), result);
-    if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]) });
+    // SL #583 item 3: a Join's tool none of whose faces is left lies wholly inside, so its words never say it doesn't reach.
+    const inside = operation === "join" ? missed.filter((i) => leavesNoFace(ts[i].handle, result)).map((i) => step.tools[i]) : [];
+    if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]), ...(inside.length > 0 && { inside }) });
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
     const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
