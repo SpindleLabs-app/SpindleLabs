@@ -314,7 +314,7 @@ export function shapePlan(kind: ShapeKind, clicks: readonly SketchXY[], sides = 
  * (same y) and Vertical on each exactly upright (same x), as the rectangle
  * tool gives its sides (constraints.ts `squaredRectangle`): only where it
  * holds exactly as drawn, so the sketch stays solved with no solve and
- * nothing can fight. A pair through a point that follows a body, or
+ * nothing can fight. A pair of points that both follow a body (#517: one is fine), or
  * already so by a constraint of its own, gets none. Ids from the counter.
  */
 export function levelled(doc: DesignDocument, sketchId: string, pairs: readonly (readonly [string, string])[]): DesignDocument {
@@ -326,7 +326,7 @@ export function levelled(doc: DesignDocument, sketchId: string, pairs: readonly 
   const added: SketchConstraint[] = [];
   for (const [a, b] of pairs) {
     const [p, q] = [at.get(a), at.get(b)];
-    if (!p || !q || a === b || follows.has(a) || follows.has(b)) continue;
+    if (!p || !q || a === b || (follows.has(a) && follows.has(b))) continue;
     const kind = p.y === q.y ? "horizontal" : p.x === q.x ? "vertical" : null;
     if (kind === null) continue;
     const holds = (c: SketchConstraint) => c.kind === kind && ((c.a === a && c.b === b) || (c.a === b && c.b === a));

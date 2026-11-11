@@ -303,11 +303,62 @@ try {
         const numbers = await rect(page, "#volume");
         assert.ok(numbers.top >= 0 && numbers.bottom <= (width > 640 ? 800 : 667) && numbers.width > 0, `the volume on screen: ${JSON.stringify(numbers)}`);
         assert.equal(await page.textContent("#volume"), "24,000 mm³");
-        // The menu's Body facts does the same: on now, and the panel stays open.
+        // Button toggles (Ben, 2026-11-11): Body facts is lit while its press shows the numbers, and the menu says so.
+        assert.equal(await page.getAttribute("#inspect-facts", "aria-pressed"), "true", "Body facts lit while it shows the numbers");
         await press(page, "#inspect-menu", tap);
         assert.equal(await page.getAttribute("#inspect-menu-facts", "aria-disabled"), null);
+        assert.equal((await page.textContent("#inspect-menu-facts")).includes("Body facts: on"), true, "the menu says it is on");
+        // Pressed again (here from the menu) it puts away what it opened: the folded panel folds again, the phone's sheet shuts.
         await press(page, "#inspect-menu-facts", tap);
-        assert.equal(await page.$eval("#properties", (p) => p.hasAttribute("data-folded")), false);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "false", null, "Body facts goes out");
+        if (tap) await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "false", null, "the sheet it opened shuts");
+        else await until(page, () => document.getElementById("properties").hasAttribute("data-folded"), null, "the panel it opened folds");
+        // And on again with the button, off again with the button.
+        await press(page, "#inspect-facts", tap);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "true", null, "on again");
+        if (shots) await page.screenshot({ path: `${shots}/body-facts-on-${width}.png` });
+        await press(page, "#inspect-facts", tap);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "false", null, "off again");
+        if (tap) assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet shut again");
+        else assert.equal(await page.$eval("#properties", (p) => p.hasAttribute("data-folded")), true, "folded again");
+        if (shots) await page.screenshot({ path: `${shots}/body-facts-off-${width}.png` });
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    await check(`${at}: Body facts pressed again leaves alone what it did not open, and goes out when its numbers are put away some other way`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        await insertPreset(page, "box", tap);
+        await until(page, () => !document.getElementById("inspect-facts").disabled, null, "Body facts on once a body is built");
+        // Opened by the person first (the phone's Properties toggle, the wide panel's pin): Body facts opens nothing, so it is not lit
+        // and a second press shuts nothing.
+        if (tap) await page.tap("#properties-toggle");
+        else {
+          if ((await page.getAttribute("#properties-handle", "aria-expanded")) === "true") await page.click("#properties-handle");
+          await page.click("#properties-handle"); // pinned
+        }
+        const open = () => page.evaluate((t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true" : !document.getElementById("properties").hasAttribute("data-folded")), tap);
+        await until(page, (t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true" : !document.getElementById("properties").hasAttribute("data-folded")), tap, "opened by the person");
+        for (let i = 0; i < 2; i++) {
+          await press(page, "#inspect-facts", tap);
+          await page.waitForTimeout(200);
+          assert.equal(await page.getAttribute("#inspect-facts", "aria-pressed"), "false", `press ${i + 1}: not lit, it opened nothing`);
+          assert.equal(await open(), true, `press ${i + 1}: still open, as the person left it`);
+        }
+        // Put away by the person: Body facts opens it and is lit; then shut some other way, it goes out.
+        if (tap) await page.tap("#properties-toggle");
+        else await page.click("#properties-handle"); // unpinned and folded
+        await until(page, (t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "false" : document.getElementById("properties").hasAttribute("data-folded")), tap, "put away");
+        await press(page, "#inspect-facts", tap);
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "true", null, "lit");
+        if (tap) await page.tap("#properties-toggle"); // the sheet shut by its own toggle
+        else await page.click("#properties-handle"); // the panel folded by its own button
+        await until(page, () => document.getElementById("inspect-facts").getAttribute("aria-pressed") === "false", null, "out once its numbers are put away another way");
+        // So the next press opens them again rather than shutting nothing.
+        await press(page, "#inspect-facts", tap);
+        await until(page, (t) => (t ? document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true" : !document.getElementById("properties").hasAttribute("data-folded")), tap, "the next press opens them again");
       } finally {
         await page.context().close();
       }
