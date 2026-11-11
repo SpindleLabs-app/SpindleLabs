@@ -12,7 +12,7 @@ import { changePreset, insertPreset, partDocument, PRESET_SIZE_LIMITS, profileSi
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { MAX_TYPED, MIN_TYPED } from "../src/typed-entry.ts";
-import { editFeature } from "../src/feature-edit.ts";
+import { editFeature, refusedSizes } from "../src/feature-edit.ts";
 
 const kernel = nodeKernel();
 const DESIGN = [{ id: "design" as const, readData: readDesignDocument }];
@@ -151,12 +151,21 @@ test("hunt B4: a box's, cylinder's or sphere's sizes and a preset's height stay 
   }
 });
 
-test("hunt B4: no edit makes a profile size that would fail its item: Edit feature and the panel's changes say why instead", () => {
+test("hunt B4: no edit makes a profile size that would fail its item: Edit feature's OK and inserting say why instead", async () => {
   const bracket = partDocument("l-bracket", 20, 10, 5);
-  // Edit feature passes a typed -5 on (readTyped takes signs, for an extrude's distance); the profile refuses it in words.
-  assert.throws(() => editFeature(bracket, "feature-1", { width: -5 }), /^Error: The width must be from 0\.001 to 1000000 mm, not -5$/);
-  assert.throws(() => editFeature(bracket, "feature-1", { depth: 0 }), /^Error: The depth must be from 0\.001 to 1000000 mm, not 0$/);
-  assert.throws(() => changePreset(bracket, "feature-1", "slot", 40, 2e6, 20), /^Error: The depth must be from 0\.001 to 1000000 mm, not 2000000$/);
+  // Edit feature passes a typed -5 on (readTyped takes signs, for an extrude's distance); its OK (refusedSizes) refuses it
+  // in words before the kernel sees it, so nothing is recorded.
+  const refuse = async (typed: Parameters<typeof editFeature>[2]) => refusedSizes(kernel, bracket, editFeature(bracket, "feature-1", typed), "feature-1");
+  assert.equal(await refuse({ width: -5 }), "L-bracket 1's width -5 mm is outside 0.001 to 1000000 mm, the sizes a profile can have");
+  assert.equal(await refuse({ depth: 0 }), "L-bracket 1's depth 0 mm is outside 0.001 to 1000000 mm, the sizes a profile can have");
+  // 1.1 x the largest and 0.9 x the smallest refused; 0.9 x the largest and 1.1 x the smallest taken.
+  assert.match((await refuse({ width: 1.1 * MAX_TYPED }))!, /width 1100000 mm is outside/);
+  assert.match((await refuse({ depth: 0.9 * MIN_TYPED }))!, /depth 0\.0009[0-9]* mm is outside/);
+  assert.equal(await refuse({ width: 0.9 * MAX_TYPED }), null);
+  // 1.1 x the smallest is a size a profile can have (any preset outline that thin has pieces the kernel refuses in its
+  // own words, holes, ends or arms under 0.001 mm), so the size rule itself is checked: it lets it through.
+  const thin = editFeature(bracket, "feature-1", { depth: 1.1 * MIN_TYPED });
+  assert.equal(profileSizeRefused(thin, thin.timeline.features[0]), null);
   assert.throws(() => insertPreset(bracket, "star", 0.0009, 5, 5), /^Error: The width must be from 0\.001 to 1000000 mm, not 0\.0009$/);
   // A box's sizes still go to the kernel (feature-edit.test.ts: its refusal names the height).
   assert.doesNotThrow(() => editFeature(partDocument("box", 40, 30, 20), "feature-1", { height: 2e6 }));

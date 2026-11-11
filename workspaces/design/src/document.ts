@@ -482,7 +482,8 @@ export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d:
 export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const old = doc.timeline.features.find((f) => f.id === id);
   if (!old || !ownShape(old) || isSketchExtrude(old)) throw new Error(`there is no preset ${shown(id)} in the design`);
-  checkProfileSizes(kind, w, d);
+  // A profile size outside PRESET_SIZE_LIMITS is not refused here: Edit feature's OK refuses it in words through
+  // `refusedSizes` (feature-edit.ts), and an item holding one fails when it builds (`profileSizeRefused`).
   let nextId = doc.nextId;
   const oldProfile = old.dependsOn.find((p) => doc.profiles.some((x) => x.id === p));
   const oldKind = presetKinds(doc)(old);
