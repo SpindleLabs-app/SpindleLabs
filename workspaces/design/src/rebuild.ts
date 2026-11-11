@@ -1029,13 +1029,14 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
   });
   const followed = moved ? { ...doc, sketches } : doc;
   // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
-  // workspace numbers them (`numberPieces`, which then has nothing more to do), so they stay moved after this rebuild.
+  // workspace numbers them (`numberPieces`; its own call after this one gives them their remembered faces), so they
+  // stay moved after this rebuild.
   const takers = followed.timeline.features.flatMap((f) => {
     const r = build.results[f.id];
     return isMoveItem(f) && r?.status === "built" && r.takes !== undefined ? [[f, r.takes] as const] : [];
   });
   if (takers.length === 0) return followed;
-  let next = numberPieces(followed, Object.keys(build.bodies), builtPieceFaces(build));
+  let next = numberPieces(followed, Object.keys(build.bodies));
   for (const [f, takes] of takers) next = changedMove(next, f.id, moveValues(f), [...movedBodies(f), ...takes]);
   return next;
 }
