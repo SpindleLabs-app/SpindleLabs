@@ -9,6 +9,7 @@ Run: python3 -m unittest discover -s supabase/test
 
 import json
 import os
+import re
 import unittest
 import uuid
 
@@ -196,6 +197,36 @@ class ModerationDatabase(unittest.TestCase):
         self.assertEqual(self.share(BO)["status"], "shared")
         self.assertEqual(self.server(f"select end_hold('{BO}', 'Dad', 'again');"), "f")
         self.assertEqual([a for a, *_ in self.log()], ["hold", "end-hold"])
+
+    def test_a_closed_account_that_deletes_itself_and_signs_in_again_starts_clean(self):
+        # C5b's choice: nothing about a person is kept to recognise them again (that waits on the legal check), so
+        # deleting the account takes its hold with it, and the same Google account signing in again is a new account.
+        # The record of the hold stays, by the old id only.
+        self.server(f"select hold_account('{BO}', null, 'Closed.', true, 'Ben', 'spam');")
+        self.assertEqual(self.share(BO)["status"], "held")
+        self.assertEqual(self.as_user(BO, "select delete_my_account();")[0], True)
+        self.assertEqual(self.server(f"select count(*) from account_holds where user_id = '{BO}';"), "0")
+        again = str(uuid.uuid4())
+        self.owner(f"insert into auth.users (id, email) values ('{again}', 'bo@example.com');")
+        self.assertEqual(self.share(again)["status"], "shared")
+        self.assertEqual(self.log(), [("hold", "", BO, "Ben")])
+
+    def test_the_server_can_read_every_column_the_review_page_asks_for(self):
+        # The moderation function (supabase/functions/moderation/index.ts) reads rows as service_role through the data
+        # API. Every table and column it names is read from its source here and selected as service_role, so a column
+        # misnamed there (C5b's first draft asked display_names for a "display_name") or a grant taken away fails.
+        with open(os.path.join(HERE, "..", "functions", "moderation", "index.ts"), encoding="utf-8") as f:
+            source = f.read()
+        link_fields = re.search(r'const LINK_FIELDS = "([a-z_,]+)"', source).group(1)
+        reads = re.findall(r'rows\("([a-z_]+)", `[^`]*?select=(\$\{LINK_FIELDS\}|[a-z_,]+)', source)
+        self.assertGreaterEqual(len(reads), 10, reads)
+        link = self.share(ADA)["id"]
+        self.report(link, uid=BO)
+        self.server(f"select record_claim('{link}', 'Acme', 'legal@acme.test', 'Our bracket', 'Ben');")
+        for table, fields in reads:
+            fields = link_fields if fields == "${LINK_FIELDS}" else fields
+            self.server(f"select {fields} from public.{table};")
+        self.assertIn(("display_names", "name"), reads)
 
     def test_no_hold_on_an_account_that_doesnt_exist(self):
         self.assertEqual(self.server(f"select hold_account('{uuid.uuid4()}', null, 'x', true, 'Ben', '');"), "f")
