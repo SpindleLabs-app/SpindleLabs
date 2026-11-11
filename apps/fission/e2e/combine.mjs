@@ -285,6 +285,45 @@ try {
     });
   }
 
+  // #504: the shell's `#workspace button:hover` outranked the panel's OK, so on hover (and on a phone after a tap, where hover sticks) OK turned dark grey and looked switched off.
+  await check("1280 px: OK keeps its colour under the pointer", async () => {
+    const page = await fresh(1280, 800, false, "&combine");
+    try {
+      await page.click('[data-view="top"]');
+      await settle(page);
+      await at(page, TOP1);
+      await page.click("#modify-menu");
+      await page.click("#modify-menu-combine");
+      await opened(page);
+      await at(page, TOP2);
+      await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+      await page.mouse.move(5, 5);
+      const colour = () => page.$eval("#combine-ok", (b) => getComputedStyle(b).backgroundColor);
+      const rest = await colour();
+      await page.hover("#combine-ok");
+      await page.waitForTimeout(250);
+      assert.equal(await colour(), rest, "OK's fill under the pointer is its fill at rest");
+      await page.keyboard.press("Escape");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  // #504: any touch screen (a 768 × 1024 tablet too) gets finger-sized controls, not only widths up to 700 px.
+  await check("768 px touch tablet: the Combine panel's controls are finger-sized", async () => {
+    const page = await fresh(768, 1024, true, "&combine");
+    try {
+      await press(page, "#modify-menu", true);
+      await press(page, "#modify-menu-combine", true);
+      await opened(page);
+      const sizes = await page.evaluate(() => Object.fromEntries(["combine-ok", "combine-cancel", "combine-operation", "combine-keep"].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, [Math.round(r.width), Math.round(r.height)]]; })));
+      for (const id of ["combine-ok", "combine-cancel", "combine-operation"]) assert.ok(sizes[id][1] >= 44, `${id} is ${sizes[id][1]} px tall: ${JSON.stringify(sizes)}`);
+      assert.ok(sizes["combine-keep"][0] >= 22 && sizes["combine-keep"][1] >= 22, `Keep tools box ${sizes["combine-keep"]}`);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   await check("1280 px: Combine 1 edited to Intersect, Escape leaves without a change, an Intersect of bodies apart is refused, and the flag stays for the tab", async () => {
     const page = await fresh(1280, 800, false, "&combine");
     try {
