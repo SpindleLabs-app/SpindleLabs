@@ -131,9 +131,19 @@ async function signIn(page) {
   await page.click("#account-open");
   await page.click("#account .account-google");
   await until(page, () => document.getElementById("account-open")?.textContent === "Ada", undefined, "signed in");
-  await page.waitForTimeout(500);
   // Signing in where a project is already kept may open My designs to ask about it: not what is checked here.
-  if (await page.evaluate(() => document.getElementById("my-designs")?.open)) await page.click("#my-designs-close");
+  // Wait for the app's answer rather than a fixed time (a 500 ms wait let the dialog open after it, 1 run in 5):
+  // either My designs opens to ask, or there was nothing to ask and the account's project links get written.
+  await until(
+    page,
+    () => document.getElementById("my-designs")?.open || Object.keys(localStorage).some((k) => k.startsWith("spindle.account.designs/")),
+    undefined,
+    "My designs asked, or nothing to ask",
+  );
+  if (await page.evaluate(() => document.getElementById("my-designs")?.open)) {
+    await page.click("#my-designs-close");
+    await until(page, () => !document.getElementById("my-designs")?.open, undefined, "My designs closed");
+  }
 }
 
 try {
