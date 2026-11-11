@@ -12,6 +12,7 @@
 // one before, or the start; a reorder is refused when the item would come
 // before an item it is built from, or after one built from it.
 
+import { bodyWords, shapings } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
 import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
@@ -197,6 +198,12 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   if (from) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(from)}: it is ${link(doc, item, from)} ${itemName(from)}` };
   const user = features.find((f, j) => j < to && f.dependsOn.includes(id));
   if (user) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(user)}: ${itemName(user)} is ${link(doc, user, item)} it` };
+  // SL #506 item 1: nor past an item that placed or changed a body it works on, or one that works on a body it placed or
+  // changed (body-uses.ts): the Combine would silently use the body as it was before (or after) that item.
+  for (const s of shapings(doc.timeline.features)) {
+    if (s.of === item && place(s.by.id) > to) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(s.by)}: it uses ${bodyWords(doc, s.body)} as ${itemName(s.by)} leaves it` };
+    if (s.by === item && place(s.of.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(s.of)}: ${itemName(s.of)} uses ${bodyWords(doc, s.body)} as ${itemName(item)} leaves it` };
+  }
   const k = doc.timeline.features.indexOf(item);
   if (k === to) return { doc };
   // The marker stays in its gap (Fusion's rule, owner's decision 2026-11-04): the item it is on, dragged away, leaves
