@@ -4,13 +4,13 @@
 // Not a journey itself.
 import assert from "node:assert/strict";
 import { emptyProject, projectFromJson, projectToJson } from "@fission/core";
-import { designWorkspace, settleKept, type DesignDocument } from "@fission/design";
+import { designWorkspace, partDocument, settleKept, type DesignDocument } from "@fission/design";
 import { app, kernel } from "./design-app.ts";
 
 export type App = Awaited<ReturnType<typeof app>>;
 
-/** An empty design, as a new project opens with. */
-export const empty = () => ({ version: 16, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }) as unknown as DesignDocument;
+/** An empty design, as a new project opens with, at today's data version (a new part's: Undo reads its steps as files are read). */
+export const empty = () => ({ version: partDocument("box", 1, 1, 1).version, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }) as unknown as DesignDocument;
 
 /** What the app shows: the volume drawn (to a millionth of a mm³), the items red on the bar, the kept-shape warning and the part's error line. */
 export function seen(a: App) {
