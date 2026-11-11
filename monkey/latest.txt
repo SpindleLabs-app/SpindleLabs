@@ -1,6 +1,6 @@
-tested commit f8483c2 on main, 2026-11-11 07:19 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42928191838)
-Monkey, seeds 359812416-359812419: 4 session(s) of 2000 actions in Chromium; 12 Combines made of 41 tried; 2 FAILED
-seed 359812416: FAIL: the tester itself: page.evaluate: Execution context was destroyed, most likely because of a navigation
-seed 359812417: pass (2000 actions)
-seed 359812418: pass (2000 actions)
-seed 359812419: FAIL: no kernel body leaks: the kernel holds 4 bodies, the Bodies group lists 3
+tested commit 831e486 on main, 2026-11-11 11:18 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/42950137793)
+Monkey, seeds 359812964-359812967: 4 session(s) of 2000 actions in Chromium; 4 Combines made of 56 tried; every check passed after every action
+seed 359812964: pass (2000 actions)
+seed 359812965: pass (2000 actions)
+seed 359812966: pass (2000 actions)
+seed 359812967: pass (2000 actions)
