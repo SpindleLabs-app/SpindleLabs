@@ -17,11 +17,15 @@ export const turnOffQuestion = (name: string) => `Turn off the link to “${name
 /** PLACEHOLDER wording for an account that moderation has put on hold. */
 export const HELD_WORDS = "Your account can't share or report right now.";
 
+/** PLACEHOLDER wording while sharing is switched off at the service (until the legal check). */
+export const OFF_WORDS = "Sharing links aren't switched on yet.";
+
 /** The words for each answer to making a link that is not "shared". */
 export const SHARE_REFUSALS: Readonly<Record<string, string>> = {
   "too-big": "This design is too big to share (over 5 MB).",
   full: "You have as many links on, or as much shared, as your account allows (50 links, 20 MB). Turn one off to make room.",
   held: HELD_WORDS,
+  off: OFF_WORDS,
   daily: "You have made 20 links in the last day, the most a day allows. Try again tomorrow.",
 };
 
@@ -239,6 +243,7 @@ export const REPORT_ANSWERS: Readonly<Record<string, string>> = {
   gone: "That link has been turned off already, so there is nothing to report.",
   enough: "You have already reported this as often as is allowed. It is waiting for review.",
   held: HELD_WORDS,
+  off: OFF_WORDS,
   own: "This is your link: turn it off instead.",
   bad: "That report wasn't accepted. Pick a reason, and keep the details under 1,000 characters.",
 };

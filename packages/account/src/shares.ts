@@ -35,10 +35,10 @@ export interface OpenedShare {
 
 export type ShareAnswer =
   | { readonly status: "shared"; readonly id: string; readonly createdAt: Date }
-  | { readonly status: "too-big" | "full" | "daily" | "held" };
+  | { readonly status: "too-big" | "full" | "daily" | "held" | "off" };
 
 /** "own": the person reporting is the one who shared the link (nothing is kept). */
-export type ReportAnswer = "kept" | "gone" | "enough" | "bad" | "own" | "held";
+export type ReportAnswer = "kept" | "gone" | "enough" | "bad" | "own" | "held" | "off";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PICTURE = /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -67,7 +67,7 @@ export function shareAnswerFrom(v: unknown): ShareAnswer | null {
     const createdAt = time(r.created_at);
     return isShareId(r.id) && createdAt ? { status: "shared", id: r.id, createdAt } : null;
   }
-  if (r.status === "too-big" || r.status === "full" || r.status === "daily" || r.status === "held") return { status: r.status };
+  if (r.status === "too-big" || r.status === "full" || r.status === "daily" || r.status === "held" || r.status === "off") return { status: r.status };
   return null;
 }
 
@@ -117,7 +117,7 @@ export function sharesApi(client: AuthClient) {
       if (!isShareId(id)) return { kind: "ok", value: "gone" };
       const r = await client.asAnyone("POST", "rpc/report_share", { p_id: id, p_kind: kind, p_reason: reason });
       if (r.kind !== "ok") return r;
-      return r.body === "kept" || r.body === "gone" || r.body === "enough" || r.body === "bad" || r.body === "own" || r.body === "held" ? { kind: "ok", value: r.body } : malformed;
+      return r.body === "kept" || r.body === "gone" || r.body === "enough" || r.body === "bad" || r.body === "own" || r.body === "held" || r.body === "off" ? { kind: "ok", value: r.body } : malformed;
     },
   };
 }
