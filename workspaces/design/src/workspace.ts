@@ -49,6 +49,7 @@ import { showEntries, viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
 import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
+import { sketchPlaceScene } from "./sketch-place.ts";
 import { BodyCache, builtPieceFaces, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { measureView } from "./measure-view.ts";
@@ -1224,17 +1225,34 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] } }>> = {};
   /** Each built body's handle in the kernel's store, by body id, from the last rebuild: Measure (35e2l2) asks the kernel about them. */
   let handlesNow: Readonly<Record<string, BodyHandle>> = {};
+  /** The last sketchPlaceScene worked out, and what from: worked again only when one of them changes. */
+  let placeMemo: { scene: Scene; features: unknown; results: unknown; id: string; out: Scene } | null = null;
+  /**
+   * The bodies as sketch `id` sees them (#540 item 1, sketch-place.ts): those made before it where they are at its
+   * place in the timeline, which is where its pins and projections follow them; drawn so while it is edited, and what
+   * it snaps to and projects from.
+   */
+  const sceneFor = (id: string, scene = lastScene): Scene | null => {
+    if (scene === null) return null;
+    const features = designDoc().timeline.features;
+    const m = placeMemo;
+    if (m && m.scene === scene && m.features === features && m.results === resultsNow && m.id === id) return m.out;
+    const out = sketchPlaceScene(scene, designDoc(), resultsNow, id);
+    placeMemo = { scene, features, results: resultsNow, id, out };
+    return out;
+  };
   /**
    * What a pointer on sketch `id` may snap to on its face's edges (26f):
    * their ends, middles and centres in the plane the sketch is drawn in
    * (the last rebuild's placement, or, for a sketch just made on a face and
    * not rebuilt since, the frame it was made in).
    */
-  const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, lastScene, sketchPlane(designDoc(), id, placedNow));
+  const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, sceneFor(id), sketchPlane(designDoc(), id, placedNow));
   /** The body edges sketch `id` lands on part way along ("on edge", projection.ts `sketchEdgeCurves`) and the corners in its plane it lines up with. */
   const bodySnaps = (id: string): BodySnaps => {
     const plane = sketchPlane(designDoc(), id, placedNow);
-    return { curves: sketchEdgeCurves(designDoc(), id, lastScene, plane), corners: sketchPlaneCorners(designDoc(), id, lastScene, plane) };
+    const scene = sceneFor(id);
+    return { curves: sketchEdgeCurves(designDoc(), id, scene, plane), corners: sketchPlaneCorners(designDoc(), id, scene, plane) };
   };
   /** Ctrl (Cmd on a Mac) held over the view: snapping and the grid are off while it is (snap.ts `snapsNow`). */
   let modHeld = false;
@@ -2077,6 +2095,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sketchBar.show(editingSketch.tool);
     sketchBar.showSnap(snapOn);
     drawSketches();
+    if (lastScene) showBodies(lastScene); // where the sketch sees them (#540 item 1)
     showBar(doc); // the playback buttons that would roll the sketch back are off (24f5)
     void showOutline();
   }
@@ -2117,6 +2136,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sketchBar.hide();
     modelling(true);
     drawSketches();
+    if (lastScene) showBodies(lastScene); // back where the timeline's end has them (#540 item 1)
     showKept();
     showBar(designDoc());
     if (drew) void show(designDoc(), shape);
@@ -3100,7 +3120,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** The bodies' mesh as the view draws it: pulled apart while Exploded view is on. */
   function bodyMesh(scene: Scene) {
-    return explodeSpread === null ? editMesh(scene) : explodedMesh(scene, explodeSpread);
+    // A sketch being edited sees the bodies at its own place in the timeline (#540 item 1): drawn there too.
+    const at = mode.kind === "edit" ? (sceneFor(mode.tool.sketch, scene) ?? scene) : scene;
+    return explodeSpread === null ? editMesh(at) : explodedMesh(at, explodeSpread);
   }
 
   /**
@@ -4035,7 +4057,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (mode.kind !== "edit" || mode.tool.kind !== "project" || toolChanges !== changes) return;
       const id = mode.tool.sketch;
       const before = designDoc();
-      const pick = projectPick(before, id, lastScene, sketchPlane(before, id, placedNow), pointer);
+      const pick = projectPick(before, id, sceneFor(id), sketchPlane(before, id, placedNow), pointer);
       let made: ReturnType<typeof projectEdges>;
       try {
         made = projectEdges(before, id, pick.edges);
