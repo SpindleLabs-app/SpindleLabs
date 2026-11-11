@@ -101,3 +101,5 @@
   .guide .guide-sky, .guide .guide-labels span, .guide .guide-leaders g, .guide .guide-card, .guide .guide-face, .guide .guide-hint { transition: none; }
   .guide .guide-chapter:not([data-active]) .guide-card { transform: none; }
 }
+/* Each chapter keeps its own hue, sunk toward the app's navy so the guide sits with the rest of the app and not as a bright blue screen. */
+.guide .guide-sky::before { content: ""; position: absolute; inset: 0; z-index: 0; background: var(--guide-sink); opacity: 0.66; pointer-events: none; }

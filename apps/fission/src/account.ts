@@ -7,6 +7,7 @@
 
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { type AccountVersions, withIcon } from "@fission/ui";
+import { displayNameRow } from "./display-name.ts";
 import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
 import { pageShareSwitch } from "./share-switch.ts";
 import { type ShareHost, startShares } from "./share.ts";
@@ -259,7 +260,18 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       del.addEventListener("click", () => confirmDelete());
       yours.append(copy, del);
       const kept = settings ? settingsBox(settings) : null;
-      const rows = [emails.row, ...(kept ? [kept] : []), out, yours];
+      const rows = [displayNameRow(client), emails.row, ...(kept ? [kept] : []), out, yours];
+      // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
+      if (links.show) {
+        const show = links.show;
+        const mine = el("button", "account-action account-my-links", "My links");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          show();
+        });
+        rows.unshift(mine);
+      }
       // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
       if (links.show) {
         const show = links.show;
