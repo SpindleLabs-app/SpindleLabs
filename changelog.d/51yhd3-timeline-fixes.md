@@ -16,3 +16,4 @@ public:
 - A sketch on a copied body's face no longer gets lost when the original body is cut or joined.
 - Older projects now behave like new ones when you keep editing them: sketches follow moved faces, new holes are cut and parts keep proper names.
 - Resizing a body no longer silently flips an arc in a sketch attached to it, and a sketch that can't follow a change keeps warning while its other lines stay editable.
+- On a phone, the Browser's rows are full tap size.
