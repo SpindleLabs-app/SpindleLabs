@@ -104,15 +104,15 @@ test("with several tools only the ones that remove nothing are named", async () 
   assert.equal(r.misses?.message, "Combine 1: Body 3 removes nothing from Body 1");
 });
 
-test("a Join whose tool is far away, or wholly inside, adds nothing; one that overlaps adds", async () => {
-  // Far: Box 2 stays a piece of its own, Box 1 still 24,000 mm³.
+test("a Combine Join never asks or warns: one whose tool is far away keeps both bodies, as Fusion does (F2)", async () => {
+  // Far: Box 2 stays a body of its own, Box 1 still 24,000 mm³; Ben's Fusion answer F2 keeps both with no warning.
   const far = await combined([BOX, [[10, 10, 10], [100, 0, 0]]], "join");
   near(far.volume, 24_000);
-  assert.equal(far.r.misses?.message, "Combine 1: Body 2 adds nothing to Body 1");
-  // Inside: x 5..15 etc. is already Box 1's, so the union is Box 1, 24,000 mm³.
+  assert.equal(far.r.misses, undefined);
+  // Inside: x 5..15 etc. is already Box 1's, so the union is Box 1, 24,000 mm³, with no question either.
   const inside = await combined([BOX, [[10, 10, 10], [5, 5, 5]]], "join");
   near(inside.volume, 24_000);
-  assert.equal(inside.r.misses?.list.length, 1);
+  assert.equal(inside.r.misses, undefined);
   // Overlapping: 24,000 + 1,000 − 500 = 24,500 mm³.
   const over = await combined([BOX, [[10, 10, 10], [35, 0, 0]]], "join");
   near(over.volume, 24_500);

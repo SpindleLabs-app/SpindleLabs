@@ -1337,7 +1337,9 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // Named as the browser shows them ("Body 2"), else by the item (an operation extrude's own body).
   const numbers = bodyNumbers(doc);
   const bodyWords = (b: string) => (numbers.has(b) ? `Body ${numbers.get(b)}` : bodyItem(b) === f.id ? label : nameOf(bodyItem(b)!));
-  const missing = misses.length === 0 || operation === "intersect" ? {} : { misses: { list: misses, message: missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined) } };
+  // A Combine Join of bodies that don't meet keeps them as separate bodies with no warning (Ben's Fusion answer F2); an
+  // Extrude Join that reaches nothing still warns (#521).
+  const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, message: missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined) } };
   return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn, ...missing };
 }
 
