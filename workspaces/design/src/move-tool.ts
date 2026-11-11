@@ -151,7 +151,8 @@ export function mappedMesh(scene: Scene, map: (body: string) => PointMap | null)
 }
 
 /** Whether a Move of `v` neither shifts nor turns. */
-const still = (v: MoveValues) => MOVE_PARAMS.every((k) => k.startsWith("pivot") || v[k] === 0);
+// A factor counts too: a Scale shifts and turns nothing (found adding its slider, 11-11: its preview never showed).
+const still = (v: MoveValues) => factorOf(v) === 1 && MOVE_PARAMS.every((k) => k.startsWith("pivot") || v[k] === 0);
 
 /**
  * The preview: `scene`'s joined mesh with the bodies `moving` (body ids)
@@ -185,7 +186,7 @@ export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Reado
   const held = movedBodies(edited);
   const now = bodies ?? held;
   const sameBodies = now.length === held.length && now.every((b) => held.includes(b));
-  if (status === "built" && sameBodies && MOVE_PARAMS.every((k) => before[k] === v[k])) return scene.mesh;
+  if (status === "built" && sameBodies && factorOf(before) === factorOf(v) && MOVE_PARAMS.every((k) => before[k] === v[k])) return scene.mesh;
   if (status === "failed" && still(v)) return scene.mesh;
   const later = doc.timeline.features.slice(at + 1).filter((f) => isMoveItem(f) && results[f.id]?.status === "built");
   return mappedMesh(scene, (body) => {

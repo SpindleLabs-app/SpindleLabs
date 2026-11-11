@@ -6,7 +6,7 @@
 import { summaryInUnit, type Feature, type GeometryReference, type Unit } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
 import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "@fission/print";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, numberedWhenBuilt, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -108,6 +108,24 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
     }
   }
   return [...out.values()];
+}
+
+/**
+ * What the last rebuild failed, as `designBodies` reads it: the ids of the
+ * items whose result is failed, and of the numbered pieces (a Combine's,
+ * an Extrude Join's own body) the design should hold now but the rebuild
+ * didn't make (`built`, the ids of the bodies it holds). A piece a later
+ * item used up is not held either, and it did not fail: counting it as
+ * failed made `designBodies` skip the item that used it, so that item's
+ * new pieces had no row and were left out of the STL (#499). So only the
+ * pieces the design's bodies would hold with nothing but the failed items
+ * left out are looked for.
+ */
+export function failedIds(document: DesignDocument, results: Readonly<Record<string, { status: string }>>, built: ReadonlySet<string>): Set<string> {
+  const items = Object.keys(results).filter((id) => results[id].status === "failed");
+  const makers = new Map(document.timeline.features.map((f) => [f.id, f] as const));
+  const absent = designBodies(document, new Set(items)).flatMap(({ body }) => (numberedWhenBuilt(body, makers.get(bodyItem(body)!)) && results[bodyItem(body)!]?.status === "built" && !built.has(body) ? [body] : []));
+  return new Set([...items, ...absent]);
 }
 
 /**

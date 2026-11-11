@@ -29,9 +29,10 @@ export function agoWords(ms: number): string {
 }
 
 /**
- * The words for step `i` of the list: its label, or "Before these steps" for the first. The history starts afresh each
- * time a project is opened (a reload too) and drops its oldest steps past UNDO_LIMIT, so the first row is the project
- * as it was before the steps listed, which is the project's real start only for a new one.
+ * The words for step `i` of the list: its label, or "Before these steps" for the first. The history keeps the last
+ * UNDO_LIMIT steps (kept in this browser across a reload, step 89, but never in the file, so a file opened elsewhere
+ * starts afresh), so the first row is the project as it was before the steps listed, which is the project's real start
+ * only for a new one.
  */
 export const stepWords = (i: number, label: string): string => (i === 0 ? "Before these steps" : label);
 
