@@ -241,14 +241,39 @@ class SharesDatabase(unittest.TestCase):
         for i in range(5):
             self.assertEqual(self.report("authenticated", r["id"], uid=BO), "kept", f"report {i + 1}")
         self.assertEqual(self.report("authenticated", r["id"], uid=BO), "enough")
-        self.assertEqual(self.report("authenticated", r["id"], uid=ADA), "kept")
+        cy = "33333333-3333-4333-8333-333333333333"
+        self.owner(f"insert into auth.users (id, email) values ('{cy}', 'cy@example.com');")
+        self.assertEqual(self.report("authenticated", r["id"], uid=cy), "kept")
 
-    def test_a_link_keeps_at_most_200_reports(self):
+    def test_signed_out_reports_cannot_crowd_out_signed_in_ones(self):
+        # Security review 2026-11-11: signed-out reports have no person to count by, so before this anyone could file
+        # all 200 a link allows and every real report after got "enough". Signed-out reports now have their own
+        # 20 a link; 0.9 x 20 = 18 kept, then 19 and 20, and the 21st (on the way to 22 = 1.1 x 20) refused.
         r = self.share(ADA)
-        self.owner(f"insert into public.share_reports (share_id, kind, reason) select '{r['id']}', 'other', '' from generate_series(1, 199);")
+        ok, out = self.as_role("anon", f"select count(*) filter (where report_share('{r['id']}', 'other', 'junk') = 'kept') from generate_series(1, 22);")
+        self.assertEqual((ok, out), (True, "20"))
+        self.assertEqual(self.report("authenticated", r["id"], kind="illegal", reason="'real'", uid=BO), "kept")
+
+    def test_the_sharer_cannot_report_their_own_link(self):
+        r = self.share(ADA)
+        self.assertEqual(self.report("authenticated", r["id"], uid=ADA), "own")
+        self.assertEqual(self.owner("select count(*) from public.share_reports;"), "0")
+
+    def test_the_report_id_sequence_is_closed_to_the_browser(self):
+        # Security review 2026-11-11: Supabase's default grants left it open, and moving it to its end breaks every
+        # later report.
+        for role in ["anon", "authenticated"]:
+            self.denied(self.as_role(role, "select setval('public.share_reports_id_seq', 9223372036854775807);"))
+
+    def test_a_link_keeps_at_most_200_signed_in_reports(self):
+        r = self.share(ADA)
+        self.owner(f"insert into public.share_reports (share_id, reporter, kind, reason) select '{r['id']}', '{BO}', 'other', '' from generate_series(1, 199);")
+        self.owner("insert into auth.users (id, email) values ('33333333-3333-4333-8333-333333333333', 'cy@example.com');")
+        self.assertEqual(self.report("authenticated", r["id"], uid="33333333-3333-4333-8333-333333333333"), "kept")
+        self.assertEqual(self.report("authenticated", r["id"], uid="33333333-3333-4333-8333-333333333333"), "enough")
+        # Signed-out reports have their own count, so the link still takes those.
         self.assertEqual(self.report("anon", r["id"]), "kept")
-        self.assertEqual(self.report("anon", r["id"]), "enough")
-        self.assertEqual(self.owner(f"select count(*) from public.share_reports where share_id = '{r['id']}';"), "200")
+        self.assertEqual(self.owner(f"select count(reporter), count(*) from public.share_reports where share_id = '{r['id']}';"), "200|201")
 
     # Download my data and deleting the account
 

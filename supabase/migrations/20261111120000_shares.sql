@@ -42,6 +42,8 @@ create table public.share_reports (
 create index share_reports_by_share on public.share_reports (share_id);
 
 revoke all on public.share_reports from anon, authenticated;
+-- Its id sequence too: Supabase's default grants would let the browser move it to its end and break every report.
+revoke all on sequence public.share_reports_id_seq from anon, authenticated;
 alter table public.share_reports enable row level security;
 -- No policy: only the functions below and the server touch it.
 
@@ -49,7 +51,7 @@ alter table public.share_reports enable row level security;
 create function public.share_limits() returns jsonb
 language sql immutable set search_path = '' as $$
   select jsonb_build_object('max_links', 50, 'max_bytes', 20971520, 'max_share_bytes', 5242880, 'max_picture_bytes', 32768,
-    'links_per_day', 20, 'reports_per_person', 5, 'reports_per_link', 200, 'max_reason', 1000)
+    'links_per_day', 20, 'reports_per_person', 5, 'reports_per_link', 200, 'signed_out_reports_per_link', 20, 'max_reason', 1000)
 $$;
 
 -- Shares a frozen copy of a design. Answers, never raising for these:
@@ -121,13 +123,18 @@ end $$;
 -- Reports a link, for anyone who can open it. Answers:
 --   "kept"    the report is kept for review
 --   "gone"    no link that is on has this id (nothing kept)
---   "enough"  this person already reported it as often as allowed, or the link has as many reports as are kept
+--   "own"     the person who shared the link reported it (nothing kept: they can turn it off)
+--   "enough"  this person already reported it as often as allowed, or the link has as many reports of this kind
+--             (signed in, or signed out) as are kept
 --   "bad"     the kind is not one of the list, or the reason is too long (nothing kept)
+-- Signed-out reports have no person to count by, so they have their own small cap a link, and never count against
+-- the signed-in ones: a flood of signed-out reports can't make a link unreportable (security review 2026-11-11).
 create function public.report_share(p_id uuid, p_kind text, p_reason text) returns text
 language plpgsql security definer set search_path = '' as $$
 declare
   lim jsonb := public.share_limits();
   me uuid := auth.uid();
+  sharer uuid;
   n integer;
 begin
   if p_kind is null or p_kind not in ('copied', 'weapon', 'sexual', 'hateful', 'illegal', 'not-a-design', 'personal-info', 'other')
@@ -135,15 +142,23 @@ begin
     return 'bad';
   end if;
   -- One report at a time per link, so the caps below hold under racing reports.
-  perform 1 from public.shares where id = p_id and off_at is null and removed_at is null for update;
+  select user_id into sharer from public.shares where id = p_id and off_at is null and removed_at is null for update;
   if not found then
     return 'gone';
   end if;
-  select count(*) into n from public.share_reports where share_id = p_id;
-  if n >= (lim->>'reports_per_link')::integer then
-    return 'enough';
-  end if;
-  if me is not null then
+  if me is null then
+    select count(*) into n from public.share_reports where share_id = p_id and reporter is null;
+    if n >= (lim->>'signed_out_reports_per_link')::integer then
+      return 'enough';
+    end if;
+  else
+    if me = sharer then
+      return 'own';
+    end if;
+    select count(*) into n from public.share_reports where share_id = p_id and reporter is not null;
+    if n >= (lim->>'reports_per_link')::integer then
+      return 'enough';
+    end if;
     select count(*) into n from public.share_reports where share_id = p_id and reporter = me;
     if n >= (lim->>'reports_per_person')::integer then
       return 'enough';
