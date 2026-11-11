@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { summaryShown, volumeShown } from "./monkey-units.mjs";
+import { shownNumber, summaryShown, volumeShown } from "./monkey-units.mjs";
 
 test("a box, a cylinder and an extrude in inches, worked by hand", () => {
   // 13 / 25.4 = 0.51181… → 0.512; 20 / 25.4 = 0.78740… → 0.787; 5 / 25.4 = 0.19685… → 0.197 (the nightly's Body 1, issue #427).
@@ -29,4 +29,28 @@ test("the check can fail: a length left in millimetres, or a name converted, is 
   assert.notEqual(summaryShown("Box: 13 × 20 × 5 mm", "in"), "Box: 13 × 20 × 5 mm");
   assert.notEqual(summaryShown("Box: 13 × 20 × 5 mm", "in"), "Box: 13 × 20 × 5 in");
   assert.notEqual(summaryShown("Extrude Sketch 1 by 25.4 mm", "in"), "Extrude Sketch 0.039 by 1 in");
+});
+
+test("a shown volume read back, worked by hand, powers of ten included (issues #473, #480, #481)", () => {
+  // Grouped digits: "9,298.852874" is 9298.852874.
+  assert.equal(shownNumber("9,298.852874 in³"), 9298.852874);
+  assert.equal(shownNumber("15,600 mm³"), 15600);
+  // #473: a 1 × 30 × 0.5 mm box is 15 mm³ = 15 / 16,387.064 in³ = 0.000915356 in³, shown "9.153561614 × 10⁻⁴ in³".
+  assert.ok(Math.abs(shownNumber("9.153561614 × 10⁻⁴ in³") - 15 / 16387.064) < 1e-12);
+  // #480: a ⌀999999 × 30 mm cylinder is π · 499999.5² · 30 = 2.35619 × 10¹³ mm³.
+  const cylinder = Math.PI * 499999.5 ** 2 * 30;
+  assert.ok(Math.abs(shownNumber("2.356189778 × 10¹³ mm³") - cylinder) <= 1e-9 * cylinder);
+  // #481: a ⌀999999 mm sphere is (4/3)π · 499999.5³ = 5.23597 × 10¹⁷ mm³.
+  const sphere = (4 / 3) * Math.PI * 499999.5 ** 3;
+  assert.ok(Math.abs(shownNumber("5.235972048 × 10¹⁷ mm³") - sphere) <= 1e-9 * sphere);
+  // A one-figure mantissa and a two-figure exponent: "1 × 10⁻¹²".
+  assert.equal(shownNumber("1 × 10⁻¹² mm³"), 1e-12);
+});
+
+test("the reading can fail: the old digits-only reading is not what the panel means", () => {
+  // What the monkey read before: every digit and point kept, "× 10⁻⁴" as more digits.
+  const old = Number("9.153561614 × 10⁻⁴ in³".replace(/[^\d.]/g, ""));
+  assert.notEqual(shownNumber("9.153561614 × 10⁻⁴ in³"), old);
+  assert.ok(Number.isNaN(shownNumber("")));
+  assert.ok(Number.isNaN(shownNumber("— in³")));
 });

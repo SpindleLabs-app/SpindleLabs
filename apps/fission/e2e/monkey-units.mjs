@@ -21,3 +21,22 @@ export function summaryShown(text, unit) {
 
 /** A volume in mm³ in `unit`'s cube: in³ is 25.4³ = 16,387.064 mm³. */
 export const volumeShown = (mm3, unit) => (unit === "in" ? mm3 / MM_PER_INCH ** 3 : mm3);
+
+const SUPERSCRIPT = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+
+/**
+ * The number a panel shows, read back: grouped digits ("15,600.5 mm³") or,
+ * outside 0.001 to 10¹², a power of ten ("9.153561614 × 10⁻⁴ in³"). Worked
+ * out here on its own, not with the app's format.ts. Stripping everything
+ * but digits and the point read "× 10⁻⁴" as more digits (issues #473, #480,
+ * #481: 9.1535616141 for 0.000915, 2.35618977810 for 2.36 × 10¹³). NaN for
+ * text with no number.
+ */
+export function shownNumber(text) {
+  const m = /(-?[\d,]+(?:\.\d+)?)(?: × 10([⁻]?)([⁰¹²³⁴⁵⁶⁷⁸⁹]+))?/.exec(text);
+  if (!m) return NaN;
+  const mantissa = Number(m[1].replace(/,/g, ""));
+  if (m[3] === undefined) return mantissa;
+  const exp = Number([...m[3]].map((c) => SUPERSCRIPT.indexOf(c)).join(""));
+  return mantissa * 10 ** (m[2] ? -exp : exp);
+}
