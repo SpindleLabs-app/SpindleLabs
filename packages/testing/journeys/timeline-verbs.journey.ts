@@ -86,12 +86,12 @@ test("hand-worked: a box and an extruded rectangle download as one STL of 24 tri
   // Both from z = 0, the extrude inside the box: the file's surfaces cross, so the export badge says not solid
   // (the file is still saved, its header unstamped).
   const out = await a.run(DOWNLOAD_STL, bodies);
-  assert.match(out.message, /^Exported spindlelabs-2-bodies\.stl\. Not solid: [^.]*crossings\. The 2 bodies are separate shells in one STL file\. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe\.$/);
+  assert.match(out.message, /^Exported Verbs\.stl\. Not solid: [^.]*crossings\. The 2 bodies are separate shells in one STL file\. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe\.$/);
   assert.equal(out.bad, true);
   assert.equal(out.solid?.verdict, "problems");
   assert.equal(a.saved.length, 1);
   const [file] = a.saved;
-  assert.equal(file.name, "spindlelabs-2-bodies.stl");
+  assert.equal(file.name, "Verbs.stl");
   // Each body's six flat faces are two triangles each: 12 + 12 = 24, so
   // 80 + 4 + 50 · 24 = 1284 bytes. The volumes add, overlapping or not
   // (each triangle's signed tetrahedron is counted once): the box 40 · 30 ·
@@ -104,7 +104,7 @@ test("hand-worked: a box and an extruded rectangle download as one STL of 24 tri
   // The same as each body downloaded alone, joined: the triangles are the kernel's, unchanged.
   await a.run(DOWNLOAD_STL, [bodies[0]]);
   await a.run(DOWNLOAD_STL, [bodies[1]]);
-  assert.deepEqual(a.saved.slice(1).map((s) => [s.name, count(s.bytes), stlVolume(s.bytes)]), [["spindlelabs-box.stl", 12, 24000], ["spindlelabs-extrude.stl", 12, 12000]]);
+  assert.deepEqual(a.saved.slice(1).map((s) => [s.name, count(s.bytes), stlVolume(s.bytes)]), [["Verbs.stl", 12, 24000], ["Verbs.stl", 12, 12000]]);
   assert.deepEqual([...file.bytes.subarray(84)], [...joinStl([a.saved[1].bytes, a.saved[2].bytes], "2 bodies").subarray(84)]);
 });
 
@@ -159,7 +159,7 @@ test("seeded: on random timelines, the verbs, the toolbar's STL, the copies and 
         alone.push(a.saved.at(-1)!.bytes);
       }
       const joined = a.saved[0].bytes;
-      assert.equal(a.saved[0].name, shown.length === 1 ? a.saved[1].name : `spindlelabs-${shown.length}-bodies.stl`, where);
+      assert.equal(a.saved[0].name, shown.length === 1 ? a.saved[1].name : "Verbs.stl", where);
       assert.equal(count(joined), alone.reduce((n, b) => n + count(b), 0), where);
       assert.deepEqual([...joined.subarray(84)], [...alone.flatMap((b) => [...b.subarray(84)])], where);
     }
