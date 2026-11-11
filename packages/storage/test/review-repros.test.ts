@@ -57,7 +57,12 @@ test("single tab: an entry recovery couldn't store ('kept for the next visit') i
   project = { ...project, name: "Renamed" }; a.changed(); await settle(); await settle();
   assert.notEqual(journal.getItem(unsavedKey("p")), null, "the kept unsaved changes were deleted");
   assert.equal(((await real.open("p")).workspaces.design as any).width, 40, "nothing saved over them");
-  assert.equal(a.leaving(), false, "the page asks before going");
-  assert.deepEqual(await recoverUnsaved(real, journal, []), []);
+  // Leaving keeps the rename aside (save/load hunt C1: before, it kept nothing and the page asked), so the next visit
+  // puts the kept 45 back and keeps the rename apart, never over it.
+  assert.equal(a.leaving(), true, "the rename is kept aside, so the page needn't ask");
+  const problems = await recoverUnsaved(real, journal, [], () => "copy");
+  assert.equal(problems.length, 1);
+  assert.match(problems[0]!, /"Renamed \(kept copy\)"/);
   assert.equal(((await real.open("p")).workspaces.design as any).width, 45, "the next visit puts them back");
+  assert.equal(((await real.open("copy")).workspaces.design as any).width, 40, "and keeps the rename apart");
 });

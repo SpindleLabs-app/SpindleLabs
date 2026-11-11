@@ -221,8 +221,10 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         out.disabled = true;
         data.forgetEmailChoice();
         settings?.forget(state.user.id);
-        const { ended } = await client.signOut();
-        note = ended ? "Signed out." : "Signed out on this device. The sign-in service couldn't be reached, so the old session stops working by itself within the hour.";
+        const result = await client.signOut();
+        // Signed out on this device either way: nothing here can use the old session any more.
+        const why = { offline: "couldn't be reached", unavailable: "is having trouble right now", rejected: "didn't accept the request" };
+        note = result.ended ? "Signed out." : `Signed out on this device. The sign-in service ${why[result.reason]}, so it couldn't end the session there too; nothing on this device can use it any more.`;
         render();
       });
       const plan = planBox();
