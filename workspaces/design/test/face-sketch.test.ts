@@ -13,6 +13,7 @@ import { addFaceSketch, addSketch, drawCircle, sketchPlane } from "../src/sketch
 import { sketchDrawings } from "../src/sketch-tool.ts";
 import { extrudeSketch, isFlipped, setExtrudeFlip } from "../src/extrude.ts";
 import { deleteItem, moveMarker, reorderItem, suppressItem } from "../src/timeline-edits.ts";
+import { insertMove, NO_MOVE } from "../src/move.ts";
 import { itemMenu, timelineBarItems } from "../src/timeline-bar.ts";
 
 const DESIGN = [{ id: "design" as const, readData: readDesignDocument }];
@@ -424,4 +425,30 @@ test("26e: a sketch can't go before the feature whose face it is drawn on, nor t
   assert.deepEqual(reorderItem(doc, "feature-1", 1), { refused: "after-dependent", message: "Box 1 can't go after Sketch 1: Sketch 1 is drawn on a face of it" });
   // An extrude's words stay "built from".
   assert.deepEqual(reorderItem(doc, "feature-5", 1), { refused: "before-dependency", message: "Extrude 1 can't go before Sketch 1: it is built from Sketch 1" });
+});
+
+test("issue #541 item 1: a version 4 or older file's sketch on a face is read with the world's frame for its body, a version 5 one without it as it is", () => {
+  // A box and a sketch on its top drawn without `body`, as before 35e2h; saved as version 4 data (no bodies' numbers then).
+  const top = plane([0, 0, 20], [1, 0, 0], [0, 0, 1]);
+  const made = addFaceSketch(partDocument("box", 40, 30, 20), { plane: "face:feature-1/top", feature: "feature-1" }, { plane: top, side: 1 }).doc;
+  const saved = (doc: typeof made, version: number) => {
+    const { bodies: _, nextBody: __, ...data } = JSON.parse(JSON.stringify(doc));
+    return { ...data, version };
+  };
+  // Moves came with version 5, so nothing had moved the box: its frame was the world's when the sketch was drawn, as a pick
+  // today gives a body nothing moved (face-sketch-moved.test.ts): origin (0, 0, 0), x along X, normal Z.
+  for (const version of [3, 4]) assert.deepEqual(readDesignDocument(saved(made, version)).sketches[0].face!.body, plane([0, 0, 0], [1, 0, 0], [0, 0, 1]), `version ${version}`);
+  // Version 5 had Moves: where the body was when drawn isn't known, so it stays without one (not carried, as before).
+  assert.equal(Object.hasOwn(readDesignDocument(saved(made, 5)).sketches[0].face!, "body"), false);
+  // Read back after its upgrade it is today's data and stays the same (nothing more is filled in).
+  const once = readDesignDocument(saved(made, 4));
+  assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(once))), once);
+  // A version 4 file with a Move before the sketch (written by hand: no SpindleLabs of version 4 had Moves) is not guessed at:
+  // the sketch is left without one. Its Move as version 5 listed it: items in dependsOn, no bodies list.
+  const moved = insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 20 }).doc;
+  const after = addFaceSketch(moved, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: top, side: 1 }).doc;
+  const data = saved(after, 4);
+  const move = data.timeline.features.find((f: { intent: { type: string } }) => f.intent.type === "move");
+  delete move.intent.parameters.bodies;
+  assert.equal(Object.hasOwn(readDesignDocument(data).sketches[0].face!, "body"), false);
 });

@@ -15,7 +15,7 @@
 import type { BodySpec, Feature, Plane } from "@fission/core";
 import { isFit, type Fit } from "@fission/print";
 import { NewerFormatError, XY_PLANE } from "@fission/core";
-import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
+import { faceFeature, isFacePlane, squared, worldFrame, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import { isHeldDesignName } from "./design-edges.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
@@ -820,6 +820,30 @@ export function migrateDesignV2(d: Record<string, unknown>): Record<string, unkn
   const last = [...solids].at(-1);
   const features = timeline.features.map((f) => (solids.has(f) && f !== last && isRecord(f) ? { ...f, suppressed: true } : f));
   return { ...d, version: 3, timeline: { ...timeline, features } };
+}
+
+/**
+ * Version 4 and older data's sketches on faces with where their bodies
+ * were when drawn (issue #541): the world's frame, as a sketch drawn today
+ * on a body nothing has moved gets (`face-pick.ts`). Moves came with
+ * version 5, so no body in such data was ever moved; from 35e2h a sketch's
+ * `body` lets the Moves put before it carry it with its face, and one
+ * without it is never carried. A face sketch with a Move before it (data
+ * no SpindleLabs of version 4 wrote) or with `body` already is left as it
+ * is, for the checks; anything not a face sketch's content likewise.
+ */
+export function withDrawnBodies(d: Record<string, unknown>): Record<string, unknown> {
+  const timeline = d.timeline;
+  if (!isRecord(timeline) || !Array.isArray(timeline.features) || !Array.isArray(d.sketches)) return d;
+  const drawn = new Set<unknown>();
+  for (const f of timeline.features) {
+    if (!isRecord(f) || !isRecord(f.intent)) continue;
+    if (f.intent.type === "move") break;
+    if (f.intent.type === "sketch" && isRecord(f.intent.parameters) && isFacePlane(f.intent.parameters.plane)) drawn.add(f.id);
+  }
+  if (drawn.size === 0) return d;
+  const sketches = d.sketches.map((s) => (isRecord(s) && drawn.has(s.id) && isRecord(s.face) && !Object.hasOwn(s.face, "body") ? { ...s, face: { ...s.face, body: worldFrame() } } : s));
+  return { ...d, sketches };
 }
 
 /**
@@ -1634,7 +1658,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // below before this is read, so only whether the data numbers its bodies decides it (issue #246: listing every version
   // here left a mutant no test could tell apart, and its explanation went stale with each new version).
   const unnumbered = !numbered;
-  const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
+  // And its sketches on faces get where their bodies were when drawn, the world's frame (`withDrawnBodies`, issue #541).
+  const v5 = old || v3.version === 4 ? withDrawnBodies({ ...v3, version: 5 }) : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
   const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
   // Version 7 names a ready-made profile's pieces with its shape (face hunt 11-01): version 6 and older names are read so, once checked (below).

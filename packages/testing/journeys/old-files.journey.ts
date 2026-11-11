@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { projectFromJson, projectToJson } from "@fission/core";
-import { BodyCache, builtBody, designWorkspace, insertPreset, moveMarker, rebuildTimeline, readDesignDocument, type DesignDocument } from "@fission/design";
+import { BodyCache, bodyReference, builtBody, designWorkspace, insertPreset, moveMarker, rebuildTimeline, readDesignDocument, type DesignDocument } from "@fission/design";
 import { app, kernel } from "./design-app.ts";
 
 const DIR = new URL("../old-files/", import.meta.url);
@@ -399,4 +399,48 @@ test("the marker files rolled forward build everything after the marker: the dis
       file,
     );
   }
+});
+
+// ---- Old files worked on after the upgrade behave as the same design made today (issue #541) ----
+
+type App = Awaited<ReturnType<typeof app>>;
+
+/** Types `value` into the app's input `sel` as a person does. */
+async function typeInto(a: App, sel: string, value: number) {
+  const input = a.$(sel) as HTMLInputElement;
+  input.value = String(value);
+  input.dispatchEvent(new a.window.Event("input", { bubbles: true }) as unknown as Event);
+  await a.settle();
+}
+
+/** The drawn scene's corners, lowest and highest x, y, z, to 1e-4 mm. */
+function drawnBounds(a: App): number[][] {
+  const p = a.mesh()!.positions;
+  const r = (x: number) => Math.round(x * 1e4) / 1e4;
+  return [Math.min, Math.max].map((m) => [0, 1, 2].map((k) => r(m(...p.filter((_, i) => i % 3 === k)))));
+}
+
+test("issue #541 item 1: a version 3 file's sketch on a face follows its box when a Move is put before it, as a sketch drawn today does", async () => {
+  // v3-face-flip: box 40 x 30 x 20 at the origin, a circle r 5 on its top round the middle (20, 15), extruded 8 down into it.
+  const a = await app(open(text("v3-face-flip.panosolid.json")).workspaces.design as DesignDocument);
+  // Before: the box x 0..40, y 0..30, z 0..20 holds everything (the cylinder x 15..25).
+  assert.deepEqual(drawnBounds(a), [[0, 0, 0], [40, 30, 20]]);
+  // Through the app's own menus: marker back to Box 1, Move the box 20 along x, marker to the end again.
+  assert.equal(await a.menu("feature-1", "marker"), null);
+  a.selection.set([bodyReference("body:feature-1")]);
+  await a.key("move-tool");
+  await typeInto(a, "#move-x", 20);
+  (a.$("#move-ok") as HTMLButtonElement).click();
+  await a.settle();
+  assert.equal(a.$("#move-error")!.hidden, true, a.$("#move-error")!.textContent ?? "");
+  assert.equal(await a.menu("feature-5", "marker"), null);
+  // By hand: the box is now x 20..60, so its top's middle is (40, 15) and the cylinder x 35..45, inside the box: everything
+  // drawn lies in x 20..60, y 0..30, z 0..20. Unfixed the cylinder stayed at x 15..25: [[15, 0, 0], [60, 30, 20]].
+  assert.deepEqual(drawnBounds(a), [[20, 0, 0], [60, 30, 20]]);
+  assert.equal(a.warning(), null);
+  // The saved design built afresh (what a reload shows): the cylinder's caps round (40, 15) at z 20 and 12, still 25π · 8 = 200π.
+  const got = await built(open(projectToJson({ ...open(text("v3-face-flip.panosolid.json")), workspaces: { design: a.doc() } })).workspaces.design as DesignDocument);
+  const cylinder = got["feature-5"] as { volume: number; caps: [number[], number[]] };
+  assert.ok(near(cylinder.volume, 200 * PI) && nearAll(cylinder.caps[0], [40, 15, 20]) && nearAll(cylinder.caps[1], [40, 15, 12]), JSON.stringify(cylinder));
+  assert.ok(await a.close());
 });
