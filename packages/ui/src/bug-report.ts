@@ -8,8 +8,16 @@
 // account) and downloads the design as a file to drag into it, since a link
 // can't carry a file. Pure, but for the dialog (`bugReportDialog`).
 
-/** The report service's address: "" until the server is set up (Ben's call), so reports go to GitHub. */
-export const BUG_REPORT_SERVICE = "";
+/** The report service (supabase/functions/bug-report): files the report in SpindleLabs' private bug-reports repo. */
+export const BUG_REPORT_SERVICE = "https://lowohzkaxhtlpfdnfaol.supabase.co/functions/v1/bug-report";
+/** The pages the service takes reports from (its APP_ORIGINS); anywhere else (a dev server, a test) reports go to GitHub. */
+export const BUG_REPORT_ORIGINS = ["https://spindlelabs.app", "https://www.spindlelabs.app", "https://spindlelabs-app.github.io"];
+
+/** Where this page sends reports: the service on SpindleLabs' own pages, else `override` (a browser test's fake service), else "" (GitHub). */
+export function bugReportEndpoint(origin: string, override?: string): string {
+  if (BUG_REPORT_ORIGINS.includes(origin)) return BUG_REPORT_SERVICE;
+  return typeof override === "string" ? override : "";
+}
 /** Where a new issue is opened. */
 export const ISSUES_NEW = "https://github.com/SpindleLabs-app/SpindleLabs/issues/new";
 /** The longest link opened: browsers and GitHub take about 8,000 characters; past this the longest part is cut. */

@@ -4,7 +4,7 @@
 // drag into it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BUG_REPORT_EMPTY, MAX_DESIGN_BYTES, bugDesignFile, bugReportBody, bugReportDialog, bugReportPayload, bugReportTitle, bugReportUrl, ISSUES_NEW, MAX_REPORT_URL, sendBugReport, type BugReport } from "../src/bug-report.ts";
+import { BUG_REPORT_EMPTY, BUG_REPORT_ORIGINS, BUG_REPORT_SERVICE, bugReportEndpoint, MAX_DESIGN_BYTES, bugDesignFile, bugReportBody, bugReportDialog, bugReportPayload, bugReportTitle, bugReportUrl, ISSUES_NEW, MAX_REPORT_URL, sendBugReport, type BugReport } from "../src/bug-report.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -181,4 +181,19 @@ test("the dialog: with no report address it goes straight to GitHub, the design 
   assert.equal(opened.length, 1);
   assert.equal(downloads.length, 1);
   assert.equal(d.dialog.open, false, "closes once opened");
+});
+
+test("reports go to the service only from SpindleLabs' own pages; elsewhere to a test's fake service, else GitHub", async () => {
+  assert.equal(bugReportEndpoint("https://spindlelabs.app"), BUG_REPORT_SERVICE);
+  assert.equal(bugReportEndpoint("https://spindlelabs-app.github.io", "https://fake.test"), BUG_REPORT_SERVICE, "a page of ours never takes an override");
+  assert.equal(bugReportEndpoint("http://localhost:4303"), "", "a dev server or test build: GitHub");
+  assert.equal(bugReportEndpoint("http://localhost:4303", "https://fake.test/send"), "https://fake.test/send");
+  assert.equal(bugReportEndpoint("https://spindlelabs.app.evil.example"), "", "only exact origins");
+  // The service takes reports from exactly these pages, or it would refuse ours.
+  // Found by walking up, so the test also runs from mutation testing's copy of the package.
+  const { existsSync, readFileSync } = await import("node:fs");
+  let dir = new URL("./", import.meta.url);
+  while (!existsSync(new URL("supabase/functions/bug-report/index.ts", dir)) && dir.pathname !== "/") dir = new URL("../", dir);
+  const fn = readFileSync(new URL("supabase/functions/bug-report/index.ts", dir), "utf8");
+  assert.equal(fn.match(/export const APP_ORIGINS = (\[[^\]]*\]);/)?.[1], JSON.stringify(BUG_REPORT_ORIGINS).replaceAll(",", ", "));
 });

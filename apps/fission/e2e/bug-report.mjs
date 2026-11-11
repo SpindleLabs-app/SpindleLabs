@@ -19,9 +19,11 @@ const browser = await launch();
 const errors = [];
 let failed = false;
 
-async function fresh(width, height, touch) {
+async function fresh(width, height, touch, service = null) {
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, acceptDownloads: true });
   const page = await context.newPage();
+  // A fake report service, named before the page loads (only SpindleLabs' own pages use the real one).
+  if (service) await page.addInitScript((u) => (window.__bugReportService = u), service);
   await page.addInitScript(() => {
     indexedDB.deleteDatabase("fission");
     // The tab the form would open, kept instead (no network in the check).
@@ -103,6 +105,58 @@ try {
       }
     });
   }
+  const FAKE = "https://reports.test/send";
+  await check("1280 px: with a report service, Send with nothing typed sends the design and says thank you; a failed send offers GitHub", async () => {
+    const page = await fresh(1280, 800, false, FAKE);
+    const sent = [];
+    let down = false;
+    await page.context().route(FAKE, (route) => {
+      const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" };
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+      if (down) return route.abort();
+      sent.push(JSON.parse(route.request().postData()));
+      return route.fulfill({ status: 200, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify({ issue: 9 }) });
+    });
+    try {
+      const open = async () => {
+        await page.click("#settings-open");
+        await page.locator("#settings-report-bug").scrollIntoViewIfNeeded();
+        await page.click("#settings-report-bug");
+      };
+      await open();
+      assert.equal(await page.textContent("#bug-report-go"), "Send");
+      assert.ok((await page.textContent("#bug-report-note")).includes("privately"), "the note says it goes privately");
+      await page.click("#bug-report-go");
+      await page.waitForFunction(() => document.getElementById("bug-report-status").textContent.startsWith("Sent"));
+      assert.equal(await page.textContent("#bug-report-status"), "Sent as report 9. Thank you!");
+      assert.equal(sent.length, 1);
+      assert.equal(sent[0].title, "Bug report from design");
+      assert.equal(sent[0].design.name, "Untitled.spindle.json");
+      assert.equal(typeof JSON.parse(sent[0].design.text), "object", "the design is the project's JSON");
+      assert.ok(sent[0].body.includes("- Workspace: design"));
+      assert.equal(await page.evaluate(() => window.__opened.length), 0, "no GitHub tab");
+      await page.click("#bug-report-go"); // Done
+      assert.equal(await page.evaluate(() => document.getElementById("bug-report").open), false);
+      // The service down: the words stay, the button offers GitHub, nothing opens until it is pressed.
+      down = true;
+      await open();
+      await page.fill("#bug-report-what", "Fillet vanished");
+      await page.click("#bug-report-go");
+      await page.waitForFunction(() => document.getElementById("bug-report-go").textContent === "Open on GitHub");
+      assert.ok((await page.textContent("#bug-report-status")).startsWith("Couldn't reach the report service."));
+      // The browser logs the refused request itself; that one is expected here, any other error still fails.
+      const refused = errors.findIndex((e) => e.includes("net::ERR_FAILED"));
+      assert.ok(refused >= 0, "the browser saw the request refused");
+      errors.splice(refused, 1);
+      assert.equal(await page.inputValue("#bug-report-what"), "Fillet vanished");
+      assert.equal(await page.evaluate(() => window.__opened.length), 0);
+      await Promise.all([page.waitForEvent("download"), page.click("#bug-report-go")]);
+      const opened = await page.evaluate(() => window.__opened);
+      assert.equal(new URL(opened[0].u).searchParams.get("title"), "Bug: Fillet vanished");
+    } finally {
+      await page.context().close();
+    }
+  });
 } finally {
   await browser.close();
   server.httpServer.close();
