@@ -1819,6 +1819,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A dimension's box stays by its label: the next thing is typing, not a tap on a point, and moving it off the points sent it
     // to the view's far corner on almost any small sketch (the solver bug hunt, 2026-11-06).
     fitList.set(fitNow());
+    // The fit list tags a circle: a polygon's Diameter box (52c) takes no fit, so the list stays under circles' boxes only.
+    typed.under("diameter", tool.kind === "circle" || pending?.kind === "diameter" ? fitList.element : null);
     typed.show(typedFields(tool), live, Math.min(box.x, Math.max(0, width - 200)), box.y, pending ? undefined : viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
