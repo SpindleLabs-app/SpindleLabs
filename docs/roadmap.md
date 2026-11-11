@@ -245,7 +245,7 @@ Interoperability
 - [ ] 75. STEP import (simple parts)
 - [ ] L2. After 75: a fixed subset of the ABC dataset (Onshape models as STEP) imported, validated and put through random booleans; L4 (Thingi10K through the STL reader) can run any time, L5 (OSS-Fuzz) once the repository is public (`docs/progress/frontier-testing.md`)
 - [ ] 76. Healing imported geometry
-- [ ] 77. 3MF and OBJ export
+- [x] 77. 3MF and OBJ export. Done (2026-11-11): File ▾ Export 3MF or OBJ… (asks which) and the Download 3MF / OBJ verbs on selected bodies, made from the kernel's STL triangles (the same numbers, so the same solid check holds), shared corners written once, each body its own object; 3MF in millimetres as a stored zip with a fixed date (the same bodies give the same bytes). Checked by hand-worked meshes, Python's zip reader (CRCs) and divergence-theorem volume, the 3MF Consortium's lib3mf in strict mode (no warnings, every object manifold and oriented), deliberate breaks, and the browser at 1280 and 375 px. Not yet: colours and materials in the 3MF (with 66), and a double-precision mesh straight from the kernel.
 
 Assemblies and drawings
 - [ ] 78. Components with their own bodies/timelines. Before 78 or X12, whichever comes first (architecture review): ids get a namespace per component, so bringing in a component or a recipe never renumbers existing ids

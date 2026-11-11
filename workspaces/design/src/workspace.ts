@@ -79,6 +79,8 @@ import { rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } fro
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
+import { EXPORT_CHOICE_ID, EXPORT_CHOICE_LABEL, exportChoice } from "./export-choice.ts";
+import { registerMeshActions } from "./mesh-export.ts";
 import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -553,6 +555,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
+  // File ▾ Export 3MF or OBJ… (step 77): the format asked, then every body shown, as the whole design's STL takes them.
+  const meshChoice = exportChoice(ctx.toolbar, (format) => {
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
+    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
+    void runAction(format.action, bodies, hiddenStlNote(doc!, failedNow).replace(/\bSTL\b/g, format.name));
+  });
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => (ctx.startedFresh?.(), void clearDesign()) });
   /** Slice for printing's warm-up loop and Better grip as last ticked (null: as remembered); the build area counts them. */
   let printExtras: FirstLayerExtras | null = null;
@@ -4266,6 +4275,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         new: fresh.entry(doc, mode.kind !== "none"),
         exports: [
           { id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => run({ op: "export_stl" }) },
+          { id: EXPORT_CHOICE_ID, label: EXPORT_CHOICE_LABEL, title: `Export 3MF or OBJ: every body shown, as one 3MF file for a slicer (sizes in millimetres, each body its own object) or one OBJ file for another 3D program`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => meshChoice.ask() },
           { id: "file-save-picture", label: "Save picture (PNG)", title: "Save picture: the view as it is on screen, as a PNG file", off: viewport.picture ? undefined : "This browser can't make a picture of the view", run: () => void savePicture() },
           { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => printing.ask() },
         ],
@@ -4442,7 +4452,10 @@ export const designWorkspace: WorkspacePlugin = {
   status: "working",
   representations: { produces: ["solid", "mesh", "outline"], accepts: [] },
   registerRepresentations: registerDesign,
-  registerActions: (registry) => registerDesignActions(registry),
+  registerActions: (registry) => {
+    registerDesignActions(registry);
+    registerMeshActions(registry);
+  },
   readData: readDesignDocument,
   commands: DESIGN_COMMANDS,
   shortcuts: DESIGN_SHORTCUTS,
