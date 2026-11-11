@@ -265,6 +265,17 @@ class SharesDatabase(unittest.TestCase):
         for role in ["anon", "authenticated"]:
             self.denied(self.as_role(role, "select setval('public.share_reports_id_seq', 9223372036854775807);"))
 
+    def test_one_person_reports_at_most_50_a_day_across_every_link(self):
+        # Security review 2026-11-11: the 5 a link didn't stop one account filling the review list across many links.
+        # 45 = 0.9 x 50 kept, then up to 50; the 51st (on the way to 55 = 1.1 x 50) refused; 24 hours later allowed.
+        links = [self.share(ADA)["id"] for _ in range(11)]
+        self.owner(f"update public.shares set created_at = now() - interval '2 days' where user_id = '{ADA}';")
+        answers = [self.report("authenticated", links[i // 5], uid=BO) for i in range(55)]
+        self.assertEqual(answers.count("kept"), 50)
+        self.assertEqual(answers[50:], ["enough"] * 5)
+        self.owner(f"update public.share_reports set created_at = now() - interval '25 hours' where reporter = '{BO}';")
+        self.assertEqual(self.report("authenticated", links[10], uid=BO), "kept")
+
     def test_a_link_keeps_at_most_200_signed_in_reports(self):
         r = self.share(ADA)
         self.owner(f"insert into public.share_reports (share_id, reporter, kind, reason) select '{r['id']}', '{BO}', 'other', '' from generate_series(1, 199);")
