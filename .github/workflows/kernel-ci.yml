@@ -37,7 +37,7 @@ on:
         required: false
         default: ""
       label:
-        description: "pr-<number> or main"
+        description: "pr-<number>, train-<number> or main"
         required: true
 
 # A newer push to the same pull request cancels the older run; main's finish.
@@ -68,7 +68,7 @@ jobs:
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
@@ -116,7 +116,7 @@ jobs:
     steps:
       - name: Inputs are commit ids, a label and a part, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
