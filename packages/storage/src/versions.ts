@@ -70,6 +70,11 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
       // storage full or failing: the save itself went through, which is what matters
     }
   }
+  /** Whether keep() could store or trim anything for a state saved at `at`: false only when it surely does nothing. */
+  async function wouldKeep(id: string, at: number) {
+    const kept = await times(kv, id);
+    return kept.length === 0 || at - kept[0] >= gapMs || kept.length > limit;
+  }
   async function forgetVersions(id: string) {
     for (const t of await times(kv, id)) await kv.delete(prefix(id) + t);
   }
@@ -78,11 +83,17 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
     list: () => store.list(),
     open: (id) => store.open(id),
     async save(id, project, read, unchangedSince, behind, writer) {
-      // The state this save replaces, read first: after the save it is gone.
+      // The state this save replaces, read first: after the save it is gone. Only when it could become a version: while
+      // the newest version is under `gapMs` older than it (most saves, in a burst of edits), keep() would pass it over,
+      // so the whole project text is neither read nor written out again just to be compared (a big project's save
+      // spent a third of its time on that).
       let before: string | undefined;
       let at: number | null = null;
+      let wanted = true;
       try {
-        [before, at] = [await kv.get(`project/${id}`), savedAt(await kv.get(`summary/${id}`))];
+        at = savedAt(await kv.get(`summary/${id}`));
+        wanted = at !== null && (await wouldKeep(id, at));
+        before = wanted ? await kv.get(`project/${id}`) : undefined;
       } catch {
         before = undefined; // can't read it: no version this time
       }
@@ -90,6 +101,9 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
         await store.save(id, project, read, unchangedSince, behind, writer);
       } catch (e) {
         if (e instanceof ProjectChangedError || !storageFull(e)) throw e;
+        // The refused save wrote nothing, so the state it replaces is still there: read it now if it was passed over,
+        // since forgetting this project's versions below makes room for it as one.
+        if (!wanted && at !== null) before = await kv.get(`project/${id}`).catch(() => undefined);
         // Refused for want of room, perhaps: this project's versions and kept undo steps give way to its work first, and
         // the save is tried once more; only if that still fails do the other projects' undo steps go too, for one last
         // try (save/load hunt C7: every project's steps went at the first refusal).

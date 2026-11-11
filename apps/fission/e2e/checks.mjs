@@ -10,6 +10,7 @@ import { readdirSync, readFileSync } from "node:fs";
 /** Files other checks import, never run on their own (e2e/checks.test.mjs checks each is still imported). */
 export const HELPERS = [
   "backdrop.mjs",
+  "big-project.mjs",
   "browser.mjs",
   "kernel-cap.mjs",
   "live-site.mjs",
