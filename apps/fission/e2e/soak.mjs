@@ -41,7 +41,7 @@ import { rng } from "./monkey-core.mjs";
 import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
 import { pinProperties } from "./properties.mjs";
 import { chooseFile, closePanels, gridSnapOn, insertPreset, openPanel, pickPlane, sheetsClearFor, switchTo } from "./start.mjs";
-import { judgeSoak, WARM_UP } from "./soak-judge.mjs";
+import { judgeSoak, treeSize, WARM_UP } from "./soak-judge.mjs";
 import { expected, matchesModel, sameState, stlFacts } from "./soak-model.mjs";
 
 const CYCLES = Number(process.env.SOAK_CYCLES ?? 40);
@@ -309,8 +309,9 @@ async function domNodes() {
   // A file handed to the browser (save-file.ts `download`) is a link never put in the page: Chromium holds it while the
   // download starts, so a reading taken then counted it or not by chance (1,144 or 1,145 over 30 wide cycles).
   const held = detachedNodes.filter((d) => !(d.treeNode.nodeName === "A" && d.treeNode.attributes?.includes("download")));
-  return inPage + held.reduce((s, d) => s + d.retainedNodeIds.length, 0);
+  return inPage + held.reduce((s, d) => s + treeSize(d.treeNode), 0);
 }
+
 
 /** SOAK_DEBUG: the page's nodes by name and nearest id, and the detached trees by their root, printed where they differ from the last reading. */
 let lastCensus = {};
@@ -326,7 +327,7 @@ async function printCensus(detachedNodes) {
   });
   for (const d of detachedNodes) {
     const key = `detached ${d.treeNode.nodeName} ${(JSON.stringify(d.treeNode.attributes) ?? "").slice(0, 80)}`;
-    census[key] = (census[key] ?? 0) + d.retainedNodeIds.length;
+    census[key] = (census[key] ?? 0) + treeSize(d.treeNode);
   }
   for (const key of new Set([...Object.keys(lastCensus), ...Object.keys(census)])) if ((lastCensus[key] ?? 0) !== (census[key] ?? 0)) console.log(`  ${key}: ${lastCensus[key] ?? 0} -> ${census[key] ?? 0}`);
   lastCensus = census;
