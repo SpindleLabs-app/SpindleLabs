@@ -255,7 +255,10 @@ test("each person's links are their own, and damaged links lose nothing", async 
   const a = browser(acc, "ada", "a");
   a.edit("p1", "v1", "Peg");
   await a.sync.syncAll();
-  assert.ok(a.store.getItem(LINKS_PREFIX + "ada"));
+  // Ada's one project linked at its first revision; read back by readLinks, not just "something stored".
+  const ada = readLinks(a.store, "ada");
+  assert.deepEqual([...ada.keys()], ["p1"]);
+  assert.equal(ada.get("p1")?.revision, 1);
   assert.equal(readLinks(a.store, "bo").size, 0);
   for (const bad of ["{", "[]", '"x"', '{"p1":{"remote":5}}', '{"p1":{"remote":"r","revision":0,"hash":"h"}}']) {
     a.store.setItem(LINKS_PREFIX + "ada", bad);

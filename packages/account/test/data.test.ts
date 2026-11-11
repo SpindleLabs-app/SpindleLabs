@@ -73,7 +73,8 @@ test("a failed delete keeps the person signed in, so they can try again", async 
   assert.equal(client.state().kind, "signed-in");
   svc.mode = 503;
   assert.deepEqual(await data.deleteAccount(), { kind: "failed", reason: "unavailable" });
-  assert.notEqual(svc.profile, undefined);
+  // The profile is still there, as it was before either try: nothing was deleted or changed.
+  assert.deepEqual(svc.profile, { email_opt_in: false });
 });
 
 test("signed out, nothing is asked of the service", async () => {
@@ -149,7 +150,8 @@ test("the last email choice seen shows at once, and the service's answer puts it
 test("deleting the account forgets the last email choice seen", async () => {
   const { store, data } = await signedIn();
   await data.setEmailChoice(true);
-  assert.notEqual(store.getItem(SEEN_EMAIL_KEY), null);
+  // Kept as "<user id>:yes" (data.ts), so the removal below is seen to take away a real entry.
+  assert.equal(store.getItem(SEEN_EMAIL_KEY), `${USER.id}:yes`);
   assert.deepEqual(await data.deleteAccount(), { kind: "ok", value: true });
   assert.equal(store.getItem(SEEN_EMAIL_KEY), null);
 });
