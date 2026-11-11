@@ -14,7 +14,7 @@
 .history-panel li[data-state="current"] button { background: var(--look-active-fill); color: var(--look-accent-text); box-shadow: inset 0 0 0 1px var(--look-accent); }
 .history-panel li[data-state="undone"] .history-name { opacity: 0.55; font-style: italic; }
 @media (max-width: 640px) {
-  .history-panel { top: auto; right: 0; bottom: 0; left: 0; width: auto; max-height: 45vh; max-height: 45dvh; border-radius: var(--look-radius-l) var(--look-radius-l) 0 0; border-width: 1px 0 0; }
+  .history-panel { top: auto; right: 0; bottom: 0; left: 0; width: auto; max-height: 30vh; max-height: calc(34dvh - 8px); border-radius: var(--look-radius-l) var(--look-radius-l) 0 0; border-width: 1px 0 0; }
   .history-panel .history-close { min-height: var(--look-target-touch); }
   .history-panel .history-list button { min-height: var(--look-target-touch); }
 }

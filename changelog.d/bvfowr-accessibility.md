@@ -4,9 +4,11 @@ fix
 - Screen readers now read out errors and status lines in the properties, sketch, home and My designs panels; the 3D view and the History panel are named; Settings' Show and Open buttons say what they show.
 - Keyboard: Enter or Space on a menu button opens it on its first item, choosing an item returns the focus to the menu instead of the top of the page, the command search keeps Tab inside it, and the keyboard's item in a menu has a clear ring.
 - A phone held sideways: long toolbar menus stay under the toolbar and scroll.
+- Phones (Ben's OK, 2026-11-11): every ▾ menu, the History panel and the Browser and Properties sheets cover at most 40% of the view after one tap (menus were 63–88%): menu items in two columns, the rest scrolling, no key letters.
 
 public:
 - Dim text, hints and greyed menus are easier to read in both light and dark themes.
 - Screen readers now announce errors and status messages, and buttons have clearer names.
 - Menus work better from the keyboard: they open on their first item and keep your place after you choose one.
 - On a phone held sideways, long menus no longer cover the toolbar.
+- On a phone, menus, History and the Browser and Properties panels now take well under half the screen, so the design stays in view.
