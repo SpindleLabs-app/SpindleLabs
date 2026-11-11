@@ -35,7 +35,7 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -49,6 +49,7 @@ import { readDesignReference, resolveReference, sharedBy } from "./references.ts
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 import { findRegion, refusalReason, regionOutline, type RegionRef } from "./regions.ts";
+import { missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -103,6 +104,8 @@ export type FeatureResult =
       pieceFaces?: Record<string, string[]>;
       /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
       pieces?: { message: string; renumbered: string[] };
+      /** A Cut or Join whose tools change nothing (misses.ts; Ben 11 Nov, SL #506 item 5, #521): which, and the row's words. */
+      misses?: { message: string; list: Miss[] };
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -1298,6 +1301,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && (isPiece(b.id) || b.id === own) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
   const pieceFaces: Record<string, string[]> = {};
   const renumbered: string[] = [];
+  const misses: Miss[] = [];
   for (const step of steps) {
     const inputs: NamedBody[] = [];
     const built = new Map<BodyHandle, BuiltBody>();
@@ -1339,6 +1343,8 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       }
       throw e;
     }
+    const missed = missedTools(operation, t.handle, ts.map((x) => x.handle), result);
+    if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]) });
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
     const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
@@ -1366,7 +1372,13 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
   const shown = renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
   const warn = shown.length === 0 ? {} : { pieces: { renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
-  return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn };
+  // Named as the browser shows them ("Body 2"), else by the item (an operation extrude's own body).
+  const numbers = bodyNumbers(doc);
+  const bodyWords = (b: string) => (numbers.has(b) ? `Body ${numbers.get(b)}` : bodyItem(b) === f.id ? label : nameOf(bodyItem(b)!));
+  // A Combine Join of bodies that don't meet keeps them as separate bodies with no warning (Ben's Fusion answer F2); an
+  // Extrude Join that reaches nothing still warns (#521).
+  const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, message: missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined) } };
+  return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn, ...missing };
 }
 
 /** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */
