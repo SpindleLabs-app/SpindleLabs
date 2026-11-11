@@ -202,7 +202,19 @@ function tabs(count: number, lockFor: (i: number) => <T>(fn: () => Promise<T>) =
   return { acc, store, syncs };
 }
 
-test("without navigator.locks, two tabs of the app sending at once add a project once", async () => {
+/** Runs fn as in a browser without navigator.locks: newer Node versions have a real one, which would skip the fallback. */
+async function withoutLocks(fn: () => Promise<void>): Promise<void> {
+  const kept = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { value: {}, configurable: true, writable: true });
+  try {
+    await fn();
+  } finally {
+    if (kept) Object.defineProperty(globalThis, "navigator", kept);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+  }
+}
+
+test("without navigator.locks, two tabs of the app sending at once add a project once", () => withoutLocks(async () => {
   assert.equal((globalThis as { navigator?: { locks?: unknown } }).navigator?.locks, undefined, "this test runs the fallback");
   const acc = fakeAccount();
   const store = memoryStore();
@@ -213,7 +225,7 @@ test("without navigator.locks, two tabs of the app sending at once add a project
   await Promise.all([t1.sendNow(), t2.sendNow()]);
   assert.deepEqual(acc.rows.map((r) => `${r.name}=${r.body}`), ["Cap=v1"]);
   assert.equal(store.getItem(LEASE_KEY), null, "the lease is given back");
-});
+}));
 
 test("seeded: however the tabs' starts interleave, the storage lock is held by one at a time", async () => {
   for (let seed = 1; seed <= 25; seed++) {
