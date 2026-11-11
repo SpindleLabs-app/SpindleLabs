@@ -3185,7 +3185,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       showCombineHint();
     },
     changed: () => combineBox.showError(""),
-    ok: () => void finishCombine(),
+    ok: () => void ctx.history.hold(finishCombine()), // held like Move's and Extrude's OK: an Undo pressed while the kernel checks waits, then takes this back (#503)
     cancel: () => leaveCombine(),
   });
   // Measure (35e2l2, measure-view.ts): Inspect ▾ Measure's panel; while open the view's clicks pick what to measure, and select nothing.
@@ -4319,7 +4319,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // And the Combine panel's (35f1c).
         if (combineBox.shown && !extrudeBox.shown) {
           if (!onView) return false;
-          if (combineBox.ready) void finishCombine();
+          if (combineBox.ready) void ctx.history.hold(finishCombine());
           return true;
         }
         if (!extrudeBox.shown || !onView) return false;

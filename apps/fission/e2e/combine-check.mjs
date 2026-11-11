@@ -22,6 +22,16 @@
 //    4,000. Move 1 edited to x 200: the boxes are apart, the Combine fails
 //    and uses up nothing, so three rows and an STL of 24,000 + 24,000 +
 //    1,000 = 49,000, from the toolbar and from File > Export STL.
+// 4. Undo pressed right after Combine's OK (#503), while the kernel still
+//    checks it: the Undo waits and takes back that OK, as for Move and
+//    Extrude, never the step before. Scene 3's boxes (49,000 as opened).
+//    a. Move 2 edited to y 3 (step 1), then a new Combine cutting Box 2 from
+//       Box 1, OK and Ctrl+Z at once: the Combine is taken back and the Move
+//       edit kept (49,000, Box 3 at y 3..13, Undo "Edit Move 2", Redo
+//       "Combine bodies"); Redo makes the Cut, 24,000 − 3,000 + 1,000 =
+//       22,000.
+//    b. That Combine edited to Intersect, OK and Ctrl+Z at once: the Cut
+//       again (22,000), Redo "Edit Combine 1"; Redo gives 3,000 + 1,000.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -98,8 +108,8 @@ async function clickRow(page, text) {
   await page.evaluate(() => document.querySelector('#browser details[data-node="bodies"]')?.setAttribute("open", ""));
   await page.locator('#browser [data-node="bodies"] .tree-row', { hasText: new RegExp(`^\\s*${text}\\s*$`) }).first().click();
 }
-/** Modify ▾ > Combine, the target and tools picked by their Bodies rows, OK; fails with the panel's words when it is refused. */
-async function combine(page, target, tools, operation, keep = false) {
+/** Modify ▾ > Combine, the target and tools picked by their Bodies rows, OK (unless `ok` is false: the panel is left ready); fails with the panel's words when it is refused. */
+async function combine(page, target, tools, operation, keep = false, ok = true) {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(150);
   await page.click("#modify-menu");
@@ -108,6 +118,7 @@ async function combine(page, target, tools, operation, keep = false) {
   for (const row of [target, ...tools]) await clickRow(page, row);
   await page.selectOption("#combine-operation", operation);
   if (keep) await page.check("#combine-keep");
+  if (!ok) return;
   await page.click("#combine-ok");
   await until(page, () => document.getElementById("combine-panel").hidden || !document.getElementById("combine-error").hidden, null, "OK answered");
   assert.equal(await page.$eval("#combine-panel", (p) => p.hidden), true, `the Combine was refused: ${await page.$eval("#combine-error", (e) => e.textContent)}`);
@@ -165,8 +176,57 @@ try {
     assert.equal(menu.volume, 49000);
     await page.context().close();
   }
+  // 4. Undo pressed right after Combine's OK.
+  {
+    const page = await fresh(design([[[40, 30, 20], null], [[40, 30, 20], [20, 15, 10]], [[10, 10, 10], [100, 0, 0]]]));
+    const editItem = async (id, panel) => {
+      await page.click(`#timeline [data-item="${id}"]`, { button: "right" });
+      await until(page, () => document.getElementById("row-menu").open, null, `${id}'s menu`);
+      await page.click("#row-menu-edit");
+      await until(page, (p) => document.getElementById(p)?.hidden === false, panel, `${panel} opened`);
+    };
+    const buttons = () => page.evaluate(() => ["undo", "redo"].map((id) => document.getElementById(id).title));
+    /** OK pressed and, with nothing between, Ctrl+Z; then everything settled. */
+    const okThenUndo = async () => {
+      await page.click("#combine-ok");
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(3000);
+      await rebuilt(page);
+    };
+    await editItem("feature-5", "move-panel");
+    await page.fill("#move-y", "3");
+    await page.click("#move-ok");
+    await until(page, () => document.getElementById("move-panel").hidden, null, "the Move edit was taken");
+    await rebuilt(page);
+    await page.waitForTimeout(1100); // past the history's merging of quick steps
+    // a. A new Combine.
+    await combine(page, "Body 1", ["Body 2"], "cut", false, false);
+    await okThenUndo();
+    assert.deepEqual(await buttons(), ["Undo Edit Move 2 (Ctrl+Z)", "Redo Combine bodies (Ctrl+Shift+Z)"], "a: the Combine was taken back, not Move 2's edit");
+    let now = await toolbarStl(page);
+    assert.equal(now.volume, 49000);
+    assert.deepEqual(now.bounds[1], [0, 45], "Box 2 reaches y 45; Box 3 at y 3..13 is inside that");
+    assert.equal(await page.$$eval("#timeline li[data-item]", (l) => l.length), 5, "a: no Combine in the timeline");
+    await page.keyboard.press("Control+Shift+z");
+    await page.waitForTimeout(500);
+    await rebuilt(page);
+    assert.equal((await toolbarStl(page)).volume, 22000, "a: Redo makes the Cut");
+    await page.waitForTimeout(1100);
+    // b. An edit of that Combine.
+    await editItem("feature-6", "combine-panel");
+    await page.selectOption("#combine-operation", "intersect");
+    await okThenUndo();
+    assert.deepEqual(await buttons(), ["Undo Combine bodies (Ctrl+Z)", "Redo Edit Combine 1 (Ctrl+Shift+Z)"], "b: the edit was taken back, not the Combine");
+    assert.equal((await toolbarStl(page)).volume, 22000, "b: the Cut again");
+    await page.keyboard.press("Control+Shift+z");
+    await page.waitForTimeout(500);
+    await rebuilt(page);
+    assert.equal((await toolbarStl(page)).volume, 4000, "b: Redo makes the Intersect");
+    await page.context().close();
+  }
   assert.deepEqual(errors, [], "no page errors");
-  console.log("combine-body-lists: ok");
+  console.log("combine-check: ok");
 } finally {
   await browser.close();
   await server.httpServer.close();
