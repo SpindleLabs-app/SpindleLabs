@@ -164,7 +164,7 @@ async function round(page, first) {
   await page.click("#row-menu-edit");
   await until(() => document.getElementById("feature-edit")?.hidden === false);
   await openPanel(page, "properties");
-  await page.fill("#feature-edit input[type=number]", "7");
+  await page.fill("#feature-edit input[inputmode=decimal]", "7");
   await page.click("#feature-edit-ok");
   await until(() => document.querySelector("#intent")?.textContent === "Extrude Sketch 1 by 7 mm");
   // The pointer moves on to the toolbar's STL, then the project is saved, opened again and emptied.

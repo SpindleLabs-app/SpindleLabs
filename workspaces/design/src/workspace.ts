@@ -995,12 +995,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const f = boxesPart === null ? undefined : doc.timeline.features.find((x) => x.id === boxesPart);
     return f !== undefined && ownShape(f) && builds(doc, f) ? f : partFeature(doc);
   }
+  /**
+   * Each size box's size (millimetres as text) from before the edit being typed in it, null while none is: a box builds
+   * the part at each key typed, so the last size taken can be half of what was typed (issue #518: 2000000 typed key by
+   * key built 200000 mm and went back to it). Set at an edit's first key, cleared once the box is left or Enter pressed.
+   */
+  const editStart: (string | null)[] = SIZE_KEYS.map(() => null);
   /** The boxes and the Shape choice show `part`'s shape and sizes, and a size typed now changes it. */
   function showPartSizes(doc: DesignDocument, part: Feature) {
     const { shape: kind, sizes } = shapeOf(doc, part);
     shape = kind;
     for (const [i, key] of SIZE_KEYS.entries()) if (sizes[key] !== undefined) inputs[i].value = String(sizes[key]);
     boxesPart = part.id;
+    editStart.fill(null); // another body's sizes: an edit begun in the boxes was for the last one
     panel.setShape(kind, kind);
     if (saved) saved = { ...saved, shape, sizes: inputs.map((i) => i.value), part: boxesPart };
   }
@@ -1052,14 +1059,30 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const why = panelSizeRefused(kind, Object.fromEntries(SIZE_KEYS.map((k, i) => [k, inputs[i].value])) as Record<SizeKey, string>);
     return why === null ? null : wordsInUnit(why, currentUnit(ctx.properties.ownerDocument));
   }
-  /** Leaving a size box whose text was refused: the size the design last took comes back, and the words go. */
-  function restoreRefused(i: number) {
+  /** The undo step a key typed in box `i` makes: one step a box and body (the merge key). */
+  const sizeStep = (i: number): [string, string] => [shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`];
+  /**
+   * Leaving a size box whose text was refused: the size from before the edit comes back (`editStart`), the part is built
+   * at it again when a half-typed size was taken meanwhile (folding the edit's undo step back to nothing), and the panel
+   * says so.
+   */
+  async function restoreRefused(i: number) {
+    const start = editStart[i];
+    editStart[i] = null;
     const why = saved === null ? null : refusedSize(shape);
     if (saved === null || why === null) return;
     const typed = inputs[i].value;
-    inputs[i].value = saved.sizes[i];
+    const back = start ?? saved.sizes[i];
+    inputs[i].value = back;
+    if (refusedSize(shape) !== null) return;
+    if (back !== saved.sizes[i]) {
+      if (putAway || !shown) return; // a box left as Design was put away (an Undo's remount) builds nothing
+      await update(...sizeStep(i));
+      // Put away meanwhile (Undo, Redo or Open remounted Design): its panel is gone, and the new one says nothing of this edit (monkey replay monkey-units-inches).
+      if (putAway || !shown) return;
+    }
     // It went back without a word (beginner play-test 2026-10-28): say so, until the next size typed.
-    if (refusedSize(shape) === null) panel.showError(wordsInUnit(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"), currentUnit(ctx.properties.ownerDocument)));
+    panel.showError(wordsInUnit(revertedNote(why, typed, back, shape === "sketch-extrude"), currentUnit(ctx.properties.ownerDocument)));
   }
 
   /**
@@ -3493,7 +3516,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (!("sizes" in read)) {
         const key = "bad" in read ? read.bad : read.refused;
         const label = f.shape === "sketch-extrude" ? "distance" : parameterRows(f.shape).find((r) => r.key === key)!.label.toLowerCase();
-        return editBox.showError("bad" in read ? `Type the ${label} in mm.` : `The ${label}${read.why.slice("A length".length)}`);
+        if ("bad" in read) return editBox.showError(`Type the ${label} in mm.`);
+        // A length's limits say "A length …"; a comma that could separate thousands says what it could mean (issue #518).
+        return editBox.showError(read.why.startsWith("A length") ? `The ${label}${read.why.slice("A length".length)}` : `The ${label}: ${read.why}`);
       }
       next = editFeature(before, id, read.sizes, flip, editRegions?.id === id ? (editRegions.picked ?? undefined) : undefined);
       // Its operation (with Combine shown): New body, or Join, Cut or Intersect with the bodies ticked.
@@ -4237,11 +4262,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // Typing in one box is one undo step (the merge key), named for the box; typing for another body is another step
   // (the key names the body: Undo after typing for Body 1 put back Body 2's width typed before it, bug hunt 2026-11-01).
   inputs.forEach((input, i) => {
-    input.addEventListener("input", () => shown && update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
-    // Left (or Enter): a refused size gives way to the last one. Blur too: Firefox gives no change for a number box
-    // left empty after 0 and -5 (hunt 26h, CI's browsers job).
-    input.addEventListener("change", () => restoreRefused(i));
-    input.addEventListener("blur", () => restoreRefused(i));
+    input.addEventListener("input", () => {
+      if (!shown) return;
+      if (editStart[i] === null && saved !== null) editStart[i] = saved.sizes[i];
+      void update(...sizeStep(i));
+    });
+    // Left (or Enter): a refused size gives way to the one from before the edit. Blur too: Firefox gave no change for a
+    // number box left empty after 0 and -5 (hunt 26h, CI's browsers job).
+    input.addEventListener("change", () => void restoreRefused(i));
+    input.addEventListener("blur", () => void restoreRefused(i));
   });
   listen();
   // A new project's design starts empty (U0c, the owner's ask), never as a box made from the size boxes.

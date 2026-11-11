@@ -351,9 +351,10 @@ try {
       await page.focus("#move-x");
       await page.keyboard.press("Control+a");
       await page.keyboard.type("1e");
-      assert.equal(await page.$eval("#move-x", (i) => i.validity.badInput), true, "the box holds text it can't read");
+      // A text box since issue #518 (a number box dropped a typed comma or unit): it keeps "1e" as typed, which reads as no number.
+      assert.equal(await page.inputValue("#move-x"), "1e", "the box holds text it can't read");
       await page.focus("#move-z");
-      assert.equal((await panel(page)).boxes.x, "", "left as typed, not filled with 0");
+      assert.equal((await panel(page)).boxes.x, "1e", "left as typed, not filled with 0");
       await page.click("#move-ok");
       await until(page, () => !document.getElementById("move-error").hidden, null, "Move refuses");
       assert.match((await panel(page)).error, /X distance/);

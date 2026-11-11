@@ -1040,7 +1040,7 @@ try {
         await openPanel(page, "properties", tap); // phone: the Edit feature panel is in the Properties sheet (U5)
         await until(page, (w) => document.getElementById("feature-edit")?.hidden === false && document.getElementById("feature-edit-title")?.textContent === w, `Edit ${id}`, "the Edit feature panel");
       };
-      const boxes = () => page.$$eval("#feature-edit input[type=number]", (is) => is.map((i) => [i.id, i.value]));
+      const boxes = () => page.$$eval("#feature-edit input[inputmode=decimal]", (is) => is.map((i) => [i.id, i.value]));
       const panelClosed = () => until(page, () => document.getElementById("feature-edit")?.hidden === true, null, "the panel closed");
       /** Body `n`'s numbers, selected from its Bodies row, then the selection cleared. */
       const bodyPanel = async (n) => {

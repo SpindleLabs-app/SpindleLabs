@@ -88,7 +88,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       inputs = [];
       const labels = rows.map((r) => {
         const input = el("input", `edit-${r.key}`);
-        Object.assign(input, { type: "number", step: "any" });
+        Object.assign(input, { type: "text", inputMode: "decimal", autocomplete: "off", spellcheck: false }); // sizeBox reads units and commas (issue #518)
         const field = sizeBox(input, () => currentUnit(document)); // the sizes are millimetres outside the box (U2c3)
         field.value = String(f.sizes[r.key] ?? "");
         // Enter in a box is OK, as in any dialog.

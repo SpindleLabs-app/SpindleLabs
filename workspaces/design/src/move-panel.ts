@@ -16,7 +16,7 @@
 // made with. The workspace drives it; the panel only shows what it is given
 // and reports what was typed and clicked. Styles: src/styles/move-panel.css.
 
-import { wordsInUnit, type MoveKind, type Unit } from "@fission/core";
+import { readDecimalText, wordsInUnit, type MoveKind, type Unit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
 import { MOVE_PARAMS, MOVE_SCALE, type MoveParam } from "./document.ts";
 import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
@@ -153,15 +153,19 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     inputs.get(k)!.value = text;
     exact.set(k, { text, value });
   };
-  // A box holding text it can't read as a number ("1e", "1.2.3") has the value "" (badInput): read it as not a number,
-  // never as an empty box's 0 (weak-spot hunt 10-29).
+  // A box holding text it can't read as a number ("1e", "1.2.3") reads as not a number, never as an empty box's 0
+  // (weak-spot hunt 10-29); badInput is kept for a number box a test may still give.
   const read = (k: MoveBox) => {
     const input = inputs.get(k)!;
     if (input.validity?.badInput) return "?";
     const field = fields.get(k);
     const text = field ? field.value : input.value; // a length box says millimetres, whichever unit it shows
     const shown = exact.get(k);
-    return shown && shown.text === text ? String(shown.value) : text;
+    if (shown && shown.text === text) return String(shown.value);
+    if (field || text.trim() === "") return text;
+    // A turn or a factor: text boxes since issue #518 (a number box dropped a decimal comma, "1,5" read as 15), read here.
+    const n = readDecimalText(text);
+    return "value" in n ? String(n.value) : "?";
   };
   const typed = () => Object.fromEntries([...MOVE_PARAMS, MOVE_SCALE].map((k) => [k, read(k as MoveBox)])) as Record<MoveBox, string>;
   let pivotTyped = false;
@@ -182,7 +186,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     set.append(legend);
     for (const key of row.keys) {
       const input = el("input", `move-${key}`);
-      Object.assign(input, { type: "number", step: "any", inputMode: "decimal" });
+      Object.assign(input, { type: "text", inputMode: "decimal", autocomplete: "off", spellcheck: false });
       const axis = key.slice(-1).toUpperCase();
       input.setAttribute("aria-label", key === MOVE_SCALE ? "Scale factor" : `${row.legend} ${axis}`);
       if (isLength(key)) fields.set(key, sizeBox(input, unitNow));
