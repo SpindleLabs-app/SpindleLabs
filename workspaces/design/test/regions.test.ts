@@ -138,6 +138,47 @@ test("an old extrude with no region builds its sketch's one outline exactly as b
   assert.equal(failed.status, "failed");
 });
 
+test("issue #541 item 2: an extrude with no region whose square gets a circle inside takes the square's region on the edit, so the hole is cut", async () => {
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const r = drawRectangle(s.doc, s.id, [0, 0], [20, 10]);
+  const old = extrudeSketch(r.doc, s.id, 10);
+  // A circle r 2 round (10, 5), inside the 20 x 10: the one outline is gone, but the four sides are still a region's outside.
+  const withCircle = drawCircle(old.doc, s.id, [10, 5], 2).doc;
+  const settled = await settleKept(kernel, old.doc, withCircle);
+  const region = settled.timeline.features.find((f) => f.id === old.id)!.intent.parameters.region as RegionRef;
+  // By hand: its outside the four sides, as drawRectangle drew them counter-clockwise from (0, 0), none reversed; the centroid
+  // the rectangle's middle (10, 5), as the Extrude panel saves a region picked on a sketch with nothing else in it.
+  assert.ok(sameLoop(region.outer, r.ids.map((curve) => ({ curve, reversed: false }))), JSON.stringify(region.outer));
+  assert.deepEqual(region.centroid.map((x) => Math.round(x * 1e9) / 1e9), [10, 5]);
+  assert.equal(settled.kept, undefined, "nothing kept: the extrude builds");
+  // 20 · 10 · 10 − π · 2² · 10 = 2000 − 40π, no warning.
+  const b = await build(settled);
+  close(b.volumes[old.id], 2000 - 40 * Math.PI, "the plate with a hole");
+  const res = b.build.results[old.id];
+  assert.ok(res.status === "built" && res.warning === undefined, JSON.stringify(res));
+  // Settled again nothing changes; and the plate with the region saved reads back the same.
+  assert.equal(await settleKept(kernel, settled, settled), settled);
+  // A circle beside it (round (40, 5), outside): the square's region again, the circle left out: 2000.
+  const beside = await settleKept(kernel, old.doc, drawCircle(old.doc, s.id, [40, 5], 2).doc);
+  close((await build(beside)).volumes[old.id], 2000, "the square alone");
+});
+
+test("issue #541 item 2, controls: an extrude with no region whose square is cut across, opened or given a stray line keeps its last shape as before, with no region", async () => {
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const r = drawRectangle(s.doc, s.id, [0, 0], [20, 10]);
+  const old = extrudeSketch(r.doc, s.id, 10);
+  const at = (x: number, y: number) => sketchOf(old.doc, s.id).points.find((q) => q.x === x && q.y === y)!.id;
+  // A line corner to corner: two triangles, neither round the four sides; a side deleted: no region at all; a stray line
+  // (30, 0) to (35, 0) beside the square: the square still a region, but the stray round none, so the one outline is broken
+  // by a loose curve, as the owner's rule (25a) has it, not by a second loop.
+  for (const edited of [drawLine(old.doc, s.id, at(0, 0), at(20, 10)).doc, deleteCurve(old.doc, s.id, r.ids[0]), drawLine(old.doc, s.id, [30, 0], [35, 0]).doc]) {
+    const settled = await settleKept(kernel, old.doc, edited);
+    assert.equal(Object.hasOwn(settled.timeline.features.find((f) => f.id === old.id)!.intent.parameters, "region"), false);
+    assert.ok(settled.kept?.[old.id], "the rectangle kept");
+    close((await build(settled)).volumes[old.id], 2000, "the kept 20 × 10 × 10");
+  }
+});
+
 test("side faces are named by their curves, a hole's too, and a curve the region passes twice by its runs", async () => {
   // A circle of radius 5 round (0, 0) with lines x = −2 and x = 2 across it: the middle band runs line, circle, line, circle.
   const s = addSketch({ ...partDocument("box", 10, 10, 10), timeline: { features: [] }, profiles: [], bodies: [], nextBody: 1 } as DesignDocument);

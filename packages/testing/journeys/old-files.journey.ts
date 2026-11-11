@@ -444,3 +444,44 @@ test("issue #541 item 1: a version 3 file's sketch on a face follows its box whe
   assert.ok(near(cylinder.volume, 200 * PI) && nearAll(cylinder.caps[0], [40, 15, 20]) && nearAll(cylinder.caps[1], [40, 15, 12]), JSON.stringify(cylinder));
   assert.ok(await a.close());
 });
+
+test("issue #541 item 2: a hole drawn into a version 3 file's extruded square cuts the hole, as in a design made today", async () => {
+  // v3-three-bodies: Sketch 1 (sketch-3) is a 10 x 10 square on XZ at x 100..110, z 0..10, extruded 10 (Extrude 1, feature-12): 1000.
+  const a = await app(open(text("v3-three-bodies.panosolid.json")).workspaces.design as DesignDocument);
+  const before = a.volume();
+  await a.doubleClick("sketch-3");
+  await a.key("sketch-circle");
+  await a.click(105, 5);
+  await a.click(107, 5);
+  await a.finish();
+  // By hand: a circle r 2 round (105, 5), inside the square, so the extrude is a plate with a hole: 1000 − π · 2² · 10 = 1000 − 40π.
+  // Unfixed: no change, "Extrude 1 keeps its last shape. Sketch 1 has no closed outline: the sketch makes 2 separate loops; …".
+  assert.equal(a.warning(), null);
+  const change = a.volume() - before;
+  assert.ok(drawnClose(-change, 40 * PI), `drawn change ${change}, exact ${-40 * PI}`);
+  const got = await built(a.doc());
+  assert.ok(near((got["feature-12"] as { volume: number }).volume, 1000 - 40 * PI), JSON.stringify(got["feature-12"]));
+  assert.ok(await a.close());
+});
+
+test("issue #541 item 2, control: a side deleted from a version 3 file's extruded square still leaves the extrude keeping its last shape", async () => {
+  // The square opened (one side gone) has no region round it either, so nothing is there to extrude: the extrude keeps the
+  // 10 x 10 x 10 = 1000 it had, warned, before the fix and after it.
+  const doc = open(text("v3-three-bodies.panosolid.json")).workspaces.design as DesignDocument;
+  const a = await app(doc);
+  const before = a.volume();
+  const side = doc.sketches.find((s) => s.id === "sketch-3")!.curves[0].id;
+  await a.doubleClick("sketch-3");
+  await a.key("clear-selection");
+  const sketch = doc.sketches.find((s) => s.id === "sketch-3")!;
+  const line = sketch.curves[0] as { start: string; end: string };
+  const at = (id: string) => sketch.points.find((p) => p.id === id)!;
+  await a.click((at(line.start).x + at(line.end).x) / 2, (at(line.start).y + at(line.end).y) / 2);
+  await a.key("delete-selection");
+  await a.finish();
+  assert.ok(!a.doc().sketches.find((s) => s.id === "sketch-3")!.curves.some((c) => c.id === side), "the side was deleted");
+  assert.equal(a.volume(), before);
+  assert.match(a.warning() ?? "", /^Extrude 1 keeps its last shape\. Sketch 1 has no closed outline/);
+  assert.equal(Object.hasOwn(a.doc().timeline.features.at(-1)!.intent.parameters, "region"), false);
+  assert.ok(await a.close());
+});
