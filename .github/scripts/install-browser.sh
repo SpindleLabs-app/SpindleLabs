@@ -75,14 +75,23 @@ mirrors_resolve() {
   return 1
 }
 
+# Fallback mirror, used when none of Ubuntu's own hosts resolves (the same
+# runners reach other hosts; WebKit and Firefox need packages the image lacks).
+fallback_mirror=${FALLBACK_MIRROR:-mirrors.edge.kernel.org}
+
 if ! mirrors_resolve; then
-  echo "install-browser: no Ubuntu mirror resolves; skipping the system packages (the runner image has the libraries)" >&2
-  for try in 1 2 3; do
-    timeout -k 15 "$(limit "$browser_seconds")" npx playwright install "$browser" && exit 0
-    echo "install-browser: browser try $try of 3 failed" >&2
-    [ "$try" = 3 ] && exit 1
-    sleep "$retry_sleep"
-  done
+  if timeout 10 $mirror_probe "$fallback_mirror" > /dev/null 2>&1; then
+    echo "install-browser: no Ubuntu mirror resolves; using $fallback_mirror" >&2
+    sudo sh -c "printf 'http://$fallback_mirror/ubuntu/\tpriority:1\n' > '$apt_dir/apt-mirrors.txt'; sed -i 's#https\?://[a-z.]*ubuntu\.com/ubuntu/\?#http://$fallback_mirror/ubuntu/#g' '$apt_dir/sources.list' '$apt_dir'/sources.list.d/*.sources 2>/dev/null; true"
+  else
+    echo "install-browser: no Ubuntu mirror resolves; skipping the system packages (the runner image has the libraries)" >&2
+    for try in 1 2 3; do
+      timeout -k 15 "$(limit "$browser_seconds")" npx playwright install "$browser" && exit 0
+      echo "install-browser: browser try $try of 3 failed" >&2
+      [ "$try" = 3 ] && exit 1
+      sleep "$retry_sleep"
+    done
+  fi
 fi
 
 for try in 1 2 3; do
