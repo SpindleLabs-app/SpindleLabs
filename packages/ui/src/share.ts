@@ -111,18 +111,27 @@ function card(doc: Doc, id: string, title: string) {
   return { el, dialog, body, finish, open, close };
 }
 
-/** The Share dialog (id `share`): make a link, copy it, and the links already on. */
-export function shareDialog(doc: Doc, parts: ShareParts): Dialog {
-  const c = card(doc, "share", SHARE_TITLE);
+export const MY_LINKS_TITLE = "My links";
+export const MY_LINKS_NOTE = "The sharing links you have on. Turn one off and nobody can open it again.";
+
+/**
+ * The Share dialog (id `share`): make a link, copy it, and the links already on. With `linksOnly` it is the My links
+ * dialog (id `my-links`, opened from the account dialog): just the list, no way to make a link and no terms.
+ */
+export function shareDialog(doc: Doc, parts: ShareParts, options: { linksOnly?: boolean } = {}): Dialog {
+  const only = options.linksOnly === true;
+  const id = only ? "my-links" : "share";
+  const c = card(doc, id, only ? MY_LINKS_TITLE : SHARE_TITLE);
   const { el } = c;
-  const note = el("p", { className: "share-note", textContent: SHARE_NOTE });
-  const terms = el("p", { className: "share-note share-terms", id: "share-terms", textContent: SHARE_TERMS_PLACEHOLDER });
-  const makeButton = el("button", { type: "button", id: "share-make", className: "share-button share-primary", textContent: "Make a link" });
-  const result = el("div", { id: "share-result", className: "share-result" });
-  const status = el("p", { id: "share-status", className: "share-status" });
+  const note = el("p", { className: "share-note", textContent: only ? MY_LINKS_NOTE : SHARE_NOTE });
+  const terms = el("p", { className: "share-note share-terms", id: `${id}-terms`, textContent: SHARE_TERMS_PLACEHOLDER });
+  const makeButton = el("button", { type: "button", id: `${id}-make`, className: "share-button share-primary", textContent: "Make a link" });
+  const result = el("div", { id: `${id}-result`, className: "share-result" });
+  const status = el("p", { id: `${id}-status`, className: "share-status" });
   status.setAttribute("role", "status");
-  const items = el("ul", { id: "share-items", className: "share-items" });
-  c.body.append(note, terms, makeButton, result, status, items);
+  const items = el("ul", { id: `${id}-items`, className: "share-items" });
+  if (only) c.body.append(note, status, items);
+  else c.body.append(note, terms, makeButton, result, status, items);
   let busy = false;
   let filling = 0;
   const say = (words: string, bad = false) => {
@@ -195,9 +204,9 @@ export function shareDialog(doc: Doc, parts: ShareParts): Dialog {
   makeButton.addEventListener("click", () =>
     void act(async () => {
       const address = await parts.make();
-      const input = el("input", { type: "text", readOnly: true, value: address, id: "share-address", className: "share-address" });
+      const input = el("input", { type: "text", readOnly: true, value: address, id: `${id}-address`, className: "share-address" });
       input.setAttribute("aria-label", "Sharing link");
-      const copy = el("button", { type: "button", id: "share-copy", className: "share-button", textContent: "Copy link" });
+      const copy = el("button", { type: "button", id: `${id}-copy`, className: "share-button", textContent: "Copy link" });
       copy.addEventListener("click", () => void parts.copy(address).then((ok) => say(ok ? "Link copied." : "Your browser wouldn't copy it. Select the link and copy it by hand.", !ok)));
       result.replaceChildren(el("p", { className: "share-note", textContent: "Your link is on. It shows the design as it is now:" }), input, copy);
       input.select();

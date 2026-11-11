@@ -17,6 +17,7 @@ export { type AccountUser, type Session } from "./session.ts";
 export { FAILURE_WORDS, type FinishFailure } from "./words.ts";
 export { type PersonReply } from "./auth.ts";
 export { accountData, type AccountData, type DataResult, PENDING_EMAIL_KEY, type Plan, SEEN_EMAIL_KEY } from "./data.ts";
+export { myNameFrom, NAME_ANSWERS, NAME_LIMITS, nameDate, nameWords, type MyName, type NameAnswer, type NamesApi, namesApi } from "./names.ts";
 export { isReportKind, isShareId, type OpenedShare, REPORT_KINDS, type ReportAnswer, type ReportKind, SHARE_LIMITS, type ShareAnswer, type ShareRow, type SharesApi, sharesApi } from "./shares.ts";
 export { type DesignFile, type DesignRow, type DesignsApi, designsApi, isSource, LIMITS, type SaveAnswer, type SaveDesign, type Source, SOURCES, type Space } from "./designs.ts";
 export { copyName, type DesignSync, designSync, forgetLinks, type Link, LINKS_PREFIX, type LocalProject, readLinks, type SyncDeps, type SyncReport } from "./sync.ts";
