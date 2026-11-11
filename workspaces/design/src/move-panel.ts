@@ -15,6 +15,8 @@
 // browser while the panel is open; an edited one keeps the bodies it was
 // made with. The workspace drives it; the panel only shows what it is given
 // and reports what was typed and clicked. Styles: src/styles/move-panel.css.
+// Scale's factor has a slider beside its box (scale-slider.ts, Ben 11-09):
+// dragging it sets the box and the preview follows, as a typed factor does.
 
 import { readDecimalText, wordsInUnit, type MoveKind, type Unit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
@@ -22,6 +24,7 @@ import { MOVE_PARAMS, MOVE_SCALE, type MoveParam } from "./document.ts";
 import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
 import { MOVE_VERBS, type MoveBox, type MoveValues } from "./move.ts";
 import { boxText } from "./move-tool.ts";
+import { factorAt, factorWords, positionOf, SCALE_SLIDER_STEPS } from "./scale-slider.ts";
 
 export interface MoveEvents {
   /** A box typed in: the preview follows (every box as typed). */
@@ -176,6 +179,22 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const showSummary = () => (summary.textContent = pivotWords(pivotTyped, ["pivotX", "pivotY", "pivotZ"].map((k) => inputs.get(k as MoveParam)!.value), unitNow()));
   const legends: { set: HTMLElement; legend: HTMLElement; row: (typeof ROWS)[number] }[] = [];
   const ok = el("button", "move-ok", "", "OK");
+  // Scale's slider (scale-slider.ts): sets the factor's box as it is dragged, and follows a typed factor.
+  const slider = el("input", "scale-slider", "move-panel-slider");
+  Object.assign(slider, { type: "range", min: String(-SCALE_SLIDER_STEPS), max: String(SCALE_SLIDER_STEPS), step: "1", value: "0" });
+  slider.setAttribute("aria-label", "Scale factor slider");
+  slider.title = "Drag to size the bodies: 0.1× at the left, 1× in the middle, 10× at the right";
+  /** Puts the slider where the factor's box says (left where it was when the box reads as no factor). */
+  const followFactor = () => {
+    const p = positionOf(Number(read(MOVE_SCALE)));
+    if (p !== null) slider.value = String(p);
+    slider.setAttribute("aria-valuetext", factorWords(factorAt(Number(slider.value))));
+  };
+  slider.addEventListener("input", () => {
+    put(MOVE_SCALE, factorAt(Number(slider.value)));
+    slider.setAttribute("aria-valuetext", factorWords(factorAt(Number(slider.value))));
+    on.typed(typed());
+  });
   const rows = ROWS.map((row) => {
     // A group with its name as its first cell: over the boxes on a wide screen, beside them on a phone (move-panel.css).
     const set = el("div", row.id, "move-panel-row");
@@ -192,6 +211,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       if (isLength(key)) fields.set(key, sizeBox(input, unitNow));
       input.addEventListener("input", () => {
         if (row.id === "move-pivot") (pivotTyped = true), showSummary();
+        if (key === MOVE_SCALE) followFactor();
         on.typed(typed());
       });
       // A box left empty shows 0 as soon as the focus leaves it (Ben, 2026-10-28): it counts as 0 meanwhile (readMoveBoxes).
@@ -199,6 +219,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
         if (input.value.trim() !== "" || input.validity?.badInput || !open) return;
         if (isLength(key)) setLength(key, "0");
         else input.value = key === MOVE_SCALE ? "1" : "0"; // an empty factor scales by 1, as readMoveBoxes reads it
+        if (key === MOVE_SCALE) followFactor();
         if (row.id === "move-pivot") showSummary();
         on.typed(typed());
       });
@@ -212,6 +233,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       if (key === MOVE_SCALE) label.append(input);
       else label.append(el("span", "", "move-panel-axis", axis), input);
       set.append(label);
+      if (key === MOVE_SCALE) set.append(slider);
     }
     return set;
   });
@@ -296,6 +318,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       exact.clear();
       for (const k of MOVE_PARAMS) put(k, m.values[k]);
       put(MOVE_SCALE, m.values.scale ?? 1);
+      followFactor();
       showRows();
       pivot.open = false;
       showSummary();

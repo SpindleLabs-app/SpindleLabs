@@ -22,7 +22,7 @@ import type { SketchXY } from "@fission/core";
 import type { Sketch, SketchConstraint } from "./document.ts";
 import type { NewConstraint } from "./constraints.ts";
 import { shownValue } from "./typed-entry.ts";
-import { curveAt, curveNear, toSegment } from "./sketch-select.ts";
+import { curveAt, curveNear, lonePointNear, toSegment } from "./sketch-select.ts";
 
 /** The constraint tools' kinds: the constraints' own, and Dimension for distances and diameters. */
 export type ConstraintKind = Exclude<SketchConstraint["kind"], "distance" | "diameter"> | "dimension";
@@ -263,6 +263,9 @@ function markNear(sketch: Sketch, at: SketchXY, reach: number, size: number): { 
  * hunt, 2026-11-06).
  */
 export function selectAt(sketch: Sketch, at: SketchXY, reach: number, size: number): string | null {
+  // A sketch point on its own (52c) is drawn over the curves, so within reach it is picked first.
+  const point = lonePointNear(sketch, at, reach);
+  if (point !== null) return point;
   const mark = markNear(sketch, at, reach / 2, size);
   const curve = curveNear(sketch, at, reach);
   if (mark === null || (curve !== null && curve.d < mark.d)) return curve?.id ?? null;

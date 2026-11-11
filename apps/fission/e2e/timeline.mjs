@@ -477,6 +477,7 @@ try {
       for (let k = 0; k < 3; k++) await redo();
       await undoIs(page, "Delete Box 1");
       await until(page, () => document.querySelector("#save-status")?.dataset.state === "saved", null, "the empty design saved");
+      await page.waitForTimeout(600); // the undo steps, written as the save lands (step 89), given time to land too
       await page.reload();
       await until(page, () => document.querySelector("#viewport")?.dataset.shape === "none", null, "the empty design reopened");
       assert.deepEqual(await bar(page), ["|"]);
@@ -485,7 +486,8 @@ try {
       assert.equal(await page.textContent("#intent"), "No body: nothing in the timeline builds");
       assert.equal(await page.textContent("#volume"), "—");
       assert.equal(await page.textContent("#error"), "");
-      assert.equal(await undoTitle(page), "Nothing to undo", "a reload starts a fresh history");
+      // Since step 89 the undo steps are kept across a reload: the delete is still the step Undo takes back.
+      assert.match(await undoTitle(page), /^Undo Delete Box 1 \(/, "a reload keeps the history (step 89)");
       const fits = Number(await page.evaluate(() => document.querySelector("#viewport").dataset.fits ?? 0));
       // Ids go on from the saved counter (12): Sketch 1 is sketch-12, its four corners and four lines 13 to 20, Extrude 1 feature-21.
       await addSquare(page, tap, layout, true);

@@ -133,7 +133,11 @@ export function panelFocus(items: readonly GeometryReference[], scene: Scene | n
   for (let i = items.length - 1; i >= 0; i--) {
     const r = readDesignReference(items[i]);
     const feature = r && doc.timeline.features.find((f) => f.id === r.featureId);
-    if (feature) return focus(feature);
+    if (!feature) continue;
+    // A selected body is the scene's body of that id: one item can make several (a Combine's pieces), and a body
+    // keeps its id when a later item (a Combine, a Move) is the one that made it last (#501).
+    if (r!.kind === "body") return { feature, body: scene?.bodies.find((b) => b.body === items[i].id) ?? null };
+    return focus(feature);
   }
   const part = partFeature(doc);
   return part === null ? null : focus(part);
