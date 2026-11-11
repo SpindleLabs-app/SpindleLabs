@@ -48,6 +48,9 @@ create table public.takedown_claims (
   work text not null check (char_length(work) between 1 and 2000),
   -- 'open' until decided: 'upheld' (the link stays down) or 'rejected' (put back).
   outcome text not null default 'open' check (outcome in ('open', 'upheld', 'rejected')),
+  -- Whether this claim is what took the link down (it was up when the claim came in): only then may rejecting it
+  -- put the link back.
+  took_down boolean not null,
   decided_at timestamptz
 );
 revoke all on public.takedown_claims from anon, authenticated;
@@ -71,6 +74,17 @@ begin
 end $$;
 create trigger shares_refuse_held before insert on public.shares for each row execute function public.refuse_held_account();
 create trigger display_names_refuse_held before insert or update on public.display_names for each row execute function public.refuse_held_account();
+
+-- A held account can't report either (second security review 2026-11-11); signed-out reports have no account.
+create function public.refuse_held_reporter() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.reporter is not null and public.account_held(new.reporter) then
+    raise exception 'account held' using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+create trigger share_reports_refuse_held before insert on public.share_reports for each row execute function public.refuse_held_reporter();
 
 -- The review list: each link with reports nobody has looked at yet, most reported first, then the oldest report.
 create function public.review_queue() returns table (share_id uuid, name text, owner uuid, open_reports bigint, kinds text[], first_report timestamptz, removed_at timestamptz, off_at timestamptz)
@@ -154,38 +168,55 @@ begin
   return true;
 end $$;
 
--- Records a copyright claim and takes the link down while it is looked at (the takedown process). The claim's id.
+-- Records a copyright claim and takes the link down while it is looked at (the takedown process). The claim's id, or
+-- null (nothing kept) for a link that never was.
 create function public.record_claim(p_share uuid, p_claimant text, p_contact text, p_work text, p_moderator text) returns bigint
 language plpgsql security definer set search_path = '' as $$
 declare
   claim_id bigint;
-  owner uuid;
+  s public.shares;
 begin
-  insert into public.takedown_claims (share_id, claimant, contact, work) values (p_share, p_claimant, p_contact, p_work) returning id into claim_id;
-  update public.shares set removed_at = coalesce(removed_at, now()) where id = p_share returning user_id into owner;
-  insert into public.moderation_log (action, share_id, user_id, moderator, note) values ('claim', p_share, owner, p_moderator, 'claim ' || claim_id || ' received; link down while it is looked at');
+  select * into s from public.shares where id = p_share for update;
+  if not found then
+    return null;
+  end if;
+  insert into public.takedown_claims (share_id, claimant, contact, work, took_down)
+    values (p_share, p_claimant, p_contact, p_work, s.removed_at is null and s.off_at is null) returning id into claim_id;
+  update public.shares set removed_at = coalesce(removed_at, now()) where id = p_share;
+  insert into public.moderation_log (action, share_id, user_id, moderator, note) values ('claim', p_share, s.user_id, p_moderator, 'claim ' || claim_id || ' received; link down while it is looked at');
   return claim_id;
 end $$;
 
--- Decides a claim: 'upheld' leaves the link down, 'rejected' puts it back. Kept in the record. False for a claim
--- already decided or never made.
+-- Decides a claim: 'upheld' leaves the link down; 'rejected' puts it back only when some claim on it took it down and
+-- no other claim on it is still open (so it never undoes a moderator's own takedown, or another claim's). Kept in
+-- the record. False for a claim already decided or never made.
 create function public.decide_claim(p_claim bigint, p_outcome text, p_moderator text, p_note text) returns boolean
 language plpgsql security definer set search_path = '' as $$
 declare
   c public.takedown_claims;
+  restore boolean;
 begin
   if p_outcome not in ('upheld', 'rejected') then
     raise exception 'unknown outcome %', p_outcome;
   end if;
+  select * into c from public.takedown_claims where id = p_claim and outcome = 'open';
+  if not found then
+    return false;
+  end if;
+  -- The link's row first, then the claims: one decision on a link at a time.
+  perform 1 from public.shares where id = c.share_id for update;
   select * into c from public.takedown_claims where id = p_claim and outcome = 'open' for update;
   if not found then
     return false;
   end if;
   update public.takedown_claims set outcome = p_outcome, decided_at = now() where id = p_claim;
-  if p_outcome = 'rejected' then
+  restore := p_outcome = 'rejected'
+    and exists (select from public.takedown_claims t where t.share_id = c.share_id and t.took_down and t.outcome <> 'upheld')
+    and not exists (select from public.takedown_claims t where t.share_id = c.share_id and t.outcome = 'open');
+  if restore then
     perform public.decide_share(c.share_id, 'put-back', p_moderator, 'claim ' || p_claim || ' rejected: ' || coalesce(p_note, ''));
   else
-    perform public.decide_share(c.share_id, 'dismiss', p_moderator, 'claim ' || p_claim || ' upheld: ' || coalesce(p_note, ''));
+    perform public.decide_share(c.share_id, 'dismiss', p_moderator, 'claim ' || p_claim || ' ' || p_outcome || ': ' || coalesce(p_note, ''));
   end if;
   return true;
 end $$;
@@ -200,5 +231,5 @@ language sql stable security definer set search_path = '' as $$
                    from public.moderation_log m where m.user_id = auth.uid()))
 $$;
 
-revoke all on function public.account_held(uuid), public.refuse_held_account(), public.review_queue(), public.decide_share(uuid, text, text, text), public.moderate_name(uuid, text, text), public.hold_account(uuid, timestamptz, text, boolean, text, text), public.end_hold(uuid, text, text), public.record_claim(uuid, text, text, text, text), public.decide_claim(bigint, text, text, text), public.my_data_part_moderation() from public, anon, authenticated;
+revoke all on function public.account_held(uuid), public.refuse_held_account(), public.refuse_held_reporter(), public.review_queue(), public.decide_share(uuid, text, text, text), public.moderate_name(uuid, text, text), public.hold_account(uuid, timestamptz, text, boolean, text, text), public.end_hold(uuid, text, text), public.record_claim(uuid, text, text, text, text), public.decide_claim(bigint, text, text, text), public.my_data_part_moderation() from public, anon, authenticated;
 grant execute on function public.review_queue(), public.decide_share(uuid, text, text, text), public.moderate_name(uuid, text, text), public.hold_account(uuid, timestamptz, text, boolean, text, text), public.end_hold(uuid, text, text), public.record_claim(uuid, text, text, text, text), public.decide_claim(bigint, text, text, text) to service_role;

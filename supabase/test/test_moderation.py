@@ -166,10 +166,11 @@ class ModerationDatabase(unittest.TestCase):
         link = self.share(BO)["id"]
         self.as_user(BO, "select set_display_name('Bo');")
         self.assertEqual(self.server(f"select hold_account('{BO}', now() + interval '7 days', 'Reports of copied models.', false, 'Ben', '');"), "t")
-        for sql in ["select share_design('Box', '{}', null);", "select set_display_name('Bo Two');"]:
-            ok, out = self.as_user(BO, sql)
-            self.assertFalse(ok, sql)
-            self.assertIn("account held", out)
+        # Answered, never raised at (second security review 2026-11-11), and a held account can't report either.
+        self.assertEqual(self.share(BO)["status"], "held")
+        self.assertEqual(self.as_user(BO, "select set_display_name('Bo Two');"), (True, "held"))
+        theirs = self.share(ADA)["id"]
+        self.assertEqual(self.as_user(BO, f"select report_share('{theirs}', 'other', '');"), (True, "held"))
         self.assertTrue(self.opens(link))  # not taken down: p_take_links was false
         self.assertEqual(self.as_user(BO, f"select unshare('{link}');"), (True, "t"))
         self.assertEqual(self.share(ADA)["status"], "shared")  # someone else is not held
@@ -184,7 +185,7 @@ class ModerationDatabase(unittest.TestCase):
         # A hold of 10 days, 9 days in (0.9x): still held. 11 days in (1.1x): over.
         self.server(f"select hold_account('{BO}', now() + interval '10 days', 'A week off.', false, 'Ben', '');")
         self.owner(f"update public.account_holds set since = now() - interval '9 days', until = now() + interval '1 day' where user_id = '{BO}';")
-        self.assertIn("account held", self.as_user(BO, "select share_design('Box', '{}', null);")[1])
+        self.assertEqual(self.share(BO)["status"], "held")
         self.owner(f"update public.account_holds set since = now() - interval '11 days', until = now() - interval '1 day' where user_id = '{BO}';")
         self.assertEqual(self.share(BO)["status"], "shared")
 
@@ -213,6 +214,30 @@ class ModerationDatabase(unittest.TestCase):
         self.assertFalse(self.opens(link))
         self.assertEqual(self.server("select string_agg(outcome, ',' order by id) from takedown_claims;"), "rejected,upheld")
         self.assertEqual([a for a, *_ in self.log()], ["claim", "put-back", "claim", "dismiss"])
+
+    def test_rejecting_a_claim_never_undoes_a_takedown_it_did_not_make(self):
+        # Second security review 2026-11-11: a rejected claim put the link back even when a moderator had taken it
+        # down for another reason before the claim came in.
+        link = self.share(ADA)["id"]
+        self.server(f"select decide_share('{link}', 'take-down', 'Ben', 'weapon');")
+        claim = self.server(f"select record_claim('{link}', 'X', 'x@example.com', 'w', 'Ben');")
+        self.assertEqual(self.server(f"select decide_claim({claim}, 'rejected', 'Ben', '');"), "t")
+        self.assertFalse(self.opens(link))
+
+    def test_rejecting_one_claim_leaves_the_link_down_while_another_is_open(self):
+        link = self.share(ADA)["id"]
+        first = self.server(f"select record_claim('{link}', 'X', 'x@example.com', 'w', 'Ben');")
+        second = self.server(f"select record_claim('{link}', 'Y', 'y@example.com', 'w', 'Ben');")
+        self.server(f"select decide_claim({first}, 'rejected', 'Ben', '');")
+        self.assertFalse(self.opens(link))
+        # Once the last open claim is rejected too, the link comes back.
+        self.server(f"select decide_claim({second}, 'rejected', 'Ben', '');")
+        self.assertTrue(self.opens(link))
+
+    def test_a_claim_on_a_link_that_never_was_keeps_nothing(self):
+        self.assertEqual(self.server("select record_claim(gen_random_uuid(), 'X', 'x@example.com', 'w', 'Ben') is null;"), "t")
+        self.assertEqual(self.server("select count(*) from takedown_claims;"), "0")
+        self.assertEqual(self.log(), [])
 
     # The person's view and deleting the account
 
