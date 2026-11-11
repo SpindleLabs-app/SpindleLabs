@@ -28,3 +28,10 @@ test("stored values: only \"fusion\" is Fusion-style; anything else is SpindleLa
   assert.equal(leftDragOf("fusion"), "select");
   assert.equal(leftDragOf("spindle"), "orbit");
 });
+
+// Audit L7: the help text names the corner cube by our own name (as its aria-label does), never another product's feature name.
+test("the presets call the corner cube the orientation cube, never the view cube", () => {
+  const words = MOUSE_PRESETS.flatMap((p) => [p.label, p.summary, ...p.rows.flatMap((r) => [r.gesture, r.does])]);
+  for (const w of words) assert.doesNotMatch(w, /view ?cube/i, w);
+  assert.match(MOUSE_PRESETS[1].summary, /the orientation cube/);
+});

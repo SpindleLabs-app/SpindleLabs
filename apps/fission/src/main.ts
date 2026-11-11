@@ -19,7 +19,7 @@ import "@fission/ui/theme.css";
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -1244,13 +1244,29 @@ function backFromWhatsNew() {
 function fillSettingsNow(backToSettings: () => void) {
   fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), onWhatsNew: () => showWhatsNew(backFromWhatsNew), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings });
 }
-// Report a bug (Ben, 2026-11-04; @fission/ui bug-report.ts): from Settings > About, a form that opens a filled-in
-// GitHub issue in a new tab. The app adds the version, browser, screen and workspace; nothing from the project.
-const bugReport = bugReportDialog(
-  document,
-  () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current }),
-  (url) => void window.open(url, "_blank", "noopener"),
-);
+// Report a bug (Ben, 2026-11-04, easier 2026-11-11; @fission/ui bug-report.ts): from Settings > About, one optional
+// box and the open design attached (ticked by default), sent to the report service when there is one, else a filled-in
+// GitHub issue in a new tab with the design downloaded to drag into it. The app adds the version, browser, screen,
+// workspace and the page's last few errors (kept here from the moment the page starts).
+const recentErrors: string[] = [];
+const keepError = (text: string) => {
+  recentErrors.push(text.slice(0, 300));
+  if (recentErrors.length > 10) recentErrors.shift();
+};
+window.addEventListener("error", (e) => keepError(`${e.message}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
+window.addEventListener("unhandledrejection", (e) => keepError(`Unhandled: ${e.reason instanceof Error ? `${e.reason.name}: ${e.reason.message}` : String(e.reason)}`));
+const bugReport = bugReportDialog(document, {
+  facts: () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
+  design: () => ({ name: projectFile || ctx.project.name || "Untitled", text: projectToJson(ctx.project) }),
+  open: (url) => void window.open(url, "_blank", "noopener"),
+  download: (name, text) => {
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  },
+  // On SpindleLabs' own pages, the report service; a browser test may name a fake one before the page loads.
+  endpoint: bugReportEndpoint(location.origin, (window as { __bugReportService?: string }).__bugReportService),
+});
 settingsDialog.addEventListener("click", (e) => {
   if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
 });
@@ -1424,8 +1440,11 @@ for (const slot of ["browser", "properties"] as const) {
   const toggle = $(`${slot}-toggle`);
   const set = (open: boolean) => {
     if (open && toggle.getAttribute("aria-expanded") !== "true") lastSheet = slot;
+    const was = toggle.getAttribute("aria-expanded") === "true";
     toggle.setAttribute("aria-expanded", String(open));
     $("workspace").dataset[slot] = open ? "open" : "closed";
+    // The workspace in the slot hears its sheet open and shut (Body facts goes out when the sheet it opened shuts).
+    if (was !== open) $(slot).dispatchEvent(new CustomEvent(`${slot}-sheet`, { detail: { open } }));
   };
   set(toggle.getAttribute("aria-expanded") === "true");
   toggle.addEventListener("click", () => {
@@ -1486,9 +1505,20 @@ startPhoneFloat($("workspace"), $("viewport"), () => {
   if (window.matchMedia("(max-width: 640px)").matches) $("properties-toggle").dispatchEvent(new CustomEvent("sheet-close"));
 });
 // Body facts (Inspect ▾) shows the numbers in the Properties sheet, which at phone width stays shut unless asked (demo rehearsal 10-28).
-$("workspace").addEventListener("properties-reveal", () => {
+// It says in the event's detail (Design's FactsReveal) whether this is a phone and whether the sheet opened for it, and pressed
+// again it asks for the sheet it opened to shut (button toggles, Ben 2026-11-11).
+$("workspace").addEventListener("properties-reveal", (e) => {
   const toggle = $("properties-toggle");
-  if (window.matchMedia("(max-width: 640px)").matches && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+  const asked = e instanceof CustomEvent && typeof e.detail === "object" && e.detail !== null ? (e.detail as { opened?: boolean; phone?: boolean }) : null;
+  const phone = window.matchMedia("(max-width: 640px)").matches;
+  if (asked) asked.phone = phone;
+  if (phone && toggle.getAttribute("aria-expanded") !== "true") {
+    toggle.click();
+    if (asked) asked.opened = true;
+  }
+});
+$("workspace").addEventListener("properties-conceal", () => {
+  if (window.matchMedia("(max-width: 640px)").matches) $("properties-toggle").dispatchEvent(new CustomEvent("sheet-close"));
 });
 // A press in the view outside a sheet puts the sheet away (a tap on the part beside it is the way out; the toggles still work).
 {

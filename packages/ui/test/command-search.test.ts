@@ -95,3 +95,16 @@ test("Escape and a press outside close it, running nothing; the commands are rea
   assert.equal(box.isOpen, false);
   assert.deepEqual(ran, []);
 });
+
+test("the box is modal (accessibility pass 2026-11-11): Tab never leaves it for the page behind, and the list is named", () => {
+  const { doc, window } = page();
+  const box = commandSearch(doc, () => COMMANDS);
+  box.open();
+  const tab = new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }) as unknown as Event;
+  doc.getElementById("command-search-input")!.dispatchEvent(tab);
+  // A browser moves the focus on a Tab only when nothing prevented it: here the box prevents it, so the focus stays put.
+  assert.equal(tab.defaultPrevented, true, "Tab is kept in the box");
+  assert.equal(box.isOpen, true);
+  assert.equal(doc.getElementById("command-search-list")!.getAttribute("aria-label"), "Commands");
+  box.close();
+});
