@@ -48,6 +48,7 @@ import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
+import { turnedOver } from "./point-drag.ts";
 import { findRegion, refusalReason, regionCurveIds, regionName, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
@@ -1072,7 +1073,7 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
   const followed = movedTo(content, [...pinned, ...projected.flatMap((q) => q.points)], projected.flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
   // Step 47d4: a sketch with constraints or arcs is solved again when a followed point moved (an arc through it is off its
   // circle now; the solver bug hunt, 2026-11-06: an arc with no constraint in the sketch was left off its circle, unsaid).
-  const again = followed !== content && (content.constraints.length > 0 || content.curves.some((c) => c.kind === "arc")) ? await solvedAgain(kernel, followed, label) : null;
+  const again = followed !== content && (content.constraints.length > 0 || content.curves.some((c) => c.kind === "arc")) ? await solvedAgain(kernel, followed, content, label) : null;
   const settled = again !== null && "solved" in again ? movedTo(followed, again.solved, []) : followed;
   if (settled !== content) index.sketches.set(f.id, settled);
   const n = held["point-lost"] + held["point-ambiguous"];
@@ -1096,7 +1097,7 @@ export const constraintsWords = (label: string, why: string): string => `${label
  * conflict, a refusal, a line or arc shrunk below MIN_FEATURE, or the
  * solver failing or taking too long).
  */
-async function solvedAgain(kernel: KernelCalls, followed: Sketch, label: string): Promise<{ solved: { point: string; at: SketchXY }[] } | { message: string }> {
+async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch, label: string): Promise<{ solved: { point: string; at: SketchXY }[] } | { message: string }> {
   const request = solverRequest(followed);
   let answer: ReturnType<typeof readAnswer>;
   try {
@@ -1110,6 +1111,9 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, label: string)
   const at = solvedPoints(followed, request, answer.points);
   const tiny = shrunk(followed, at);
   if (tiny !== null) return { message: constraintsWords(label, `${curveWord(followed, tiny, "a")} would shrink below the smallest size`) };
+  // #545 item 1: an arc the solve would turn inside out (its sweep past half a turn), refused as a drag refuses it.
+  const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
+  if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
   return { solved: followed.points.flatMap((p) => {
     const [x, y] = at.get(p.id)!;
     return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
