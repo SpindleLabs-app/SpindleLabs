@@ -28,6 +28,7 @@ check the ts-mutants job failed with nothing more specific reported
 monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body# Body #","body# Body #","body# Body #"], the file builds ["body# Body #","bod
 monkey Bodies group matches the file: rows ["body# Body #","body# Body #","body# Body #","body# Body #"], the file builds ["body# Body #","body# Body #","bod
 monkey Bodies group matches the file: rows ["body# Body #"], the file builds ["body# Body #","body# Body #"]
+monkey combine reachable: Combine's operation is out of reach with its bodies picked
 monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #
 monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #, and its Moves and Combines keep # bodies as they were
 monkey no result: the session never finished (job out of time, or the tester crashed)
