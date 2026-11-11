@@ -1407,8 +1407,11 @@ for (const slot of ["browser", "properties"] as const) {
   const toggle = $(`${slot}-toggle`);
   const set = (open: boolean) => {
     if (open && toggle.getAttribute("aria-expanded") !== "true") lastSheet = slot;
+    const was = toggle.getAttribute("aria-expanded") === "true";
     toggle.setAttribute("aria-expanded", String(open));
     $("workspace").dataset[slot] = open ? "open" : "closed";
+    // The workspace in the slot hears its sheet open and shut (Body facts goes out when the sheet it opened shuts).
+    if (was !== open) $(slot).dispatchEvent(new CustomEvent(`${slot}-sheet`, { detail: { open } }));
   };
   set(toggle.getAttribute("aria-expanded") === "true");
   toggle.addEventListener("click", () => {
@@ -1469,9 +1472,20 @@ startPhoneFloat($("workspace"), $("viewport"), () => {
   if (window.matchMedia("(max-width: 640px)").matches) $("properties-toggle").dispatchEvent(new CustomEvent("sheet-close"));
 });
 // Body facts (Inspect ▾) shows the numbers in the Properties sheet, which at phone width stays shut unless asked (demo rehearsal 10-28).
-$("workspace").addEventListener("properties-reveal", () => {
+// It says in the event's detail (Design's FactsReveal) whether this is a phone and whether the sheet opened for it, and pressed
+// again it asks for the sheet it opened to shut (button toggles, Ben 2026-11-11).
+$("workspace").addEventListener("properties-reveal", (e) => {
   const toggle = $("properties-toggle");
-  if (window.matchMedia("(max-width: 640px)").matches && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+  const asked = e instanceof CustomEvent && typeof e.detail === "object" && e.detail !== null ? (e.detail as { opened?: boolean; phone?: boolean }) : null;
+  const phone = window.matchMedia("(max-width: 640px)").matches;
+  if (asked) asked.phone = phone;
+  if (phone && toggle.getAttribute("aria-expanded") !== "true") {
+    toggle.click();
+    if (asked) asked.opened = true;
+  }
+});
+$("workspace").addEventListener("properties-conceal", () => {
+  if (window.matchMedia("(max-width: 640px)").matches) $("properties-toggle").dispatchEvent(new CustomEvent("sheet-close"));
 });
 // A press in the view outside a sheet puts the sheet away (a tap on the part beside it is the way out; the toggles still work).
 {
