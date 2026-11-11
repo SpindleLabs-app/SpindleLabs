@@ -3419,9 +3419,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const movedOn = factsTool !== null && state.tool !== factsTool;
     if (factsByFold && (!panelShown(state) || movedOn)) (factsByFold = false), drawFacts();
   });
-  ctx.properties.addEventListener("properties-sheet", (e) => {
+  // Taken off at unmount (timeline hunt 2026-11-11: left on the shell's properties slot, each Undo's remount kept the
+  // old mount alive with its DOM, design and caches, and long sessions ran out of memory).
+  const onPropertiesSheet = (e: Event) => {
     if (factsBySheet && !(e as CustomEvent<{ open: boolean }>).detail?.open) (factsBySheet = false), drawFacts();
-  });
+  };
+  ctx.properties.addEventListener("properties-sheet", onPropertiesSheet);
 
   /** Opens item `id`'s sizes in the Edit feature panel, out of any sketch or Extrude panel first. */
   function openEdit(id: string) {
@@ -4451,6 +4454,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       toolChanges++;
       moves++;
       sleep();
+      ctx.properties.removeEventListener("properties-sheet", onPropertiesSheet);
       stopHealing?.();
       void bodies.close();
       areaNote.remove();
