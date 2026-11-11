@@ -202,6 +202,10 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
     for (let k = 0; k < steps; k++) {
       const before = a.doc();
       const labelBefore = a.history.undoLabel();
+      // The steps as History lists them: an open sketch fences Undo to its own steps (issue #520), so labelBefore is null
+      // in a sketch with nothing drawn since it opened; these are the same whether or not a sketch is open.
+      const stepsBefore = JSON.stringify(a.history.steps().map((st) => [st.label, st.state]));
+      const doneLabel = a.history.steps().find((st) => st.state === "current")?.label || null;
       const solids = before.timeline.features.filter((f) => f.intent.type !== "sketch");
       const roll = r();
       let expect: { edit: string; recorded: boolean } | null = null;
@@ -330,7 +334,9 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
           if (!/^Edit /.test(label ?? "")) return fail(`Edit feature on ${expect.edit} recorded ${JSON.stringify(label)}`);
           const l = leak(before, after, expect.edit);
           if (l) return fail(`Edit feature on ${expect.edit}: ${l}`);
-        } else if (key !== canonical(before) || label !== labelBefore) return fail(`Edit feature on ${expect.edit} changed the file though nothing should be recorded (Undo now ${JSON.stringify(label)})`);
+          // Nothing recorded: the same file and the same steps, and (Edit feature having closed any sketch, so no fence) Undo
+          // offers the step that was done before.
+        } else if (key !== canonical(before) || JSON.stringify(a.history.steps().map((st) => [st.label, st.state])) !== stepsBefore || label !== doneLabel) return fail(`Edit feature on ${expect.edit} changed the file though nothing should be recorded (Undo now ${JSON.stringify(label)})`);
       }
       const back = projectFromJson(projectToJson({ ...emptyProject("Chaos"), workspaces: { design: after } }), [designWorkspace]).workspaces.design;
       if (canonical(back) !== canonical(after)) return fail(`the file reads back differently: ${canonical(back).slice(0, 300)} vs ${canonical(after).slice(0, 300)}`);
