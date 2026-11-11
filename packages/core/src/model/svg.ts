@@ -142,6 +142,23 @@ function loopPath(loop: Loop, box: Box): string {
   return `${d}Z`;
 }
 
+/** An outline's exact box in model coordinates (y up): corners, circles and the extremes of each arc. */
+export type OutlineBox = Box;
+
+/**
+ * The outline's SVG path data (outer loop, then each hole; y flipped, as in
+ * the file) and its exact box in model coordinates (y up). A malformed
+ * outline throws an Error saying what is wrong. Laser's sheet (several
+ * outlines in one file) is built from this.
+ */
+export function outlinePath(outline: Outline): { d: string; box: OutlineBox } {
+  check(outline.outer, "outline");
+  outline.holes.forEach((h, i) => check(h, `hole ${i + 1}`));
+  const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const d = [outline.outer, ...outline.holes].map((l) => loopPath(l, box)).join("");
+  return { d, box };
+}
+
 /** Escapes text for an SVG element's content. */
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -151,10 +168,7 @@ const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").rep
  * Error saying what is wrong; nothing is written for it.
  */
 export function outlineToSvg(outline: Outline, title?: string): SvgFile {
-  check(outline.outer, "outline");
-  outline.holes.forEach((h, i) => check(h, `hole ${i + 1}`));
-  const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  const data = [outline.outer, ...outline.holes].map((l) => loopPath(l, box)).join("");
+  const { d: data, box } = outlinePath(outline);
   const width = box.maxX - box.minX;
   const height = box.maxY - box.minY;
   const [w, h] = [svgNumber(width), svgNumber(height)];
