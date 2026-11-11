@@ -97,3 +97,23 @@ test("the panel's words say lengths in the unit", () => {
   assert.equal(pivotWords(true, ["1", "2", "3"], "in"), "Pivot (1, 2, 3) in");
   assert.equal(pivotWords(true, ["1", "2", "3"]), "Pivot (1, 2, 3) mm");
 });
+
+// Issue #518: the Move, Rotate and Scale boxes were number boxes too, so a browser dropped a typed unit or decimal comma.
+test("hand-worked: Move's boxes read a unit and a decimal comma, and refuse what they can't read (#518)", () => {
+  const { panel, box, typeIn } = setup();
+  for (const k of ["x", "turnX", "scale", "pivotX"]) assert.deepEqual([box(k).type, box(k).inputMode], ["text", "decimal"], k);
+  typeIn("x", "1,5");
+  assert.equal(panel.typed.x, "1.5", "a decimal comma: 1.5 mm, never 15");
+  typeIn("x", "2 cm");
+  assert.equal(panel.typed.x, "20", "2 cm × 10 = 20 mm");
+  typeIn("y", "1in");
+  assert.equal(panel.typed.y, "25.4", "1 in = 25.4 mm");
+  typeIn("turnX", "22,5");
+  assert.equal(panel.typed.turnX, "22.5", "an angle with a decimal comma: 22.5°");
+  typeIn("scale", "1,25");
+  assert.equal(panel.typed.scale, "1.25");
+  for (const [k, t] of [["x", "0x10"], ["x", "2 cx"], ["x", "1,000"], ["turnX", "0x10"], ["scale", "1,000"]]) {
+    typeIn(k, t);
+    assert.ok(!Number.isFinite(Number(panel.typed[k as "x"])), `${k} ${t} is read as no number, never as another one: ${panel.typed[k as "x"]}`);
+  }
+});

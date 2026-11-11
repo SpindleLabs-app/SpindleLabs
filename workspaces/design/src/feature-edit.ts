@@ -10,7 +10,7 @@
 // reference app refuses a typed 0 (the owner's answer, 2026-10-19).
 // These are pure document functions; workspace.ts drives the panel.
 
-import { KernelError, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
+import { commaWords, KernelError, readSizeText, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
 import { changePreset, isOperationExtrude, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
 import { featureSpec, isFlipped, setExtrudeDistance, setExtrudeFlip, setExtrudeRegion } from "./extrude.ts";
 import type { RegionRef } from "./regions.ts";
@@ -156,8 +156,10 @@ export function readTyped(keys: readonly SizeKey[], typed: Partial<Record<SizeKe
   for (const key of SIZE_KEYS) {
     if (!keys.includes(key)) continue;
     const text = typed[key] ?? "";
-    const v = Number(text);
-    if (text.trim() === "" || !Number.isFinite(v)) return { bad: key };
+    // The boxes give millimetres as text, or the text typed when it is no size (properties.ts `sizeBox`, issue #518).
+    const read = readSizeText(text, "mm");
+    if ("why" in read) return read.why === "comma" ? { refused: key, why: commaWords(text) } : { bad: key };
+    const v = read.mm;
     const why = v === 0 ? null : lengthRefused(Math.abs(v));
     if (why !== null) return { refused: key, why };
     sizes[key] = v;
