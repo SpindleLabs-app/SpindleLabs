@@ -91,6 +91,12 @@ test("reporting your own link keeps nothing and says so", async () => {
   assert.deepEqual(await api(s, "bo").report(id, "other", ""), { kind: "ok", value: "kept" });
 });
 
+test("a held account's answers are passed on as \"held\"", () => {
+  assert.deepEqual(shareAnswerFrom({ status: "held" }), { status: "held" });
+  const held = { asPerson: async () => ({ kind: "ok", body: "held" }), asAnyone: async () => ({ kind: "ok", body: "held" }), state: () => ({ kind: "signed-out" }) };
+  return sharesApi(held as never).report("10000000-0000-4000-8000-000000000001", "other", "").then((r) => assert.deepEqual(r, { kind: "ok", value: "held" }));
+});
+
 test("a failing service is passed on as it is, and a wrong shape is malformed", async () => {
   const s = fakeShares();
   s.mode = "down";

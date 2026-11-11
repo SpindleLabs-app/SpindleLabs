@@ -14,10 +14,14 @@ export const SIGN_IN_TO_SHARE = "Sign in to make a sharing link. People opening 
 export const NO_LINKS = "You have no sharing links on.";
 export const turnOffQuestion = (name: string) => `Turn off the link to “${name}”? Nobody can open it again, and its copy is deleted. This can't be undone.`;
 
+/** PLACEHOLDER wording for an account that moderation has put on hold. */
+export const HELD_WORDS = "Your account can't share or report right now.";
+
 /** The words for each answer to making a link that is not "shared". */
 export const SHARE_REFUSALS: Readonly<Record<string, string>> = {
   "too-big": "This design is too big to share (over 5 MB).",
   full: "You have as many links on, or as much shared, as your account allows (50 links, 20 MB). Turn one off to make room.",
+  held: HELD_WORDS,
   daily: "You have made 20 links in the last day, the most a day allows. Try again tomorrow.",
 };
 
@@ -234,6 +238,7 @@ export const REPORT_ANSWERS: Readonly<Record<string, string>> = {
   kept: "Thanks. Your report was sent for review.",
   gone: "That link has been turned off already, so there is nothing to report.",
   enough: "You have already reported this as often as is allowed. It is waiting for review.",
+  held: HELD_WORDS,
   own: "This is your link: turn it off instead.",
   bad: "That report wasn't accepted. Pick a reason, and keep the details under 1,000 characters.",
 };
