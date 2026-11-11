@@ -37,6 +37,13 @@ export interface ViewportPick {
    * nearest offered plane: the planes are drawn behind the body (step 26d).
    */
   plane?: string | null;
+  /**
+   * Where on the picked face the pointer was, in the world (mm), when a
+   * face was picked while planes are offered; absent otherwise. Design
+   * names a face merged from several level faces by the one under it
+   * (SL #502).
+   */
+  point?: readonly [number, number, number];
   shift: boolean;
   /**
    * The second click of a double-click, or of a finger's double-tap, on the

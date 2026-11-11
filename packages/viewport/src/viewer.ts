@@ -876,6 +876,11 @@ export class ViewportView {
 
   /** The kernel face index under a point on screen (client pixels), or null for empty space. */
   private faceAt(clientX: number, clientY: number): number | null {
+    return this.faceHitAt(clientX, clientY)?.face ?? null;
+  }
+
+  /** The face under a point on screen (client pixels) and where the ray meets it in the world, or null. */
+  private faceHitAt(clientX: number, clientY: number): { face: number; point: [number, number, number] } | null {
     const mesh = this.host.mesh();
     const faceMesh = this.host.faceMesh();
     if (!mesh || !faceMesh || this.image) return null; // the body is not drawn under an image
@@ -884,15 +889,18 @@ export class ViewportView {
     this.raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), this.camera);
     // Nearest hit first; for indexed geometry faceIndex is the triangle number.
     const [hit] = this.raycaster.intersectObject(faceMesh, false);
-    return faceOfTriangle(mesh.triangle_faces, hit?.faceIndex);
+    const face = faceOfTriangle(mesh.triangle_faces, hit?.faceIndex);
+    return face === null || hit === undefined ? null : { face, point: [hit.point.x, hit.point.y, hit.point.z] };
   }
 
   /** While planes are offered (26d): the plane or the face a click there picks (picking.ts planeOrFace), any face, offered or not, so a curved one can be refused in words. */
-  private planeTarget(clientX: number, clientY: number): { plane: string | null; face: number | null } {
-    const face = this.faceAt(clientX, clientY);
+  private planeTarget(clientX: number, clientY: number): { plane: string | null; face: number | null; point?: [number, number, number] } {
+    const hit = this.faceHitAt(clientX, clientY);
+    const face = hit?.face ?? null;
     const plane = face === null ? this.planeAt(clientX, clientY) : null;
     const which = planeOrFace(plane !== null, face !== null);
-    return { plane: which === "plane" ? plane : null, face: which === "face" ? face : null };
+    // Where on the face (SL #502: a face merged from level faces is named by the one under the pointer).
+    return { plane: which === "plane" ? plane : null, face: which === "face" ? face : null, ...(which === "face" && hit !== null ? { point: hit.point } : {}) };
   }
 
   /**

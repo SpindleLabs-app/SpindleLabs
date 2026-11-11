@@ -131,9 +131,19 @@ async function signIn(page) {
   await page.click("#account-open");
   await page.click("#account .account-google");
   await until(page, () => document.getElementById("account-open")?.textContent === "Ada", undefined, "signed in");
-  await page.waitForTimeout(500);
   // Signing in where a project is already kept may open My designs to ask about it: not what is checked here.
-  if (await page.evaluate(() => document.getElementById("my-designs")?.open)) await page.click("#my-designs-close");
+  // Wait for the app's answer rather than a fixed time (a 500 ms wait let the dialog open after it, 1 run in 5):
+  // either My designs opens to ask, or there was nothing to ask and the account's project links get written.
+  await until(
+    page,
+    () => document.getElementById("my-designs")?.open || Object.keys(localStorage).some((k) => k.startsWith("spindle.account.designs/")),
+    undefined,
+    "My designs asked, or nothing to ask",
+  );
+  if (await page.evaluate(() => document.getElementById("my-designs")?.open)) {
+    await page.click("#my-designs-close");
+    await until(page, () => !document.getElementById("my-designs")?.open, undefined, "My designs closed");
+  }
 }
 
 try {
@@ -201,6 +211,36 @@ try {
     assert.deepEqual(svc.reports, [{ kind: "weapon", reason: "a gun part" }]);
     await b.page.click("#shared-close");
     assert.equal(await b.page.$("#shared"), null, "the view is removed once closed");
+  });
+
+  await check("My links in the account dialog lists the link that is on, with Copy and Turn off asking first; nothing to make a link there", async () => {
+    await a.page.click("#account-open");
+    await a.page.click("#account .account-my-links");
+    await until(a.page, () => document.getElementById("my-links")?.open && !document.getElementById("account")?.open, undefined, "My links open, account closed");
+    await until(a.page, () => document.querySelectorAll("#my-links-items .share-item").length === 1, undefined, "listed");
+    assert.equal(await a.page.$("#my-links-make"), null);
+    assert.equal(await a.page.$("#my-links-terms"), null);
+    assert.equal(await a.page.textContent("#my-links-title"), "My links");
+    await a.page.click("#my-links .share-item-off");
+    assert.match(await a.page.textContent("#my-links .share-item-question"), /Turn off the link to “Untitled”\?/);
+    await a.page.click("#my-links .share-item-keep");
+    assert.equal(svc.shares[0].off, false, "Keep it on turned nothing off");
+    if (shots) await a.page.screenshot({ path: `${shots}/my-links-1280.png` });
+    await a.page.click("#my-links-close");
+  });
+
+  await check("without ?share the account dialog has no My links", async () => {
+    const plain = await device(svc);
+    await signIn(plain.page);
+    await plain.page.click("#account-open");
+    assert.equal(await plain.page.$("#account .account-my-links"), null);
+    await plain.context.close();
+  });
+
+  await check("the privacy page has the sharing section, marked placeholder", async () => {
+    const words = await (await a.page.request.get(`${URL_}privacy.html`)).text();
+    assert.match(words, /<h3>Sharing links<\/h3>/);
+    assert.match(words, /Placeholder wording, not yet checked by a lawyer/);
   });
 
   await check("Turn off asks first (Keep it on leaves it), then the link opens nothing", async () => {

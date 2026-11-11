@@ -23,6 +23,8 @@ import type { BodyHandle, BooleanResult } from "@fission/core";
 export interface Miss {
   target: string;
   tools: string[];
+  /** Of a Join's `tools`, those none of whose faces is left on the result: wholly inside the target (SL #583 item 3). */
+  inside?: string[];
 }
 
 /** The inputs each result body's faces lie on (first origins and merged ones). */
@@ -38,6 +40,11 @@ export function missedTools(op: "cut" | "join" | "intersect", target: BodyHandle
   return tools.flatMap((t, i) => (reaches(t) ? [] : [i]));
 }
 
+/** Whether no face of the result lies on `tool`: a Join's tool that adds nothing lies wholly inside the target (far away, its faces are a piece of their own). */
+export function leavesNoFace(tool: BodyHandle, result: Pick<BooleanResult, "history">): boolean {
+  return !facesFrom(result).some((s) => s.has(tool));
+}
+
 /** "Body 2", "Body 2 and Body 3", "Body 2, Body 3 and Body 4". */
 export function listWords(names: readonly string[]): string {
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -49,13 +56,15 @@ const orWords = (names: readonly string[]) => (names.length <= 1 ? (names[0] ?? 
 /**
  * The row's warning for an item whose Cut or Join changes nothing (no
  * full stop): "Combine 1: Body 2 removes nothing from Body 1",
- * "Extrude 2 cuts nothing: it doesn't reach Body 1". `name` gives a body
+ * "Extrude 2 cuts nothing: it doesn't reach Body 1", "Extrude 2 adds nothing: it
+ * lies wholly inside Body 1" (a Join's own body none of whose faces is left). `name` gives a body
  * id's words; `own` is an operation extrude's own body.
  */
 export function missWords(label: string, op: "cut" | "join", misses: readonly Miss[], name: (body: string) => string, own?: string): string {
   if (own !== undefined && misses.every((m) => m.tools.length === 1 && m.tools[0] === own)) {
     // An extrude whose own body is what misses (Cut: each target its own boolean; Join: into the first body picked).
     const targets = misses.map((m) => name(m.target));
+    if (op === "join" && misses.every((m) => m.inside?.includes(own))) return `${label} adds nothing: it lies wholly inside ${orWords(targets)}`;
     return op === "cut" ? `${label} cuts nothing: it doesn't reach ${orWords(targets)}` : `${label} adds nothing: it doesn't reach ${orWords(targets)}`;
   }
   const parts = misses.map((m) => {

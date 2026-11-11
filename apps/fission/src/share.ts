@@ -4,7 +4,8 @@
 // or saving.
 
 import { type AuthClient, FAILURE_WORDS, sharesApi } from "@fission/account";
-import { SHARE_REFUSALS, shareDialog, sharedView, type ShareDialog } from "@fission/ui";
+import { SHARE_REFUSALS, shareDialog, sharedView, type ShareDialog, type ShareParts } from "@fission/ui";
+import { textForShare } from "./share-text.ts";
 
 /** What the shell lends the sharing code (main.ts). */
 export interface ShareHost {
@@ -29,15 +30,14 @@ export function startShares(client: AuthClient, host: ShareHost, signInWords: (w
   const api = sharesApi(client);
   const base = () => location.origin + location.pathname;
   let dialog: ShareDialog | null = null;
-  const dialogFor = () =>
-    (dialog ??= shareDialog(document, {
+  const parts: ShareParts = {
       name: () => host.current()?.name ?? "",
       make: async () => {
         const now = host.current();
         if (!now) throw new Error("there is nothing to share yet. Make something first.");
-        // TODO(C2c, needs SL #553): run `now.text` through the open format's stripForShare() (packages/open-format/src/share.ts,
-        // PERSONAL_FIELDS) here, so no personal field leaves the browser in a shared copy. #553 is not merged yet.
-        const r = await api.share(now.name, now.text, host.picture());
+        // Nothing personal leaves the browser in a shared copy (the open format's share export, see share-text.ts).
+        const text = await textForShare(now.text);
+        const r = await api.share(now.name, text, host.picture());
         if (r.kind !== "ok") throw new Error(words(r));
         if (r.value.status !== "shared") throw new Error(SHARE_REFUSALS[r.value.status]);
         return linkAddress(base(), r.value.id);
@@ -60,7 +60,10 @@ export function startShares(client: AuthClient, host: ShareHost, signInWords: (w
           return false;
         }
       },
-    }));
+  };
+  const dialogFor = () => (dialog ??= shareDialog(document, parts));
+  let linksDialog: ShareDialog | null = null;
+  const linksFor = () => (linksDialog ??= shareDialog(document, parts, { linksOnly: true }));
 
   /** Takes the link out of the address, keeping the switch on. */
   function cleanAddress() {
@@ -76,6 +79,11 @@ export function startShares(client: AuthClient, host: ShareHost, signInWords: (w
     show(): void {
       if (client.state().kind === "signed-in") void dialogFor().show();
       else signInWords("Sign in to make a sharing link. People opening a link don't need an account.");
+    },
+    /** Account dialog > My links: just the list of links that are on, or Sign in when signed out. */
+    links(): void {
+      if (client.state().kind === "signed-in") void linksFor().show();
+      else signInWords("Sign in to see your sharing links.");
     },
     /** A link opened: its frozen copy with Open my own copy and Report, or why there is none. */
     async openLink(id: string): Promise<void> {
