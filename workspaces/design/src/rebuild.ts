@@ -39,7 +39,7 @@ import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBo
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
-import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type NamedBody } from "./boolean-names.ts";
+import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
@@ -1310,8 +1310,10 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];
     for (const nb of named.bodies) {
-      const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
-      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
+      const h = result.history[result.bodies.indexOf(nb.handle)];
+      const frames = framesOfResult(h, built);
+      const faces = withOrigins(nb.faces, h, inputs, frames);
+      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
       if (!featureOf.has(nb.id) || nb.id === own) {
         firstPiece++;
@@ -1329,6 +1331,26 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const shown = renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
   const warn = shown.length === 0 ? {} : { pieces: { renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
   return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn };
+}
+
+/**
+ * A boolean result's face names with, on each face merged from several
+ * input faces lying level (the history's `also`), the input faces it lies on
+ * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then.
+ */
+function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined): readonly FaceNames[] {
+  if (h?.also === undefined || !h.also.some((a) => a.length > 0)) return faces;
+  const byHandle = new Map(inputs.map((x) => [x.handle, x] as const));
+  return faces.map((face, i) => {
+    const more = h.also![i] ?? [];
+    if (more.length === 0) return face;
+    const origins = [h.faces[i], ...more].flatMap((from) => {
+      const input = from === undefined ? undefined : byHandle.get(from.body);
+      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face }];
+    });
+    const frame = frames?.[i] ?? null;
+    return { ...face, origins, ...(frame !== null && { frame }) };
+  });
 }
 
 /** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */
