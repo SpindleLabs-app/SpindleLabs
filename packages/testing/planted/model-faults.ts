@@ -564,7 +564,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "greyed-loses-hold": {
     fault: "greyed-loses-hold",
     what: "settling judges held placements with suppression on, so a face redrawn away while greyed is never held",
-    edits: [{ file: REBUILD, find: "  const features = doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));", replace: "  const features = doc.timeline.features;" }],
+    edits: [{ file: REBUILD, find: "  const features = suppressed ? doc.timeline.features : doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));", replace: "  const features = doc.timeline.features;" }],
     run: ["naming"],
     caught: "seeded:",
     why: "Design falls back to the frame as drawn when nothing is held, which in the Fusion case Q3 is where the hold would be; the seeded sessions move the face before suppressing",
@@ -744,10 +744,8 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "lost-projection-moves": {
     fault: "lost-projection-moves",
     what: "a projection whose edge is gone has its points sent to the sketch's origin",
-    edits: [
-      { file: REBUILD, find: "      lost.push({ id: q.id, cause: found.cause });", replace: "      lost.push({ id: q.id, cause: found.cause }), projected.push({ id: q.id, points: madePoints(content, q).map((point) => ({ point, at: [0, 0] as SketchXY })) });" },
-      { file: REBUILD, find: 'import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves,', replace: 'import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves,' },
-    ],
+    // rebuild.ts imports madePoints itself since SL #539 (ownPoints), so the plant needs no import of its own.
+    edits: [{ file: REBUILD, find: "      lost.push({ id: q.id, cause: found.cause });", replace: "      lost.push({ id: q.id, cause: found.cause }), projected.push({ id: q.id, points: madePoints(content, q).map((point) => ({ point, at: [0, 0] as SketchXY })) });" }],
     run: ["naming"],
     caught: "Fusion answers",
   },

@@ -287,7 +287,9 @@ class TheRealBaseline(unittest.TestCase):
         # when refused: box-minus-box, far-wall-outside, hollow-box, km-plate and
         # small-cube-halved, 2 sketches, 2 extrudes and a Cut leaving one body:
         # 2 + 2 x 2 + 1 + 1 = 8; micron-cube-halved the same, its Cut refused: 7;
-        # flush-blocks, a box, a sketch and its extrude joined into one: 1 + 4 + 1 + 1 = 7;
+        # flush-blocks, a box, a sketch and its extrude joined into one: 1 + 4 + 1 + 1 = 7,
+        # plus one solve (SL #545, 11-11): its sketch is pinned to the box and holds a
+        # Horizontal, so each rebuild checks it still holds as stored: 8;
         # f2-gap-join, two boxes joined into two pieces: 2 x 2 + 1 + 2 = 7.
         with open(baseline.BASELINE) as f:
             b = json.load(f)
@@ -295,7 +297,7 @@ class TheRealBaseline(unittest.TestCase):
         self.assertEqual(calls, {"bracket_two_holes": 2 * 1 + 0, "enclosure": 2 * 5 + 4, "gear": 2 * 1 + 1, "l_bracket": 2 * 1 + 1, "stepped_boss": 2 * 3 + 2, "thirty_features": 2 * 16 + 15,
                                  "box_minus_box": 2 + 2 * 2 + 1 + 1, "far_wall_outside": 2 + 2 * 2 + 1 + 1, "hollow_box": 2 + 2 * 2 + 1 + 1,
                                  "km_plate": 2 + 2 * 2 + 1 + 1, "small_cube_halved": 2 + 2 * 2 + 1 + 1, "micron_cube_halved": 2 + 2 * 2 + 1,
-                                 "flush_blocks": 1 + 2 * 2 + 1 + 1, "f2_gap_join": 2 * 2 + 1 + 2})
+                                 "flush_blocks": 1 + 2 * 2 + 1 + 1 + 1, "f2_gap_join": 2 * 2 + 1 + 2})
         m = "app.golden_models.failed_percent"
         self.assertEqual(b["metrics"][m], 0)
         self.assertEqual(b["margins"]["failed_percent"]["fail"], 0)
