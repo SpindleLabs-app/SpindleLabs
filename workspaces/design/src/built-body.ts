@@ -34,6 +34,24 @@ export function framesOfResult(h: BooleanResult["history"][number] | undefined, 
   return frames.some((f) => f !== null) ? frames : undefined;
 }
 
+/**
+ * SL #583 item 3: a boolean's result body's faces (BuiltBody `reversed`) from its history: each face is its first
+ * origin's face turned round when their outward normals point apart (a Cut's wall from a tool: the kernel's result
+ * face lies on the tool's face, the other way about), or not when they agree, after whether that origin face itself
+ * was (`inputs`' own `reversed`). Two flat faces lying on one another are parallel, so the sign of their normals'
+ * dot product is exact; a curved face (no normal) keeps its origin's. Undefined when none is turned round.
+ */
+export function reversedOfResult(h: BooleanResult["history"][number] | undefined, view: BodyView, inputs: ReadonlyMap<BodyHandle, { built: BuiltBody; view: BodyView }>): boolean[] | undefined {
+  const reversed = (h?.faces ?? []).map((from, j) => {
+    const input = inputs.get(from.body);
+    const was = input?.built.reversed?.[from.face] ?? false;
+    const [a, b] = [view.face_normals[j], input?.view.face_normals[from.face]];
+    const apart = a != null && b != null && a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < 0;
+    return was !== apart;
+  });
+  return reversed.some((r) => r) ? reversed : undefined;
+}
+
 /** A shown body's frame for face `face` (scene.ts `ShownBody`): per face on a Combine's result, else the body's. */
 export const shownFrame = (b: { frame?: Plane; frames?: readonly (Plane | null)[] }, face: number): Plane | undefined => (b.frames ? (b.frames[face] ?? undefined) : b.frame);
 

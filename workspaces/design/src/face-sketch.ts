@@ -86,6 +86,13 @@ export interface SketchFace {
   held?: Plane;
   /** Where the Moves before it had put the face's body's own frame (the world's) when drawn (35e2h), with its size (SL #539: none when drawn before); none when drawn before 35e2h, which is never carried. */
   body?: BodyFrame;
+  /**
+   * Whether its face, when drawn, was the face its name comes from turned round (Design data version 24, SL #583 item 3):
+   * a Cut's wall carries the cut tool's face's name (rule 2) facing into the hole, the tool's own face the other way.
+   * The rebuild holds the sketch with its plane lost when the face its name finds now is the other one (the Combine made
+   * a Join or Intersect, or suppressed). None in data from before, which is never judged so.
+   */
+  reversed?: boolean;
 }
 
 /** The origin planes in the order a tie is broken (sketch.ts PLANES; the model's ORIGIN_FRAMES). */

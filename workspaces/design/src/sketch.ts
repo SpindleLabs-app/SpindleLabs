@@ -112,7 +112,7 @@ export function addSketch(doc: DesignDocument, plane: SketchPlane = "XY"): { doc
  * the face as built now), depending on that feature so it can't be dragged
  * before it.
  */
-export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
+export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string; reversed?: boolean }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
   if (!isFacePlane(face.plane) || faceFeature(face.plane) !== face.feature) throw new Error(`${shown(face.plane)} is not a face of ${shown(face.feature)}`);
   const on = doc.timeline.features.find((f) => f.id === face.feature);
   if (!on || !hasOwnFaces(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
@@ -125,7 +125,7 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   const size = drawn.body?.size ?? 1;
   if (!Number.isFinite(size) || size <= 0) throw new Error(`a sketch on a scaled face needs its body's size above 0, not ${size}`);
   // SL #539: the body's size is always recorded (1 too), so a sketch without one is known to be from before and carried as it was.
-  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}) });
+  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}), ...(face.reversed !== undefined && { reversed: face.reversed }) });
 }
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {

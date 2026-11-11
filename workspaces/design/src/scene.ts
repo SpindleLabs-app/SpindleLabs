@@ -26,6 +26,8 @@ export interface ShownBody {
   frame?: Plane;
   /** A Combine's result (35f1e2): each face's frame, as its input body's was (rebuild.ts `BuiltBody.frames`); read with built-body.ts `shownFrame`. */
   frames?: readonly (Plane | null)[];
+  /** A boolean's result (SL #583 item 3): whether each face is the face its name comes from turned round (rebuild.ts `BuiltBody.reversed`). */
+  reversed?: readonly boolean[];
   /** A Combine's result (35f1): its faces named by its Combine. */
   combined?: true;
   /** A Combine's result (35f1f2b): the Combine that made it, the item a pin or projection on it names (`madeBy`). */
@@ -107,7 +109,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
       continue;
     }
     const frame = frameOfBody(b);
-    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.frames && { frames: b.frames }), ...(b.named !== undefined && { combined: true as const }), ...(b.by !== undefined && { by: b.by }) });
+    shown.push({ body: id, feature: b.feature, place: numbers.get(id)!, view, names: namesOfBody(b, view), ...(frame ? { frame } : {}), ...(b.frames && { frames: b.frames }), ...(b.reversed && { reversed: b.reversed }), ...(b.named !== undefined && { combined: true as const }), ...(b.by !== undefined && { by: b.by }) });
   }
   // 35f1e: once a Combine built, the design is named as one, over every body it holds, hidden ones too.
   if (!ids.some((id) => build.bodies[id].named !== undefined)) return shown;

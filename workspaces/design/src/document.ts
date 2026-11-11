@@ -270,7 +270,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 17;
+  version: 24;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -462,7 +462,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 17, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 24, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -1184,6 +1184,8 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   if (face.side !== 1 && face.side !== -1) throw new Error(`${at}'s side must be 1 or -1, not ${shown(face.side)}`);
   if (Object.hasOwn(face, "held")) checkPlane(face.held, `${at}'s held plane`);
   if (Object.hasOwn(face, "body")) checkPlane(face.body, `${at}'s body frame`);
+  // SL #583 item 3 (version 24): whether its face was its name's face turned round when drawn.
+  if (Object.hasOwn(face, "reversed") && typeof face.reversed !== "boolean") throw new Error(`${at}'s reversed must be true or false, not ${shown(face.reversed)}`);
   // SL #539: the body's size when drawn (its scale factors multiplied), a number above 0.
   const body = face.body as Record<string, unknown> | undefined;
   if (body !== undefined && Object.hasOwn(body, "size") && !(typeof body.size === "number" && Number.isFinite(body.size) && body.size > 0)) throw new Error(`${at}'s body frame's size must be a number above 0, not ${shown(body.size)}`);
@@ -1658,6 +1660,11 @@ function hasVersion14Fields(d: Record<string, unknown>): boolean {
 }
 
 /** Whether version 14 data holds what only version 15 brought (35f1f2b): a pin or projection by a Combine result's edge name (design-edges.ts). */
+/** Whether version 17 data has a face sketch recording which way its face was drawn (SL #583 item 3), which only version 24 holds. */
+function hasVersion24Fields(d: Record<string, unknown>): boolean {
+  return (Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "reversed"));
+}
+
 /** Whether version 16 data has a constraint naming a point that follows a body, which only version 17 (#517) allows. */
 function hasVersion17Fields(d: Record<string, unknown>): boolean {
   // Read before the data is checked (the fuzzer's saved inputs: a projected list that is text), so only lists of records
@@ -1772,7 +1779,7 @@ function checkPresets(features: readonly Feature[], profiles: ReadonlyMap<unknow
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 17;
+export const DESIGN_VERSION = 24;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1832,10 +1839,15 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 17 (#517) lets a constraint name a point that follows a body beside one of the sketch's own, which version 16
   // refused; other version 16 data is read as it is.
   if (v16.version === 16 && hasVersion17Fields(v16)) throw new Error(`Design data says version ${shown(given)} but has a constraint on a point that follows a body, which version 17 brought`);
-  const d = (v16.version === 16 ? { ...v16, version: 17 } : v16) as Partial<DesignDocument>;
+  const v17 = v16.version === 16 ? { ...v16, version: 17 } : v16;
+  // Version 24 (SL #583 item 3) lets a face sketch record whether its face was its name's face turned round (a Cut's
+  // wall); version 17 data never held it, and opens with none, never judged so. Versions 18 to 23 belong to other
+  // changes not in this SpindleLabs, so they are not read (below).
+  if (v17.version === 17 && hasVersion24Fields(v17)) throw new Error(`Design data says version ${shown(given)} but has a sketch recording which way its face was drawn, which version 24 brought`);
+  const d = (v17.version === 17 ? { ...v17, version: 24 } : v17) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 17 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 or 17)`);
+  // A whole number above 24 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 or 24)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
