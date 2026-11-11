@@ -440,3 +440,30 @@ test("regression (35f1d monkey, seed 1): a built Move keeps the bodies it moved 
   off.timeline.features[1].suppressed = true;
   assert.equal(expectedView(off).held, 0);
 });
+
+test("a Duplicate builds only when the body it copies does, worked by hand (issues #472, #475, #479)", () => {
+  // The nightly's file (seed 202611090, shortened): Sphere 1 suppressed, then "Mirror of Sphere 1" (a Duplicate built
+  // on it), then a box. Design greys an item built on a suppressed one (Q3), so the mirror makes no body: the only row is
+  // the box's. The monkey used to expect the mirror's Body 13 as well.
+  const sphere = { id: "feature-1", intent: { type: "sphere", parameters: { diameter: 20 }, summary: "Sphere: ⌀20 mm" }, dependsOn: [], suppressed: true };
+  const mirror = { id: "feature-26", intent: { type: "duplicate", parameters: { body: "body:feature-1", mirror: "xz" }, summary: "Mirror of Sphere 1 across the XZ plane" }, dependsOn: ["feature-1"], suppressed: false };
+  const box = { id: "feature-14", intent: { type: "box", parameters: { width: 24, depth: 20, height: 15 }, summary: "Box: 24 × 20 × 15 mm" }, dependsOn: [], suppressed: false };
+  const file = () => ({ version: 16, nextId: 27, profiles: [], sketches: [], bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-14", number: 8 }, { id: "body:feature-26", number: 13 }], nextBody: 16, timeline: { features: structuredClone([sphere, mirror, box]) } });
+  assert.deepEqual(expectedView(file()).rows, [{ row: "body-8", place: 8, id: "feature-14", body: "body:feature-14" }]);
+  assert.deepEqual(expectedView(file()).solids, ["feature-14"]);
+  // The sphere on again: it builds, so its mirror does too, after it in timeline order: Bodies 1, 13 and 8.
+  const on = file();
+  on.timeline.features[0].suppressed = false;
+  assert.deepEqual(expectedView(on).rows.map((r) => r.row), ["body-1", "body-13", "body-8"]);
+  // The marker on the sphere: the mirror is rolled back, so only the sphere builds.
+  const marked = file();
+  marked.timeline.features[0].suppressed = false;
+  marked.timeline.marker = "feature-1";
+  assert.deepEqual(expectedView(marked).rows.map((r) => r.row), ["body-1"]);
+  // Built on a copy that is itself greyed (a Duplicate of the mirror, seed 359806678's chain): greyed too.
+  const chain = file();
+  chain.timeline.features.push({ id: "feature-30", intent: { type: "duplicate", parameters: { body: "body:feature-26" }, summary: "Duplicate of Mirror 1" }, dependsOn: ["feature-26"], suppressed: false });
+  assert.deepEqual(expectedView(chain).rows.map((r) => r.row), ["body-8"]);
+  chain.timeline.features[0].suppressed = false;
+  assert.equal(expectedView(chain).rows.length, 4);
+});

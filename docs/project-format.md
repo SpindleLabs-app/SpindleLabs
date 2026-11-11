@@ -2,6 +2,8 @@
 
 A SpindleLabs project is one JSON document. The format is open: anyone may read and write it, and this page describes it. The types it is checked against are in `packages/core/src/model/` (`project.ts`, `links.ts`, `feature.ts`, `material.ts`).
 
+A draft of the future open package format (a zip holding this JSON unchanged, plus a manifest, optional cached shapes and a thumbnail) is in `docs/open-format/spec.md`. The app does not write it yet.
+
 ## Current version: 2
 
 ```json

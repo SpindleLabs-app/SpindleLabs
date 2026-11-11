@@ -212,15 +212,20 @@ export function expectedView(design, failed = new Set()) {
   const kept = design.kept ?? {};
   const byId = new Map(features.map((f, i) => [f.id, { f, i }]));
   const active = (i) => i < stop && !features[i].suppressed;
+  // A Move or a Combine (35f1c) acts on bodies and makes none of its own.
+  const acts = (f) => f.intent.type === "move" || f.intent.type === "combine";
   const builds = (f, i) => {
     if (!active(i)) return false;
+    // A Duplicate (Duplicate or Mirror body, 35e2m) is built on the item whose body it copies: suppressed or not
+    // building, that greys the copy too (Q3), so it makes no body (issues #472, #475, #479: a Mirror of a suppressed
+    // sphere was expected as a row). A copy of a copy follows the same rule down the chain; a Combine or a Move it is
+    // built on (a piece's copy) builds when it is on and before the marker.
+    if (f.intent.type === "duplicate") return (f.dependsOn ?? []).every((d) => byId.has(d) && (acts(byId.get(d).f) ? active(byId.get(d).i) : builds(byId.get(d).f, byId.get(d).i)));
     if (f.intent.type !== "extrude" || !Object.hasOwn(f.intent.parameters, "sketch")) return true;
     const s = byId.get(f.intent.parameters.sketch);
     if (s === undefined || s.f.intent.type !== "sketch") return Object.hasOwn(kept, f.id);
     return active(s.i);
   };
-  // A Move or a Combine (35f1c) acts on bodies and makes none of its own.
-  const acts = (f) => f.intent.type === "move" || f.intent.type === "combine";
   const solids = features.filter((f, i) => f.intent.type !== "sketch" && !acts(f) && builds(f, i));
   const made = features.filter((f) => f.intent.type !== "sketch" && !acts(f));
   // A Combine's pieces ("body:<combine>/piece:k") are numbered by the app when they first appear, which only the kernel
