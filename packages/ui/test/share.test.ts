@@ -155,3 +155,23 @@ test("a list that can't be read says why", async () => {
   await tick();
   assert.equal(d.getElementById("share-status")?.textContent, "Your links can't be listed right now. offline");
 });
+
+test("My links (links only): lists the links, has no Make a link and no terms, its ids never clash with the Share dialog's, and Turn off asks first", async () => {
+  const d = doc();
+  const row = (id: string, name: string): ShareLinkRow => ({ id, name, picture: null, createdAt: NOW, removedAt: null });
+  const { parts, log } = shareParts([row("i1", "Box"), row("i2", "Gear")]);
+  shareDialog(d, parts); // the Share dialog beside it in the same page
+  const mine = shareDialog(d, parts, { linksOnly: true });
+  await mine.show();
+  await tick();
+  assert.equal(mine.element.id, "my-links");
+  assert.equal(d.querySelectorAll("#my-links-items .share-item").length, 2);
+  assert.equal(d.querySelector("#my-links-make"), null, "no way to make a link here");
+  assert.equal(d.querySelector("#my-links-terms"), null);
+  assert.equal(d.querySelector("#my-links #share-make"), null, "nothing of the Share dialog inside it");
+  assert.equal(new Set([...d.querySelectorAll("[id]")].map((e) => e.id)).size, d.querySelectorAll("[id]").length, "every id is unique");
+  await click(d, "#my-links .share-item-off");
+  assert.match(d.querySelector("#my-links .share-item-question")?.textContent ?? "", /Turn off the link to “Box”\?/);
+  await click(d, "#my-links .share-item-keep");
+  assert.deepEqual(log.filter((l) => l.startsWith("off")), [], "Keep it on turns nothing off");
+});

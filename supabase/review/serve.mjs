@@ -37,6 +37,11 @@ export function securityHeaders(service = ACCOUNT_SERVICE) {
   };
 }
 
+/** The page's HTML with the account service's address filled into its policy (index.html's SERVICE_ORIGIN). */
+export function pageHtml(service = ACCOUNT_SERVICE) {
+  return readFileSync(new URL("index.html", here), "utf8").replaceAll("SERVICE_ORIGIN", new URL(service.url).origin);
+}
+
 const PAGES = {
   "/": ["index.html", "text/html; charset=utf-8"],
   "/review.js": ["review.js", "text/javascript; charset=utf-8"],
@@ -59,7 +64,7 @@ export function handler(req, res) {
     res.writeHead(404, headers).end();
     return;
   }
-  res.writeHead(200, { ...headers, "content-type": page[1] }).end(file(page[0]));
+  res.writeHead(200, { ...headers, "content-type": page[1] }).end(page[0] === "index.html" ? pageHtml() : file(page[0]));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

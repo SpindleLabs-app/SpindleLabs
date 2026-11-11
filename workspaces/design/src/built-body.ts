@@ -100,7 +100,8 @@ export function copiedFaceName(name: string, dup: string, source?: string, isIte
 export function copiedNames(named: NonNullable<BuiltBody["named"]>, dup: string, source?: string, isItem?: (id: string) => boolean): NonNullable<BuiltBody["named"]> {
   const names = (n: string) => [...new Set([copiedFaceName(n, dup, source, isItem), copiedFaceName(n, dup)])];
   return {
-    faces: named.faces.map((f) => ({ ...f, names: [...new Set(f.names.flatMap(names))] })),
+    // A merged face's origins (SL #502) are the original's, in its place: a copy names the face by its first name.
+    faces: named.faces.map((f) => ({ names: [...new Set(f.names.flatMap(names))] })),
     made: new Map([...named.made].flatMap(([n, order]) => names(n).map((x) => [x, order] as const))),
   };
 }
