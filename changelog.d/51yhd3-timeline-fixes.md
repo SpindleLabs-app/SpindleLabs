@@ -7,6 +7,7 @@ fix
 - A sketch on a copy's face stays on it when a cut or join is put on the copied body before the copy.
 - Old projects: a sketch on a face now moves with its body when a Move is put before it, a hole drawn into an old extruded sketch is cut, and an old part gets its proper name ("Cylinder 1") and is renamed when its shape changes.
 - Resizing a body no longer turns an arc pinned to it inside out without a word; a sketch a body's change left unsolved keeps its warning, and its other curves can still be constrained and dragged.
+- With the Combine switch on: a Move of a body that an earlier edit splits in two moves both pieces; an extrude joined wholly inside a body says it lies inside instead of that it doesn't reach; on a phone the Bodies list rows are full tap size and the Combine fields say Tap.
 
 public:
 - Snapping to a corner while editing an earlier sketch now lands where the corner is shown.
