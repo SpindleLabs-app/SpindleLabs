@@ -154,7 +154,8 @@ const closed = (page) => until(page, () => document.getElementById("combine-pane
 const fields = (page, want, what) =>
   until(page, (w) => [document.getElementById("combine-target-names")?.textContent, document.getElementById("combine-tools-names")?.textContent].join(" | ") === w, want, what);
 const items = (page) => page.$$eval("#timeline li[data-item]", (l) => l.map((li) => li.dataset.item));
-const undoTitle = (page) => page.getAttribute("#undo", "title");
+// What Undo says of the project's steps: with a tool open its title says it cancels the tool (issue #520).
+const undoTitle = (page) => page.getAttribute("#undo", "data-project-step");
 /** The Body rows: each row's node and name. */
 async function bodyRows(page) {
   await page.evaluate(() => document.querySelector('#browser [data-node="bodies"]')?.closest("details")?.setAttribute("open", ""));
