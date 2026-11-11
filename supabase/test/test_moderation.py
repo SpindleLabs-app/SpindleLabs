@@ -32,6 +32,7 @@ class ModerationDatabase(unittest.TestCase):
             self.assertTrue(ok, f"{os.path.basename(path)} failed to load: {out}")
         for uid, email in [(ADA, "ada@example.com"), (BO, "bo@example.com")]:
             self.owner(f"insert into auth.users (id, email) values ('{uid}', '{email}');")
+        self.owner("update share_switch set sharing_on = true;")
 
     def owner(self, sql):
         ok, out = self.pg.psql(sql)
