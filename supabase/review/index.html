@@ -4,9 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
+  <!-- The same policy serve.mjs sends as a header, for hosts that can't send one (GitHub Pages); SERVICE_ORIGIN is
+       filled in by serve.mjs and build.mjs. frame-ancestors can't be set here, so review.js refuses to run framed. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'self' SERVICE_ORIGIN; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <title>SpindleLabs review</title>
-  <link rel="stylesheet" href="/review.css">
-  <script type="module" src="/review.js"></script>
+  <link rel="stylesheet" href="review.css">
+  <script type="module" src="review.js"></script>
 </head>
 <body>
   <header>

@@ -5,6 +5,15 @@
 // text (textContent), never as HTML, and serve.mjs's content security policy lets only this script run, so a report
 // can never run code in the moderator's browser. The sign-in is kept in this tab only (sessionStorage).
 
+// Inside a frame (another site showing this page, to trick a moderator into clicking), refuse and stop: the page is
+// also served as plain files (GitHub Pages), where no header can forbid framing.
+if (window.top !== window.self) {
+  document.body.replaceChildren("This page can't be shown inside another page. Open it on its own.");
+  throw new Error("framed");
+}
+
+/** This page's own address, without index.html: where the sign-in comes back to. */
+const HOME = `${location.origin}${location.pathname.replace(/index\.html$/, "")}`;
 const TOKEN = "review.token";
 const VERIFIER = "review.verifier";
 const status = document.getElementById("status");
@@ -42,7 +51,7 @@ async function signIn() {
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
   sessionStorage.setItem(VERIFIER, verifier);
   const challenge = base64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
-  const q = new URLSearchParams({ provider: "google", redirect_to: `${location.origin}/`, code_challenge: challenge, code_challenge_method: "s256" });
+  const q = new URLSearchParams({ provider: "google", redirect_to: HOME, code_challenge: challenge, code_challenge_method: "s256" });
   location.assign(`${config.url}/auth/v1/authorize?${q}`);
 }
 
@@ -50,7 +59,7 @@ async function signIn() {
 async function finishSignIn() {
   const code = new URLSearchParams(location.search).get("code");
   if (!code) return false;
-  history.replaceState(null, "", "/");
+  history.replaceState(null, "", HOME);
   const verifier = sessionStorage.getItem(VERIFIER);
   sessionStorage.removeItem(VERIFIER);
   if (!verifier) return false;
@@ -68,7 +77,7 @@ async function finishSignIn() {
 
 function signOut() {
   sessionStorage.removeItem(TOKEN);
-  location.assign("/");
+  location.assign(HOME);
 }
 
 // ---- Talking to the moderation function ----
@@ -340,7 +349,7 @@ function showSignIn() {
 }
 
 async function start() {
-  config = await (await fetch("/config.json")).json();
+  config = await (await fetch("config.json")).json();
   await finishSignIn().catch(() => false);
   if (!sessionStorage.getItem(TOKEN)) return showSignIn();
   let moderator;
