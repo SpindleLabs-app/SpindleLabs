@@ -337,6 +337,7 @@ test("typed sizes: a centre rectangle's width and height, a polygon's sides and 
   assert.deepEqual(typedFields(pg), ["sides", "diameter", "angle"]);
   assert.deepEqual(aimOf(doc, pg, [6, 8], { diameter: 10 }), [3, 4]);
   assert.deepEqual(aimOf(doc, pg, null, { diameter: 10, angle: 90 }), [0, 5]);
+  assert.deepEqual(aimOf(doc, pg, [0, 0], { diameter: 10 }), [5, 0], "a tap on the centre: along +x, as a circle's");
   const eight = withLocks(pg, { sides: 8 }, null);
   assert.equal(eight.sides, 8);
   const drawn = clicks(doc, eight, [[10, 0]]);

@@ -565,7 +565,11 @@ export function shapeAim(tool: ShapeTool, p: SketchXY | null, locks: Locks): Ske
     const y = H === undefined ? p![1] : anchor[1] + sideOf(anchor[1], p?.[1]) * (H / 2);
     return [x, y];
   }
-  if (fields.includes("diameter")) return lineEnd(anchor, p, { length: locks.diameter === undefined ? undefined : locks.diameter / 2, angle: locks.angle });
+  if (fields.includes("diameter")) {
+    const radius = locks.diameter === undefined ? undefined : locks.diameter / 2;
+    // A typed diameter with the pointer still on the centre (a tap) goes along +x, as the circle tool's does.
+    return lineEnd(anchor, p, { length: radius, angle: locks.angle }) ?? (radius === undefined ? null : lineEnd(anchor, null, { length: radius, angle: locks.angle ?? 0 }));
+  }
   if (fields.includes("length")) return lineEnd(anchor, p, locks);
   const size = fields.includes("height") ? locks.height : locks.width === undefined ? undefined : locks.width / 2;
   if (size === undefined) return p;
