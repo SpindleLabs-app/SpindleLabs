@@ -68,25 +68,87 @@ export function shortFloat(v: number): string {
   return String(Number(v.toPrecision(9)));
 }
 
-const xmlText = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+/**
+ * A name as XML attribute text. XML 1.0 allows no U+0000–U+0008, U+000B,
+ * U+000C, U+000E–U+001F, U+FFFE, U+FFFF or lone surrogate at all, not even
+ * as a reference: each becomes U+FFFD. A raw line feed, carriage return or
+ * tab in an attribute is read back as a space, so those are written as
+ * references, which keep them.
+ */
+export function xmlText(s: string): string {
+  return s
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/\n/g, "&#10;")
+    .replace(/\r/g, "&#13;")
+    .replace(/\t/g, "&#9;");
+}
 
-/** The 3MF model part: every body an object in millimetres, each placed once on the plate as modelled. */
+/** The 3MF model part line by line: every body an object in millimetres, each placed once on the plate as modelled. */
+function* modelLines(meshes: readonly Mesh[]): Generator<string> {
+  yield '<?xml version="1.0" encoding="UTF-8"?>';
+  yield '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">';
+  yield '<metadata name="Application">SpindleLabs</metadata>';
+  yield "<resources>";
+  for (let i = 0; i < meshes.length; i++) {
+    const m = meshes[i];
+    yield `<object id="${i + 1}" type="model" name="${xmlText(m.name)}"><mesh><vertices>`;
+    for (let v = 0; v < m.corners.length; v += 3) yield `<vertex x="${shortFloat(m.corners[v])}" y="${shortFloat(m.corners[v + 1])}" z="${shortFloat(m.corners[v + 2])}"/>`;
+    yield "</vertices><triangles>";
+    for (let t = 0; t < m.triangles.length; t += 3) yield `<triangle v1="${m.triangles[t]}" v2="${m.triangles[t + 1]}" v3="${m.triangles[t + 2]}"/>`;
+    yield "</triangles></mesh></object>";
+  }
+  yield "</resources>";
+  yield "<build>";
+  for (let i = 0; i < meshes.length; i++) yield `<item objectid="${i + 1}"/>`;
+  yield "</build>";
+  yield "</model>";
+}
+
+/** The 3MF model part as text (for tests and small parts; the file itself is made by `modelBytes`). */
 export function modelXml(meshes: readonly Mesh[]): string {
-  const out: string[] = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">',
-    '<metadata name="Application">SpindleLabs</metadata>',
-    "<resources>",
-  ];
-  meshes.forEach((m, i) => {
-    out.push(`<object id="${i + 1}" type="model" name="${xmlText(m.name)}"><mesh><vertices>`);
-    for (let v = 0; v < m.corners.length; v += 3) out.push(`<vertex x="${shortFloat(m.corners[v])}" y="${shortFloat(m.corners[v + 1])}" z="${shortFloat(m.corners[v + 2])}"/>`);
-    out.push("</vertices><triangles>");
-    for (let t = 0; t < m.triangles.length; t += 3) out.push(`<triangle v1="${m.triangles[t]}" v2="${m.triangles[t + 1]}" v3="${m.triangles[t + 2]}"/>`);
-    out.push("</triangles></mesh></object>");
-  });
-  out.push("</resources>", "<build>", ...meshes.map((_, i) => `<item objectid="${i + 1}"/>`), "</build>", "</model>");
-  return out.join("\n") + "\n";
+  return [...modelLines(meshes)].join("\n") + "\n";
+}
+
+/** About 1 MiB of text per piece: far under the longest string a browser makes (2^29 characters), so a big mesh never meets that limit. */
+const PIECE = 1 << 20;
+
+/** Lines as UTF-8 bytes, each ending in a line feed, encoded a piece at a time so no one string holds the whole file. */
+export function linesToBytes(lines: Iterable<string>): Uint8Array<ArrayBuffer> {
+  const utf8 = new TextEncoder();
+  const pieces: Uint8Array[] = [];
+  let text: string[] = [];
+  let length = 0;
+  let total = 0;
+  const flush = () => {
+    if (text.length === 0) return;
+    const b = utf8.encode(text.join("\n") + "\n");
+    pieces.push(b);
+    total += b.length;
+    text = [];
+    length = 0;
+  };
+  for (const line of lines) {
+    text.push(line);
+    length += line.length + 1;
+    if (length >= PIECE) flush();
+  }
+  flush();
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of pieces) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/** The 3MF model part's bytes. */
+export function modelBytes(meshes: readonly Mesh[]): Uint8Array<ArrayBuffer> {
+  return linesToBytes(modelLines(meshes));
 }
 
 const CONTENT_TYPES =
@@ -103,21 +165,30 @@ export function threeMf(meshes: readonly Mesh[]): Uint8Array<ArrayBuffer> {
   return zipStored([
     { path: "[Content_Types].xml", bytes: utf8.encode(CONTENT_TYPES) },
     { path: "_rels/.rels", bytes: utf8.encode(RELS) },
-    { path: "3D/3dmodel.model", bytes: utf8.encode(modelXml(meshes)) },
+    { path: "3D/3dmodel.model", bytes: modelBytes(meshes) },
   ]);
 }
 
-/** A Wavefront OBJ file holding these meshes, one named object each (OBJ has no units: the numbers are millimetres, said in its first line). */
-export function objText(meshes: readonly Mesh[]): string {
-  const out: string[] = ["# SpindleLabs OBJ, units: millimetres"];
+/** A Wavefront OBJ file line by line, one named object per mesh (OBJ has no units: the numbers are millimetres, said in its first line). */
+function* objLines(meshes: readonly Mesh[]): Generator<string> {
+  yield "# SpindleLabs OBJ, units: millimetres";
   let first = 1; // OBJ counts corners from 1, across the whole file
   for (const m of meshes) {
-    out.push(`o ${m.name.replace(/\s+/g, "_") || "body"}`);
-    for (let v = 0; v < m.corners.length; v += 3) out.push(`v ${shortFloat(m.corners[v])} ${shortFloat(m.corners[v + 1])} ${shortFloat(m.corners[v + 2])}`);
-    for (let t = 0; t < m.triangles.length; t += 3) out.push(`f ${m.triangles[t] + first} ${m.triangles[t + 1] + first} ${m.triangles[t + 2] + first}`);
+    yield `o ${m.name.replace(/\s+/g, "_") || "body"}`;
+    for (let v = 0; v < m.corners.length; v += 3) yield `v ${shortFloat(m.corners[v])} ${shortFloat(m.corners[v + 1])} ${shortFloat(m.corners[v + 2])}`;
+    for (let t = 0; t < m.triangles.length; t += 3) yield `f ${m.triangles[t] + first} ${m.triangles[t + 1] + first} ${m.triangles[t + 2] + first}`;
     first += m.corners.length / 3;
   }
-  return out.join("\n") + "\n";
+}
+
+/** The OBJ file as text (for tests and small parts). */
+export function objText(meshes: readonly Mesh[]): string {
+  return [...objLines(meshes)].join("\n") + "\n";
+}
+
+/** The OBJ file's bytes, made a piece at a time. */
+export function objBytes(meshes: readonly Mesh[]): Uint8Array<ArrayBuffer> {
+  return linesToBytes(objLines(meshes));
 }
 
 let crcTable: Uint32Array | null = null;
@@ -140,11 +211,14 @@ export function crc32(bytes: Uint8Array): number {
 /** 1980-01-01 00:00, the earliest date a zip can hold: fixed, so the bytes never depend on the clock. */
 const DOS_TIME = 0;
 const DOS_DATE = (0 << 9) | (1 << 5) | 1;
-/** Zip's own size limit without its 64-bit extension (which these files never need: 500 MB bodies at most). */
+/** Zip's own size limit without its 64-bit extension, which this writer does not make: a bigger file is refused in words. */
 const ZIP_LIMIT = 0xffffffff;
+/** Zip's own entry count limit without the 64-bit extension (a 3MF has three). */
+const ZIP_ENTRIES = 0xffff;
 
 /** A zip archive of these files, stored without compression. */
 export function zipStored(files: readonly { path: string; bytes: Uint8Array }[]): Uint8Array<ArrayBuffer> {
+  if (files.length > ZIP_ENTRIES) throw new Error(`A zip holds at most ${ZIP_ENTRIES} files without its 64-bit extension, and this one has ${files.length}`);
   const utf8 = new TextEncoder();
   const parts = files.map((f) => ({ name: utf8.encode(f.path), bytes: f.bytes, crc: crc32(f.bytes) }));
   const local = parts.reduce((n, p) => n + 30 + p.name.length + p.bytes.length, 0);

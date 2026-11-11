@@ -117,3 +117,127 @@ test("a broken zip is caught by the same reader (the check can fail)", () => {
   const said = execFileSync("python3", ["-I", "-c", "import sys, zipfile\nprint(zipfile.ZipFile(sys.argv[1]).testzip())", file], { encoding: "utf8" });
   assert.equal(said, "a.txt\n");
 });
+
+// The 3MF package checked as a strict reader checks it (export hunt F2, issue #552), in Python with only its own
+// library: every local zip header walked from the start of the file (not the central directory alone, which is all
+// zipfile trusts), its CRC-32 and both sizes compared with the bytes that follow, and the central directory's copy
+// with the local one; [Content_Types].xml giving exactly the OPC and 3MF types for .rels and .model; _rels/.rels
+// naming a part that is there, with the 3MF relationship type; the model parsed as namespaced XML in the 3MF core
+// namespace, in millimetres, each object a mesh of at least 3 vertices and 1 triangle (the core schema's minimums)
+// whose indices are all corners it has, and each build item naming an object. The constants are the specs' own.
+const STRICT = String.raw`
+import sys, struct, zlib
+import xml.etree.ElementTree as ET
+data = open(sys.argv[1], 'rb').read()
+local, at = {}, 0
+while data[at:at+4] == b'PK\x03\x04':
+    ver, flags, method, t, d, crc, csize, usize, nlen, xlen = struct.unpack('<HHHHHIIIHH', data[at+4:at+30])
+    name = data[at+30:at+30+nlen].decode('utf-8')
+    body = data[at+30+nlen+xlen:at+30+nlen+xlen+csize]
+    assert method == 0 and not flags & 8, f'{name}: not stored with sizes in its header'
+    assert csize == usize == len(body), f'{name}: local sizes {csize}/{usize}, {len(body)} bytes'
+    assert zlib.crc32(body) == crc, f'{name}: local CRC'
+    local[name] = (at, crc, csize, body)
+    at += 30 + nlen + xlen + csize
+central = data.rfind(b'PK\x05\x06')
+assert central >= 0, 'no end of central directory'
+count, size, start = struct.unpack('<HII', data[central+10:central+20])
+assert start == at, 'central directory not straight after the last local file'
+c = start
+for _ in range(count):
+    assert data[c:c+4] == b'PK\x01\x02', 'central header'
+    crc, csize, usize, nlen, xlen, clen = struct.unpack('<IIIHHH', data[c+16:c+34])
+    off = struct.unpack('<I', data[c+42:c+46])[0]
+    name = data[c+46:c+46+nlen].decode('utf-8')
+    assert name in local and local[name][:3] == (off, crc, csize) and usize == csize, f'{name}: central and local differ'
+    c += 46 + nlen + xlen + clen
+assert c == central and len(local) == count, 'entry count'
+part = lambda n: local[n][3]
+CT = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+types = {e.get('Extension').lower(): e.get('ContentType') for e in ET.fromstring(part('[Content_Types].xml')) if e.tag == CT + 'Default'}
+assert types.get('rels') == 'application/vnd.openxmlformats-package.relationships+xml', types
+assert types.get('model') == 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml', types
+RL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+rels = [r for r in ET.fromstring(part('_rels/.rels')) if r.tag == RL + 'Relationship' and r.get('Type') == 'http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel']
+assert len(rels) == 1, 'one 3D model relationship'
+target = rels[0].get('Target').lstrip('/')
+assert target in local, f'relationship names {target}, not in the package'
+M = '{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}'
+model = ET.fromstring(part(target))
+assert model.tag == M + 'model' and model.get('unit') == 'millimeter', model.tag
+ids, out = set(), []
+for o in model.find(M + 'resources').findall(M + 'object'):
+    v = o.find(M + 'mesh').find(M + 'vertices').findall(M + 'vertex')
+    t = [[int(x.get(k)) for k in ('v1', 'v2', 'v3')] for x in o.find(M + 'mesh').find(M + 'triangles').findall(M + 'triangle')]
+    assert len(v) >= 3 and len(t) >= 1, f'object {o.get("id")}: {len(v)} vertices, {len(t)} triangles'
+    assert all(0 <= i < len(v) for tri in t for i in tri), 'triangle index out of range'
+    ids.add(o.get('id'))
+    out.append(f'{o.get("name")}: {len(v)} {len(t)}')
+items = [i.get('objectid') for i in model.find(M + 'build').findall(M + 'item')]
+assert items and all(i in ids for i in items), 'build items'
+print('\n'.join(out))
+`;
+
+function strictReads(bytes: Uint8Array): string {
+  const file = join(mkdtempSync(join(tmpdir(), "strict-3mf-")), "part.3mf");
+  writeFileSync(file, bytes);
+  return execFileSync("python3", ["-I", "-c", STRICT, file], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
+test("a strict reader opens the 3MF: local zip headers, content types, the relationship, the namespaced model", () => {
+  const two: Mesh[] = [meshOfStl(tetra, "Body 1"), { ...meshOfStl(tetra, "Body \"2\" <&>") }];
+  assert.equal(strictReads(threeMf(two)), 'Body 1: 4 4\nBody "2" <&>: 4 4');
+});
+
+test("the strict reader refuses each break a 3MF reader refuses (the check can fail)", () => {
+  const utf8 = new TextEncoder();
+  const good = threeMf([meshOfStl(tetra, "Body 1")]);
+  // The package's two small parts as the good file stores them (stored, so their text is there as it is).
+  const text = new TextDecoder().decode(good);
+  const types = text.slice(text.indexOf("<?xml"), text.indexOf("</Types>") + 9);
+  const relsStart = text.indexOf("<?xml", text.indexOf("</Types>"));
+  const rels = text.slice(relsStart, text.indexOf("</Relationships>") + 17);
+  const partsOf = (model = modelXml([meshOfStl(tetra, "Body 1")]), t = types, r = rels) =>
+    zipStored([
+      { path: "[Content_Types].xml", bytes: utf8.encode(t) },
+      { path: "_rels/.rels", bytes: utf8.encode(r) },
+      { path: "3D/3dmodel.model", bytes: utf8.encode(model) },
+    ]);
+  // The control: put together the same way, the reader opens it, byte for byte the app's file.
+  assert.deepEqual(partsOf(), good);
+  assert.equal(strictReads(partsOf()), "Body 1: 4 4");
+  const breaks: [string, Uint8Array][] = [
+    ["namespace", partsOf(modelXml([meshOfStl(tetra, "Body 1")]).replace("core/2015/02", "core/2015/03"))],
+    ["content type", partsOf(undefined, types.replace("3dmanufacturing-3dmodel+xml", "3dmanufacturing-model+xml"))],
+    ["relationship target", partsOf(undefined, undefined, rels.replace("/3D/3dmodel.model", "/3D/model.model"))],
+    ["relationship type", partsOf(undefined, undefined, rels.replace("2013/01/3dmodel", "2013/01/model"))],
+    ["unescaped quote", partsOf(modelXml([meshOfStl(tetra, "Body 1")]).replace('name="Body 1"', 'name="Body "1""'))],
+    ["empty object", partsOf(modelXml([meshOfStl(tetra, "Body 1"), { name: "Body 2", corners: [1, 1, 1], triangles: [] }]))],
+  ];
+  // The first local header's CRC (bytes 14–17) and its sizes (18–25), each broken in the file's own bytes.
+  const crc = new Uint8Array(good);
+  crc[14] ^= 1;
+  const sizes = new Uint8Array(good);
+  sizes.fill(0, 18, 26);
+  breaks.push(["local CRC", crc], ["local sizes", sizes]);
+  for (const [what, bytes] of breaks) assert.throws(() => strictReads(bytes), undefined, `${what} was not refused`);
+});
+
+test("a zip with more entries than it can count without its 64-bit extension is refused in words", () => {
+  const files = Array.from({ length: 65536 }, (_, i) => ({ path: `f${i}`, bytes: new Uint8Array(0) }));
+  assert.throws(() => zipStored(files), /at most 65535 files .* this one has 65536/);
+  assert.doesNotThrow(() => zipStored(files.slice(0, 65535)));
+});
+
+test("the files made a piece at a time are byte for byte the whole text encoded at once, across piece boundaries", async () => {
+  const { linesToBytes, modelBytes, objBytes } = await import("../src/mesh-files.ts");
+  // 40,000 copies of the tetrahedron's triangles over its 4 corners: about 50 bytes a triangle line, so some 2 MB of
+  // model text, crossing the 1 MiB piece boundary at least once; a name with a 3-byte and a 4-byte UTF-8 character.
+  const t = meshOfStl(tetra, "Bödy € 😀");
+  const big: Mesh = { ...t, triangles: Array.from({ length: 40000 }, () => t.triangles).flat() };
+  const utf8 = new TextEncoder();
+  assert.ok(utf8.encode(modelXml([big])).length > 2 * (1 << 20) - 1);
+  assert.deepEqual(modelBytes([big, t]), utf8.encode(modelXml([big, t])));
+  assert.deepEqual(objBytes([big, t]), utf8.encode(objText([big, t])));
+  assert.deepEqual(linesToBytes([]), new Uint8Array(0));
+});
