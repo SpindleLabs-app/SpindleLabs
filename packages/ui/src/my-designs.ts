@@ -120,6 +120,7 @@ export function myDesigns(doc: Document, parts: MyDesignsParts): MyDesigns {
   const space = el("p", { id: "my-designs-space", className: "my-designs-space" });
   const others = el("div", { id: "my-designs-others", className: "my-designs-others" });
   const status = el("p", { id: "my-designs-status", className: "my-designs-status" });
+  status.setAttribute("role", "status"); // read out as it changes
   status.setAttribute("role", "status");
   const items = el("ul", { id: "my-designs-items", className: "my-designs-items" });
   const body = el("div", { className: "my-designs-body" });
