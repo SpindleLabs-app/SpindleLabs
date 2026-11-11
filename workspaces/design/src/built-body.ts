@@ -83,7 +83,8 @@ export function copiedFaceName(name: string, dup: string): string {
 /** A Combine's result's names (BuiltBody `named`) as Duplicate `dup`'s copy of it holds them (`copiedFaceName`). */
 export function copiedNames(named: NonNullable<BuiltBody["named"]>, dup: string): NonNullable<BuiltBody["named"]> {
   return {
-    faces: named.faces.map((f) => ({ ...f, names: f.names.map((n) => copiedFaceName(n, dup)) })),
+    // A merged face's origins (SL #502) are the original's, in its place: a copy names the face by its first name.
+    faces: named.faces.map((f) => ({ names: f.names.map((n) => copiedFaceName(n, dup)) })),
     made: new Map([...named.made].map(([n, order]) => [copiedFaceName(n, dup), order])),
   };
 }

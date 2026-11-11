@@ -231,8 +231,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);",
-        replace: "    const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], new Map([...built.keys()].map((h) => [h, built.get(t.handle)!] as const)));",
+        find: "      const frames = framesOfResult(h, built);",
+        replace: "      const frames = framesOfResult(h, new Map([...built.keys()].map((k) => [k, built.get(t.handle)!] as const)));",
       },
     ],
     run: ["timeline"],
