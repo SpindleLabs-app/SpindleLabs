@@ -1196,12 +1196,13 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
   const plane = mirrorOf(f);
   if (b.spec === null) {
     // 35f1f2c: a Combine's result copied as it is (the same kernel body), or mirrored by the kernel's body_move; its faces the
-    // Duplicate's, each keeping its role with the feature it came from (built-body.ts `copiedFaceName`), in the same order
+    // Duplicate's, each keeping its role with the feature it came from (built-body.ts `copiedFaceName`; the source's own as a
+    // plain copy's, SL #538 item 5), in the same order
     // (a move or a mirror keeps every face and its order), each frame carried across the plane with it.
     const motions = plane === undefined ? [] : [mirrorMotion(plane)];
     const handle = motions.length === 0 ? b.handle : await cache.moved(b.handle, motions);
     const frames = motions.length === 0 ? b.frames : b.named!.faces.map((_, k) => movedFrame(b.frames?.[k] ?? null, motions));
-    bodies[id] = { feature: f.id, handle, spec: null, named: copiedNames(b.named!, f.id), ...(frames && { frames }) };
+    bodies[id] = { feature: f.id, handle, spec: null, named: copiedNames(b.named!, f.id, b.feature, (id) => Object.hasOwn(done, id)), ...(frames && { frames }) };
     return { status: "built", bodies: [id] };
   }
   const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane)]);
