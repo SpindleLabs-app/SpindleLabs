@@ -153,7 +153,7 @@ export const WAITING_MOVES: readonly WaitingMove[] = [
     weight: 6,
     does: "Move (35e2): pick one or two bodies shown before where the new item goes, type a shift and a turn about Z through a pivot; a new timeline item that makes no body.",
     model:
-      "Each body it moves is turned about the upright through the pivot, then shifted, from the Move on: faces and edges keep their names, areas and lengths; centroids move. Greyed while a body it moves is suppressed or greyed, failed naming one deleted or not built, all or none (timeline-model.ts `moveBodies`).",
+      "Each body it moves is turned about the upright through the pivot, then shifted, from the Move on: faces and edges keep their names, areas and lengths; centroids move. Greyed while a body it moves is suppressed or greyed, moving the rest when one is deleted or not built and naming it, failed when none is left (timeline-model.ts `moveBodies`).",
     draw: (r) => ({ op: "add-move", pick: r.next(), other: r.next() < 0.3 ? r.next() : null, ...moveNumbers(r) }),
   },
   {
@@ -562,6 +562,8 @@ function resultDiff(a: ItemResult, b: ItemResult, edgeClose: EdgeClose = exactEd
   const carried = (r: typeof a) => r.lift !== undefined && !along(a).every((x, k) => close(x, along(b)[k]));
   if ((a.lift === undefined) !== (b.lift === undefined) || a.plane !== b.plane || a.down !== b.down || (a.lift !== undefined && !close(a.lift, b.lift!)) || carried(a)) return `${placed(a)} vs ${placed(b)}`;
   if (a.source !== b.source) return `source lost ${a.source ?? "no"} vs ${b.source ?? "no"}`;
+  // SL #506 item 4: a Move that moves only some of its bodies names the others.
+  if ((a.missing ?? []).join() !== (b.missing ?? []).join()) return `missing ${(a.missing ?? []).join() || "none"} vs ${(b.missing ?? []).join() || "none"}`;
   if (!a.body || !b.body) {
     if (a.body || b.body) return `a body vs ${a.body ? "none" : "a body"}`;
   } else {
@@ -645,9 +647,10 @@ function translateResult(res: ItemResult, to: (id: string) => string): ItemResul
   if (res.status === "failed") return { ...res, input: res.input === undefined ? undefined : to(res.input) };
   if (res.status === "greyed") return { status: "greyed", by: to(res.by) };
   if (res.status !== "built") return res;
-  const { warning, source, body, pieces, ...rest } = res;
+  const { warning, source, body, pieces, missing, ...rest } = res;
   return {
     ...rest,
+    ...(missing && { missing: missing.map(to) }),
     ...(warning && { warning: { cause: warning.cause, input: to(warning.input) } }),
     ...(source !== undefined && { source: to(source) }),
     ...(body && { body: translateBody(body, to) }),
@@ -708,7 +711,8 @@ const idsOf = (doc: ModelDoc): string[] =>
  * The items that depend on `id`, directly or through others, and `id`
  * itself; 35f1d2: and a Combine's target and tool once it does, whose
  * rows show what it left of their bodies, and what depends on them; and
- * (SL #482) every body a Move moves once the Move does, all or none.
+ * (SL #482) every body a Move moves once the Move does (one gone changes
+ * which it moves, SL #506 item 4).
  */
 function dependents(doc: ModelDoc, id: string): Set<string> {
   const out = new Set([id]);
@@ -718,8 +722,8 @@ function dependents(doc: ModelDoc, id: string): Set<string> {
       const reached = [
         ...(!out.has(i.id) && dependsOn(i).some((d) => out.has(d)) ? [i.id] : []),
         ...(i.kind === "combine" && out.has(i.id) ? [i.target, i.tool].filter((x) => !out.has(x)) : []),
-        // SL #482: a Move moves all its bodies or none, and each body's row shows it where the Move put it, so
-        // an edit that makes a Move fail (one body used up) or build again reaches every body it moves.
+        // SL #482: each body's row shows it where the Move put it, so an edit that makes a Move fail, move fewer
+        // bodies (one used up, SL #506 item 4) or build again reaches every body it moves.
         ...(i.kind === "move" && out.has(i.id) ? i.bodies.filter((x) => !out.has(x)) : []),
       ];
       for (const x of reached) {
@@ -1018,6 +1022,8 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
         const at = expected.order.indexOf(id);
         const after = (b: string) => model.doc.items.some((c) => c.kind === "combine" && c.target === b && expected.results[c.id]?.status === "built" && expected.order.indexOf(c.id) < at);
         if (item.bodies.some(after)) count("move:combine-result");
+        // SL #506 item 4: a Move that moved only some of its bodies.
+        if (r.missing) count("move:partly");
       }
     }
     prev = now;

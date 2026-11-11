@@ -65,7 +65,7 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   const held = pins && projects ? "snapped points and projected edges" : projects ? "projected edges" : "snapped points";
   // 26e (Q1): what is built from a sketch that stays stays with it, saying its source is lost.
   const built = before.timeline.features.filter((f) => isSketchExtrude(f) && staying.some((s) => f.dependsOn.includes(s.id))).map(itemName);
-  // A Move has no shape of its own: it fails, and moves all its bodies or none, so the others it moves go back (hunt 11-01).
+  // A Move has no shape of its own: with nothing left to move it fails; else it moves the rest and shows a warning (SL #506 item 4).
   const moving = users.filter(isMoveItem);
   const moves = moving.map((m) => {
     const others = [...new Set(movedBodies(m).map((b) => bodyItem(b)).filter((f) => f !== undefined && f !== id))].flatMap((f) => {
@@ -74,7 +74,7 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
     });
     return others.length === 0
       ? `${itemName(m)} has nothing left to move and fails`
-      : `${itemName(m)} fails, so ${listWords(others)} ${others.length === 1 ? "goes" : "go"} back to where ${others.length === 1 ? "it was" : "they were"} before it`;
+      : `${itemName(m)} moves only ${listWords(others)} and shows a warning`;
   });
   const movers = moving.map(itemName);
   const fails = users.map(itemName).filter((n) => !keeps.includes(n) && !stays.includes(n) && !holds.includes(n) && !movers.includes(n));
