@@ -19,6 +19,7 @@ import { movedBodies } from "./move.ts";
 import { faceFeature, isFaceSketch } from "./face-sketch.ts";
 import { settleKept, type BodyCache } from "./rebuild.ts";
 import { deleteItem, itemName } from "./timeline-edits.ts";
+import { bodyWords, shapings } from "./body-uses.ts";
 
 /** What the box asks before a used item is deleted. */
 export interface DeleteQuestion {
@@ -52,7 +53,14 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   if (!item) throw new Error(`there is no item ${id} in the timeline`);
   const name = itemName(item);
   const users = before.timeline.features.filter((f) => f.dependsOn.includes(id));
-  if (users.length === 0) return null;
+  // SL #506 item 2: a later item working on a body this one placed or changed (body-uses.ts) changes when it goes.
+  const shaped = shapings(before.timeline.features).filter((s) => s.by === item && !users.includes(s.of));
+  const later = [...new Map(shaped.map((s) => [s.of.id, s] as const)).values()];
+  const changes =
+    later.length === 0
+      ? ""
+      : `${later.map((s) => `${itemName(s.of)} uses ${bodyWords(before, s.body)} as ${name} leaves it`).join("; ")}, so ${later.length === 1 ? `${itemName(later[0].of)} changes` : `${listWords(later.map((s) => itemName(s.of)))} change`} without it.`;
+  if (users.length === 0) return later.length === 0 ? null : { heading: `Delete ${name}?`, words: `${changes} Undo brings ${name} back.` };
   const keeps = users.filter((f) => isSketchExtrude(f) && after.kept !== undefined && Object.hasOwn(after.kept, f.id)).map(itemName);
   const staying = users.filter((f) => isFaceSketch(f) && faceFeature(f.intent.parameters.plane as string) === id);
   const stays = staying.map(itemName);
@@ -108,7 +116,7 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
           ? "is built from"
           : "are built from";
   const usedBy = `${listWords(users.map(itemName))} ${on} ${name}.`;
-  return { heading: `Delete ${name}?`, words: `${usedBy} If you delete it, ${what}. Undo brings ${name} back.` };
+  return { heading: `Delete ${name}?`, words: `${usedBy} If you delete it, ${what}.${changes === "" ? "" : ` ${changes}`} Undo brings ${name} back.` };
 }
 
 /**

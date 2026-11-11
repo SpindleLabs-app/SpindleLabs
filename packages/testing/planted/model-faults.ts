@@ -434,6 +434,12 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "reorder-past-shaper": {
+    what: "a reorder lets an item pass the Move or Combine that placed or changed a body it works on (SL #506 item 1)",
+    edits: [{ file: EDITS, find: "  for (const s of shapings(doc.timeline.features)) {", replace: "  for (const s of shapings([])) {" }],
+    run: ["timeline"],
+    caught: "outcome differs from the model",
+  },
   "duplicate-no-body": {
     what: "a Duplicate builds but makes no copy (35e2)",
     edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };\n  return { status: \"built\", bodies: [id] };", replace: "  return { status: \"built\" };" }],
