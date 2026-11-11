@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { repoFile } from "./repo-file.ts";
 
-const { bugReport, MAX_DESIGN_BYTES, MAX_BODY_CHARS, MAX_TITLE_CHARS } = (await import(repoFile("supabase/functions/bug-report/index.ts").href)) as typeof import("../../../supabase/functions/bug-report/index.ts");
+const { bugReport, ipv6Prefix, quiet, senderAddress, MAX_DESIGN_BYTES, MAX_BODY_CHARS, MAX_TITLE_CHARS } = (await import(repoFile("supabase/functions/bug-report/index.ts").href)) as typeof import("../../../supabase/functions/bug-report/index.ts");
 
 const APP = "https://spindlelabs.app";
 const IP = "203.0.113.7";
@@ -35,7 +35,7 @@ function world(o: { env?: Record<string, string | undefined>; allowed?: boolean 
 }
 
 const post = (body: unknown, o: { origin?: string; raw?: string } = {}) =>
-  new Request("https://db.test/functions/v1/bug-report", { method: "POST", headers: { origin: o.origin ?? APP, "content-type": "application/json", "x-forwarded-for": `${IP}, 10.0.0.1` }, body: o.raw ?? JSON.stringify(body) });
+  new Request("https://db.test/functions/v1/bug-report", { method: "POST", headers: { origin: o.origin ?? APP, "content-type": "application/json", "cf-connecting-ip": IP, "x-forwarded-for": `198.51.100.99, ${IP}` }, body: o.raw ?? JSON.stringify(body) });
 
 const report = (o: Record<string, unknown> = {}) => ({ title: "Bug: fillet vanished", body: "### What happened\n\nIt went @ben", design: null, ...o });
 
@@ -45,9 +45,9 @@ test("hand-worked: a report with a design stores the file, then files the issue 
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { issue: 42 });
   assert.equal(res.headers.get("access-control-allow-origin"), APP);
-  // 1. The limit, asked for the hashed sender (the first address in x-forwarded-for, with the salt).
+  // 1. The limit, asked for the hashed sender (cf-connecting-ip, with the salt) and the design's 2 bytes.
   assert.equal(calls[0].url, "https://db.test/rest/v1/rpc/bug_report_allowed");
-  assert.deepEqual(JSON.parse(calls[0].body), { p_sender: SENDER });
+  assert.deepEqual(JSON.parse(calls[0].body), { p_sender: SENDER, p_bytes: 2 });
   // 2. The design, under reports/<date>/<id>-<name>. "{}" is bytes 7B 7D: 011110 110111 110100 (padded), so base64 "e30=".
   assert.equal(calls[1].method, "PUT");
   assert.equal(calls[1].url, "https://api.github.com/repos/SpindleLabs-app/bug-reports/contents/reports/2026-11-11/k3y-Bracket.spindle.json");
@@ -136,4 +136,27 @@ test("the body and title at 0.9× of their limits are filed; at 1.1× refused wi
     w = world();
     assert.equal((await w.handle(post(report({ [key]: "a".repeat(Math.ceil(1.1 * max)) })))).status, 413, `${key} 1.1×`);
   }
+});
+
+test("hand-worked: the sender's address is never one the caller wrote", () => {
+  const h = (o: Record<string, string>) => new Headers(o);
+  // Cloudflare's header wins; a caller can't set it (Cloudflare replaces it).
+  assert.equal(senderAddress(h({ "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "1.1.1.1" })), "203.0.113.7");
+  // Without it, the last x-forwarded-for entry: the proxy appends the real address after whatever the caller wrote.
+  assert.equal(senderAddress(h({ "x-forwarded-for": "1.1.1.1, 2.2.2.2, 203.0.113.7" })), "203.0.113.7");
+  assert.equal(senderAddress(h({})), "unknown");
+  // IPv6 by its /64: "2001:db8:1:2::1" fills "::" with four zero groups (8 - 4 written), so its first four are 2001, db8, 1, 2.
+  assert.equal(ipv6Prefix("2001:db8:1:2::1"), "2001:0db8:0001:0002::/64");
+  assert.equal(ipv6Prefix("2001:db8::1"), "2001:0db8:0000:0000::/64");
+  assert.equal(ipv6Prefix("[2001:db8:a:b:c:d:e:f]:443"), "2001:0db8:000a:000b::/64");
+  assert.equal(senderAddress(h({ "cf-connecting-ip": "2001:DB8:1:2:aaaa::9" })), "2001:0db8:0001:0002::/64");
+});
+
+test("hand-worked: a filed body pings nobody, and a design's name is only its name", async () => {
+  assert.equal(quiet("hi @ben &#64;ben &commat;ben a&b"), "hi @\u200bben &amp;#64;ben &amp;commat;ben a&amp;b");
+  const { handle, calls } = world();
+  await handle(post(report({ design: { name: "x](http:evil.example) [a.spindle.json", text: "{}" } })));
+  const body = JSON.parse(calls.at(-1)!.body).body as string;
+  // Every [ ] ( ) is escaped, so the only link on the line is the stored file's.
+  assert.ok(body.includes("Design file: [x\\]\\(http:evil.example\\) \\[a.spindle.json](https://github.com/x/blob/main/f)"), body);
 });
