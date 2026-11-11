@@ -597,7 +597,9 @@ async function makesOutline(kernel: KernelCalls, doc: DesignDocument, sketchId: 
  * where it was when the edge is gone; from 27d each projection likewise. The same rules as the model's `settle`: suppression
  * and the marker don't count, so a greyed sketch keeps nothing while its
  * face is there, and one whose face went while it was greyed keeps where
- * it was. `after` itself when nothing changes.
+ * it was. Only a followed point of a sketch that builds with the
+ * suppressed items off follows its edge as built so, as the rebuild draws
+ * it (hunt 11-11, #540 item 2). `after` itself when nothing changes.
  *
  * Placing face sketches builds bodies: on `cache` when given (it may be
  * the one drawn from, even while it rebuilds: bodies built already are
@@ -664,13 +666,18 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
     // per face sketch, and a last to see nothing change. The kept shapes are decided again on each pass's design.
     for (let pass = 0; pass <= faces; pass++) {
       const now = await placed(doc);
+      // Pinned points follow their bodies as the rebuild draws them, an earlier suppressed Move left off (hunt 11-11, #540
+      // item 2: followed with it on, every edit in the sketch threw a point to where the Move would put it, and the rebuild
+      // put it back); a sketch that isn't built that way (itself suppressed or greyed) as it would be with everything on.
+      const drawn = doc.timeline.features.some((f) => f.suppressed) ? await placeOpen(doc, bodies, kernel, true) : now;
+      const pinsOf = (id: string) => (drawn[id]?.status === "built" ? drawn[id] : now[id]);
       let changed = false;
       const sketches: Sketch[] = [];
       for (const content of doc.sketches) {
         const r = now[content.id];
         if (content.face === undefined || r?.status !== "built") {
           // 27c: a sketch on an origin plane with pinned points follows them too.
-          const followed = content.face === undefined ? followedSketch(content, r) : content;
+          const followed = content.face === undefined ? followedSketch(content, pinsOf(content.id)) : content;
           changed ||= followed !== content;
           sketches.push(followed);
           continue;
@@ -683,7 +690,7 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         changed ||= keep !== held;
         const settled = keep === held ? content : { ...content, face: keep ? { ...face, held: keep } : face };
         // Step 26f: each pinned point that found its edge goes where the edge is now; one that didn't stays where it was.
-        const followed = followedSketch(settled, r);
+        const followed = followedSketch(settled, pinsOf(content.id));
         changed ||= followed !== settled;
         sketches.push(followed);
       }
@@ -719,12 +726,14 @@ export const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFa
  * Every item of `doc` up to its last sketch on a face or with pins,
  * built with nothing suppressed and no marker, without freeing anything:
  * where each face sketch would lie, and each pinned point would be, with
- * everything on (none for a document without one).
+ * everything on (none for a document without one). With `suppressed`
+ * the suppressed items stay off (the marker still doesn't count): where
+ * each pinned point is drawn (hunt 11-11, #540 item 2).
  */
-async function placeOpen(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls): Promise<Record<string, FeatureResult>> {
+async function placeOpen(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls, suppressed = false): Promise<Record<string, FeatureResult>> {
   const last = doc.timeline.features.filter((f) => placedOnBodies(doc, f)).at(-1);
   if (last === undefined) return {};
-  const features = doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));
+  const features = suppressed ? doc.timeline.features : doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));
   return (await buildTimeline({ ...doc, timeline: { features, marker: last.id } }, cache, kernel)).results;
 }
 

@@ -564,7 +564,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "greyed-loses-hold": {
     fault: "greyed-loses-hold",
     what: "settling judges held placements with suppression on, so a face redrawn away while greyed is never held",
-    edits: [{ file: REBUILD, find: "  const features = doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));", replace: "  const features = doc.timeline.features;" }],
+    edits: [{ file: REBUILD, find: "  const features = suppressed ? doc.timeline.features : doc.timeline.features.map((f) => (f.suppressed ? { ...f, suppressed: false } : f));", replace: "  const features = doc.timeline.features;" }],
     run: ["naming"],
     caught: "seeded:",
     why: "Design falls back to the frame as drawn when nothing is held, which in the Fusion case Q3 is where the hold would be; the seeded sessions move the face before suppressing",
