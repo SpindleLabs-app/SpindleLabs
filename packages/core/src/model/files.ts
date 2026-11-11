@@ -122,13 +122,28 @@ function firstElementIsSvg(t: string): boolean {
   return t.startsWith("<svg", i) && (i + 4 === t.length || /[\s>/]/.test(t[i + 4]));
 }
 
+/**
+ * The text after any leading STEP (ISO 10303-21) comments and the whitespace round them: Part 21 lets a comment,
+ * "/*" up to the next "*\/", stand wherever a space may (save-load hunt D1). An unclosed comment leaves "" (not STEP).
+ */
+function afterPart21Comments(t: string): string {
+  let i = 0;
+  for (;;) {
+    while (i < t.length && /\s/.test(t[i])) i++;
+    if (!t.startsWith("/*", i)) return t.slice(i);
+    const end = t.indexOf("*/", i + 2);
+    if (end < 0) return "";
+    i = end + 2;
+  }
+}
+
 /** The format the contents show by themselves, or null (STL and DXF never show here: their signatures are too weak). */
 function strongFormat(head: Uint8Array): FileFormat | null {
   if (startsWith(head, PNG_SIGNATURE)) return "png";
   if (startsWith(head, [0xff, 0xd8, 0xff])) return "jpeg";
   if (startsWith(head, ascii("%PDF-"))) return "pdf";
   const t = text(head).trimStart();
-  if (t.startsWith("ISO-10303-21;")) return "step";
+  if (afterPart21Comments(t).startsWith("ISO-10303-21;")) return "step";
   if (t.startsWith("{") && t.includes('"formatVersion"')) return "project";
   if (firstElementIsSvg(t)) return "svg";
   return null;
