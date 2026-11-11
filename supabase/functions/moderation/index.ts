@@ -1,5 +1,5 @@
 // SpindleLabs' moderation function (a Supabase Edge Function, Deno): what the review page
-// (supabase/review/, run on a moderator's own computer, never part of the app) asks for, so
+// (supabase/review/, run on a moderator's own computer or published at the mirror's /review/, never part of the app) asks for, so
 // the people who run SpindleLabs can act on reports without the SQL editor (community step
 // C5b). One file with no imports, so it can be pasted into the Supabase dashboard's editor as
 // it is. Deploy it with "Verify JWT" OFF: every request is checked here, and the browser's
@@ -26,8 +26,13 @@
 export type Env = Record<string, string | undefined>;
 export type Deps = { env: Env; fetch: typeof fetch; now?: () => number; log?: (line: string) => void };
 
-/** Where the review page runs: the moderator's own computer (supabase/review/serve.mjs). Never the app's pages. */
-export const REVIEW_ORIGINS = ["http://localhost:8765", "http://127.0.0.1:8765"];
+/**
+ * Where the review page runs: the moderator's own computer (supabase/review/serve.mjs), or the mirror's /review/
+ * (supabase/review/build.mjs, for a computer with no terminal). The mirror also serves a copy of the app, so this
+ * check is a second lock only; what keeps the page to moderators is the sign-in and the MODERATORS list below.
+ * Never spindlelabs.app.
+ */
+export const REVIEW_ORIGINS = ["http://localhost:8765", "http://127.0.0.1:8765", "https://spindlelabs-app.github.io"];
 /** The largest request read at all, in bytes: the longest claim with every character escaped, and the rest. */
 export const MAX_REQUEST_BYTES = 64 * 1024;
 /** The longest note (why), as the moderation record allows. */

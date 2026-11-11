@@ -59,6 +59,10 @@ export function askWords(op: "cut" | "join", misses: readonly Miss[], name: (bod
   const or = targets.length <= 1 ? (targets[0] ?? "") : `${targets.slice(0, -1).join(", ")} or ${targets.at(-1)}`;
   if (asking.kind === "extrude" && misses.every((m) => m.tools.length === 1 && m.tools[0] === asking.own)) {
     const turn = "It may point the wrong way: Flip turns it round.";
+    // SL #583 item 3: none of its faces left, it lies wholly inside, so it neither reaches nothing nor stays apart.
+    if (op === "join" && misses.every((m) => m.inside?.includes(asking.own))) {
+      return { heading: "The join adds nothing", words: `${asking.label} lies wholly inside ${or}, so joining it adds nothing. ${turn} Join anyway, or cancel and change it?`, go: "Join anyway" };
+    }
     return op === "cut"
       ? { heading: "The cut removes nothing", words: `${asking.label} doesn't reach ${or}, so it cuts nothing and leaves no body of its own. ${turn} Cut anyway, or cancel and change it?`, go: "Cut anyway" }
       : { heading: "The join adds nothing", words: `${asking.label} doesn't reach ${or}, so it stays a separate piece. ${turn} Join anyway, or cancel and change it?`, go: "Join anyway" };

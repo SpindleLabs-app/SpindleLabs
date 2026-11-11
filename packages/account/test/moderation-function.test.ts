@@ -120,8 +120,11 @@ test("a moderator's id in another case on the list, and a sign-in for a differen
   assert.equal((await two.handle(ask({ do: "me" }))).status, 403);
 });
 
-test("only the review page's own addresses may call it; the app's pages may not", async () => {
-  for (const origin of ["https://spindlelabs.app", "https://spindlelabs-app.github.io", "http://localhost:8766", "null", ""]) {
+test("only the review page's own addresses may call it; the app's own address may not", async () => {
+  // The mirror (https://spindlelabs-app.github.io) is allowed since the page is published there at /review/ for a
+  // moderator with no terminal; it also serves an app copy, so this is a second lock behind the sign-in and the list.
+  assert.deepEqual(REVIEW_ORIGINS, ["http://localhost:8765", "http://127.0.0.1:8765", "https://spindlelabs-app.github.io"]);
+  for (const origin of ["https://spindlelabs.app", "https://www.spindlelabs.app", "https://spindlelabs-app.github.io.evil.test", "http://spindlelabs-app.github.io", "http://localhost:8766", "null", ""]) {
     const { handle, calls } = world();
     const res = await handle(ask({ do: "me" }, { origin }));
     assert.equal(res.status, 403, origin);
