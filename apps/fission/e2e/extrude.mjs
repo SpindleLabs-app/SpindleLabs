@@ -182,7 +182,9 @@ try {
     // A new part: framed again in the 3D view, not left looking straight down.
     assert.equal(Number(await data(page, "fits")), fitsBefore + 1, "framed once");
     assert.equal(await data(page, "shape"), "sketch-extrude");
+    // The row by name (the extrude's intent above says Sketch 1), not only some row with its id.
     assert.ok(await page.isVisible('[data-node="sketches/sketch-2"]'), "the sketch stays in the browser");
+    assert.equal(await page.textContent('#browser .tree-row[data-node="sketches/sketch-2"]'), "Sketch 1", "the sketch stays in the browser, by name");
     if (shots) await page.screenshot({ path: `${shots}/extrude-done-1280.png` });
 
     // A typed distance rebuilds it: 1200 · 25 = 30,000 mm³, one "Change extrude distance" step.

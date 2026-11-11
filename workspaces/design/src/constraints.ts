@@ -15,8 +15,11 @@
 // last and is the one blamed when it makes a conflict; the points held
 // (the first pick: Fusion keeps it still); one free radius per circle.
 //
-// Constraints never name a point that follows a body (refused): the body,
-// not the sketch, says where it is. A body's edit that moves such a point
+// A constraint may name a point that follows a body beside one of the
+// sketch's own (Design data version 17, #517: a rectangle drawn from a
+// body's corner keeps its sides square); one naming only followed points is
+// refused (document.ts `heldByBody`): the body, not the sketch, says where
+// they are, so it could only fight. A body's edit that moves such a point
 // solves the sketch again with it fixed where the body put it (rebuild.ts
 // `follow`, 47d4), so an arc through it stays on its circle; when the
 // constraints can't hold there, only the followed points move, with a
@@ -188,7 +191,7 @@ export function namingProblem(sketch: Sketch, c: NewConstraint): string | null {
   for (const p of names) if (!sketch.points.some((q) => q.id === p)) return `The sketch has no point ${p}.`;
   if (c.kind !== "fix" && c.a === c.b) return "Pick two different points.";
   const follows = followingPoints(sketch);
-  if (names.some((p) => follows.has(p))) return "That point follows a body's edge, so the body says where it is: constraints can't move it.";
+  if (names.every((p) => follows.has(p))) return names.length === 1 ? "That point follows a body's edge, so the body says where it is: constraints can't move it." : "Both points follow a body's edge, so the body says where they are: a constraint between them could only fight it.";
   if (c.kind === "distance") return dimensionProblem(c.value);
   return null;
 }
@@ -335,7 +338,7 @@ export function keptConstraints(sketch: Pick<Sketch, "points" | "constraints" | 
  * gives a rectangle (the beginner check, 2026-11-06: without them a size
  * on one side made a trapezoid). Only where it holds exactly as drawn, so
  * the sketch stays solved without a solve and nothing can fight; a side
- * through a point that follows a body, or already level or upright by its
+ * with both ends following a body (#517: one end is fine), or already level or upright by its
  * own constraint, gets none. The ids from the one counter.
  */
 export function squaredRectangle(doc: DesignDocument, sketchId: string, sides: readonly string[]): DesignDocument {
@@ -347,7 +350,7 @@ export function squaredRectangle(doc: DesignDocument, sketchId: string, sides: r
   const added: SketchConstraint[] = [];
   for (const id of sides) {
     const line = sketch.curves.find((c) => c.id === id);
-    if (line?.kind !== "line" || follows.has(line.start) || follows.has(line.end)) continue;
+    if (line?.kind !== "line" || (follows.has(line.start) && follows.has(line.end))) continue;
     const [a, b] = [at.get(line.start)!, at.get(line.end)!];
     const kind = a.y === b.y ? "horizontal" : a.x === b.x ? "vertical" : null;
     if (kind === null) continue;

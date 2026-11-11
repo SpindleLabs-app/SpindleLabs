@@ -163,14 +163,19 @@ test("remove takes away exactly its own two entries, and works when only one of 
   await store.save("a", part(1));
   await store.save("b", part(2));
   await store.remove("a");
-  // The save count is shared by every project, so it stays (B5).
-  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/b"]);
+  // The save count is shared by every project, so it stays (B5). A removed project's text is deleted and its summary
+  // left as its deletion mark, in one step (save/load hunt C2, C3); b's entries are untouched.
+  const mark = (id: string) => /^\{"deleted":"[^"]*"\}$/.test(kv.entries.get(`summary/${id}`) ?? "");
+  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/a", "summary/b"]);
+  assert.deepEqual([mark("a"), mark("b")], [true, false]);
   await kv.delete("summary/b"); // only the project left
   await store.remove("b");
-  assert.deepEqual([...kv.entries.keys()], ["order"]);
+  assert.deepEqual([kv.entries.has("project/b"), mark("b")], [false, true]);
   await kv.set("summary/c", "{}"); // only the summary left
   await store.remove("c");
-  assert.deepEqual([...kv.entries.keys()], ["order"]);
+  assert.deepEqual([kv.entries.has("project/c"), mark("c")], [false, true]);
+  assert.deepEqual(await store.list(), [], "none of them listed");
+  await assert.rejects(store.remove("a"), /no stored project "a" to remove/);
 });
 
 // ---------- unsaved.ts ----------

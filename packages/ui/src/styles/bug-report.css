@@ -1,4 +1,4 @@
-/* Report a bug (bug-report.ts): the Settings card dialog's look (settings.css), with three boxes, a note and two buttons. */
+/* Report a bug (bug-report.ts): the Settings card dialog's look (settings.css), with one box, the design tick, a note and two buttons. */
 .bug-report .bug-report-field { display: grid; gap: 4px; font-size: 13px; }
 .bug-report .bug-report-field textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 6px 8px; resize: vertical; color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
 .bug-report .bug-report-field textarea:focus { outline: 2px solid var(--look-accent); outline-offset: 0; }
@@ -8,4 +8,22 @@
 .bug-report .bug-report-actions { display: flex; justify-content: flex-end; gap: var(--look-space-2); padding: var(--look-space-3) var(--look-space-4); border-top: 1px solid var(--look-edge); }
 @media (max-width: 640px) {
   .bug-report .close, .bug-report .settings-action { min-height: var(--look-target-touch); }
+}
+.bug-report .bug-report-tick { display: flex; align-items: center; justify-content: flex-start; gap: var(--look-space-2); font-size: 13px; }
+.bug-report .bug-report-tick span { flex: 1; text-align: left; }
+.bug-report .bug-report-tick input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--look-accent); }
+.bug-report .bug-report-status.bug-report-calm { color: inherit; }
+.bug-report .bug-report-go:disabled { opacity: 0.5; cursor: progress; }
+@media (max-width: 640px) {
+  .bug-report .bug-report-tick { min-height: var(--look-target-touch); }
+}
+/* The sending bar: a short block running along a track, over and over (bug-report.ts `progress`). */
+.bug-report .bug-report-progress { position: relative; height: 6px; overflow: hidden; border-radius: 3px; background: var(--look-edge); }
+.bug-report .bug-report-progress[hidden] { display: none; }
+.bug-report .bug-report-progress-run { position: absolute; top: 0; bottom: 0; left: 0; width: 35%; border-radius: 3px; background: var(--look-accent); animation: bug-report-run 1.2s ease-in-out infinite; }
+@keyframes bug-report-run { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+/* Without motion: the bar stays full and gently dims, so it still says "working". */
+@media (prefers-reduced-motion: reduce) {
+  .bug-report .bug-report-progress-run { width: 100%; animation: bug-report-wait 2s ease-in-out infinite alternate; }
+  @keyframes bug-report-wait { from { opacity: 1; } to { opacity: 0.5; } }
 }

@@ -16,6 +16,8 @@ export interface FakeService {
   approve(challenge: string): string;
   /** "up" answers; "down" throws as fetch does with no network; a number answers every request with that status. */
   mode: "up" | "down" | number;
+  /** When true, a sign-in code sent with the wrong secret is refused but stays usable (by default a code works once, whatever happens). */
+  keepCodeOnWrongSecret?: boolean;
   /** When set, the next successful reply's body is this instead. */
   nextBody?: unknown;
   /** Refresh tokens the service still accepts. */
@@ -68,8 +70,8 @@ export function fakeService(nowS: () => number): FakeService {
       if (url.includes("/token?") && "authorization" in headers) return new Response('{"error":"unexpected token"}', { status: 400 });
       if (url === `${SERVICE}/auth/v1/token?grant_type=pkce`) {
         const challenge = codes.get(body.auth_code);
-        codes.delete(body.auth_code); // a code works once
         const hashed = createHash("sha256").update(String(body.code_verifier)).digest("base64url");
+        if (!(svc.keepCodeOnWrongSecret && challenge !== undefined && hashed !== challenge)) codes.delete(body.auth_code); // a code works once
         if (challenge === undefined || hashed !== challenge) return new Response('{"error":"invalid_grant"}', { status: 400 });
         return issue();
       }
