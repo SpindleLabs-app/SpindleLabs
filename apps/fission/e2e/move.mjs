@@ -98,7 +98,8 @@ const panel = (page) =>
   });
 const opened = (page) => until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the Move panel open");
 const closed = (page) => until(page, () => document.getElementById("move-panel")?.hidden === true, null, "the Move panel closed");
-const undoTitle = (page) => page.getAttribute("#undo", "title");
+// What Undo says of the project's steps: with a tool open its title says it cancels the tool (issue #520).
+const undoTitle = (page) => page.getAttribute("#undo", "data-project-step");
 const items = (page) => page.$$eval("#timeline [data-item]", (els) => els.map((e) => e.dataset.item));
 /** Which of the panel's rows show: the distances, the angles, the pivot, Snap. */
 const rowsShown = (page) => page.evaluate(() => ["move-distance", "move-angle", "move-pivot-fold", "move-snap"].filter((id) => !document.getElementById(id).hidden));

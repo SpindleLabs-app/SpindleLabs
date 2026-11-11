@@ -108,7 +108,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
     what: "the history keeps the steps that could be redone when a new step is recorded",
     edits: [
       { file: "packages/core/src/model/history.ts", find: "      entries.length = index + 1; // nothing to redo after a new step", replace: "" },
-      { file: "packages/core/src/model/history.ts", find: "        entries.push({ snapshot, label, mergeKey, at: t });", replace: "        entries.splice(index + 1, 0, { snapshot, label, mergeKey, at: t });" },
+      { file: "packages/core/src/model/history.ts", find: "        entries.push(entry(snapshot, label, mergeKey, t));", replace: "        entries.splice(index + 1, 0, entry(snapshot, label, mergeKey, t));" },
     ],
     run: ["history"],
     caught: "history-fuzz",

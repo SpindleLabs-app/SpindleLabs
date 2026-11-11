@@ -751,3 +751,86 @@ test("load never keeps more than the limit (save/load hunt C9): the oldest go fi
   assert.equal(h.steps().length, 4);
   assert.equal(h.undo(), "Step 3");
 });
+
+// Issue #520 (app bug hunt 2026-11-11): Ctrl+Z in a sketch opened again with Edit Sketch took back the extrude made
+// before it. Design fences the history while the sketch is open: only the sketch's own steps can be undone.
+test("hand-worked: a fence stops undo, redo and jumps at the present, and lets go when released", () => {
+  const { h, edit, restores } = rig();
+  // 40 → 50 ("Width 50", the extrude before the sketch) → 60, undone: 60 is a redo away when the fence goes up at 50.
+  edit(50);
+  edit(60);
+  h.undo();
+  const release = h.fence();
+  // Nothing before the fence (40) and nothing a redo away when it went up (60) is in reach.
+  assert.equal(h.canUndo(), false);
+  assert.equal(h.undoLabel(), null);
+  assert.equal(h.undo(), null);
+  assert.equal(h.canRedo(), false);
+  assert.equal(h.redoLabel(), null);
+  assert.equal(h.redo(), null);
+  assert.equal(h.jumpTo(0), null); // the start, behind the fence
+  assert.equal(h.jumpTo(2), null); // 60, a redo away when the fence went up
+  assert.deepEqual(restores, [50]); // only the undo before the fence put anything back
+  // The sketch's own steps: 50 → 70 → 80. Undo goes 80 → 70 → 50 and stops; redo comes back to 80.
+  edit(70, "Draw line");
+  edit(80, "Draw line 2");
+  assert.equal(h.undo(), "Draw line 2");
+  assert.equal(h.undo(), "Draw line");
+  assert.equal(h.canUndo(), false);
+  assert.equal(h.undo(), null);
+  assert.equal(h.redo(), "Draw line");
+  assert.equal(h.jumpTo(3), "Draw line 2"); // steps: 40, 50, 70, 80 — 80 is the sketch's own, in reach
+  assert.equal(h.jumpTo(1), "Width 50"); // the fence's own floor is in reach
+  assert.equal(h.jumpTo(0), null);
+  // Released (Finish Sketch): the steps before are in reach again.
+  release();
+  assert.equal(h.undoLabel(), "Width 50");
+  assert.equal(h.undo(), "Width 50");
+  // Every restore in order: the first undo (50), undos to 70 and 50, redo to 70, jumps to 80 and 50, the last undo to 40.
+  assert.deepEqual(restores, [50, 70, 50, 70, 80, 50, 40]);
+});
+
+test("a fence: the next record never merges into the step before it, reset ends it, an old release changes nothing", () => {
+  const { h, edit, tick } = rig();
+  edit(50, "Width", "w");
+  const release = h.fence();
+  tick(10); // well inside MERGE_MS: without the fence, this would fold into "Width"
+  edit(55, "Width", "w");
+  assert.equal(h.steps().length, 3); // 40, 50, 55: a step of its own, so the sketch can undo it alone
+  assert.equal(h.undo(), "Width");
+  assert.equal(h.canUndo(), false);
+  const second = h.fence(); // a new fence replaces the first
+  release(); // the first's release no longer lets go
+  assert.equal(h.canUndo(), false);
+  second();
+  assert.equal(h.canUndo(), true);
+  h.fence();
+  h.reset();
+  edit(60);
+  edit(70);
+  assert.equal(h.undo(), "Width 70");
+  assert.equal(h.undo(), "Width 60"); // reset ended the fence: back to the start
+});
+
+test("a fence's floor taken out (amend folds it back, or the limit drops it) moves to what is kept", () => {
+  // Amend: the present at the fence amended back to the state before it removes that step; the floor becomes the step before.
+  const { h, doc, edit } = rig();
+  edit(50);
+  edit(60);
+  h.fence();
+  doc.w = 50;
+  assert.equal(h.amend(), true); // 60 folded back to 50: the "Width 60" step is gone
+  assert.equal(h.canUndo(), false); // the floor moved to 50, not past it
+  edit(65);
+  assert.equal(h.undo(), "Width 65");
+  assert.equal(h.undo(), null);
+  // The limit: limit 2 keeps 3 states; the fence's floor (40, the start) drops out as steps are made after it.
+  const small = rig({ limit: 2 });
+  small.h.fence();
+  small.edit(50);
+  small.edit(60);
+  small.edit(70); // 40 dropped: 50, 60, 70 kept, all made after the fence
+  assert.equal(small.h.undo(), "Width 70");
+  assert.equal(small.h.undo(), "Width 60");
+  assert.equal(small.h.undo(), null);
+});

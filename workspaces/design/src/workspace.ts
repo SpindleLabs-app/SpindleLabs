@@ -109,6 +109,19 @@ const rebuildsOn = new WeakMap<HTMLElement, number>();
  * since the point it ran from may be gone). Cleared by Finish sketch.
  */
 let editingSketch: { id: string; grid: number; typed: string; tool: ToolKind } | null = null;
+/**
+ * While a sketch is edited, Undo covers only its own edits, as Fusion's (issue #520: Ctrl+Z in a sketch opened again
+ * with Edit Sketch took back the extrude made before it, unseen): the history is fenced at the sketch's start (before a
+ * new sketch's Create sketch step, so undoing that still closes it) and let go when the sketch closes. Kept across
+ * mounts, as the sketch is.
+ */
+let sketchFence: (() => void) | null = null;
+/** No sketch edited any more: the history's fence let go. */
+function stopEditingSketch() {
+  editingSketch = null;
+  sketchFence?.();
+  sketchFence = null;
+}
 /** Grid snap on or off (sketch feel SF1; off by default: points go where you click), kept for every sketch until the page reloads. */
 let gridSnap = DEFAULT_GRID_SNAP;
 /** The Settings default for Snap to grid last taken (U2b): a new sketch takes a changed default, else keeps the toggle as left. */
@@ -523,7 +536,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
   /** Mounted by Undo or Redo (step 20c): the first build keeps the camera unless the body no longer fits, even for another shape. */
   const restored = putAwayByRestore !== null && putAwayByRestore === ctx.project;
-  if (putAwayByRestore !== null && !restored) editingSketch = null; // that sketch was the old project's
+  if (putAwayByRestore !== null && !restored) stopEditingSketch(); // that sketch was the old project's
   let keepCamera = ctx.history.restoring() || restored;
   putAwayByRestore = null;
   const inspecting: Inspecting = {
@@ -1167,6 +1180,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.selection.set([bodyReference(body)]);
     startMove();
     moveFromInsert = true;
+    moveAfterStep = true;
   }
 
   // A new token for copied bodies whenever Design opens other than by Undo or Redo putting it back (a project opened,
@@ -1206,7 +1220,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const copies = copiesOf(added.ids).filter((b) => shownNow.has(b));
     if (copies.length === 0 || designDoc() !== added.doc || mode.kind !== "none" || extruding || extrudeBox.shown || editBox.editing !== null || moveBox.shown || combineBox.shown || deleting.open !== null) return;
     ctx.selection.set(copies.map(bodyReference));
-    if (mirror === undefined) startMove();
+    if (mirror === undefined) {
+      startMove();
+      moveAfterStep = true;
+    }
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -1858,6 +1875,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind === "edit") leaveSketch();
     leaveExplode(); // a tool works on the bodies where they are
     mode = { kind: "pick" };
+    toolsChanged();
     showStart();
     viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
     sketchBox.showPick();
@@ -2027,6 +2045,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** A new sketch made on a plane or a face: recorded (one undo step), opened with the line tool, looked at square on. */
   function startNewSketch(made: { doc: DesignDocument; id: string }) {
     viewport.showPlanes([]);
+    sketchFence?.();
+    sketchFence = ctx.history.fence(); // the sketch's own steps from here: its Create sketch first
+    toolsChanged(); // the plane prompt is over
     applySketchEdit(made.doc, SKETCH_STEPS.create, made.id);
     // A new sketch starts with the grid size and Snap to grid chosen in Settings (U2b), the built-in ones when none is.
     const start = currentDesignDefaults(ctx.properties.ownerDocument);
@@ -2050,6 +2071,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     const kept = sketchGrids.get(id);
+    sketchFence?.();
+    sketchFence = ctx.history.fence(); // only what is drawn from now on can be undone while it is open (issue #520)
     editingSketch = { id, grid: kept?.grid ?? currentDesignDefaults(ctx.properties.ownerDocument).grid, typed: kept?.typed ?? String(currentDesignDefaults(ctx.properties.ownerDocument).grid), tool: "line" };
     enterSketch();
     if (mode.kind !== "edit") return;
@@ -2067,7 +2090,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Edits the sketch named in editingSketch with its tool, nothing clicked yet. */
   function enterSketch() {
     const doc = designDoc();
-    if (!editingSketch || !doc.sketches.some((s) => s.id === editingSketch!.id)) return void (editingSketch = null);
+    if (!editingSketch || !doc.sketches.some((s) => s.id === editingSketch!.id)) return void stopEditingSketch();
     leaveExplode(); // a tool works on the bodies where they are
     mode = { kind: "edit", tool: startTool(editingSketch.tool, editingSketch.id), grid: editingSketch.grid, pointer: null, snap: null };
     pointerAt = null;
@@ -2110,7 +2133,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const drew = mode.kind === "edit" && rebuild && designDoc() !== shownDoc;
     mode = { kind: "none" };
     unlock();
-    editingSketch = null;
+    stopEditingSketch();
+    toolsChanged();
     showStart();
     viewport.showPlanes([]);
     sketchBox.hide();
@@ -2651,12 +2675,35 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], regions: new Map(), offer: null, region: null, distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null, operation: "new", choices: [], unticked: new Set() };
     leaveExplode(); // a tool works on the bodies where they are
     extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE), combineShown());
+    toolsChanged();
     // No usable sketch: say why (a body's flat faces are still offered to click, UX1c); with no sketch at all and a body, just how to pick.
     if (items.length > 0 ? !chosen : sketches.length === 0 && (lastScene?.bodies.length ?? 0) > 0) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
     else if (items.length === 0) extrudeBox.showStatus(sketches.length > 0 ? NO_USABLE_SKETCH : NO_SKETCH, false);
     showExtrudeView();
     if (doc) void offerProfiles(doc, items.map((f) => f.id));
     if (chosen) void checkExtrude(chosen);
+  }
+
+  /** A tool's panel opened or closed: the shell's Undo and Redo say what they would do now (`openTool`), once this change is done. */
+  function toolsChanged() {
+    queueMicrotask(() => {
+      if (!putAway) ctx.toolChanged?.();
+    });
+  }
+  /**
+   * The tool open now, which Undo cancels alone (issue #520, as Fusion's), or null. Nothing a tool's panel holds is
+   * recorded before its OK, so cancelling it takes back everything it did. A Move that Insert or Duplicate opened on
+   * what it made is that command's own (`moveAfterStep`): Undo takes the command back.
+   */
+  function openTool(): { name: string; cancel(): void } | null {
+    if (!shown) return null;
+    if (mode.kind === "pick") return { name: "Create sketch", cancel: () => leaveSketch() };
+    if (extruding || extrudeBox.shown) return { name: "Extrude", cancel: () => leaveExtrude() };
+    if (editBox.editing !== null) return { name: "Edit feature", cancel: () => leaveEdit() };
+    if (moveBox.shown && !moveAfterStep) return { name: moveBox.editing !== null ? "Edit feature" : MOVE_VERBS[moveBox.kind], cancel: () => leaveMove() };
+    if (combineBox.shown) return { name: combineBox.editing !== null ? "Edit feature" : "Combine", cancel: () => leaveCombine() };
+    if (measureBox.shown) return { name: "Measure", cancel: () => measureBox.close() };
+    return null;
   }
 
   /** Each opening and closing of the Extrude panel counted: an OK whose build lands after it changed is out of date (bug hunt 11-04, E2). */
@@ -2666,6 +2713,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extruding = null;
     extrudeBox.hide();
     viewport.showExtrude(null);
+    toolsChanged();
   }
 
   /** What the view shows while Extrude is open: the outlines offered, the chosen one, the preview and its arrow at the distance now. */
@@ -3204,6 +3252,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     clearOverlay: (id) => viewport.clearOverlay(id),
     changed: () => {
       measureButton.setAttribute("aria-pressed", String(measureBox.shown));
+      toolsChanged();
       if (measureBox.shown) fold?.reveal(); // the folded panel opens at it (U0b)
     },
     over: viewport.element,
@@ -3267,13 +3316,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const c = combineBodies(f);
       combineTarget = c.target;
       combineTools = [...c.tools];
-      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools });
+      toolsChanged();
+    combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools });
       ctx.selection.clear();
       return showCombineHint();
     }
     const picked = pickedBodies(ctx.selection.items, lastScene);
     combineTarget = picked[0] ?? null;
     combineTools = picked.slice(1);
+    toolsChanged();
     combineBox.show({ id: null, name: "Combine", target: combineTarget && combineLabel(combineTarget), tools: combineTools.map(combineLabel), operation: "join", keepTools: false });
     pickCombineBodies();
   }
@@ -3318,6 +3369,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function leaveCombine() {
     measureBox.close();
     if (!combineBox.shown) return;
+    toolsChanged();
     combineOpenings++;
     const edited = combineBox.editing !== null;
     combineBox.hide();
@@ -3393,6 +3445,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch();
     leaveExplode(); // a tool works on the bodies where they are
     editBox.show(editableFeature(designDoc(), id));
+    toolsChanged();
     editRegions = null;
     editOps = null;
     // Extrude's Operation row (with Combine shown), as Fusion's Extrude edited.
@@ -3408,6 +3461,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   function leaveEdit() {
     editBox.hide();
+    toolsChanged();
     editOps = null;
     if (editRegions === null) return;
     editRegions = null;
@@ -3539,6 +3593,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function startMove(id: string | null = null, kind: MoveKind = "move") {
     leaveExplode(); // a tool works on the bodies where they are
     moveFromInsert = false;
+    moveAfterStep = false;
     leaveExtrude();
     leaveEdit();
     leaveCombine();
@@ -3549,7 +3604,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (id !== null) {
       const f = doc.timeline.features.find((x) => x.id === id)!;
       moveBodies = movedBodies(f);
-      moveBox.show({ id, kind: moveKindOf(f), name: itemName(f), bodies: f.dependsOn.map((b) => doc.timeline.features.find((x) => x.id === b)?.provenance.self.label ?? f.provenance.from.find((r) => r.id === b)?.label ?? b), values: moveValues(f) });
+      toolsChanged();
+    moveBox.show({ id, kind: moveKindOf(f), name: itemName(f), bodies: f.dependsOn.map((b) => doc.timeline.features.find((x) => x.id === b)?.provenance.self.label ?? f.provenance.from.find((r) => r.id === b)?.label ?? b), values: moveValues(f) });
       // Its bodies picked as a new Move's are (35e2i), so a click adds one or takes one out; this comes back through pickMoveBodies.
       const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
       ctx.selection.set(moveBodies.filter((b) => shownNow.has(b)).map(bodyReference));
@@ -3557,6 +3613,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     moveBodies = pickedBodies(ctx.selection.items, lastScene);
     const [pivotX, pivotY, pivotZ] = startPivot(moveBodies, lastScene);
+    toolsChanged();
     moveBox.show({ id: null, kind, name: MOVE_VERBS[kind], bodies: bodyLabels(moveBodies), values: { ...NO_MOVE, pivotX, pivotY, pivotZ } });
     pickMoveBodies();
   }
@@ -3740,6 +3797,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let moveOpenings = 0;
   /** The open Move is the one an Insert started on its new body (Ben, 2026-11-04): leaving it lets that body go again, as Insert left nothing picked before. */
   let moveFromInsert = false;
+  /**
+   * The Move open is the one Insert or Duplicate opened on what it just made (issue #520): part of that command, so Undo
+   * takes back the Insert or Duplicate, the Move with it, as before; any other open Move is cancelled alone.
+   */
+  let moveAfterStep = false;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
   /** A new Move open whose boxes move and turn nothing yet: Cancel would lose nothing. */
   function moveUntouched(): boolean {
@@ -3750,6 +3812,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   function leaveMove() {
     if (!moveBox.shown) return;
+    moveAfterStep = false;
+    toolsChanged();
     moveOpenings++;
     // An edited Move's bodies, and the new body an Insert picked for its Move, were picked by the tool, not the user.
     const edited = moveBox.editing !== null || moveFromInsert;
@@ -4191,6 +4255,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sleep() {
     if (!shown) return;
     shown = false;
+    toolsChanged(); // a tool open here is off screen: Undo is the project's again
     // Design's own overlay goes with it: another workspace's view says nothing about a Combine (36d).
     viewport.clearOverlay(REFUSAL_OVERLAY);
     showPrintCheck(); // asleep: cleared
@@ -4257,6 +4322,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sleep,
     run,
     check: aiCheck,
+    openTool,
     // File ▾ (U0f2a): New clears the design after asking (start-fresh.ts); Export STL downloads every body shown, as the toolbar's STL does.
     fileEntries: () => {
       const doc = designDoc();
@@ -4386,6 +4452,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     wake() {
       if (shown) return;
       shown = true;
+      toolsChanged();
       listen();
       showStart();
       showBuildAreaWords();
@@ -4404,7 +4471,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       unitWatch = null;
       for (const d of [pointDrag, liveDrag]) if (d) cancelDrag(d);
       putAwayByRestore = ctx.history.restoring() ? ctx.project : null;
-      if (putAwayByRestore === null) editingSketch = null;
+      if (putAwayByRestore === null) stopEditingSketch();
       // A click, Enter or hover still waiting on the kernel was for the sketch shown until now; an undo that puts the
       // workspace away may have taken that sketch out, so it is dropped as a tool change drops it (app sweep 2026-10-28).
       toolChanges++;
