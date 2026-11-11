@@ -744,10 +744,8 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "lost-projection-moves": {
     fault: "lost-projection-moves",
     what: "a projection whose edge is gone has its points sent to the sketch's origin",
-    edits: [
-      { file: REBUILD, find: "      lost.push({ id: q.id, cause: found.cause });", replace: "      lost.push({ id: q.id, cause: found.cause }), projected.push({ id: q.id, points: madePoints(content, q).map((point) => ({ point, at: [0, 0] as SketchXY })) });" },
-      { file: REBUILD, find: 'import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves,', replace: 'import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves,' },
-    ],
+    // rebuild.ts imports madePoints itself since SL #539 (ownPoints), so the plant needs no import of its own.
+    edits: [{ file: REBUILD, find: "      lost.push({ id: q.id, cause: found.cause });", replace: "      lost.push({ id: q.id, cause: found.cause }), projected.push({ id: q.id, points: madePoints(content, q).map((point) => ({ point, at: [0, 0] as SketchXY })) });" }],
     run: ["naming"],
     caught: "Fusion answers",
   },

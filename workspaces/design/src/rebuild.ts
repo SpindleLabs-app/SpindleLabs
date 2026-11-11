@@ -36,13 +36,13 @@
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
-import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
+import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
-import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
+import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
@@ -821,6 +821,12 @@ const originPlacement = (item: Feature): SketchPlacement | null => (item.intent.
 
 const XY_PLACEMENT: SketchPlacement = { plane: planeOf("XY"), side: 1 };
 
+/** A sketch's points that are its own (SL #539): neither pinned to an edge or corner nor made by a projection, so only an edit of the sketch moves them. */
+export function ownPoints(content: Sketch): Sketch["points"] {
+  const followed = new Set([...(content.pins ?? []).map((p) => p.point), ...(content.projected ?? []).flatMap((p) => madePoints(content, p))]);
+  return followed.size === 0 ? content.points : content.points.filter((p) => !followed.has(p.id));
+}
+
 /**
  * A sketch item's result: where it lies. On an origin plane, that plane.
  * On a face (rule 8): greyed while the face's feature is suppressed or
@@ -853,8 +859,10 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const p = content.face!;
   let cause: PlaneWarning["cause"] = "plane-lost";
   const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false): Promise<FeatureResult> => {
-    // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
-    const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined);
+    // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried);
+    // SL #539: a change of size since by a Scale carries the middle of its own points (not those pinned or projected, which follow
+    // edges by name and are written back after: the middle never moves by settling) as the body's point under it, its sizes kept.
+    const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};

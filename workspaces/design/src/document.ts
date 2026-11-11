@@ -1066,6 +1066,9 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   if (face.side !== 1 && face.side !== -1) throw new Error(`${at}'s side must be 1 or -1, not ${shown(face.side)}`);
   if (Object.hasOwn(face, "held")) checkPlane(face.held, `${at}'s held plane`);
   if (Object.hasOwn(face, "body")) checkPlane(face.body, `${at}'s body frame`);
+  // SL #539: the body's size when drawn (its scale factors multiplied), a number above 0.
+  const body = face.body as Record<string, unknown> | undefined;
+  if (body !== undefined && Object.hasOwn(body, "size") && !(typeof body.size === "number" && Number.isFinite(body.size) && body.size > 0)) throw new Error(`${at}'s body frame's size must be a number above 0, not ${shown(body.size)}`);
   const there = byId.get(feature);
   if (there !== undefined && (there.at > byId.get(f.id)!.at || !hasOwnFaces(there.item))) throw new Error(`${at} is on a face of ${shown(feature)}, which is not a solid item before it in the timeline`);
   if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} is on a face of ${feature} but does not depend on it`);
