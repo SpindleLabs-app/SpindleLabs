@@ -128,7 +128,9 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
       const snapLabel = el("label", { className: "sketch-grid-snap" });
       snapLabel.append(snapBox, " Snap to grid");
       status = el("p", { id: "sketch-status", className: "sketch-status" });
+      status.setAttribute("role", "status"); // read out as it changes
       gridError = el("p", { id: "sketch-grid-error", className: "bad" });
+      gridError.setAttribute("role", "alert");
       gridError.hidden = true;
       help = el("p", { className: "sketch-help", id: "sketch-help" });
       showTool(tool);

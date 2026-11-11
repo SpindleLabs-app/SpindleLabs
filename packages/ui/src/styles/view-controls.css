@@ -43,3 +43,8 @@
   .view-controls:is(#workspace:not([data-split="on"]):not(:has(> #assistant:not([hidden]))):has(> #properties.properties-fold:not([data-folded]):not(:empty)) .view-controls) { left: 8px; transform: none; max-width: calc(100% - 332px); flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
   .view-controls:is(#workspace:not([data-split="on"]):not(:has(> #assistant:not([hidden]))):has(> #properties.properties-fold:not([data-folded]):not(:empty)) .view-controls) .nav-group { flex-shrink: 0; }
 }
+
+/* A touch screen of any width (a tablet; a phone held sideways keeps its own 45 px row, phone-short.css) gets the phone's finger-sized targets (44 px, Apple's 44 pt; Ben's OK 2026-11-11): at 768 px 54 of 56 targets were mouse-sized. */
+@media (pointer: coarse) and (min-width: 641px) and (min-height: 501px) {
+  .view-controls button.nav-button:not(#no-such-id) { min-width: var(--look-target-touch); height: var(--look-target-touch); }
+}

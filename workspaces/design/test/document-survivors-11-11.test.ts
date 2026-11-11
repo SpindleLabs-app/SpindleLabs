@@ -101,7 +101,7 @@ test("no bodies or hidden list in the data adds none (catches either Array.isArr
 
 test("the reader: shown planes that are not text are refused by name, as before the type test went (the change of 2026-11-11)", () => {
   // `includes` is false for 5 and for null, so the plane check alone refuses them, in the same words as "XY" (a plane named as sketches name it, not as the origin does).
-  const d = { version: 16, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
+  const d = { version: 18, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
   for (const [plane, words] of [[5, "5"], [null, "null"], ["XY", "XY"]] as const)
     assert.throws(() => readDesignDocument({ ...d, shownPlanes: [plane] }), { message: `Design data shows ${words}, which is not an origin plane` });
   assert.deepEqual(readDesignDocument({ ...d, shownPlanes: ["origin-xz"] }).shownPlanes, ["origin-xz"]);

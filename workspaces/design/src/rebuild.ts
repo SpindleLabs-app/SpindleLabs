@@ -36,7 +36,7 @@
 
 import { extrudeSketches, hasMoreProfiles, profileParts } from "./extrude-profiles.ts";
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -50,6 +50,7 @@ import { readDesignReference, resolveReference, sharedBy } from "./references.ts
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 import { findRegion, refusalReason, regionOutline, type RegionRef } from "./regions.ts";
+import { missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -104,6 +105,8 @@ export type FeatureResult =
       pieceFaces?: Record<string, string[]>;
       /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
       pieces?: { message: string; renumbered: string[] };
+      /** A Cut or Join whose tools change nothing (misses.ts; Ben 11 Nov, SL #506 item 5, #521): which, and the row's words. */
+      misses?: { message: string; list: Miss[] };
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -246,6 +249,8 @@ export class BodyCache {
   private moves = new Map<string, { from: BodyHandle; to: BodyHandle }>();
   /** Bodies asked of the kernel and not answered yet: the same spec asked again waits for the same answer, so asking ahead never builds twice. */
   private building = new Map<string, Promise<BodyHandle>>();
+  /** Booleans and moves asked of the kernel and not answered yet (`once`), by their keys. */
+  private asking = new Map<string, Promise<unknown>>();
   /** Set by `close`: nothing more is built, and a body answered after it is freed at once, not kept. */
   private closed = false;
   /** Uses running now (`using`): while any is, `keepOnly` only says what to keep, and the last to end frees the rest. */
@@ -257,6 +262,39 @@ export class BodyCache {
   private kernel: KernelCalls;
   constructor(kernel: KernelCalls) {
     this.kernel = kernel;
+  }
+
+  /**
+   * Keeps `handle` at `at`. A body already kept there that is another one
+   * (an answer asked again because one of its pieces was freed) moves to a
+   * key of its own, so `freeUnwanted` still frees it: a body leaves the map
+   * only by being freed.
+   */
+  private keep(at: string, handle: BodyHandle): void {
+    const old = this.bodies.get(at);
+    if (old !== undefined && old.handle !== handle) {
+      const moved = `${at}~${old.handle}`;
+      this.bodies.set(moved, old);
+      this.keys.set(old.handle, moved);
+    }
+    this.bodies.set(at, { handle });
+    this.keys.set(handle, at);
+  }
+
+  /**
+   * `ask()` once for `key` while it is on its way: the same key asked again
+   * meanwhile waits for the same answer (issue #487: two settles asking one
+   * Combine's boolean at once each got their own, and the first was never
+   * freed).
+   */
+  private once<T>(key: string, ask: () => Promise<T>): Promise<T> {
+    const on = this.asking.get(key);
+    if (on !== undefined) return on as Promise<T>;
+    const asked: Promise<T> = ask().finally(() => {
+      if (this.asking.get(key) === asked) this.asking.delete(key);
+    });
+    this.asking.set(key, asked);
+    return asked;
   }
 
   /**
@@ -278,8 +316,7 @@ export class BodyCache {
         void this.kernel.call("body_free", handle).catch(() => {});
         throw new Error(CLOSED);
       }
-      this.bodies.set(at, { handle });
-      this.keys.set(handle, at);
+      this.keep(at, handle);
       return handle;
     });
     this.building.set(at, build);
@@ -304,18 +341,16 @@ export class BodyCache {
     const key = JSON.stringify(copy === 0 ? ["boolean", target, tools, op] : ["boolean", target, tools, op, copy]);
     const hit = this.booleans.get(key);
     if (hit && hit.bodies.every((h) => this.keys.has(h))) return hit;
-    const result = await this.kernel.call("body_boolean", target, [...tools], op);
-    if (this.closed) {
-      for (const h of result.bodies) void this.kernel.call("body_free", h).catch(() => {});
-      throw new Error(CLOSED);
-    }
-    result.bodies.forEach((handle, i) => {
-      const k = `${key}#${i}`;
-      this.bodies.set(k, { handle });
-      this.keys.set(handle, k);
+    return this.once(key, async () => {
+      const result = await this.kernel.call("body_boolean", target, [...tools], op);
+      if (this.closed) {
+        for (const h of result.bodies) void this.kernel.call("body_free", h).catch(() => {});
+        throw new Error(CLOSED);
+      }
+      result.bodies.forEach((handle, i) => this.keep(`${key}#${i}`, handle));
+      this.booleans.set(key, result);
+      return result;
     });
-    this.booleans.set(key, result);
-    return result;
   }
 
   /**
@@ -330,15 +365,16 @@ export class BodyCache {
     const key = JSON.stringify(["moved", handle, motions]);
     const hit = this.moves.get(key);
     if (hit && this.keys.has(hit.from) && this.keys.has(hit.to)) return hit.to;
-    const to = await this.kernel.call("body_move", handle, [...motions]);
-    if (this.closed) {
-      void this.kernel.call("body_free", to).catch(() => {});
-      throw new Error(CLOSED);
-    }
-    this.bodies.set(key, { handle: to });
-    this.keys.set(to, key);
-    this.moves.set(key, { from: handle, to });
-    return to;
+    return this.once(key, async () => {
+      const to = await this.kernel.call("body_move", handle, [...motions]);
+      if (this.closed) {
+        void this.kernel.call("body_free", to).catch(() => {});
+        throw new Error(CLOSED);
+      }
+      this.keep(key, to);
+      this.moves.set(key, { from: handle, to });
+      return to;
+    });
   }
 
   /** A kept body's view, asked of the kernel once it answers (a failed ask is forgotten, so the next look asks again: T6b). */
@@ -456,6 +492,7 @@ export class BodyCache {
     this.bodies.clear();
     this.keys.clear();
     this.building.clear();
+    this.asking.clear();
     this.booleans.clear();
     this.moves.clear();
     this.unfreed = [];
@@ -797,7 +834,8 @@ function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls
   const slow = new Set<Feature>();
   const building = buildingItems(doc);
   for (const f of doc.timeline.features) {
-    if (!ownShape(f) || !building.has(f) || skipped.has(f)) continue;
+    // A profile size outside the limits is never asked for (the kernel built a negative one mirrored): `buildFeature` fails it.
+    if (!ownShape(f) || !building.has(f) || skipped.has(f) || profileSizeRefused(doc, f) !== null) continue;
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
     if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
@@ -1068,6 +1106,9 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
+      // Save-load hunt B4: failed in words as a size the kernel refuses is, never built (a negative one came out mirrored).
+      const refused = profileSizeRefused(doc, f);
+      if (refused !== null) return { status: "failed", cause: "error", message: refused };
       const spec = specOf(doc, f);
       return made({ handle: await cache.body(spec), spec });
     }
@@ -1271,6 +1312,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && (isPiece(b.id) || b.id === own) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
   const pieceFaces: Record<string, string[]> = {};
   const renumbered: string[] = [];
+  const misses: Miss[] = [];
   for (const step of steps) {
     const inputs: NamedBody[] = [];
     const built = new Map<BodyHandle, BuiltBody>();
@@ -1313,6 +1355,8 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       }
       throw e;
     }
+    const missed = missedTools(operation, t.handle, ts.map((x) => x.handle), result);
+    if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]) });
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
     const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
@@ -1340,7 +1384,13 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
   const shown = renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
   const warn = shown.length === 0 ? {} : { pieces: { renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
-  return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn };
+  // Named as the browser shows them ("Body 2"), else by the item (an operation extrude's own body).
+  const numbers = bodyNumbers(doc);
+  const bodyWords = (b: string) => (numbers.has(b) ? `Body ${numbers.get(b)}` : bodyItem(b) === f.id ? label : nameOf(bodyItem(b)!));
+  // A Combine Join of bodies that don't meet keeps them as separate bodies with no warning (Ben's Fusion answer F2); an
+  // Extrude Join that reaches nothing still warns (#521).
+  const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, message: missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined) } };
+  return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn, ...missing };
 }
 
 /** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */

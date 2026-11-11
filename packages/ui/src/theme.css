@@ -170,7 +170,7 @@
   --text-c9d1d9: #c9d1d9;
   --text-d4d9e0: #d4d9e0;
   --text-d7dde5: #d7dde5;
-  --text-dim: #8a919c;
+  --text-dim: #9aa1ac;
   --text-f0a35e: #f0a35e;
   --text-f0c06a: #f0c06a;
   --text-f3b77a: #f3b77a;
@@ -198,7 +198,7 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --accent: #0063bf;
-  --accent-text: #056cca;
+  --accent-text: #035aa8;
   --danger: #db0606;
   --fill-0b1024: #dee2f1;
   --fill-101216: #eaebee;
@@ -308,7 +308,7 @@
   --text-c9d1d9: #282e34;
   --text-d4d9e0: #20242a;
   --text-d7dde5: #1b2027;
-  --text-dim: #656a73;
+  --text-dim: #4a4f57;
   --text-f0a35e: #a65710;
   --text-f0c06a: #93640f;
   --text-f3b77a: #a35b13;
@@ -334,6 +334,8 @@
 /* end of the colour tokens */
 html, body { margin: 0; height: 100%; background: var(--page); color: var(--text-body); font: 14px system-ui, sans-serif; }
 body { display: flex; flex-direction: column; }
+/* Hint words in an empty box: the dim token, not the browser's own grey (4.0 : 1 dark, 3.8 : 1 light on the page). */
+::placeholder { color: var(--text-dim); opacity: 1; }
 
 /* Top bar: name, workspace tabs, community. */
 #topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; padding: 0 12px; min-height: 44px; background: linear-gradient(180deg, var(--fill-1b2332), var(--surface)); border-bottom: 1px solid var(--look-edge); box-shadow: var(--look-top-light); flex-shrink: 0; }

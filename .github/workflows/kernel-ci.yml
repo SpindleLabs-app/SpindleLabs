@@ -96,7 +96,12 @@ jobs:
 
   checks:
     needs: checks-plan
-    runs-on: ubuntu-latest
+    # Pinned to the image the oracles were pinned on: ubuntu-latest moved to a
+    # newer one on 2026-11-11 (compiler defaulting to C23, PrusaSlicer 2.9.4
+    # instead of the 2.7.2 the slicer oracle's settings are pinned to), which
+    # broke the SolveSpace build and the slicer oracle on every part. Move it
+    # on purpose, with the oracles re-pinned, never by drift.
+    runs-on: ubuntu-24.04
     environment: kernel
     # The slowest part takes about 25 minutes; the whole checks once took 80
     # and one run on a slow runner was cancelled at 90 (2026-11-05). 150,
