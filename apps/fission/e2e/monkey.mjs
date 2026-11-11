@@ -39,6 +39,9 @@
 // (default 60) stops it, keeping the shortest list found so far; MONKEY_KNOWN=0 fails on the
 // known bugs too (KNOWN_BUGS); MONKEY_FOCUS=edit picks item menus and
 // double-clicks four times as often (hunts on editing early items, 25a5);
+// MONKEY_MINUTES, the run's own time limit (past it a session stops after
+// its action and says "cut off", shrinking stops, later seeds say "not
+// started", and the summary is printed; issues #476, #477);
 // MONKEY_PORT (default 4210);
 // MONKEY_OUT serves another build folder than dist (the plants build there).
 // Run after `npm run build`: node e2e/monkey.mjs
@@ -51,6 +54,10 @@ import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelV
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
 const STEPS = Number(process.env.MONKEY_STEPS || 60);
+// The run's own time limit (issues #476, #477): past it a session stops after its action, shrinking stops, no
+// new seed starts, and the summary is still printed, so a job's limit never kills the monkey mid-session.
+const MINUTES = Number(process.env.MONKEY_MINUTES || Infinity);
+const DEADLINE = Date.now() + MINUTES * 60_000;
 // Combine is switched on (35f1d: the hidden tool, `?combine`), so the monkey presses it long before it goes public.
 const url = `http://localhost:${PORT}/?test-hooks&combine#design`;
 const here = (p) => new URL(p, import.meta.url);
@@ -207,19 +214,28 @@ const SAVE_GAP_MS = 600;
  * action began, and its file then arrived first (issue #362: "not JSON",
  * the STL's "SpindleLabs STL: …" header). `stray` (the self-test) starts
  * such a download in the same moment as Save.
+ *
+ * The gap since the last press is measured by the page's clock, at the
+ * click itself (issue #454): the app's double-click guard reads the page's
+ * clock, and timed from here a slow runner's late-arriving click could land
+ * under 500 ms after the one before, which the guard rightly takes as one
+ * press, so no file came. `lag` (the self-test) makes this click land that
+ * late.
  */
-async function save(s, stray = false) {
+async function save(s, { stray = false, lag = 0 } = {}) {
   const project = (d) => d.suggestedFilename().endsWith(".spindle");
   // Save takes presses closer than 500 ms to the one before as one press, a double-click (packages/ui press-guard.ts,
   // REPEAT_MS): the monkey saves after every action, often sooner than a person could, so it waits that out first.
-  const since = Date.now() - (s.savedAt ?? -Infinity);
-  if (since < SAVE_GAP_MS) await s.page.waitForTimeout(SAVE_GAP_MS - since);
-  s.savedAt = Date.now();
-  const click = (stray) => {
+  const click = async ({ stray, lag, gap }) => {
+    const pause = (ms) => new Promise((done) => setTimeout(done, ms));
+    if (lag) await pause(lag);
+    const wait = (window.__monkeySavedAt ?? -Infinity) + gap - performance.now();
+    if (wait > 0) await pause(wait);
     if (stray) Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["SpindleLabs STL: stray"])), download: "fission-box.stl" }).click();
+    window.__monkeySavedAt = performance.now();
     document.getElementById("save").click();
   };
-  const [download] = await Promise.all([s.page.waitForEvent("download", { predicate: project, timeout: 8000 }).catch(() => null), s.page.evaluate(click, stray)]);
+  const [download] = await Promise.all([s.page.waitForEvent("download", { predicate: project, timeout: 8000 }).catch(() => null), s.page.evaluate(click, { stray, lag, gap: SAVE_GAP_MS })]);
   if (!download) fail("save", "Save gave no file");
   const text = readFileSync(await download.path(), "utf8");
   try {
@@ -600,6 +616,7 @@ async function run(browser, { actions, random, steps }) {
     await check(s);
     const count = actions ? actions.length : steps;
     for (let i = 0; i < count; i++) {
+      if (Date.now() >= DEADLINE) return { actions: done, failure: null, cutOff: true, known: [...s.known], combined: s.combined.size, tried: s.tried };
       let a;
       if (actions) a = actions[i];
       else {
@@ -633,6 +650,7 @@ async function main() {
     const known = out.known.length ? `; known bug seen: ${out.known.join(", ")}` : "";
     // How many Combines the run made (35f1d): the hidden tool is only tested where the monkey gets it to OK.
     const combines = out.tried || out.combined ? `, ${out.combined} Combine${out.combined === 1 ? "" : "s"} made of ${out.tried} tried` : "";
+    if (out.cutOff) return console.log(`${name}: cut off after ${out.actions.length} actions by the run's time limit (MONKEY_MINUTES ${MINUTES}), every check passed until then${combines}${known}`);
     if (!out.failure) return console.log(`${name}: pass (${out.actions.length} actions${combines}${known})`);
     failed++;
     console.log(`${name}: FAIL at action ${out.actions.length}: ${out.failure.check}: ${out.failure.message}`);
@@ -645,11 +663,16 @@ async function main() {
     if (process.env.MONKEY_SHRINK !== "0" && out.failure.check !== "the tester itself") {
       const want = signature(out.failure);
       const minutes = Number(process.env.MONKEY_SHRINK_MINUTES || 60);
+      let cut = false; // a replay the run's time limit stopped, which says nothing about the failure
       const shrunk = await shrinkFailure(out.actions, async (candidate) => {
         const again = await run(browser, { actions: candidate });
+        cut ||= Boolean(again.cutOff);
         return again.failure !== null && signature(again.failure) === want;
-      }, { deadline: Date.now() + minutes * 60_000 });
-      if (!shrunk.replayed) {
+      }, { deadline: Math.min(Date.now() + minutes * 60_000, DEADLINE) });
+      if (!shrunk.replayed && cut) {
+        console.log("  the run's time limit came before its actions were replayed; the whole list is kept");
+        keep(out.actions, { shrunk: false, outOfTime: true });
+      } else if (!shrunk.replayed) {
         console.log("  did not fail again when its actions were replayed: a timing failure (a slow runner or a race); the whole list is kept");
         keep(out.actions, { shrunk: false, replayed: false });
       } else {
@@ -666,11 +689,25 @@ async function main() {
     {
       const s = await open(browser);
       try {
-        JSON.parse(await save(s, true));
+        JSON.parse(await save(s, { stray: true }));
         console.log("self-test save beside a stray download: pass");
       } catch (e) {
         failed++;
         console.log(`self-test save beside a stray download: FAIL: ${e.detail ?? e.message}`);
+      } finally {
+        await s.context.close();
+      }
+    }
+    // And two saves give two files when the first click reached the page late, as on a slow runner (issue #454).
+    {
+      const s = await open(browser);
+      try {
+        await save(s, { lag: 400 });
+        JSON.parse(await save(s));
+        console.log("self-test save after a late click: pass");
+      } catch (e) {
+        failed++;
+        console.log(`self-test save after a late click: FAIL: ${e.detail ?? e.message}`);
       } finally {
         await s.context.close();
       }
@@ -685,7 +722,13 @@ async function main() {
         await report(`regression ${f}`, saved.seed, await run(browser, { actions: saved.actions }));
       }
       const seeds = process.env.FISSION_SEED ? [Number(process.env.FISSION_SEED)] : seedList(process.env.MONKEY_SEEDS || "1-3");
-      for (const seed of seeds) await report(`seed ${seed}`, seed, await run(browser, { random: rng(seed), steps: STEPS }));
+      for (const seed of seeds) {
+        if (Date.now() >= DEADLINE) {
+          console.log(`seed ${seed}: not started: the run's time limit (MONKEY_MINUTES ${MINUTES}) came first`);
+          continue;
+        }
+        await report(`seed ${seed}`, seed, await run(browser, { random: rng(seed), steps: STEPS }));
+      }
     }
   } finally {
     await browser.close();

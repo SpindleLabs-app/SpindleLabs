@@ -2,7 +2,7 @@
 // each kind of growth is caught, and the heap allowance at 0.9× and 1.1×.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { COUNTS, HEAP_PER_CYCLE, judgeSoak } from "./soak-judge.mjs";
+import { COUNTS, HEAP_PER_CYCLE, judgeSoak, treeSize } from "./soak-judge.mjs";
 
 /** Readings every 5 cycles to `cycles`, flat unless `change` alters one. */
 function run(cycles = 40, change = () => {}) {
@@ -49,4 +49,17 @@ test("WebAssembly memory growing in the second half fails; in the first half it 
 
 test("too short a run is refused, not passed", () => {
   assert.deepEqual(judgeSoak(run(5)), ["too few readings after the warm-up to judge (1; at least 3)"]);
+});
+
+test("hand-worked: a detached tree counts every node in it, whatever JavaScript has touched (issue #198)", () => {
+  // A <select> holding two <optgroup>s, the first with two <option>s and the second one, each option one text:
+  // 1 select + 2 groups + 3 options + 3 texts = 9, as DevTools' DOM.getDetachedDomNodes gives the tree.
+  const text = { nodeType: 3, nodeName: "#text" };
+  const option = { nodeType: 1, nodeName: "OPTION", childNodeCount: 1, children: [text] };
+  const select = { nodeType: 1, nodeName: "SELECT", childNodeCount: 2, children: [{ nodeType: 1, nodeName: "OPTGROUP", childNodeCount: 2, children: [option, option] }, { nodeType: 1, nodeName: "OPTGROUP", childNodeCount: 1, children: [option] }] };
+  assert.equal(treeSize(select), 9);
+  assert.equal(treeSize(text), 1);
+  // A tree DevTools cut short (an option listed with its text left out) is refused, never undercounted.
+  const cut = { ...select, children: [{ nodeType: 1, nodeName: "OPTGROUP", childNodeCount: 1, children: [{ ...option, children: [] }] }, select.children[1]] };
+  assert.throws(() => treeSize(cut), { message: "DevTools listed 0 of the 1 nodes under a detached OPTION" });
 });
