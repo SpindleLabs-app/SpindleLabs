@@ -701,7 +701,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // After the frame that draws the build, so checking a big part never holds the new body back.
     setTimeout(() => {
       if (run !== printCheckRuns || !printCheckOn || !shown || lastScene !== scene || explodeSpread !== null) return;
-      const { found, overlays } = checkShown(scene.bodies.map((b) => b.view.mesh), printRulesIn(storage));
+      const { found, overlays } = checkShown(scene.bodies.map((b) => b.view.mesh), printRulesIn(storage), currentUnit(ctx.properties.ownerDocument));
       for (const id of ALL_PRINT_CHECK_IDS) if (!overlays.some((o) => o.id === id)) viewport.clearOverlay(id);
       for (const o of overlays) viewport.setOverlay(o);
       viewport.element.dataset.printCheck = printCheckSummary(found); // read by the e2e test
@@ -3219,7 +3219,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.selection.clear();
     measureBox.open();
   }
-  const onUnitChange = () => measureBox.unitChanged();
+  const onUnitChange = () => (measureBox.unitChanged(), showPrintCheck()); // the print check's words in the new unit (issue #519)
   /** The Combine's bodies (body ids): the target (null: none yet) and the tools, in the order picked. */
   let combineTarget: string | null = null;
   let combineTools: string[] = [];
