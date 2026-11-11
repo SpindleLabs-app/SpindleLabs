@@ -35,7 +35,7 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -43,7 +43,7 @@ import { combineNames, designNames, resolveFaceName, shownFaces, type DesignName
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
-import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
+import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
@@ -101,6 +101,8 @@ export type FeatureResult =
       constraints?: { message: string };
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
+      /** A Move's (SL #583 item 2): the pieces it moved that it doesn't hold yet, new pieces of a body it holds; `followedDoc` adds them to it. */
+      takes?: string[];
       /** A Combine's or an operation extrude's pieces (35f1) by id, each with the shown names of its faces as the item made them: what the data remembers a piece by when it is first numbered (hunt 11-06). */
       pieceFaces?: Record<string, string[]>;
       /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
@@ -207,6 +209,8 @@ export interface BuiltBody {
    * tool's (built-body.ts `frameOfFace`).
    */
   frames?: readonly (Plane | null)[];
+  /** A piece (SL #583 item 2): the body whose boolean it split from (its item's target), so a Move holding that body finds it. */
+  from?: string;
 }
 
 
@@ -1013,7 +1017,8 @@ function movedTo(content: Sketch, points: readonly { point: string; at: SketchXY
  * `doc` with every pinned point where `build` (a rebuild of `doc`) found
  * it (26f), or `doc` itself when none moved: what the app takes into the
  * edit's undo step once the edit has rebuilt, so the sketch is drawn, and
- * a point whose edge goes later held, where the point followed to.
+ * a point whose edge goes later held, where the point followed to. And
+ * each Move holding the new pieces it moved (`takes`, SL #583 item 2).
  */
 export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDocument {
   let moved = false;
@@ -1022,7 +1027,17 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
     moved ||= next !== s;
     return next;
   });
-  return moved ? { ...doc, sketches } : doc;
+  const followed = moved ? { ...doc, sketches } : doc;
+  // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
+  // workspace numbers them (`numberPieces`, which then has nothing more to do), so they stay moved after this rebuild.
+  const takers = followed.timeline.features.flatMap((f) => {
+    const r = build.results[f.id];
+    return isMoveItem(f) && r?.status === "built" && r.takes !== undefined ? [[f, r.takes] as const] : [];
+  });
+  if (takers.length === 0) return followed;
+  let next = numberPieces(followed, Object.keys(build.bodies), builtPieceFaces(build));
+  for (const [f, takes] of takers) next = changedMove(next, f.id, moveValues(f), [...movedBodies(f), ...takes]);
+  return next;
 }
 
 /**
@@ -1184,7 +1199,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
   };
   try {
     if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index, kernel);
-    if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
+    if (isMoveItem(f)) return await moveBodies(doc, f, done, bodies, cache);
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
@@ -1231,8 +1246,17 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
  * were (`holds`), so the next rebuild finds them built. Its bodies are
  * stored by body id (`movedBodies`, Design data version 6, 35ec), each
  * made by an item it depends on (`bodyItem`).
+ *
+ * A body it holds that an earlier item's boolean has split since the Move
+ * was made (SL #583 item 2: an upstream edit makes a Cut go right
+ * through) is moved whole: every new piece split from it (`from`), one
+ * the design hasn't numbered yet, is moved too and named in `takes`, so
+ * the design takes it into the Move (`followedDoc`) and it stays moved.
+ * A piece it holds that its item no longer makes (that edit undone) is
+ * no failure while the Move holds the body it split from: that body has
+ * it again.
  */
-async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
+async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   for (const id of f.dependsOn) {
     const r = done[id];
     if (r?.status === "suppressed") return { status: "greyed", by: id };
@@ -1241,15 +1265,30 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   const label = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
   const motions = moveMotions(moveValues(f));
   const from: [string, BuiltBody][] = [];
-  for (const body of movedBodies(f)) {
+  const held = movedBodies(f);
+  for (const body of held) {
     const id = bodyItem(body)!;
     const r = done[id];
     const b = r?.status === "built" ? bodies[body] : undefined;
     if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
     if (r?.status !== "built") return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
+    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again.
+    if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
     // Built, but gone from here on: an earlier Combine or extrude used it up, or left no such piece (as `booleanSteps` says it; hunts 11-06, 11-08).
     if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${f.provenance.self.label} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
     from.push([body, b]);
+  }
+  // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
+  const numbered = doc.bodies === undefined ? null : new Set(doc.bodies.map((b) => b.id));
+  const takes: string[] = [];
+  for (let grew = numbered !== null; grew; ) {
+    grew = false;
+    for (const [id, b] of Object.entries(bodies))
+      if (b.from !== undefined && !numbered!.has(id) && !from.some(([x]) => x === id) && from.some(([x]) => x === b.from)) {
+        from.push([id, b]);
+        takes.push(id);
+        grew = true;
+      }
   }
   // Built only once every body is there, so a Move that fails builds nothing.
   // A Combine's result has no spec (35f1f2a): the kernel moves the body it keeps (body_move), and each face's frame is
@@ -1273,7 +1312,15 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   }
   const holds = from.map(([, b]) => b.handle);
   for (const [id, b] of moved) bodies[id] = b;
-  return { status: "built", holds };
+  return { status: "built", holds, ...(takes.length > 0 ? { takes } : {}) };
+}
+
+/** The bodies item `id`'s booleans split pieces from (SL #583 item 2): a Combine's target, an operation extrude's bodies. */
+function splitBy(doc: DesignDocument, id: string): string[] {
+  const item = doc.timeline.features.find((x) => x.id === id);
+  if (item === undefined) return [];
+  if (isCombineItem(item)) return [combineBodies(item).target];
+  return isOperationExtrude(item) ? [...extrudeOperation(item)!.bodies] : [];
 }
 
 /**
@@ -1440,9 +1487,10 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     delete work[step.target];
     for (const nb of named.bodies) {
       const frames = framesOfResult(result.history[result.bodies.indexOf(nb.handle)], built);
-      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }) };
+      const piece = !featureOf.has(nb.id) || nb.id === own;
+      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces: nb.faces, made: nb.made }, by: f.id, ...(frames && { frames }), ...(piece && { from: step.target }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
-      if (!featureOf.has(nb.id) || nb.id === own) {
+      if (piece) {
         firstPiece++;
         if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
       }
