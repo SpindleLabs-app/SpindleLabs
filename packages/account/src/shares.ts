@@ -37,7 +37,8 @@ export type ShareAnswer =
   | { readonly status: "shared"; readonly id: string; readonly createdAt: Date }
   | { readonly status: "too-big" | "full" | "daily" };
 
-export type ReportAnswer = "kept" | "gone" | "enough" | "bad";
+/** "own": the person reporting is the one who shared the link (nothing is kept). */
+export type ReportAnswer = "kept" | "gone" | "enough" | "bad" | "own";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PICTURE = /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -116,7 +117,7 @@ export function sharesApi(client: AuthClient) {
       if (!isShareId(id)) return { kind: "ok", value: "gone" };
       const r = await client.asAnyone("POST", "rpc/report_share", { p_id: id, p_kind: kind, p_reason: reason });
       if (r.kind !== "ok") return r;
-      return r.body === "kept" || r.body === "gone" || r.body === "enough" || r.body === "bad" ? { kind: "ok", value: r.body } : malformed;
+      return r.body === "kept" || r.body === "gone" || r.body === "enough" || r.body === "bad" || r.body === "own" ? { kind: "ok", value: r.body } : malformed;
     },
   };
 }

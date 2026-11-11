@@ -71,7 +71,9 @@ export function fakeShares(seed = 1): FakeShares {
             const kind = String(a.p_kind);
             const reason = typeof a.p_reason === "string" ? a.p_reason : "";
             if (!(REPORT_KINDS as readonly string[]).includes(kind) || reason.length > SHARE_LIMITS.maxReason) return ok("bad");
-            if (!s.rows.some((x) => x.id === a.p_id && live(x))) return ok("gone");
+            const row = s.rows.find((x) => x.id === a.p_id && live(x));
+            if (!row) return ok("gone");
+            if (user !== null && row.user === user) return ok("own");
             const here = s.reports.filter((x) => x.shareId === a.p_id);
             if (here.length >= SHARE_LIMITS.reportsPerLink || (user !== null && here.filter((x) => x.reporter === user).length >= SHARE_LIMITS.reportsPerPerson)) return ok("enough");
             s.reports.push({ shareId: String(a.p_id), reporter: user, kind, reason });

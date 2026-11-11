@@ -83,6 +83,14 @@ test("reports: kept from anyone, a bad kind or a reason over 1000 is bad, 5 a pe
   assert.deepEqual(await api(s, null).report(id, "copied", ""), { kind: "ok", value: "gone" });
 });
 
+test("reporting your own link keeps nothing and says so", async () => {
+  const s = fakeShares();
+  const id = await shareId(api(s, "ada"));
+  assert.deepEqual(await api(s, "ada").report(id, "other", ""), { kind: "ok", value: "own" });
+  assert.equal(s.reports.length, 0);
+  assert.deepEqual(await api(s, "bo").report(id, "other", ""), { kind: "ok", value: "kept" });
+});
+
 test("a failing service is passed on as it is, and a wrong shape is malformed", async () => {
   const s = fakeShares();
   s.mode = "down";

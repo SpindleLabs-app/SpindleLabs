@@ -234,6 +234,7 @@ export const REPORT_ANSWERS: Readonly<Record<string, string>> = {
   kept: "Thanks. Your report was sent for review.",
   gone: "That link has been turned off already, so there is nothing to report.",
   enough: "You have already reported this as often as is allowed. It is waiting for review.",
+  own: "This is your link: turn it off instead.",
   bad: "That report wasn't accepted. Pick a reason, and keep the details under 1,000 characters.",
 };
 

@@ -20,7 +20,7 @@ test("hand-worked: the report reasons are the database's eight, each with words,
   // supabase/migrations/20261111120000_shares.sql: copied, weapon, sexual, hateful, illegal, not-a-design, personal-info, other.
   assert.deepEqual(REPORT_KIND_WORDS.map(([k]) => k), ["copied", "weapon", "sexual", "hateful", "illegal", "not-a-design", "personal-info", "other"]);
   assert.ok(REPORT_KIND_WORDS.every(([, w]) => w.length > 5));
-  assert.deepEqual(Object.keys(REPORT_ANSWERS).sort(), ["bad", "enough", "gone", "kept"]);
+  assert.deepEqual(Object.keys(REPORT_ANSWERS).sort(), ["bad", "enough", "gone", "kept", "own"]);
   assert.deepEqual(Object.keys(SHARE_REFUSALS).sort(), ["daily", "full", "too-big"]);
   assert.match(SHARE_REFUSALS["daily"] ?? "", /20 links/);
   assert.match(SHARE_TERMS_PLACEHOLDER, /not yet checked by a lawyer/, "the terms say they are a placeholder");
@@ -78,7 +78,7 @@ test("Report: the form is hidden until asked, sends the reason and details cut t
   assert.deepEqual(log, ["illegal:1000"]);
   assert.equal(d.getElementById("shared-status")?.textContent, REPORT_ANSWERS["kept"]);
   assert.equal((d.getElementById("shared-report-form") as HTMLElement).hidden, true, "a kept report puts the form away");
-  for (const a of ["gone", "enough", "bad"]) {
+  for (const a of ["gone", "enough", "bad", "own"]) {
     answer = a;
     await click(d, "#shared-report");
     await click(d, "#shared-report-send");

@@ -35,6 +35,8 @@ export function startShares(client: AuthClient, host: ShareHost, signInWords: (w
       make: async () => {
         const now = host.current();
         if (!now) throw new Error("there is nothing to share yet. Make something first.");
+        // TODO(C2c, needs SL #553): run `now.text` through the open format's stripForShare() (packages/open-format/src/share.ts,
+        // PERSONAL_FIELDS) here, so no personal field leaves the browser in a shared copy. #553 is not merged yet.
         const r = await api.share(now.name, now.text, host.picture());
         if (r.kind !== "ok") throw new Error(words(r));
         if (r.value.status !== "shared") throw new Error(SHARE_REFUSALS[r.value.status]);
