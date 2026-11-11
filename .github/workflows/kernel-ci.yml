@@ -164,6 +164,8 @@ jobs:
       # 1, 2, then 4 minutes before the next of four (up to 10 minutes each).
       - if: contains(fromJSON('["release","rest","all"]'), matrix.part)
         run: |
+          # Ubuntu's mirrors stopped resolving on 2026-11-11: see the script.
+          .github/scripts/apt-mirror.sh
           apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
           for try in 1 2 3 4; do
             sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
