@@ -36,6 +36,8 @@ export interface CombineShow {
   tools: readonly string[];
   operation: CombineOperation;
   keepTools: boolean;
+  /** Why this Combine failed in the last rebuild, in the rebuild's words (#505): shown at the top of its edit panel. */
+  failed?: string;
 }
 
 export interface CombinePanel {
@@ -108,6 +110,9 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
   keepLabel.append(keep, document.createTextNode(" Keep tools"));
   const note = el("p", "combine-note", "combine-panel-note", EDIT_NOTE);
   note.hidden = true;
+  const why = el("p", "combine-why", "bad");
+  why.hidden = true;
+  why.setAttribute("role", "status");
   const error = el("p", "combine-error", "bad");
   error.hidden = true;
   error.setAttribute("role", "alert");
@@ -119,7 +124,7 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
   cancel.addEventListener("click", () => on.cancel());
   const buttons = el("div", "", "combine-panel-buttons");
   buttons.append(ok, cancel);
-  box.append(title, target.button, tools.button, note, opLabel, keepLabel, error, buttons);
+  box.append(title, why, target.button, tools.button, note, opLabel, keepLabel, error, buttons);
   box.addEventListener("keydown", (e) => {
     // A button's own Enter clicks it; anywhere else in the panel (the operation, Keep tools) Enter is OK.
     if (e.key === "Enter" && !ok.disabled && (e.target as Element | null)?.tagName !== "BUTTON") on.ok();
@@ -143,6 +148,8 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
       operation.value = c.operation;
       keep.checked = c.keepTools;
       error.hidden = true;
+      why.textContent = c.id !== null && c.failed ? `Couldn't be made: ${c.failed}` : "";
+      why.hidden = why.textContent === "";
       note.hidden = c.id === null;
       target.button.disabled = tools.button.disabled = c.id !== null;
       delete ok.dataset.busy;

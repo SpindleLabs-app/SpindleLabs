@@ -796,6 +796,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // The Feature and Body sections describe the selected feature (else the part), with the browser's number for its body.
     const focus = panelFocus(items, lastScene, doc);
     panel.showFeature(focus?.feature ?? null);
+    showFailureNote((lastSelectedFeature = focus?.feature.id ?? null));
     if (focus?.body) panel.showBody(focus.body.view, `Body ${focus.body.place}`);
     // The part failed: the numbers it last built, marked out of date (markStale, "Out of date: these numbers are for the last part that built").
     else if (focus && partShown?.feature === focus.feature.id && focus.feature === partFeature(doc)) panel.showBody(partShown.view, `Body ${partShown.place}`);
@@ -909,6 +910,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     failedNow = new Set([...Object.keys(build.results).filter((id) => build.results[id].status === "failed"), ...absent]);
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
+    reasonsNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "failed" && r.message ? [[id, r.message] as const] : [])));
     handlesNow = Object.fromEntries(Object.entries(build.bodies).map(([id, b]) => [id, b.handle]));
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
@@ -1223,6 +1225,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
+  /** #505: why each failed item failed, in the rebuild's words (its title, card, Properties and Edit panel). */
+  let reasonsNow: ReadonlyMap<string, string> = new Map();
   let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] } }>> = {};
   /** Each built body's handle in the kernel's store, by body id, from the last rebuild: Measure (35e2l2) asks the kernel about them. */
   let handlesNow: Readonly<Record<string, BodyHandle>> = {};
@@ -1248,15 +1252,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** The sketch being edited, whose own Suppress and Delete are off. */
   const editingId = () => (mode.kind === "edit" && editingSketch ? editingSketch.id : null);
 
+  /** #505: the Feature section says why a failed item failed: the item picked on the bar (a failed Combine has no body to select), else the selected feature. */
+  function showFailureNote(selected: string | null = null) {
+    const id = picked !== null && failedNow.has(picked) ? picked : selected;
+    panel.showFeatureFailure(id !== null && failedNow.has(id) ? (reasonsNow.get(id) ?? "") : "");
+  }
+  let lastSelectedFeature: string | null = null;
   /** The timeline bar for `doc`, wired to the item menu. */
   function showBar(doc: DesignDocument) {
     if (!ctx.timeline) return;
+    showFailureNote(lastSelectedFeature);
     showTimelineBar(ctx.timeline, doc, {
       describe: (summary) => summaryInUnit(summary, currentUnit(ctx.timeline!.ownerDocument)),
       failed: failedNow,
       slow: slowNow,
       onRetry: retry,
       warnings: warnedRows(),
+      reasons: reasonsNow,
       picked,
       scene: () => lastScene,
       onPick: (id) => {
@@ -3267,7 +3279,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const c = combineBodies(f);
       combineTarget = c.target;
       combineTools = [...c.tools];
-      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools });
+      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools, failed: failedNow.has(id) ? reasonsNow.get(id) : undefined });
       ctx.selection.clear();
       return showCombineHint();
     }

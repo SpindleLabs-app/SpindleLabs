@@ -446,3 +446,18 @@ test("saved failing sessions replay clean", () => {
     assert.equal(runBarSession(bar, steps)?.message ?? null, null, name);
   }
 });
+
+// #505: a failed row says why, in the rebuild's own words.
+test("hand-worked: a failed item carries the rebuild's reason, only while it is failed", () => {
+  const doc = threeItems();
+  const failed = new Set(["feature-3"]);
+  const reasons = new Map([["feature-3", "The bodies don't overlap, so they have nothing in common."], ["feature-1", "left over"]]);
+  const items = timelineBarItems(doc, failed, new Map(), (s) => s, reasons).items;
+  // Worked by hand: only feature-3 is failed and has words, so only it carries them; feature-1 has words but built.
+  assert.deepEqual(items.map((i) => i.reason), [null, null, "The bodies don't overlap, so they have nothing in common."]);
+  // Rolled back: greyed, not red, so no reason either.
+  assert.equal(timelineBarItems(withMarker(doc, "sketch-2"), failed, new Map(), (s) => s, reasons).items[2].reason, null);
+  // Failed with no words known (the data's own failure): no reason, still failed.
+  const bare = timelineBarItems(doc, failed).items[2];
+  assert.deepEqual([bare.failed, bare.reason], [true, null]);
+});

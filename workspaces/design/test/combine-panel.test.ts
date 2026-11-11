@@ -185,3 +185,16 @@ test("hand-worked: the flag is on with ?combine, kept for the tab, and off again
   assert.equal(readCombineFlag("?combine", null), true);
   assert.equal(readCombineFlag("", null), false);
 });
+
+// #505: the Edit Combine panel opened from a failed row says why it failed, as visible text.
+test("an edited Combine that failed says why; a new one and a good one say nothing", () => {
+  const { panel, $ } = setup();
+  const base = { name: "Combine 1", target: "Body 1", tools: ["Body 2"], operation: "cut", keepTools: false } as const;
+  panel.show({ ...base, id: "feature-9", failed: "Body 2 doesn't reach Body 1." });
+  assert.equal($("combine-why").hidden, false);
+  assert.equal($("combine-why").textContent, "Couldn't be made: Body 2 doesn't reach Body 1.");
+  panel.show({ ...base, id: "feature-9" });
+  assert.equal($("combine-why").hidden, true);
+  panel.show({ ...base, id: null });
+  assert.equal($("combine-why").hidden, true);
+});

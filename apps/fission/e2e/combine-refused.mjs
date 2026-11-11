@@ -88,7 +88,7 @@ try {
     await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
-    await page.goto(`${url}?test-hooks&all-workspaces#design`);
+    await page.goto(`${url}?test-hooks&all-workspaces&combine#design`);
     await page.locator("#start-hint").waitFor();
     await page.setInputFiles("#open-file", { name: "refused.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(project)) });
     await until(page, (id) => document.querySelector(`#timeline li[data-item="${id}"]`) !== null, COMBINE, "the file open", 15000);
@@ -96,6 +96,19 @@ try {
     await until(page, () => document.querySelector("#viewport").dataset.overlayPlaces === "points 0 lines 1", null, `${width}: the edge drawn as one line`);
     const row = await page.$eval(`#timeline li[data-item="${COMBINE}"]`, (li) => ({ failed: li.dataset.failed, title: li.title }));
     assert.equal(row.failed, "true", `${width}: Combine 1 fails on its row`);
+    // #505: the row says why in the kernel's own words (the title holds back the card on a mouse; the other places are visible text).
+    const why = row.title.match(/\(failed: (.+)\)/)?.[1];
+    assert.ok(why && why.length > 10, `${width}: the row's title says why (${row.title})`);
+    // The Properties' Feature section says it too once the row is picked, and the Edit Combine panel opened from the row.
+    await page.evaluate((id) => document.querySelector(`#timeline li[data-item="${id}"]`).click(), COMBINE);
+    await until(page, () => !document.getElementById("feature-failure").hidden, null, `${width}: the Properties say why`);
+    assert.equal(await page.$eval("#feature-failure", (e) => e.textContent), `Couldn't be made: ${why}`, `${width}: the Feature section's words`);
+    await page.evaluate((id) => document.querySelector(`#timeline [data-more="${id}"]`).click(), COMBINE);
+    await until(page, () => document.getElementById("row-menu")?.open, null, `${width}: the row's menu`);
+    await page.locator("#row-menu-edit").click();
+    await until(page, () => document.getElementById("combine-panel")?.hidden === false, null, `${width}: Edit Combine open`);
+    assert.equal(await page.$eval("#combine-why", (e) => (e.hidden ? null : e.textContent)), `Couldn't be made: ${why}`, `${width}: the Edit panel says why`);
+    await page.locator("#combine-cancel").click();
     await nextFrame(page);
     // The edge's middle (10, 5, 10) and a quarter along it are red; a point on Box 1's top well away from it is not.
     for (const p of [[10, 5, 10], [10, 2.5, 10]]) {
