@@ -590,7 +590,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     exploded: () => explodeSpread !== null,
     noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   // File ▾ Export 3MF or OBJ… (step 77): the format asked, then every body shown, as the whole design's STL takes them.
@@ -1463,6 +1463,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     void chooseEntry(menuHost, id, openAction(doc, id), editingId()).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)));
   }
 
+  /**
+   * `run` once no OK is still being checked by the kernel (held in the history), at once when none is. Insert and the
+   * item menus go through it (SL #677 item 4): each shuts the open tool's panel, and an OK that found its panel shut
+   * dropped its Combine, extrude or edit without a word. Waiting, as Undo does, both are recorded in the order pressed.
+   */
+  function afterOk(run: () => void) {
+    if (!ctx.history.busy()) return run();
+    void ctx.history.whenIdle().then(run);
+  }
+
   /** Item `id`'s menu (timeline-menu.ts): Move the marker here, Suppress or Unsuppress, Delete; an entry that is off says why. */
   function openMenu(id: string, at: { x: number; y: number }, row?: string) {
     const doc = designDoc();
@@ -1471,7 +1481,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const editing = editingId();
     // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
     const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
-    const entries = [...shows, ...menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
+    const entries = [...shows, ...menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => afterOk(() => void chooseEntry(menuHost, id, e.action, editingId()).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
@@ -1498,7 +1508,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           ? () => toggleHidden(target.row)
           : e.action === "show-only" || e.action === "show-all"
             ? () => showFrom(e.action as "show-only" | "show-all", target.row)
-            : () => void chooseEntry(menuHost, target.feature, e.action as MenuEntry["action"], editing).catch(fail),
+            : () => afterOk(() => void chooseEntry(menuHost, target.feature, e.action as MenuEntry["action"], editingId()).catch(fail)),
     }));
     menuAt = at;
     deleting.menu(itemName(item), at, entries);

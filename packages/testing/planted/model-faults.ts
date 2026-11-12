@@ -205,8 +205,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
-        replace: "        for (const tool of step.keepTools ? [] : step.tools) delete bodies[tool];\n        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+        find: "        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${who === null ? e.message : roundWords(who)}`",
+        replace: "        for (const tool of step.keepTools ? [] : step.tools) delete bodies[tool];\n        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${who === null ? e.message : roundWords(who)}`",
       },
     ],
     run: ["timeline"],
