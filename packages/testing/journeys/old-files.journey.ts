@@ -345,7 +345,7 @@ test("every old file opens through today's reader, upgraded to version 17 with i
   for (const file of files()) {
     const want = CORPUS[file];
     const doc = open(text(file)).workspaces.design as DesignDocument;
-    assert.equal(doc.version, 17, file);
+    assert.equal(doc.version, 18, file);
     // Each solid item's body numbered once, 1 to n, the next n + 1 (35e; which body gets which: workspaces/design/test/body-numbers.test.ts).
     const solids = want.items.filter(([, type]) => type !== "sketch" && type !== "move").length;
     assert.deepEqual(doc.bodies!.map((b) => b.number).sort((x, y) => x - y), Array.from({ length: solids }, (_, i) => i + 1), file);

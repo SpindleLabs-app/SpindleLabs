@@ -1,6 +1,7 @@
-// The Laser page (step L1a, behind `?laser`, flag.ts): Design's flat shapes
-// (its sketches and ready-made profiles) laid out on the laser's bed, drawn
-// from above in the shared view, and saved as SVG or DXF at true size.
+// The Laser page (steps L1a and L1a2, behind `?laser`, flag.ts): Design's flat
+// shapes (its sketches and ready-made profiles) laid out on the laser's bed,
+// shown flat from above (flat-view.ts: laser cutting is 2D, so the view only
+// slides and zooms), and saved as SVG or DXF at true size.
 //
 // The shapes are read through the representation registry (Design's
 // "design:outlines" lister and its outline producer), never from Design's
@@ -9,10 +10,11 @@
 // project keeps only Laser's own choices (`LaserData`: the bed, the gap,
 // the parts turned off). Styles: src/styles/laser-page.css.
 
-import type { DisplayMesh, KernelCalls, ListedObject, MountedWorkspace, Outline, RepresentationRegistry, WorkspaceContext } from "@fission/core";
+import type { ListedObject, MountedWorkspace, Outline, RepresentationRegistry, WorkspaceContext } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
 import { sheetDxf } from "./dxf.ts";
-import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, thicknessRefusal, mmWords, outlineBox, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
+import { createFlatView, type FlatScene } from "./flat-view.ts";
+import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, thicknessRefusal, mmWords, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
 
 /** Design's lister for flat shapes (Design's representations.ts DESIGN_OUTLINES). */
 export const OUTLINES_LISTER = "design:outlines";
@@ -25,7 +27,7 @@ export interface LaserData {
   version: 1;
   bed: Bed;
   gap: number;
-  /** The sheet's thickness, mm: how the parts are drawn now; what engraving focuses on and joints are sized by later. */
+  /** The sheet's thickness, mm: kept for what engraving focuses on and joints are sized by later; nothing reads it yet, so the page has no box for it. */
   thickness: number;
   /** The parts turned off, by their id in Design. */
   off: string[];
@@ -82,50 +84,23 @@ export function layoutWords(layout: Layout, offered: number): string {
   return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`)].join(" ");
 }
 
-/** The parts as the kernel draws them: each placed outline made a sheet `thickness` thick (make_extrude), so the view is the
- * kernel's own tessellation of the exact arcs, never one worked out here (packages/CLAUDE.md: 2D curve maths lives in the
- * kernel). A part the kernel refuses is counted with why, never drawn wrong. */
-export async function partMeshes(kernel: KernelCalls, layout: Layout, thickness: number): Promise<{ meshes: DisplayMesh[]; failed: { label: string; why: string }[] }> {
-  const meshes: DisplayMesh[] = [];
-  const failed: { label: string; why: string }[] = [];
-  for (const p of layout.placed) {
-    try {
-      meshes.push((await kernel.call("make_extrude", p.outline, thickness)).mesh);
-    } catch (e) {
-      failed.push({ label: p.label, why: e instanceof Error ? e.message : String(e) });
-    }
-  }
-  return { meshes, failed };
+/** Words for the middle of a bed with nothing on it, a line each; none when a part is on it. */
+export function emptyBedNote(layout: Layout, offered: number): string[] {
+  if (layout.placed.length > 0) return [];
+  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from Design appear here."] : ["No parts on the bed."];
 }
 
-/** How far under the parts the bed is drawn, mm, so their bottoms never flicker against it. */
-export const BED_DROP = 0.05;
-
-/** The bed seen from above (two triangles just under z = 0, outlined) with the parts' meshes on it, as one mesh. Pure. */
-export function bedMesh(bed: Bed, parts: readonly DisplayMesh[]): DisplayMesh {
-  const { width: w, height: h } = bed;
-  const z = -BED_DROP;
-  const out: DisplayMesh = {
-    positions: [0, 0, z, w, 0, z, w, h, z, 0, h, z],
-    normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
-    indices: [0, 1, 2, 0, 2, 3],
-    triangle_faces: [0, 0],
-    edge_lines: [0, 0, z, w, 0, z, w, 0, z, w, h, z, w, h, z, 0, h, z, 0, h, z, 0, 0, z],
-    edge_line_edges: [0, 0, 0, 0],
+/**
+ * What the flat view draws: the bed, and each placed part by the path data
+ * the saved SVG file gets (sheet.ts `outlinePath`, core's writer), so the
+ * screen and the file can't differ, and no arc is worked out here.
+ */
+export function flatScene(layout: Layout, bed: Bed, offered: number): FlatScene {
+  return {
+    bed,
+    parts: layout.placed.map((p) => ({ id: p.id, label: p.label, d: outlinePath(p.outline).d, box: { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height } })),
+    note: emptyBedNote(layout, offered),
   };
-  let face = 1;
-  for (const m of parts) {
-    const base = out.positions.length / 3;
-    out.positions.push(...m.positions);
-    out.normals.push(...m.normals);
-    out.indices.push(...m.indices.map((i) => i + base));
-    const faces = m.triangle_faces.length === 0 ? 0 : Math.max(...m.triangle_faces) + 1;
-    out.triangle_faces.push(...m.triangle_faces.map((f) => f + face));
-    face += faces;
-    out.edge_lines.push(...m.edge_lines);
-    out.edge_line_edges.push(...m.edge_line_edges.map(() => 0));
-  }
-  return out;
 }
 
 /** Hands a file to the person (the browser's save box); a test passes its own. */
@@ -173,7 +148,6 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
 <label class="laser-page-field">Width <input name="width" type="number" min="1" max="3000" step="any" inputmode="decimal"> mm</label>
 <label class="laser-page-field">Height <input name="height" type="number" min="1" max="3000" step="any" inputmode="decimal"> mm</label>
 <label class="laser-page-field">Gap between parts <input name="gap" type="number" min="0" step="any" inputmode="decimal"> mm</label>
-<label class="laser-page-field">Sheet thickness <input name="thickness" type="number" min="0" max="50" step="any" inputmode="decimal"> mm</label>
 <p class="laser-page-words" role="status"></p>
 <div class="laser-page-files"><button type="button" data-save="svg">Save SVG</button><button type="button" data-save="dxf">Save DXF</button></div>
 <p class="laser-page-note">Sizes are exact, in mm, with arcs kept as arcs. Kerf, power and speed are set in your laser program for now.</p>`;
@@ -187,12 +161,22 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
     input("width").value = String(d.bed.width);
     input("height").value = String(d.bed.height);
     input("gap").value = String(d.gap);
-    input("thickness").value = String(d.thickness);
   };
 
-  /** Counts the view's builds: a later one replaces an earlier one still asking the kernel. */
-  let drawing = 0;
-  const draw = async (frame: boolean): Promise<void> => {
+  // The view: flat, over the shared viewport's empty 2D view (the body, the 3D grid and the view cube are away meanwhile).
+  const flat = createFlatView(doc, { cards: () => [ctx.browser, ctx.properties] });
+  const showView = () => {
+    ctx.viewport.showImage(null);
+    flat.attach(ctx.viewport.element);
+  };
+  const hideView = () => {
+    flat.detach();
+    ctx.viewport.clearImage(); // the body and the 3D camera come back as they were
+  };
+  flat.show({ bed: data().bed, parts: [] }, true); // the project's own bed at once, empty until Design's shapes have been read
+  showView();
+
+  const draw = (frame: boolean): void => {
     const d = data();
     layout = layOut(partsOn(offered, d.off), d.bed, d.gap);
     items.replaceChildren(
@@ -211,7 +195,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
         box.addEventListener("change", () => {
           const now = data();
           store({ ...now, off: box.checked ? now.off.filter((x) => x !== p.id) : [...now.off, p.id] }, box.checked ? `Put ${p.label} on the laser bed` : `Take ${p.label} off the laser bed`);
-          void draw(false);
+          draw(false);
         });
         const b = outlineBox(p.outline);
         label.append(box, ` ${p.label}, ${mmWords(b.maxX - b.minX)} × ${mmWords(b.maxY - b.minY)} mm`);
@@ -221,32 +205,25 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
     );
     words.textContent = layoutWords(layout, offered.length);
     for (const b of buttons) b.disabled = layout.placed.length === 0;
-    const mine = ++drawing;
-    const { meshes, failed } = await partMeshes(ctx.kernel, layout, d.thickness);
-    if (!live || mine !== drawing) return;
-    if (failed.length > 0) words.textContent += ` ${failed.map((f) => `${f.label} could not be drawn: ${f.why}.`).join(" ")}`;
-    if (awake) {
-      ctx.viewport.showBody(bedMesh(d.bed, meshes));
-      if (frame) ctx.viewport.setView("top"); // frames the bed from above (fit() would frame it from the home view)
-    }
+    flat.show(flatScene(layout, d.bed, offered.length), frame);
   };
 
   const onBed = () => {
     const width = Number(input("width").value);
     const height = Number(input("height").value);
     const gap = Number(input("gap").value);
-    const thickness = Number(input("thickness").value);
-    const empty = ["width", "height", "gap", "thickness"].some((n) => input(n).value.trim() === "");
-    const why = empty ? "Type a number of mm in each box." : (bedRefusal({ width, height }, gap) ?? thicknessRefusal(thickness));
+    const empty = ["width", "height", "gap"].some((n) => input(n).value.trim() === "");
+    const why = empty ? "Type a number of mm in each box." : bedRefusal({ width, height }, gap);
     if (why) {
       words.textContent = why;
       for (const b of buttons) b.disabled = true;
       return;
     }
-    store({ ...data(), bed: { width, height }, gap, thickness }, "Change the laser bed");
-    void draw(true);
+    const before = data();
+    store({ ...before, bed: { width, height }, gap }, "Change the laser bed");
+    draw(width !== before.bed.width || height !== before.bed.height); // a new bed is shown whole; a new gap moves the parts, not the view
   };
-  for (const name of ["width", "height", "gap", "thickness"]) input(name).addEventListener("change", onBed);
+  for (const name of ["width", "height", "gap"]) input(name).addEventListener("change", onBed);
 
   const name = () => (ctx.project.name || "laser-sheet").replace(/[\\/:*?"<>|]+/g, "-");
   for (const b of buttons)
@@ -267,20 +244,26 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
     if (!live || mine !== reading) return;
     offered = next;
     fill();
-    await draw(frame);
+    draw(frame);
   };
   const ready = show(true);
   return {
     ready,
     sleep() {
+      if (!awake) return;
       awake = false;
+      hideView();
     },
     wake() {
+      if (awake) return;
       awake = true;
+      showView();
       void show(false); // the design may have changed while another workspace was on screen
     },
     unmount() {
       live = false;
+      if (awake) hideView();
+      awake = false;
       list.remove();
       panel.remove();
     },

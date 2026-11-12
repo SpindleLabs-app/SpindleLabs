@@ -144,7 +144,7 @@ test("files: construction is true or left out, and version 7 data can't hold it"
   const seven = { ...raw(), version: 7 };
   assert.throws(() => readDesignDocument(seven), /says version 7 but has construction curves or dimensions, which version 8 brought/);
   // Version 7 data without them opens as version 8, unchanged otherwise.
-  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(doc)), version: 7 }).version, 17);
+  assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(doc)), version: 7 }).version, 18);
 });
 
 test("the sketch's words count construction curves apart", async () => {
