@@ -86,7 +86,7 @@ import { rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } fro
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
-import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
+import { COPY_SVG, DOWNLOAD_STL, failedItemsNote, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignOutcome, type DesignRun } from "./actions.ts";
 
 /**
  * What the user last entered (as typed), kept while other workspaces are
@@ -636,7 +636,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
       if (!alive()) throw new SliceDropped();
       // A choice changed while it sliced: the preview says it shows the earlier ones, as Slice and download's result does.
-      openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p), changed() ? PREVIEW_EARLIER : undefined);
+      // Failed timeline items are not in it, said over the time-lapse (export hunt 2026-11-12 D).
+      const warning = [doc ? failedItemsNote(doc, failedNow, "print") : "", changed() ? PREVIEW_EARLIER : ""].filter(Boolean).join(" ");
+      openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p), warning || undefined);
+    },
+    // What the print leaves out: the timeline items that failed (export hunt 2026-11-12 D).
+    missing: () => {
+      const doc = designDoc();
+      return doc ? failedItemsNote(doc, failedNow, "print") : "";
     },
     // The bar follows the engine's own reports (Ben, 2026-11-01).
     onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),
@@ -894,7 +901,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene, failed: failedNow });
     const outcome = await action.run(targets, run);
     if (outcome.solid && shown) {
-      solidCard.show(outcome.solid);
+      solidCard.show(outcome.solid, (outcome as DesignOutcome).notes);
       solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
     }
     if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad);
