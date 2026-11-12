@@ -340,6 +340,9 @@ const sameIds = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b
 const folding = new Map<string, boolean>();
 const isOpen = (n: { id: string; startsFolded?: boolean }) => folding.get(n.id) ?? !n.startsFolded;
 
+/** Why a Combine in the file can't be edited while Combine is switched off (#507). */
+const COMBINE_OFF = "Combine is switched off, so this can't be edited.";
+
 /** Lights the browser rows whose geometry is selected (aria-current), and only those; `failed`, the last rebuild's failed ids, select nothing. */
 /**
  * A Timeline row's Retry (35d4): shown, after its words, while its item
@@ -860,6 +863,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // The Feature and Body sections describe the selected feature (else the part), with the browser's number for its body.
     const focus = panelFocus(items, lastScene, doc);
     panel.showFeature(focus?.feature ?? null);
+    showFailureNote((lastSelectedFeature = focus?.feature.id ?? null));
     if (focus?.body) panel.showBody(focus.body.view, `Body ${focus.body.place}`);
     // The part failed: the numbers it last built, marked out of date (markStale, "Out of date: these numbers are for the last part that built").
     else if (focus && partShown?.feature === focus.feature.id && focus.feature === partFeature(doc)) panel.showBody(partShown.view, `Body ${partShown.place}`);
@@ -1003,6 +1007,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     failedNow = failedIds(doc, build.results, new Set(Object.keys(build.bodies)));
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
+    reasonsNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "failed" && r.message ? [[id, r.message] as const] : [])));
     handlesNow = Object.fromEntries(Object.entries(build.bodies).map(([id, b]) => [id, b.handle]));
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
@@ -1329,6 +1334,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
+  /** #505: why each failed item failed, in the rebuild's words (its title, card, Properties and Edit panel). */
+  let reasonsNow: ReadonlyMap<string, string> = new Map();
   let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] } }>> = {};
   /** Each built body's handle in the kernel's store, by body id, from the last rebuild: Measure (35e2l2) asks the kernel about them. */
   let handlesNow: Readonly<Record<string, BodyHandle>> = {};
@@ -1371,15 +1378,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** The sketch being edited, whose own Suppress and Delete are off. */
   const editingId = () => (mode.kind === "edit" && editingSketch ? editingSketch.id : null);
 
+  /** #505: the Feature section says why a failed item failed: the item picked on the bar (a failed Combine has no body to select), else the selected feature. */
+  function showFailureNote(selected: string | null = null) {
+    const id = picked !== null && failedNow.has(picked) ? picked : selected;
+    panel.showFeatureFailure(id !== null && failedNow.has(id) ? (reasonsNow.get(id) ?? "") : "");
+  }
+  let lastSelectedFeature: string | null = null;
   /** The timeline bar for `doc`, wired to the item menu. */
   function showBar(doc: DesignDocument) {
     if (!ctx.timeline) return;
+    showFailureNote(lastSelectedFeature);
     showTimelineBar(ctx.timeline, doc, {
       describe: (summary) => summaryInUnit(summary, currentUnit(ctx.timeline!.ownerDocument)),
       failed: failedNow,
       slow: slowNow,
       onRetry: retry,
       warnings: warnedRows(),
+      reasons: reasonsNow,
       picked,
       scene: () => lastScene,
       onPick: (id) => {
@@ -1471,7 +1486,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const editing = editingId();
     // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
     const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
-    const entries = [...shows, ...menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
+    // Ben 2026-11-11 (#507): with Combine switched off, a Combine already in the file builds but can't be edited: Edit is greyed out, saying why.
+    const switchedOff = (e: MenuEntry): MenuEntry => (e.action === "edit" && isCombineItem(item) && !combineShown() ? { ...e, off: COMBINE_OFF } : e);
+    const entries = [...shows, ...menuEntries(doc, id, editing).map(switchedOff).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
@@ -3511,6 +3528,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const combineHint = viewport.element.ownerDocument.createElement("p");
   combineHint.id = "combine-hint"; // read by the e2e test
   combineHint.className = "move-panel-hint";
+  combineHint.setAttribute("role", "status"); // read out as it changes (#504)
   combineHint.hidden = true;
   viewport.element.append(combineHint);
   function showCombineHint() {
@@ -3547,7 +3565,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const c = combineBodies(f);
       combineTarget = c.target;
       combineTools = [...c.tools];
-      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools });
+      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools, failed: failedNow.has(id) ? reasonsNow.get(id) : undefined });
       ctx.selection.clear();
       return showCombineHint();
     }
@@ -3686,6 +3704,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Opens item `id`'s sizes in the Edit feature panel, out of any sketch or Extrude panel first. */
   function openEdit(id: string) {
     const item = designDoc().timeline.features.find((f) => f.id === id)!;
+    if (isCombineItem(item) && !combineShown()) return panel.showActionNote(COMBINE_OFF, true);
     if (isMoveItem(item)) return startMove(id);
     if (isCombineItem(item)) return startCombine(id);
     // Asked before any open tool is left (hunt 11-11, E2: a Copy, which has nothing to edit, shut an open Move and lost

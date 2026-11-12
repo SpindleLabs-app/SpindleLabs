@@ -14,6 +14,8 @@
   .phone-float .phone-float-finish:disabled { opacity: 0.45; }
   .phone-float .phone-float-plane:not(#none) { min-width: 44px; padding: 0 8px; }
   .phone-float .phone-float-words { flex-basis: 100%; padding: 0 4px; color: var(--text-d7dde5); font-size: 14px; }
+  /* Finish Combine and Cancel in one row at 375 px with a wide sans-serif too (CI's DejaVu made the bar 266 px against its 263 px, so Cancel wrapped under it: #504). */
+  .phone-float[data-kind="combine"] button:not(#none) { padding: 0 8px; }
   /* What is wrong (phone-float.ts floatWhy): at most three lines, so the bar never grows over the view. */
   .phone-float .phone-float-why { color: var(--warn); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }
