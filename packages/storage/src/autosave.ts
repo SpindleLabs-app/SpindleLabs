@@ -54,6 +54,8 @@ export interface Timers {
 export interface AutosaveOptions {
   /** How long things must be quiet after a change before saving, in ms. */
   quietMs?: number;
+  /** The longest a change waits for its save to start while more keep coming (LONGEST_MS). */
+  longestMs?: number;
   timers?: Timers;
   /** Where `leaving()` keeps changes the store doesn't hold yet (the browser's localStorage); null keeps none. */
   journal?: JournalStorage | null;
@@ -131,6 +133,12 @@ export interface Autosave {
 
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
 export const QUIET_MS = 1000;
+/**
+ * Five seconds: a save starts this long after the first change not yet stored, however many more keep coming. Each
+ * change restarts the quiet moment, so steady work (a change every 0.9 s) was never stored at all, and a crashed tab
+ * lost the whole stretch (lost-work hunt 2026-11-12, issue #627 item 8).
+ */
+export const LONGEST_MS = 5000;
 
 /**
  * How long a save may go unanswered before the status says storage isn't
@@ -154,10 +162,12 @@ export function startAutosave(
   id: string,
   project: () => Project,
   onStatus: (status: AutosaveStatus) => void = () => {},
-  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date(), fromKept = false, writer = freshWriter(), newId = freshWriter }: AutosaveOptions = {},
+  { quietMs = QUIET_MS, longestMs = LONGEST_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date(), fromKept = false, writer = freshWriter(), newId = freshWriter }: AutosaveOptions = {},
 ): Autosave {
   let timer: unknown = null;
   let inFlight = false;
+  /** When the first change of the wait running was made (ms): the save starts LONGEST_MS after it at the latest. */
+  let waitingSince = 0;
   /** The save in flight went unanswered past STORAGE_ANSWER_MS: said, and kept said until it settles. */
   let overdue = false;
   /** Settles when the save in flight (if any) has finished, either way. */
@@ -341,8 +351,11 @@ export function startAutosave(
   function changed() {
     if (stopped) return;
     version++;
+    const t = now().getTime();
     if (timer !== null) timers.clearTimeout(timer);
-    timer = timers.setTimeout(() => void save(), quietMs);
+    else waitingSince = t; // the first change since the last save started
+    // The quiet moment, cut short where it would end past the longest wait (never longer, whatever the clock does).
+    timer = timers.setTimeout(() => void save(), Math.max(0, Math.min(quietMs, waitingSince + longestMs - t)));
     report(overdue ? { state: "error", message: STORAGE_NOT_ANSWERING } : { state: "saving" });
   }
   /** A history change: a change unless the project is what the store holds, with no save waiting or running. */

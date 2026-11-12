@@ -50,8 +50,13 @@ export const noNew = (where: string) => `New: ${where} has nothing to clear yet.
 export const EXPORT_STL_ID = "file-export-stl";
 export const noExport = (where: string) => `Export STL: ${where} has nothing to export yet. DesignLab exports its bodies as STL.`;
 
-/** The menu's sections as things are now. Pure, so it is tested by hand. */
-export function fileSections(parts: FileMenuParts): MenuSection[] {
+/** The width at and under which File ▾ is a bottom sheet capped at 34% of the window (styles/phone-sheet.css). */
+export const PHONE_SHEET_QUERY = "(max-width: 640px)";
+
+/** The menu's sections as things are now. Pure, so it is tested by hand. On a phone (`phone`) the exports come first: the
+ * sheet shows about six rows before it scrolls, and after the project items Export STL and Slice for printing were below
+ * that fold (SL #648). */
+export function fileSections(parts: FileMenuParts, phone = false): MenuSection[] {
   const entries = parts.entries();
   const where = parts.where();
   // A workspace's entry runs as it is when chosen, found again by its id: the menu may have stayed open while a project
@@ -75,10 +80,12 @@ export function fileSections(parts: FileMenuParts): MenuSection[] {
   });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  return [{ items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), ...(parts.share ? [item(parts.share, "export", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
+  const project: MenuSection = { items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), ...(parts.share ? [item(parts.share, "export", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] };
+  const out: MenuSection = { items: exports.map((e) => item(e, "export")) };
+  return phone ? [out, project] : [project, out];
 }
 
 /** File ▾ in `doc`: a menu button with the id `file-menu`. */
 export function fileMenu(doc: Document, parts: FileMenuParts): MenuButton {
-  return menuButton(doc, { id: "file-menu", label: "File", title: "File: New, Open, Save and Export", sections: () => fileSections(parts) });
+  return menuButton(doc, { id: "file-menu", label: "File", title: "File: New, Open, Save and Export", sections: () => fileSections(parts, doc.defaultView?.matchMedia?.(PHONE_SHEET_QUERY).matches ?? false) });
 }

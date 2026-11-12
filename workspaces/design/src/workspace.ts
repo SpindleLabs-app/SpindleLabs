@@ -70,6 +70,7 @@ import { editRegionWords, offerOf, pickRegionWords, regionChosenWords, regionOff
 import type { RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
+import { isShapeTool } from "./sketch-shapes.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
@@ -84,7 +85,7 @@ import { rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } fro
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
-import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
+import { COPY_SVG, DOWNLOAD_STL, failedItemsNote, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignOutcome, type DesignRun } from "./actions.ts";
 
 /**
  * What the user last entered (as typed), kept while other workspaces are
@@ -626,7 +627,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
       if (!alive()) throw new SliceDropped();
       // A choice changed while it sliced: the preview says it shows the earlier ones, as Slice and download's result does.
-      openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p), changed() ? PREVIEW_EARLIER : undefined);
+      // Failed timeline items are not in it, said over the time-lapse (export hunt 2026-11-12 D).
+      const warning = [doc ? failedItemsNote(doc, failedNow, "print") : "", changed() ? PREVIEW_EARLIER : ""].filter(Boolean).join(" ");
+      openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p), warning || undefined);
+    },
+    // What the print leaves out: the timeline items that failed (export hunt 2026-11-12 D).
+    missing: () => {
+      const doc = designDoc();
+      return doc ? failedItemsNote(doc, failedNow, "print") : "";
     },
     // The bar follows the engine's own reports (Ben, 2026-11-01).
     onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),
@@ -852,7 +860,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene, failed: failedNow });
     const outcome = await action.run(targets, run);
     if (outcome.solid && shown) {
-      solidCard.show(outcome.solid);
+      solidCard.show(outcome.solid, (outcome as DesignOutcome).notes);
       solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
     }
     if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad);
@@ -2419,7 +2427,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
             // Counted on the view at once: the drag's end (pointDrags) can be said before this loop's finally runs.
             viewport.element.dataset.dragSolves = String(++dragSolves);
             drawSketches();
-          }, drag.before);
+          });
           if (stale()) return endDrag(drag);
           drag.doc = got.doc;
           sketchBox.showError(got.refused ?? "");
@@ -4276,7 +4284,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const aim = aimOf(designDoc(), mode.tool, snapped, took);
       if (!aim) return sketchBox.showError(NO_AIM);
       const before = designDoc();
-      const done = clickAt(before, withLocks(mode.tool, took, snapped), aim);
+      const given = withLocks(mode.tool, took, snapped);
+      const done = clickAt(before, given, aim);
       // The owner's rule (rebuild.ts): an extrude whose sketch this edit breaks keeps the sketch as it was, in the same undo step.
       // A new point on the face's edges is pinned there (26f), in the same step.
       let next = pinNewPoints(before, done.doc, done.tool.sketch, edges);
@@ -4292,7 +4301,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // A circle's rim the grid rounded onto its centre from further out than a snap's reach (so not a click on the centre)
       // says the grid did it (a small circle at phone zoom; beginner play-test 2026-10-28).
       sketchBox.showError(done.note === NO_RADIUS && snapsNow(snapOn, held, gridSnap).grid && rounded[0] === snapped[0] && rounded[1] === snapped[1] && pointer.pixel !== undefined && Math.sqrt((at[0] - snapped[0]) ** 2 + (at[1] - snapped[1]) ** 2) > SNAP_PIXELS * pointer.pixel ? GRID_ATE_RADIUS : (done.note ?? ""));
-      if (done.tool !== mode.tool && locks === took) unlock(); // the sizes it placed with, not any typed since
+      if (done.tool !== given && locks === took) unlock(); // the sizes it placed with, not any typed since; a refusal hands `given` back
       mode.tool = done.tool;
       // What the pointer snaps to now, with the new point and the tool's next step: where a hover answered since the
       // click has it (the click waited its turn behind the kernel while the pointer moved on: hunt 26h), else still at
@@ -4381,7 +4390,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const aim = aimOf(designDoc(), mode.tool, pointer, took);
       if (!aim) return (sketchBox.showError(NO_AIM), giveBack());
       const before = designDoc();
-      const done = clickAt(before, withLocks(mode.tool, took, pointer), aim);
+      const given = withLocks(mode.tool, took, pointer);
+      const done = clickAt(before, given, aim);
       // As a click: an extrude whose sketch this breaks keeps the sketch as it was (rebuild.ts), in the same undo step, and a point on the face's edges is pinned (26f).
       let next = pinNewPoints(before, done.doc, done.tool.sketch, edgeTargets(done.tool.sketch));
       if (done.drew) {
@@ -4393,7 +4403,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
       }
       sketchBox.showError(done.note ?? "");
-      if (done.tool === mode.tool) giveBack();
+      if (done.tool === given) giveBack();
       mode.tool = done.tool;
       mode.snap = null;
       if (done.drew) applySketchEdit(next, drawStep(done.tool), done.tool.sketch);
@@ -4610,7 +4620,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           if (combineBox.ready) void ctx.history.hold(finishCombine());
           return true;
         }
-        if (!extrudeBox.shown || !onView) return false;
+        // Extrude's own Distance box counts as the view too: it has the focus as the panel opens with a mouse (UI audit
+        // 2026-11-12, `typesStraightAway`), and its Enter is this OK. In the app the box's keydown takes Enter itself (the
+        // shell sends no plain key from a text field), so this never records twice.
+        const inDistance = active !== null && active.id === "extrude-distance" && ctx.properties.contains(active);
+        if (!extrudeBox.shown || !(onView || inDistance)) return false;
         if (extrudeBox.ready) void ctx.history.hold(finishExtrude(extrudeBox.typed));
         return true;
       }
@@ -4630,7 +4644,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "command-search") return mode.kind === "none" ? (searchBox.open(), true) : false;
       if (id === "rotate-tool") return mode.kind === "none" ? (startMove(null, "rotate"), true) : false;
       if (id === "clear-selection" && mode.kind === "edit" && toolBusy(mode.tool)) {
-        mode.tool = startTool(mode.tool.kind, mode.tool.sketch);
+        // A shape drops its clicks and keeps its polygon's sides, as the panel says (hunt 2026-11-12).
+        mode.tool = isShapeTool(mode.tool) ? { ...mode.tool, clicks: [] } : startTool(mode.tool.kind, mode.tool.sketch);
         mode.snap = null;
         toolChanges++;
         unlock();

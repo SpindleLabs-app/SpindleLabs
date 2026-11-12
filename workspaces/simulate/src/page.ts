@@ -15,6 +15,7 @@
 
 import type { AnalysisOverlay, FaceReference, ListedObject, MountedWorkspace, OverlaySeverity, ViewportPick, WorkspaceContext } from "@fission/core";
 import { studyNow, type StudyNow } from "./faces.ts";
+import { materialWords, sourceLines, testMaterials } from "./materials.ts";
 import {
   addLoad,
   addStudy,
@@ -27,6 +28,7 @@ import {
   readyProblems,
   removeLoad,
   setLoad,
+  setMaterial,
   toggleHeld,
   togglePushed,
   UNIT_WORDS,
@@ -87,6 +89,8 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   let note = "";
   let shownOverlays: string[] = [];
   let framedBody: string | null = null;
+  /** Whether Run checked the study, as it is now, against the design on screen since this mount (a remount starts not run: nothing is saved). */
+  let ran = false;
 
   const data = (): TestLabData => {
     try {
@@ -97,6 +101,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
   };
   const store = (next: TestLabData, label: string) => {
     ctx.project.workspaces.simulate = next;
+    ran = false; // the set-up changed, so what Run checked is not this one
     ctx.projectChanged(label);
   };
   const study = (): Study | null => data().studies[0] ?? null;
@@ -219,6 +224,36 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     return row;
   };
 
+  /** What the part is made of: one choice from the materials library, with the numbers TestLab will use and where each came from. */
+  const materialSection = (s: Study) => {
+    const box = el("section", "testlab-page-material");
+    box.append(el("h3", undefined, "Made of"));
+    const choice = el("select");
+    choice.name = "material";
+    choice.setAttribute("aria-label", "Material");
+    if (s.material === null) choice.append(option("Choose a material", "", true));
+    const materials = testMaterials();
+    for (const m of materials) choice.append(option(m.name, m.id, m.id === s.material));
+    choice.value = s.material ?? ""; // said again once the options are in: a DOM may keep an older choice's index otherwise
+    choice.addEventListener("change", () => {
+      const m = materials.find((x) => x.id === choice.value);
+      if (!m) return;
+      store(setMaterial(data(), s.id, m.id), `Make it of ${m.name}`);
+      draw();
+    });
+    box.append(choice);
+    const m = materials.find((x) => x.id === s.material)?.mechanical;
+    if (m) {
+      box.append(el("p", "testlab-page-words", materialWords(m)));
+      for (const n of m.notes) box.append(el("p", "testlab-page-words", n));
+      const sources = el("details", "testlab-page-sources");
+      sources.append(el("summary", undefined, "Where these numbers come from"));
+      for (const line of sourceLines(m)) sources.append(el("p", undefined, line));
+      box.append(sources);
+    }
+    return box;
+  };
+
   /** Draws the panel, the list and the view from the data and the last look-up. */
   const draw = () => {
     const s = study();
@@ -227,7 +262,7 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
     if (s === null || s.body === null) {
       panel.append(el("p", "testlab-page-words", "Pick a body to test from the list."));
     } else {
-      panel.append(el("p", "testlab-page-body", `Testing ${s.body.label} from Design.`));
+      panel.append(el("p", "testlab-page-body", `Testing ${s.body.label} from Design.`), materialSection(s));
       const fixture = s.fixtures[0];
       const held = el("section", "testlab-page-held");
       held.append(el("h3", undefined, "Held here"));
@@ -265,8 +300,6 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
 
   /** Whether the study is out of date with the design (the graph's mark), redrawn alone when the graph changes so typing is never cut off. */
   const stateLine = el("p", "testlab-page-state");
-  /** Whether Run checked the study against the design on screen since this mount (a remount starts not run: nothing is saved). */
-  let ran = false;
   const drawState = () => {
     const s = study();
     const stale = s !== null && ctx.graph.has(studyNode(s.id)) && ctx.graph.isStale(studyNode(s.id));
