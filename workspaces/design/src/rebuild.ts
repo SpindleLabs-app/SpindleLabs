@@ -1589,13 +1589,11 @@ async function namedStep(feature: string, op: BooleanOp, inputs: readonly NamedB
   if ("failed" in named) return named;
   const bodies: Extract<NamedStep, { bodies: unknown }>["bodies"] = [];
   for (const nb of named.bodies) {
-    {
-      const h = result.history[result.bodies.indexOf(nb.handle)];
-      const frames = framesOfResult(h, built);
-      const faces = withOrigins(nb.faces, h, inputs, frames);
-      const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
-      bodies.push({ id: nb.id, handle: nb.handle, faces, made: nb.made, ...(frames && { frames }), ...(reversed && { reversed }) });
-    }
+    const h = result.history[result.bodies.indexOf(nb.handle)];
+    const frames = framesOfResult(h, built);
+    const faces = withOrigins(nb.faces, h, inputs, frames);
+    const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
+    bodies.push({ id: nb.id, handle: nb.handle, faces, made: nb.made, ...(frames && { frames }), ...(reversed && { reversed }) });
   }
   return { bodies, renumbered: named.renumbered };
 }
