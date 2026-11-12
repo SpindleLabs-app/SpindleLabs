@@ -1,0 +1,12 @@
+{
+ "seed": 359812416,
+ "note": "Issue #568: at 375 px a click meant for the view landed on the sign-in dialog's \"Privacy and terms\" link, the page loaded privacy.html and the tester died with \"Execution context was destroyed\" (seed 359812416 at action 1192). The tester never clicks a link that loads another page; this list must now pass.",
+ "actions": [
+  { "do": "resize", "size": [1280, 800] },
+  { "do": "click", "sel": "#account-open" },
+  { "do": "resize", "size": [375, 740] },
+  { "do": "canvas", "x": 0.2385, "y": 0.8805, "double": false },
+  { "do": "key", "key": "Escape" },
+  { "do": "canvas", "x": 0.5, "y": 0.5, "double": false }
+ ]
+}
