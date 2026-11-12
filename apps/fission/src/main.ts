@@ -1310,6 +1310,14 @@ if (__ACCOUNTS__)
             return null; // gone, or can't be read: not sent
           }
         },
+        stored: (id) => store.text(id),
+        asRead: (text) => {
+          try {
+            return projectToJson(projectFromJson(text, workspaces));
+          } catch {
+            return null;
+          }
+        },
         put: async (id, text, name, savedAt) => {
           const project = projectFromJson(text, workspaces);
           project.name = name;
