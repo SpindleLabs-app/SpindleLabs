@@ -6,15 +6,18 @@
 // CRC checked) and finds a 40 × 30 × 20 mm box in millimetres (8 corners,
 // 12 triangles, volume 40 · 30 · 20 = 24,000 mm³ by the divergence
 // theorem, positive only when every triangle faces out); the OBJ holds the
-// same box. It is off, saying why, with nothing built.
+// same box. It is off, saying why, with nothing built. A design whose Extrude
+// Cut failed (failed-hole.spindle, export-failed.mjs) exports the plain box as
+// 3MF and OBJ saying Extrude 1 failed and is not in the file, the card amber
+// "Not the whole design", never "Checked solid" (#640 1).
 // Run with `npm run e2e` (after `npm run build`); `E2E_BROWSER` picks the engine.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launch } from "./browser.mjs";
-import { chooseFile, fileItem, startWithBox } from "./start.mjs";
+import { chooseFile, closePanels, fileItem, startWithBox } from "./start.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4777, strictPort: true }, logLevel: "error" });
@@ -110,6 +113,47 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
         await page.waitForFunction((k) => document.getElementById("action-note")?.textContent?.startsWith(`Exported spindlelabs-box.${k}. Checked solid.`), kind);
       }
       assert.match(await page.textContent("#action-note"), /OBJ files carry no units: these numbers are millimetres/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+const holed = readFileSync(new URL("./failed-hole.spindle", import.meta.url));
+for (const [width, tap] of [[1280, false], [375, true]]) {
+  await check(`${width} px${tap ? ", taps" : ""}: a failed Extrude Cut is named by Export 3MF and OBJ, the card "Not the whole design", the file the plain box`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: innerHeightOf(width) }, hasTouch: tap, acceptDownloads: true });
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    try {
+      await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+      await page.goto(url);
+      await page.waitForSelector("#open-file", { state: "attached" });
+      await page.setInputFiles("#open-file", { name: "failed-hole.spindle", mimeType: "application/octet-stream", buffer: holed });
+      await page.waitForFunction(() => [...document.querySelectorAll("#timeline li[data-item]")].some((li) => li.dataset.failed === "true"), null, { timeout: 20000 });
+      if (tap) await closePanels(page, tap);
+      for (const [kind, name] of [["3mf", "3MF"], ["obj", "OBJ"]]) {
+        await chooseFile(page, "file-export-mesh", tap);
+        const [download] = await Promise.all([page.waitForEvent("download"), tap ? page.tap(`#export-choice-${kind}`) : page.click(`#export-choice-${kind}`)]);
+        const file = join(dir, `${width}-holed.${kind}`);
+        await download.saveAs(file);
+        // The Cut is not in the file: the plain 40 × 30 × 20 box, 24,000 mm³ (the design is 24,000 − π · 25 · 10 = 23,214.6).
+        assert.equal(readBack(file, kind), "8 12 24000.000");
+        await page.waitForFunction(() => document.getElementById("solid-badge")?.hidden === false);
+        const missing = `Extrude 1 failed, so it is not in the ${name}: the part is saved without it. Fix it in the timeline (red) to include it.`;
+        await page.waitForFunction((k) => document.getElementById("action-note")?.textContent?.startsWith(`Exported spindlelabs-box.${k}.`), kind);
+        const note = await page.textContent("#action-note");
+        assert.ok(note.startsWith(`Exported spindlelabs-box.${kind}. ${missing} What was built is checked solid.`), note);
+        assert.ok(!note.includes("Checked solid"), note);
+        const b = await page.evaluate(() => {
+          const el = document.getElementById("solid-badge");
+          return { state: el.dataset.state, title: el.querySelector("h2").textContent };
+        });
+        assert.deepEqual(b, { state: "missing", title: "Not the whole design" });
+        if (shots) await page.screenshot({ path: join(shots, `export-3mf-failed-${kind}-${width}.png`) });
+        await (tap ? page.tap("#solid-badge-close") : page.click("#solid-badge-close"));
+      }
       assert.deepEqual(errors, []);
     } finally {
       await context.close();

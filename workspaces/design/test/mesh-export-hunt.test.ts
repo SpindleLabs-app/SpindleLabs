@@ -42,20 +42,21 @@ const both: Selected[] = [{ kind: "body", id: "body:feature-1" }, { kind: "body"
 
 const real = nodeKernel();
 
-test("F1: two cubes sharing a face are two solid objects in a 3MF or OBJ, so it says Checked solid (the STL of both still does not)", async () => {
+test("F1: two cubes sharing a face are two solid objects in a 3MF or OBJ, which say they touch (#640 5); the STL of both says so too", async () => {
   // Cube A x 0..10, cube B x 10..20. Each object alone is a cube: 8 corners, 12 triangles, every edge used once each way, so
-  // closed and outward, 1000 mm³ each. The 3MF and OBJ keep them apart, so each is checked alone; the STL is one triangle
-  // soup in which the face x = 10 is shared, so its check rightly finds edges used by four triangles.
+  // closed and outward, 1000 mm³ each. The 3MF and OBJ keep them apart, so each is checked alone and is solid; the two
+  // joined are one triangle soup in which the face x = 10 is shared (edges used by four triangles), so the export says
+  // the 2 bodies touch or overlap, as the STL's does, in the words for separate objects (#640 5: was a plain
+  // "Checked solid", which says nothing of two parts pressed together).
   const { r, ctx } = setUp(twoCubes(10), real.call.bind(real));
   for (const id of [DOWNLOAD_3MF, DOWNLOAD_OBJ]) {
     const outcome = await r.get(id)!.run(both, ctx);
-    assert.match(outcome.message, /\. Checked solid\./, outcome.message);
-    assert.equal(outcome.bad, id === DOWNLOAD_OBJ ? false : false);
-    // Two closed pieces, 2 × 1000 mm³, 2 × 12 triangles.
-    assert.deepEqual([outcome.solid?.verdict, outcome.solid?.shells, outcome.solid?.triangles, outcome.solid?.volume], ["solid", 2, 24, 2000]);
+    assert.match(outcome.message, /\. The 2 bodies touch or overlap: each body is solid on its own and is its own object in the file/, outcome.message);
+    assert.equal(outcome.bad, true);
+    assert.equal((outcome as { notes?: { touching?: number } }).notes?.touching, 2);
   }
   const stl = await r.get(DOWNLOAD_STL)!.run(both, ctx);
-  assert.match(stl.message, /Not solid/);
+  assert.match(stl.message, /The 2 bodies touch or overlap/);
 });
 
 /** A closed tetrahedron's binary STL (legs of 10 mm), its header `name`. */
@@ -114,7 +115,8 @@ test("F2: every object is checked on its own (one check call per body), and the 
   const calls: string[] = [];
   const { r, ctx } = setUp(twoCubes(30), standIn([file()], [SOLID, SOLID], calls));
   const outcome = await r.get(DOWNLOAD_3MF)!.run(both, ctx);
-  assert.equal(calls.filter((c) => c === "check_solid").length, 2);
+  // One check per body, then one of the two joined (#640 5: do they touch or overlap?), here solid too, so nothing more is said.
+  assert.equal(calls.filter((c) => c === "check_solid").length, 3);
   // Two tetrahedra: 2 shells, 8 triangles, 2 × 1000/6 mm³.
   assert.deepEqual(outcome.solid, { verdict: "solid", triangles: 8, shells: 2, volume: 2000 / 6, problems: [] });
 });
@@ -141,7 +143,8 @@ test("F2: a closed save box saves nothing and says so; a hidden body is refused;
   assert.deepEqual(await closed.r.get(DOWNLOAD_OBJ)!.run([both[0]], closed.ctx), { message: "Export OBJ cancelled: nothing was saved.", bad: false });
   const hidden = setUp(hideBody(twoCubes(30), "body:feature-2", true), standIn([file()], [SOLID]));
   const refused = await hidden.r.get(DOWNLOAD_3MF)!.run(both, hidden.ctx);
-  assert.deepEqual(refused, { message: "body:feature-2 is not a body shown in the design, so there is nothing to download.", bad: true });
+  // Named by its browser row's number, as Download STL names it, never its id (#640 2).
+  assert.deepEqual(refused, { message: "Body 2 is not a body shown in the design, so there is nothing to download.", bad: true });
   assert.equal(hidden.saved.length, 0);
   const order = setUp(twoCubes(30), real.call.bind(real));
   await order.r.get(DOWNLOAD_3MF)!.run([both[1], both[0], both[1]], order.ctx);
@@ -162,13 +165,14 @@ test("F4: a body single precision squashes to nothing is left out of the file, s
   assert.deepEqual(refused, { message: "Nothing to export as OBJ: single precision squashes Body 1 to nothing, so it has no triangles.", bad: true });
 });
 
-test("F5: control characters in a name never reach the XML raw; a line feed or tab is kept as a character reference", () => {
+test("F5: control characters in a name never reach the XML raw; a line feed or tab becomes a space (#640 3)", () => {
   const mesh = meshOfStl(tetraStl(), "x");
   // XML 1.0 allows no U+0000–U+0008, U+000B, U+000C, U+000E–U+001F, U+FFFE or U+FFFF at all, even as references: replaced by U+FFFD.
   const xml = modelXml([{ ...mesh, name: "bell\u0007here￿" }]);
   assert.match(xml, /name="bell�here�"/);
-  // Attribute normalisation turns a raw line feed, carriage return or tab into a space; &#10;, &#13; and &#9; keep them.
-  assert.match(modelXml([{ ...mesh, name: "a\nb\tc\rd" }]), /name="a&#10;b&#9;c&#13;d"/);
+  // A line feed, carriage return or tab is written as a space: as a character reference the 3MF consortium's own
+  // reader refuses the file (export hunt 2026-11-12 B), and a raw one is read back as a space anyway.
+  assert.match(modelXml([{ ...mesh, name: "a\nb\tc\rd" }]), /name="a b c d"/);
 });
 
 test("F2: merged reports: problems of any object win over unfinished, unfinished over solid, each kind once with counts added", async () => {

@@ -71,9 +71,11 @@ export function shortFloat(v: number): string {
 /**
  * A name as XML attribute text. XML 1.0 allows no U+0000–U+0008, U+000B,
  * U+000C, U+000E–U+001F, U+FFFE, U+FFFF or lone surrogate at all, not even
- * as a reference: each becomes U+FFFD. A raw line feed, carriage return or
- * tab in an attribute is read back as a space, so those are written as
- * references, which keep them.
+ * as a reference: each becomes U+FFFD. A line feed, carriage return or tab
+ * is written as a space: XML reads a raw one in an attribute back as a space
+ * anyway, and written as a character reference the 3MF consortium's own
+ * reader refuses the whole file (export hunt 2026-11-12 B, #640 3). A name
+ * is a label, so the space loses nothing a slicer shows.
  */
 export function xmlText(s: string): string {
   return s
@@ -82,9 +84,7 @@ export function xmlText(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/\n/g, "&#10;")
-    .replace(/\r/g, "&#13;")
-    .replace(/\t/g, "&#9;");
+    .replace(/[\n\r\t]/g, " ");
 }
 
 /** The 3MF model part line by line: every body an object in millimetres, each placed once on the plate as modelled. */

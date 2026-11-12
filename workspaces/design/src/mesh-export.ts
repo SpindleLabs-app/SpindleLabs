@@ -8,13 +8,13 @@
 
 import type { Action, ActionOutcome, ActionRegistry, Feature, SolidProblem, SolidReport } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
-import { shownBodyFeature, type SaveFile } from "./actions.ts";
+import { checkWords, exportNotes, failedItemsNote, joinStl, shownBodyFeature, type DesignOutcome, type SaveFile } from "./actions.ts";
 import { designBodies } from "./browser.ts";
 import { bodyNumbers, isDuplicateItem, makesPieces, shapeOf, type DesignDocument } from "./document.ts";
 import { meshOfStl, objBytes, threeMf, type Mesh } from "./mesh-files.ts";
 import { endStls } from "./move-tool.ts";
 import type { DesignRun } from "./actions.ts";
-import { badgeFor, SOLID_OVERLAY, solidOverlay } from "./solid-badge.ts";
+import { SOLID_OVERLAY, solidOverlay } from "./solid-badge.ts";
 
 export const DOWNLOAD_3MF = "design.download-3mf";
 export const DOWNLOAD_OBJ = "design.download-obj";
@@ -105,58 +105,102 @@ function meshAction(format: Format, save: SaveFile): Action {
       const doc = ctx.project.workspaces.design as DesignDocument | undefined;
       if (!doc) return { message: "There is no part to download yet.", bad: true };
       if (targets.length === 0) return { message: `${format.label} takes at least one body.`, bad: true };
-      // The bodies as Download STL picks them: each shown, once, in build order.
+      // The bodies as Download STL picks them: each shown, once, in build order, with the last rebuild's failed items
+      // (a failed Combine leaves its inputs shown: #640 2).
+      const failed = ctx.failed ?? NONE_FAILED;
+      const numbers = bodyNumbers(doc);
+      const place = (body: string) => `Body ${numbers.get(body)}`;
       const picked: { body: string; feature: Feature }[] = [];
       for (const target of targets) {
-        const f = shownBodyFeature(target, doc);
-        if (!f || (ctx.scene && !ctx.scene.bodies.some((b) => b.body === target.id))) return { message: `${target.id} is not a body shown in the design, so there is nothing to download.`, bad: true };
+        const f = shownBodyFeature(target, doc, failed);
+        if (!f || (ctx.scene && !ctx.scene.bodies.some((b) => b.body === target.id))) return { message: `${numbers.has(target.id) ? place(target.id) : target.id} is not a body shown in the design, so there is nothing to download.`, bad: true };
         if (!picked.some((p) => p.body === target.id)) picked.push({ body: target.id, feature: f });
       }
-      const order = designBodies(doc).map((b) => b.body);
+      const order = designBodies(doc, failed).map((b) => b.body);
       picked.sort((a, b) => order.indexOf(a.body) - order.indexOf(b.body));
       const kindOf = (f: Feature) => {
         if (makesPieces(f) || isDuplicateItem(f)) return "body";
         const shape = shapeOf(doc, f).shape;
         return shape === "sketch-extrude" ? "extrude" : shape;
       };
-      const numbers = bodyNumbers(doc);
-      const place = (body: string) => `Body ${numbers.get(body)}`;
       try {
         const files = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
         const one = picked.length === 1;
         const name = one ? kindOf(picked[0].feature) : `${picked.length} bodies`;
         const file = `spindlelabs-${one ? name : `${picked.length}-bodies`}${format.kind.extension}`;
         const all = files.map((f, i) => ({ mesh: meshOfStl(f.bytes, place(picked[i].body)), file: f, body: picked[i].body }));
-        // A body single precision squashes to nothing has no triangles left: no mesh, so it is left out, in words.
-        const kept = all.filter((m) => m.mesh.triangles.length > 0);
-        const squashed = all.filter((m) => m.mesh.triangles.length === 0).map((m) => place(m.body));
-        if (kept.length === 0) return { message: `Nothing to export as ${format.name}: single precision squashes ${listWords(squashed)} to nothing, so ${squashed.length === 1 ? "it has" : "they have"} no triangles.`, bad: true };
         // Each object checked on its own, on its own triangles: never blocks the save, never says solid when it can't run.
-        let solid: SolidReport | undefined;
         let unchecked = "";
+        const reports = new Map<string, SolidReport>();
         try {
-          const reports: SolidReport[] = [];
-          for (const m of kept) reports.push(await ctx.kernel.call("check_solid", m.file.bytes));
-          solid = mergeReports(reports);
+          for (const m of all) if (m.mesh.triangles.length > 0) reports.set(m.body, await ctx.kernel.call("check_solid", m.file.bytes));
         } catch (e) {
           unchecked = `The solid check could not run (${e instanceof Error ? e.message : String(e)}), so the file is not known to be solid.`;
+          reports.clear();
         }
+        // A body single precision squashes to nothing has no triangles left, and one squashed flat (#640 4) no volume: no
+        // object either would make sense of (a slicer crashed loading the flat one), so each is left out, in words.
+        const nothing = all.filter((m) => m.mesh.triangles.length === 0).map((m) => place(m.body));
+        const flat = all.filter((m) => squashedFlat(reports.get(m.body))).map((m) => place(m.body));
+        const kept = all.filter((m) => m.mesh.triangles.length > 0 && !squashedFlat(reports.get(m.body)));
+        if (kept.length === 0) return { message: `Nothing to export as ${format.name}: ${[...nothingWords(nothing, format.name, false), ...flatWords(flat, format.name, false)].join(" ")}`, bad: true };
+        let solid = reports.size > 0 ? mergeReports(kept.map((m) => reports.get(m.body)!)) : undefined;
+        // Several objects each solid alone: the joined file is checked too, so bodies that touch or overlap get the
+        // STL's words (#640 5), and its marks show where; a check of it that can't run says nothing more.
+        let touching: number | undefined;
+        if (solid?.verdict === "solid" && kept.length > 1) {
+          const joined = await ctx.kernel.call("check_solid", joinStl(kept.map((m) => m.file.bytes), name)).catch(() => undefined);
+          if (joined?.verdict === "problems") {
+            touching = kept.length;
+            solid = joined;
+          }
+        }
+        // Timeline items that failed are not in the file (#640 1): said as Download STL says them.
+        const missing = failedItemsNote(doc, failed, format.name as "3MF" | "OBJ");
         const saved = await save(format.pack(kept.map((m) => m.mesh)), file);
         if (saved === false) return { message: `Export ${format.name} cancelled: nothing was saved.`, bad: false };
         // The red marks follow this file's check, as Download STL's do: set when it found places, cleared otherwise.
-        const marked = solid ? solidOverlay(solid) : null;
+        const marked = solid ? solidOverlay(solid, touching !== undefined) : null;
         if (marked) ctx.viewport.setOverlay(marked);
         else ctx.viewport.clearOverlay(SOLID_OVERLAY);
         const warnings = kept.flatMap((m) => (m.file.warning ? [one ? precisionWords(m.file.warning, format.name) : `${place(m.body)}: ${precisionWords(m.file.warning, format.name)}`] : []));
-        const left = squashed.length === 0 ? [] : [`${listWords(squashed)} ${squashed.length === 1 ? "is" : "are"} left out of the ${format.name}: single precision squashes ${squashed.length === 1 ? "it" : "them"} to nothing, so ${squashed.length === 1 ? "it has" : "they have"} no triangles.`];
-        const badge = solid ? `${badgeFor(solid).title}.` : unchecked;
-        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, badge, ...left, ...warnings, format.note].filter(Boolean).join(" ");
-        return { message, bad: warnings.length > 0 || left.length > 0 || solid?.verdict !== "solid", ...(solid && { solid }) };
+        const left = [...nothingWords(nothing, format.name, true), ...flatWords(flat, format.name, true)];
+        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, missing, checkWords(solid, unchecked, missing, touching, true), ...left, ...warnings, format.note].filter(Boolean).join(" ");
+        const notes = exportNotes(missing, touching, true);
+        const outcome: DesignOutcome = { message, bad: warnings.length > 0 || left.length > 0 || solid?.verdict !== "solid" || missing !== "", ...(solid && { solid }), ...(notes && { notes }) };
+        return outcome;
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };
       }
     },
   };
+}
+
+const NONE_FAILED: ReadonlySet<string> = new Set();
+
+/**
+ * Whether a body's own check finds it squashed flat by single precision: its triangles cross and fold onto each other
+ * (collapsed ones among them) round no volume at all, less than a cube of the smallest feature (1 µm, 1e-9 mm³).
+ * A real body that small is checked solid, so it is never taken for one (a 2 µm cube: 8e-9 mm³, solid).
+ */
+export function squashedFlat(report: SolidReport | undefined): boolean {
+  return report !== undefined && report.verdict === "problems" && Math.abs(report.volume) < 1e-9 && report.problems.some((p) => p.kind === "collapsed");
+}
+
+/** Bodies with no triangles left, in words: "… is left out of the 3MF: …" (`out`), or why there is nothing. */
+function nothingWords(bodies: readonly string[], format: string, out: boolean): string[] {
+  if (bodies.length === 0) return [];
+  const it = bodies.length === 1;
+  const why = `single precision squashes ${it ? "it" : "them"} to nothing, so ${it ? "it has" : "they have"} no triangles.`;
+  return [out ? `${listWords(bodies)} ${it ? "is" : "are"} left out of the ${format}: ${why}` : `single precision squashes ${listWords(bodies)} to nothing, so ${it ? "it has" : "they have"} no triangles.`];
+}
+
+/** Bodies squashed flat, in words, as `nothingWords`. */
+function flatWords(bodies: readonly string[], format: string, out: boolean): string[] {
+  if (bodies.length === 0) return [];
+  const it = bodies.length === 1;
+  const why = `single precision squashes ${it ? "it" : "them"} flat, so ${it ? "it has" : "they have"} no volume. Move ${it ? "it" : "them"} closer to the origin or make ${it ? "it" : "them"} thicker.`;
+  return [out ? `${listWords(bodies)} ${it ? "is" : "are"} left out of the ${format}: ${why}` : `single precision squashes ${listWords(bodies)} flat, so ${it ? "it has" : "they have"} no volume.`];
 }
 
 /** "Body 1", "Body 1 and Body 2", "Body 1, Body 2 and Body 3". */
