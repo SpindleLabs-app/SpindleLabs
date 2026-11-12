@@ -33,3 +33,9 @@
   /* With the AI panel open beside the view the card keeps its place under the view cube, so the bar may run up to the cube. */
   .phone-float:is(#workspace:has(> #assistant:not([hidden])) .phone-float):not([hidden]) { max-width: calc(100% - 120px); }
 }
+/* Extrude beside Finish Sketch (phone-float.ts ENDERS next): its icon before its words, as Finish. */
+.phone-float .phone-float-next:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
+/* The narrowest phones (320 px): Extrude shows only its icon, 44 px square (20 + 2 × 11 + its edges), so it fits beside Finish Sketch on one row and the bar never grows over the view. */
+@media (max-width: 360px) {
+  .phone-float .phone-float-next:not(#none) { font-size: 0; gap: 0; min-width: 44px; padding: 0 11px; }
+}
