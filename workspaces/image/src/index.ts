@@ -31,7 +31,7 @@ const summary = "Photo and texture editing with real-world sizes, for textures, 
 
 export const imageWorkspace: WorkspacePlugin = {
   id: "image",
-  title: "Image",
+  title: "ImageLab",
   summary,
   status: "working",
   // Each layer as an Image with its physical size (G2a); taking images in comes with Render and Layout.

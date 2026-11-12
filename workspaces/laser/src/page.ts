@@ -139,7 +139,7 @@ export function pairWords(aLabel: string, bLabel: string, r: PartsRelation): { w
 
 /** The words under the bed: how many parts are on it, each one left off with why, and (given the bed) each one reaching past its edge and each pair that overlaps or touches. */
 export function layoutWords(layout: Layout, offered: number, bed?: Bed, pairs: readonly PairRelation[] = []): string {
-  if (offered === 0) return "Nothing to cut yet: draw a closed sketch in Design and it appears here.";
+  if (offered === 0) return "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.";
   const n = layout.placed.length;
   const on = n === 0 ? "No parts on the bed." : `${n} ${n === 1 ? "part" : "parts"} on the bed.`;
   const off = bed ? layout.placed.flatMap((p) => offBedWords(p, bed) ?? []) : [];
@@ -150,7 +150,7 @@ export function layoutWords(layout: Layout, offered: number, bed?: Bed, pairs: r
 /** Words for the middle of a bed with nothing on it, a line each; none when a part is on it. */
 export function emptyBedNote(layout: Layout, offered: number): string[] {
   if (layout.placed.length > 0) return [];
-  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from Design appear here."] : ["No parts on the bed."];
+  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."] : ["No parts on the bed."];
 }
 
 /**
