@@ -123,6 +123,8 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "move-not-held": "the rebuild differs from the model",
   "sketch-not-carried": "the rebuild differs from the model",
   "move-bodies-kept": "the rebuild differs from the model",
+  // SL #506 item 1: a Combine or Move dragged past the Move or Combine that placed or changed its bodies.
+  "reorder-past-shaper": "outcome differs from the model",
   "combine-tool-kept": "the rebuild differs from the model",
   "combine-not-held": "the rebuild differs from the model",
   "combine-pieces-dropped": "the rebuild differs from the model",

@@ -64,10 +64,18 @@ export interface SyncDeps {
     list(): Promise<readonly LocalProject[]>;
     /** The project's file text as kept, or null when it is gone. */
     text(id: string): Promise<string | null>;
+    /**
+     * The project's text exactly as this browser stores it, read without bringing it up to date (null when gone).
+     * `text` gives it as today's readers write it, which an app update changes with no change made here: the link's
+     * hash, made by the build before, then matches only this one (lost-work hunt 2026-11-12, issue #628 item 1).
+     */
+    stored?(id: string): Promise<string | null>;
     /** Keeps `text` as project `id` (null: a new one), named `name`; gives its id. */
     put(id: string | null, text: string, name: string, savedAt: Date): Promise<string>;
   };
   hash(text: string): Promise<string>;
+  /** A design's text as today's readers write it, or null when they can't read it: the account's text may be an older build's (#628 item 1). */
+  asRead?(text: string): string | null;
   /** The workspace a project comes from. */
   source(id: string, text: string): Source;
   /** A fresh picture of project `id`, when this tab can take one. */
@@ -77,7 +85,7 @@ export interface SyncDeps {
 }
 
 export type SyncReport =
-  | { readonly kind: "done"; readonly sent: number; readonly copies: readonly string[]; readonly tooBig: readonly string[]; readonly waiting?: true; readonly refused?: readonly string[] }
+  | { readonly kind: "done"; readonly sent: number; readonly copies: readonly string[]; readonly tooBig: readonly string[]; readonly waiting?: true; readonly refused?: readonly string[]; /** Changed here, but deleted from the account: not kept there (#628 item 2). */ readonly gone?: readonly string[] }
   | { readonly kind: "full"; readonly sent: number }
   | { readonly kind: "off" }
   | Exclude<DataResult<never>, { kind: "ok" }>;
@@ -157,6 +165,7 @@ export function designSync(deps: SyncDeps) {
       const copies: string[] = [];
       const tooBig: string[] = [];
       const refused: string[] = [];
+      const gone: string[] = [];
       const keep = () => writeLinks(store, userId, links);
       const done = (r: SyncReport): SyncReport => (keep() || (r.kind !== "done" && r.kind !== "full") ? r : storage);
 
@@ -201,6 +210,19 @@ export function designSync(deps: SyncDeps) {
         const pendingCopy = link?.adding !== undefined && link.copy === true; // an add of a "(copy)" not found: added again as one
         if (link?.adding !== undefined) link = undefined;
         if (link && link.hash === hash) continue; // unchanged since sent or fetched (whatever skip says)
+        // Unchanged here, though today's readers write it another way than the build that made the link (an app update):
+        // the text as stored is still the one linked. Sent as a change, every device's every project went up again after
+        // an update, a device merely behind made a "(copy)", and one merely started took the revision from another
+        // device's real edit (#628 item 1). The link takes today's hash; nothing is sent.
+        if (link && deps.local.stored) {
+          const kept = await deps.local.stored(p.id);
+          if (kept !== null && kept !== text && (await deps.hash(kept)) === link.hash) {
+            links.set(p.id, { ...link, hash });
+            if (!keep()) return storage;
+            continue;
+          }
+        }
+        if (link?.skip === "gone") gone.push(p.name); // changed here since: said every round, never sent
         if (link?.skip === "gone" || link?.skip === "left") continue; // deleted from the account, or left out: never sent
         const asCopy = link?.copy === true || pendingCopy;
         const base = { name: asCopy ? copyName(p.name) : p.name, source: deps.source(p.id, text), body: text, picture: deps.picture(p.id), savedAt: p.modified };
@@ -219,8 +241,11 @@ export function designSync(deps: SyncDeps) {
           if (!stillMine()) return done(elsewhere);
           const got = await api.get(live.remote);
           if (got.kind !== "ok") return done(got);
-          if (got.value !== null && (await deps.hash(got.value.body)) === hash) {
-            links.set(p.id, { remote: live.remote, revision: got.value.revision, hash, ...(live.copy ? { copy: true as const } : {}) });
+          // (or that text as an older build wrote it: the same design once read)
+          const theirs = got.value === null ? null : got.value.body;
+          const asRead = theirs === null ? null : (deps.asRead?.(theirs) ?? null);
+          if (theirs !== null && ((await deps.hash(theirs)) === hash || (asRead !== null && (await deps.hash(asRead)) === hash))) {
+            links.set(p.id, { remote: live.remote, revision: got.value!.revision, hash, ...(live.copy ? { copy: true as const } : {}) });
             sent++;
             if (!keep()) return storage;
             continue;
@@ -255,6 +280,7 @@ export function designSync(deps: SyncDeps) {
           if (!keep()) return storage;
         } else if (a.status === "gone") {
           links.set(p.id, { remote: live?.remote ?? "", revision: live?.revision ?? 1, hash, skip: "gone" });
+          gone.push(p.name);
           if (!keep()) return storage;
         } else if (a.status === "too-big") {
           links.set(p.id, { remote: live?.remote ?? "", revision: live?.revision ?? 1, hash, skip: "too-big", ...(live?.copy ? { copy: true as const } : {}) });
@@ -268,7 +294,7 @@ export function designSync(deps: SyncDeps) {
           return done({ kind: "off" });
         } else restore(); // "changed" on a brand new design can't happen; left for the next round
       }
-      return done(full ? { kind: "full", sent } : { kind: "done", sent, copies, tooBig, ...(refused.length ? { refused } : {}) });
+      return done(full ? { kind: "full", sent } : { kind: "done", sent, copies, tooBig, ...(refused.length ? { refused } : {}), ...(gone.length ? { gone } : {}) });
     });
   }
 

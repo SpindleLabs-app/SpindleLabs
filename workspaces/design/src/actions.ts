@@ -132,12 +132,34 @@ function namesWords(names: readonly string[]): string {
  * Extrude Cut's hole was left out without a word, the file still "Checked solid": export hunt 2026-11-12 D). Empty
  * when nothing failed. The file is still made: the person may want what was built, and is told before they use it.
  */
-export function failedItemsNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, what: "STL" | "print" = "STL"): string {
+export function failedItemsNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, what: "STL" | "3MF" | "OBJ" | "print" = "STL"): string {
   const names = doc.timeline.features.flatMap((f) => (failed.has(f.id) ? [f.provenance.self.label] : []));
   if (names.length === 0) return "";
   const they = names.length === 1 ? "it" : "them";
-  const made = what === "STL" ? `the part is saved without ${they}` : `the part is printed without ${they}`;
+  const made = what === "print" ? `the part is printed without ${they}` : `the part is saved without ${they}`;
   return `${namesWords(names)} failed, so ${names.length === 1 ? "it is" : "they are"} not in the ${what}: ${made}. Fix ${they} in the timeline (red) to include ${they}.`;
+}
+
+/**
+ * What an export's message says of its file's check, the same for Download STL, 3MF and OBJ (export hunt 2026-11-12 B:
+ * the 3MF and OBJ, written beside the STL, missed its words for failed items and touching bodies): the touching words
+ * when every body is solid alone but they cross (`touching`, how many bodies; `separate`, each its own object in the
+ * file), else the check's own title, "What was
+ * built is checked solid." when timeline items failed (`missing`), or why the check could not run (`unchecked`).
+ */
+export function checkWords(solid: SolidReport | undefined, unchecked: string, missing: string, touching: number | undefined, separate = false): string {
+  if (touching !== undefined) {
+    const between = touchingWords(touching, separate);
+    return `${between.title}: ${between.detail.charAt(0).toLowerCase()}${between.detail.slice(1)}`;
+  }
+  if (!solid) return unchecked;
+  return missing && solid.verdict === "solid" ? "What was built is checked solid." : `${badgeFor(solid).title}.`;
+}
+
+/** The export card's notes beyond the file's check (`ExportNotes`), shared by the three exports; undefined when none. */
+export function exportNotes(missing: string, touching: number | undefined, separate = false): ExportNotes | undefined {
+  const notes: ExportNotes = { ...(missing && { missing }), ...(touching !== undefined && { touching, ...(separate && { separate }) }) };
+  return Object.keys(notes).length > 0 ? notes : undefined;
 }
 
 /** What Download STL returns in Design (35f1 export hunt D): the outcome, with what its export badge says beyond the file's check (`ExportNotes`), when anything. */
@@ -266,7 +288,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         }
         // Timeline items that failed are not in the file: never stamped or said "checked solid" as if it were the design.
         const missing = failedItemsNote(doc, failed, "STL");
-        const notes: ExportNotes = { ...(missing && { missing }), ...(touching !== undefined && { touching }) };
+        const notes = exportNotes(missing, touching);
         const saved = await save(solid?.verdict === "solid" && !missing ? stampChecked(bytes, name) : bytes, file);
         if (saved === false) return { message: "Export STL cancelled: nothing was saved.", bad: false };
         const marked = solid ? solidOverlay(solid, touching !== undefined) : null;
@@ -280,10 +302,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const place = (body: string) => `Body ${numbers.get(body)}`;
         const warnings = picked.flatMap((p, i) => (files[i].warning ? [one ? files[i].warning! : `${place(p.body)}: ${files[i].warning}`] : []));
         // Touching bodies: their own words in place of the badge's and the several-bodies note (which they say again).
-        const between = touching !== undefined ? touchingWords(touching) : null;
-        const badge = between ? `${between.title}: ${between.detail.charAt(0).toLowerCase()}${between.detail.slice(1)}` : solid ? (missing && solid.verdict === "solid" ? "What was built is checked solid." : `${badgeFor(solid).title}.`) : unchecked;
-        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, missing, badge, ...warnings, between ? "" : manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
-        const outcome: DesignOutcome = { message, bad: warned.length > 0 || solid?.verdict !== "solid" || missing !== "", ...(solid && { solid }), ...(Object.keys(notes).length > 0 && { notes }) };
+        const badge = checkWords(solid, unchecked, missing, touching);
+        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, missing, badge, ...warnings, touching !== undefined ? "" : manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
+        const outcome: DesignOutcome = { message, bad: warned.length > 0 || solid?.verdict !== "solid" || missing !== "", ...(solid && { solid }), ...(notes && { notes }) };
         return outcome;
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };
