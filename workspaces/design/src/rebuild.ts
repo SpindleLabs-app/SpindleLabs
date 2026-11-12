@@ -818,9 +818,10 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
       const next: Record<string, KeptShape> = {};
       // Each extrude whose sketch makes its region saves the region as it is now (regions.ts `regionNow`).
       const regions = new Map<string, RegionRef>();
-      // Each profile of each extrude (version 18: several), its kept shape filed by the extrude and its sketch (`keptKey`):
-      // a sketch two profiles share keeps one shape, as soon as either is lost. Every profile has its region brought up
-      // to date here (SL #611 C3: a `more` profile's too, saved at its place in `more`, `moreRegions`).
+      // Each profile of each extrude (version 18: several), its kept shape its own, filed by the extrude and its place
+      // among the profiles (`keptKey`, version 20, SL #632: two profiles of one sketch each keep the shape they were lost
+      // with). Every profile has its region brought up to date here (SL #611 C3: a `more` profile's too, saved at its
+      // place in `more`, `moreRegions`).
       const own = new Set<Feature>(doc.timeline.features);
       const moreRegions = new Map<string, Map<number, RegionRef>>();
       const parts = doc.timeline.features.filter(isSketchExtrude).flatMap((x) => profileParts(x).map((part, k) => ({ part, k: k - 1, item: x.id })));
@@ -842,13 +843,15 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         // Issue #541: an extrude of the one outline whose outline is still there whole, as a region's outside, takes that region.
         const region = first && had === undefined && regionOf(f) === undefined ? await outlineRegion(kernel, before, doc, sketch) : undefined;
         if (region !== undefined) regions.set(f.id, region);
-        else if (had !== undefined) next[f.id] = had;
+        // Lost by this edit (it made its outline in `before`): its shape in `before`, even when a shape is filed for it
+        // already (a version 18 file's shape shared with another profile of its sketch, copied to each when read, SL #632);
+        // lost before it: the shape it keeps.
         else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f)))) {
           const item = beforeItems.get(sketch)!;
           const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
           const shape = keptCurves(was);
           next[f.id] = placement ? { ...shape, placement } : shape;
-        }
+        } else if (had !== undefined) next[f.id] = had;
       }
       const moved = regions.size > 0 || moreRegions.size > 0;
       const { kept: old, ...rest } = !moved ? doc : { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => withMoreRegions(withRegion(f, regions.get(f.id)), moreRegions.get(f.id))) } };
