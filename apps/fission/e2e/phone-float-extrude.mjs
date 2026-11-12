@@ -28,9 +28,10 @@ async function check(name, run) {
   }
 }
 
-async function open(width, height) {
+async function open(width, height, font = null) {
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
+  if (font) await page.addInitScript((f) => document.addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: `* { font-family: "${f}" !important; }` }))), font);
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
@@ -93,9 +94,11 @@ async function finishAt10({ page, tap }) {
   await untilBodies(page, 1);
 }
 
-for (const [width, height] of [[393, 852], [390, 844]]) {
-  await check(`${width} px: Extrude beside Finish Sketch on the bar, on screen and tappable, left of the view cube; a tap opens Extrude on the sketch`, async () => {
-    const o = await open(width, height);
+// The bar must hold its row with a wider font too: CI's Linux draws system-ui in DejaVu Sans, about 10% wider than a phone's
+// font, and there the two buttons wrapped to two rows at 390 and 393 px (merge queue 2026-11-12). `font` forces it here.
+for (const [width, height, font] of [[393, 852], [390, 844], [390, 844, "DejaVu Sans"]]) {
+  await check(`${width} px${font ? ` in ${font}` : ""}: Extrude beside Finish Sketch on the bar, on screen and tappable, left of the view cube; a tap opens Extrude on the sketch`, async () => {
+    const o = await open(width, height, font);
     const { page } = o;
     await rectangle(o);
     assert.equal(await page.textContent("#float-finish"), "Finish Sketch");
