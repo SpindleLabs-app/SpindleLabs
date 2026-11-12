@@ -1,0 +1,24 @@
+/* The review page: plain and readable; it runs only on a moderator's own computer. */
+body { font: 15px/1.45 system-ui, sans-serif; margin: 0; color: #1d2330; background: #f6f7f9; }
+header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: 0.6rem 1rem; background: #1d2330; color: #fff; }
+header h1 { font-size: 1.1rem; margin: 0; }
+nav { display: flex; gap: 0.4rem; margin-left: auto; }
+main { padding: 1rem; max-width: 70rem; }
+#status { margin: 0.5rem 1rem; min-height: 1.4em; }
+#status.error { color: #a4161a; font-weight: 600; }
+button { font: inherit; padding: 0.3rem 0.7rem; border: 1px solid #8a93a6; border-radius: 4px; background: #fff; cursor: pointer; }
+button.danger { border-color: #a4161a; color: #a4161a; }
+table { border-collapse: collapse; width: 100%; background: #fff; }
+th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #dde1e8; vertical-align: top; }
+tr.pick { cursor: pointer; }
+tr.pick:hover { background: #eef2fb; }
+section { background: #fff; border: 1px solid #dde1e8; border-radius: 6px; padding: 0.8rem 1rem; margin-bottom: 1rem; }
+h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
+.picture { max-width: 16rem; max-height: 12rem; border: 1px solid #dde1e8; }
+.reason { white-space: pre-wrap; overflow-wrap: anywhere; }
+.form { display: grid; gap: 0.4rem; max-width: 40rem; }
+.form textarea, .form input { font: inherit; padding: 0.3rem; }
+.row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.muted { color: #5b6476; }
+.placeholder { border-left: 4px solid #d18f00; padding-left: 0.6rem; white-space: pre-wrap; }
+nav[hidden] { display: none; }

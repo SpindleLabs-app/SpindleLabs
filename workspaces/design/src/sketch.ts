@@ -14,10 +14,10 @@ import { XY_PLANE } from "@fission/core";
 import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { constraintPoints, counted, curvePoints, insertAt, insertItem, hasOwnFaces, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { counted, curvePoints, insertAt, insertItem, hasOwnFaces, heldByBody, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
-import { keptConstraints, withoutCurveConstraints } from "./constraints.ts";
+import { followingPoints, keptConstraints, withoutCurveConstraints } from "./constraints.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
@@ -122,7 +122,10 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   const label = on.provenance.self.label;
   const body = drawn.body === undefined ? null : squared(drawn.body);
   if (drawn.body !== undefined && body === null) throw new Error("a sketch on a moved face needs a frame for where its body was moved to");
-  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body } : {}) });
+  const size = drawn.body?.size ?? 1;
+  if (!Number.isFinite(size) || size <= 0) throw new Error(`a sketch on a scaled face needs its body's size above 0, not ${size}`);
+  // SL #539: the body's size is always recorded (1 too), so a sketch without one is known to be from before and carried as it was.
+  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}) });
 }
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {
@@ -409,10 +412,10 @@ export function pinNewPoints(before: DesignDocument, after: DesignDocument, sket
       if (t) pins.push(pinOf(p.id, t, own));
   }
   if (pins.length === (sketch.pins?.length ?? 0)) return after;
-  // A constraint can't name a point that follows a body: one the same edit made on a point it pins (a rectangle's own
-  // Horizontal on a corner at the origin, the solver bug hunt 2026-11-06) goes, or the design would not open again.
-  const pinned = new Set(pins.map((p) => p.point));
-  const constraints = sketch.constraints.filter((c) => !constraintPoints(c).some((p) => pinned.has(p)));
+  // A constraint can't name only points that follow a body (#517; document.ts `heldByBody`): one the same edit made between
+  // two points it pins (a rectangle's side along a box's edge) goes, or the design would not open again. One with a point of
+  // the sketch's own stays, so a rectangle from a body's corner keeps its sides square.
+  const constraints = sketch.constraints.filter((c) => !heldByBody(c, followingPoints({ ...sketch, pins })));
   return withRefs(after, constraints.length === sketch.constraints.length ? sketch : { ...sketch, constraints }, pins);
 }
 
@@ -434,7 +437,9 @@ export function movePointOnto(doc: DesignDocument, sketchId: string, pointId: st
   const was = sketchIn(doc, sketchId).pins ?? [];
   const k = was.findIndex((p) => p.point === pointId);
   const pins = k < 0 ? [...(sketch.pins ?? []), pin] : was.map((p, j) => (j === k ? pin : p));
-  const next = withRefs(moved, sketch, pins);
+  // As pinNewPoints: a constraint left naming only followed points goes (#517).
+  const constraints = sketch.constraints.filter((c) => !heldByBody(c, followingPoints({ ...sketch, pins })));
+  const next = withRefs(moved, constraints.length === sketch.constraints.length ? sketch : { ...sketch, constraints }, pins);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
 }
 

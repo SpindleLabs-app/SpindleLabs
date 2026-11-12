@@ -63,6 +63,9 @@ export interface CombinePanel {
 /** What each field says with nothing in it. */
 export const TARGET_EMPTY = "Click the body to change";
 export const TOOLS_EMPTY = "Click the bodies to use as tools";
+/** The same on a touch screen, which says Tap as the app's other touch words do. */
+export const TARGET_EMPTY_TOUCH = "Tap the body to change";
+export const TOOLS_EMPTY_TOUCH = "Tap the bodies to use as tools";
 /** The note under an edited Combine's fields. */
 export const EDIT_NOTE = "The bodies stay as this Combine was made. To use other bodies, delete it and make a new one.";
 
@@ -160,9 +163,10 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
     setBodies(t, ts) {
       hasTarget = t !== null;
       toolCount = ts.length;
-      target.value.textContent = t ?? TARGET_EMPTY;
+      const touch = document.defaultView?.matchMedia?.("(pointer: coarse)").matches === true;
+      target.value.textContent = t ?? (touch ? TARGET_EMPTY_TOUCH : TARGET_EMPTY);
       target.value.classList.toggle("combine-panel-empty", t === null);
-      tools.value.textContent = ts.length === 0 ? TOOLS_EMPTY : ts.join(", ");
+      tools.value.textContent = ts.length === 0 ? (touch ? TOOLS_EMPTY_TOUCH : TOOLS_EMPTY) : ts.join(", ");
       tools.value.classList.toggle("combine-panel-empty", ts.length === 0);
       okState();
     },

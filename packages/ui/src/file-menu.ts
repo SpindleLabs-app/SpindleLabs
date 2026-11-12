@@ -31,6 +31,8 @@ export interface FileMenuParts {
   versions?: FileMenuEntry;
   /** My designs…, listed after them when given (account features 1): the designs kept in the person's account. */
   myDesigns?: FileMenuEntry;
+  /** Share…, after My designs (community C2c; only with the ?share switch on): a link to a frozen copy of the open design. */
+  share?: FileMenuEntry;
   save: FileMenuEntry;
   /** Save As…, listed after Save when given: it asks for a name and place again. */
   saveAs?: FileMenuEntry;
@@ -73,7 +75,7 @@ export function fileSections(parts: FileMenuParts): MenuSection[] {
   });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  return [{ items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
+  return [{ items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), ...(parts.share ? [item(parts.share, "export", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
 }
 
 /** File ▾ in `doc`: a menu button with the id `file-menu`. */

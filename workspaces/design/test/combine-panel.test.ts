@@ -4,7 +4,7 @@
 // on, and what the address and the tab's store say about the flag.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { combinePanel, EDIT_NOTE, TARGET_EMPTY, TOOLS_EMPTY, type CombineField } from "../src/combine-panel.ts";
+import { combinePanel, EDIT_NOTE, TARGET_EMPTY, TARGET_EMPTY_TOUCH, TOOLS_EMPTY, TOOLS_EMPTY_TOUCH, type CombineField } from "../src/combine-panel.ts";
 import { COMBINE_KEY, readCombineFlag } from "../src/combine-flag.ts";
 
 const { Window } = await import("happy-dom");
@@ -25,6 +25,19 @@ function setup() {
   const pressed = () => ["target", "tools"].filter((w) => $(`combine-${w}`).getAttribute("aria-pressed") === "true");
   return { window, doc, panel, heard, $, pressed };
 }
+
+test("on a touch screen (pointer: coarse) the empty fields say Tap, with a mouse Click (#583 item 4)", () => {
+  for (const [coarse, target, tools] of [[true, "Tap the body to change", "Tap the bodies to use as tools"], [false, TARGET_EMPTY, TOOLS_EMPTY]] as const) {
+    const { window, panel, $ } = setup();
+    // happy-dom's matchMedia is a stub; answer only the pointer query, as a phone or a desktop would.
+    (window as unknown as { matchMedia: (q: string) => { matches: boolean } }).matchMedia = (q) => ({ matches: coarse && q === "(pointer: coarse)" });
+    panel.show({ id: null, name: "Combine", target: null, tools: [], operation: "join", keepTools: false });
+    assert.equal($("combine-target-names").textContent, target);
+    assert.equal($("combine-tools-names").textContent, tools);
+  }
+  assert.equal(TARGET_EMPTY_TOUCH, "Tap the body to change");
+  assert.equal(TOOLS_EMPTY_TOUCH, "Tap the bodies to use as tools");
+});
 
 test("hand-worked: a new Combine picks its target, then its tools, and OK is on only with both", () => {
   const { panel, $, pressed } = setup();

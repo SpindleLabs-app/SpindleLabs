@@ -527,5 +527,25 @@ class SecretsOnlyOnMain(unittest.TestCase):
         self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "GITHUB_TOKEN"))), [])
 
 
+class LabelCheck(unittest.TestCase):
+    """kernel-ci.yml's input check accepts the kernel repo's merge queue's
+    label train-<number> beside pr-<number> and main, and nothing looser
+    (the label becomes a folder name in kernel-results)."""
+
+    def patterns(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "workflows", "kernel-ci.yml")
+        with open(path) as f:
+            found = re.findall(r"\$LABEL =~ \^(\([^)]*\))\$", f.read())
+        self.assertEqual(len(found), 2, "both input checks")
+        return found
+
+    def test_accepted_and_refused(self):
+        for pattern in self.patterns():
+            for ok in ("pr-1", "pr-215", "train-7", "train-203", "main"):
+                self.assertTrue(re.fullmatch(pattern, ok), ok)
+            for bad in ("train-", "train-x", "train-1/../x", "pr-1 ", "trains-1", "train", "Main", "main2", "-1", ""):
+                self.assertFalse(re.fullmatch(pattern, bad), bad)
+
+
 if __name__ == "__main__":
     unittest.main()
