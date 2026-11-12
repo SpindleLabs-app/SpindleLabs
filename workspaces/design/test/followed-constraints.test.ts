@@ -57,7 +57,7 @@ test("#517 hand-worked: a rectangle from the box's corner to its edge's middle k
   // The right and left sides (Vertical) and the top (Horizontal) each have a free end: kept.
   assert.deepEqual(s.pins?.map((p) => p.name), [CORNER.name, MIDDLE.name]);
   assert.deepEqual(s.constraints.map((c) => c.kind), ["vertical", "horizontal", "vertical"]);
-  assert.equal(DESIGN_VERSION, 18);
+  assert.equal(DESIGN_VERSION, 19);
   assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(doc))), doc);
 });
 
@@ -120,5 +120,5 @@ test("#517 version 17: version 16 data holding a constraint on a followed point 
   const { doc: top, id } = onTop();
   const made = drawRectangle(top, id, [5, 5], [15, 15]);
   const free = JSON.parse(JSON.stringify(squaredRectangle(made.doc, id, made.ids)));
-  assert.equal(readDesignDocument({ ...free, version: 16 }).version, 18);
+  assert.equal(readDesignDocument({ ...free, version: 16 }).version, 19);
 });
