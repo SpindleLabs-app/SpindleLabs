@@ -303,9 +303,11 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     pointer(kind: SketchPointer["kind"], at: [number, number] | null, under: { edge?: number; face?: number } = {}) {
       viewport.onSketchPointer?.({ kind, at, pixel: 0.1, ...under });
     },
-    async key(id: string) {
-      view.shortcut?.(id);
+    /** Shortcut `id`, waited for; `e` is the event the shell hands over (a copy or paste carries its clipboard). */
+    async key(id: string, e?: Event) {
+      const done = view.shortcut?.(id, e);
       await settle();
+      return done;
     },
     /** Shortcut `id` as the shell runs it, not waited for (with the kernel held, nothing it asks is answered yet). */
     press(id: string) {
