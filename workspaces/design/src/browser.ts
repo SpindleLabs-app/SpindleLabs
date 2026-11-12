@@ -176,6 +176,39 @@ export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> =
 }
 
 /**
+ * What the Combine panel and its questions call `body` (SL #677 item 5):
+ * its Bodies row ("Body 2") when the list shows it, else its item's name
+ * ("Box 2", or "a piece of Combine 1"): an edited Combine's tools are used
+ * up, so the list has no row for them, and a number it doesn't show would
+ * send a person looking for a body that isn't there. A body whose item is
+ * deleted is named as `by` (the Combine using it) remembers it, then
+ * "(deleted)"; never a raw id.
+ */
+export function bodyLabel(document: DesignDocument, body: string, failed: ReadonlySet<string> = NONE_FAILED, by?: Feature): string {
+  const row = bodyRows(document, failed).find((r) => r.body === body);
+  if (row !== undefined) return row.label;
+  const id = bodyItem(body);
+  const item = document.timeline.features.find((f) => f.id === id);
+  if (item !== undefined) return isPiece(body) ? `a piece of ${item.provenance.self.label}` : item.provenance.self.label;
+  const was = by?.provenance.from.find((x) => x.id === id)?.label;
+  return was === undefined ? "a deleted body" : `${was} (deleted)`;
+}
+
+/**
+ * The Bodies rows' tags while Combine is open (SL #677 item 5): "Target"
+ * on the target's row and "Tool" on each tool's, by row id ("body-2"),
+ * in the list's order; words, so they don't rest on colour alone.
+ */
+export function combineRowTags(document: DesignDocument, failed: ReadonlySet<string>, target: string | null, tools: readonly string[]): Map<string, "Target" | "Tool"> {
+  const tags = new Map<string, "Target" | "Tool">();
+  for (const r of bodyRows(document, failed)) {
+    if (r.body === target) tags.set(r.id, "Target");
+    else if (tools.includes(r.body)) tags.set(r.id, "Tool");
+  }
+  return tags;
+}
+
+/**
  * The browser's tree for a document. Each feature is a row in build order
  * by its short name ("Box 1", U0e), its tooltip the name with its
  * description (intent summary) under it, so a name cut short is still
