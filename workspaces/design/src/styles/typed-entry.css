@@ -6,7 +6,7 @@
 /* Clicks go through the boxes to the sketch while nothing is typed in
    them: the boxes trail the pointer, and a quick move-and-click can land
    where they were a moment before (found by the Firefox sketch session).
-   With a mouse a digit starts typing; on a wide touch screen (no hover)
+   With a mouse a digit starts typing; on a wide, tall touch screen (a tablet: no hover)
    and while typing they take taps. At phone width they take none until
    typed in (the sketch toolbar's Type, sketch-toolbar.ts): beside the
    finger they swallowed the next tap of a line drawn down (sketch hunt
@@ -15,7 +15,7 @@
 .typed-entry:focus-within { pointer-events: auto; }
 /* Two fingers on the boxes never zoom the page (phone hunt 11-01). */
 .typed-entry { touch-action: pan-x pan-y; }
-@media (hover: none) and (min-width: 641px) { .typed-entry { pointer-events: auto; } }
+@media (hover: none) and (min-width: 641px) and (min-height: 501px) { .typed-entry { pointer-events: auto; } }
 .typed-entry[hidden] { display: none; }
 .typed-entry .typed-entry-row { display: grid; grid-template-columns: 52px 76px 18px 14px; align-items: center; gap: 4px; padding: 2px 6px; background: var(--fill-22-25-30-092); border: 1px solid var(--line-3a404a); border-radius: var(--look-radius-s); font-size: 12px; color: var(--text-soft); }
 .typed-entry .typed-entry-name { font-size: 11px; }
@@ -29,8 +29,9 @@
 .typed-entry .typed-entry-invalid { border-color: var(--danger); }
 .typed-entry .typed-entry-error { grid-column: 1 / -1; max-width: 180px; font-size: 11px; color: var(--text-ff9b9b); white-space: normal; }
 .typed-entry .typed-entry-error[hidden] { display: none; }
-/* Phone width: boxes tall enough to tap, below the pointer's finger. */
-@media (max-width: 640px) {
+/* Phone width, or a touch screen 500 px tall or less (a phone held sideways, which a width test took for a tablet:
+   phone hunt 2026-11-12, #614): boxes tall enough to tap, below the pointer's finger. */
+@media (max-width: 640px), (hover: none) and (max-height: 500px) {
   .typed-entry { transform: translate(-50%, 28px); }
   .typed-entry input:not(#none) { min-height: 32px; font-size: 16px; }
 }
