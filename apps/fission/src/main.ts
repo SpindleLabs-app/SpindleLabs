@@ -30,6 +30,7 @@ import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
 import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
+import { liftOverSheets } from "./undo-lift.ts";
 import { appLoaded } from "./loading.ts";
 import { ALL_WORKSPACES_SWITCH, listedWorkspaces } from "./listed-workspaces.ts";
 import { designWorkspace } from "@fission/design";
@@ -73,7 +74,7 @@ if (import.meta.env.PROD) openLatest();
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
 // The shell opens whole projects, dropped or pasted like any other file (X6).
-representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(new TextDecoder().decode(bytes), name) });
+representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(bytes, name) });
 // The one action registry: the verbs each workspace offers for a selection.
 const actions = new ActionRegistry();
 for (const w of workspaces) w.registerActions?.(actions);
@@ -796,8 +797,8 @@ function replaceProject(project: Project) {
  * kept in this browser only once it has shown (security audit S2): one that
  * freezes the tab while it builds is never stored, so never reopened.
  */
-function openProject(text: string, fileName = "") {
-  const project = projectFromJson(text, workspaces);
+function openProject(file: string | Uint8Array, fileName = "") {
+  const project = projectFromJson(file, workspaces);
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
@@ -1256,7 +1257,7 @@ const keepError = (text: string) => {
 window.addEventListener("error", (e) => keepError(`${e.message}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
 window.addEventListener("unhandledrejection", (e) => keepError(`Unhandled: ${e.reason instanceof Error ? `${e.reason.name}: ${e.reason.message}` : String(e.reason)}`));
 const bugReport = bugReportDialog(document, {
-  facts: () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
+  facts: () => ({ version: `${__APP_VERSION__ ?? "unknown"} (${$("version").textContent || "kernel not started"})`, browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
   design: () => ({ name: projectFile || ctx.project.name || "Untitled", text: projectToJson(ctx.project) }),
   open: (url) => void window.open(url, "_blank", "noopener"),
   download: (name, text) => {
@@ -1379,6 +1380,8 @@ function placeUndoRedo() {
 }
 phone.addEventListener("change", placeUndoRedo);
 placeUndoRedo();
+// An open sheet lifts the docked pair above its top edge, so a size mistyped in it can be undone (SL #623 item 6).
+liftOverSheets(document, $("undo-redo"), phone);
 for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id)); // named by aria-label
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
@@ -1524,7 +1527,7 @@ $("workspace").addEventListener("properties-conceal", () => {
 {
   const phone = window.matchMedia("(max-width: 640px)");
   $("workspace").addEventListener("pointerdown", (e) => {
-    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float")) return; // the bar over the view ends a tool, which puts the sheet away itself
+    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float") || e.target.closest("#undo-redo")) return; // the bar over the view ends a tool, which puts the sheet away itself; Undo and Redo leave it open, so the size is seen going back
     for (const slot of ["browser", "properties"]) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();

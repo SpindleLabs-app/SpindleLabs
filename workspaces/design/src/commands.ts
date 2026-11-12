@@ -15,6 +15,7 @@ import { NAME_LIMIT, renameItem } from "./timeline-edits.ts";
 import { addSketch, drawCircle, drawLine, drawRectangle } from "./sketch.ts";
 import { freshDesign } from "./start-fresh.ts";
 import { lengthRefused } from "./typed-entry.ts";
+import { extrudeSketches } from "./extrude-profiles.ts";
 
 export const SHAPES: readonly ShapeKind[] = ["box", "cylinder", "sphere", "l-bracket", "plate", "slot", "star"];
 
@@ -123,9 +124,9 @@ export function drawRefused(doc: DesignDocument, id: string): string | null {
   return used ? `${used} is built from this sketch, so the AI can't draw in it yet: draw there yourself, or start a new sketch.` : null;
 }
 
-/** The name of the first extrude built from sketch `id`, or null. */
+/** The name of the first extrude built from sketch `id` (any of its profiles', SL #611), or null. */
 export function builtFrom(doc: DesignDocument, id: string): string | null {
-  return doc.timeline.features.find((f) => isSketchExtrude(f) && f.intent.parameters.sketch === id)?.provenance.self.label ?? null;
+  return doc.timeline.features.find((f) => isSketchExtrude(f) && extrudeSketches(f).includes(id))?.provenance.self.label ?? null;
 }
 
 /**
