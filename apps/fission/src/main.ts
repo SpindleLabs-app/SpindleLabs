@@ -1225,6 +1225,29 @@ const panesInUse = (): PaneId[] => (activePane === "split" ? ["split", "main"] :
 /** Typing in a field: a text box, text area, list or editable text. A tickbox, radio or button takes no letters, so keys still reach the shortcuts after one is clicked (found in SF1: ticking Snap to grid stopped L, R, C and A). */
 const TEXT_FIELDS = "input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=reset], [type=range], [type=color], [type=file]), textarea, select, [contenteditable]:not([contenteditable=false])";
 const inText = (t: EventTarget | null) => t instanceof Element && t.closest(TEXT_FIELDS) !== null;
+/**
+ * Undo and Redo keys in a text field are the browser's own, of the typing in it, except where the field holds no typing
+ * of its own to take back: a field whose typing is the project's steps as typed (`data-undo="app"`, Design's size
+ * boxes), a list, and a box emptied once its value was used (`data-undo="app-empty"`, the sketch's typed sizes after
+ * Enter). There the keys are the project's Undo and Redo. Left to the browser they did nothing for the emptied box, and
+ * in a size box untyped a digit as a NEW step, a 60 mm box becoming 6 mm (Undo hunt 2026-11-12, #623).
+ */
+const UNDO_KEYS = new Set(["undo", "redo", "redo-y"]);
+function undoIsOurs(t: EventTarget | null): boolean {
+  const field = t instanceof Element ? t.closest(TEXT_FIELDS) : null;
+  if (!(field instanceof HTMLElement)) return false;
+  return field instanceof HTMLSelectElement || field.dataset.undo === "app" || (field.dataset.undo === "app-empty" && (field as HTMLInputElement).value === "");
+}
+// The browser keeps one undo of typing for the whole page, not one per field: Ctrl+Z in the command search or a panel's
+// box, with nothing left of its own to untype, went on to untype the last size typed in a size box, wherever the keys
+// were. A size box's typing is never the browser's to take back or redo.
+document.addEventListener(
+  "beforeinput",
+  (e) => {
+    if ((e.inputType === "historyUndo" || e.inputType === "historyRedo") && e.target instanceof HTMLElement && e.target.dataset.undo === "app") e.preventDefault();
+  },
+  true,
+);
 const shellShortcuts: Record<string, (e: Event) => boolean> = {
   shortcuts: () => (showShortcuts(), true),
   undo: () => (undoRedo("undo"), true),
@@ -1248,7 +1271,7 @@ function runShortcut(chord: Chord, e: Event) {
   if (document.querySelector("dialog[open]")) return;
   const panes = panesInUse();
   const entry = shortcuts.lookup(chord, panes.map((p) => pool.showing(p)!));
-  if (!entry || (!entry.inText && inText(e.target))) return;
+  if (!entry || (!entry.inText && inText(e.target) && !(UNDO_KEYS.has(entry.id) && undoIsOurs(e.target)))) return;
   const done = entry.scope === "app" ? shellShortcuts[entry.id]?.(e) : pool.awake(panes.find((p) => pool.showing(p) === entry.scope)!)?.view.shortcut?.(entry.id, e);
   if (done !== false && done !== undefined) e.preventDefault();
 }

@@ -109,6 +109,8 @@ export type FeatureResult =
       pieceFaces?: Record<string, string[]>;
       /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
       pieces?: { message: string; renumbered: string[] };
+      /** A Move some of whose bodies are no longer there (SL #506 item 4): it moves the rest, and says which it can't and why; their body ids. */
+      missing?: { message: string; bodies: string[] };
       /** A Cut or Join whose tools change nothing (misses.ts; Ben 11 Nov, SL #506 item 5, #521): which, and the row's words. */
       misses?: { message: string; list: Miss[] };
     }
@@ -1339,7 +1341,10 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
  * everything after the Move (a sketch on its face, the view, the STL)
  * finds it where the Move put it. All or none: a body the kernel refuses
  * to move (out past model space) leaves every body where it was and fails
- * the Move with the kernel's words. The Move holds the bodies as they
+ * the Move with the kernel's words. A body no longer there (deleted, not
+ * built, or used up by an earlier Combine) is left out with a warning
+ * (`missing`, SL #506 item 4), the rest moved; with none left it fails.
+ * The Move holds the bodies as they
  * were (`holds`), so the next rebuild finds them built. Its bodies are
  * stored by body id (`movedBodies`, Design data version 6, 35ec), each
  * made by an item it depends on (`bodyItem`).
@@ -1360,21 +1365,30 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
     if (r?.status === "greyed") return { status: "greyed", by: r.by };
   }
   const label = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const name = f.provenance.self.label;
   const motions = moveMotions(moveValues(f));
   const from: [string, BuiltBody][] = [];
+  // SL #506 item 4: a body that is no longer there is left out, and the Move moves the rest with a warning naming it,
+  // so a body it also moves never jumps back for it. With none left the Move fails, naming the first as before.
+  const gone: { body: string; said: string; failed: Extract<FeatureResult, { status: "failed" }> }[] = [];
   const held = movedBodies(f);
   for (const body of held) {
     const id = bodyItem(body)!;
     const r = done[id];
     const b = r?.status === "built" ? bodies[body] : undefined;
-    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
-    if (r?.status !== "built") return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
-    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again.
-    if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
+    const what = body === bodyIdOf(id) ? label(id) : `a piece of ${label(id)}`;
+    if (r === undefined) gone.push({ body, said: `${label(id)} was deleted`, failed: { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${name} has nothing to move` } });
+    else if (r.status !== "built") gone.push({ body, said: `${label(id)} is not built`, failed: { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${name} can't move it` } });
+    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again (SL #583 item 2).
+    else if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
     // Built, but gone from here on: an earlier Combine or extrude used it up, or left no such piece (as `booleanSteps` says it; hunts 11-06, 11-08).
-    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${f.provenance.self.label} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
-    from.push([body, b]);
+    else if (b === undefined) gone.push({ body, said: `an earlier Combine or extrude used up ${what} or left no such piece`, failed: { status: "failed", cause: "failed-input", input: id, message: `${name} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` } });
+    else from.push([body, b]);
   }
+  if (from.length === 0 && gone.length > 0) return gone[0].failed;
+  const list = (names: readonly string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+  const words = (body: string) => (isPiece(body) ? `a piece of ${label(bodyItem(body)!)}` : label(bodyItem(body)!));
+  const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
   // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
   const numbered = doc.bodies === undefined ? null : new Set(doc.bodies.map((b) => b.id));
   const takes: string[] = [];
@@ -1409,7 +1423,7 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
   }
   const holds = from.map(([, b]) => b.handle);
   for (const [id, b] of moved) bodies[id] = b;
-  return { status: "built", holds, ...(takes.length > 0 ? { takes } : {}) };
+  return { status: "built", holds, ...missing, ...(takes.length > 0 ? { takes } : {}) };
 }
 
 /** The bodies item `id`'s booleans split pieces from (SL #583 item 2): a Combine's target, an operation extrude's bodies. */
