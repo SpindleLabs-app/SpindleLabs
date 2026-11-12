@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, orbitSafeOffset, refitScale, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
+import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, orbitSafeOffset, refitScale, planeSeenAs, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
 
 type Vec3 = [number, number, number];
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -338,5 +338,25 @@ test("refitScale: a round trip of shapes comes back to 1 (self-consistency)", ()
   for (const [a, b, c] of [[0.46, 3.1, 0.46], [0.3, 0.9, 1.7], [2, 0.5, 0.25]]) {
     const k = refitScale(45, a, b) * refitScale(45, b, c) * refitScale(45, c, a);
     assert.ok(Math.abs(k - 1) < 1e-12, `${a} -> ${b} -> ${c}: ${k}`);
+  }
+});
+
+test("hand-worked: how a sketch's x and y run on screen from each side of its plane (planeSeenAs)", () => {
+  // From the normal's side: x right, y up, whatever the plane.
+  const xy = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] } as const;
+  assert.deepEqual(planeSeenAs(xy), { right: 1, up: 1 });
+  assert.deepEqual(planeSeenAs(xy, 1), { right: 1, up: 1 });
+  // A bottom face (frame XY, seen from −Z): the bottom view has −Y up, the plane's y = Z × X = +Y, so y runs
+  // down the screen; looking up from below with −Y up, +X is to the right.
+  assert.deepEqual(planeSeenAs(xy, -1), { right: 1, up: -1 });
+  // A back face (frame XZ: normal −Y, x +X, so y = −Y × X = +Z), seen from +Y: the back view keeps Z up, and
+  // from behind +X runs to the left.
+  assert.deepEqual(planeSeenAs({ origin: [0, 30, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] }, -1), { right: -1, up: 1 });
+  // A left face (frame YZ: normal +X, x +Y, y = X × Y = +Z), seen from −X: Z up, and +Y runs to the left.
+  assert.deepEqual(planeSeenAs({ origin: [0, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] }, -1), { right: -1, up: 1 });
+  // Either way from behind it is a mirror image: exactly one axis is turned.
+  for (const p of [xy, { origin: [0, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] } as const]) {
+    const s = planeSeenAs(p, -1);
+    assert.equal(s.right * s.up, -1);
   }
 });

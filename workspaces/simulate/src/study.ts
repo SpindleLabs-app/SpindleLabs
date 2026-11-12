@@ -7,7 +7,7 @@
 // dropped. Every edit here is a pure function returning new data, recorded
 // by the page as one undo step.
 
-import { NewerFormatError, type BodyReference, type FaceReference, type StableId } from "@fission/core";
+import { NewerFormatError, materialLibrary, type BodyReference, type FaceReference, type StableId } from "@fission/core";
 
 /** Standard gravity, m/s²: a mass of m kg hanging weighs m × G newtons (the defined value, CGPM 1901). */
 export const G = 9.80665;
@@ -67,6 +67,8 @@ export interface Study {
   kind: "static";
   /** The body by its stable reference and the name Design showed it by when picked ("Body 1"); null until one is picked. */
   body: { ref: BodyReference; label: string } | null;
+  /** What the part is made of, by the materials library's id ("pla"); null until chosen (T2: bodies have no material of their own yet, so it is asked once). */
+  material: string | null;
   fixtures: Fixture[];
   loads: Load[];
   mesh: MeshSize;
@@ -74,18 +76,19 @@ export interface Study {
 
 /** What the project keeps for TestLab (project.workspaces.simulate). */
 export interface TestLabData {
-  version: 1;
+  version: 2;
   studies: Study[];
   /** The next number for an id (study-n, fixture-n, load-n), never reused. */
   nextId: number;
 }
 
-export const TESTLAB_VERSION = 1;
+/** 1: T1 (no material); 2: T2, a study's material (version 1 reads as "not chosen"). */
+export const TESTLAB_VERSION = 2;
 
 /** The biggest amount a box takes: 1,000,000 N (about 100 tonnes hanging), 1,000,000 kg or 1,000,000 kPa (1 GPa). */
 export const MAX_AMOUNT = 1_000_000;
 
-export const emptyTestLab = (): TestLabData => ({ version: 1, studies: [], nextId: 1 });
+export const emptyTestLab = (): TestLabData => ({ version: 2, studies: [], nextId: 1 });
 
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 const isRef = (x: unknown, kind: "face" | "body"): boolean => isObject(x) && x.kind === kind && typeof x.id === "string" && x.id !== "";
@@ -154,9 +157,15 @@ export function readTestLab(data: unknown): TestLabData {
       return { id: lid, faces: readFaces(l.faces, at), amount: l.amount, unit: l.unit as LoadUnit, direction: l.direction as Direction };
     });
     if (!MESH_SIZES.includes(s.mesh as MeshSize)) throw new Error(`${where}'s mesh size ${String(s.mesh)} is not coarse, normal or fine`);
-    return { id, name: s.name, kind: "static", body, fixtures, loads, mesh: s.mesh as MeshSize };
+    let material: string | null = null;
+    if ((data.version as number) >= 2) {
+      if (s.material !== null && typeof s.material !== "string") throw new Error(`${where}'s material is not a material's name`);
+      if (typeof s.material === "string" && materialLibrary().get(s.material)?.mechanical === undefined) throw new Error(`${where} is made of ${s.material}, which is not in this SpindleLabs's materials library`);
+      material = s.material as string | null;
+    }
+    return { id, name: s.name, kind: "static", body, material, fixtures, loads, mesh: s.mesh as MeshSize };
   });
-  return { version: 1, studies, nextId: data.nextId };
+  return { version: 2, studies, nextId: data.nextId };
 }
 
 /** Why an amount can't be a load's, in words; null when it can. Above 0 and at most MAX_AMOUNT; 0 pushes nothing. */
@@ -200,7 +209,7 @@ export function addStudy(data: TestLabData, body: Study["body"]): { data: TestLa
   const names = new Set(data.studies.map((s) => s.name.toLowerCase()));
   let n = data.studies.length + 1;
   while (names.has(`study ${n}`)) n++;
-  const study: Study = { id, name: `Study ${n}`, kind: "static", body, fixtures: [{ id: fid, faces: [] }], loads: [], mesh: "normal" };
+  const study: Study = { id, name: `Study ${n}`, kind: "static", body, material: null, fixtures: [{ id: fid, faces: [] }], loads: [], mesh: "normal" };
   return { data: { ...b, studies: [...data.studies, study] }, study };
 }
 
@@ -251,6 +260,13 @@ export function addLoad(data: TestLabData, studyId: string): { data: TestLabData
   return { data: withStudy(next, { ...s, loads: [...s.loads, load] }), load };
 }
 
+/** The study made of a library material (a page bug, never the user's, throws for one not in the library or with no mechanical numbers). */
+export function setMaterial(data: TestLabData, studyId: string, material: string): TestLabData {
+  const s = studyOf(data, studyId);
+  if (materialLibrary().get(material)?.mechanical === undefined) throw new Error(`there is no material ${material} to test with`);
+  return s.material === material ? data : withStudy(data, { ...s, material });
+}
+
 /** Takes a load out. */
 export function removeLoad(data: TestLabData, studyId: string, loadId: string): TestLabData {
   const s = studyOf(data, studyId);
@@ -293,6 +309,7 @@ export function studyFaces(study: Study): HeldFace[] {
 export function readyProblems(study: Study, lost: readonly string[]): string[] {
   const out: string[] = [];
   if (study.body === null) return ["Pick a body to test."];
+  if (study.material === null) out.push("Choose what the part is made of.");
   if (lost.length > 0) out.push(...lost);
   if (!study.fixtures.some((f) => f.faces.length > 0)) out.push("Pick at least one face to hold in place: with nothing held the part would just fly away.");
   if (study.loads.length === 0) out.push("Add a load: with nothing pushing, nothing bends.");

@@ -37,13 +37,13 @@ test("an edit, worked out by hand: notes for Slice and Simulate, none for Design
   // expensive, so it waits: "out of date … Rerun it in Simulate.").
   syncGraph(g, partDocument("box", 41, 30, 20), doc, notes);
   assert.deepEqual(view(notes, g), [
-    ["plate", "slice", "updating", "Print plate updating: you changed the box in Design."],
-    ["stress", "simulate", "needs-rerun", "Stress out of date: you changed the box in Design. Rerun it in Simulate."],
+    ["plate", "slice", "updating", "Print plate updating: you changed the box in DesignLab."],
+    ["stress", "simulate", "needs-rerun", "Stress out of date: you changed the box in DesignLab. Rerun it in TestLab."],
   ]);
   // Chains: plate reads feature-1 directly; stress reads the view, which reads feature-1.
   const [plate, stress] = notes.current(g);
-  assert.deepEqual(plate.chain, ["Box: 41 × 30 × 20 mm in Design", "Print plate in Slice"]);
-  assert.deepEqual(stress.chain, ["Box: 41 × 30 × 20 mm in Design", "Volume, area and mesh in Design", "Stress in Simulate"]);
+  assert.deepEqual(plate.chain, ["Box: 41 × 30 × 20 mm in DesignLab", "Print plate in SliceLab"]);
+  assert.deepEqual(stress.chain, ["Box: 41 × 30 × 20 mm in DesignLab", "Volume, area and mesh in DesignLab", "Stress in TestLab"]);
 });
 
 test("an unchanged edit makes no note", () => {
@@ -62,9 +62,9 @@ test("a removed profile names the removal to the cut that read it", () => {
   // Bracket → box: feature-1 changes (nothing outside Design reads it) and
   // profile-1 goes. The cut still reads profile-1, so the removal reaches it.
   syncGraph(g, partDocument("box", 40, 30, 20), bracket, notes);
-  assert.deepEqual(view(notes, g), [["cut", "laser", "updating", "Cut path updating: you removed the profile in Design."]]);
+  assert.deepEqual(view(notes, g), [["cut", "laser", "updating", "Cut path updating: you removed the profile in DesignLab."]]);
   // The chain keeps the gone profile's name.
-  assert.deepEqual(notes.current(g)[0].chain, ["Profile profile-1 in Design", "Cut path in Laser"]);
+  assert.deepEqual(notes.current(g)[0].chain, ["Profile profile-1 in DesignLab", "Cut path in LaserLab"]);
 });
 
 test("seeded random edits: Design's notes match a model of what each edit means", () => {
@@ -120,8 +120,8 @@ test("seeded random edits: Design's notes match a model of what each edit means"
       }
       const expected = [...model]
         .map(([id, m]) => {
-          const [label, where, cost] = id === "plate" ? ["Print plate", "Slice", "cheap"] : ["Stress", "Simulate", "expensive"];
-          const why = `${m.words} in Design.`;
+          const [label, where, cost] = id === "plate" ? ["Print plate", "SliceLab", "cheap"] : ["Stress", "TestLab", "expensive"];
+          const why = `${m.words} in DesignLab.`;
           return [id, m.fresh ? `${label} updated: ${why}` : cost === "cheap" ? `${label} updating: ${why}` : `${label} out of date: ${why} Rerun it in ${where}.`];
         })
         .sort();
@@ -132,7 +132,7 @@ test("seeded random edits: Design's notes match a model of what each edit means"
       assert.deepEqual(got, expected, at);
       for (const n of notes.current(g)) {
         assert.notEqual(n.workspace, "design", `${at}: no note about Design's own results`);
-        assert.equal(n.chain.at(-1), n.node === "plate" ? "Print plate in Slice" : "Stress in Simulate", at);
+        assert.equal(n.chain.at(-1), n.node === "plate" ? "Print plate in SliceLab" : "Stress in TestLab", at);
       }
     }
   }

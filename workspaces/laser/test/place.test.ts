@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Loop, Outline } from "@fission/core";
-import { boxesOverlap, cleanMm, EDGE_SLACK, layOutPlaced, MAX_REACH, normalAngle, offBed, offBedWords, overlapCandidates, placementRefusal, placeOutline, readPlacements, snapMm, turnedOnTheSpot, turnOutline, type LaidPart } from "../src/place.ts";
+import { boxesOverlap, cleanMm, EDGE_SLACK, FLIP, flippedOnTheSpot, layOutPlaced, mirrorOutline, MAX_REACH, normalAngle, offBed, offBedWords, overlapCandidates, placementRefusal, placeOutline, readPlacements, snapMm, turnedOnTheSpot, turnOutline, type LaidPart } from "../src/place.ts";
 import { layOut, outlineBox, type PlacedPart, type SheetPart } from "../src/sheet.ts";
 
 const path = (corners: number[], bulges: number[] = []): Loop => ({ path: { corners, bulges } });
@@ -150,7 +150,7 @@ test("seeded: with nothing placed by hand the layout is the rows' own (sheet.ts 
     const parts = Array.from({ length: 1 + Math.floor(r() * 12) }, (_, i) => part(`p${i}`, r() < 0.1 ? { outer: path([0, 0, 1, 1]), holes: [] } : rect(1 + Math.floor(r() * 120), 1 + Math.floor(r() * 120), Math.floor(r() * 50) - 25, Math.floor(r() * 50) - 25)));
     const rows = layOut(parts, bed, gap);
     const laid = layOutPlaced(parts, bed, gap);
-    assert.deepEqual(laid.placed.map(({ angle: _a, by: _b, ...p }) => p), rows.placed, `seed ${seed}`);
+    assert.deepEqual(laid.placed.map(({ angle: _a, flip: _f, by: _b, ...p }) => p), rows.placed, `seed ${seed}`);
     assert.deepEqual(laid.left, rows.left, `seed ${seed}`);
   }
 });
@@ -191,7 +191,7 @@ test("seeded: round hand-placed parts, every row part is on the bed inside the g
   assert.ok(stepped > 300, `${stepped} row parts stepped round a hand-placed part`);
 });
 
-const placedAt = (x: number, y: number, width: number, height: number, by: "hand" | "rows" = "hand", label = "Sketch A"): LaidPart => ({ id: label, label, outline: rect(width, height, x, y), x, y, width, height, angle: 0, by });
+const placedAt = (x: number, y: number, width: number, height: number, by: "hand" | "rows" = "hand", label = "Sketch A"): LaidPart => ({ id: label, label, outline: rect(width, height, x, y), x, y, width, height, angle: 0, flip: false, by });
 
 test("hand-worked: a part past the bed's edge is said so in words, side by side; one on the bed is not", () => {
   assert.equal(offBed(placedAt(0, 0, 100, 50), BED), null); // exactly the bed
@@ -240,5 +240,107 @@ test("hand-worked: a dragged part snaps to whole millimetres; numbers are cleane
 test("PlacedPart from the rows and LaidPart are the same shape plus the angle and who placed it", () => {
   const rows: PlacedPart = layOut([part("A", rect(10, 10))], BED, 5).placed[0];
   const laid = layOutPlaced([part("A", rect(10, 10))], BED, 5).placed[0];
-  assert.deepEqual(laid, { ...rows, angle: 0, by: "rows" });
+  assert.deepEqual(laid, { ...rows, angle: 0, flip: false, by: "rows" });
+});
+
+test("hand-worked: pairs are worth asking about when their boxes overlap or come within the margin given, and one of the two was placed by hand", () => {
+  const laid = (x: number, y: number, w: number, h: number, by: "hand" | "rows"): LaidPart => ({ id: `${x},${y}`, label: "p", outline: { outer: { path: { corners: [], bulges: [] } }, holes: [] }, x, y, width: w, height: h, angle: 0, flip: false, by });
+  // A 10 × 10 at the origin placed by hand; one touching its right side; one 5 away; a row part over it; two row parts over each other.
+  const parts = [laid(0, 0, 10, 10, "hand"), laid(10, 0, 10, 10, "rows"), laid(15, 0, 10, 10, "rows"), laid(5, 5, 10, 10, "rows")];
+  // Overlap only: part 0 with part 3 (5 × 5 shared). Parts 1, 2 and 3 overlap each other but are all row parts.
+  assert.deepEqual(overlapCandidates(parts), [[0, 3]]);
+  // Within 0.002 mm: the touching one (gap 0) counts too; the one 5 away still not.
+  assert.deepEqual(overlapCandidates(parts, 0.002), [[0, 1], [0, 3]]);
+  // The margin's own line: a gap of 0.9 × 0.002 counts, 1.1 × 0.002 does not (across, and up).
+  for (const [gap, counts] of [[0.0018, true], [0.0022, false]] as const) {
+    assert.equal(overlapCandidates([parts[0], laid(10 + gap, 0, 10, 10, "rows")], 0.002).length === 1, counts, `across, ${gap}`);
+    assert.equal(overlapCandidates([parts[0], laid(0, 10 + gap, 10, 10, "rows")], 0.002).length === 1, counts, `up, ${gap}`);
+    assert.equal(overlapCandidates([parts[0], laid(10 + gap, 10 + gap, 10, 10, "rows")], 0.002).length === 1, counts, `corner to corner, ${gap}`);
+  }
+});
+
+// Mirrors (L1b4): a sketch seen from behind its plane, and Flip.
+
+/** Twice the signed area of a path loop's corners (shoelace): positive when it goes round counter-clockwise. */
+const turning = (l: Loop) => {
+  if ("circle" in l) return 0;
+  const c = l.path.corners;
+  let s = 0;
+  for (let i = 0; i < c.length; i += 2) s += c[i] * c[(i + 3) % c.length] - c[(i + 2) % c.length] * c[i + 1];
+  return s;
+};
+
+test("hand-worked: a D mirrored left to right bulges to the left, keeps going round counter-clockwise, and its arc stays a half circle", () => {
+  // The D: the square (0,0) (10,0) (10,10) (0,10), its right side a half circle (bulge 1, radius 5) out to x = 15.
+  const d: Outline = { outer: path([0, 0, 10, 0, 10, 10, 0, 10], [0, 1, 0, 0]), holes: [{ circle: { center: [4, 5], radius: 2 } }] };
+  const m = mirrorOutline(d, FLIP);
+  // x → −x: (0,0) (−10,0) (−10,10) (0,10), clockwise now, so written backwards: (0,0) (0,10) (−10,10) (−10,0). The half
+  // circle is now the piece from (−10,10) down to (−10,0); a mirror turns its way round (−1) and going it backwards turns
+  // it again (+1): bulge 1, counter-clockwise going down, which lies to the west, out to x = −15.
+  assert.deepEqual(m.outer, path([0, 0, 0, 10, -10, 10, -10, 0], [0, 0, 1, 0]));
+  assert.deepEqual(m.holes, [{ circle: { center: [-4, 5], radius: 2 } }]);
+  assert.deepEqual(outlineBox(m), { minX: -15, minY: 0, maxX: 0, maxY: 10 });
+  assert.ok(turning(m.outer) > 0, "still counter-clockwise");
+  // Top to bottom (a bottom face): y → −y, the half circle on the right still, the box upside down.
+  assert.deepEqual(outlineBox(mirrorOutline(d, { right: 1, up: -1 })), { minX: 0, minY: -10, maxX: 15, maxY: 0 });
+  // No mirror at all is the outline itself.
+  assert.equal(mirrorOutline(d, { right: 1, up: 1 }) === d, true);
+});
+
+test("seeded: a mirror twice is the outline back, every loop keeps its way round, and the box is the box mirrored (300 random outlines)", () => {
+  for (let seed = 1; seed <= 300; seed++) {
+    const r = random(seed);
+    const n = 3 + Math.floor(r() * 6);
+    // A star-shaped loop round (cx, cy), counter-clockwise, with small bulges, and a clockwise hole near its middle.
+    const [cx, cy] = [Math.floor(r() * 200) - 100, Math.floor(r() * 200) - 100];
+    const corners: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const a = (2 * Math.PI * i) / n;
+      const rad = 20 + Math.floor(r() * 20);
+      corners.push(cx + Math.round(rad * Math.cos(a)), cy + Math.round(rad * Math.sin(a)));
+    }
+    const bulges = Array.from({ length: n }, () => (r() < 0.5 ? 0 : Math.round((r() * 0.6 - 0.3) * 1000) / 1000));
+    const outline: Outline = { outer: path(corners, bulges), holes: [path([cx - 2, cy - 2, cx - 2, cy + 2, cx + 2, cy + 2, cx + 2, cy - 2])] };
+    let box;
+    try {
+      box = outlineBox(outline);
+    } catch {
+      continue; // a corner landed twice on one point: not an outline
+    }
+    for (const m of [FLIP, { right: 1, up: -1 } as const, { right: -1, up: -1 } as const]) {
+      const once = mirrorOutline(outline, m);
+      assert.ok(turning(once.outer) > 0 && turning(once.holes[0]) < 0, `seed ${seed}: ways round kept`);
+      const b = outlineBox(once);
+      const want = { minX: m.right === 1 ? box.minX : -box.maxX, maxX: m.right === 1 ? box.maxX : -box.minX, minY: m.up === 1 ? box.minY : -box.maxY, maxY: m.up === 1 ? box.maxY : -box.minY };
+      for (const k of ["minX", "maxX", "minY", "maxY"] as const) near(b[k], want[k], `seed ${seed} ${k}`, 2e-6);
+      // Twice: the same corners and bulges, perhaps starting at another corner (a loop has no first corner).
+      const twice = mirrorOutline(once, m);
+      const key = (l: Loop) => ("circle" in l ? "" : [...Array(l.path.corners.length / 2).keys()].map((i) => `${l.path.corners[2 * i]},${l.path.corners[2 * i + 1]},${l.path.bulges[i] ?? 0}`).sort().join(" "));
+      assert.equal(key(twice.outer), key(outline.outer), `seed ${seed}: twice is back`);
+    }
+  }
+});
+
+test("hand-worked: Flip mirrors a part on the spot; a turned part's angle goes to minus itself; flipping twice is where it started", () => {
+  // A 30 × 10 L-ish step: (0,0) (30,0) (30,10) (10,10) (10,5) (0,5)... kept simple: a right triangle (0,0) (30,0) (0,10).
+  const tri: Outline = { outer: path([0, 0, 30, 0, 0, 10]), holes: [] };
+  // Sitting at (5, 5) unturned, box 30 × 10: flipped about its middle (20, 10) it keeps the box and puts its right angle
+  // on the right: placed it is (35,5) (5,5) (35,15) in some order.
+  const at = flippedOnTheSpot(tri, { x: 5, y: 5, width: 30, height: 10, angle: 0, flip: false });
+  assert.deepEqual(at, { x: 5, y: 5, angle: 0, flip: true });
+  assert.deepEqual(new Set(placeOutline(tri, at).outline.outer.path.corners.join(",").match(/-?\d+(\.\d+)?,-?\d+(\.\d+)?/g)), new Set(["35,5", "5,5", "35,15"]));
+  // Turned 90 (box 10 × 30 at (5, 5)), then flipped: mirror then turn −90 (M·R(90) = R(−90)·M), the same box.
+  const turned = flippedOnTheSpot(tri, { x: 5, y: 5, width: 10, height: 30, angle: 90, flip: false });
+  assert.deepEqual(turned, { x: 5, y: 5, angle: 270, flip: true });
+  // What Flip makes of a turned part is the turned part seen in a mirror across its box's middle line x = 10: the turned
+  // triangle is (15,5) (15,35) (5,5); mirrored about x = 10: (5,5) (5,35) (15,5).
+  assert.deepEqual(new Set(placeOutline(tri, turned).outline.outer.path.corners.join(",").match(/-?\d+(\.\d+)?,-?\d+(\.\d+)?/g)), new Set(["5,5", "5,35", "15,5"]));
+  // Twice: back to unflipped at the same angle.
+  assert.deepEqual(flippedOnTheSpot(tri, { x: 5, y: 5, width: 10, height: 30, angle: 270, flip: true }), { x: 5, y: 5, angle: 90 });
+});
+
+test("a flip a project holds is kept only as true; anything else is no flip", () => {
+  assert.deepEqual(readPlacements({ a: { x: 1, y: 2, angle: 0, flip: true }, b: { x: 1, y: 2, flip: "yes" }, c: { x: 1, y: 2, flip: false } }), { a: { x: 1, y: 2, angle: 0, flip: true }, b: { x: 1, y: 2, angle: 0 }, c: { x: 1, y: 2, angle: 0 } });
+  const laid = layOutPlaced([part("a", rect(10, 10)), part("b", rect(10, 10))], BED, 5, { a: { x: 50, y: 20, angle: 0, flip: true } });
+  assert.deepEqual(laid.placed.map((p) => [p.id, p.flip, p.by]), [["a", true, "hand"], ["b", false, "rows"]]);
 });

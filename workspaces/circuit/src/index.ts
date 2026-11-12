@@ -13,7 +13,7 @@ import type { FaceReference, WorkspacePlugin } from "@fission/core";
 import { showPlaceholder } from "@fission/ui";
 
 const summary =
-  "Electronics: schematics, board layout, routing and design-rule checks, designed together with the enclosure in Design.";
+  "Electronics: schematics, board layout, routing and design-rule checks, designed together with the enclosure in DesignLab.";
 
 /** DRAFT: a board. Its outline is a Design face by reference, never a copy. */
 export interface Board {
@@ -36,19 +36,19 @@ export function checkDesignRules(_board: Board): { message: string; at: [number,
 
 export const circuitWorkspace: WorkspacePlugin = {
   id: "circuit",
-  title: "Circuit",
+  title: "PCBLab",
   summary,
   status: "placeholder",
   representations: { produces: [], accepts: [] },
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
-      title: "Circuit",
+      title: "PCBLab",
       summary,
       plans: [
         "Schematic capture with a shared component library",
         "Board layout and routing, with design-rule checks",
-        "Board outline taken from a face or sketch in Design, by reference",
+        "Board outline taken from a face or sketch in DesignLab, by reference",
         "Components shown in 3D inside the enclosure, with live collision checks",
         "Mounting holes linked both ways to screw posts in the enclosure",
         "Gerber and drill export",

@@ -18,7 +18,7 @@ import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { addConstraint, MIN_FEATURE, type NewConstraint } from "../src/constraints.ts";
 import { partDocument, type DesignDocument, type Sketch } from "../src/document.ts";
 import { addSketch, drawArc, drawLine, drawRectangle, PROJECTED_POINT } from "../src/sketch.ts";
-import { ARC_TURNED, DRAG_STEP_PIXELS, dragStep, dragSteps, dragTo, FIXED_POINT, fixedPoints, grabProblem, MAX_DRAG_STEPS, PINNED_POINT, pointOf, turn, turnedOver } from "../src/point-drag.ts";
+import { ARC_TURNED, DRAG_STEP_PIXELS, dragStep, dragSteps, dragTo, FIXED_POINT, fixedPoints, grabProblem, MAX_DRAG_STEPS, PINNED_POINT, pointOf, sweepOf, turn, turnedOver } from "../src/point-drag.ts";
 
 const kernel = nodeKernel();
 const sketchOf = (doc: DesignDocument, id: string): Sketch => doc.sketches.find((s) => s.id === id)!;
@@ -232,11 +232,13 @@ test("a drag in the second of two sketches changes only that one, and keeps the 
   assert.equal(sketchOf(got, b.id).points.find((x) => x.id === p), sketchOf(lb.doc, b.id).points.find((x) => x.id === p), "an unmoved point is kept as it was");
 });
 
-test("regression (47d4 review): an arc can't be carried across its chord through a step landing exactly flat", async () => {
-  // An arc from (10, 0) to (0, 0) round (5, 3): turn(centre, start, end) = (5)(−3) − (−3)(−5) = −30. Its centre dragged to
-  // (5, −3) at 0.5 mm a pixel goes in ⌈6 / 4⌉ = 2 steps: (5, 0), on the chord (flat, allowed), then (5, −3), +30, the arc the
-  // other way round. Against the step before (flat) that is no turn, but against where the drag began it is: refused,
-  // left at the flat step. In one step it is refused too.
+test("regression (47d4 review, judged by the sweep since SL #612): an arc's centre carried across its chord in steps changes the arc smoothly, in one jump it is refused", async () => {
+  // An arc from (10, 0) to (0, 0) round (5, 3): start − centre = (5, −3) at −31.0°, end − centre = (−5, −3) at −149.0°, so
+  // it sweeps counter-clockwise 360° − 118.1° = 241.9°, bulging up (always on the right of start → end). Its centre dragged
+  // to (5, −3): start − centre = (5, 3) at 31.0°, end − centre = (−5, 3) at 149.0°, a 118.1° arc, still bulging up: a
+  // smaller arc, not one inside out (the old triangle-sign check called it turned over). In one step the sweep jumps
+  // 123.9°, over MAX_SWEEP_STEP (120°): refused, as a solver jumping branches would be. At 0.5 mm a pixel it goes in
+  // ⌈6 / 4⌉ = 2 steps: (5, 0) on the chord, a half circle (180°, 61.9° on), then (5, −3) (61.9° more): taken.
   const s0 = addSketch(partDocument("box", 40, 30, 20));
   const arc = drawArc(s0.doc, s0.id, [10, 0], [0, 0], [5, 3]); // start point-3, end point-4, centre point-5
   const tri = (d: DesignDocument) => {
@@ -246,8 +248,10 @@ test("regression (47d4 review): an arc can't be carried across its chord through
   assert.equal(tri(arc.doc), -30);
   assert.deepEqual(await dragStep(kernel, arc.doc, s0.id, "point-5", [5, -3]), { refused: ARC_TURNED });
   const got = await dragTo(kernel, arc.doc, s0.id, "point-5", [5, -3], 0.5);
-  assert.equal(got.refused, ARC_TURNED);
-  assert.ok(tri(got.doc) <= 0, `the arc turned over: ${tri(got.doc)}`);
+  assert.equal(got.refused, null);
+  const s = sketchOf(got.doc, s0.id);
+  const sweep = (sweepOf(xy(s, "point-5"), xy(s, "point-3"), xy(s, "point-4")) * 180) / Math.PI;
+  assert.ok(Math.abs(sweep - (2 * Math.atan2(5, 3) * 180) / Math.PI) < 1e-6, `swept ${sweep}°`);
 });
 
 test("the newest target wins: a drag stops between steps once a newer one comes", async () => {

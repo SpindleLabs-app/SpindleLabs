@@ -8,7 +8,8 @@
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { type AccountVersions, withIcon } from "@fission/ui";
 import { displayNameRow } from "./display-name.ts";
-import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
+import { hideNotice, showNotice } from "./app-notice.ts";
+import { type Designs, type DesignsHost, SIGNED_OUT_WORDS, startDesigns } from "./my-designs.ts";
 import { pageShareSwitch } from "./share-switch.ts";
 import { type ShareHost, startShares } from "./share.ts";
 import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
@@ -66,12 +67,20 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const redirectTo = location.origin + location.pathname;
   const checked = checkConfig({ ...service, redirectTo });
   if (!checked.ok) return; // a build with broken settings simply has no sign-in
+  /** The session ended under the app; said once the account button exists (a renewal refused while still starting). */
+  let lost = false;
+  let say: (() => void) | null = null;
   const client = authClient({
     config: checked.config,
     fetch: (input, init) => fetch(input, init),
     store: browserStore(),
     now: () => Date.now(),
     random: (bytes) => void crypto.getRandomValues(bytes as Uint8Array<ArrayBuffer>),
+    // Whichever request found it (designs, settings, sharing): the button stops showing the name, and the page says so.
+    sessionLost: () => {
+      lost = true;
+      say?.();
+    },
   });
   const store = browserStore();
   const data = accountData(client, store);
@@ -79,6 +88,11 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
   const links = { show: null as (() => void) | null }; // My links, once sharing is on (below)
   const ui = accountUi(client, data, store, designs, settings, links);
+  say = () => {
+    ui.render();
+    showNotice("signed-out", SIGNED_OUT_WORDS, { label: "Sign in", title: "Open the sign-in dialog", press: () => (hideNotice("signed-out"), ui.open()) });
+  };
+  if (lost) say();
   // Sharing links (community C2): only with ?share in the address, until the legal check.
   const switched = pageShareSwitch();
   const shares = shareHost && switched.on ? startShares(client, shareHost, (w) => ui.open(w)) : null;

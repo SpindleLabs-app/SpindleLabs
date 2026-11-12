@@ -64,9 +64,9 @@ function setUp(start: DesignDocument) {
   return { ctx, graph, notes, overlays, steps, edit, faceCalled, tap, click, status, mesh: () => mesh!, data: () => readTestLab(project.workspaces.simulate) };
 }
 
-test("TestLab is still the Simulate placeholder without ?testlab, and its page with it", () => {
+test("TestLab is still the placeholder without ?testlab, and its page with it", () => {
   assert.equal(simulateWorkspace.status, "placeholder");
-  assert.equal(simulateWorkspace.title, "Simulate");
+  assert.equal(simulateWorkspace.title, "TestLab");
   setTestLabShown(true);
   setTestLabShown(null);
 });
@@ -79,7 +79,12 @@ test("hand-worked: the box's bottom held and top pushed follow it made 35 high, 
   await page.ready;
   assert.equal(t.data().studies[0].body?.label, "Body 1"); // the only body, set up without being asked
 
-  // Hold the bottom, add a load, push the top, make it 5 kg hanging.
+  // Made of PLA (T2: asked once, since a body has no material of its own yet), then hold the bottom, add a load, push the top, make it 5 kg hanging.
+  const Event0 = (t.ctx.properties.ownerDocument.defaultView as unknown as typeof globalThis).Event;
+  const material = [...t.ctx.properties.querySelectorAll<HTMLSelectElement>("select[name=material]")].at(-1)!;
+  material.value = "pla";
+  material.dispatchEvent(new Event0("change"));
+  await settle();
   t.click("[data-testlab=pick-held]");
   await t.tap(await t.faceCalled("Bottom face"));
   t.click("[data-testlab=add-load]");
@@ -94,7 +99,7 @@ test("hand-worked: the box's bottom held and top pushed follow it made 35 high, 
   unit.value = "kg";
   unit.dispatchEvent(new Event("change"));
   await settle();
-  assert.deepEqual(t.steps, ["Test Body 1", "Hold Bottom face", "Add load", "Push Top face with Load 1", "Change Load 1", "Change Load 1"]);
+  assert.deepEqual(t.steps, ["Test Body 1", "Make it of PLA", "Hold Bottom face", "Add load", "Push Top face with Load 1", "Change Load 1", "Change Load 1"]);
   assert.match(t.ctx.properties.textContent!, /5 kg hanging \(49\.0 N\) down on 1 face/); // 5 × 9.80665 = 49.03 N
   t.click("[data-testlab=run]");
   await settle();
@@ -105,7 +110,7 @@ test("hand-worked: the box's bottom held and top pushed follow it made 35 high, 
   t.edit(changePreset(box, "feature-1", "box", 40, 30, 35));
   assert.equal(t.graph.isStale(node), true);
   assert.ok(
-    t.notes.current(t.graph).some((n) => n.node === node && /^Study 1 out of date: you changed the box in Design\./.test(n.text)),
+    t.notes.current(t.graph).some((n) => n.node === node && /^Study 1 out of date: you changed the box in DesignLab\./.test(n.text)),
     JSON.stringify(t.notes.current(t.graph)),
   );
   page.sleep!();
