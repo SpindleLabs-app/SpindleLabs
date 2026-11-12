@@ -43,7 +43,8 @@ import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuil
 import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
 import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printMovesOf, printWords, SliceDropped, testPieceFile } from "@fission/print";
 import { openPrintPreview } from "./print-preview.ts";
-import { openTool, openToolRefusal, type OpenTool } from "./open-tool.ts";
+import { openTool, openToolRefusal, stillRebuilding, type OpenTool } from "./open-tool.ts";
+import { DOWNLOAD_3MF, DOWNLOAD_OBJ } from "./mesh-export.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
@@ -597,7 +598,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   // File ▾ Export 3MF or OBJ… (step 77): the format asked, then every body shown, as the whole design's STL takes them.
-  const meshChoice = exportChoice(ctx.toolbar, (format) => {
+  const meshChoice = exportChoice(ctx.toolbar, async (format) => {
+    if (!(await exportReady(`Export ${format.name}`))) return;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
     if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
@@ -611,14 +613,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Draws the build area again (set once the build area's own state exists below; the dialog may tick before then). */
   let refreshArea = () => {};
   /** File ▾ > Slice for printing (and DESIGN ▾'s Slice): the dialog, unless a tool is still open (#639), which it says. */
-  function sliceAsked() {
-    if (!exportWaits("Slice for printing")) printing.ask();
+  async function sliceAsked() {
+    if (await exportReady("Slice for printing")) printing.ask();
   }
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
   const printing = slicePrint(ctx.toolbar, {
     async slice(choices, file, alive) {
       const waits = openToolRefusal(toolOpen(), "Slice for printing"); // the dialog is modal, but a key may still have opened one (#639)
       if (waits !== null) throw new Error(waits);
+      if (!(await builtNow())) throw new Error(stillRebuilding("Slice for printing"));
       const doc = designDoc();
       // By body (35f1: a Combine's pieces have no item of their own).
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
@@ -639,6 +642,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     async preview(choices, file, alive, changed) {
       const waits = openToolRefusal(toolOpen(), "Preview");
       if (waits !== null) throw new Error(waits);
+      if (!(await builtNow())) throw new Error(stillRebuilding("Preview"));
       const doc = designDoc();
       // By body (35f1: a Combine's pieces have no item of their own).
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
@@ -904,11 +908,35 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
 
+  /** The export verbs, by action: each waits for an open tool (#639, #675 item 2) and for the rebuild (#675 item 1). */
+  const EXPORT_VERBS: Record<string, string> = { [DOWNLOAD_STL]: "Export STL", [DOWNLOAD_3MF]: "Export 3MF", [DOWNLOAD_OBJ]: "Export OBJ" };
+  /**
+   * Waits for every rebuild under way, then says whether the bodies drawn and the failed items known (`lastScene`,
+   * `failedNow`) are those of the design as it is now. An export pressed while the design rebuilt after Undo, Redo or
+   * opening a file read the new design with the last rebuild's failed items: a Combine the change made fail was taken
+   * as built, the body it would have used up left out and the file called "Checked solid" (SL #675 item 1).
+   */
+  async function builtNow(): Promise<boolean> {
+    while (showsRunning > 0) await new Promise<void>((done) => showsDone.push(done));
+    return !putAway && designDoc() === builtFor;
+  }
+  /**
+   * True when `verb` (an export) may read the design: no tool is open (`exportWaits`) and the design is built as it is
+   * now, waited for when a rebuild is under way; otherwise it says why and saves nothing.
+   */
+  async function exportReady(verb: string): Promise<boolean> {
+    if (exportWaits(verb)) return false;
+    if (await builtNow()) return !exportWaits(verb); // a tool opened while it waited
+    if (shown) panel.showActionNote(stillRebuilding(verb), true);
+    return false;
+  }
+
   /** Runs a registered verb on these targets and shows what it said. */
   async function runAction(id: string, targets: readonly Selected[], note = "") {
     const action = ctx.actions.get(id);
     if (!action) return panel.showActionNote(`No action ${id} is registered.`, true);
-    if (id === DOWNLOAD_STL && exportWaits("Export STL")) return;
+    const verb = EXPORT_VERBS[id];
+    if (verb !== undefined && !(await exportReady(verb))) return;
     // Design's own runs know the bodies drawn (actions.ts, DesignRun: the precision overlay marks only those that warned);
     // the shell's context stays the prototype, so its getters (the project, the graph) read live as ever.
     const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene, failed: failedNow });
@@ -1005,6 +1033,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }));
     // 35f1: a Combine's numbered piece this rebuild didn't make counts as failed, so no row or STL offers it.
     failedNow = failedIds(doc, build.results, new Set(Object.keys(build.bodies)));
+    builtFor = doc;
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
     reasonsNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "failed" && r.message ? [[id, r.message] as const] : [])));
@@ -1124,15 +1153,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * only the shape and keeps the sizes; the kernel judges the sizes (a bad
    * one shows its message, as when typed).
    */
+  /** The whole design's STL: the bodies are chosen once the design is built as it is now (SL #675 item 1). */
+  async function exportShown() {
+    if (!(await exportReady("Export STL"))) return;
+    const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+    const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
+    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
+    // Hidden bodies are left out, as in Fusion; the note says which (beginner play-test 2026-10-28).
+    return runAction(DOWNLOAD_STL, bodies, hiddenStlNote(doc!, failedNow));
+  }
   function run(command: Command) {
     // The whole design's STL, every body shown in one file (25c1): the same verb selected bodies offer, from the registry.
-    if (command.op === "export_stl") {
-      const doc = ctx.project.workspaces.design as DesignDocument | undefined;
-      const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
-      if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
-      // Hidden bodies are left out, as in Fusion; the note says which (beginner play-test 2026-10-28).
-      return runAction(DOWNLOAD_STL, bodies, hiddenStlNote(doc!, failedNow));
-    }
+    if (command.op === "export_stl") return exportShown();
     if (command.op === "create_sketch") return aiSketch(String(command.on));
     if (DRAW_OPS.includes(command.op)) return aiDraw(command);
     if (command.op === EXTRUDE_OP) return aiExtrude(command);
@@ -1324,6 +1356,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const lostSketches = () => new Set(warningsNow.flatMap((w) => (w.lost ? [w.item] : [])));
   /** The items the last rebuild failed (24f3: red in the bar and the browser's Timeline rows); the data's own failures are added by `timelineBarItems`. */
   let failedNow: ReadonlySet<string> = new Set();
+  /** The design `failedNow` was last worked out for (the same design with its points followed counts, `takeIn`): an export reads nothing until it is the design as it is now (`builtNow`). */
+  let builtFor: DesignDocument | null = null;
+  /** show() calls not yet ended, and who waits for the last to end (`builtNow`). */
+  let showsRunning = 0;
+  const showsDone: (() => void)[] = [];
   /** Those of them that took the kernel too long (35d4): each with a Retry on its row. */
   let slowNow: ReadonlySet<string> = new Set();
   /** Retry on a row (35d4): the item that took too long is tried once more, and the design built again with it. */
@@ -1615,6 +1652,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const view = viewport.element;
     rebuildsOn.set(view, (rebuildsOn.get(view) ?? 0) + 1);
     view.dataset.rebuilding = "true";
+    showsRunning++;
     try {
       // The bar and the browser show `doc` at once, before the kernel settles it (a slow kernel: a phone, a big design):
       // a second drag on a bar still showing the last design would land elsewhere than its line showed (hunt2 C1).
@@ -1631,6 +1669,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const left = rebuildsOn.get(view)! - 1;
       rebuildsOn.set(view, left);
       view.dataset.rebuilding = String(left > 0);
+      if (--showsRunning === 0) for (const done of showsDone.splice(0)) done();
     }
   }
   /**
@@ -1701,6 +1740,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.project.workspaces.design = next;
     if (saved?.doc === doc) saved = { ...saved, doc: next };
     if (shownDoc === doc) shownDoc = next;
+    if (builtFor === doc) builtFor = next;
     ctx.history.amend(true);
   }
   async function showBuilt(doc: DesignDocument, kind: PartKind) {

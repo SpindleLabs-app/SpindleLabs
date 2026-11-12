@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { openTool, openToolRefusal, type ToolsOpen } from "../src/open-tool.ts";
+import { openTool, openToolRefusal, stillRebuilding, type ToolsOpen } from "../src/open-tool.ts";
 
 // SL #639 item 1: an export pressed with a tool still open saves the design as recorded, not what the tool shows, so
 // it is refused in words naming the tool. The words are written out by hand here, as a person would read them.
@@ -50,4 +50,9 @@ test("which panel says it: the tool's own, and the plane prompt's words under th
   assert.equal(tools({ combine: { editing: null } }), "combine");
   assert.equal(tools({ sketch: { kind: "pick" } }), "pick");
   assert.equal(tools({ sketch: { kind: "edit", id: "sketch-5" } }), "sketch");
+});
+
+test("an export asked before the design is built as it is now says nothing was saved, naming the export (SL #675 item 1)", () => {
+  assert.equal(stillRebuilding("Export STL"), "The design has not finished rebuilding, so nothing was saved: try Export STL again in a moment.");
+  assert.equal(stillRebuilding("Export 3MF"), "The design has not finished rebuilding, so nothing was saved: try Export 3MF again in a moment.");
 });
