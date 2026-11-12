@@ -1649,7 +1649,7 @@ try {
       // Nothing pretends to autosave.
       await bare.fill("#width", "50");
       await bare.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
-      assert.equal(await bare.textContent("#save-status"), "");
+      assert.equal(await bare.textContent("#save-status"), "Not saved: nothing is kept in this browser. Use Save to keep your work as a file."); // said for as long as it is so (issue #627 item 4); it was empty
       const [download] = await Promise.all([bare.waitForEvent("download"), bare.click("#save")]);
       assert.equal(download.suggestedFilename(), "Untitled.spindle");
     } finally {

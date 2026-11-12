@@ -14,7 +14,7 @@ import { versionedStore, type VersionedStore } from "./versions.ts";
 
 export { indexedDbKeyValue } from "./indexeddb.ts";
 export { memoryKeyValue, type KeyValue } from "./key-value.ts";
-export { startAutosave, QUIET_MS, STORAGE_ANSWER_MS, STORAGE_NOT_ANSWERING, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
+export { startAutosave, LONGEST_MS, QUIET_MS, STORAGE_ANSWER_MS, STORAGE_NOT_ANSWERING, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
 export { ProjectChangedError, projectStore, storedCopy, type ProjectStore, type ProjectSummary } from "./store.ts";
 export { keepStorage, type PersistentStorage } from "./persist.ts";
 export { ASIDE_PREFIX, asideKey, keptCopyName, journalEntry, keptEntry, NEWER_PREFIX, putAsideOthers, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
@@ -26,5 +26,5 @@ export function localStore(readers: readonly DataReader[]): VersionedStore {
   return versionedStore(projectStore(kv, readers), kv, readers);
 }
 export { bringForward, forget, MAX_PROJECT_NAME, rename } from "./projects.ts";
-export { alignSteps, decodeSteps, encodeSteps, stepsStore, STEPS_CHAR_LIMIT, STEPS_FORMAT, STEPS_PROJECTS, type StepsStore } from "./undo-steps.ts";
+export { alignSteps, extendSteps, decodeSteps, encodeSteps, stepsStore, STEPS_CHAR_LIMIT, STEPS_FORMAT, STEPS_PROJECTS, type StepsStore } from "./undo-steps.ts";
 export { storageFull, versionedStore, VERSION_GAP_MS, VERSION_LIMIT, type VersionedStore } from "./versions.ts";
