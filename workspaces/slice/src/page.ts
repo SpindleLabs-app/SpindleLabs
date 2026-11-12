@@ -82,7 +82,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
 
   const note = doc.createElement("section");
   note.className = "slice-page";
-  note.innerHTML = `<h2>Slice</h2><p>This page shows the bodies of your design on the print plate. Print choices and slicing come to it in the next steps; until then, slice from Design: File ▾ Slice for printing.</p>`;
+  note.innerHTML = `<h2>SliceLab</h2><p>This page shows the bodies of your design on the print plate. Print choices and slicing come to it in the next steps; until then, slice from DesignLab: File ▾ Slice for printing.</p>`;
   ctx.properties.append(note);
 
   const show = async () => {
@@ -122,7 +122,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
 
 export const slicePageWorkspace: WorkspacePlugin = {
   id: "slice",
-  title: "Slice",
+  title: "SliceLab",
   summary: "A 3D printing slicer for any printer, fed directly by the design.",
   status: "working",
   representations: { produces: [], accepts: ["mesh"] },

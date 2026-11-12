@@ -240,9 +240,9 @@ try {
   await check("1280 px, slow kernel: a tool clicked out after OK records nothing and says so; OK again cuts only the tool left", async () => {
     const page = await fresh(slowBrowser, 1280, 800, false, OVERLAP);
     try {
+      await volumeIs(page, false, 49000, "as made"); // before Combine opens: no export goes out while it is open (#647)
       await picked(page, false, TOP1, [TOP2, TOP3], "cut");
       await fields(page, "Body 1 | Body 2, Body 3", "Box 1, then Box 2 and Box 3");
-      await volumeIs(page, false, 49000, "as made");
       await okBusy(page);
       await at(page, TOP3);
       await fields(page, "Body 1 | Body 2", "Box 3 taken out");
@@ -250,7 +250,14 @@ try {
       assert.equal(await page.$eval("#combine-panel", (p) => p.hidden), false, "the panel stays open");
       assert.equal(await undoTitle(page), "Nothing to undo", "nothing recorded");
       assert.deepEqual(await items(page), ITEMS, "no Combine in the timeline");
-      await volumeIs(page, false, 49000, "still as made");
+      // Since SL #639 item 1 (#647) no export goes out while a tool is open: the STL is refused in the Combine's own words,
+      // and nothing is saved (the timeline and Undo above already show nothing was recorded; the volume is checked after OK).
+      let saved = false;
+      page.once("download", () => { saved = true; });
+      await page.click("#toolbar [data-op=export_stl]");
+      await until(page, (w) => document.getElementById("combine-error")?.textContent?.startsWith(w), "Combine is still open: press OK or Cancel first, then Export STL.", "the STL refused while Combine is open", 5000);
+      await page.waitForTimeout(500);
+      assert.equal(saved, false, "no STL saved while Combine is open");
       await page.click("#combine-ok");
       await closed(page);
       await rebuilt(page);

@@ -35,15 +35,23 @@ test("hand-listed: Design's File ▾ is New, Open…, Save, then Export STL, eac
   assert.equal(second.items[0].off, "There is no body to download.");
 });
 
+test("hand-listed: on a phone the exports come first, then New, Open…, Save (SL #648: the sheet's fold)", () => {
+  const { entry, parts: p } = parts(() => ({ new: entry("start-fresh", "New"), exports: [entry("file-export-stl", "Export STL"), entry("slice-for-printing", "Slice for printing")] }));
+  const phoneRows = fileSections(p, true).map((s) => s.items.map((i) => i.id));
+  assert.deepEqual(phoneRows, [["file-export-stl", "slice-for-printing"], ["start-fresh", "open", "file-save"]]);
+  // Wide, the order is as ever: the project's items, then the exports.
+  assert.deepEqual(fileSections(p, false).map((s) => s.items.map((i) => i.id)), [["start-fresh", "open", "file-save"], ["file-export-stl", "slice-for-printing"]]);
+});
+
 test("a workspace with no entries still lists New and Export STL, off and saying why, by its name", () => {
   const { parts: p } = parts(() => null, "Slice");
   assert.deepEqual(rows(p), [
     [
-      [NEW_ID, "New", "new", "New: Slice has nothing to clear yet. New clears the design in Design."],
+      [NEW_ID, "New", "new", "New: Slice has nothing to clear yet. New clears the design in DesignLab."],
       ["open", "Open…", "open", null],
       ["file-save", "Save", "save", null],
     ],
-    [[EXPORT_STL_ID, "Export STL", "export", "Export STL: Slice has nothing to export yet. Design exports its bodies as STL."]],
+    [[EXPORT_STL_ID, "Export STL", "export", "Export STL: Slice has nothing to export yet. DesignLab exports its bodies as STL."]],
   ]);
   // So do entries that leave one out, or list no exports.
   const { entry, parts: q } = parts(() => ({ exports: [] }), "Community");

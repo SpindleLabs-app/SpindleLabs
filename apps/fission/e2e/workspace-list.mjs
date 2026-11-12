@@ -72,8 +72,8 @@ try {
       const page = await fresh(width, touch);
       await page.locator("#start-hint").waitFor();
       assert.deepEqual(await rows(page, touch), [
-        ["design", "Design", "", false],
-        ["slice", "Slice", "", false],
+        ["design", "DesignLab", "", false],
+        ["slice", "SliceLab", "", false],
       ]);
       await press(page, "#workspace-menu");
       await shot(page, `workspace-list-${width}`);
@@ -90,7 +90,7 @@ try {
       await press(page, '#workspace-menu-menu [data-workspace="slice"]');
       await page.waitForSelector("#slice-print-dialog[open]");
       assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), "design", "Design stays on screen under the dialog");
-      assert.equal(await page.textContent("#workspace-menu"), "Design ▾");
+      assert.equal(await page.textContent("#workspace-menu"), "DesignLab ▾");
       await shot(page, `workspace-list-slice-${width}`);
       await press(page, "#slice-print-close");
       assert.equal(await page.$eval("#slice-print-dialog", (d) => d.open), false);
@@ -150,7 +150,7 @@ try {
   await check("the other workspaces still open by their links, unlisted: #image shows Image, named on the button", async () => {
     const page = await fresh(1280, false, "#image");
     await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
-    assert.equal(await page.textContent("#workspace-menu"), "Image ▾");
+    assert.equal(await page.textContent("#workspace-menu"), "ImageLab ▾");
     assert.equal(await page.isVisible("#image-open"), true);
     assert.deepEqual(
       (await rows(page, false)).map((r) => r[0]),
@@ -165,16 +165,16 @@ try {
     await page.locator("#start-hint").waitFor();
     const soon = "Coming soon";
     assert.deepEqual(await rows(page, false), [
-      ["design", "Design", "", false],
-      ["render", "Render", soon, true],
-      ["simulate", "Simulate", soon, true],
-      ["manufacture", "Manufacture", soon, true],
-      ["laser", "Laser", soon, true],
-      ["slice", "Slice", "", false],
-      ["circuit", "Circuit", soon, true],
-      ["vector", "Vector", soon, true],
-      ["image", "Image", "", false],
-      ["layout", "Layout", soon, true],
+      ["design", "DesignLab", "", false],
+      ["render", "RenderLab", soon, true],
+      ["simulate", "TestLab", soon, true],
+      ["manufacture", "CNCLab", soon, true],
+      ["laser", "LaserLab", soon, true],
+      ["slice", "SliceLab", "", false],
+      ["circuit", "PCBLab", soon, true],
+      ["vector", "VectorLab", soon, true],
+      ["image", "ImageLab", "", false],
+      ["layout", "LayoutLab", soon, true],
     ]);
     assert.equal(await page.isVisible("#split-toggle"), true);
     await page.context().close();

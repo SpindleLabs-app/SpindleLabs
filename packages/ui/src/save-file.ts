@@ -35,7 +35,7 @@ export interface SaveRequest {
 /** The part of a browser file handle that saving uses. */
 export interface FileHandle {
   name: string;
-  createWritable(): Promise<{ write(data: BlobPart): Promise<void>; close(): Promise<void> }>;
+  createWritable(): Promise<{ write(data: BlobPart): Promise<void>; close(): Promise<void>; abort?(): Promise<void> }>;
 }
 
 export type SaveResult =
@@ -96,9 +96,14 @@ async function write(handle: FileHandle, bytes: BlobPart) {
   const w = await handle.createWritable();
   try {
     await w.write(bytes);
-  } finally {
-    await w.close();
+  } catch (e) {
+    // The write's own reason is the one to say: closing a stream whose write failed throws "Cannot close a ERRORED
+    // writable stream" over it (export hunt 2026-11-12, SL #644 item 6). Aborted, the half-written copy is thrown
+    // away and the file on disk stays as it was.
+    await w.abort?.().catch(() => {});
+    throw e;
   }
+  await w.close();
 }
 
 /** Hands `bytes` to the browser as a download named `name`. */
@@ -167,13 +172,18 @@ export async function saveFile(doc: Document, request: SaveRequest): Promise<Sav
   const win = doc.defaultView!;
   const { kind, bytes } = request;
   const suggested = fileNameFor(request.suggestedName, kind.extension);
+  // The kept file that could not be written again, and why: asked where to save instead, a person who then
+  // chooses nowhere is told nothing was saved, rather than nothing at all.
+  let lost: SaveResult | null = null;
   try {
     if (request.handle) {
       try {
         await write(request.handle, bytes);
         return { status: "saved", name: request.handle.name, handle: request.handle };
-      } catch {
+      } catch (e) {
         // Gone or no longer allowed: ask again below.
+        const why = e instanceof Error ? e.message : String(e);
+        lost = { status: "failed", message: `Couldn't write "${request.handle.name}" again${why ? `: ${why}` : ""}. No other place was chosen, so nothing was saved.` };
       }
     }
     const picker = pickerOf(win);
@@ -182,7 +192,7 @@ export async function saveFile(doc: Document, request: SaveRequest): Promise<Sav
       try {
         handle = await picker({ suggestedName: suggested, types: [{ description: kind.description, accept: { [kind.mime]: [kind.extension] } }] });
       } catch (e) {
-        if (e instanceof Error && e.name === "AbortError") return { status: "cancelled" };
+        if (e instanceof Error && e.name === "AbortError") return lost ?? { status: "cancelled" };
         // The picker is refused here (a frame, a policy): the box does it.
       }
       if (handle) {
@@ -198,7 +208,7 @@ export async function saveFile(doc: Document, request: SaveRequest): Promise<Sav
       }
     }
     const name = driven(win) ? suggested : await askName(doc, suggested, kind);
-    if (name === null) return { status: "cancelled" };
+    if (name === null) return lost ?? { status: "cancelled" };
     download(doc, bytes, name, kind.mime);
     return { status: "saved", name, handle: null };
   } catch (e) {

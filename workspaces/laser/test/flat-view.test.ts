@@ -67,7 +67,7 @@ test("hand-worked: the bed and the part are drawn in mm, the sheet's matrix puts
   assert.deepEqual(["x", "y", "width", "height"].map((a) => bed.getAttribute(a)), ["0", "-400", "400", "400"]);
   // The part: the very path data it was given (the file's), named in its tooltip with its size.
   const parts = [...view.element.querySelectorAll("path.laser-flat-part")];
-  assert.deepEqual(parts.map((p) => [p.getAttribute("d"), p.getAttribute("data-part"), p.querySelector("title")!.textContent]), [["M3 -3L43 -3L43 -33L3 -33Z", "s1", "Sketch 1, 40 × 30 mm"]]);
+  assert.deepEqual(parts.map((p) => [p.getAttribute("d"), p.getAttribute("data-part"), p.querySelector("title")!.textContent]), [["M3 -3L43 -3L43 -33L3 -33Z", "s1", "Sketch 1, cut, 40 × 30 mm"]]);
   // Fitted: 1.59 px per mm, the bed's origin at (186, 672) (view-box.test.ts's working).
   const [scale, x, y] = matrix();
   near(scale, 1.59, "scale");
@@ -104,8 +104,8 @@ test("a part too small on screen for its name goes without it; an empty bed says
   near(phone.matrix()[0], 0.7675, "a phone's fitted scale"); // the part is 30.7 px wide: under the 57.6 its name needs
   assert.deepEqual(phone.texts("laser-flat-part-name"), []);
   assert.equal(phone.view.element.querySelectorAll("path.laser-flat-part").length, 1); // still drawn
-  phone.view.show({ bed: SCENE.bed, parts: [], note: ["Nothing to cut yet.", "Closed sketches from Design appear here."] }, false);
-  assert.deepEqual(phone.texts("laser-flat-note"), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
+  phone.view.show({ bed: SCENE.bed, parts: [], note: ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."] }, false);
+  assert.deepEqual(phone.texts("laser-flat-note"), ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."]);
   assert.equal(phone.view.element.querySelector("svg")!.getAttribute("aria-label"), "The laser bed from above, 400 × 400 mm, with no parts.");
   assert.equal(phone.view.element.dataset.parts, "0");
 });
@@ -381,7 +381,7 @@ test("a click on a part picks it, a click on the bare bed lets it go, and the pi
   assert.equal(part("s1").getAttribute("transform"), null);
   // The page draws the scene with the part picked.
   view.show({ ...SCENE, picked: "s1" }, false);
-  assert.equal(part("s1").getAttribute("class"), "laser-flat-part laser-flat-part-picked");
+  assert.equal(part("s1").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-picked");
   assert.equal(part("s1").getAttribute("aria-pressed"), "true");
   assert.equal(view.element.dataset.picked, "s1");
   const turn = view.element.querySelector<HTMLButtonElement>('button[data-view="turn"]')!;
@@ -486,11 +486,80 @@ test("a part that sits wrongly is marked and says why; with no one listening for
   const { host, view, fireOn, part, matrix } = setUp();
   view.attach(host);
   view.show({ bed: SCENE.bed, parts: [{ ...RECT, warn: "off the bed: 5 mm past the right side" }] }, true);
-  assert.equal(part("s1").getAttribute("class"), "laser-flat-part laser-flat-part-warn");
-  assert.equal(part("s1").querySelector("title")!.textContent, "Sketch 1, 40 × 30 mm, off the bed: 5 mm past the right side");
+  assert.equal(part("s1").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-warn");
+  assert.equal(part("s1").querySelector("title")!.textContent, "Sketch 1, cut, 40 × 30 mm, off the bed: 5 mm past the right side");
   assert.equal(part("s1").getAttribute("tabindex"), null); // nothing to pick it for
   fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
   fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 240, clientY: 630 });
   near(matrix()[1], 226, "the view slid");
   assert.equal(part("s1").getAttribute("transform"), null);
+});
+
+test("a part being dragged stays in the hand through a redraw that left it as it was; a redraw that moved it ends the drag", () => {
+  const { view, fireOn, part, heard } = withHandlers();
+  const other = { id: "s2", label: "Sketch 2", d: "M100 -3L140 -3L140 -33L100 -33Z", box: { minX: 100, minY: 3, maxX: 140, maxY: 33 } };
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 300, clientY: 600 }); // (63, 31) mm, as worked above
+  // The page draws again (an answer about other parts came in): s1 itself is as it was.
+  view.show({ bed: SCENE.bed, parts: [RECT, { ...other, warn: "overlaps Sketch 3" }] }, false);
+  assert.equal(part("s1").getAttribute("transform"), "translate(63 -31)");
+  assert.equal(view.element.dataset.moving, "s1");
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 300, clientY: 600 });
+  assert.deepEqual(heard.splice(0), [["move", "s1", 63, 31, false]]);
+  // The scene moves the part under the hand (an Undo, a typed number): the drag is over and tells nobody.
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 300, clientY: 600 });
+  view.show({ bed: SCENE.bed, parts: [{ ...RECT, d: "M13 -3L53 -3L53 -33L13 -33Z", box: { minX: 13, minY: 3, maxX: 53, maxY: 33 } }] }, false);
+  assert.equal(part("s1").getAttribute("transform"), null);
+  assert.equal(view.element.dataset.moving, undefined);
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 300, clientY: 600 });
+  assert.deepEqual(heard, []);
+});
+
+test("hand-worked: each layer drawn in its own look, and a key above the bed's top-right corner names only the layers on it", () => {
+  const { host, view, part } = setUp();
+  view.attach(host);
+  const engraved = { ...RECT, id: "s2", label: "Sketch 2", op: "engrave" as const, d: "M50 -3L60 -3L60 -13L50 -13Z", box: { minX: 50, minY: 3, maxX: 60, maxY: 13 } };
+  view.show({ ...SCENE, parts: [RECT, engraved] }, true);
+  // A part with no layer given is cut.
+  assert.equal(part("s1").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
+  assert.equal(part("s2").getAttribute("class"), "laser-flat-part laser-flat-part-engrave");
+  assert.equal(part("s2").querySelector("title")!.textContent, "Sketch 2, engrave, 10 × 10 mm");
+  // The key, worked by hand: fitted at 1.59 px per mm with the origin at (186, 672), the bed's top-right corner is at
+  // (186 + 400 × 1.59, 672 − 400 × 1.59) = (822, 36); the key's line is 8 px above it, y = 28. Right to left: "Cut" ends
+  // at x = 822, its swatch (10 px) 4 px before the words, which are 3 × 6.2 = 18.6 px wide: x = 822 − 18.6 − 4 − 10 =
+  // 789.4. Then 12 px of space: "Engrave" ends at 777.4, its swatch at 777.4 − 7 × 6.2 − 4 − 10 = 720. No Score: none on the bed.
+  const key = [...view.element.querySelectorAll("text.laser-flat-key")].map((t) => [t.textContent, t.getAttribute("x"), t.getAttribute("y"), t.getAttribute("text-anchor")]);
+  assert.deepEqual(key, [["Cut", "822.0", "28.0", "end"], ["Engrave", "777.4", "28.0", "end"]]);
+  const swatches = [...view.element.querySelectorAll("rect.laser-flat-swatch")].map((r) => [r.getAttribute("class"), r.getAttribute("x"), r.getAttribute("y")]);
+  // Each swatch sits on the words' line: its top 9 px above it (10 px tall, 1 px below the line).
+  assert.deepEqual(swatches, [["laser-flat-swatch laser-flat-part-cut", "789.4", "19.0"], ["laser-flat-swatch laser-flat-part-engrave", "720.0", "19.0"]]);
+  // No parts, no key.
+  view.show({ ...SCENE, parts: [] }, false);
+  assert.equal(view.element.querySelectorAll(".laser-flat-key, .laser-flat-swatch").length, 0);
+  view.detach();
+});
+
+test("Flip (L1b4): beside Turn while a part is picked, by its button or F; with no one listening for flips there is no Flip button", () => {
+  const heard: unknown[][] = [];
+  const { view, host, svg, window } = setUp(SIZE, SIZE.width, { onPick: (id) => heard.push(["pick", id]), onTurn: (id, d) => heard.push(["turn", id, d]), onFlip: (id) => heard.push(["flip", id]) });
+  view.attach(host);
+  view.show({ ...SCENE, picked: "s1" }, true);
+  const flip = view.element.querySelector<HTMLButtonElement>('button[data-view="flip"]')!;
+  assert.equal(flip.getAttribute("aria-label"), "Flip");
+  assert.equal(flip.closest<HTMLElement>(".nav-group")!.hidden, false);
+  assert.equal(flip.closest(".nav-group") === view.element.querySelector('button[data-view="turn"]')!.closest(".nav-group"), true, "in Turn's group");
+  flip.click();
+  const key = (k: string) => svg.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }) as unknown as Event);
+  key("f");
+  key("F");
+  assert.deepEqual(heard, [["flip", "s1"], ["flip", "s1"], ["flip", "s1"]]);
+  // Nothing picked: F does nothing and the group is hidden.
+  view.show({ ...SCENE, picked: null }, false);
+  key("f");
+  assert.equal(heard.length, 3);
+  assert.equal(flip.closest<HTMLElement>(".nav-group")!.hidden, true);
+  view.detach();
+  const plain = setUp(SIZE, SIZE.width, { onTurn: () => {} });
+  assert.equal(plain.view.element.querySelector('button[data-view="flip"]') === null, true);
 });

@@ -2,7 +2,7 @@
 // - Without ?testlab, #simulate is still the Simulate placeholder: no page.
 // - With ?testlab, the 40 × 30 × 20 box (x 0..40, y 0..30, z 0..20) from Design is tested without being asked: its front
 //   face (y = 0) tapped to hold, a load added and the top (z = 20) tapped, typed 5 kg: "5 kg hanging (49.0 N) down on
-//   1 face" (5 × 9.80665). Run says it checked the set-up and that solving comes later.
+//   1 face" (5 × 9.80665), made of PLA with its numbers (T2). Run says it checked the set-up and that solving comes later.
 // - The box typed 35 high in Design: back in TestLab the study is out of date with the change note naming the edit, and
 //   the top is found again by name at z = 35 (its paint read off the canvas there). The box made a sphere: both faces
 //   lost, said in words; Undo brings them back.
@@ -102,6 +102,11 @@ async function setUpStudy(page, tap) {
   await page.selectOption(".testlab-page select[name=unit]", "kg");
   // 5 kg × 9.80665 m/s² = 49.03 N.
   await until(page, () => document.querySelector(".testlab-page-load .testlab-page-words")?.textContent === "5 kg hanging (49.0 N) down on 1 face", null, "the load in words");
+  // T2: what it is made of, asked once; PLA across its layers: the lower of 2160 and 2370 MPa, and 35 MPa (the maker's sheet).
+  assert.match(await status(page), /Choose what the part is made of\./);
+  await page.selectOption(".testlab-page select[name=material]", "pla");
+  await until(page, () => /Stiffness 2,160 MPa, breaking strength 35 MPa, 1\.24 g\/cm³\./.test(document.querySelector(".testlab-page-material")?.textContent ?? ""), null, "PLA's numbers");
+  assert.doesNotMatch(await status(page), /Choose what the part is made of/);
 }
 
 /** The colour of the canvas pixel at world point `p` (premultiplied RGBA). */
@@ -141,7 +146,7 @@ try {
     await toTestLab(page);
     await until(page, () => document.querySelector(".testlab-page-state")?.dataset.stale === "true", null, "out of date");
     const notes = await page.locator(".change-note .note-text").allTextContents();
-    assert.ok(notes.some((n) => n === "Study 1 out of date: you changed the box in Design. Rerun it in Simulate."), notes.join(" | "));
+    assert.ok(notes.some((n) => n === "Study 1 out of date: you changed the box in DesignLab. Rerun it in TestLab."), notes.join(" | "));
     await until(page, () => (document.querySelector(".testlab-page-status")?.textContent ?? "x") === "", null, "both faces found again");
     // The top's paint at z = 35 (where it is now), and the plain body colour at z = 20 on the front, held, so painted too.
     const atTop = await pixel(page, [20, 15, 35]);

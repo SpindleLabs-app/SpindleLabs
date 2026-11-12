@@ -177,7 +177,7 @@ test("drawing a line changes the sketch in the graph, not the part", () => {
   syncGraph(g, drawLine(s.doc, s.id, [0, 0], [1, 0]).doc, s.doc, notes);
   assert.deepEqual(g.stale(), ["laser.cut"]);
   assert.equal(g.isStale(PART_VIEW), false);
-  assert.match(notes.current(g)[0].text, /you changed Sketch 1 in Design/);
+  assert.match(notes.current(g)[0].text, /you changed Sketch 1 in DesignLab/);
 });
 
 // ---- Saving and opening (docs/project-format.md, Design's data version 2) ----
@@ -500,5 +500,8 @@ test("sketchOutline hands the kernel the arcs apart from the lines and circles (
   const asked: unknown[][] = [];
   const kernel = { call: (async (...args: unknown[]) => (asked.push(args), { open: "x" })) } as unknown as KernelCalls;
   await assert.rejects(sketchOutline(kernel, doc, sketch), /^Error: Sketch 1 has no closed outline: x$/);
-  assert.deepEqual(asked, [["sketch_outline", [{ a: [0, 0], b: [40, 0] }, { a: [0, 40], b: [0, 0] }], [], [{ start: [40, 0], end: [0, 40], centre: [0, 0] }]]]);
+  // Refused as an outline, the same curves are asked about as regions (one shape with holes is still an outline,
+  // SL #639 item 3); this stand-in answers neither, so the first refusal stands.
+  const curves = [[{ a: [0, 0], b: [40, 0] }, { a: [0, 40], b: [0, 0] }], [], [{ start: [40, 0], end: [0, 40], centre: [0, 0] }]];
+  assert.deepEqual(asked, [["sketch_outline", ...curves], ["sketch_regions", ...curves]]);
 });

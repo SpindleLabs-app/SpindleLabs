@@ -451,6 +451,21 @@ test("saved failing sessions replay clean", () => {
   }
 });
 
+// #505: a failed row says why, in the rebuild's own words.
+test("hand-worked: a failed item carries the rebuild's reason, only while it is failed", () => {
+  const doc = threeItems();
+  const failed = new Set(["feature-3"]);
+  const reasons = new Map([["feature-3", "The bodies don't overlap, so they have nothing in common."], ["feature-1", "left over"]]);
+  const items = timelineBarItems(doc, failed, new Map(), (s) => s, reasons).items;
+  // Worked by hand: only feature-3 is failed and has words, so only it carries them; feature-1 has words but built.
+  assert.deepEqual(items.map((i) => i.reason), [null, null, "The bodies don't overlap, so they have nothing in common."]);
+  // Rolled back: greyed, not red, so no reason either.
+  assert.equal(timelineBarItems(withMarker(doc, "sketch-2"), failed, new Map(), (s) => s, reasons).items[2].reason, null);
+  // Failed with no words known (the data's own failure): no reason, still failed.
+  const bare = timelineBarItems(doc, failed).items[2];
+  assert.deepEqual([bare.failed, bare.reason], [true, null]);
+});
+
 // Timeline and rebuild hunt 2026-11-11 (E2): Edit feature was on for every item that is not a sketch, so a Copy's or a
 // Mirror's led to "Copy 1 is a sketch: it has no sizes to edit" after shutting whatever tool was open.
 test("Edit feature is off for a Copy and a Mirror, which have nothing of their own to edit, with words true of the item; on for every item with an editor", () => {

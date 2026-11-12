@@ -3,7 +3,7 @@ export { outline, type ProfileKind, type ShapeKind, type Loop, type Outline } fr
 export { designWorkspace } from "./workspace.ts";
 export { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, drawWords, extrudable, EXTRUDE_OP, commandDistance, extrudeTarget, extrudeWords, RENAME_OP, renameTarget, renameWords, SHAPES, SKETCH_REACH } from "./commands.ts";
 export { AI_FACES, AI_SKETCHES, AI_TIMELINE_ITEMS, aiCommands, aiFaces, designAIView, facingWords, type AIFace, type PanelSizes } from "./ai-view.ts";
-export { bodyFeatures, bodyRows, browserTree, rowReference, rowReferences, type BrowserNode } from "./browser.ts";
+export { bodyFeatures, bodyLabel, bodyRows, browserTree, rowReference, rowReferences, type BrowserNode } from "./browser.ts";
 export { parameterRows, propertiesPanel, SIZE_KEYS, type ParameterRow, type Verb, type PropertiesPanel, type SizeKey } from "./properties.ts";
 export { toolbarGroups, type ToolButton, type ToolGroup } from "./toolbar.ts";
 export { buildSpec, specFor } from "./spec.ts";
