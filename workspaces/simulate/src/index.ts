@@ -27,7 +27,7 @@ export function solve(_study: unknown): Promise<never> {
 
 export const simulateWorkspace: WorkspacePlugin = {
   id: "simulate",
-  title: "Simulate",
+  title: "TestLab",
   summary: SUMMARY,
   status: "placeholder",
   representations: { produces: [], accepts: [] }, // a placeholder to the app until Ben releases TestLab; the page reads bodies and faces through the registry
@@ -36,7 +36,7 @@ export const simulateWorkspace: WorkspacePlugin = {
   mount(ctx) {
     if (testlabShown()) return mountTestLabPage(ctx);
     showPlaceholder(ctx.properties, {
-      title: "Simulate",
+      title: "TestLab",
       summary: SUMMARY,
       plans: ["Static stress, then thermal and modal studies", "Materials from the shared library (density, stiffness, strength)", "Loads and constraints placed on design faces by reference: they follow the face when the design changes", "Meshing from the exact geometry", "Results: stress, displacement and safety factor drawn in the shared viewport"],
       startsAfter: "after CAD step 40 (booleans and full topological naming), so loads stay on the right faces",

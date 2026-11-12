@@ -36,7 +36,7 @@ export interface FileMenuParts {
   save: FileMenuEntry;
   /** Save As…, listed after Save when given: it asks for a name and place again. */
   saveAs?: FileMenuEntry;
-  /** The name of what is on screen ("Slice", "Community"), for the words of an entry that is off there. */
+  /** The name of what is on screen ("SliceLab", "Community"), for the words of an entry that is off there. */
   where(): string;
   /** The entries of the workspace on screen, or null when it has none. */
   entries(): { new?: FileMenuEntry; exports?: FileMenuEntry[] } | null;
@@ -45,10 +45,10 @@ export interface FileMenuParts {
 /** New's id and words when the workspace on screen has nothing to clear (Design's own New keeps the id, `start-fresh`). */
 export const NEW_ID = "start-fresh";
 /** Why New is off where the workspace on screen has no New. */
-export const noNew = (where: string) => `New: ${where} has nothing to clear yet. New clears the design in Design.`;
+export const noNew = (where: string) => `New: ${where} has nothing to clear yet. New clears the design in DesignLab.`;
 /** Export STL's id, and why it is off where the workspace on screen exports nothing. */
 export const EXPORT_STL_ID = "file-export-stl";
-export const noExport = (where: string) => `Export STL: ${where} has nothing to export yet. Design exports its bodies as STL.`;
+export const noExport = (where: string) => `Export STL: ${where} has nothing to export yet. DesignLab exports its bodies as STL.`;
 
 /** The width at and under which File ▾ is a bottom sheet capped at 34% of the window (styles/phone-sheet.css). */
 export const PHONE_SHEET_QUERY = "(max-width: 640px)";

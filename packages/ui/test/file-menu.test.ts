@@ -47,11 +47,11 @@ test("a workspace with no entries still lists New and Export STL, off and saying
   const { parts: p } = parts(() => null, "Slice");
   assert.deepEqual(rows(p), [
     [
-      [NEW_ID, "New", "new", "New: Slice has nothing to clear yet. New clears the design in Design."],
+      [NEW_ID, "New", "new", "New: Slice has nothing to clear yet. New clears the design in DesignLab."],
       ["open", "Open…", "open", null],
       ["file-save", "Save", "save", null],
     ],
-    [[EXPORT_STL_ID, "Export STL", "export", "Export STL: Slice has nothing to export yet. Design exports its bodies as STL."]],
+    [[EXPORT_STL_ID, "Export STL", "export", "Export STL: Slice has nothing to export yet. DesignLab exports its bodies as STL."]],
   ]);
   // So do entries that leave one out, or list no exports.
   const { entry, parts: q } = parts(() => ({ exports: [] }), "Community");
