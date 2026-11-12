@@ -45,6 +45,8 @@ export interface ProjectStore {
   list(): Promise<ProjectSummary[]>;
   /** Reads and upgrades a stored project; refuses a missing or corrupt one with a message. */
   open(id: string): Promise<Project>;
+  /** A stored project's text exactly as stored, not read or upgraded; null when there is none (account sync compares it with what it last sent, issue #628 item 1). */
+  text(id: string): Promise<string | null>;
   /**
    * Stores the project under `id`, replacing what was there. `read` is when
    * the project was in that state (autosave reads it, a journal entry was
@@ -155,6 +157,10 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       const all = texts.filter(([, text]) => !deletionMark(text)).map(([id, text]) => readSummary(id, text)); // a deleted project is never listed (C2)
       // By order first: a project saved while the clock ran ahead must not stay newest once it is put right (B5).
       return all.sort((a, b) => b.order - a.order || b.modified.getTime() - a.modified.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    },
+    async text(id) {
+      checkId(id);
+      return (await kv.get(PROJECT + id)) ?? null;
     },
     async open(id) {
       checkId(id);
