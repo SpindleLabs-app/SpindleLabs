@@ -4,8 +4,9 @@
 // 44 px tall, tappable, left of the view cube, and a tap on it does what the toolbar's Extrude does (the sketch finished,
 // Extrude open with it chosen). The taps for a 10 mm box from an empty design are counted: 9 with the bar's Extrude,
 // against 10 with Finish Sketch then the toolbar's Extrude (the old way, also run here as the control). Nothing else on
-// the bar changes: the plane prompt and Extrude's own bar have no Extrude. At 393 × 852 (Ben's iPhone 15 Pro) and
-// 320 × 568 (the narrowest phone), with taps. Screenshots go to E2E_SHOTS when set. Run with `npm run e2e`.
+// the bar changes: the plane prompt and Extrude's own bar have no Extrude. At 393 × 852 (Ben's iPhone 15 Pro) and 390 × 844,
+// with taps; at 375 × 667 and 320 × 568 there is no room, and the bar is Finish Sketch alone as before (the old way's
+// control runs at all four). Screenshots go to E2E_SHOTS when set. Run with `npm run e2e`.
 import assert from "node:assert/strict";
 import { launch, untilBodies } from "./browser.mjs";
 import { preview } from "vite";
@@ -92,7 +93,7 @@ async function finishAt10({ page, tap }) {
   await untilBodies(page, 1);
 }
 
-for (const [width, height] of [[393, 852], [320, 568]]) {
+for (const [width, height] of [[393, 852], [390, 844]]) {
   await check(`${width} px: Extrude beside Finish Sketch on the bar, on screen and tappable, left of the view cube; a tap opens Extrude on the sketch`, async () => {
     const o = await open(width, height);
     const { page } = o;
@@ -100,11 +101,8 @@ for (const [width, height] of [[393, 852], [320, 568]]) {
     assert.equal(await page.textContent("#float-finish"), "Finish Sketch");
     assert.equal(await page.getAttribute("#float-extrude", "aria-label"), "Extrude");
     // One row, as with Finish Sketch alone (6 + 44 + 6 px and its edges): two buttons never make the bar grow over the view.
-    // At 320 px the words go and the icon stays (phone-float.css), else it would wrap to 108 px.
     const barHeight = await page.$eval("#phone-float", (b) => b.getBoundingClientRect().height);
     assert.ok(barHeight <= 60, `the bar is one row (${barHeight} px tall)`);
-    const words = await page.$eval("#float-extrude", (b) => getComputedStyle(b).fontSize);
-    assert.equal(words === "0px", width <= 360, `Extrude's words ${width <= 360 ? "hidden" : "shown"} at ${width} px (font size ${words})`);
     assert.deepEqual(await reach(page, "#float-extrude"), { onScreen: true, tappable: true, height: 44 }, "Extrude on screen and tappable");
     assert.deepEqual(await reach(page, "#float-finish"), { onScreen: true, tappable: true, height: 44 }, "Finish Sketch still on screen and tappable");
     // The view cube is 8 + 96 px in from the right (phone-start.mjs): the bar never reaches it, now it holds two buttons.
@@ -124,6 +122,30 @@ for (const [width, height] of [[393, 852], [320, 568]]) {
     await o.context.close();
   });
 
+}
+
+// Narrower than 390 px there is no room (phone-float.css): the bar is Finish Sketch alone, exactly as before, so it covers
+// no more of the view (at 375 px a second button wrapped the bar or reached onto the spots the sketch checks tap).
+for (const [width, height] of [[375, 667], [320, 568]]) {
+  await check(`${width} px: no room for Extrude on the bar, which stays Finish Sketch alone in one row`, async () => {
+    const o = await open(width, height);
+    const { page } = o;
+    await rectangle(o);
+    assert.equal(await page.isVisible("#float-extrude"), false, "no Extrude on the bar");
+    assert.deepEqual(await reach(page, "#float-finish"), { onScreen: true, tappable: true, height: 44 }, "Finish Sketch on screen and tappable");
+    const bar = await page.$eval("#phone-float", (b) => {
+      const r = b.getBoundingClientRect();
+      const f = document.getElementById("float-finish").getBoundingClientRect();
+      return { height: r.height, past: r.right - f.right };
+    });
+    assert.ok(bar.height <= 60, `the bar is one row (${bar.height} px tall)`);
+    // The bar ends 6 px (its padding) and its edge past Finish Sketch: nothing beside it.
+    assert.ok(bar.past <= 8, `the bar ends just past Finish Sketch (${bar.past} px)`);
+    await o.context.close();
+  });
+}
+
+for (const [width, height] of [[393, 852], [390, 844], [375, 667], [320, 568]]) {
   await check(`${width} px, the control: the old way (Finish Sketch, then the toolbar's Extrude) takes one tap more`, async () => {
     const o = await open(width, height);
     const { page } = o;

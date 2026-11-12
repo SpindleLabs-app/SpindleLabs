@@ -35,7 +35,11 @@
 }
 /* Extrude beside Finish Sketch (phone-float.ts ENDERS next): its icon before its words, as Finish. */
 .phone-float .phone-float-next:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
-/* The narrowest phones (320 px): Extrude shows only its icon, 44 px square (20 + 2 × 11 + its edges), so it fits beside Finish Sketch on one row and the bar never grows over the view. */
-@media (max-width: 360px) {
-  .phone-float .phone-float-next:not(#none) { font-size: 0; gap: 0; min-width: 44px; padding: 0 11px; }
+/* Phones narrower than 390 px (320, 360, 375) have no room for it: with its words the row needs about 266 px (Finish 143 +
+   6 + Extrude 103 + the bar's 12 px padding and edges) and the bar may be the screen less 112 px (263 px at 375), so it
+   wrapped to two rows; even as a 44 px icon it reached 50 px further over the view, onto the spots the sketch checks tap
+   at 375 px (bodies, fit-tag, beginner-mistakes; merge queue 2026-11-12). There the bar keeps Finish Sketch alone, as
+   before, and Extrude is the toolbar's. 278 px at 390 holds the row. */
+@media (max-width: 389px) {
+  .phone-float .phone-float-next:not(#none) { display: none; }
 }
