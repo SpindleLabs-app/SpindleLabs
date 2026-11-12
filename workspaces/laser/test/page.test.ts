@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RepresentationRegistry, type Outline, type WorkspaceContext } from "@fission/core";
-import { emptyBedNote, flatScene, laserWorkspace, layOut, layoutWords, mountLaserPage, OUTLINES_LISTER, readLaserData, readParts, setLaserShown, sheetSvg, type SaveText } from "../src/index.ts";
+import { emptyBedNote, flatScene, laserWorkspace, layOut, layoutWords, mountLaserPage, OUTLINES_LISTER, pairWords, readLaserData, readParts, setLaserShown, sheetSvg, type PartsRelation, type Relate, type SaveText } from "../src/index.ts";
+import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -69,18 +70,18 @@ test("hand-worked: the flat view is given the bed and each placed part as the fi
 
 test("an empty bed says why in its middle: nothing offered yet, or every part turned off or left off", () => {
   const none = { placed: [], left: [] };
-  assert.deepEqual(emptyBedNote(none, 0), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
+  assert.deepEqual(emptyBedNote(none, 0), ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."]);
   assert.deepEqual(emptyBedNote(none, 2), ["No parts on the bed."]);
   assert.deepEqual(emptyBedNote(layOut([{ id: "a", label: "a", outline: rect(10, 10) }], { width: 100, height: 50 }, 5), 1), []);
 });
 
 test("the words: nothing offered, parts on the bed, and each left off with why", () => {
-  assert.equal(layoutWords({ placed: [], left: [] }, 0), "Nothing to cut yet: draw a closed sketch in Design and it appears here.");
+  assert.equal(layoutWords({ placed: [], left: [] }, 0), "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.");
   const one = layOut([{ id: "a", label: "Sketch 1", outline: rect(10, 10) }, { id: "b", label: "Sketch 2", outline: rect(500, 10) }], { width: 100, height: 100 }, 5);
   assert.equal(layoutWords(one, 2), "1 part on the bed. Sketch 2 is left off: it is 500 × 10 mm, bigger than the bed (100 × 100 mm, 5 mm in from each edge).");
 });
 
-function mount(save?: SaveText, laser?: unknown) {
+function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = () => doc.body.appendChild(doc.createElement("div"));
@@ -107,7 +108,7 @@ function mount(save?: SaveText, laser?: unknown) {
       changes.push(label);
       keys.push(mergeKey);
     },
-    kernel,
+    kernel: realKernel ?? kernel,
     toolbar: slot(),
     browser: slot(),
     properties: slot(),
@@ -115,7 +116,7 @@ function mount(save?: SaveText, laser?: unknown) {
     viewport: { element, showImage: (image: unknown) => viewport.push(`showImage(${image})`), clearImage: () => viewport.push("clearImage"), showBody: refuse("showBody"), setView: refuse("setView"), fit: refuse("fit") },
   } as unknown as WorkspaceContext;
   const drawn = () => [...element.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("d"));
-  return { ctx, element, viewport, drawn, design, changes, keys, project, mounted: mountLaserPage(ctx, save), window };
+  return { ctx, element, viewport, drawn, design, changes, keys, project, mounted: mountLaserPage(ctx, save, relate), window };
 }
 
 test("the page lists the parts with their sizes, lays them on the bed, draws them flat, and keeps a part turned off in the project", async () => {
@@ -288,7 +289,7 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
   setLaserShown(true);
   const on = laserWorkspace.mount(ctx);
   await on.ready;
-  assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "Nothing to cut yet: draw a closed sketch in Design and it appears here.");
+  assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.");
   on.unmount();
   setLaserShown(null);
 });
@@ -339,8 +340,8 @@ test("a new gap leaves the view where the person put it; a new bed size shows th
 // Parts put by hand (L1b). The parts: Sketch a, 60 × 40, in the rows at (3, 3); Sketch b, 30 × 10, right of it at (66, 3).
 
 /** The page with Sketch b picked by a click on its outline, and what a test needs to type and press. */
-async function withPicked(save?: SaveText, laser?: unknown) {
-  const all = mount(save, laser);
+async function withPicked(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown) {
+  const all = mount(save, laser, relate, realKernel);
   await all.mounted.ready;
   const { ctx, element, window } = all;
   const fireOn = (target: Element, type: string, init: Record<string, unknown> = {}) => {
@@ -499,5 +500,111 @@ test("places a project holds are used as they are, and ones that are not usable 
   await mounted.ready;
   // Sketch a in the rows at (3, 3); Sketch b where it was put, (200, 50).
   assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z", "M200 -50L230 -50L230 -60L200 -60Z"]);
+  mounted.unmount();
+});
+
+// Overlap warnings (L1b2). The page asks about each pair whose boxes overlap or all but touch; the answer is the kernel's
+// (overlap.test.ts), stood in for here by `answer` except in the last test.
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+test("the words for a pair: overlapping and too-close-to-tell are marked on the parts, a touch and a failed check are only said, apart says nothing", () => {
+  assert.equal(pairWords("A", "B", { relation: "apart" }), null);
+  assert.deepEqual(pairWords("A", "B", { relation: "overlap" }), { words: "A and B overlap.", mark: true });
+  assert.deepEqual(pairWords("A", "B", { relation: "touch" }), { words: "A and B touch: their cuts would share a line.", mark: false });
+  assert.deepEqual(pairWords("A", "B", { relation: "unknown", why: "x", meet: true }), { words: "A and B touch or overlap: they are too close to tell which.", mark: true });
+  assert.deepEqual(pairWords("A", "B", { relation: "unknown", why: "the kernel stopped" }), { words: "Couldn't check whether A and B overlap: the kernel stopped.", mark: false });
+});
+
+test("a part put over another is asked about once, said in words and marked on both; moved clear the warning goes; put back, the kept answer is used", async () => {
+  const askedOf: string[] = [];
+  let answer: PartsRelation = { relation: "overlap" };
+  const { path, click, type, words, partWords, mounted } = await withPicked(undefined, undefined, async (a, b) => {
+    askedOf.push(JSON.stringify([a.outer, b.outer]));
+    return answer;
+  });
+  assert.deepEqual(askedOf, []); // in the rows nothing can overlap: nothing is asked
+  type("x", "10"); // Sketch b, 30 × 10 at (10, 3), lies inside Sketch a's box, (3, 3) to (63, 43)
+  assert.equal(words(), "2 parts on the bed."); // not said before the answer is in
+  await tick();
+  // Asked with both parts as they sit on the bed: a's corners from (3, 3), b's from (10, 3).
+  assert.deepEqual(askedOf, [JSON.stringify([{ path: { corners: [3, 3, 63, 3, 63, 43, 3, 43], bulges: [] } }, { path: { corners: [10, 3, 40, 3, 40, 13, 10, 13], bulges: [] } }])]);
+  assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b overlap.");
+  assert.equal(partWords(), "Sketch a and Sketch b overlap.");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-warn");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-warn laser-flat-part-picked");
+  assert.equal(path("a").querySelector("title")!.textContent, "Sketch a, 60 × 40 mm, overlaps Sketch b");
+  assert.equal(path("b").querySelector("title")!.textContent, "Sketch b, 30 × 10 mm, overlaps Sketch a");
+  click("a"); // a redraw that moved nothing asks nothing
+  await tick();
+  assert.equal(askedOf.length, 1);
+  click("b");
+  type("x", "200"); // clear of a: boxes 137 mm apart, so nothing to ask and nothing to say
+  await tick();
+  assert.equal(askedOf.length, 1);
+  assert.equal(words(), "2 parts on the bed.");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  answer = { relation: "apart" }; // were it asked again, the warning would not come back
+  type("x", "10");
+  assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b overlap."); // at once, from the answer kept for these two as they sit
+  assert.equal(askedOf.length, 1);
+  mounted.unmount();
+});
+
+test("a touch is said but not marked; too close to tell is said and marked; a check that fails says why; an answer for a layout since changed is not shown", async () => {
+  let answer: () => Promise<PartsRelation> = async () => ({ relation: "touch" });
+  const { path, type, words, mounted } = await withPicked(undefined, undefined, () => answer());
+  type("x", "63"); // b's left side on a's right side: the boxes touch, so the pair is asked about
+  await tick();
+  assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b touch: their cuts would share a line.");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  answer = async () => ({ relation: "unknown", why: "an edge lies along another", meet: true });
+  type("x", "62");
+  await tick();
+  assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b touch or overlap: they are too close to tell which.");
+  assert.equal(path("a").querySelector("title")!.textContent, "Sketch a, 60 × 40 mm, touches or overlaps Sketch b");
+  answer = async () => {
+    throw new Error("the kernel was restarted");
+  };
+  type("x", "61");
+  await tick();
+  assert.equal(words(), "2 parts on the bed. Couldn't check whether Sketch a and Sketch b overlap: the kernel was restarted.");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  // A slow answer: the part is moved clear before it comes, and the answer, about where the part was, is not shown.
+  let late: (r: PartsRelation) => void = () => {};
+  answer = () => new Promise<PartsRelation>((r) => (late = r));
+  type("x", "20");
+  type("x", "300");
+  late({ relation: "overlap" });
+  await tick();
+  assert.equal(words(), "2 parts on the bed.");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-picked");
+  // Boxes 0.5 mm apart are apart: nothing is asked at all.
+  let asked = 0;
+  answer = async () => (asked++, { relation: "overlap" });
+  type("x", "63.5");
+  await tick();
+  assert.equal(asked, 0);
+  mounted.unmount();
+});
+
+test("hand-worked, on the real kernel: a part inside another overlaps it, one sharing its edge touches it, one half a mm off is apart", async () => {
+  const real = nodeKernel();
+  const { type, words, mounted } = await withPicked(undefined, undefined, undefined, real);
+  const settled = async (want: string) => {
+    for (let i = 0; i < 200 && words() !== want; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(words(), want);
+  };
+  // Sketch a is the rectangle (3, 3) to (63, 43). Sketch b, 30 × 10, at (10, 3) is (10, 3) to (40, 13): wholly inside a.
+  type("x", "10");
+  await settled("2 parts on the bed. Sketch a and Sketch b overlap.");
+  // At x = 63 its left side lies on a's right side, x = 63, from y = 3 to 13: a shared line, no shared area.
+  type("x", "63");
+  await settled("2 parts on the bed. Sketch a and Sketch b touch: their cuts would share a line.");
+  // At x = 62.5 it reaches 0.5 mm into a: 0.5 × 10 = 5 mm² in both.
+  type("x", "62.5");
+  await settled("2 parts on the bed. Sketch a and Sketch b overlap.");
+  type("x", "63.5");
+  await settled("2 parts on the bed.");
   mounted.unmount();
 });

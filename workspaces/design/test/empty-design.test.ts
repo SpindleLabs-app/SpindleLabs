@@ -134,7 +134,7 @@ test("hand-worked: the part's view reads nothing once no body builds, and a resu
   const after = moveMarker(before, "start");
   syncGraph(g, after, before, notes);
   assert.deepEqual([...g.upstreamOf(PART_VIEW)], []);
-  assert.deepEqual(notes.current(g).map((n) => [n.node, n.state, n.text]), [["stress", "needs-rerun", "Stress out of date: you moved the timeline marker in Design. Rerun it in Simulate."]]);
+  assert.deepEqual(notes.current(g).map((n) => [n.node, n.state, n.text]), [["stress", "needs-rerun", "Stress out of date: you moved the timeline marker in DesignLab. Rerun it in TestLab."]]);
 });
 
 test("the panel with no body: the feature says so, the numbers are blank, and the Parameters say how to add one", async () => {

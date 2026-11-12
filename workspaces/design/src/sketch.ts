@@ -112,7 +112,7 @@ export function addSketch(doc: DesignDocument, plane: SketchPlane = "XY"): { doc
  * the face as built now), depending on that feature so it can't be dragged
  * before it.
  */
-export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
+export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string; reversed?: boolean }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
   if (!isFacePlane(face.plane) || faceFeature(face.plane) !== face.feature) throw new Error(`${shown(face.plane)} is not a face of ${shown(face.feature)}`);
   const on = doc.timeline.features.find((f) => f.id === face.feature);
   if (!on || !hasOwnFaces(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
@@ -125,7 +125,7 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   const size = drawn.body?.size ?? 1;
   if (!Number.isFinite(size) || size <= 0) throw new Error(`a sketch on a scaled face needs its body's size above 0, not ${size}`);
   // SL #539: the body's size is always recorded (1 too), so a sketch without one is known to be from before and carried as it was.
-  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}) });
+  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}), ...(face.reversed !== undefined && { reversed: face.reversed }) });
 }
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {
@@ -306,7 +306,8 @@ export function pointNear(sketch: Sketch, at: readonly [number, number]): string
  * points a line already joins is that line, not a second one on top of it
  * (the line tool's SAME_LINE; app sweep 2026-10-28): `ids` are the four
  * sides, shared ones by their own ids. A projected line (27d) is traced
- * over, not shared: the outline leaves it out (27e). Corners on one row or column, or
+ * over, not shared: the outline leaves it out (27e); so is a construction
+ * line, which is never an ordinary side (hunt 2026-11-12). Corners on one row or column, or
  * closer to it than 2·SAME_PLACE (two corners that near could both be one
  * point already there), have no width or no height and are refused.
  */
@@ -320,7 +321,7 @@ export function drawRectangle(doc: DesignDocument, sketchId: string, a: readonly
   for (let i = 0; i < 4; i++) {
     const [from, to] = [corners[i], corners[(i + 1) % 4]];
     const now = sketchIn(next, sketchId);
-    const there = typeof from === "string" && typeof to === "string" ? now.curves.find((x) => x.kind === "line" && !now.projected?.some((p) => p.made === x.id) && ((x.start === from && x.end === to) || (x.start === to && x.end === from))) : undefined;
+    const there = typeof from === "string" && typeof to === "string" ? now.curves.find((x) => x.kind === "line" && x.construction !== true && !now.projected?.some((p) => p.made === x.id) && ((x.start === from && x.end === to) || (x.start === to && x.end === from))) : undefined;
     if (there) {
       ids.push(there.id);
       continue;

@@ -16,13 +16,17 @@
 // id in Design), so nothing else shifts; parts drawn later find room in rows
 // round them, and "Arrange in rows" forgets every place. A part may be put
 // anywhere, so one reaching past the bed's edge is said so in words and
-// marked on the bed, never moved back silently. Styles: src/styles/laser-page.css.
+// marked on the bed, never moved back silently. So are two parts that
+// overlap: for each pair whose boxes overlap the kernel is asked whether the
+// shapes themselves do (overlap.ts), and the answer is said in words and
+// marked on both parts. Styles: src/styles/laser-page.css.
 
 import { NewerFormatError, type ListedObject, type MountedWorkspace, type Outline, type RepresentationRegistry, type WorkspaceContext } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
 import { sheetDxf } from "./dxf.ts";
 import { createFlatView, type FlatScene } from "./flat-view.ts";
-import { cleanMm, layOutPlaced, normalAngle, offBedWords, placementRefusal, readPlacements, turnedOnTheSpot, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
+import { BOX_MARGIN, partsRelation, type PartsRelation } from "./overlap.ts";
+import { cleanMm, layOutPlaced, normalAngle, offBedWords, overlapCandidates, placementRefusal, readPlacements, turnedOnTheSpot, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
 import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, thicknessRefusal, mmWords, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
 
 /** Design's lister for flat shapes (Design's representations.ts DESIGN_OUTLINES). */
@@ -113,19 +117,40 @@ export async function readParts(registry: RepresentationRegistry, objects: reado
 export const partsOn = (offered: readonly OfferedPart[], off: readonly string[]): SheetPart[] =>
   offered.flatMap((p) => ("outline" in p && !off.includes(p.id) ? [{ id: p.id, label: p.label, outline: p.outline }] : []));
 
-/** The words under the bed: how many parts are on it, each one left off with why, and (given the bed) each one reaching past its edge. */
-export function layoutWords(layout: Layout, offered: number, bed?: Bed): string {
-  if (offered === 0) return "Nothing to cut yet: draw a closed sketch in Design and it appears here.";
+/** How two parts on the bed lie, as the page keeps it: their places in `layout.placed`, and the kernel's answer (overlap.ts). */
+export interface PairRelation {
+  a: number;
+  b: number;
+  relation: PartsRelation;
+}
+
+/**
+ * What a pair's answer means for the person, or null when there is nothing to say (the parts lie apart). `mark` is set
+ * when both parts are marked on the bed: they overlap, or they are too close to tell a touch from an overlap. Parts
+ * that only touch are said, not marked: their cuts would share a line, which is the person's to judge.
+ */
+export function pairWords(aLabel: string, bLabel: string, r: PartsRelation): { words: string; mark: boolean } | null {
+  if (r.relation === "apart") return null;
+  if (r.relation === "overlap") return { words: `${aLabel} and ${bLabel} overlap.`, mark: true };
+  if (r.relation === "touch") return { words: `${aLabel} and ${bLabel} touch: their cuts would share a line.`, mark: false };
+  if (r.meet) return { words: `${aLabel} and ${bLabel} touch or overlap: they are too close to tell which.`, mark: true };
+  return { words: `Couldn't check whether ${aLabel} and ${bLabel} overlap: ${r.why ?? "the kernel gave no answer"}.`, mark: false };
+}
+
+/** The words under the bed: how many parts are on it, each one left off with why, and (given the bed) each one reaching past its edge and each pair that overlaps or touches. */
+export function layoutWords(layout: Layout, offered: number, bed?: Bed, pairs: readonly PairRelation[] = []): string {
+  if (offered === 0) return "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.";
   const n = layout.placed.length;
   const on = n === 0 ? "No parts on the bed." : `${n} ${n === 1 ? "part" : "parts"} on the bed.`;
   const off = bed ? layout.placed.flatMap((p) => offBedWords(p, bed) ?? []) : [];
-  return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`), ...off].join(" ");
+  const meet = pairs.flatMap((p) => pairWords(layout.placed[p.a]?.label ?? "?", layout.placed[p.b]?.label ?? "?", p.relation)?.words ?? []);
+  return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`), ...off, ...meet].join(" ");
 }
 
 /** Words for the middle of a bed with nothing on it, a line each; none when a part is on it. */
 export function emptyBedNote(layout: Layout, offered: number): string[] {
   if (layout.placed.length > 0) return [];
-  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from Design appear here."] : ["No parts on the bed."];
+  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."] : ["No parts on the bed."];
 }
 
 /**
@@ -133,13 +158,19 @@ export function emptyBedNote(layout: Layout, offered: number): string[] {
  * the saved SVG file gets (sheet.ts `outlinePath`, core's writer), so the
  * screen and the file can't differ, and no arc is worked out here.
  */
-export function flatScene(layout: Layout, bed: Bed, offered: number, picked: string | null = null): FlatScene {
+export function flatScene(layout: Layout, bed: Bed, offered: number, picked: string | null = null, pairs: readonly PairRelation[] = []): FlatScene {
   return {
     bed,
-    parts: layout.placed.map((p) => {
+    parts: layout.placed.map((p, i) => {
       const off = offBedWords(p, bed);
-      // The warning without the part's name ("off the bed: 5 mm past the right side"): it is said on the part itself.
-      return { id: p.id, label: p.label, d: outlinePath(p.outline).d, box: { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height }, ...(off && { warn: off.slice(p.label.length + 4, -1) }) };
+      // The warnings without the part's own name ("off the bed: 5 mm past the right side", "overlaps Sketch 2"): they are said on the part itself.
+      const warns = off ? [off.slice(p.label.length + 4, -1)] : [];
+      for (const pair of pairs) {
+        if (pair.a !== i && pair.b !== i) continue;
+        const other = layout.placed[pair.a === i ? pair.b : pair.a];
+        if (other && pairWords(p.label, other.label, pair.relation)?.mark) warns.push(pair.relation.relation === "overlap" ? `overlaps ${other.label}` : `touches or overlaps ${other.label}`);
+      }
+      return { id: p.id, label: p.label, d: outlinePath(p.outline).d, box: { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height }, ...(warns.length > 0 && { warn: warns.join("; ") }) };
     }),
     note: emptyBedNote(layout, offered),
     picked,
@@ -157,10 +188,23 @@ const browserSave =
     return r.status === "saved" ? r.name : false;
   };
 
-/** The page's mounting; `save` replaces the browser's save box (tests). */
-export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedWorkspace {
+/** Asks how two parts lie (overlap.ts `partsRelation`, the kernel's answer); a test passes its own. */
+export type Relate = (a: Outline, b: Outline) => Promise<PartsRelation>;
+
+/** The most answers about pairs of parts kept at once (each a pair of outlines as text and a word): past it the oldest go. */
+const ANSWERS_KEPT = 400;
+
+/** The page's mounting; `save` replaces the browser's save box and `relate` the kernel's answer about two parts (tests). */
+export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: Relate): MountedWorkspace {
   const doc = ctx.toolbar.ownerDocument;
   const saveText = save ?? browserSave(doc);
+  const relation: Relate = relate ?? ((a, b) => partsRelation(ctx.kernel, a, b));
+  /** The kernel's answers about pairs of parts as they sit (both outlines, as text), so a redraw that moved neither asks nothing again. */
+  const answers = new Map<string, PartsRelation>();
+  /** The pairs being asked about now, by the same text. */
+  const asking = new Set<string>();
+  /** The pairs of the layout drawn whose answer is known. */
+  let pairs: PairRelation[] = [];
   let live = true;
   let awake = true;
   let reading = 0;
@@ -284,6 +328,25 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
     layout = layOutPlaced(partsOn(offered, d.off), d.bed, d.gap, d.placed);
     const part = layout.placed.find((p) => p.id === picked) ?? null;
     if (!part) picked = null;
+    // Pairs whose boxes overlap or all but touch (further apart, the parts are apart and nothing is asked): the answer kept
+    // for them as they sit, or the kernel asked (the page is drawn again when it answers).
+    pairs = [];
+    for (const [a, b] of overlapCandidates(layout.placed, BOX_MARGIN)) {
+      const key = JSON.stringify([layout.placed[a].outline, layout.placed[b].outline]);
+      const known = answers.get(key);
+      if (known) pairs.push({ a, b, relation: known });
+      else if (!asking.has(key)) {
+        asking.add(key);
+        void relation(layout.placed[a].outline, layout.placed[b].outline)
+          .catch((e): PartsRelation => ({ relation: "unknown", why: e instanceof Error ? e.message : String(e) }))
+          .then((answer) => {
+            asking.delete(key);
+            if (answers.size >= ANSWERS_KEPT) answers.delete(answers.keys().next().value!);
+            answers.set(key, answer);
+            if (live) draw(false);
+          });
+      }
+    }
     items.replaceChildren(
       ...offered.map((p) => {
         const li = doc.createElement("li");
@@ -308,7 +371,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
         return li;
       }),
     );
-    words.textContent = layoutWords(layout, offered.length, d.bed);
+    words.textContent = layoutWords(layout, offered.length, d.bed, pairs);
     for (const b of buttons) b.disabled = layout.placed.length === 0;
     arrange.hidden = Object.keys(d.placed).length === 0;
     partBox.hidden = part === null;
@@ -317,10 +380,13 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
       input("x").value = String(part.x);
       input("y").value = String(part.y);
       input("angle").value = String(part.angle);
-      partWords.textContent = offBedWords(part, d.bed) ?? (part.by === "rows" ? "In the rows. Move or turn it and every part stays where it is." : "");
+      const at = layout.placed.indexOf(part);
+      const meets = pairs.flatMap((p) => (p.a === at || p.b === at ? (pairWords(layout.placed[p.a].label, layout.placed[p.b].label, p.relation)?.words ?? []) : []));
+      const said = [offBedWords(part, d.bed) ?? [], meets].flat();
+      partWords.textContent = said.length > 0 ? said.join(" ") : part.by === "rows" ? "In the rows. Move or turn it and every part stays where it is." : "";
       partBox.querySelector<HTMLButtonElement>("button[data-rows]")!.hidden = part.by === "rows";
     }
-    flat.show(flatScene(layout, d.bed, offered.length, picked), frame);
+    flat.show(flatScene(layout, d.bed, offered.length, picked, pairs), frame);
   };
 
   // The picked part's numbers, typed.
@@ -370,7 +436,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
       const svg = b.dataset.save === "svg";
       try {
         const saved = await saveText(svg ? sheetSvg(layout, d.bed, ctx.project.name || "Laser sheet") : sheetDxf(layout, d.bed), name(), svg ? SVG_KIND : DXF_KIND);
-        if (live) words.textContent = saved === false ? `Save ${svg ? "SVG" : "DXF"} cancelled: nothing was saved.` : `Saved ${saved}: ${layoutWords(layout, offered.length, d.bed)}`;
+        if (live) words.textContent = saved === false ? `Save ${svg ? "SVG" : "DXF"} cancelled: nothing was saved.` : `Saved ${saved}: ${layoutWords(layout, offered.length, d.bed, pairs)}`;
       } catch (e) {
         if (live) words.textContent = `Could not save the file: ${e instanceof Error ? e.message : String(e)}`;
       }

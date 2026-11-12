@@ -64,9 +64,9 @@ function setUp(start: DesignDocument) {
   return { ctx, graph, notes, overlays, steps, edit, faceCalled, tap, click, status, mesh: () => mesh!, data: () => readTestLab(project.workspaces.simulate) };
 }
 
-test("TestLab is still the Simulate placeholder without ?testlab, and its page with it", () => {
+test("TestLab is still the placeholder without ?testlab, and its page with it", () => {
   assert.equal(simulateWorkspace.status, "placeholder");
-  assert.equal(simulateWorkspace.title, "Simulate");
+  assert.equal(simulateWorkspace.title, "TestLab");
   setTestLabShown(true);
   setTestLabShown(null);
 });
@@ -105,7 +105,7 @@ test("hand-worked: the box's bottom held and top pushed follow it made 35 high, 
   t.edit(changePreset(box, "feature-1", "box", 40, 30, 35));
   assert.equal(t.graph.isStale(node), true);
   assert.ok(
-    t.notes.current(t.graph).some((n) => n.node === node && /^Study 1 out of date: you changed the box in Design\./.test(n.text)),
+    t.notes.current(t.graph).some((n) => n.node === node && /^Study 1 out of date: you changed the box in DesignLab\./.test(n.text)),
     JSON.stringify(t.notes.current(t.graph)),
   );
   page.sleep!();
