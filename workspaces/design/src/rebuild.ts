@@ -1080,9 +1080,30 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
   // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
   // workspace numbers them (`numberPieces`; its own call after this one gives them their remembered faces), so they
   // stay moved after this rebuild.
+  // A Move that is off when a body it holds is first split (suppressed, rolled back by the marker, greyed or failed:
+  // SL #624 item 2) moved nothing, so named nothing in `takes`; it holds the whole body all the same, and this rebuild
+  // is about to number the new piece, after which no later one could tell it from a piece left unpicked. So it takes
+  // the piece now: one split (`from`) from a body it holds, not numbered yet, made by an item before the Move.
+  const numbered = followed.bodies === undefined ? null : new Set(followed.bodies.map((b) => b.id));
+  const place = new Map(followed.timeline.features.map((f, i) => [f.id, i] as const));
   const takers = followed.timeline.features.flatMap((f) => {
+    if (!isMoveItem(f)) return [];
     const r = build.results[f.id];
-    return isMoveItem(f) && r?.status === "built" && r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (r?.status === "built") return r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (numbered === null) return [];
+    const held = movedBodies(f);
+    const takes: string[] = [];
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const [id, b] of Object.entries(build.bodies)) {
+        const made = place.get(bodyItem(id) ?? "");
+        if (b.from === undefined || numbered.has(id) || held.includes(id) || takes.includes(id) || made === undefined || made > place.get(f.id)!) continue;
+        if (!held.includes(b.from) && !takes.includes(b.from)) continue;
+        takes.push(id);
+        grew = true;
+      }
+    }
+    return takes.length > 0 ? [[f, takes] as const] : [];
   });
   if (takers.length === 0) return followed;
   let next = numberPieces(followed, Object.keys(build.bodies));
