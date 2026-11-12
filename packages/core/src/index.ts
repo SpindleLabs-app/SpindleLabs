@@ -42,7 +42,7 @@ export { describeProvenance, WORKSPACE_NAMES, workspaceName } from "./model/feat
 export type { FileFormat, FileFormatInfo, FileHead, FileImporter, FileRoute, Identified } from "./model/files.ts";
 export { claimedFormat, FILE_FORMATS, formatInfo, HEAD_BYTES, identifyFile, routeFiles } from "./model/files.ts";
 export { headBytesFor, MAX_IMAGE_BYTES, unreadableMessage } from "./model/files.ts";
-export type { SvgFile } from "./model/svg.ts";
+export type { SeenAs, SvgFile } from "./model/svg.ts";
 export { outlineToSvg, svgNumber } from "./model/svg.ts";
 export { EXACTNESS, isExact, RepresentationRegistry, XY_PLANE } from "./model/representation.ts";
 export type { Action, ActionOutcome, ActionTarget, Selected, SelectionKind } from "./model/actions.ts";
