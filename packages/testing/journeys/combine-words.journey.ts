@@ -107,3 +107,35 @@ test("an edited Combine names a used-up tool by its item, and a deleted one by t
   assert.equal(b.$("#combine-tools-names")!.textContent, "Box 2 (deleted)");
   await b.close();
 });
+
+// ---- Which body is which, and what OK did (the coordinator's calls on SL #677 item 5, 2026-11-12) ----
+
+/** The tag beside Bodies row `node` ("body-2"), or null. */
+const tagOf = (a: Awaited<ReturnType<typeof app>>, node: string) => {
+  const row = a.$(`.tree-row[data-node="${node}"]`);
+  return row?.parentElement?.querySelector(".combine-tag")?.textContent ?? null;
+};
+
+test("while Combine is open the Bodies rows say Target and Tool; after OK one line says what it did and that Undo puts it back", async () => {
+  // Box 1 (10 mm cube) and Box 2 (5 mm cube) at the origin, overlapping: Body 1 and Body 2.
+  const a = await app(insertPreset(partDocument("box", 10, 10, 10), "box", 5, 5, 5).doc, designWorkspace);
+  await openCombine(a);
+  assert.deepEqual([tagOf(a, "body-1"), tagOf(a, "body-2")], [null, null], "nothing picked, no tags");
+  a.selection.set([{ kind: "body", id: "body:feature-1" } as never]);
+  await a.settle();
+  assert.deepEqual([tagOf(a, "body-1"), tagOf(a, "body-2")], ["Target", null], "Box 1 the target");
+  a.selection.set([{ kind: "body", id: "body:feature-1" } as never, { kind: "body", id: "body:feature-2" } as never]);
+  await a.settle();
+  assert.deepEqual([tagOf(a, "body-1"), tagOf(a, "body-2")], ["Target", "Tool"], "Box 2 a tool");
+  // The tag sits beside the row's words, not in them: the row still reads "Body 1".
+  assert.equal(a.$('.tree-row[data-node="body-1"]')!.textContent!.trim(), "Body 1");
+  // OK with Join, Keep tools off (the defaults): Box 2 joins Box 1 and is used up.
+  a.$("#combine-ok")!.click();
+  await a.settle();
+  const done = a.$("#combine-done")!;
+  assert.equal(done.hidden, false, "the line shows");
+  assert.equal(done.textContent, "Combine 1: Body 2 joined to Body 1 and used up. Undo puts it back as it was.");
+  assert.equal(done.getAttribute("role"), "status", "read out as it appears");
+  assert.equal(a.window.document.querySelectorAll(".combine-tag").length, 0, "the panel shut, the tags go");
+  await a.close();
+});
