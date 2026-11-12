@@ -19,7 +19,8 @@
    where the screen has the height) and 16 px apart, each taking a tap 40 px across
    and the row's height with an invisible ::before while it still looks as
    small; the four areas meet, never overlap. */
-@media (max-width: 640px) {
+/* A phone, or a touch screen of any width (a tablet, not a phone held sideways; Ben's OK 2026-11-11): 40 px tap areas. */
+@media (max-width: 640px), (pointer: coarse) and (min-height: 501px) {
   .timeline-marker .timeline-marker-buttons { gap: 16px; padding-left: 20px; }
   .timeline-marker .timeline-marker-button:not(#none) { position: relative; }
   .timeline-marker .timeline-marker-button::before { content: ""; position: absolute; inset: -10px -9px; } /* from inside its 1 px border: 22 + 18 = 40 */

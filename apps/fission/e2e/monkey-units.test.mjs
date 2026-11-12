@@ -18,6 +18,8 @@ test("lengths under an inch keep 3 significant figures, worked by hand (issue #4
   // The nightly's Body 5: 1 / 25.4 = 0.039370… → 0.0394; 30 / 25.4 = 1.181102… → 1.181 (3 decimals from 1 in up);
   // 0.5 / 25.4 = 0.019685… → 0.0197. Three decimals would have said 0.039 and 0.02.
   assert.equal(summaryShown("Box: 1 × 30 × 0.5 mm", "in"), "Box: 0.0394 × 1.181 × 0.0197 in");
+  // Issue #649 (seed 359814968): 40 / 25.4 = 1.574803… → 1.575; 1 / 25.4 → 0.0394; 20 / 25.4 = 0.787401… → 0.787.
+  assert.equal(summaryShown("Box: 40 × 1 × 20 mm", "in"), "Box: 1.575 × 0.0394 × 0.787 in");
   // 0.001 mm (the smallest length) is 0.0000393700… in → 0.0000394, never 1e-5 notation; 25.4 mm stays 1.
   assert.equal(summaryShown("Box: 0.001 × 25.4 × 2.54 mm", "in"), "Box: 0.0000394 × 1 × 0.1 in");
   // The check can fail: the old 3-decimal reading is not what the panel says.
@@ -63,4 +65,12 @@ test("the reading can fail: the old digits-only reading is not what the panel me
   assert.notEqual(shownNumber("9.153561614 × 10⁻⁴ in³"), old);
   assert.ok(Number.isNaN(shownNumber("")));
   assert.ok(Number.isNaN(shownNumber("— in³")));
+});
+
+test("a volume the model can't work out stays not judged in inches (issues #474, #483, #485, #486)", () => {
+  // modelVolume gives null for a preset profile or an arc; null / 25.4³ is 0, which read as "that body is 0.00000 in³".
+  assert.equal(volumeShown(null, "in"), null);
+  assert.equal(volumeShown(null, "mm"), null);
+  // 0 stays a number (a real answer), not "not judged".
+  assert.equal(volumeShown(0, "in"), 0);
 });

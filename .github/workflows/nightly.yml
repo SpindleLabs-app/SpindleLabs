@@ -228,8 +228,15 @@ jobs:
             left=$(( (end - now) / 60 - 15 ))
             [ "$left" -lt "$limit" ] && limit=$left
             [ "$limit" -ge 10 ] || { echo "too little time left before 14:50 UTC"; exit 1; }
+            # Only the sessions that fit (issue #476: a late start left 79 minutes for four): one per 40 minutes,
+            # a 2,000-action session's 25 or so with room for a failure's replays.
+            fit=$(( limit / 40 ))
+            [ "$fit" -lt "$seeds" ] && seeds=$(( fit > 1 ? fit : 1 ))
           fi
-          MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + seeds - 1))" MONKEY_STEPS=2000 \
+          # The monkey stops itself 5 minutes before the cut-off (MONKEY_MINUTES: the session it is in says
+          # "cut off", later seeds "not started", and the summary with its Combines line is printed; issues
+          # #476, #477), so `timeout` is only the backstop for a tester that hangs.
+          MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + seeds - 1))" MONKEY_STEPS=2000 MONKEY_MINUTES=$(( limit - 5 )) \
             timeout "${limit}m" node e2e/monkey.mjs 2>&1 | tee "$OUT/monkey.log" | grep -E '^(seed |monkey:)' || true
           python3 ../../.github/scripts/monkey_night.py "$OUT/monkey.log" e2e/monkey-results "$OUT" "$first" "$seeds" 2000 combine
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -415,6 +422,8 @@ jobs:
           # The code every round of this run tested, so old failures can be
           # told apart from current ones.
           COMMIT: ${{ github.sha }}
+          # The tested code's repository: a closed issue seen again on code older than its closing is not reopened (file_issues.py).
+          CODE_REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
           # Each job's result: a red one with no failure folder files an issue too.

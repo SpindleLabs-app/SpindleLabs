@@ -41,7 +41,11 @@ export function propertyNames(source: string, name: string): string[] {
 // Design data version 16 (hunt 11-08): an Extrude Join's piece holding only the extrude is `body:<the extrude>`, where
 // version 15 named it piece 1 (the upgrade renames every body id in the data), in fields already listed (a BodyRecord's
 // `id` and `faces`), so nothing new below; a version 15 reader would refuse the extrude's own id as a body.
-const LEDGER_VERSION = 16;
+// Design data version 17 (#517): a constraint may name a point that follows a body beside a point of the sketch's own, in
+// fields already listed, so nothing new below; a version 16 reader would refuse the file.
+// Design data version 18 (Ben 11-11): an extrude of a sketch may hold more profiles (`more` in its parameters, a list of
+// ProfileRef, held to its fields below), which a version 17 reader would build as the first profile alone.
+const LEDGER_VERSION = 18;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
@@ -55,6 +59,7 @@ const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/regions.ts", type: "RegionRef", names: ["outer", "centroid"] },
   { file: "workspaces/design/src/regions.ts", type: "RegionPiece", names: ["curve", "reversed"] },
   { file: "workspaces/design/src/document.ts", type: "BodyRecord", names: ["id", "number", "faces"] },
+  { file: "workspaces/design/src/extrude-profiles.ts", type: "ProfileRef", names: ["sketch", "region"] },
 ];
 
 test("the saved types' fields are exactly the ledger of the current data version", () => {

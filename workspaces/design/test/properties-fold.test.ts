@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FOLDED_AT_START, HANDLE_ID, PIN_KEY, propertiesFold, panelShown, pressed, readPinned, revealed, withReasons, writePinned, type FoldState, type PinStorage } from "../src/properties-fold.ts";
+import { FOLDED_AT_START, HANDLE_ID, PIN_KEY, concealed, propertiesFold, panelShown, pressed, readPinned, revealed, withReasons, writePinned, type FoldState, type PinStorage } from "../src/properties-fold.ts";
 
 const at = (s: Partial<FoldState>): FoldState => ({ ...FOLDED_AT_START, ...s });
 
@@ -65,6 +65,22 @@ test("words the user must see open a folded panel until the user moves on", () =
   assert.equal(s.pinned, false, "and does not pin it");
   const shown = at({ selected: true });
   assert.equal(revealed(shown), shown, "a shown panel needs no reveal");
+});
+
+test("hand-worked: Body facts pressed again folds what it opened, but never unpins (button toggles, Ben 2026-11-11)", () => {
+  // Folded at the start; Body facts reveals it: shown by the reveal alone. Pressed again: the reveal ends, nothing else held it, folded.
+  const shownByFacts = revealed(FOLDED_AT_START);
+  assert.equal(panelShown(concealed(shownByFacts)), false, "the reveal ended folds the panel");
+  // A body still selected from the Move Body facts put away holds the panel open: pressed again it is dismissed, as Fold does.
+  const selected = at({ selected: true });
+  assert.equal(panelShown(concealed(selected)), false, "a selection holding it is dismissed");
+  assert.equal(concealed(selected).selected, true, "the selection itself is kept");
+  assert.equal(panelShown(withReasons(concealed(selected), { selected: false })), false, "and a later change of selection follows the reasons again");
+  // Pinned: the pin holds it and Body facts never unpins, so the same state.
+  const pinned = at({ pinned: true, revealed: true });
+  assert.equal(concealed(pinned), pinned, "a pinned panel is left alone");
+  // Folded already: nothing to fold.
+  assert.equal(concealed(FOLDED_AT_START), FOLDED_AT_START);
 });
 
 test("breaking the rule fails: a rule that ignores the dismissal differs on a folded selection", () => {
@@ -164,4 +180,20 @@ test("regression (full e2e run, image.mjs): closed when Design is put away, the 
   assert.equal(slot.hasAttribute("data-folded"), false, "folded is Design's: the next workspace shows its page");
   assert.equal(slot.hasAttribute("data-problem"), false, "and no ⚠ of Design's stays");
   assert.equal(slot.querySelector(`#${HANDLE_ID}`), null, "the button goes too");
+});
+
+test("in a real DOM: conceal folds a revealed panel, and onChange hears every change", () => {
+  const doc = new Window().document as unknown as Document;
+  const slot = doc.createElement("aside");
+  slot.id = "properties";
+  doc.body.append(slot);
+  const fold = propertiesFold(slot, [], FOLDED_AT_START, null);
+  const heard: boolean[] = [];
+  fold.onChange((s) => heard.push(s.revealed));
+  fold.reveal();
+  assert.equal(slot.hasAttribute("data-folded"), false, "revealed");
+  fold.conceal();
+  assert.equal(slot.hasAttribute("data-folded"), true, "concealed folds it");
+  fold.conceal();
+  assert.deepEqual(heard, [true, false], "two changes heard; a conceal that changes nothing is not one");
 });

@@ -43,7 +43,7 @@ test("every toolbar command, sketch tool and preset has an icon from the set (U0
   assert.deepEqual(toolbarGroups().flatMap((g) => g.buttons.map((b) => [b.label, b.icon])), [["STL", "export"]]);
   for (const t of SKETCH_TOOLS) assert.ok(known.has(TOOL_ICONS[t.kind]), `${t.label}: ${TOOL_ICONS[t.kind]}`);
   // Written out by hand: the arcs by how they are drawn, the rest by name.
-  assert.deepEqual(SKETCH_TOOLS.map((t) => TOOL_ICONS[t.kind]), ["line", "rectangle", "circle", "arc", "centre-arc", "tangent-arc", "project"]);
+  assert.deepEqual(SKETCH_TOOLS.map((t) => TOOL_ICONS[t.kind]), ["line", "rectangle", "centre-rectangle", "three-rectangle", "circle", "three-circle", "arc", "centre-arc", "tangent-arc", "polygon", "outside-polygon", "centre-slot", "overall-slot", "point", "project"]);
   const items = insertSections(() => {}).flatMap((s) => s.items);
   assert.deepEqual(items.map((i) => i.icon), ["box", "cylinder", "sphere", "l-bracket", "plate", "slot", "star", "community"]);
   for (const i of items) assert.ok(known.has(i.icon!), i.id);

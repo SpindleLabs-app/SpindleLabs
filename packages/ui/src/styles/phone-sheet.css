@@ -21,7 +21,14 @@
      covers most of the view (Ben's phone rule); the AI panel, a chat, keeps 60%. */
   .phone-sheet :is(#browser, #properties, #assistant):not(#none) { overscroll-behavior-y: none; }
   .phone-sheet :is(#browser, #properties):not(#none) { max-height: 45%; }
-  .phone-sheet .menu-button > .menu-button-menu:not(#none) { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: auto; min-width: 0; max-width: none; max-height: 70dvh; border-radius: 20px 20px 0 0; border-bottom: none; padding: 22px 8px calc(8px + env(safe-area-inset-bottom)); box-shadow: var(--look-top-light), 0 -8px 28px var(--shade-black-055); z-index: 40; }
+  .phone-sheet .menu-button > .menu-button-menu:not(#none) { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: auto; min-width: 0; max-width: none; /* One tap never covers most of the view (Ben's rule; he OK'd the cap 2026-11-11): 34% of the window less 8 px is at most about 40% of the 3D view at every phone size (phone-menus.mjs). */ max-height: calc(34dvh - 8px); overscroll-behavior: contain; border-radius: 20px 20px 0 0; border-bottom: none; padding: 22px 8px calc(8px + env(safe-area-inset-bottom)); box-shadow: var(--look-top-light), 0 -8px 28px var(--shade-black-055); z-index: 40; }
+  /* The menu sheet's items in two columns, the rest scrolling (a cut-off last row shows there is more); no key letters, as a
+     phone has no keyboard; each item keeps a finger's height. */
+  .phone-sheet .menu-button .menu-button-section:not(#none) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 4px; }
+  .phone-sheet .menu-button .menu-button-heading:not(#none) { grid-column: 1 / -1; }
+  .phone-sheet .menu-button .menu-button-item:not(#none):not(#no-such-id) { min-height: 44px; padding: 4px 8px; gap: 2px 8px; flex-wrap: wrap; justify-content: flex-start; white-space: normal; }
+  .phone-sheet .menu-button .menu-button-key:not(#none) { display: none; }
+  .phone-sheet .menu-button .menu-button-note:not(#none) { flex-basis: 100%; padding-left: 24px; font-size: 12px; color: var(--text-dim); }
   /* The clean look (UX2b, after Life360): every sheet has a grab handle at
      the top middle, and Browser and Properties are pill buttons floating
      over the view's top left (their row goes back to the view; the toggles'

@@ -145,7 +145,7 @@ async function threeApart() {
   const names = (remembered: Map<string, readonly string[]>, own?: string) => {
     const r = combineNames("feature-9", "union", target, [a, b], result, views, 1, remembered, own);
     assert.ok(!("failed" in r));
-    return { ids: new Map(r.bodies.map((x) => [x.handle, x.id])), faces: new Map(r.bodies.map((x) => [x.handle, shownFaces(x.faces)])), renumbered: r.renumbered };
+    return { ids: new Map(r.bodies.map((x) => [x.handle, x.id])), faces: new Map(r.bodies.map((x) => [x.handle, shownFaces(x.faces)])), renumbered: r.renumbered, nextPiece: r.nextPiece };
   };
   return { T: at(0), A: at(20), B: at(40), names };
 }
@@ -158,6 +158,8 @@ test("hand-worked: two pieces hold only the extrude: the first by rank (larger f
   const first = names(new Map(), own);
   assert.deepEqual([first.ids.get(T), first.ids.get(B), first.ids.get(A)], ["body:feature-1", own, "body:feature-9/piece:1"]);
   assert.deepEqual(first.renumbered, []);
+  // The own id is number 1 and piece 1 number 2 (issue #424): piece 1 is taken, so the next piece made is piece 2.
+  assert.equal(first.nextPiece, 2);
   // B remembered as piece 1 (by its faces): it stays piece 1, and the own id goes to the first piece left, A.
   const swapped = names(new Map([["body:feature-9/piece:1", first.faces.get(B)!]]), own);
   assert.deepEqual([swapped.ids.get(B), swapped.ids.get(A)], ["body:feature-9/piece:1", own]);
@@ -199,7 +201,7 @@ test("upgrade: a version 15 file whose Join's piece a Move, a Copy, a Combine, a
   const raw = JSON.parse(V15);
   assert.equal(raw.version, 15);
   const doc = readDesignDocument(raw);
-  assert.equal(doc.version, 16);
+  assert.equal(doc.version, 18);
   // Every name of the piece is the extrude's own id now, its number and faces kept; nothing else changed.
   const own = "body:feature-11";
   const was = "body:feature-11/piece:1";

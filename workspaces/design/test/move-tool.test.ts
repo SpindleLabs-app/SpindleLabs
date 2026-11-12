@@ -14,6 +14,7 @@ import type { BodyView, DisplayMesh, GeometryReference } from "@fission/core";
 import { NO_MOVE, type MoveValues } from "../src/move.ts";
 import { boxCentre, boxText, draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, MOVE_PREVIEW_LIMIT, movedMesh, movedPoint, pickedBodies, previewable, readMoveBoxes, snapDegrees, snapMm, startPivot, unmovedPoint, wrapDegrees } from "../src/move-tool.ts";
 import { insertMove } from "../src/move.ts";
+import { insertDuplicates } from "../src/duplicate.ts";
 import { bodyIdOf, insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { nameBody } from "../src/naming.ts";
 import { bodyReference, designReference } from "../src/references.ts";
@@ -235,6 +236,45 @@ test("an edited Move's preview by hand when it or a later Move did not build", (
   assert.equal(editedMoveMesh(scene, doc, {}, "feature-3", v({ x: 10 })), scene.mesh, "not built at all");
   assert.equal(editedMoveMesh(scene, doc, failed, "feature-3", v({ pivotX: 5 })), scene.mesh, "a failed Move edited to move nothing");
   assert.equal(editedMoveMesh(scene, doc, failed, "feature-1", v({ x: 10 })), scene.mesh, "not a Move");
+});
+
+test("an edited Move's preview carries a later Copy or Mirror of the moved body, by hand (hunt 11-11, #539 item 3: the copy stayed where it was, then OK moved it)", () => {
+  // Box 1 (feature-1); Move 1 (feature-2) shifts it 10 mm along X; Mirror 1 (feature-3) mirrors Box 1 across YZ
+  // (the copy is body:feature-3); Move 2 (feature-4) shifts the copy 50 mm along Y; Cylinder 1 (feature-5) stands apart.
+  const moved = insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], v({ x: 10 })).doc;
+  const mirrored = insertDuplicates(moved, ["body:feature-1"], "YZ").doc;
+  const doc = insertPreset(insertMove(mirrored, ["body:feature-3"], v({ y: 50 })).doc, "cylinder", 20, 20, 10).doc;
+  assert.deepEqual(doc.timeline.features.map((f) => f.id), ["feature-1", "feature-2", "feature-3", "feature-4", "feature-5"]);
+  const built = Object.fromEntries(doc.timeline.features.map((f) => [f.id, { status: "built" }]));
+  // Box 1's point (1, 1, 0) with normal (1, 0, 0) as made. Built: Move 1 → (11, 1, 0); the Mirror across YZ negates x:
+  // the copy's point (−11, 1, 0), normal (−1, 0, 0); Move 2 → (−11, 51, 0).
+  const at = (feature: string, p: number[], n: number[], place: number): ShownBody => {
+    const b = shown(feature, BOX_VIEW, [[0, 0, 0], [40, 30, 20]], place);
+    const mesh = { ...b.view.mesh, positions: [...p, ...b.view.mesh.positions.slice(3)], normals: [...n, ...b.view.mesh.normals.slice(3)] };
+    return { ...b, view: { ...b.view, mesh } };
+  };
+  const cyl = shown("feature-5", CYLINDER_VIEW, [[90, -10, 0], [110, 10, 10]], 3);
+  const scene = joinBodies([at("feature-1", [11, 1, 0], [1, 0, 0], 1), at("feature-3", [-11, 51, 0], [-1, 0, 0], 2), cyl]);
+  const box = scene.bodies[0].view.mesh.positions.length;
+  // Move 1 edited to x 110: Box 1's point (111, 1, 0); the Mirror copies Box 1 as Move 1 leaves it: (−111, 1, 0), then Move 2 (−111, 51, 0).
+  const far = editedMoveMesh(scene, doc, built, "feature-2", v({ x: 110 }));
+  close(far.positions.slice(0, 3), [111, 1, 0], "Box 1, x 110");
+  close(far.positions.slice(box, box + 3), [-111, 51, 0], "Mirror 1, x 110");
+  // Move 1 edited to 90° about Z (pivot at the origin), no shift: (1, 1, 0) → (−1, 1, 0) (x goes to y, y to −x), normal (1, 0, 0) → (0, 1, 0).
+  // Mirrored across YZ: (1, 1, 0), normal (0, 1, 0) (no x to negate); Move 2: (1, 51, 0), its normal unturned.
+  const turned = editedMoveMesh(scene, doc, built, "feature-2", v({ turnZ: 90 }));
+  close(turned.positions.slice(box, box + 3), [1, 51, 0], "Mirror 1, turned");
+  close(turned.normals.slice(box, box + 3), [0, 1, 0], "Mirror 1's normal, turned");
+  // The cylinder is none of these: as built.
+  const copy = scene.bodies[1].view.mesh.positions.length;
+  assert.deepEqual(turned.positions.slice(box + copy), scene.mesh.positions.slice(box + copy));
+  // Control: editing Move 2 (the copy's own Move) leaves Box 1 alone; y 60 instead of 50 puts the copy's point at (−11, 61, 0).
+  const second = editedMoveMesh(scene, doc, built, "feature-4", v({ y: 60 }));
+  assert.deepEqual(second.positions.slice(0, box), scene.mesh.positions.slice(0, box));
+  close(second.positions.slice(box, box + 3), [-11, 61, 0], "Mirror 1 by Move 2");
+  // A Mirror that did not build made no copy to carry: the copy (if drawn at all) stays as it is.
+  const noMirror = editedMoveMesh(scene, doc, { ...built, "feature-3": { status: "failed" } }, "feature-2", v({ x: 110 }));
+  assert.deepEqual(noMirror.positions.slice(box, box + copy), scene.mesh.positions.slice(box, box + copy));
 });
 
 test("seeded: 300 chains of Moves on two bodies; an edited Move's preview is the chain built again with the edit in it", () => {

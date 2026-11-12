@@ -21,8 +21,8 @@ export function summaryShown(text, unit) {
   return text.replace(RUN, (run) => run.replace(new RegExp(NUM, "g"), (n) => inches(Number(n))).replace(/ mm$/, " in"));
 }
 
-/** A volume in mm³ in `unit`'s cube: in³ is 25.4³ = 16,387.064 mm³. */
-export const volumeShown = (mm3, unit) => (unit === "in" ? mm3 / MM_PER_INCH ** 3 : mm3);
+/** A volume in mm³ in `unit`'s cube: in³ is 25.4³ = 16,387.064 mm³. null (a volume the model can't work out) stays null, never 0 (issues #474, #483, #485, #486). */
+export const volumeShown = (mm3, unit) => (mm3 === null || unit !== "in" ? mm3 : mm3 / MM_PER_INCH ** 3);
 
 const SUPERSCRIPT = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 

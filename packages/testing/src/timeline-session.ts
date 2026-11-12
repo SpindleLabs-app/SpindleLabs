@@ -41,12 +41,14 @@ import {
   buildBounds,
   createModel,
   dependsOn,
+  onFaceName,
   edgeKey,
   edgeName,
   faceKey,
   insertAt,
   outlineProblem,
   rebuild,
+  takeIn,
   resolveFace,
   sizeKeys,
   type Applied,
@@ -706,14 +708,21 @@ const idsOf = (doc: ModelDoc): string[] =>
 /**
  * The items that depend on `id`, directly or through others, and `id`
  * itself; 35f1d2: and a Combine's target and tool once it does, whose
- * rows show what it left of their bodies, and what depends on them.
+ * rows show what it left of their bodies, and what depends on them; and
+ * (SL #482) every body a Move moves once the Move does, all or none.
  */
 function dependents(doc: ModelDoc, id: string): Set<string> {
   const out = new Set([id]);
   for (let grew = true; grew; ) {
     grew = false;
     for (const i of doc.items) {
-      const reached = [...(!out.has(i.id) && dependsOn(i).some((d) => out.has(d)) ? [i.id] : []), ...(i.kind === "combine" && out.has(i.id) ? [i.target, i.tool].filter((x) => !out.has(x)) : [])];
+      const reached = [
+        ...(!out.has(i.id) && dependsOn(i).some((d) => out.has(d)) ? [i.id] : []),
+        ...(i.kind === "combine" && out.has(i.id) ? [i.target, i.tool].filter((x) => !out.has(x)) : []),
+        // SL #482: a Move moves all its bodies or none, and each body's row shows it where the Move put it, so
+        // an edit that makes a Move fail (one body used up) or build again reaches every body it moves.
+        ...(i.kind === "move" && out.has(i.id) ? i.bodies.filter((x) => !out.has(x)) : []),
+      ];
       for (const x of reached) {
         out.add(x);
         grew = true;
@@ -831,6 +840,8 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
   const count = (k: string) => (counts[k] = (counts[k] ?? 0) + 1);
   let refs: FaceName[] = [];
   let prev: Rebuild = await subject.rebuild();
+  // What a rebuild settles is taken into the design, as Design takes it in after each rebuild (SL #583 item 2).
+  model.doc = takeIn(model.doc);
   let held = [...bodyKeys(model.doc, rebuild(model.doc)).values()];
   let built = subject.builds ? await subject.builds() : 0;
 
@@ -894,6 +905,7 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
 
     const now = await subject.rebuild();
     const builtNow = subject.builds ? (await subject.builds()) - built : 0;
+    model.doc = takeIn(model.doc);
     const expected = rebuild(model.doc);
     const translated = translateRebuild(expected, to);
     // Two faces (or edges) under one name only where the model has them too (35f1d2: pieces whose tags are alike, rule 3;
@@ -942,7 +954,7 @@ export async function runSession(subject: TimelineSubject, steps: readonly Sessi
     // Not after a reorder (or an undo or redo, which may undo one): a sketch is placed on the bodies built before it,
     // so one put before a Move of its body now lies where that body was, though the body ends up where it was.
     if (resolved.kind === "edit" && resolved.op.op !== "reorder" && resolved.op.op !== "undo" && resolved.op.op !== "redo") {
-      const sketches = model.doc.items.flatMap((x) => (x.kind === "sketch" && x.on ? [{ id: to(x.id), face: nameTo({ feature: x.on.feature, role: x.on.role, ...(x.on.tag && { tag: x.on.tag }) }, to) }] : []));
+      const sketches = model.doc.items.flatMap((x) => (x.kind === "sketch" && x.on ? [{ id: to(x.id), face: nameTo(onFaceName(x.on), to) }] : []));
       const still = sketchMovedAlone(prev, now, sketches, edgeClose);
       if (typeof still === "string") fail("a sketch moved though its face did not", still);
       else if (still > 0) count("sketch-still:checked");

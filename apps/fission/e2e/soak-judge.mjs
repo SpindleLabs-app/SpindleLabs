@@ -44,3 +44,16 @@ export function judgeSoak(readings) {
   if (readings.at(-1).wasm > half.wasm) problems.push(`the kernel's WebAssembly memory keeps growing: ${half.wasm} bytes at cycle ${half.cycle}, ${readings.at(-1).wasm} at cycle ${last}`);
   return problems;
 }
+
+/**
+ * Every node of a detached tree DevTools lists (the root, its elements and its text): a tree JavaScript holds keeps all of
+ * them alive. Its `retainedNodeIds` only names the nodes JavaScript has touched, which comes and goes: Design's fit list,
+ * held while no circle is typed, read 1 or 20 by whether its options had been read since a collection (issue #198:
+ * "nodes keeps growing" on a count that only wobbled). Throws when DevTools leaves part of the tree out, so nothing goes
+ * uncounted.
+ */
+export function treeSize(node) {
+  const children = node.children ?? [];
+  if (children.length !== (node.childNodeCount ?? 0)) throw new Error(`DevTools listed ${children.length} of the ${node.childNodeCount} nodes under a detached ${node.nodeName}`);
+  return 1 + children.reduce((s, c) => s + treeSize(c), 0);
+}

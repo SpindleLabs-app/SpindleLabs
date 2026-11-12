@@ -200,7 +200,7 @@ Sketcher, continued (after the hard block; see the build-order note above)
 - [ ] 50. Editable dimensions (length, radius, angle): moved up to 47e, straight after the solver core (owner's order, 2026-11-03); the number is kept so the later numbers keep their meaning
 - [ ] 51. Constraint status colours
 - [ ] 52. Trim, extend, offset, mirror (offsets in K1, shared with Laser kerf and Vector)
-  - [ ] 52c. More sketch shapes (menu check, 2026-11-06; nut traps and screw slots need them; each is lines and arcs the sketch already has, so a side thread can pull this forward when usage allows): polygon (sides, inscribed or circumscribed), slot (centre to centre and overall), rectangle from its centre and from three points, circle through three points and through two points, ellipse (the kernel's Ellipse curve from 37), and a sketch point (a hole centre to dimension to).
+  - [ ] 52c. More sketch shapes (menu check, 2026-11-06; nut traps and screw slots need them; each is lines and arcs the sketch already has, so a side thread can pull this forward when usage allows): polygon (sides, inscribed or circumscribed), slot (centre to centre and overall), rectangle from its centre and from three points, circle through three points and through two points, ellipse (the kernel's Ellipse curve from 37), and a sketch point (a hole centre to dimension to). Done 2026-11-11 (docs/progress/cad.md): both polygons, both slots, both new rectangles, the 3-point circle and the sketch point; still to do: the 2-point circle and the ellipse.
   - [ ] 52d. Sketch fillet and chamfer at a corner (the two curves trimmed and the arc or line added, constrained tangent and coincident so it survives a drag), break a curve at a point, move or copy chosen sketch curves, and rectangular and circular patterns of sketch curves (the same pattern maths as 61, in 2D first).
   - [ ] 52e. Sketch text: typed text on a sketch plane in a chosen font and height, its outlines as lines, arcs and Béziers (K1's Béziers, X17's biarc fitting) so it extrudes to an embossed or cut label; shares V2's text-to-outlines.
   - [ ] 52f. Trace and place: a picture put on the sketch plane, scaled by typing one known length, to trace over (and hidden or deleted afterwards); SVG and DXF curves placed straight into a sketch (X6a identifies the files; the readers are shared with L2 and V2).
@@ -263,7 +263,7 @@ Extras
 - [ ] 88. Cloud saving, versions, sharing (recipes, origin and remix lineage: X12)
 
 Everyday comfort
-- [ ] 89. History kept across a reload (owner's ask, 2026-11-09). Today the History panel (and Undo) starts afresh whenever a project is opened, a reload too, and keeps the last 100 steps (step 20; the panel's first row says "Before these steps"). Keep the steps with the project in this browser, so after a reload the list and Undo carry on from where they were; never in the project file or a shared copy. Not before the fillets (44–46) are done (the owner's order: no new features until then). To settle when it starts: how much browser storage the snapshots may take (100 whole-project snapshots of a big part), and what happens when the stored steps no longer match the project (a change made in another tab: start afresh, as `History.load` already does).
+- [x] 89. History kept across a reload (owner's ask, 2026-11-09). DONE: the steps are kept in this browser beside each kept project (never in the file or a shared copy, so no data version), at most 8 million characters of snapshots a project (the oldest go first) and the 10 projects used most recently, given up first when storage is full so they never cost a save, and put back only when they end at the project as it opens (another tab's change starts afresh); works offline. The ask as written: Today the History panel (and Undo) starts afresh whenever a project is opened, a reload too, and keeps the last 100 steps (step 20; the panel's first row says "Before these steps"). Keep the steps with the project in this browser, so after a reload the list and Undo carry on from where they were; never in the project file or a shared copy. Not before the fillets (44–46) are done (the owner's order: no new features until then). To settle when it starts: how much browser storage the snapshots may take (100 whole-project snapshots of a big part), and what happens when the stored steps no longer match the project (a change made in another tab: start afresh, as `History.load` already does).
 
 Beginner mode and the Learn CAD course (owner's ask, 2026-11-07). Where it sits, in the owner's master order (2026-11-07): flat booleans, curved booleans, fillets, then lots of features, then a rework of everything so it works well for a person, with a beginner mode. The course belongs to that last phase: it is built once the tools it teaches exist (sketch through 52, extrude modes 39 and 53, hole 54, revolve 56, patterns and mirror 61, chamfer and fillets 44–46, Combine, Measure, the print preview and print file H2–H3), and after the rework has settled where the buttons live, so lessons are not rewritten when the layout changes. The pure pieces (LC1, LC2, LC6) need nothing from the rework and may start earlier only if a pull request slot is spare; they never take a slot from a primary kernel step. A new workstream file, `docs/progress/learn.md`, starts with LC0 and holds the design decisions and every substep's test plan.
 
@@ -390,12 +390,18 @@ Laser workspace (starts after CAD step 52, when the sketcher is solid)
 - [ ] L3. Job preview and time estimate
 - [ ] L4. Machine control for common controllers; sheet-metal flat patterns after step 87
 
-Simulate workspace (starts after CAD step 40, booleans and full topological naming)
-- [ ] S1. Studies in the project; loads and constraints on design faces by reference
-- [ ] S2. Tetrahedral meshing from the exact geometry (shares step 85)
-- [ ] S3. Static stress: stress, displacement, safety factor in the viewport
+TestLab, the Simulate workspace (owner's decision, 2026-11-12: start now with a basic version whose first job is proving the live link with DesignLab bodies, on a foundation that grows to world-class with no compromises; the full plan is in the project files, testlab/testlab-plan.txt, and the engine's details stay in the kernel repo). Its title is TestLab; its id in code and project files stays `simulate`, so old projects keep opening. Faces made by extrudes and flat booleans already have stable names, so it no longer waits for step 40; curved bodies join as 37–43 land.
+- [x] T0. The plan (2026-11-12).
+- [ ] T1. The live link, no solver yet: pick a DesignLab body, pick the faces it is held by and pushed on (by stable id), type the load in plain words ("5 kg hanging", "20 N down"), saved as a study in the project (a new data version). After a design edit the same faces stay picked and the result is marked out of date; a deleted face gives a plain warning that the load lost its face, never a silent drop; undo brings it back. The Run button says plainly that the solver is not there yet. Browser checks at 1280 and 375 px. (S1)
+- [ ] T2. Materials: the one materials library (I3) made real for five starter materials (PLA, PETG, ABS, aluminium 6061, steel), each with its stiffness, strength and density and where the numbers come from.
+- [ ] T3. The solver, checked on hand-made meshes: a bar in tension and a cantilever worked by hand, errors that shrink at the rate theory predicts as the mesh gets finer, forces that balance.
+- [ ] T4. Filling any accepted body with a fine mesh that keeps every face and stays truly round on curved faces, checked against the kernel's exact volume and face areas before anything is solved; a mesh that fails the check is refused with the reason. (S2, shares step 85)
+- [ ] T5. Run, cancel and progress in the worker; results in the shared viewport: colours for stress, the bent shape drawn exaggerated with the scale stated, the biggest bend, the highest stress, and the safety factor in green, amber or red with one sentence. Labelled a simulation, with a note that printed parts are weaker across layers. (S3)
+- [ ] T6. Textbook and published benchmarks every night (a hole in a plate, a thick tube under pressure, the standard NAFEMS cases), an outside FEA program as a second check, results frozen so they cannot drift, and the strength estimate (H4) always on the safe side of TestLab (H4c).
+- [ ] T7. Back into DesignLab: "Test strength in TestLab" on a selected body, stress paint on the part (marked out of date after an edit), and a zero-exports journey (I20): design a bracket, test it, make it thicker, rerun, and the bend drops by the hand-worked amount.
+- Later, each as its own piece without a rewrite: printed-part strength from SliceLab's build direction (weaker across layers), natural frequencies and heat (S4), parameter sweeps back into DesignLab ("thinnest wall with safety factor 2 or more", integration map row 5), assemblies and contact, yielding and buckling, automatic mesh refinement where the stress changes fast, and the AI setting up studies in plain words (A8).
 - [ ] S4. Thermal and modal studies
-- The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; S3's stress study becomes its outside oracle (H4c).
+- The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; TestLab's stress study (T5, S3) becomes its outside oracle (H4c).
 
 Manufacture workspace (starts after CAD step 40, booleans and full topological naming)
 - [ ] M1. Setups, stock, work coordinates; a tool library shared across projects
@@ -564,11 +570,16 @@ AI assistant (owner's spec "AI assistant — architecture and placeholders"; opt
 - Report back to the owner when A1–A6 and A9 land: built vs placeholdered, test status, decisions needed
 
 Community (free sharing only; starts after CAD step 25, needs a server first, see docs/community.md)
-- [ ] C1. Decide the server questions in docs/community.md with the owner
+- [ ] C1. Decide the server questions in docs/community.md with the owner (proposed 2026-11-11 in `docs/progress/community.md`; the money items wait on the owner)
 - [ ] C2. Accounts and uploads: share a whole project (editable timeline and every workspace's data) or a mesh, with a free licence
 - [ ] C3. Search and browse; download into a new local project; open it in any workspace
 - [ ] C4. Remix: a downloaded copy links back to the original and credits its author
 - [ ] C5. Moderation and reporting
+- [ ] C6. Profiles: a display name only, no messages
+- [ ] C7. Likes
+- [ ] C8. Comments, only if the legal check allows them
+- [ ] C9. The monthly design contest, after launch
+- Steps, decisions and the order they are built in: `docs/progress/community.md` (C2 starts with sharing links).
 - Sign-in (owner's decision, 2026-11-04): browsing and searching the community needs no account; posting, downloading and remixing need a signed-in account (AC1 below).
 
 Money (owner's decisions, 2026-10-29 and 2026-10-30; nothing built yet, planned for launch). The core CAD stays free for everyone, with no limits on projects or exports, and nothing is ever paid inside community sharing. Money comes only from the extras below, priced fairly and never pushed with pop-ups. AI stays free with the user's own key or a local model; paid AI credits are an optional convenience, priced above what the provider charges us. A payment account needs an adult to hold it, so a parent holds it at first.

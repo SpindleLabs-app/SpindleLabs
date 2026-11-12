@@ -181,3 +181,36 @@ test("hand-worked: a sketch drawn on a top that a Combine before it turned into 
   assert.deepEqual([roof?.area, roof?.centroid[2], roof?.down], [60, 20, true]);
   assert.deepEqual(r.results["item-2"], { status: "built", lift: 20 });
 });
+
+test("hand-worked: a sketch on a face of a Combine result's copy finds that face by its whole name, curve and all (SL #430)", () => {
+  // Ben's 40 × 30 × 20 box (item-1) joined with an 8 × 55 × 8 bar (item-2) from the same corner (item-3, the bar used
+  // up), then a Duplicate of the join (item-4). The copy names each face by its role, a tool's face with the feature it
+  // came from (built-body.ts `copiedFaceName`): the bar's top beyond the box as item-4/top:item-2 (z = 8, 8 · 25 = 200 mm²).
+  // The box's own top is the copied body's own item's face, so (SL #538 item 5) it is named as a plain copy's top,
+  // item-4/top (z = 20, 40 · 30 = 1200 mm²), the same name it has when nothing was joined, and still holds the name copies
+  // gave it before, item-4/top:item-1, after that. A sketch picked on each holds its whole shown name, so it lies on its
+  // face, at z 20 and z 8, found (no plane warning). (Design finds a face by any name it holds, so a sketch saved with
+  // the old item-4/top:item-1 finds the box's top: workspaces/design/test/copy-face-names.test.ts.)
+  const m = createModel();
+  run(
+    m,
+    { op: "add-preset", kind: "box", sizes: [40, 30, 20] },
+    { op: "add-preset", kind: "box", sizes: [8, 55, 8] },
+    { op: "add-combine", target: "item-1", tool: "item-2", operation: "join", keep: false },
+    { op: "add-duplicate", body: "item-1" },
+  );
+  const copy = (rebuild(m.doc).results["item-4"] as { body?: ModelBody }).body;
+  const tops = (copy?.faces ?? []).filter((f) => f.name.role === "top").map((f) => [faceKey(f.name), (f.also ?? []).map(faceKey), f.area, f.centroid[2]]);
+  assert.deepEqual(tops, [
+    ["item-4/top", ["item-4/top:item-1"], 1200, 20],
+    ["item-4/top:item-2", [], 200, 8],
+  ]);
+  run(
+    m,
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [10, 10], radius: 2 }, face: { feature: "item-4", role: "top" } },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [4, 40], radius: 2 }, face: { feature: "item-4", role: "top", curve: "item-2" } },
+  );
+  const r = rebuild(m.doc);
+  assert.deepEqual(r.results["item-5"], { status: "built", lift: 20 });
+  assert.deepEqual(r.results["item-7"], { status: "built", lift: 8 });
+});

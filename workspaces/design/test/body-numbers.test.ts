@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { emptyProject, projectFromJson, projectToJson } from "@fission/core";
-import { bodyNumbers, insertPreset, makesBody, numberBodies, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
+import { bodyNumbers, insertPreset, makesBody, numberBodies, numberedWhenBuilt, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { deleteItem, moveMarker, reorderItem, suppressItem } from "../src/timeline-edits.ts";
@@ -109,7 +109,7 @@ test("hand-worked: a version 4 file gets the numbers it showed: the bodies that 
   ]);
   assert.equal(read.nextBody, 5);
   assert.deepEqual(labels(read), ["Body 1", "Body 2"]);
-  assert.equal(read.version, 16);
+  assert.equal(read.version, 18);
   // Unsuppressed and rolled forward, A and D come back as Body 3 and Body 4.
   assert.deepEqual(labels(moveMarker(suppressItem(read, "feature-1", false), null)), ["Body 3", "Body 1", "Body 2", "Body 4"]);
 });
@@ -162,8 +162,11 @@ test("every saved project in the repo opens with each body row named as before 3
       // Every body has a number, none twice, the counter above them all.
       const numbers = doc.bodies!.map((b) => b.number);
       assert.equal(new Set(numbers).size, numbers.length, where);
-      // One body for each feature that makes one, besides a Combine's new pieces (35f, "body:<combine>/piece:<n>").
-      const own = doc.bodies!.filter((b) => !b.id.includes("/piece:"));
+      // One body for each feature that makes one, besides those numbered only once a rebuild makes them: a Combine's or
+      // an operation extrude's new pieces (35f, "body:<item>/piece:<n>") and an Extrude Join's own body, its piece apart
+      // from the bodies it joins (version 16: the first saved file with one is old-files/later/v15-join-piece, #512).
+      const items = new Map(doc.timeline.features.map((f) => [f.id, f] as const));
+      const own = doc.bodies!.filter((b) => !numberedWhenBuilt(b.id, items.get(b.id.slice(5))));
       assert.equal(own.length, doc.timeline.features.filter(makesBody).length, where);
       if (version <= 4) assert.equal(own.length, doc.bodies!.length, where);
       assert.ok(numbers.every((n) => n < doc.nextBody!), where);
@@ -303,4 +306,62 @@ test("seeded sessions of edits agree with a model of the rule: given once when m
     assert.deepEqual(reopen(doc), doc, `seed ${seed}`);
   }
   assert.equal(edits, 1600);
+});
+
+// Save-load hunt B1 (2026-11-11): a file whose nextBody was near 2^53 opened, adding a body counted past the safe
+// integers, and the autosaved design no longer opened ("nextBody 9007199254740992 is not a counting number"). nextBody
+// now has nextId's limit, MAX_NEXT_ID, and an edit that would number a body past it is refused, as one taking an id is.
+test("save-load hunt B1: nextBody may be 2^52 = 4,503,599,627,370,496 but not one more, and a design that opens still opens after adding bodies", async () => {
+  const { MAX_NEXT_ID } = await import("../src/document.ts");
+  const at = (nextBody: number) => ({ ...JSON.parse(JSON.stringify(partDocument("box", 20, 10, 5))), nextBody });
+  // The box is Body 1, so nextBody may be anything from 2 up to the limit.
+  assert.equal(readDesignDocument(at(MAX_NEXT_ID)).nextBody, MAX_NEXT_ID);
+  assert.throws(() => readDesignDocument(at(MAX_NEXT_ID + 1)), /^Error: Design data's nextBody 4503599627370497 is above 4503599627370496, more bodies than a design can number$/);
+  // The hunt's two files: 2^53 - 1 and 2^53 - 2 are refused on open now, not after the next edit.
+  for (const big of [Number.MAX_SAFE_INTEGER, 2 ** 53 - 2]) assert.throws(() => readDesignDocument(at(big)), /is above 4503599627370496, more bodies than a design can number/);
+  // At 2^52 - 2 a box takes Body 4503599627370494 and the counter becomes 2^52 - 1; a second box takes 2^52 - 1 and the
+  // counter becomes 2^52, the limit, which opens; a third would make it 2^52 + 1 and is refused, saying why.
+  let doc = insertPreset(readDesignDocument(at(MAX_NEXT_ID - 2)), "box", 5, 5, 5).doc;
+  doc = insertPreset(doc, "box", 6, 6, 6).doc;
+  assert.equal(doc.nextBody, MAX_NEXT_ID);
+  assert.deepEqual(doc.bodies!.map((b) => b.number), [1, MAX_NEXT_ID - 2, MAX_NEXT_ID - 1]);
+  assert.deepEqual(reopen(doc), doc);
+  assert.throws(() => insertPreset(doc, "box", 7, 7, 7), /^Error: This design has numbered every body it can hold \(4503599627370496\), so no more bodies can be added to it$/);
+  // A sketch's extrude makes a body too: refused the same way at the top.
+  const s = addSketch(doc);
+  assert.throws(() => extrudeSketch(drawRectangle(s.doc, s.id, [0, 0], [4, 3]).doc, s.id, 2), /numbered every body it can hold/);
+});
+
+test("save-load hunt B1: a Combine's new pieces are never numbered past nextBody's limit either", async () => {
+  const { MAX_NEXT_ID, numberPieces } = await import("../src/document.ts");
+  // Two boxes and a Combine cutting the second from the first, the counter one below the limit.
+  const box = (id: string, label: string) => ({ id, intent: { type: "box", parameters: { width: 10, depth: 10, height: 10 }, summary: "Box: 10 × 10 × 10 mm" }, provenance: { self: { workspace: "design", id, label }, from: [] }, dependsOn: [], suppressed: false });
+  const data = {
+    version: 16,
+    nextId: 4,
+    profiles: [],
+    sketches: [],
+    timeline: {
+      features: [
+        box("feature-1", "Box 1"),
+        box("feature-2", "Box 2"),
+        {
+          id: "feature-3",
+          intent: { type: "combine", parameters: { target: "body:feature-1", tools: ["body:feature-2"], operation: "cut", keepTools: false }, summary: "Combine: cut Box 2 from Box 1" },
+          provenance: { self: { workspace: "design", id: "feature-3", label: "Combine 1" }, from: [] },
+          dependsOn: ["feature-1", "feature-2"],
+          suppressed: false,
+        },
+      ],
+    },
+    bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }],
+    nextBody: MAX_NEXT_ID - 1,
+  };
+  const d = readDesignDocument(data);
+  // One piece takes 2^52 - 1 and the counter becomes 2^52, which opens.
+  const one = numberPieces(d, ["body:feature-3/piece:1"]);
+  assert.equal(one.nextBody, MAX_NEXT_ID);
+  assert.deepEqual(reopen(one), one);
+  // Two pieces would take the counter to 2^52 + 1: refused, never written into a design that would not open.
+  assert.throws(() => numberPieces(d, ["body:feature-3/piece:1", "body:feature-3/piece:2"]), /^Error: This design has numbered every body it can hold/);
 });

@@ -1,0 +1,24 @@
+/* The Laser page (page.ts): the parts listed in the browser, the bed and the files in the properties. Colours are tokens only. */
+.laser-page { padding: var(--look-space-3); color: var(--text-body); }
+.laser-page h2 { margin: 0 0 var(--look-space-2); font-size: 15px; }
+.laser-page .laser-page-parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.laser-page .laser-page-parts li { padding: 6px 8px; background: var(--surface-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.laser-page .laser-page-parts label { display: flex; gap: 6px; align-items: center; min-height: 24px; }
+.laser-page .laser-page-refused { color: var(--text-dim); }
+.laser-page .laser-page-field { display: flex; gap: 6px; align-items: center; margin: 0 0 var(--look-space-2); }
+.laser-page .laser-page-field input { width: 6em; }
+.laser-page .laser-page-words { margin: var(--look-space-2) 0; font-size: 13px; }
+.laser-page .laser-page-files { display: flex; gap: var(--look-space-2); flex-wrap: wrap; }
+.laser-page .laser-page-files button { min-height: 32px; }
+.laser-page .laser-page-note { margin: var(--look-space-2) 0 0; font-size: 13px; color: var(--text-dim); }
+/* A part placed by hand (L1b): its numbers under the bed's, in a box of its own named for the part. */
+.laser-page .laser-page-arrange { min-height: 32px; margin: 0 0 var(--look-space-2); }
+.laser-page .laser-page-arrange[hidden] { display: none; }
+.laser-page .laser-page-part { margin: 0 0 var(--look-space-3); padding: var(--look-space-2); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); min-width: 0; }
+.laser-page .laser-page-part[hidden] { display: none; }
+.laser-page .laser-page-part legend { padding: 0 4px; font-weight: 600; }
+.laser-page .laser-page-part-words { margin: 0 0 var(--look-space-2); font-size: 13px; color: var(--text-dim); }
+.laser-page .laser-page-part-words:empty { display: none; }
+.laser-page .laser-page-turns { display: flex; gap: var(--look-space-2); flex-wrap: wrap; }
+.laser-page .laser-page-turns button { min-height: 32px; }
+.laser-page .laser-page-turns button[hidden] { display: none; }

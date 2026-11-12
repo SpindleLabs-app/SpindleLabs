@@ -10,7 +10,8 @@
 // (`barEdit`). Behaviour copied from the reference app's timeline.
 
 import type { Feature } from "@fission/core";
-import { buildingItems, greyedBy, greyedItems, isDuplicateItem, isMoveItem, isSketchItem, type DesignDocument } from "./document.ts";
+import { buildingItems, duplicatedBody, greyedBy, greyedItems, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isSketchItem, type DesignDocument } from "./document.ts";
+import { canEditFeature } from "./feature-edit.ts";
 import { moveKindOf } from "./move.ts";
 import { mirrorOf } from "./duplicate.ts";
 import { deleteItem, itemName, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS } from "./timeline-edits.ts";
@@ -237,8 +238,27 @@ function sketchOff(doc: DesignDocument, at: number, editing: string | null): str
 }
 
 /**
+ * Why Edit feature is off for `item`, in words true of what it is; null
+ * when it opens an editor (workspace.ts `openEdit`: a solid's sizes, a
+ * Move's, Rotate's or Scale's panel, a Combine's). A Copy or a Mirror has
+ * none (hunt 11-11, E2: its entry was on, and said "Copy 1 is a sketch"):
+ * it follows the body it was made from, named as the item names it now. A
+ * sketch is opened with Edit Sketch instead.
+ */
+export function editOff(item: Feature): string | null {
+  if (isMoveItem(item) || isCombineItem(item) || canEditFeature(item)) return null;
+  const name = itemName(item);
+  if (isSketchItem(item)) return `${name} is a sketch: open it with Edit Sketch`;
+  if (!isDuplicateItem(item)) return `${name} has nothing to edit`;
+  const from = item.provenance.from[0]?.label;
+  const body = from === undefined ? "a body" : isPiece(duplicatedBody(item)) ? `a piece of ${from}` : from;
+  return `${name} is a ${mirrorOf(item) === undefined ? "copy" : "mirror image"} of ${body}: it follows that body and has nothing of its own to edit`;
+}
+
+/**
  * Item `id`'s menu (a right-click on it, or its ⋯ on a phone): Edit
- * feature (a solid feature's sizes, step 25a2) or Edit Sketch (a sketch
+ * feature (a solid feature's sizes, step 25a2; off with why for an item
+ * with nothing to edit, `editOff`) or Edit Sketch (a sketch
  * opened again, step 25a3), Move the marker here, Suppress or Unsuppress,
  * Rename (U0e2) and Delete. Edit Sketch is off for the sketch already open, a suppressed
  * one and one after the marker (`sketchOff`). Moving the marker is off
@@ -252,7 +272,7 @@ export function itemMenu(doc: DesignDocument, id: string, editing: string | null
   if (at < 0) throw new Error(`there is no item ${id} in the timeline`);
   const item = doc.timeline.features[at];
   const busy = editing === id ? editedWords(itemName(item)) : null;
-  const edit: MenuEntry = isSketchItem(item) ? { action: "edit-sketch", label: "Edit Sketch", off: sketchOff(doc, at, editing) } : { action: "edit", label: "Edit feature", off: null };
+  const edit: MenuEntry = isSketchItem(item) ? { action: "edit-sketch", label: "Edit Sketch", off: sketchOff(doc, at, editing) } : { action: "edit", label: "Edit feature", off: editOff(item) };
   return [
     edit,
     { action: "marker", label: "Move the marker here", off: marker === at + 1 ? "The marker is already here" : rollsBack(doc, editing, at + 1) },
@@ -574,8 +594,16 @@ export interface BarWiring {
 /** How the last press on each bar's items came (a finger shows the picked item's card, having no hover). */
 const pickedBy = new WeakMap<HTMLElement, string>();
 
-/** Whether the item cards are off: the browser checks switch them off with the app's tooltips (main.ts), so a hover covers nothing they probe. */
-const cardsOff = (page: Document) => (page.defaultView as unknown as { __noTooltips?: boolean } | null)?.__noTooltips === true;
+/** The app's build flag (apps/fission vite.config.ts): false in the live build, true in the test build; unset when these files run unbundled (the unit tests). */
+declare const __TEST_HOOKS__: boolean | undefined;
+const TEST_BUILD = typeof __TEST_HOOKS__ === "undefined" || __TEST_HOOKS__;
+
+/**
+ * Whether the item cards are off: the browser checks switch them off with the app's
+ * tooltips (main.ts), so a hover covers nothing they probe. Only the test build reads
+ * the switch; the live build drops it with the rest of the test hooks (audit S12).
+ */
+const cardsOff = (page: Document) => TEST_BUILD && (page.defaultView as unknown as { __noTooltips?: boolean } | null)?.__noTooltips === true;
 
 /**
  * Fills the timeline slot: an ordered list of the items, with the marker

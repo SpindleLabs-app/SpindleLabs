@@ -14,14 +14,14 @@ import { XY_PLANE } from "@fission/core";
 import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { constraintPoints, counted, curvePoints, insertAt, insertItem, hasOwnFaces, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { counted, curvePoints, insertAt, insertItem, hasOwnFaces, heldByBody, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
-import { keptConstraints, withoutCurveConstraints } from "./constraints.ts";
+import { followingPoints, keptConstraints, withoutCurveConstraints } from "./constraints.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
-export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", dimension: "Dimension", redimension: "Change dimension", unconstrain: "Delete constraint", fit: "Tag fit", unfit: "Remove fit" } as const;
+export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", polygon: "Draw polygon", slot: "Draw slot", point: "Draw point", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point", horizontal: "Horizontal", vertical: "Vertical", coincident: "Coincident", fix: "Fix", dimension: "Dimension", redimension: "Change dimension", unconstrain: "Delete constraint", fit: "Tag fit", unfit: "Remove fit" } as const;
 
 /**
  * Each origin plane's frame: the sketch's x along `xAxis`, its y along
@@ -122,7 +122,10 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   const label = on.provenance.self.label;
   const body = drawn.body === undefined ? null : squared(drawn.body);
   if (drawn.body !== undefined && body === null) throw new Error("a sketch on a moved face needs a frame for where its body was moved to");
-  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body } : {}) });
+  const size = drawn.body?.size ?? 1;
+  if (!Number.isFinite(size) || size <= 0) throw new Error(`a sketch on a scaled face needs its body's size above 0, not ${size}`);
+  // SL #539: the body's size is always recorded (1 too), so a sketch without one is known to be from before and carried as it was.
+  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}) });
 }
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {
@@ -242,6 +245,30 @@ export function drawArc(doc: DesignDocument, sketchId: string, start: LineEnd, e
   return { id, doc: withSketch(after, sketch) };
 }
 
+/**
+ * A sketch point at `at` with no curve (step 52c, Fusion's Point): a hole's
+ * centre to dimension to, or a place to snap to. It stays until it is
+ * deleted itself (`deletePoint`): `deleteCurve` takes only the points the
+ * deleted curve leaves unused, never one that was alone already.
+ */
+export function drawPoint(doc: DesignDocument, sketchId: string, at: readonly [number, number]): { doc: DesignDocument; id: string } {
+  const [id, drawn] = pointFor({ doc, sketch: sketchIn(doc, sketchId) }, at);
+  return { id, doc: withSketch(drawn.doc, drawn.sketch) };
+}
+
+/** The sketch points no curve is drawn from and no projection made (`drawPoint`'s). */
+export function lonePoints(sketch: Pick<Sketch, "points" | "curves" | "projected">): Set<string> {
+  const used = usedPoints(sketch.curves, sketch.projected);
+  return new Set(sketch.points.filter((p) => !used.has(p.id)).map((p) => p.id));
+}
+
+/** The sketch without lone point `pointId` (`lonePoints`), its pins and the constraints naming it. A point a curve is drawn from goes only with its curves. */
+export function deletePoint(doc: DesignDocument, sketchId: string, pointId: string): DesignDocument {
+  const sketch = sketchIn(doc, sketchId);
+  if (!lonePoints(sketch).has(pointId)) throw new Error(`point ${pointId} of sketch ${sketchId} is not a point on its own`);
+  return withRefs(doc, { ...sketch, points: sketch.points.filter((p) => p.id !== pointId) }, (sketch.pins ?? []).filter((p) => p.point !== pointId));
+}
+
 /** The sketch's point exactly at `at`, by id, or null. */
 export function pointAt(sketch: Sketch, at: readonly [number, number]): string | null {
   return sketch.points.find((p) => p.x === at[0] && p.y === at[1])?.id ?? null;
@@ -323,7 +350,8 @@ export function deleteCurve(doc: DesignDocument, sketchId: string, curveId: stri
   const projection = sketch.projected?.find((p) => p.made === curveId);
   if (projection) return unproject(doc, sketchId, projection.id);
   const curves = sketch.curves.filter((c) => c.id !== curveId);
-  const used = usedPoints(curves, sketch.projected);
+  // A sketch point (`drawPoint`) that was alone before stays: only the points the deleted curve leaves unused go.
+  const used = new Set([...usedPoints(curves, sketch.projected), ...lonePoints(sketch)]);
   // Its length, radius or level goes with it, though its ends may stay with the curves next to it (the solver bug hunt, 2026-11-06).
   const constraints = withoutCurveConstraints(sketch.constraints, sketch.curves.find((c) => c.id === curveId)!, curves);
   return withRefs(doc, { ...sketch, curves, constraints, points: sketch.points.filter((p) => used.has(p.id)) }, (sketch.pins ?? []).filter((p) => used.has(p.point)));
@@ -384,10 +412,10 @@ export function pinNewPoints(before: DesignDocument, after: DesignDocument, sket
       if (t) pins.push(pinOf(p.id, t, own));
   }
   if (pins.length === (sketch.pins?.length ?? 0)) return after;
-  // A constraint can't name a point that follows a body: one the same edit made on a point it pins (a rectangle's own
-  // Horizontal on a corner at the origin, the solver bug hunt 2026-11-06) goes, or the design would not open again.
-  const pinned = new Set(pins.map((p) => p.point));
-  const constraints = sketch.constraints.filter((c) => !constraintPoints(c).some((p) => pinned.has(p)));
+  // A constraint can't name only points that follow a body (#517; document.ts `heldByBody`): one the same edit made between
+  // two points it pins (a rectangle's side along a box's edge) goes, or the design would not open again. One with a point of
+  // the sketch's own stays, so a rectangle from a body's corner keeps its sides square.
+  const constraints = sketch.constraints.filter((c) => !heldByBody(c, followingPoints({ ...sketch, pins })));
   return withRefs(after, constraints.length === sketch.constraints.length ? sketch : { ...sketch, constraints }, pins);
 }
 
@@ -409,7 +437,9 @@ export function movePointOnto(doc: DesignDocument, sketchId: string, pointId: st
   const was = sketchIn(doc, sketchId).pins ?? [];
   const k = was.findIndex((p) => p.point === pointId);
   const pins = k < 0 ? [...(sketch.pins ?? []), pin] : was.map((p, j) => (j === k ? pin : p));
-  const next = withRefs(moved, sketch, pins);
+  // As pinNewPoints: a constraint left naming only followed points goes (#517).
+  const constraints = sketch.constraints.filter((c) => !heldByBody(c, followingPoints({ ...sketch, pins })));
+  const next = withRefs(moved, constraints.length === sketch.constraints.length ? sketch : { ...sketch, constraints }, pins);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
 }
 

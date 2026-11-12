@@ -1,0 +1,12 @@
+{
+  "seed": 0,
+  "what": "Issues #472, #475, #479: a Mirror (or Copy) of a body whose item is then suppressed builds nothing, greyed with it (Q3); the monkey's model of the file expected the copy's row in the Bodies group",
+  "actions": [
+    { "do": "open", "edit": "add-solid", "at": 2 },
+    { "do": "click", "sel": "button[data-node=\"body-1\"]" },
+    { "do": "click", "sel": "#modify-menu" },
+    { "do": "click", "sel": "#modify-menu-mirror-xz" },
+    { "do": "key", "key": "Escape" },
+    { "do": "open", "edit": "suppress", "at": 0 }
+  ]
+}

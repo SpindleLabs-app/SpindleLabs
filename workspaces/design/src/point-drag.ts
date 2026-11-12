@@ -132,7 +132,7 @@ const pointsOf = (sketch: Sketch): Map<string, XY> => new Map(sketch.points.map(
 export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY, origin: DesignDocument = doc): Promise<DragStep> {
   const moved = movePoint(doc, sketchId, pointId, to[0], to[1]).sketches.find((s) => s.id === sketchId)!; // throws for a sketch or point not there
   const sketch = doc.sketches.find((s) => s.id === sketchId)!;
-  const request = solverRequest(moved, [pointId]);
+  const request = solverRequest(moved, [pointId], [pointId]); // its own connected part only (#545 item 2)
   const answer = readAnswer(await kernel.call("solve_sketch", request.text));
   if (answer.result === "refused") return { refused: `The sketch can't be solved there: ${answer.message}.` };
   if (answer.result === "conflict") return { refused: "The sketch's constraints can't all hold there, so the point stays where it last was." };
@@ -181,7 +181,7 @@ export async function dragTo(kernel: KernelCalls, doc: DesignDocument, sketchId:
 }
 
 /** How far (mm) a dragged point may move and still count as held still by its constraints: the solver's LINEAR. */
-const HELD_STILL = 1e-5;
+export const HELD_STILL = 1e-5;
 
 /** The words for a drag its constraints hold still. */
 export const HELD = "Its constraints and dimensions hold this point where it is: take one off to move it.";

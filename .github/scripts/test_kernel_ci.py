@@ -145,6 +145,33 @@ class Save(unittest.TestCase):
         self.assertIn("ci/pr-3/abc/1-1/checks/release/at-limit.bin", files)
         self.assertNotIn("ci/pr-3/abc/1-1/checks/release/plain.jsonl", files)
 
+    def test_other_runs_folders_survive_a_save_through_a_filtered_clone(self):
+        # The save clones without file contents and checks out only its own folder (it was most of a save's
+        # time); the folders of other runs, never checked out, must still be there after the push, and the
+        # clone must really have been filtered (a file:// remote that allows it, as GitHub does).
+        t = self.tmp.name
+        subprocess.run(["git", "-C", self.remote, "config", "uploadpack.allowFilter", "true"], check=True)
+        seed2 = os.path.join(t, "seed2")
+        subprocess.run(["git", "clone", "-q", self.remote, seed2], check=True, capture_output=True)
+        os.makedirs(os.path.join(seed2, "ci", "pr-1", "old", "checks"))
+        with open(os.path.join(seed2, "ci", "pr-1", "old", "checks", "tests.log"), "w") as f:
+            f.write("an earlier run\n")
+        git = ["git", "-C", seed2, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-qm", "an earlier run"], check=True)
+        subprocess.run(git + ["push", "-q", "origin", "HEAD:main"], check=True, capture_output=True)
+        env = dict(os.environ, RESULTS_REPO="file://" + self.remote, RESULTS_PATH="ci/pr-3/abc/1-1", LABEL="pr-3", HEAD_SHA="abc", SAVE_WAIT_SCALE="0")
+        out = subprocess.run(["bash", SCRIPT, "save", "checks", self.logs], capture_output=True, text=True, env=env)
+        self.assertEqual((out.returncode, out.stdout), (0, "saved checks\n"), out.stderr)
+        files = self.saved()
+        self.assertIn("ci/pr-1/old/checks/tests.log", files)
+        self.assertIn("ci/pr-3/abc/1-1/checks/tests.log", files)
+        self.assertIn("README", files)
+        # the whole history the old way (a full clone) would have kept every file; here the save committed one folder
+        last = subprocess.run(["git", "-C", self.remote, "show", "--stat", "--format=%s", "main"], capture_output=True, text=True, check=True).stdout
+        self.assertIn("kernel-ci ci/pr-3/abc/1-1/checks", last)
+        self.assertNotIn("old", last)
+
     def test_small_logs_save_with_no_note(self):
         out = self.save()
         self.assertEqual((out.returncode, out.stdout), (0, "saved checks\n"))
@@ -498,6 +525,26 @@ class SecretsOnlyOnMain(unittest.TestCase):
         self.assertEqual(self.problems("w", wf("    environment:\n      name: kernel\n" + key)), [], "the mapping form names it too")
         self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "SOME_NEW_KEY"))), ["w a: uses SOME_NEW_KEY, which this check doesn't know"])
         self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "GITHUB_TOKEN"))), [])
+
+
+class LabelCheck(unittest.TestCase):
+    """kernel-ci.yml's input check accepts the kernel repo's merge queue's
+    label train-<number> beside pr-<number> and main, and nothing looser
+    (the label becomes a folder name in kernel-results)."""
+
+    def patterns(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "workflows", "kernel-ci.yml")
+        with open(path) as f:
+            found = re.findall(r"\$LABEL =~ \^(\([^)]*\))\$", f.read())
+        self.assertEqual(len(found), 2, "both input checks")
+        return found
+
+    def test_accepted_and_refused(self):
+        for pattern in self.patterns():
+            for ok in ("pr-1", "pr-215", "train-7", "train-203", "main"):
+                self.assertTrue(re.fullmatch(pattern, ok), ok)
+            for bad in ("train-", "train-x", "train-1/../x", "pr-1 ", "trains-1", "train", "Main", "main2", "-1", ""):
+                self.assertFalse(re.fullmatch(pattern, bad), bad)
 
 
 if __name__ == "__main__":

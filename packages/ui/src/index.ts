@@ -9,7 +9,7 @@ export { SPLIT_MIN_WIDTH_PX, defaultSplit, splitChoices, type SplitEntry } from 
 export { WarmPool, type WarmHooks } from "./warm.ts";
 export { CUSTOM_KEYS, applyCustom, readCustom, THEME_CHOICES, THEME_COLOURS, THEME_SETTING, applyTheme, isThemeChoice, readThemeChoice, resolveTheme, startTheme, type Theme, type ThemeChoice } from "./theme-choice.ts";
 export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type SettingsParts, type SettingsSection, type SettingsStorage, type SettingValue } from "./settings.ts";
-export { BUG_REPORT_EMPTY, ISSUES_NEW, MAX_REPORT_URL, bugReportBody, bugReportDialog, bugReportTitle, bugReportUrl, type BugFacts, type BugReport } from "./bug-report.ts";
+export { BUG_REPORT_EMPTY, BUG_REPORT_ORIGINS, BUG_REPORT_SERVICE, bugReportEndpoint, ISSUES_NEW, MAX_DESIGN_BYTES, MAX_REPORT_URL, bugDesignFile, bugReportBody, bugReportDialog, bugReportPayload, bugReportTitle, bugReportUrl, sendBugReport, type BugDialogHooks, type BugFacts, type BugPayload, type BugReport, type DesignFile } from "./bug-report.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
@@ -24,6 +24,8 @@ export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELET
 export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, homeScreen, usedAt, workspacesIn, type HomeParts, type HomeProject, type HomeRow, type HomeScreen } from "./home-screen.ts";
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
 export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type DesignRowWords, type MyDesigns, type MyDesignsParts } from "./my-designs.ts";
+export { NO_LINKS, REPORT_ANSWERS, REPORT_KIND_WORDS, SHARE_NOTE, SHARE_REFUSALS, SHARE_TERMS_PLACEHOLDER, SHARE_TITLE, shareDialog, sharedView, SIGN_IN_TO_SHARE, turnOffQuestion, type Dialog as ShareDialog, type SharedCopy, type SharedParts, type ShareLinkRow, type ShareParts } from "./share.ts";
+export { likeCountText, likeRow, type LikeParts, type LikeRow, type LikeState, SIGN_IN_TO_LIKE } from "./like.ts";
 export { ACCOUNT_NOTE, ACCOUNT_TAG, NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIONS_TITLE, versionList, versionRows, versionTime, type AccountVersions, type VersionList, type VersionListParts, type VersionPlace, type VersionRow } from "./version-list.ts";
 export { startTooltips, tipWords, quickInfoFor, TIP_SHORT_MAX, type TipWords, type Tooltips } from "./tooltip.ts";
 export { agoWords, historyPanel, stepWords, type HistoryPanel, type HistoryPanelParts } from "./history-panel.ts";
