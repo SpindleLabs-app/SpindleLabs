@@ -9,7 +9,7 @@ import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS
 import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
-import { bodyChoices, operationNote, tickedBodies, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
+import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, pastedBodies } from "./duplicate.ts";
@@ -18,7 +18,7 @@ import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { changedCombine, COMBINE_STEP, forgetPieces, insertCombine } from "./combine.ts";
-import { combinePanel } from "./combine-panel.ts";
+import { combineHintWords, combinePanel } from "./combine-panel.ts";
 import { askWords, bodyNamer, checkedItem, cutAsk, type Checked } from "./cut-ask.ts";
 import type { Miss } from "./misses.ts";
 import { combineShown } from "./combine-flag.ts";
@@ -33,7 +33,7 @@ import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
-import { bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { bodyLabel, bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, editOff, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
@@ -56,7 +56,7 @@ import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { sketchPlaceScene } from "./sketch-place.ts";
-import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, missesMessage, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { measureView } from "./measure-view.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
@@ -594,7 +594,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     exploded: () => explodeSpread !== null,
     noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => void insertBody(kind), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   // File ▾ Export 3MF or OBJ… (step 77): the format asked, then every body shown, as the whole design's STL takes them.
@@ -1042,7 +1042,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
     // A part whose body a later Combine used up did not fail (part-failure.ts).
     const failure = partFailure(doc.timeline.features, feature, build);
-    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies), builtPieceFaces(build)) };
+    const followed = numberPieces(followedDoc(doc, build), Object.keys(build.bodies), builtPieceFaces(build));
+    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build, followed), failure, followed };
   }
   /**
    * The rebuild's warnings in timeline order: an extrude built from its kept
@@ -1050,9 +1051,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * sketch whose plane is lost (Q1, Q6: it stays where it was, drawn red)
    * and an extrude built from one (its source is lost); from 26f a
    * sketch's points whose edges are lost, and from 27d its projections;
-   * a Combine whose numbered pieces changed (hunt 11-06).
+   * a Combine whose numbered pieces changed (hunt 11-06). `numbered` is
+   * the document with this build's new pieces numbered, so a Cut or Join
+   * that changes nothing names them as the Bodies list does (SL #677 item 5).
    */
-  function warningsOf(doc: DesignDocument, build: TimelineBuild): Warned[] {
+  function warningsOf(doc: DesignDocument, build: TimelineBuild, numbered: DesignDocument): Warned[] {
     const out: Warned[] = [];
     for (const f of doc.timeline.features) {
       const r = build.results[f.id];
@@ -1069,7 +1072,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // SL #506 item 4: a Move that moves only some of its bodies says which it can't move, never a silent jump.
       if (r.missing) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.missing.message}.` });
       // A Cut or Join whose tools change nothing (Ben 11 Nov): OK asked first; an earlier edit since can't ask, so the row says it.
-      if (r.misses) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.misses.message}.` });
+      if (r.misses) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${missesMessage(numbered, f, r.misses.list, r.misses.operation)}.` });
     }
     return out;
   }
@@ -1515,6 +1518,33 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     void chooseEntry(menuHost, id, openAction(doc, id), editingId()).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)));
   }
 
+  /** The kernel checks and questions of OKs that have recorded nothing yet (`okCheck`). */
+  const okChecks = new Set<Promise<unknown>>();
+  /**
+   * `work`, a kernel check or a question an OK waits for before it records (Combine, Extrude, Edit feature, Move),
+   * noted until it settles so `afterOk` can wait for it. Not the settle after a step is recorded: the next action
+   * is recorded at once then (undo-unsettled-next.journey.ts).
+   */
+  function okCheck<T>(work: Promise<T>): Promise<T> {
+    okChecks.add(work);
+    const done = () => void okChecks.delete(work);
+    work.then(done, done);
+    return work;
+  }
+  /**
+   * `run` once no OK is still being checked by the kernel, at once when none is. Insert and the item menus go
+   * through it (SL #677 item 4): each shuts the open tool's panel, and an OK that found its panel shut dropped its
+   * Combine, extrude or edit without a word. Waiting, as Undo does, both are recorded in the order pressed. The OK
+   * goes on first when its check answers (its wait was there before this one), recording or asking its next thing.
+   */
+  function afterOk(run: () => void) {
+    if (okChecks.size === 0) return run();
+    void (async () => {
+      while (okChecks.size > 0) await Promise.allSettled([...okChecks]);
+      run();
+    })();
+  }
+
   /** Item `id`'s menu (timeline-menu.ts): Move the marker here, Suppress or Unsuppress, Delete; an entry that is off says why. */
   function openMenu(id: string, at: { x: number; y: number }, row?: string) {
     const doc = designDoc();
@@ -1525,7 +1555,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
     // Ben 2026-11-11 (#507): with Combine switched off, a Combine already in the file builds but can't be edited: Edit is greyed out, saying why.
     const switchedOff = (e: MenuEntry): MenuEntry => (e.action === "edit" && isCombineItem(item) && !combineShown() ? { ...e, off: COMBINE_OFF } : e);
-    const entries = [...shows, ...menuEntries(doc, id, editing).map(switchedOff).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }))];
+    const entries = [...shows, ...menuEntries(doc, id, editing).map(switchedOff).map((e) => ({ ...e, run: () => afterOk(() => void chooseEntry(menuHost, id, e.action, editingId()).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
@@ -1552,7 +1582,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           ? () => toggleHidden(target.row)
           : e.action === "show-only" || e.action === "show-all"
             ? () => showFrom(e.action as "show-only" | "show-all", target.row)
-            : () => void chooseEntry(menuHost, target.feature, e.action as MenuEntry["action"], editing).catch(fail),
+            : () => afterOk(() => void chooseEntry(menuHost, target.feature, e.action as MenuEntry["action"], editing).catch(fail)),
     }));
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
@@ -2833,7 +2863,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!e || e.operation === "new") return;
     const listed = (lastScene?.bodies ?? []).map((b) => ({ body: b.body, label: `Body ${b.place}`, bounds: b.view.bounds }));
     e.choices = e.preview === null ? [] : bodyChoices(e.preview.bounds, listed, e.unticked);
-    const note = e.preview === null ? { text: OPERATION_WAITS, ready: false } : operationNote(e.operation, e.choices);
+    const note = e.preview === null ? { text: OPERATION_WAITS, ready: false } : operationNote(e.operation, e.choices, touchingOnly(e.preview.bounds, listed));
     extrudeBox.showBodies(e.choices, note.text, note.ready);
   }
   const sketchLabel = (id: string) => sketchItem(designDoc(), id).provenance.self.label;
@@ -3266,10 +3296,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let misses: Miss[] = [];
     try {
       made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined, choice, more);
-      await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
+      await okCheck((async () => buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!)))());
       // Several profiles are joined only in the rebuild (SL #611 C1): the whole item is built before it is recorded.
       if (choice !== null || more.length > 0) {
-        const checked = await onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id));
+        const checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id)));
         if (checked.refused !== null) throw new Error(checked.refused);
         misses = checked.misses;
       }
@@ -3279,7 +3309,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     // A Cut or Join that reaches nothing (#521): asked first, as a Combine's; Cancel leaves the panel open.
     if (choice !== null && choice.operation !== "intersect" && misses.length > 0 && extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region && designDoc() === before) {
-      if (!(await askExtrudeMisses(made.doc, made.id, choice.operation, misses))) return;
+      if (!(await okCheck(askExtrudeMisses(made.doc, made.id, choice.operation, misses)))) return;
     }
     // Closed or opened again, another sketch chosen, or something else changed the design, while the kernel worked: this extrude is out of date.
     // Another region of the sketch picked meanwhile is another sketch chosen (48d hunt): the one picked last is what OK makes.
@@ -3341,7 +3371,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (e === null || e.operation === "new") return;
     if (e.candidates === null || e.own === null) return editBox.showBodies([], "Finding the bodies the extrude reaches…", false);
     e.choices = bodyChoices(e.own, e.candidates, e.unticked, e.kept);
-    const note = operationNote(e.operation, e.choices);
+    const note = operationNote(e.operation, e.choices, touchingOnly(e.own, e.candidates));
     editBox.showBodies(e.choices, note.text, note.ready);
   }
   /**
@@ -3572,16 +3602,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   combineHint.hidden = true;
   viewport.element.append(combineHint);
   function showCombineHint() {
-    combineHint.textContent = combineBox.field === "target" ? "Combine: click or tap the body to change" : "Now click or tap the bodies to use as tools";
+    combineHint.textContent = combineHintWords(combineBox.field, bodyRows(designDoc(), failedNow).length);
     combineHint.hidden = !(shown && combineBox.shown && combineBox.editing === null && (combineTarget === null || combineTools.length === 0));
   }
-  /** What the panel calls body `id`: "Body 2" as the browser numbers it, else its item's name. */
+  /** What the panel calls body `id`: its Bodies row ("Body 2"), else its item's name; a deleted one as the edited Combine remembers it (browser.ts `bodyLabel`, SL #677 item 5). */
   const combineLabel = (id: string) => {
     const doc = designDoc();
-    const n = bodyNumbers(doc).get(id);
-    if (n !== undefined) return `Body ${n}`;
-    const item = doc.timeline.features.find((f) => f.id === bodyItem(id));
-    return item === undefined ? id : isPiece(id) ? `a piece of ${itemName(item)}` : itemName(item);
+    const editing = combineBox.editing;
+    return bodyLabel(doc, id, failedNow, editing === null ? undefined : doc.timeline.features.find((f) => f.id === editing));
   };
 
   /**
@@ -3605,7 +3633,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const c = combineBodies(f);
       combineTarget = c.target;
       combineTools = [...c.tools];
-      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools, failed: failedNow.has(id) ? reasonsNow.get(id) : undefined });
+      const label = (b: string) => bodyLabel(doc, b, failedNow, f);
+      combineBox.show({ id, name: itemName(f), target: label(c.target), tools: c.tools.map(label), operation: c.operation, keepTools: c.keepTools, failed: failedNow.has(id) ? reasonsNow.get(id) : undefined });
       ctx.selection.clear();
       return showCombineHint();
     }
@@ -3698,7 +3727,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     combineBox.busy(true);
     let checked: Checked;
     try {
-      checked = await onceMoreAfterRestart(() => checkedItem(kernel, next, made));
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, made)));
     } catch (e) {
       checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
     }
@@ -3711,7 +3740,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A Cut or Join whose tools change nothing (Ben, 11 Nov): asked first; Cancel leaves the panel open, nothing recorded.
     const op = combineBox.operation;
     if (checked.misses.length > 0 && op !== "intersect") {
-      const yes = await missAsk.ask(askWords(op, checked.misses, combineLabel, { kind: "combine", keepTools: combineBox.keepTools }));
+      const yes = await okCheck(missAsk.ask(askWords(op, checked.misses, combineLabel, { kind: "combine", keepTools: combineBox.keepTools })));
       if (!yes || combineOpenings !== opened) return;
       if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
       if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
@@ -3891,10 +3920,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let refused: string | null;
     let misses: Miss[] = [];
     try {
-      refused = await refusedSizes(kernel, before, next, id);
+      refused = await okCheck(refusedSizes(kernel, before, next, id));
       // An extrude that joins, cuts or intersects: its boolean must work too, or the edit says why and records nothing.
       const now = next.timeline.features.find((f) => f.id === id);
-      if (refused === null && now !== undefined && isOperationExtrude(now)) ({ refused, misses } = await onceMoreAfterRestart(() => checkedItem(kernel, next, id)));
+      if (refused === null && now !== undefined && isOperationExtrude(now)) ({ refused, misses } = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id))));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
@@ -3906,7 +3935,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Its Cut or Join now reaches nothing (#521): asked first; Cancel leaves the panel open.
     const op = extrudeOperation(next.timeline.features.find((f) => f.id === id)!)?.operation;
     if (misses.length > 0 && (op === "cut" || op === "join")) {
-      if (!(await askExtrudeMisses(next, id, op, misses)) || editBox.editing !== id) return;
+      if (!(await okCheck(askExtrudeMisses(next, id, op, misses))) || editBox.editing !== id) return;
       if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
     }
     menuHost.record(editStep(before, id), next);
@@ -4195,7 +4224,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     moveBox.busy(true);
     let refused: string | null;
     try {
-      refused = await onceMoreAfterRestart(() => refusedMove(kernel, next, moved));
+      refused = await okCheck(onceMoreAfterRestart(() => refusedMove(kernel, next, moved)));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }

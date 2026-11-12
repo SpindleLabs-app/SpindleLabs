@@ -66,6 +66,16 @@ export const TOOLS_EMPTY = "Click the bodies to use as tools";
 /** The same on a touch screen, which says Tap as the app's other touch words do. */
 export const TARGET_EMPTY_TOUCH = "Tap the body to change";
 export const TOOLS_EMPTY_TOUCH = "Tap the bodies to use as tools";
+/**
+ * The hint over the view while a new Combine lacks its target or a tool,
+ * `bodies` the rows in the Bodies list: with fewer than two there is
+ * nothing to pick, so it says how to get another (SL #677 item 5).
+ */
+export function combineHintWords(field: "target" | "tools", bodies: number): string {
+  if (bodies === 0) return "Combine needs two bodies: make them first with Insert or Extrude";
+  if (bodies === 1) return "Combine needs two bodies: add another with Insert or Extrude";
+  return field === "target" ? "Combine: click or tap the body to change" : "Now click or tap the bodies to use as tools";
+}
 /** The note under an edited Combine's fields. */
 export const EDIT_NOTE = "The bodies stay as this Combine was made. To use other bodies, delete it and make a new one.";
 

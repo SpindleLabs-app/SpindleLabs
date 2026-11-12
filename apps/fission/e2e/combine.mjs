@@ -337,6 +337,36 @@ try {
     }
   });
 
+  // SL #677 item 5: at 320 px Keep tools wrapped down beside Target body, and Tool bodies beside OK. The sheet keeps its
+  // rows at 320, 375 and 393 px: the title, operation and Keep tools first; the two fields side by side; then OK and Cancel.
+  for (const width of [320, 375, 393]) {
+    await check(`${width} px, taps: the Combine sheet's rows stay in order (title and choices, the two fields, OK and Cancel)`, async () => {
+      const page = await fresh(width, 667, true, "&combine");
+      try {
+        await press(page, '[data-view="top"]', true);
+        await settle(page);
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+        await at(page, TOP1, true);
+        await at(page, TOP2, true);
+        await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+        await page.waitForTimeout(400);
+        const box = (sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) }; });
+        const [keep, target, tools, ok, cancel] = [await box(".combine-panel-keep"), await box("#combine-target"), await box("#combine-tools"), await box("#combine-ok"), await box("#combine-cancel")];
+        if (shots) await page.screenshot({ path: `${shots}/combine-${width}-sheet-rows.png` });
+        const all = JSON.stringify({ keep, target, tools, ok, cancel });
+        assert.ok(keep.bottom <= target.top, `Keep tools above the fields: ${all}`);
+        assert.equal(target.top, tools.top, `the two fields side by side: ${all}`);
+        assert.ok(target.left < tools.left, `Target body left of Tool bodies: ${all}`);
+        assert.ok(Math.max(target.bottom, tools.bottom) <= ok.top && ok.top === cancel.top, `OK and Cancel on their own row under the fields: ${all}`);
+        assert.ok(cancel.right <= width, `nothing past the right edge: ${all}`);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
   // #504: the shell's `#workspace button:hover` outranked the panel's OK, so on hover (and on a phone after a tap, where hover sticks) OK turned dark grey and looked switched off.
   await check("1280 px: OK keeps its colour under the pointer", async () => {
     const page = await fresh(1280, 800, false, "&combine");
@@ -399,7 +429,8 @@ try {
       await page.click("#row-menu-edit");
       await opened(page);
       assert.equal(await page.textContent("#combine-title"), "Edit Combine 1");
-      await fields(page, "Body 1 | Body 2", "the edit shows its bodies");
+      // The Cut used Box 2 up, so the Bodies list has no Body 2: the tool is named by its item (SL #677 item 5).
+      await fields(page, "Body 1 | Box 2", "the edit shows its bodies");
       assert.equal(await page.$eval("#combine-tools", (b) => b.disabled), true);
       assert.equal(await page.$eval("#combine-operation", (s) => s.value), "cut");
       // Escape: nothing changes.
