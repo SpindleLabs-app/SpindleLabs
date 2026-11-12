@@ -19,7 +19,7 @@ export interface SettingsSection {
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "general", title: "General", coming: "" },
-  { id: "design", title: "Design", coming: "" },
+  { id: "design", title: "DesignLab", coming: "" },
   { id: "phone", title: "Phone", coming: "Touch and sheet choices will be set here." },
   { id: "printing", title: "Printing", coming: "Your printer and the slicer will be set here." },
   { id: "privacy", title: "Privacy and data", coming: "" },
