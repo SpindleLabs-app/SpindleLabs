@@ -366,6 +366,47 @@ try {
     await context.close();
   });
 
+  await check("a part put over another is warned about in words and on both parts, by the kernel's own answer; sharing an edge is said as a touch; clear of it nothing is said", async () => {
+    const { context, page } = await newPage("?laser");
+    await sketchRectangle(page);
+    // A second sketch: a 20 × 20 square.
+    await page.click("#create-sketch");
+    await pickPlane(page, "XY", false);
+    await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching again");
+    await gridSnapOn(page);
+    await page.click("#sketch-tool-rectangle");
+    for (const p of [[-30, 0], [-10, 20]]) await clickPlane(page, p, TOP);
+    await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "a closed square");
+    await page.click("#finish-sketch");
+    await until(page, () => document.querySelector("#viewport").dataset.sketching !== "true", null, "the second sketch finished");
+    await toLaser(page);
+    await words(page, "2 parts on the bed.");
+    assert.deepEqual(await listed(page), ["Sketch 1, 40 × 30 mm", "Sketch 2, 20 × 20 mm"]);
+    // In the rows: Sketch 1 from (3, 3), Sketch 2 right of it from (46, 3). Sketch 2 is picked and typed to X = 20:
+    // (20, 3) to (40, 23), wholly inside Sketch 1's (3, 3) to (43, 33).
+    const second = '.laser-flat path.laser-flat-part[data-part]:nth-of-type(2)';
+    const box = await boxOf(page, second);
+    await page.mouse.click((box[0] + box[2]) / 2, (box[1] + box[3]) / 2);
+    await until(page, () => document.querySelector(".laser-page-part legend")?.textContent === "Sketch 2", null, "Sketch 2 picked");
+    const typeX = async (v) => {
+      await page.fill('.laser-page input[name="x"]', v);
+      await page.locator('.laser-page input[name="x"]').blur();
+    };
+    await typeX("20");
+    await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 overlap.");
+    assert.deepEqual(await page.$$eval(".laser-flat path.laser-flat-part", (ps) => ps.map((p) => p.classList.contains("laser-flat-part-warn"))), [true, true]);
+    assert.deepEqual(await page.$$eval(".laser-flat path.laser-flat-part title", (ts) => ts.map((t) => t.textContent)), ["Sketch 1, 40 × 30 mm, overlaps Sketch 2", "Sketch 2, 20 × 20 mm, overlaps Sketch 1"]);
+    await page.screenshot({ path: "e2e/laser-page-1280-overlap.png" });
+    // At X = 43 its left side lies on Sketch 1's right side: a shared line and no shared area.
+    await typeX("43");
+    await words(page, "2 parts on the bed. Sketch 1 and Sketch 2 touch: their cuts would share a line.");
+    assert.deepEqual(await page.$$eval(".laser-flat path.laser-flat-part", (ps) => ps.map((p) => p.classList.contains("laser-flat-part-warn"))), [false, false]);
+    // Half a mm clear: nothing to say.
+    await typeX("43.5");
+    await until(page, () => document.querySelector(".laser-page-words")?.textContent === "2 parts on the bed.", null, "no warning once the parts are apart");
+    await context.close();
+  });
+
   await check("at 375 px a tap picks a part and a finger then moves it; Turn joins the row of buttons without leaving the screen or covering Undo", async () => {
     const context = await browser.newContext({ viewport: { width: 375, height: 800 }, hasTouch: true, isMobile: true });
     const page = await context.newPage();
