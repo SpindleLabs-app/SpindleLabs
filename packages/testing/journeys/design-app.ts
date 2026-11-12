@@ -158,6 +158,23 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     },
   });
   ctx.history = history;
+  // The shell's Undo and Redo presses (main.ts `undoRedo` and `undoRedoNow`), for `pressUndo` and `pressRedo` below.
+  let pressesWaiting = 0;
+  let pressed: Promise<void> = Promise.resolve();
+  const pressNow = (which: "undo" | "redo") => {
+    history[which]();
+    history.amend();
+  };
+  const shellPress = (which: "undo" | "redo") => {
+    if (pressesWaiting === 0 && !history.busy()) return pressNow(which);
+    pressesWaiting++;
+    pressed = pressed
+      .then(() => history.whenIdle())
+      .then(() => {
+        pressesWaiting--;
+        pressNow(which);
+      });
+  };
   const startBodies = (await kernel.call("body_count")) as number;
   mount();
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null;
@@ -319,6 +336,15 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
       $("#finish-sketch")!.click();
       await settle();
     },
+    /**
+     * Undo or Redo pressed as the shell runs it (apps/fission/src/main.ts `undoRedo`, #503), not waited for: at once
+     * when no press waits and nothing is held in the history, else after the presses before it and the held work, in
+     * the order pressed; then the defaults a mount filled in are taken in (`amend`), as `undoRedoNow` does.
+     * `presses()` ends when every press so far has run.
+     */
+    pressUndo: () => shellPress("undo"),
+    pressRedo: () => shellPress("redo"),
+    presses: () => pressed,
     async undo() {
       const label = history.undo();
       await settle();

@@ -33,7 +33,7 @@ import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
 import { bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
-import { callOffDrag, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
+import { callOffDrag, editOff, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { partFailure } from "./part-failure.ts";
@@ -52,7 +52,7 @@ import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { sketchPlaceScene } from "./sketch-place.ts";
-import { BodyCache, builtPieceFaces, followedDoc, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { measureView } from "./measure-view.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
@@ -1028,9 +1028,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return { op: "set_part", shape, width, depth, height };
   }
 
-  /** The body the boxes describe (`boxesPart`) in `doc` while it is a body that builds, else the last body; null with none. */
-  function boxesFeature(doc: DesignDocument): Feature | null {
-    const f = boxesPart === null ? undefined : doc.timeline.features.find((x) => x.id === boxesPart);
+  /** The body the boxes describe (`boxesPart`, or `part` for an edit that waited its turn) in `doc` while it is a body that builds, else the last body; null with none. */
+  function boxesFeature(doc: DesignDocument, part = boxesPart): Feature | null {
+    const f = part === null ? undefined : doc.timeline.features.find((x) => x.id === part);
     return f !== undefined && ownShape(f) && builds(doc, f) ? f : partFeature(doc);
   }
   /** The boxes and the Shape choice show `part`'s shape and sizes, and a size typed now changes it. */
@@ -1117,25 +1117,49 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const refused = refusedSize(kind);
       if (refused !== null) return panel.showError(refused);
     }
+    // The sizes as typed now, for the body the boxes describe now: an edit that waits its turn is this one, whatever is
+    // typed or selected while it waits.
+    const sizes = inputs.map((i) => i.value);
+    const part = boxesPart;
+    // A size or shape from the panel while an edit before it is still being settled (`settlesRunning`, #537) waits its turn,
+    // held in the history as the settle is: made on the settled design it is its own right step, and the step before
+    // is settled while it is still the present (recorded at once, that step stayed as first recorded for good, and
+    // Undo went back to a design nobody made). An edit that brings its design (`next`) was made from the design as it
+    // is now and can't wait: it is recorded at once, as before.
+    const waited = label !== undefined && next === undefined && (settlesRunning > 0 || editsWaiting.length > 0);
+    if (waited) await ctx.history.hold(new Promise<void>((go) => editsWaiting.push(go)));
+    let shown: Promise<void> | undefined;
+    try {
+      // Put away while it waited: the project is another Design's now, and this edit is dropped.
+      if (!(waited && putAway)) shown = makeEdit(kind, sizes, part, label, mergeKey, next);
+    } finally {
+      // Nothing of it left for the kernel to settle: the next edit waiting has its turn (else `settled` gives it).
+      if (waited && settlesRunning === 0) editsWaiting.shift()?.();
+    }
+    await shown;
+  }
+  /** `update`'s edit made, recorded and shown as far as asking the kernel to settle it; resolves when it is drawn. `sizes` are the boxes' as typed, `part` the body they describe. */
+  function makeEdit(kind: PartKind, sizes: string[], part: string | null, label?: string, mergeKey?: string, next?: DesignDocument): Promise<void> {
     viewport.clearOverlay(STL_OVERLAY); // it described the part before this edit
     // The panel edits the part's one solid feature, keeping the sketches; the
     // project holds it. An opened file's document is kept as it is until the
     // first edit. An extrude of a sketch has one size, its distance (the height box).
     const current = ctx.project.workspaces.design as DesignDocument | undefined;
     // The body the boxes describe (the selected one, else the last) is the one changed (bug hunt 2026-11-01).
-    const target = current && next === undefined && loaded === undefined && remounted === undefined ? boxesFeature(current) : null;
+    const target = current && next === undefined && loaded === undefined && remounted === undefined ? boxesFeature(current, part) : null;
     let doc: DesignDocument;
     if (next ?? loaded ?? remounted) doc = (next ?? loaded ?? remounted)!;
-    else if (kind === "sketch-extrude" && current) doc = setExtrudeDistance(current, Number(inputs[2].value), target?.id);
+    else if (kind === "sketch-extrude" && current) doc = setExtrudeDistance(current, Number(sizes[2]), target?.id);
     else if (!current) doc = documentFor(partCommand(), current);
     else {
-      const [w, d, h] = inputs.map((i) => Number(i.value));
+      const [w, d, h] = sizes.map(Number);
       const made = withPartAt(current, target, kind as ShapeKind, w, d, h);
       doc = made.doc;
       // A new body (a preset shape chosen for an extruded sketch, which has none to become) is added at the marker;
       // the selection stays as it was (nothing leaves it unannounced, refind.journey.ts), so the boxes go back to
-      // the selected body when it is not the new one, as the Feature section does.
-      boxesPart = made.id;
+      // the selected body when it is not the new one, as the Feature section does. Not when the boxes went to another
+      // body while this edit waited its turn.
+      if (boxesPart === part) boxesPart = made.id;
     }
     // No shape is the part's while the design has no body (24f4): the Shape choice says "—".
     panel.setShape(kind, partFeature(doc) === null ? null : kind);
@@ -1143,14 +1167,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const before = loaded ? null : (current ?? null);
     loaded = undefined;
     remounted = undefined;
-    saved = { doc, shape, sizes: inputs.map((i) => i.value), part: boxesPart };
+    saved = { doc, shape, sizes, part: boxesPart };
     syncGraph(ctx.graph, doc, before, ctx.changeNotes);
     const changed = ctx.project.workspaces.design !== doc;
     // A user's edit is settled once recorded (`settled`), from the design before the first edit not yet settled.
     if (changed && label !== undefined && current) unsettled ??= current;
     ctx.project.workspaces.design = doc;
     if (changed) ctx.projectChanged(label, mergeKey); // the shell autosaves (19c) and records the undo step (20b)
-    await show(doc, kind);
+    return show(doc, kind);
   }
 
   /**
@@ -1505,6 +1529,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       void update(step, undefined, next);
     },
     ask: (q, go) => deleting.ask(q, go),
+    hold: (work) => ctx.history.hold(work), // a delete the kernel still plans, held like an OK it still checks (#537)
     refuse: (message) => panel.showError(message),
     edit: (id) => openEdit(id),
     editSketch: (id) => openSketch(id),
@@ -1560,7 +1585,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * `doc`, the design just recorded, settled against `unsettled` and taken
    * into the edit's own undo step (the typing in a box still one step), or
    * `doc` itself: when nothing is unsettled, when it has no sketch on a face or following a body
-   * (nothing else a non-sketch edit changes is settled), or when the design
+   * and asks no extrude for another outline (`keptUnsettled`; nothing else
+   * a non-sketch edit changes is settled), or when the design
    * changed again while the kernel looked (the next edit settles from the
    * same `unsettled`).
    */
@@ -1568,11 +1594,29 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const from = unsettled;
     if (from === null || ctx.history.restoring()) return doc;
     // A sketch on a face, or one with points pinned to edges or edges projected (hunt A, 2026-11-04: a followed point
-    // can lose an origin sketch, whose extrude then keeps its last shape).
-    if (!doc.timeline.features.some((f) => placedOnBodies(doc, f))) {
+    // can lose an origin sketch, whose extrude then keeps its last shape); or an extrude given another region by Edit
+    // feature, which forgets the shape kept for the old one (timeline hunt 2026-11-11).
+    if (!doc.timeline.features.some((f) => placedOnBodies(doc, f)) && !keptUnsettled(from, doc)) {
       unsettled = null;
       return doc;
     }
+    // Held in the history until the kernel has answered and the step is settled (#537): Undo, Redo or a jump pressed
+    // meanwhile waits (main.ts), so it never puts back a step still as first recorded. Let go however it ends (taken
+    // in, failed, timed out, the design replaced or Design put away); then the next panel edit waiting has its turn.
+    settlesRunning++;
+    const kept = settledBy(from, doc);
+    const done = () => {
+      if (--settlesRunning === 0) editsWaiting.shift()?.();
+    };
+    void ctx.history.hold(kept.then(done, done));
+    return kept;
+  }
+  /** Edits recorded whose settle the kernel has not answered yet (`settled`: each held in the history). */
+  let settlesRunning = 0;
+  /** The panel edits waiting for them, oldest first, each let go by calling it (`update`). */
+  const editsWaiting: (() => void)[] = [];
+  /** `settled`'s work on the kernel: `doc` settled from `from` and taken into its undo step, or `doc` itself. */
+  async function settledBy(from: DesignDocument, doc: DesignDocument): Promise<DesignDocument> {
     let next: DesignDocument;
     try {
       next = await settleKept(kernel, from, doc, bodies);
@@ -2445,6 +2489,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       let got: Awaited<ReturnType<typeof changeDimension>>;
       try {
         got = await changeDimension(kernel, before, tool.sketch, id, value);
+        // Settled as a constraint is (`constrain`): an extrude whose outline the new size spoils keeps its last shape.
+        if (!("refused" in got)) got = { ...got, doc: await settleKept(kernel, before, got.doc, bodies) };
       } catch (e) {
         return sketchBox.showError(e instanceof Error ? e.message : String(e));
       }
@@ -2513,6 +2559,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       let got: Awaited<ReturnType<typeof addConstraint>>;
       try {
         got = await addConstraint(kernel, before, sketchId, add);
+        // Settled as a drag or a delete is before it is recorded (timeline hunt 2026-11-11): an extrude whose outline
+        // the solved sketch no longer makes keeps its last shape, and one whose outline it closes again forgets it.
+        if (!("refused" in got)) got = { ...got, doc: await settleKept(kernel, before, got.doc, bodies) };
       } catch (e) {
         return sketchBox.showError(e instanceof Error ? e.message : String(e));
       }
@@ -3486,13 +3535,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const item = designDoc().timeline.features.find((f) => f.id === id)!;
     if (isMoveItem(item)) return startMove(id);
     if (isCombineItem(item)) return startCombine(id);
+    // Asked before any open tool is left (hunt 11-11, E2: a Copy, which has nothing to edit, shut an open Move and lost
+    // what was typed in it before the refusal): an item with nothing to edit says why, in the menu's words, and nothing changes.
+    const off = editOff(item);
+    if (off !== null) return panel.showError(off);
+    const feature = editableFeature(designDoc(), id);
     leaveExtrude();
     leaveMove();
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     leaveExplode(); // a tool works on the bodies where they are
-    editBox.show(editableFeature(designDoc(), id));
-    editRegions = null;
+    editBox.show(feature);
+    leaveEditRegions(); // another item's, still offered: its body is drawn again
     editOps = null;
     // Extrude's Operation row (with Combine shown), as Fusion's Extrude edited.
     if (combineShown() && isSketchExtrude(item)) {
@@ -3508,6 +3562,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function leaveEdit() {
     editBox.hide();
     editOps = null;
+    leaveEditRegions();
+  }
+
+  /**
+   * Out of the regions Edit feature offers (48d4), by whichever way they are left: the panel closed, or opened on
+   * another item (hunt 11-11, A2: that way forgot them without drawing, so the edited extrude's body stayed out of the
+   * view and the regions shaded after Cancel). None is shaded, and the body left out while they were is drawn again.
+   */
+  function leaveEditRegions() {
     if (editRegions === null) return;
     editRegions = null;
     viewport.showExtrude(null);
@@ -3690,7 +3753,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (snapping && picked.length === 0) snapping = null;
     showMoveHint();
     moveBox.setBodies(edited ? heldLabels(moveBodies) : bodyLabels(picked));
-    moveBox.setPivot(startPivot(picked, lastScene));
+    // The pivot follows the bodies unless typed. A new Move's are where the scene shows them. An edited Move's, once its
+    // Centre of the bodies was pressed, are found where they were before it, as the button finds them (hunt 11-11, E1:
+    // read off the scene here, a click on a body or a rebuild put the pivot where the bodies end up).
+    if (id === null) moveBox.setPivot(startPivot(picked, lastScene));
+    else if (!moveBox.pivotTyped) void centreOfBodies();
     previewMove();
   }
 

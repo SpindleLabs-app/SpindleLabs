@@ -49,7 +49,7 @@ import { readDesignReference, resolveReference, sharedBy } from "./references.ts
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 import { HELD_STILL, turnedOver } from "./point-drag.ts";
-import { findRegion, refusalReason, regionCurveIds, regionName, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
+import { findRegion, refusalReason, regionCurveIds, regionName, regionNow, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
 import { leavesNoFace, missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
@@ -565,6 +565,17 @@ async function outlineOf(kernel: KernelCalls, content: KeptShape & Pick<Sketch, 
   }
 }
 
+/**
+ * Region `region` of a sketch as its points and curves make it now
+ * (regions.ts `regionNow`): `region` itself when it already says so, or
+ * when it is not found. Asked of the kernel as `outlineOf` asks, so a
+ * settle that asked for the outline already has the answer.
+ */
+async function regionToday(kernel: KernelCalls, content: KeptShape & Pick<Sketch, "projected">, region: RegionRef): Promise<RegionRef> {
+  const c = sketchCurves(content);
+  return regionNow((await kernel.call("sketch_regions", c.lines, c.circles, c.arcs)).regions, idsOf(content), region) ?? region;
+}
+
 /** A sketch's content as it is now, or undefined when it is gone. */
 const contentOf = (doc: DesignDocument, id: string): Sketch | undefined => doc.sketches.find((s) => s.id === id);
 
@@ -673,7 +684,9 @@ async function makesOutline(kernel: KernelCalls, doc: DesignDocument, sketchId: 
  * rule applied: an extrude whose sketch is lost in `after` keeps the
  * sketch's points and curves from `before` (if it made an outline there
  * and the extrude has no kept shape yet), and where it lay when not on XY;
- * one whose sketch makes an outline forgets its kept shape. From step 26c
+ * one whose sketch makes an outline forgets its kept shape, and saves its
+ * region (step 48) as the sketch makes it now, its curves and centroid
+ * (`regionNow`: the timeline hunt of 2026-11-11). From step 26c
  * a sketch on a face whose name finds no face or two in `after` holds the
  * placement it had in `before` (if it holds none yet), and forgets it once
  * its face is back; from 26f, each point pinned to its face's edge goes
@@ -722,11 +735,17 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
      */
     const keepLost = async (doc: DesignDocument): Promise<DesignDocument> => {
       const next: Record<string, KeptShape> = {};
+      // Each extrude whose sketch makes its region saves the region as it is now (regions.ts `regionNow`).
       const regions = new Map<string, RegionRef>();
       for (const f of doc.timeline.features) {
         if (!isSketchExtrude(f)) continue;
         const sketch = f.intent.parameters.sketch as string;
-        if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;
+        if (await makesOutline(kernel, doc, sketch, regionOf(f))) {
+          const region = regionOf(f);
+          const now = region && (await regionToday(kernel, contentOf(doc, sketch)!, region));
+          if (now !== undefined && now !== region) regions.set(f.id, now);
+          continue;
+        }
         const had = keptOf(after, f);
         const was = contentOf(before, sketch);
         // Issue #541: an extrude of the one outline whose outline is still there whole, as a region's outside, takes that region.
@@ -809,6 +828,31 @@ const follows = (content: Sketch | undefined): boolean => content?.pins !== unde
 
 /** Whether sketch item `f` lies on or follows a body: on a face (26c), or with points pinned to edges (27c) or edges projected (27d). */
 export const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && follows(doc.sketches.find((s) => s.id === f.id)));
+
+/**
+ * Whether settling an edit from `before` (a settled design) to `after` can
+ * change what an extrude keeps (`settleKept`) in a design with no sketch
+ * placed on bodies: only when an extrude asks for another outline than
+ * before, because it names another region (Edit feature's region pick,
+ * timeline hunt 2026-11-11: the sketch makes the new region, so the shape
+ * kept for the old one is forgotten) or its sketch's points or curves
+ * changed. A new extrude of an unchanged sketch asks nothing new; one whose
+ * sketch is gone and that keeps a shape already is settled (a delete settles
+ * itself before it is recorded). Asks the kernel nothing.
+ */
+export function keptUnsettled(before: DesignDocument, after: DesignDocument): boolean {
+  const drawn = (doc: DesignDocument, id: string) => doc.sketches.find((s) => s.id === id);
+  const was = new Map(before.timeline.features.map((f) => [f.id, f]));
+  return after.timeline.features.some((f) => {
+    if (!isSketchExtrude(f)) return false;
+    const old = was.get(f.id);
+    if (old !== undefined && JSON.stringify(regionOf(old)) !== JSON.stringify(regionOf(f))) return true;
+    const now = drawn(after, f.intent.parameters.sketch as string);
+    const then = drawn(before, (old ?? f).intent.parameters.sketch as string);
+    if (now === then || (now !== undefined && then !== undefined && now.points === then.points && now.curves === then.curves && now.projected === then.projected)) return false;
+    return now !== undefined || keptOf(after, f) === undefined;
+  });
+}
 
 /**
  * Every item of `doc` up to its last sketch on a face or with pins,
