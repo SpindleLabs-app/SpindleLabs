@@ -15,19 +15,21 @@ import { outline } from "./profiles.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { bodyOf, findInScene, joinBodies, sceneHit, shownBodies, shownReference, type Scene } from "./scene.ts";
 import { referenceLabel } from "./selection.ts";
-import { sketchOutline, sketchPlane } from "./sketch.ts";
+import { sketchOutline, sketchPlane, sketchSide } from "./sketch.ts";
 import { buildSpec } from "./spec.ts";
 
 /** Anything in Design that is a closed 2D shape on a plane; a sketch's outline comes from the kernel, so it may be a promise. */
 export interface OutlineSource extends Producible {
   plane: Plane;
+  /** −1 when it is drawn and seen against the plane's normal (a sketch on a back or bottom face, `sketchSide`); left out otherwise. */
+  side?: -1;
   outline(): Outline | Promise<Outline>;
 }
 
 /** Outline of any OutlineSource: profiles and sketches. */
 export const outlineProducer: Producer = async (object) => {
   const source = object as OutlineSource;
-  return { kind: "outline", plane: source.plane, outline: await source.outline() };
+  return { kind: "outline", plane: source.plane, ...(source.side === -1 && { side: -1 as const }), outline: await source.outline() };
 };
 
 /**
@@ -88,6 +90,7 @@ export function designObjects(document: DesignDocument, kernel: KernelCalls): (O
     type: "design.sketch",
     id: s.id,
     plane: sketchPlane(document, s.id),
+    ...(sketchSide(document, s.id) === -1 && { side: -1 as const }),
     outline: () => sketchOutline(kernel, document, s.id),
   }));
   // Every body shown, not only the part's (25c1); a design with no body (24f4) offers no solid.
