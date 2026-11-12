@@ -494,3 +494,24 @@ test("a part that sits wrongly is marked and says why; with no one listening for
   near(matrix()[1], 226, "the view slid");
   assert.equal(part("s1").getAttribute("transform"), null);
 });
+
+test("a part being dragged stays in the hand through a redraw that left it as it was; a redraw that moved it ends the drag", () => {
+  const { view, fireOn, part, heard } = withHandlers();
+  const other = { id: "s2", label: "Sketch 2", d: "M100 -3L140 -3L140 -33L100 -33Z", box: { minX: 100, minY: 3, maxX: 140, maxY: 33 } };
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 300, clientY: 600 }); // (63, 31) mm, as worked above
+  // The page draws again (an answer about other parts came in): s1 itself is as it was.
+  view.show({ bed: SCENE.bed, parts: [RECT, { ...other, warn: "overlaps Sketch 3" }] }, false);
+  assert.equal(part("s1").getAttribute("transform"), "translate(63 -31)");
+  assert.equal(view.element.dataset.moving, "s1");
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 300, clientY: 600 });
+  assert.deepEqual(heard.splice(0), [["move", "s1", 63, 31, false]]);
+  // The scene moves the part under the hand (an Undo, a typed number): the drag is over and tells nobody.
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 300, clientY: 600 });
+  view.show({ bed: SCENE.bed, parts: [{ ...RECT, d: "M13 -3L53 -3L53 -33L13 -33Z", box: { minX: 13, minY: 3, maxX: 53, maxY: 33 } }] }, false);
+  assert.equal(part("s1").getAttribute("transform"), null);
+  assert.equal(view.element.dataset.moving, undefined);
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 300, clientY: 600 });
+  assert.deepEqual(heard, []);
+});
