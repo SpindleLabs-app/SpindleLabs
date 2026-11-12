@@ -18,7 +18,7 @@
 // anywhere, so one reaching past the bed's edge is said so in words and
 // marked on the bed, never moved back silently. Styles: src/styles/laser-page.css.
 
-import type { ListedObject, MountedWorkspace, Outline, RepresentationRegistry, WorkspaceContext } from "@fission/core";
+import { NewerFormatError, type ListedObject, type MountedWorkspace, type Outline, type RepresentationRegistry, type WorkspaceContext } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
 import { sheetDxf } from "./dxf.ts";
 import { createFlatView, type FlatScene } from "./flat-view.ts";
@@ -33,7 +33,7 @@ export const DXF_KIND: SaveKind = { description: "DXF drawing for a laser cutter
 
 /** What the project keeps for Laser: its own choices only, never Design's shapes. */
 export interface LaserData {
-  version: 1;
+  version: 2;
   bed: Bed;
   gap: number;
   /** The sheet's thickness, mm: kept for what engraving focuses on and joints are sized by later; nothing reads it yet, so the page has no box for it. */
@@ -44,9 +44,34 @@ export interface LaserData {
   placed: Record<string, Placement>;
 }
 
-export const defaultLaserData = (): LaserData => ({ version: 1, bed: { ...DEFAULT_BED }, gap: DEFAULT_GAP, thickness: DEFAULT_THICKNESS, off: [], placed: {} });
+/**
+ * The version of Laser's data this build writes. 1: bed, gap, thickness, off. 2: `placed` (parts placed by hand, L1b1).
+ * A change to what the data holds takes the next number and a step in `readLaserProjectData`, so a build from before
+ * it refuses the data instead of storing it again without the new part.
+ */
+export const LASER_DATA_VERSION = 2;
 
-/** The project's Laser data, read defensively: anything missing or not usable falls back to the default, never throws. */
+export const defaultLaserData = (): LaserData => ({ version: LASER_DATA_VERSION, bed: { ...DEFAULT_BED }, gap: DEFAULT_GAP, thickness: DEFAULT_THICKNESS, off: [], placed: {} });
+
+/**
+ * Laser's part of a project as it is opened (the plugin's `readData`, asked by core's `projectFromJson`): brought up to
+ * the version this build writes, one step at a time, with everything else it holds kept. Data from a later Laser is
+ * refused as newer (core's `NewerFormatError`: the project is then kept for a build that reads it, never stored again
+ * with the unknown parts dropped); data that is not Laser's is refused in words.
+ */
+export function readLaserProjectData(data: unknown): unknown {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) throw new Error("Laser data must be an object");
+  let d = data as Record<string, unknown>;
+  const v = d.version;
+  if (typeof v !== "number") throw new Error("Laser data has no version");
+  if (!Number.isInteger(v) || v < 1) throw new Error(`Laser data version ${v} is not one this SpindleLabs reads`);
+  if (v > LASER_DATA_VERSION) throw new NewerFormatError(`it was saved by a newer SpindleLabs (Laser data version ${v}; this one reads up to ${LASER_DATA_VERSION})`);
+  // 1 → 2: parts placed by hand arrive (L1b1). Version 1 had none.
+  if (d.version === 1) d = { ...d, version: 2, placed: {} };
+  return d;
+}
+
+/** The project's Laser data as the page uses it, read defensively: anything missing or not usable falls back to the default, never throws. */
 export function readLaserData(data: unknown): LaserData {
   const out = defaultLaserData();
   if (typeof data !== "object" || data === null) return out;
@@ -145,9 +170,11 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
   let picked: string | null = null;
 
   const data = () => readLaserData(ctx.project.workspaces.laser);
-  const store = (next: LaserData, label: string) => {
-    ctx.project.workspaces.laser = next;
-    ctx.projectChanged(label);
+  const store = (next: LaserData, label: string, mergeKey?: string) => {
+    // Over what the project holds, so anything there beside the fields this page knows stays in the project.
+    const held = ctx.project.workspaces.laser;
+    ctx.project.workspaces.laser = typeof held === "object" && held !== null && !Array.isArray(held) ? { ...held, ...next } : next;
+    ctx.projectChanged(label, mergeKey);
   };
 
   // The parts, in the browser.
@@ -235,8 +262,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
     const placed: Record<string, Placement> = { ...now.placed };
     for (const q of layout.placed) if (!Object.hasOwn(placed, q.id)) placed[q.id] = { x: q.x, y: q.y, angle: q.angle };
     placed[p.id] = { x: at.x, y: at.y, angle: normalAngle(at.angle) };
-    ctx.project.workspaces.laser = { ...now, placed };
-    ctx.projectChanged(label, mergeKey);
+    store({ ...now, placed }, label, mergeKey);
     draw(false);
     return true;
   };

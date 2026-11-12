@@ -29,9 +29,9 @@ test("readParts reads every shape as an outline, and one that can't be read says
 });
 
 test("the saved choices read back; anything missing or unusable falls back to the default and never throws", () => {
-  assert.deepEqual(readLaserData({ version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {} });
+  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {} });
   for (const bad of [undefined, null, 7, "x", {}, { bed: { width: -1, height: 5 } }, { gap: 1e9 }, { thickness: 0 }, { thickness: 51 }])
-    assert.deepEqual(readLaserData(bad), { version: 1, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {} }, JSON.stringify(bad));
+    assert.deepEqual(readLaserData(bad), { version: 2, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {} }, JSON.stringify(bad));
   assert.deepEqual(readLaserData({ off: ["a", 3, null, "b"] }).off, ["a", "b"]);
 });
 
@@ -199,14 +199,32 @@ test("a bed size typed in is kept; one that can't be used is refused in words an
 });
 
 test("the sheet thickness has no box while nothing uses it, and a thickness a project already holds is kept through a change", async () => {
-  const { ctx, project, mounted } = mount(undefined, { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: [] });
+  const { ctx, project, mounted } = mount(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: [], placed: {} });
   await mounted.ready;
   assert.deepEqual([...ctx.properties.querySelectorAll("input")].map((i) => i.name), ["width", "height", "gap", "x", "y", "angle"]); // the bed's, and the picked part's (L1b)
   const width = ctx.properties.querySelector<HTMLInputElement>('input[name="width"]')!;
   assert.equal(width.value, "300");
   width.value = "310";
   width.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
-  assert.deepEqual(project.workspaces.laser, { version: 1, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {} });
+  assert.deepEqual(project.workspaces.laser, { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {} });
+  mounted.unmount();
+});
+
+test("a change in the page keeps what the project's Laser data holds beside the fields the page knows (lost-work hunt, 2026-11-12)", async () => {
+  // A bed change, a part moved and a part turned off each store the data again: `note` (a field this page has no name
+  // for) must come through all three.
+  const { ctx, project, type, mounted } = await withPicked(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
+  const held = () => project.workspaces.laser as Record<string, unknown>;
+  type("width", "310");
+  assert.deepEqual(held(), { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
+  // Sketch b (picked) typed to X 100: the first hand move, which also fixes Sketch a where the rows put it, (2, 2).
+  type("x", "100");
+  assert.deepEqual(held(), { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept" });
+  const box = ctx.browser.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  box.checked = false;
+  box.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change", { bubbles: true }));
+  assert.equal(held().note, "kept");
+  assert.deepEqual(held().off, ["a"]);
   mounted.unmount();
 });
 
@@ -278,7 +296,7 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
 // Found by the review of L1a2 (each failed before its fix).
 
 test("before the parts have been read the view already shows the project's own bed, empty, and never a made-up one", async () => {
-  const { element, mounted } = mount(undefined, { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [] });
+  const { element, mounted } = mount(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [], placed: {} });
   const names = () => [...element.querySelectorAll("text.laser-flat-bed-name")].map((t) => t.textContent);
   // Straight after mounting: the read of Design's shapes has not answered yet.
   assert.deepEqual(names(), ["Bed 300 × 200 mm"]);
@@ -477,7 +495,7 @@ test("hand-worked: Back in the rows gives one part back to the rows, round the p
 test("places a project holds are used as they are, and ones that are not usable are dropped without a word", async () => {
   assert.deepEqual(readLaserData({ placed: { a: { x: 1, y: 2, angle: 450 }, b: { x: "1", y: 2 }, c: null, d: { x: 1e9, y: 0 }, e: { x: 5, y: 6 } } }).placed, { a: { x: 1, y: 2, angle: 90 }, e: { x: 5, y: 6, angle: 0 } });
   assert.deepEqual(readLaserData({ placed: [1, 2] }).placed, {});
-  const { drawn, mounted } = mount(undefined, { version: 1, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: { b: { x: 200, y: 50, angle: 0 } } });
+  const { drawn, mounted } = mount(undefined, { version: 2, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: { b: { x: 200, y: 50, angle: 0 } } });
   await mounted.ready;
   // Sketch a in the rows at (3, 3); Sketch b where it was put, (200, 50).
   assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z", "M200 -50L230 -50L230 -60L200 -60Z"]);
