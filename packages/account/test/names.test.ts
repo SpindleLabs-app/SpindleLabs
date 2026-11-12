@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import type { AuthClient } from "../src/auth.ts";
 import { NAME_ANSWERS, NAME_LIMITS, myNameFrom, nameDate, nameWords, namesApi } from "../src/names.ts";
 import { fakeNames } from "./fake-names.ts";
+import { repoFile } from "./repo-file.ts";
 
 const api = (s: ReturnType<typeof fakeNames>, user: string | null) => namesApi(s.as(user) as AuthClient);
 const DAY = 86_400_000;
@@ -74,7 +75,7 @@ test("every refusal has words, and too-soon names the day", () => {
 });
 
 test("the limits match the migration", () => {
-  const sql = readFileSync(new URL("../../../supabase/migrations/20261111130000_display_names.sql", import.meta.url), "utf8");
+  const sql = readFileSync(repoFile("supabase/migrations/20261111130000_display_names.sql"), "utf8");
   assert.match(sql, new RegExp(`'min_length', ${NAME_LIMITS.minLength}, 'max_length', ${NAME_LIMITS.maxLength}, 'change_gap_seconds', ${NAME_LIMITS.changeGapSeconds}`));
   for (const a of NAME_ANSWERS) assert.ok(sql.includes(`'${a}'`), a);
 });

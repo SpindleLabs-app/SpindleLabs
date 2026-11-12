@@ -210,6 +210,19 @@ class Plan(unittest.TestCase):
         self.assertEqual(plan(self.FOUND, [fixed], "claude/x"), [("comment", self.K, 7)])
         self.assertEqual(plan(self.FOUND, [issue(7, self.K, "CLOSED", "NOT_PLANNED")], "main"), [])
 
+    def test_a_run_on_code_older_than_the_close_does_not_reopen(self):
+        # SL #430 and #484 (11-11): runs that tested commits from before the fix had merged reopened the fixed
+        # issues. A closed-as-fixed kind seen on main on such a commit only gets a comment ("old").
+        fixed = issue(7, self.K, "CLOSED", "COMPLETED")
+        self.assertEqual(plan(self.FOUND, [fixed], "main", predates=lambda i: True), [("old", self.K, 7)])
+        self.assertEqual(plan(self.FOUND, [fixed], "main", predates=lambda i: False), [("reopen", self.K, 7)])
+        # Only closed-as-fixed issues are asked about.
+        asked = []
+        plan(self.FOUND, [issue(7, self.K)], "main", predates=lambda i: asked.append(i) or True)
+        self.assertEqual(asked, [])
+        _, body = texts("old", self.K, [("1", "e")], "RUN", "abc1234", "main")
+        self.assertIn("older than this issue's closing", body)
+
     def test_matches_by_marker_not_title(self):
         other = issue(3, "something else")
         self.assertEqual(plan(self.FOUND, [other], "main"), [("create", self.K, None)])
@@ -619,6 +632,46 @@ class Locking(unittest.TestCase):
         self.assertEqual(calls[-1], ("issue", "lock", "7"))
         calls, _ = self.run_with([issue(7, self.K, "CLOSED", "COMPLETED")])
         self.assertEqual([c[:2] for c in calls[-3:]], [("issue", "reopen"), ("issue", "comment"), ("issue", "lock")])
+
+    def run_closed(self, status, env):
+        import file_issues
+        asked = []
+
+        def fake_code_api(*args):
+            asked.append(args)
+            if "commits?" in args[0]:
+                return json.dumps([{"sha": "m" * 40}])
+            if status == "fails":
+                raise file_issues.subprocess.CalledProcessError(1, "gh", stderr="no")
+            return json.dumps({"status": status})
+        saved, saved_env = file_issues.code_api, dict(os.environ)
+        file_issues.code_api = fake_code_api
+        os.environ.update(env)
+        try:
+            closed = dict(issue(7, self.K, "CLOSED", "COMPLETED"), closedAt="2026-11-11T02:46:10Z")
+            calls, logs = self.run_with([closed])
+        finally:
+            file_issues.code_api = saved
+            os.environ.clear()
+            os.environ.update(saved_env)
+        return calls, asked
+
+    def test_the_tested_commits_age_decides_a_reopen(self):
+        # Main's commit at the close (commits?until=closedAt) against the tested one (compare): "behind" means the run
+        # tested older code, so comment only; "ahead"/"identical" contain the fix, so reopen.
+        env = {"CODE_REPO": "o/code"}
+        calls, asked = self.run_closed("behind", env)
+        self.assertNotIn(("issue", "reopen", "7"), calls)
+        self.assertEqual([c[:2] for c in calls[-2:]], [("issue", "comment"), ("issue", "lock")])
+        self.assertEqual(asked[0], ("repos/o/code/commits?sha=main&until=2026-11-11T02:46:10Z&per_page=1",))
+        self.assertEqual(asked[1], ("repos/o/code/compare/" + "m" * 40 + "...c",))
+        for status in ("ahead", "identical", "fails"):
+            calls, _ = self.run_closed(status, env)
+            self.assertIn(("issue", "reopen", "7"), calls, status)
+        # No CODE_REPO (a workflow not set up for it): reopen as before, asking nothing.
+        calls, asked = self.run_closed("behind", {})
+        self.assertIn(("issue", "reopen", "7"), calls)
+        self.assertEqual(asked, [])
 
     def test_one_refused_gh_call_skips_only_its_kind_and_the_run_ends_red(self):
         # Weak-spot hunt 10-29: the first refused `gh issue create` stopped the whole night's filing, and the job stayed

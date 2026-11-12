@@ -245,7 +245,9 @@ export class ViewportView {
       // Extrude (UX1b): a click picks the closed outline under the pointer, or none.
       if (this.host.extruding()) {
         const profile = this.profileAt(e.clientX, e.clientY);
-        return this.host.extrudePointer({ kind: "pick", profile, face: profile === null ? this.faceAt(e.clientX, e.clientY) : null });
+        // Ctrl, Cmd or Shift held adds or takes away a profile (several extruded at once), as Fusion's Ctrl-click.
+        const add = e.ctrlKey || e.metaKey || e.shiftKey;
+        return this.host.extrudePointer({ kind: "pick", profile, face: profile === null ? this.faceAt(e.clientX, e.clientY) : null, ...(add ? { add: true as const } : {}) });
       }
       // Sketching: a click places a point on the sketch's plane, it picks nothing.
       const plane = this.host.sketchPlane();
@@ -1527,7 +1529,7 @@ export class Viewer implements SharedViewport {
    */
   showExtrude(show: ExtrudeShow | null) {
     this.extrude.show(show);
-    const said = { extrudeProfiles: show?.profiles.map((p) => p.id).join(" "), extrudeChosen: show?.chosen ?? undefined, extrudePreview: show ? String(show.preview !== null) : undefined, extrudeDistance: show?.arrow ? String(show.arrow.distance) : undefined };
+    const said = { extrudeProfiles: show?.profiles.map((p) => p.id).join(" "), extrudeChosen: show?.chosen ?? undefined, extrudeAlso: show?.alsoChosen?.length ? show.alsoChosen.join(" ") : undefined, extrudePreview: show ? String(show.preview !== null) : undefined, extrudeDistance: show?.arrow ? String(show.arrow.distance) : undefined };
     for (const [key, value] of Object.entries(said)) {
       if (value === undefined) delete this.element.dataset[key];
       else this.element.dataset[key] = value;

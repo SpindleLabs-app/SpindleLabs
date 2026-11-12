@@ -80,8 +80,10 @@ function deletedItem(doc: DesignDocument, id: string): DesignDocument {
   const pieces = (doc.hidden ?? []).filter((h) => isPiece(h) && bodyItem(h) === id);
   const left = withoutHidden(next, id, bodyIdOf(id), ...pieces);
   const { kept: old, ...rest } = left;
-  if (old === undefined || !Object.hasOwn(old, id)) return { ...left, profiles, sketches };
-  const { [id]: _, ...kept } = old;
+  // Its own kept shape, and (version 18) those of its other profiles' sketches, "<id>/<sketch>" (SL #611 C5).
+  const mine = (k: string) => k === id || k.startsWith(`${id}/`);
+  if (old === undefined || !Object.keys(old).some(mine)) return { ...left, profiles, sketches };
+  const kept = Object.fromEntries(Object.entries(old).filter(([k]) => !mine(k)));
   return Object.keys(kept).length === 0 ? { ...rest, profiles, sketches } : { ...rest, profiles, sketches, kept };
 }
 
