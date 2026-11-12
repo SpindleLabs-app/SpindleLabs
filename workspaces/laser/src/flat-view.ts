@@ -459,10 +459,15 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     detach,
     show(next, frame) {
       const resized = next.bed.width !== scene.bed.width || next.bed.height !== scene.bed.height;
+      // A part being dragged goes on being dragged through a redraw that left it as it was (a late answer about other
+      // parts); if the scene moved or dropped it, the drag is over.
+      const held = press?.moved && press.drags ? press.part : null;
+      const same = held !== null && scene.parts.find((p) => p.id === held)?.d === next.parts.find((p) => p.id === held)?.d;
       scene = next;
       shown = true;
-      if (press?.part && press.moved) endPress(); // the scene changed under a part being dragged: the drag is over
+      if (held !== null && !same) endPress();
       drawScene();
+      if (held !== null && same && press) partPath(held)?.setAttribute("transform", `translate(${press.by[0]} ${-press.by[1]})`);
       if (frame || fitted) return fit(); // a view the person has not moved keeps the whole bed in sight, clear of the parts list as it grows
       if (resized) view = zoomAt(view, scene.bed, measure(), { x: 0, y: 0 }, 1); // the same view, kept within the new bed's limits
       draw();

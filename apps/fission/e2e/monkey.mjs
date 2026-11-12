@@ -49,7 +49,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { switchTo } from "./start.mjs";
-import { summaryShown, volumeShown } from "./monkey-units.mjs";
+import { shownNumber, summaryShown, volumeShown } from "./monkey-units.mjs";
 import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, settledText, shrinkFailure, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
@@ -555,7 +555,7 @@ async function act(s, a) {
         if (!got.stale) {
           // A Combine's target and pieces are what the kernel made of them, which the file alone can't say.
           const want = combined ? null : volumeShown(modelVolume(design, f), got.unit);
-          const volume = Number(got.volume.replace(/[^\d.]/g, ""));
+          const volume = shownNumber(got.volume); // powers of ten too ("9.15 × 10⁻⁴ in³", issues #473, #480, #481)
           // The panel rounds to a few figures (fmt in properties.ts); 0.5% is far inside the gap between any two different bodies the monkey makes, and far outside the kernel's 1e-6 relative volume error.
           if (want !== null && !(Math.abs(volume - want) <= 0.005 * want)) wrong.push(`with ${name} selected the Body panel shows ${got.volume}, but that body is ${want.toPrecision(6)} ${got.unit}³`);
           // With every body selected (one body alone) the app lights none of them on purpose (scene.ts), so the count is checked from two bodies up.

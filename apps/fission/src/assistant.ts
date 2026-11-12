@@ -424,7 +424,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here || cut;
     $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here || cut;
     $("ai-ask-note").textContent = !here
-      ? "The assistant can change Design's part; other workspaces get their AI features when they are built."
+      ? "The assistant can change DesignLab's part; other workspaces get their AI features when they are built."
       : !s
         ? "Choose a provider in Settings below to ask."
         : cut
@@ -436,7 +436,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     const title = workspaceTitle;
     $("ai-features").innerHTML = `${features.length ? `<h3>Planned in ${escape(title)}</h3>${list(features)}` : ""}<h3>Planned across the project</h3>${list(AI_FEATURES.suite)}`;
   }
-  let workspaceTitle = "Design";
+  let workspaceTitle = "DesignLab";
   addEventListener("online", () => render());
   addEventListener("offline", () => render());
 
@@ -675,7 +675,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);
       const design = host.design();
-      if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
+      if (!design?.run) return say("DesignLab isn't open, so nothing was changed.", true);
       // What only the kernel can judge (an extrude's outline) is asked before the preview, so a change that can't be made is never offered (AI7c).
       const problem = await design.check?.(answer.commands);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);

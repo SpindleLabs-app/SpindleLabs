@@ -174,16 +174,16 @@ test("an opened workspace's data is saved again and can be replaced or dropped",
 
 test("every workspace's name as people read it", () => {
   const ids = ["design", "render", "simulate", "manufacture", "laser", "slice", "circuit", "vector", "image", "layout"] as const;
-  assert.deepEqual(ids.map(workspaceName), ["Design", "Render", "Simulate", "Manufacture", "Laser", "Slice", "Circuit", "Vector", "Image", "Layout"]);
+  assert.deepEqual(ids.map(workspaceName), ["DesignLab", "RenderLab", "TestLab", "CNCLab", "LaserLab", "SliceLab", "PCBLab", "VectorLab", "ImageLab", "LayoutLab"]);
 });
 
 test("provenance from one origin has no 'applied to'; from three, the later two are joined by ', then '", () => {
   const self = { workspace: "slice" as const, id: "p", label: "Plate 1" };
   const o = (workspace: "vector" | "design" | "image", label: string) => ({ workspace, id: label, label });
-  assert.equal(describeProvenance({ self, from: [o("design", "Body 2")] }), "Plate 1 comes from Body 2 in Design.");
+  assert.equal(describeProvenance({ self, from: [o("design", "Body 2")] }), "Plate 1 comes from Body 2 in DesignLab.");
   assert.equal(
     describeProvenance({ self, from: [o("image", "Photo"), o("vector", "Trace"), o("design", "Relief")] }),
-    "Plate 1 comes from Photo in Image, applied to Trace in Vector, then Relief in Design.",
+    "Plate 1 comes from Photo in ImageLab, applied to Trace in VectorLab, then Relief in DesignLab.",
   );
 });
 

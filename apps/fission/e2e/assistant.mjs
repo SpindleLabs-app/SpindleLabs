@@ -1032,8 +1032,8 @@ try {
       await page.waitForFunction(() => document.querySelector("#ai-model-pick").value === "qwen2.5:1.5b");
       await switchTo(page, "laser");
       assert.equal(await page.isDisabled("#ai-ask-button"), true);
-      assert.match(await page.textContent("#ai-ask-note"), /can change Design's part/);
-      assert.match(await page.textContent("#assistant"), /Planned in Laser.*finger-joint boxes/s);
+      assert.match(await page.textContent("#ai-ask-note"), /can change DesignLab's part/);
+      assert.match(await page.textContent("#assistant"), /Planned in LaserLab.*finger-joint boxes/s);
     } finally {
       await page.close();
     }

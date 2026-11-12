@@ -103,7 +103,7 @@ for (const fault of ["open fails", "read fails", "open never answers"]) {
     await startWithBox(p);
     assert.match(await saved(p), /"width": ?40\b/);
     // Nothing pretends to autosave.
-    assert.equal(await p.textContent("#save-status"), "");
+    assert.equal(await p.textContent("#save-status"), "Not saved: nothing is kept in this browser. Use Save to keep your work as a file."); // said for as long as it is so (issue #627 item 4); it was empty
     // The kept project was never lost: storage well again, it opens.
     await healthyVisit(p);
     await p.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³", null, { timeout: 15_000 });
