@@ -7,10 +7,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
+import { addConstraint, changeDimension, squaredRectangle } from "../src/constraints.ts";
 import { toggleConstruction } from "../src/construction.ts";
 import { partDocument, type DesignDocument } from "../src/document.ts";
 import { sketchRegions } from "../src/regions.ts";
-import { addSketch, drawRectangle } from "../src/sketch.ts";
+import { addSketch, drawLine, drawRectangle } from "../src/sketch.ts";
 import { clickAt, SAME_LINE, startTool } from "../src/sketch-tool.ts";
 
 const kernel = nodeKernel();
@@ -70,4 +71,52 @@ test("hand-worked (hunt A2c): a line along a construction line's two points is d
   assert.equal(s.curves.filter((c) => c.kind === "line" && c.construction !== true).length, 1);
   // Now an ordinary line joins (0, 0) and (10, 0): a second one there would break the outline.
   assert.equal(clicks(got.doc, "line", g.id, [[0, 0], [10, 0]]).note, SAME_LINE);
+});
+
+/** A Rectangle-tool rectangle (0, 0)–(30, 20), squared: its sides chain (0,0) → (30,0) → (30,20) → (0,20) → (0,0). */
+function rect() {
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const r = drawRectangle(s.doc, s.id, [0, 0], [30, 20]);
+  return { doc: squaredRectangle(r.doc, s.id, r.ids), id: s.id, ids: r.ids };
+}
+const corners = (d: DesignDocument, id: string) => sk(d, id).points.map((q) => [q.x, q.y]);
+
+// Hand-worked (hunt B2): the corner clicked first, (0, 0), stays wherever a side is sized; the side's other end, and the
+// far side with it (Horizontal and Vertical keep it a rectangle), moves.
+// - bottom (0,0)→(30,0) sized 50: (30,0) and (30,20) go to x = 50.
+// - right (30,0)→(30,20) sized 35: its end next to the first corner's side, (30,0), stays; (30,20) and (0,20) go to y = 35.
+// - top (30,20)→(0,20) sized 60: the drawn start (30,20) used to be held, pushing (0,20) and (0,0) to x = −30. Its end on
+//   the first corner's side, (0,20), stays; (30,20) and (30,0) go to x = 60.
+// - left (0,20)→(0,0) sized 40: (0,0) stays (it used to go to y = −20); (0,20) and (30,20) go to y = 40.
+for (const [side, name, value, want] of [
+  [0, "bottom", 50, [[0, 0], [50, 0], [50, 20], [0, 20]]],
+  [1, "right", 35, [[0, 0], [30, 0], [30, 35], [0, 35]]],
+  [2, "top", 60, [[0, 0], [60, 0], [60, 20], [0, 20]]],
+  [3, "left", 40, [[0, 0], [30, 0], [30, 40], [0, 40]]],
+] as const) {
+  test(`hand-worked (hunt B2): a rectangle from the origin keeps its first corner when its ${name} side is sized ${value}, and when the size is changed`, async () => {
+    const { doc, id, ids } = rect();
+    const line = sk(doc, id).curves.find((c) => c.id === ids[side]) as { start: string; end: string };
+    const got = await addConstraint(kernel, doc, id, { kind: "distance", a: line.start, b: line.end, value });
+    assert.ok("doc" in got, "refused" in got ? got.refused : "");
+    assert.deepEqual(corners(got.doc, id), want);
+    // Changed from its label to 10 more: the first corner still stays, the same side grows by 10.
+    const changed = await changeDimension(kernel, got.doc, id, got.id, value + 10);
+    assert.ok("doc" in changed);
+    const grown = want.map(([x, y]) => (side % 2 === 0 ? [x === 0 ? 0 : x + 10, y] : [x, y === 0 ? 0 : y + 10]));
+    assert.deepEqual(corners(changed.doc, id), grown);
+  });
+}
+
+test("hand-worked: a lone line sized keeps its start, the point drawn first, either way the size is picked", async () => {
+  // Line (2, 1) → (5, 5), 5 long; sized 10 along the same way: (2, 1) + 10·(3, 4)/5 = (8, 9). Picked end first (a = end), still.
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const l = drawLine(s.doc, s.id, [2, 1], [5, 5]);
+  const line = sk(l.doc, s.id).curves.find((c) => c.id === l.id) as { start: string; end: string };
+  for (const [a, b] of [[line.start, line.end], [line.end, line.start]]) {
+    const got = await addConstraint(kernel, l.doc, s.id, { kind: "distance", a, b, value: 10 });
+    assert.ok("doc" in got);
+    const p = corners(got.doc, s.id).map(([x, y]) => [Math.round(x * 1e9) / 1e9, Math.round(y * 1e9) / 1e9]);
+    assert.deepEqual(p, [[2, 1], [8, 9]]);
+  }
 });
