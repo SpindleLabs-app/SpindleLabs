@@ -1,0 +1,11 @@
+/* The open project's name in the top bar's empty middle (project-name.ts). From 900 px it takes the room the bar has
+   left (the workspace button keeps its own width, theme.css), centred in it (at most 360 px wide, its auto margins taking the rest), which puts it near the bar's middle; a long
+   name ends in "…". Plain text until pointed at or focused, then a box. From 900 to 1199 px it still holds that room,
+   so the bar's right end stays at the right, but is not shown: with Sign in and the wider fonts of some systems there is
+   too little room left for a name to read. Under 900 px it is left out (the design tabs and File > Projects still name
+   the project). */
+.project-name { flex: 1 1 0; min-width: 0; max-width: 360px; margin: 0 auto; height: 32px; padding: 0 10px; box-sizing: border-box; font: inherit; font-size: 14px; font-weight: 600; text-align: center; text-overflow: ellipsis; color: var(--text-body); background: transparent; border: 1px solid transparent; border-radius: var(--look-radius-s); }
+.project-name:hover { border-color: var(--line); }
+.project-name:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; background: var(--page); text-align: left; }
+@media (max-width: 1199px) { .project-name { visibility: hidden; } }
+@media (max-width: 899px) { .project-name { display: none; } }

@@ -19,7 +19,7 @@ import "@fission/ui/theme.css";
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -1486,6 +1486,19 @@ $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
 showUndoRedo();
+// The open project's name in the top bar's empty middle (UI audit 2026-11-12, Ben's choice A), renamed in place: a
+// rename is an undo step and is stored like any edit, and the design tabs follow it. Shown again after every change to
+// the history (an undo, another project opened). Phones leave it out (@fission/ui styles/project-name.css).
+const nameBox = projectNameBox(document, {
+  name: () => ctx.project.name,
+  rename: (name) => {
+    ctx.project.name = name;
+    projectChanged("Rename project");
+  },
+  maxLength: MAX_PROJECT_NAME,
+});
+$("workspaces").after(nameBox.element);
+ctx.history.onChange(nameBox.refresh);
 // History: every step kept, to go back (or forward) to any of them at once. Waits for an OK the kernel still checks
 // like Undo and Redo do, so it goes back from the finished step.
 function jumpHistory(step: number) {

@@ -346,6 +346,8 @@ body { display: flex; flex-direction: column; }
 @media (max-width: 1439px) { #topbar h1 #version { display: none; } }
 /* Basis 0, so the workspace button's row takes the room that is left and never pushes the rest onto a second row. */
 #workspaces { display: flex; gap: 2px; flex: 1 1 0; min-width: 0; }
+/* From 900 px the project's name (styles/project-name.css) takes the room that is left instead, so the workspace button keeps its own width and the name gives way first. */
+@media (min-width: 900px) { #workspaces { flex: 0 0 auto; } }
 /* AI, Guide and Community sit in the top bar on wide screens and behind Menu on phones. */
 #topbar-actions { display: contents; }
 #menu-toggle { display: none; }
