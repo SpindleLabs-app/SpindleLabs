@@ -167,7 +167,7 @@ try {
       const page = await fresh(width, tap);
       try {
         await press(page, "#file-menu", tap);
-        assert.deepEqual(await menuRows(page), [
+        const project = [
           ["start-fresh", "new", true],
           ["open", "open", false],
           ["file-projects", "folder", false],
@@ -175,11 +175,17 @@ try {
           ["file-my-designs", "account", false],
           ["file-save", "save", false],
           ["file-save-as", "save", false],
+        ];
+        const exports = [
           ["file-export-stl", "export", true],
           ["file-save-picture", "export", false],
           ["file-slice-print", "export", true],
-        ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…Ctrl+O", "Projects in this browser…", "Earlier versions…", "My designs…", "SaveCtrl+S", "Save As…Ctrl+Shift+S", "Export STL", "Save picture (PNG)", "Slice for printing"]);
+        ];
+        // On a phone the exports come first, above the sheet's fold (SL #648, phone-file-exports.mjs).
+        assert.deepEqual(await menuRows(page), tap ? [...exports, ...project] : [...project, ...exports]);
+        const projectWords = ["New", "Open…Ctrl+O", "Projects in this browser…", "Earlier versions…", "My designs…", "SaveCtrl+S", "Save As…Ctrl+Shift+S"];
+        const exportWords = ["Export STL", "Save picture (PNG)", "Slice for printing"];
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), tap ? [...exportWords, ...projectWords] : [...projectWords, ...exportWords]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
         assert.equal(await page.getAttribute("#file-slice-print", "title"), NO_BODY);
