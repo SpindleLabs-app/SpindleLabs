@@ -71,8 +71,16 @@ export const SEVERAL_TITLE = "Pick several profiles: each click or tap adds a pr
 /** The words beside Pick several: the mouse's way of doing the same (Fusion's "Hold Ctrl to modify selection"). */
 export const SEVERAL_HINT = "or hold Ctrl (⌘) or Shift as you click";
 
+/** The same on a touch screen, which has no Ctrl or Shift: tap each profile. */
+export const SEVERAL_HINT_TOUCH = "then tap each profile";
+
 /** What the profile row says while none is chosen. */
 export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
+
+/** Whether a typed distance can go straight into the box as Extrude opens: a mouse or trackpad (it hovers, it points finely), not a finger. */
+export function typesStraightAway(document: Document): boolean {
+  return document.defaultView?.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? false;
+}
 
 export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): ExtrudePanel {
   const document = slot.ownerDocument;
@@ -119,7 +127,10 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       const profileRow = el("div", "", "extrude-row extrude-profile-row");
       profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear);
       const severalRow = el("div", "", "extrude-several");
-      severalRow.append(several, el("span", "", "extrude-several-hint", SEVERAL_HINT));
+      // A mouse reads the keys; a touch screen, with neither, reads to tap (extrude-several.css shows one of them).
+      const hint = el("span", "", "extrude-several-hint");
+      hint.append(el("span", "", "extrude-several-keys", SEVERAL_HINT), el("span", "", "extrude-several-tap", SEVERAL_HINT_TOUCH));
+      severalRow.append(several, hint);
       const input = el("input", "extrude-distance");
       Object.assign(input, { type: "number", step: "any" });
       const field = sizeBox(input, () => currentUnit(document));
@@ -207,6 +218,13 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       followUnit(document, onUnit);
       this.showProfile(chosen);
       box.hidden = false;
+      // With a mouse the cursor waits in the Distance box, its number selected, so typing a distance and Enter make the
+      // extrude with no click on the box first (UI audit 2026-11-12, Fusion's feel). Never on a touch screen: its keyboard
+      // would cover the view the moment Extrude opens (Ben's phone rule, 10-28).
+      if (typesStraightAway(document)) {
+        input.focus({ preventScroll: true });
+        input.select();
+      }
     },
     showProfile(chosen) {
       if (!parts) return;

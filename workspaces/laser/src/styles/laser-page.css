@@ -11,3 +11,17 @@
 .laser-page .laser-page-files { display: flex; gap: var(--look-space-2); flex-wrap: wrap; }
 .laser-page .laser-page-files button { min-height: 32px; }
 .laser-page .laser-page-note { margin: var(--look-space-2) 0 0; font-size: 13px; color: var(--text-dim); }
+/* A part placed by hand (L1b): its numbers under the bed's, in a box of its own named for the part. */
+.laser-page .laser-page-arrange { min-height: 32px; margin: 0 0 var(--look-space-2); }
+.laser-page .laser-page-arrange[hidden] { display: none; }
+.laser-page .laser-page-part { margin: 0 0 var(--look-space-3); padding: var(--look-space-2); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); min-width: 0; }
+.laser-page .laser-page-part[hidden] { display: none; }
+.laser-page .laser-page-part legend { padding: 0 4px; font-weight: 600; }
+.laser-page .laser-page-part-words { margin: 0 0 var(--look-space-2); font-size: 13px; color: var(--text-dim); }
+.laser-page .laser-page-part-words:empty { display: none; }
+.laser-page .laser-page-turns { display: flex; gap: var(--look-space-2); flex-wrap: wrap; }
+.laser-page .laser-page-turns button { min-height: 32px; }
+.laser-page .laser-page-turns button[hidden] { display: none; }
+/* A part's layer (L1c): under its name in its row, in the app's field look; 32 px tall (44 on a touch screen). */
+.laser-page .laser-page-op { display: block; margin: 4px 0 0 26px; min-height: 32px; padding: 2px 6px; background: var(--look-field); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); font: inherit; font-size: 13px; }
+@media (pointer: coarse) { .laser-page .laser-page-op { min-height: 44px; font-size: 16px; } }

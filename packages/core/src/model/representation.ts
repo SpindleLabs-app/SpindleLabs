@@ -8,9 +8,10 @@
 // Image and Data are typed now and get their first producers with the
 // Image workspace and with parameters / analysis results.
 
-import type { BodySpec, Outline } from "../kernel/kernel-types.ts";
+import type { BodySpec, DisplayMesh, Outline } from "../kernel/kernel-types.ts";
 import type { FileFormat, FileImporter } from "./files.ts";
 import type { Project } from "./project.ts";
+import type { BodyReference, FaceReference } from "./references.ts";
 
 export type RepresentationKind = "solid" | "outline" | "mesh" | "image" | "data";
 
@@ -42,6 +43,8 @@ export interface SolidRep {
 export interface OutlineRep {
   kind: "outline";
   plane: Plane;
+  /** The side of the plane the outline was drawn and is seen from: −1 for against the normal (a sketch on a back or bottom face), where the same x and y look mirrored; left out means the normal's side. A flat copy (SVG, a laser bed) follows it so it is the picture that was drawn (viewport's `planeSeenAs`). */
+  side?: -1;
   outline: Outline;
 }
 
@@ -82,7 +85,35 @@ export interface Producible {
 /** An object a workspace offers the others, with the name its owner shows it by ("Body 1"). */
 export interface ListedObject extends Producible {
   label: string;
+  /** The stable reference a link to it keeps (a body's), when its owner names it so: what `facesOf` takes. */
+  ref?: BodyReference;
 }
+
+/**
+ * Where a face reference is on a body now (TestLab's held and pushed faces):
+ * its face (the kernel's index on that body), gone (`why` in words), or
+ * shared by `count` faces after the last edit, so never moved to one of them.
+ */
+export type FaceFound = { status: "found"; face: number } | { status: "gone"; why: string } | { status: "shared"; count: number };
+
+/**
+ * A body's faces as its owner shows and names them now, from one rebuild:
+ * its display mesh (mm; `triangle_faces` are its own face indices), each
+ * face's stable reference by index (null for one with no name of its own,
+ * which nothing may hold) and its name in the owner's words ("Top face"),
+ * and where each reference asked about is now, in the order asked.
+ */
+export interface BodyFaces {
+  mesh: DisplayMesh;
+  faces: (FaceReference | null)[];
+  labels: string[];
+  found: FaceFound[];
+  /** The dependency-graph nodes the body is made from, so a result on it is marked out of date by any edit that could change it (Design: every timeline item). */
+  inputs: string[];
+}
+
+/** Gives a body's faces and finds face references on it (`BodyFaces`); throws, in words, for a body its owner doesn't show now. */
+export type FaceFinder = (project: Project, body: BodyReference, refs: readonly FaceReference[]) => Promise<BodyFaces>;
 
 /** Lists what a workspace offers the others in `project` (read from the project's data, never from the workspace's screen). */
 export type Lister = (project: Project) => ListedObject[];
@@ -123,6 +154,7 @@ export class RepresentationRegistry {
   private converters: Converter[] = [];
   private listers = new Map<string, Lister>();
   private importers = new Map<FileFormat, FileImporter>();
+  private finders = new Map<string, FaceFinder>();
 
   /** Says that objects of `type` can describe themselves as `kind`. */
   registerProducer(type: string, kind: RepresentationKind, producer: Producer): void {
@@ -141,6 +173,32 @@ export class RepresentationRegistry {
   /** What workspace `workspace` offers in `project`, in its own order; none when it lists nothing (or the project holds nothing of it). */
   objectsOf(workspace: string, project: Project): ListedObject[] {
     return this.listers.get(workspace)?.(project) ?? [];
+  }
+
+  /** Says how workspace `workspace` (the owner of the geometry: Design) gives a body's named faces and finds face references on it; one per workspace. */
+  registerFaceFinder(workspace: string, finder: FaceFinder): void {
+    if (this.finders.has(workspace)) throw new Error(`${workspace} already has a face finder`);
+    this.finders.set(workspace, finder);
+  }
+
+  /**
+   * Body `body`'s faces in `project` as workspace `workspace` names them now,
+   * and where each of `refs` is on it. Refused in words when that workspace
+   * finds no faces, and checked: a mesh, face list or answer that doesn't
+   * fit together is refused, never handed on.
+   */
+  async facesOf(workspace: string, project: Project, body: BodyReference, refs: readonly FaceReference[]): Promise<BodyFaces> {
+    const finder = this.finders.get(workspace);
+    if (!finder) throw new Error(`${workspace} doesn't say where its faces are`);
+    const got = await finder(project, body, refs);
+    const n = got.faces.length;
+    const bad = (why: string) => new Error(`${workspace} gave ${body.id}'s faces ${why}`);
+    if (got.labels.length !== n) throw bad(`with ${got.labels.length} names for ${n} faces`);
+    if (got.mesh.indices.length !== 3 * got.mesh.triangle_faces.length) throw bad("with a mesh whose lists disagree in length");
+    if (got.mesh.triangle_faces.some((f) => !(Number.isInteger(f) && f >= 0 && f < n))) throw bad("with a triangle on a face it did not list");
+    if (got.found.length !== refs.length) throw bad(`with ${got.found.length} answers for ${refs.length} references`);
+    if (got.found.some((f) => f.status === "found" && !(Number.isInteger(f.face) && f.face >= 0 && f.face < n))) throw bad("with a reference found on a face it did not list");
+    return got;
   }
 
   registerConverter(converter: Converter): void {
