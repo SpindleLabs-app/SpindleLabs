@@ -1,4 +1,4 @@
-tested commit dcf093d on main, 2026-11-12 14:29 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43224852705)
-Monkey, seeds 359816406-359816406: 1 session(s) of 2000 actions in Chromium; 0 Combines made of 8 tried; 1 FAILED; 1 cut off by the time limit
-FAIL: no session finished in the run's time limit (each was cut off or never started), so the run tested too little
-seed 359816406: cut off after 1755 actions by the time limit (every check passed until then)
+tested commit 82fa8cb on main, 2026-11-12 17:58 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43243193539)
+Monkey, seeds 202611120-202611121: 2 session(s) of 2000 actions in Chromium; 3 Combines made of 25 tried; 1 FAILED
+seed 202611120: pass (2000 actions)
+seed 202611121: FAIL: settles: the page was still changing 6 s after the action

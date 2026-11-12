@@ -1,2 +1,8 @@
-tested commit dcf093d on main, 2026-11-12 14:29 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43224852705)
-no report: the journeys job stopped before the walk
+tested commit 82fa8cb on main, 2026-11-12 17:58 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43243193539)
+FLAG Design: shape to STL: slowest 1.78 s = 38.18× the fixed workload, baseline 1.16 s (54% over, flag above 15%, fail above 100%)
+OK Design: sketch to STL: 8 clicks (baseline 8), slowest 3.52 s = 83.69× the fixed workload (baseline 9.70 s)
+PENDING Box to laser panels: waits for Laser (L1–L3), X13
+PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
+PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
+PENDING Photo to lithophane: waits for Image (G2), Slice (P2)
+PENDING Part to simulation and back: waits for Simulate (S3), parameters (50, I18)
