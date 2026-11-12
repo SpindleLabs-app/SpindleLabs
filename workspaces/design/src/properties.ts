@@ -138,7 +138,7 @@ const HTML = `
   <dl id="stats">
     <dt>Volume</dt><dd id="volume">…</dd>
     <dt>Area</dt><dd id="area">…</dd>
-    <dt><label for="mass-material">Material</label></dt><dd><select id="mass-material" class="dark-select mass-material"></select></dd>
+    <dt><label for="mass-material">Material</label></dt><dd><select id="mass-material" class="dark-select body-mass"></select></dd>
     <dt title="${SOLID_NOTE}">Mass</dt><dd id="mass" title="${SOLID_NOTE}">…</dd>
     <dt>Topology</dt><dd id="topology">…</dd>
     <dt>Validation</dt><dd id="status">…</dd>
