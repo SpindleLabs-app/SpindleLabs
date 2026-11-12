@@ -52,7 +52,7 @@ const items = (page) =>
       return { name: item.querySelector(".menu-button-name")?.textContent.trim() ?? item.textContent.trim(), shown: r.top >= m.top - 0.5 && r.bottom <= m.bottom + 0.5 && r.bottom <= innerHeight, onTop: !!hit && item.contains(hit) };
     });
   });
-const EXPORTS = ["Export STL", "Save picture (PNG)", "Slice for printing"];
+const EXPORTS = ["Export STL", "Export 3MF or OBJ…", "Save picture (PNG)", "Slice for printing"];
 
 for (const [width, height] of [[320, 568], [375, 667], [393, 852], [430, 932]]) {
   await check(`${width} × ${height}: File's exports in sight as the sheet opens, before the project items; Export STL downloads the box`, async () => {

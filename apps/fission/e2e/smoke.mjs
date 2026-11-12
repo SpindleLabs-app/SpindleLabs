@@ -885,7 +885,7 @@ try {
     assert.equal(await page.isVisible("#selection-actions"), false);
     await page.click("#browser [data-node=body-1]");
     await page.waitForFunction(() => document.body.dataset.selection === "body:feature-1");
-    assert.deepEqual(await verbs(), [["Download STL", "design.download-stl"]]);
+    assert.deepEqual(await verbs(), [["Download STL", "design.download-stl"], ["Download 3MF", "design.download-3mf"], ["Download OBJ", "design.download-obj"]]);
     assert.equal(await page.isVisible("#selection-actions"), true);
     const f = await downloadStl("#selection-actions [data-action='design.download-stl']");
     assert.equal(f.name, "spindlelabs-box.stl");
