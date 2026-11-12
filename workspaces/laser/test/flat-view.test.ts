@@ -3,7 +3,7 @@
 // lower-left corner at (186, 672)). The real thing in Chromium: apps/fission/e2e/laser-page.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createFlatView, type FlatScene } from "../src/index.ts";
+import { createFlatView, type FlatScene, type FlatViewOptions } from "../src/index.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -11,21 +11,23 @@ const SIZE = { width: 980, height: 756 };
 const RECT = { id: "s1", label: "Sketch 1", d: "M3 -3L43 -3L43 -33L3 -33Z", box: { minX: 3, minY: 3, maxX: 43, maxY: 33 } };
 const SCENE: FlatScene = { bed: { width: 400, height: 400 }, parts: [RECT] };
 
-function setUp(size = SIZE, windowWidth = size.width) {
+function setUp(size = SIZE, windowWidth = size.width, options: FlatViewOptions = {}) {
   // The app's window: as wide as the view unless a test says the view is only part of it.
   const window = new Window({ innerWidth: windowWidth, innerHeight: size.height });
   const doc = window.document as unknown as Document;
   const host = doc.body.appendChild(doc.createElement("div"));
   host.setAttribute("aria-label", "3D view");
   host.innerHTML = `<canvas></canvas><div class="view-cube"></div><div class="view-controls" id="view-controls"></div>`;
-  const view = createFlatView(doc, { size: () => size });
+  const view = createFlatView(doc, { size: () => size, ...options });
   const svg = view.element.querySelector("svg")!;
-  const fire = (type: string, init: Record<string, unknown>) => {
+  /** An event on `target` (a part's outline, a button), heard by the view as it bubbles up. */
+  const fireOn = (target: Element, type: string, init: Record<string, unknown>) => {
     const e = new window.Event(type, { bubbles: true, cancelable: true });
     Object.assign(e, { pointerType: "mouse", button: 0, buttons: type === "pointerup" ? 0 : 1, ...init }); // a held left button, as a real drag reports
-    svg.dispatchEvent(e as unknown as Event);
+    target.dispatchEvent(e as unknown as Event);
     return e;
   };
+  const fire = (type: string, init: Record<string, unknown>) => fireOn(svg, type, init);
   /** The sheet's matrix: [scale, x of the bed's origin, y of the bed's origin]. */
   const matrix = () => {
     const m = /^matrix\((\S+) 0 0 (\S+) (\S+) (\S+)\)$/.exec(view.element.querySelector(".laser-flat-world")!.getAttribute("transform")!)!;
@@ -33,7 +35,9 @@ function setUp(size = SIZE, windowWidth = size.width) {
     return [Number(m[1]), Number(m[3]), Number(m[4])];
   };
   const texts = (cls: string) => [...view.element.querySelectorAll(`text.${cls}`)].map((t) => t.textContent);
-  return { window, doc, host, view, svg, fire, matrix, texts };
+  /** The outline of part `id` on the page. */
+  const part = (id: string) => view.element.querySelector(`path.laser-flat-part[data-part="${id}"]`)!;
+  return { window, doc, host, view, svg, fire, fireOn, part, matrix, texts };
 }
 const near = (got: number, want: number, what: string) => assert.ok(Math.abs(got - want) <= 1e-9, `${what}: got ${got}, want ${want}`);
 
@@ -113,7 +117,9 @@ test("the row of buttons is the flat view's own: Zoom out, Zoom in and Fit, with
   const bar = view.element.querySelector(".view-controls.laser-flat-bar")!;
   assert.equal(bar.getAttribute("role"), "toolbar");
   const buttons = [...bar.querySelectorAll<HTMLButtonElement>("button.nav-button")];
-  assert.deepEqual(buttons.map((b) => [b.dataset.view, b.getAttribute("aria-label")]), [["zoom-out", "Zoom out"], ["zoom-in", "Zoom in"], ["fit", "Fit"]]);
+  // The view's three, and Turn for a picked part (L1b), which is away while no part is picked: it turns a part, never the view.
+  assert.deepEqual(buttons.map((b) => [b.dataset.view, b.getAttribute("aria-label")]), [["zoom-out", "Zoom out"], ["zoom-in", "Zoom in"], ["fit", "Fit"], ["turn", "Turn"]]);
+  assert.equal(buttons[3].closest<HTMLElement>(".nav-group")!.hidden, true);
   assert.ok(buttons.every((b) => b.title.length > 0 && b.type === "button"));
   // Zoom in: ×1.25 about the view's middle (490, 378). The origin was 186 − 490 = −304 px from it across and 672 − 378 = 294
   // down; both grow by 1.25: 490 − 380 = 110 and 378 + 367.5 = 745.5.
@@ -349,4 +355,142 @@ test("hand-worked: a part out of sight gets no name; the wheel with Ctrl held (a
   near(matrix()[0], 6.36, "×4");
   assert.deepEqual(texts("laser-flat-part-name"), []);
   assert.equal(view.element.querySelectorAll("path.laser-flat-part").length, 1); // the outline itself is still there
+});
+
+// Parts picked, moved and turned (L1b). The view only reports; `heard` is what the page would be told.
+
+function withHandlers(size = SIZE) {
+  const heard: unknown[][] = [];
+  const all = setUp(size, size.width, {
+    onPick: (id) => heard.push(["pick", id]),
+    onMove: (id, dx, dy, key) => heard.push(["move", id, dx, dy, key]),
+    onTurn: (id, degrees) => heard.push(["turn", id, degrees]),
+  });
+  all.view.attach(all.host);
+  all.view.show(SCENE, true);
+  return { ...all, heard };
+}
+
+test("a click on a part picks it, a click on the bare bed lets it go, and the picked part is marked and offered Turn", () => {
+  const { view, fire, fireOn, part, heard } = withHandlers();
+  // The part's box, 3…43 × 3…33 mm, is 190.77…254.37 across and 619.53…667.23 down on screen: (200, 650) is on it.
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 202, clientY: 651 }); // a hand never holds quite still: 2.2 px is still a click
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 202, clientY: 651 });
+  assert.deepEqual(heard, [["pick", "s1"]]);
+  assert.equal(part("s1").getAttribute("transform"), null);
+  // The page draws the scene with the part picked.
+  view.show({ ...SCENE, picked: "s1" }, false);
+  assert.equal(part("s1").getAttribute("class"), "laser-flat-part laser-flat-part-picked");
+  assert.equal(part("s1").getAttribute("aria-pressed"), "true");
+  assert.equal(view.element.dataset.picked, "s1");
+  const turn = view.element.querySelector<HTMLButtonElement>('button[data-view="turn"]')!;
+  assert.equal(turn.closest<HTMLElement>(".nav-group")!.hidden, false);
+  turn.click();
+  assert.deepEqual(heard.splice(0), [["pick", "s1"], ["turn", "s1", 90]]);
+  // A click on the picked part again says nothing new; one on the bare bed lets it go.
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 200, clientY: 650 });
+  assert.deepEqual(heard, []);
+  fire("pointerdown", { pointerId: 1, clientX: 500, clientY: 300 });
+  fire("pointerup", { pointerId: 1, clientX: 500, clientY: 300 });
+  assert.deepEqual(heard, [["pick", null]]);
+  // A picked part that is no longer on the bed is no pick: no Turn.
+  view.show({ bed: SCENE.bed, parts: [], picked: "s1" }, false);
+  assert.equal(view.element.dataset.picked, undefined);
+  assert.equal(turn.closest<HTMLElement>(".nav-group")!.hidden, true);
+});
+
+test("hand-worked: a mouse drags the part under it, its box's corner landing on whole mm; the view stays put and the name goes along", () => {
+  const { view, fireOn, part, matrix, heard } = withHandlers();
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  // 100 px right and 50 px up at 1.59 px per mm: 62.89 mm across and 31.45 mm up. The box's lower-left corner, (3, 3),
+  // would be at (65.89, 34.45): it lands on (66, 34), so the part has moved (63, 31). In the sheet's own numbers y is flipped.
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 300, clientY: 600 });
+  assert.equal(part("s1").getAttribute("transform"), "translate(63 -31)");
+  assert.equal(view.element.dataset.moving, "s1");
+  near(matrix()[1], 186, "the view did not slide");
+  // The name sits at the part's middle, now (23 + 63, 18 + 31) = (86, 49) mm: 186 + 86 × 1.59 = 322.74, 672 − 49 × 1.59 = 594.09 (baseline 4 px lower).
+  const name = view.element.querySelector("text.laser-flat-part-name")!;
+  assert.deepEqual([name.getAttribute("x"), name.getAttribute("y")], ["322.7", "598.1"]);
+  assert.deepEqual(heard, []); // nothing is told before the part is let go
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 300, clientY: 600 });
+  assert.deepEqual(heard, [["move", "s1", 63, 31, false]]);
+  // Let go, the part is back where the scene has it until the page draws the new scene.
+  assert.equal(part("s1").getAttribute("transform"), null);
+  assert.equal(view.element.dataset.moving, undefined);
+  // A drag that ends where it began (under half a mm) moves nothing and is told to nobody.
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 210, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 200.5, clientY: 650 }); // 0.31 mm: the corner is back on 3
+  fireOn(part("s1"), "pointerup", { pointerId: 1, clientX: 200.5, clientY: 650 });
+  assert.deepEqual(heard.length, 1);
+});
+
+test("a finger slides the view across a part that is not picked, and moves the part once it is; a second finger makes it a pinch and moves no part", () => {
+  const { view, fireOn, part, matrix, heard } = withHandlers();
+  const touch = { pointerType: "touch", isPrimary: true };
+  fireOn(part("s1"), "pointerdown", { ...touch, pointerId: 5, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { ...touch, pointerId: 5, clientX: 240, clientY: 630 });
+  near(matrix()[1], 226, "the view slid 40 px"); // the whole way from where the finger went down, though the first 8 px were a tap still
+  near(matrix()[2], 652, "and 20 px up");
+  assert.equal(part("s1").getAttribute("transform"), null);
+  fireOn(part("s1"), "pointerup", { ...touch, pointerId: 5, clientX: 240, clientY: 630 });
+  assert.deepEqual(heard, []); // a slide is no tap: nothing picked
+  // Picked, the same finger moves the part: 100 px right and 50 px up is (63, 31) mm as with the mouse.
+  view.show({ ...SCENE, picked: "s1" }, true);
+  fireOn(part("s1"), "pointerdown", { ...touch, pointerId: 6, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { ...touch, pointerId: 6, clientX: 300, clientY: 600 });
+  assert.equal(part("s1").getAttribute("transform"), "translate(63 -31)");
+  // A second finger down: the part goes back, and the two fingers pinch the view.
+  fireOn(part("s1"), "pointerdown", { pointerType: "touch", isPrimary: false, pointerId: 7, clientX: 500, clientY: 600 });
+  assert.equal(part("s1").getAttribute("transform"), null);
+  fireOn(part("s1"), "pointerup", { ...touch, pointerId: 6, clientX: 300, clientY: 600 });
+  fireOn(part("s1"), "pointerup", { pointerType: "touch", pointerId: 7, clientX: 500, clientY: 600 });
+  assert.deepEqual(heard, []);
+  // A tap on a part that is not picked picks it.
+  view.show(SCENE, false);
+  fireOn(part("s1"), "pointerdown", { ...touch, pointerId: 8, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { ...touch, pointerId: 8, clientX: 205, clientY: 654 }); // 6.4 px: a finger's tap
+  fireOn(part("s1"), "pointerup", { ...touch, pointerId: 8, clientX: 205, clientY: 654 });
+  assert.deepEqual(heard, [["pick", "s1"]]);
+});
+
+test("with a part picked the arrows move it 1 mm (10 with Shift), R turns it, Escape lets it go; Enter on a part picks it", () => {
+  const { view, fire, fireOn, part, matrix, heard } = withHandlers();
+  assert.equal(fireOn(part("s1"), "keydown", { key: "Enter" }).defaultPrevented, true);
+  assert.deepEqual(heard.splice(0), [["pick", "s1"]]);
+  fire("keydown", { key: "ArrowRight" }); // nothing picked yet: the arrows are the view's
+  near(matrix()[1], 186 - 48, "the view slid");
+  assert.deepEqual(heard, []);
+  view.show({ ...SCENE, picked: "s1" }, true);
+  fire("keydown", { key: "ArrowRight" });
+  fire("keydown", { key: "ArrowUp", shiftKey: true });
+  fire("keydown", { key: "ArrowLeft" });
+  fire("keydown", { key: "ArrowDown", shiftKey: true });
+  fire("keydown", { key: "r" });
+  fire("keydown", { key: "R", shiftKey: true });
+  fire("keydown", { key: "Escape" });
+  assert.deepEqual(heard, [["move", "s1", 1, 0, true], ["move", "s1", 0, 10, true], ["move", "s1", -1, 0, true], ["move", "s1", 0, -10, true], ["turn", "s1", 90], ["turn", "s1", -90], ["pick", null]]);
+  near(matrix()[1], 186, "the view stayed where it was");
+  assert.equal(fire("keydown", { key: "r", ctrlKey: true }).defaultPrevented, false); // reload stays the browser's
+  // A pick that is no longer on the bed is no pick: the arrows are the view's again.
+  heard.length = 0;
+  view.show({ bed: SCENE.bed, parts: [], picked: "s1" }, true);
+  fire("keydown", { key: "ArrowRight" });
+  assert.deepEqual(heard, []);
+  near(matrix()[1], 186 - 48, "the view slid");
+});
+
+test("a part that sits wrongly is marked and says why; with no one listening for moves a press on a part slides the view as before", () => {
+  const { host, view, fireOn, part, matrix } = setUp();
+  view.attach(host);
+  view.show({ bed: SCENE.bed, parts: [{ ...RECT, warn: "off the bed: 5 mm past the right side" }] }, true);
+  assert.equal(part("s1").getAttribute("class"), "laser-flat-part laser-flat-part-warn");
+  assert.equal(part("s1").querySelector("title")!.textContent, "Sketch 1, 40 × 30 mm, off the bed: 5 mm past the right side");
+  assert.equal(part("s1").getAttribute("tabindex"), null); // nothing to pick it for
+  fireOn(part("s1"), "pointerdown", { pointerId: 1, clientX: 200, clientY: 650 });
+  fireOn(part("s1"), "pointermove", { pointerId: 1, clientX: 240, clientY: 630 });
+  near(matrix()[1], 226, "the view slid");
+  assert.equal(part("s1").getAttribute("transform"), null);
 });

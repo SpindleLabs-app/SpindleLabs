@@ -273,7 +273,10 @@ try {
     assert.ok(apart(bar, await boxOf(page, "#undo-redo")), "the row of buttons clear of Undo and Redo");
     assert.ok(bar[0] >= 0 && bar[2] <= 375, "the row of buttons inside the screen");
     // Each button is a full finger's target (44 px).
-    for (const size of await page.$$eval(".laser-flat-bar button", (bs) => bs.map((b) => [b.offsetWidth, b.offsetHeight]))) assert.ok(size[0] >= 44 && size[1] >= 44, `a ${size} px button`);
+    // (Turn is away while no part is picked; the check of a picked part below measures it.)
+    const shown = await page.$$eval(".laser-flat-bar button", (bs) => bs.filter((b) => !b.closest("[hidden]")).map((b) => [b.dataset.view, b.offsetWidth, b.offsetHeight]));
+    assert.deepEqual(shown.map((b) => b[0]), ["zoom-out", "zoom-in", "fit"]);
+    for (const size of shown) assert.ok(size[1] >= 44 && size[2] >= 44, `a ${size} px button`);
     assert.equal(await boxOf(page, "#view-controls"), null);
     assert.deepEqual(await page.$$eval(".laser-flat text.laser-flat-note", (t) => t.map((x) => x.textContent)), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
     await page.screenshot({ path: "e2e/laser-page-375.png" });
@@ -291,6 +294,127 @@ try {
     await page.click("#browser-toggle");
     await until(page, (top) => Math.abs(document.querySelector(".laser-flat-bed").getBoundingClientRect().top - top) < 0.5, bed[1], "the bed back where it was once the sheet is closed");
     assert.equal(await scaleNow(page), fitted);
+    await context.close();
+  });
+
+  await check("a part is dragged on the bed and lands on whole mm, kept in the project; turned, typed off the bed it is warned about, and Arrange puts it back in the rows", async () => {
+    const { context, page } = await newPage("?laser");
+    await sketchRectangle(page);
+    await toLaser(page);
+    await words(page, "1 part on the bed.");
+    const part = ".laser-flat path.laser-flat-part";
+    const value = (name) => page.$eval(`.laser-page input[name="${name}"]`, (i) => Number(i.value));
+    const pathOf = (x, y, w, h) => `M${x} ${-y}L${x + w} ${-y}L${x + w} ${-(y + h)}L${x} ${-(y + h)}Z`;
+    const scale = await scaleNow(page);
+    const before = await boxOf(page, part);
+    assert.equal(await boxOf(page, ".laser-page-part"), null, "no part's numbers before one is picked");
+    // Dragged 80 px right and 60 px up by its middle: its corner, at (3, 3) mm, lands on the nearest whole mm.
+    const from = [(before[0] + before[2]) / 2, (before[1] + before[3]) / 2];
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    await page.mouse.move(from[0] + 30, from[1] - 20, { steps: 3 });
+    await page.mouse.move(from[0] + 80, from[1] - 60, { steps: 4 });
+    assert.equal(await page.$eval(".laser-flat", (e) => e.dataset.moving), await page.$eval(part, (e) => e.dataset.part), "the part is being moved");
+    assert.equal(await scaleNow(page), scale, "the view did not move with the part");
+    await page.mouse.up();
+    const [x, y] = [Math.round(3 + 80 / scale), Math.round(3 + 60 / scale)];
+    await until(page, (d) => document.querySelector(".laser-flat path.laser-flat-part")?.getAttribute("d") === d, pathOf(x, y, 40, 30), `the part drawn at (${x}, ${y})`);
+    // The part is picked: its numbers show, under its own name.
+    assert.equal(await page.textContent(".laser-page-part legend"), "Sketch 1");
+    assert.deepEqual([await value("x"), await value("y"), await value("angle")], [x, y, 0]);
+    const after = await boxOf(page, part);
+    closeTo(after[0] - before[0], (x - 3) * scale, 1.5, "moved right on screen");
+    closeTo(before[3] - after[3], (y - 3) * scale, 1.5, "moved up on screen");
+    assert.match(await page.$eval(part, (e) => e.getAttribute("class")), /laser-flat-part-picked/);
+    // The file has it where it was put.
+    assert.ok((await save(page, "svg")).text.includes(`d="${pathOf(x, y, 40, 30)}"`), "the saved SVG has the part where it was put");
+    // Kept: to Design and back, it is still there.
+    await page.evaluate(() => (location.hash = "#design"));
+    await until(page, () => document.body.dataset.activeWorkspace === "design", null, "Design shown");
+    await toLaser(page);
+    await until(page, (d) => document.querySelector(".laser-flat path.laser-flat-part")?.getAttribute("d") === d, pathOf(x, y, 40, 30), "the part where it was left");
+    // Picked again by a click, then Turn: a quarter turn about its middle, 30 wide and 40 tall.
+    const now = await boxOf(page, part);
+    await page.mouse.click((now[0] + now[2]) / 2, (now[1] + now[3]) / 2);
+    await page.locator('.laser-flat-bar button[data-view="turn"]').click();
+    await until(page, () => document.querySelector('.laser-page input[name="angle"]')?.value === "90", null, "the angle saying 90");
+    const turned = await boxOf(page, part);
+    closeTo(turned[2] - turned[0], 30 * scale, 1.5, "30 mm wide on screen");
+    closeTo(turned[3] - turned[1], 40 * scale, 1.5, "40 mm tall on screen");
+    closeTo((turned[0] + turned[2]) / 2, (now[0] + now[2]) / 2, 1.5, "turned on the spot");
+    await page.screenshot({ path: "e2e/laser-page-1280-placed.png" });
+    // Typed 20 mm past the right side (30 wide from 390 reaches 420 on a 400 bed): said in words and marked, not moved back.
+    await page.fill('.laser-page input[name="x"]', "390");
+    await page.locator('.laser-page input[name="x"]').blur();
+    await until(page, () => document.querySelector(".laser-page-words")?.textContent === "1 part on the bed. Sketch 1 is off the bed: 20 mm past the right side.", null, "the off-bed warning in words");
+    assert.match(await page.$eval(part, (e) => e.getAttribute("class")), /laser-flat-part-warn/);
+    const colours = await page.$eval(part, (e) => [getComputedStyle(e).stroke, getComputedStyle(e).strokeDasharray, getComputedStyle(document.documentElement).getPropertyValue("--warn").trim()]);
+    assert.notEqual(colours[1], "none", "the warned part is dashed");
+    assert.equal(await page.isDisabled(".laser-page button[data-save=svg]"), false); // the file can still be saved: the warning is the person's to act on
+    // The arrows move it a mm at a time, back onto the bed side.
+    await page.focus(".laser-flat svg");
+    await page.keyboard.press("ArrowLeft");
+    await until(page, () => document.querySelector('.laser-page input[name="x"]')?.value === "389", null, "one mm left");
+    // Arrange in rows: back to the lower-left corner, unturned.
+    await page.click(".laser-page button[data-arrange]");
+    await until(page, (d) => document.querySelector(".laser-flat path.laser-flat-part")?.getAttribute("d") === d, "M3 -3L43 -3L43 -33L3 -33Z", "the part back in the rows");
+    await words(page, "1 part on the bed.");
+    assert.equal(await boxOf(page, ".laser-page button[data-arrange]"), null);
+    // One Undo brings the hand-made layout back.
+    await page.click("#undo");
+    await until(page, () => /^M\d+ /.test(document.querySelector(".laser-flat path.laser-flat-part")?.getAttribute("d") ?? "") && document.querySelector(".laser-flat path.laser-flat-part").getAttribute("d") !== "M3 -3L43 -3L43 -33L3 -33Z", null, "Undo bringing the placed part back");
+    await context.close();
+  });
+
+  await check("at 375 px a tap picks a part and a finger then moves it; Turn joins the row of buttons without leaving the screen or covering Undo", async () => {
+    const context = await browser.newContext({ viewport: { width: 375, height: 800 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    page.on("pageerror", (e) => errors.push(e.message));
+    // The sketch is drawn at desktop width (the sketch tools' own phone checks are elsewhere), then the window is a phone's.
+    await page.goto(`${url}?laser#design`);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await sketchRectangle(page);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await toLaser(page);
+    await words(page, "1 part on the bed.");
+    const part = ".laser-flat path.laser-flat-part";
+    await page.locator(".laser-flat .laser-flat-bed").waitFor();
+    // Zoom in on the part so a finger can take it: twice the Zoom in button, then it is found again.
+    const scale0 = await scaleNow(page);
+    const cdp = await context.newCDPSession(page);
+    const touch = (type, at) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: at[0], y: at[1] }] });
+    const middle = async () => { const b = await boxOf(page, part); return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]; };
+    // A finger dragged across the part before it is picked slides the view, and the part stays at (3, 3).
+    let at = await middle();
+    await touch("touchStart", at);
+    await touch("touchMove", [at[0] + 20, at[1] - 30]);
+    await touch("touchMove", [at[0] + 40, at[1] - 60]);
+    await touch("touchEnd", at);
+    assert.equal(await page.$eval(part, (e) => e.getAttribute("d")), "M3 -3L43 -3L43 -33L3 -33Z");
+    assert.equal(await scaleNow(page), scale0);
+    const slid = await middle();
+    closeTo(slid[0] - at[0], 40, 2, "the view slid with the finger, across");
+    closeTo(slid[1] - at[1], -60, 2, "and up");
+    // A tap picks it; Turn appears in the row, inside the screen and clear of Undo and Redo.
+    at = slid;
+    await touch("touchStart", at);
+    await touch("touchEnd", at);
+    await until(page, () => document.querySelector(".laser-flat")?.dataset.picked !== undefined, null, "the part picked by a tap");
+    const bar = await boxOf(page, ".laser-flat-bar");
+    assert.ok(bar[0] >= 0 && bar[2] <= 375, `the row of buttons ${bar} inside the screen`);
+    assert.ok(apart(bar, await boxOf(page, "#undo-redo")), "the row clear of Undo and Redo");
+    const turn = await page.$eval('.laser-flat-bar button[data-view="turn"]', (b) => [b.offsetWidth, b.offsetHeight]);
+    assert.ok(turn[0] >= 44 && turn[1] >= 44, `Turn is a ${turn} px button`);
+    assert.equal(await boxOf(page, "#properties"), null, "picking opens no sheet over the view");
+    // Now the same finger moves the part: 46 px right and 46 px up is 59.9 mm each way at this zoom, landing on whole mm.
+    await touch("touchStart", at);
+    await touch("touchMove", [at[0] + 20, at[1] - 20]);
+    await touch("touchMove", [at[0] + 46, at[1] - 46]);
+    await touch("touchEnd", at);
+    const [x, y] = [Math.round(3 + 46 / scale0), Math.round(3 + 46 / scale0)];
+    await until(page, (d) => document.querySelector(".laser-flat path.laser-flat-part")?.getAttribute("d") === d, `M${x} ${-y}L${x + 40} ${-y}L${x + 40} ${-(y + 30)}L${x} ${-(y + 30)}Z`, `the part moved to (${x}, ${y}) by a finger`);
+    await page.screenshot({ path: "e2e/laser-page-375-placed.png" });
     await context.close();
   });
 
