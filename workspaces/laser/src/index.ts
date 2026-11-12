@@ -1,4 +1,4 @@
-// @fission/laser: the Laser workspace. Laser steps L1a and L1a2, behind `?laser`
+// @fission/laser: the Laser workspace. Laser steps L1a, L1a2 and L1b, behind `?laser`
 // (flag.ts): Design's sketches and profiles laid out on the laser's bed, shown
 // flat from above (flat-view.ts) and saved as SVG or DXF at true size (page.ts). Without the flag it is the
 // placeholder it was. Next steps: cut, engrave and score layers with
@@ -14,6 +14,7 @@ export { bulgeNumber, CUT_LAYER, sheetDxf } from "./dxf.ts";
 export { LASER_KEY, laserShown, readLaserFlag, setLaserShown } from "./flag.ts";
 export { createFlatView, type FlatPart, type FlatScene, type FlatView, type FlatViewOptions } from "./flat-view.ts";
 export { defaultLaserData, DXF_KIND, emptyBedNote, flatScene, layoutWords, mountLaserPage, OUTLINES_LISTER, partsOn, readLaserData, readParts, SVG_KIND, type LaserData, type OfferedPart, type SaveText } from "./page.ts";
+export { boxesOverlap, cleanMm, EDGE_SLACK, layOutPlaced, MAX_REACH, normalAngle, offBed, offBedWords, overlapCandidates, placementRefusal, placeOutline, readPlacements, snapMm, turnedOnTheSpot, turnOutline, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
 export { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, MAX_BED, MAX_THICKNESS, thicknessRefusal, moveOutline, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type PlacedPart, type SheetPart } from "./sheet.ts";
 export { CARD_GAP, CARD_MOST, FIT_MARGINS, fitView, marginsClearOf, marginsFor, PHONE_TOP, PHONE_WIDTH, KEEP_IN_SIGHT, keepInSight, MARK_GAP, marksBetween, markStep, MAX_SCALE, MIN_BED_PX, minScale, nameFits, panBy, toBed, toScreen, wheelZoom, wordsWidth, ZOOM_STEP, zoomAt, type Card, type Margins, type ScreenPoint, type Size, type View } from "./view-box.ts";
 
