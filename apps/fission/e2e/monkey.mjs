@@ -331,7 +331,9 @@ async function check(s) {
 }
 
 /** Controls that leave the app for another site (Sign in with Google goes to Google's page): a session that left can't be checked, so the tester never presses them. */
-const LEAVES = ".account-google";
+// A link that loads another page leaves too: a click meant for the view landed on the sign-in dialog's "Privacy and
+// terms" link at 375 px and the page navigated away (issue #568, seed 359812416). A blob: link is a download.
+const LEAVES = '.account-google, a[href]:not([href^="#"]):not([href^="blob:"])';
 /** Is the point (page pixels) on a control that leaves the app, as when a dialog lies over the view? */
 const leavesAt = (page, x, y) => page.evaluate(([px, py, leaves]) => document.elementFromPoint(px, py)?.closest(leaves) != null, [x, y, LEAVES]);
 
