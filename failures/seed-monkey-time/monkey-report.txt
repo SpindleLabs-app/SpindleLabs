@@ -1,0 +1,2 @@
+Monkey, seeds 359816406-359816406: 1 session(s) of 2000 actions in Chromium; 0 Combines made of 8 tried; 1 FAILED; 1 cut off by the time limit
+failure: no session finished in the run's time limit (each was cut off or never started), so the run tested too little | the run's sessions; replay: cd apps/fission && npm run build && FISSION_SEED=359816406 MONKEY_STEPS=1 node e2e/monkey.mjs

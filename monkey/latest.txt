@@ -1,3 +1,4 @@
-tested commit 0fe95b0 on main, 2026-11-12 14:02 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43172865030)
-Monkey, seeds 359816310-359816310: 1 session(s) of 2000 actions in Chromium; 6 Combines made of 18 tried; every check passed after every action
-seed 359816310: pass (2000 actions)
+tested commit dcf093d on main, 2026-11-12 14:29 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43224852705)
+Monkey, seeds 359816406-359816406: 1 session(s) of 2000 actions in Chromium; 0 Combines made of 8 tried; 1 FAILED; 1 cut off by the time limit
+FAIL: no session finished in the run's time limit (each was cut off or never started), so the run tested too little
+seed 359816406: cut off after 1755 actions by the time limit (every check passed until then)
