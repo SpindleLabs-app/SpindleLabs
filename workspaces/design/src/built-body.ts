@@ -45,7 +45,7 @@ export const shownFrame = (b: { frame?: Plane; frames?: readonly (Plane | null)[
  * from its tools.
  */
 export function namesOfBody(b: BuiltBody, view: BodyView): BodyNames {
-  if (b.spec !== null) return featureNames(b.feature, { spec: b.spec, curves: b.curves }, view);
+  if (b.spec !== null) return featureNames(b.feature, { spec: b.spec, curves: b.curves, profile: b.profile }, view);
   const own = `face:${encodeURIComponent(b.feature)}/`;
   const parts = (b.named?.faces ?? []).map((f) => f.names.find((n) => n.startsWith(own))?.slice(own.length) ?? null);
   const counts = new Map<string, number>();
@@ -61,7 +61,7 @@ export function namesOfBody(b: BuiltBody, view: BodyView): BodyNames {
  */
 export function namedBody(id: string, b: BuiltBody, view: BodyView, place: number): NamedBody {
   if (b.named !== undefined) return { id, handle: b.handle, view, faces: b.named.faces, made: b.named.made };
-  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves }, view), place);
+  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves, profile: b.profile }, view), place);
 }
 
 /**
