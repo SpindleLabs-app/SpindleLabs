@@ -13,7 +13,8 @@ import { partDocument, type DesignDocument } from "../src/document.ts";
 import { sketchRegions } from "../src/regions.ts";
 import { addSketch, drawLine, drawRectangle } from "../src/sketch.ts";
 import { clickAt, SAME_LINE, startTool } from "../src/sketch-tool.ts";
-import { FLAT_CENTRE_RECTANGLE } from "../src/sketch-shapes.ts";
+import { FLAT_CENTRE_RECTANGLE, SAME_SHAPE, shapeWithLocks, type ShapeTool } from "../src/sketch-shapes.ts";
+import { aimOf, withLocks } from "../src/typed-entry.ts";
 import { snapOnSketch } from "../src/snap.ts";
 
 const kernel = nodeKernel();
@@ -140,4 +141,25 @@ test("hand-worked (hunt A3): a 40 × 1.6 mm centre rectangle round the origin at
   const withPoint = clickAt(s.doc, startTool("point", s.id), [-5, 0.5]).doc;
   const centre2 = clickAt(withPoint, startTool("centre-rectangle", s.id), [0, 0]).tool;
   assert.deepEqual(snapOnSketch(withPoint, centre2, [20, 0.8], [20, 0.8], 0.1).at, [20, 0.5]);
+});
+
+test("hand-worked (hunt A4): a polygon refused as drawn already hands back the tool held, its centre kept, so the typed boxes stay", () => {
+  // Centre (0, 0), typed 8 sides and diameter 20: an octagon with corners 20 / 2 = 10 from the centre. The same centre and
+  // sizes again make the same octagon, refused with SAME_SHAPE: nothing placed, so the tool handed back must be the one
+  // given (the workspace reads a new object as a click that placed something and empties the typed boxes).
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const locks = { sides: 8, diameter: 20 };
+  let tool = clickAt(s.doc, startTool("polygon", s.id), [0, 0]).tool;
+  const first = clickAt(s.doc, withLocks(tool, locks, [5, 0]), aimOf(s.doc, tool, [5, 0], locks)!);
+  assert.ok(first.drew);
+  tool = clickAt(first.doc, first.tool, [0, 0]).tool; // the next polygon's centre, 8 sides kept
+  assert.equal((tool as ShapeTool).sides, 8);
+  const given = withLocks(tool, locks, [5, 0]);
+  assert.equal(given, tool, "the sides typed are the tool's already: the same tool");
+  const again = clickAt(first.doc, given, aimOf(first.doc, tool, [5, 0], locks)!);
+  assert.equal(again.drew, false);
+  assert.equal(again.note, SAME_SHAPE);
+  assert.equal(again.tool, given);
+  // Other sides typed: a copy with them (the workspace compares with the tool it gave, not the one it held).
+  assert.equal(shapeWithLocks(tool as ShapeTool, { sides: 5 }).sides, 5);
 });

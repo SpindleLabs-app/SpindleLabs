@@ -69,6 +69,7 @@ import { editRegionWords, offerOf, pickRegionWords, regionChosenWords, regionOff
 import type { RegionRef } from "./regions.ts";
 import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
+import { isShapeTool } from "./sketch-shapes.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
@@ -4266,7 +4267,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const aim = aimOf(designDoc(), mode.tool, snapped, took);
       if (!aim) return sketchBox.showError(NO_AIM);
       const before = designDoc();
-      const done = clickAt(before, withLocks(mode.tool, took, snapped), aim);
+      const given = withLocks(mode.tool, took, snapped);
+      const done = clickAt(before, given, aim);
       // The owner's rule (rebuild.ts): an extrude whose sketch this edit breaks keeps the sketch as it was, in the same undo step.
       // A new point on the face's edges is pinned there (26f), in the same step.
       let next = pinNewPoints(before, done.doc, done.tool.sketch, edges);
@@ -4282,7 +4284,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // A circle's rim the grid rounded onto its centre from further out than a snap's reach (so not a click on the centre)
       // says the grid did it (a small circle at phone zoom; beginner play-test 2026-10-28).
       sketchBox.showError(done.note === NO_RADIUS && snapsNow(snapOn, held, gridSnap).grid && rounded[0] === snapped[0] && rounded[1] === snapped[1] && pointer.pixel !== undefined && Math.sqrt((at[0] - snapped[0]) ** 2 + (at[1] - snapped[1]) ** 2) > SNAP_PIXELS * pointer.pixel ? GRID_ATE_RADIUS : (done.note ?? ""));
-      if (done.tool !== mode.tool && locks === took) unlock(); // the sizes it placed with, not any typed since
+      if (done.tool !== given && locks === took) unlock(); // the sizes it placed with, not any typed since; a refusal hands `given` back
       mode.tool = done.tool;
       // What the pointer snaps to now, with the new point and the tool's next step: where a hover answered since the
       // click has it (the click waited its turn behind the kernel while the pointer moved on: hunt 26h), else still at
@@ -4371,7 +4373,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const aim = aimOf(designDoc(), mode.tool, pointer, took);
       if (!aim) return (sketchBox.showError(NO_AIM), giveBack());
       const before = designDoc();
-      const done = clickAt(before, withLocks(mode.tool, took, pointer), aim);
+      const given = withLocks(mode.tool, took, pointer);
+      const done = clickAt(before, given, aim);
       // As a click: an extrude whose sketch this breaks keeps the sketch as it was (rebuild.ts), in the same undo step, and a point on the face's edges is pinned (26f).
       let next = pinNewPoints(before, done.doc, done.tool.sketch, edgeTargets(done.tool.sketch));
       if (done.drew) {
@@ -4383,7 +4386,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
       }
       sketchBox.showError(done.note ?? "");
-      if (done.tool === mode.tool) giveBack();
+      if (done.tool === given) giveBack();
       mode.tool = done.tool;
       mode.snap = null;
       if (done.drew) applySketchEdit(next, drawStep(done.tool), done.tool.sketch);
@@ -4620,7 +4623,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "command-search") return mode.kind === "none" ? (searchBox.open(), true) : false;
       if (id === "rotate-tool") return mode.kind === "none" ? (startMove(null, "rotate"), true) : false;
       if (id === "clear-selection" && mode.kind === "edit" && toolBusy(mode.tool)) {
-        mode.tool = startTool(mode.tool.kind, mode.tool.sketch);
+        // A shape drops its clicks and keeps its polygon's sides, as the panel says (hunt 2026-11-12).
+        mode.tool = isShapeTool(mode.tool) ? { ...mode.tool, clicks: [] } : startTool(mode.tool.kind, mode.tool.sketch);
         mode.snap = null;
         toolChanges++;
         unlock();
