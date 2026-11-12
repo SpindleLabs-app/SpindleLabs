@@ -44,6 +44,7 @@ import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody, reversedOfResult } from "./built-body.ts";
+import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
@@ -1565,7 +1566,9 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const madeKey = (id: string): [number, number] => [places.get(bodyItem(id)!) ?? Infinity, isPiece(id) ? Number(id.slice(id.lastIndexOf(":") + 1)) : 0];
   const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && (isPiece(b.id) || b.id === own) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
   const pieceFaces: Record<string, string[]> = {};
-  const renumbered: string[] = [];
+  // Two of the item's bodies under one id would lose one of them without a word (SL #538 item 1): the numbering below
+  // never gives one, and were it ever to, the item fails here and no body changes.
+  const clash = (id: string): FeatureResult => ({ status: "failed", cause: "error", message: `${label} can't be made: two of its bodies would both be ${id}, so one would be lost (a fault in SpindleLabs, not in the design)`, ...(made.length > 0 ? { holds: made } : {}) });
   const misses: Miss[] = [];
   for (const step of steps) {
     const inputs: NamedBody[] = [];
@@ -1620,13 +1623,16 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     const inside = operation === "join" ? missed.filter((i) => leavesNoFace(ts[i].handle, result)).map((i) => step.tools[i]) : [];
     if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]), ...(inside.length > 0 && { inside }) });
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
-    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
+    // Numbered here by rank alone, on from the last boolean's; the remembered pieces are found once all are made (below).
+    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, undefined, own);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
     // Each input's item, for a piece keeping its id (an Extrude join's other bodies, hunt 11-08).
     const featureOf = new Map([step.target, ...step.tools].map((b) => [b, work[b].feature] as const));
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];
+    const twice = named.bodies.find((nb, i) => nb.id in work || named.bodies.findIndex((x) => x.id === nb.id) !== i);
+    if (twice !== undefined) return clash(twice.id);
     for (const nb of named.bodies) {
       const h = result.history[result.bodies.indexOf(nb.handle)];
       const frames = framesOfResult(h, built);
@@ -1640,9 +1646,26 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
         if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
       }
     }
-    for (const id of named.renumbered) if (!renumbered.includes(id)) renumbered.push(id);
     holds.push(...inputs.map((x) => x.handle));
   }
+  // One numbering for the whole item (docs/document-model.md section 8, "one feature, one renaming"): each remembered
+  // piece stays on the piece with its faces, whichever boolean made it, and the others take the numbers no piece has.
+  // Numbered a boolean at a time, a new chunk of one body took the number a chunk of another body was remembered with,
+  // and one overwrote the other: a whole chunk gone from the design, by the order the bodies were picked in.
+  const numbered = Object.keys(pieceFaces);
+  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), remembered, own);
+  const pieces = numbered.map((id) => ({ body: work[id], faces: pieceFaces[id] }));
+  for (const id of numbered) {
+    delete work[id];
+    delete pieceFaces[id];
+  }
+  for (const [i, { body, faces }] of pieces.entries()) {
+    if (settled.ids[i] in work || settled.ids[i] in pieceFaces) return clash(settled.ids[i]);
+    if (body !== undefined) work[settled.ids[i]] = body;
+    pieceFaces[settled.ids[i]] = faces;
+  }
+  const renumbered = settled.renumbered;
+  for (const [i, id] of ids.entries()) if (numbered.includes(id)) ids[i] = settled.ids[numbered.indexOf(id)];
   for (const id of Object.keys(bodies)) if (!(id in work)) delete bodies[id];
   Object.assign(bodies, work);
   const kept = ids.filter((id) => id in work);
