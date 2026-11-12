@@ -128,6 +128,8 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "move-bodies-kept": "the rebuild differs from the model",
   // SL #506 item 1: a Combine or Move dragged past the Move or Combine that placed or changed its bodies.
   "reorder-past-shaper": "outcome differs from the model",
+  // SL #676 item 1: a Copy or a kept tool's Combine dragged past a later item changing the body it works on.
+  "reorder-past-reader": "outcome differs from the model",
   "combine-tool-kept": "the rebuild differs from the model",
   "combine-not-held": "the rebuild differs from the model",
   "combine-pieces-dropped": "the rebuild differs from the model",
@@ -151,8 +153,9 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "duplicate-no-body": "the rebuild differs from the model",
 };
 
+// SL #676 item 1: a drag past a later item changing a body the dragged one reads is rare in the sessions; 49 is the first seed (of 1 to 600) to catch it.
 /** Faults the first 24 seeds don't reach, and the seeds that do (found by searching 1 to 200; search again if the sessions change). */
-const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-face-moves-with-target": [77n] };
+const LATE_SEEDS: Partial<Record<ModelFault, bigint[]>> = { "combine-face-moves-with-target": [77n], "reorder-past-reader": [49n] };
 
 /** The first seed whose session the planted bug fails, and how. */
 async function firstFailure(make: () => TimelineSubject, late: readonly bigint[] = []): Promise<{ seed: bigint; failure: TimelineFailure } | null> {
