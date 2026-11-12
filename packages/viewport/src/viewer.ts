@@ -152,7 +152,10 @@ export class ViewportView {
     container.appendChild(this.cube.element);
     this.bar = navBar({
       // A lit tool pressed again puts itself away where the left button rests as a picker (Fusion's way).
-      mode: (mode) => this.setMode(mode === this.mode && this.home === "select" ? "select" : mode),
+      mode: (mode) => {
+        this.panTouchOnly = false; // a mode picked on the bar is the mouse's too
+        this.setMode(mode === this.mode && this.home === "select" ? "select" : mode);
+      },
       fit: () => this.fitSelection() ?? this.fit(),
       lookAt: () => {
         const plane = this.host.sketchPlane();
@@ -381,9 +384,11 @@ export class ViewportView {
     );
   }
 
-  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit nothing changes and it says false. */
+  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit (or a sketch's own Pan, sketchPans) nothing changes and it says false. */
   leaveNavTool(): boolean {
-    if (this.mode === this.home) return false;
+    // Pan lit for a sketch on a touch screen (sketchPans) is the sketch's resting mode, not a tool picked: Escape goes on to
+    // the sketch (ending a line's chain), as with Orbit lit.
+    if (this.mode === this.home || (this.sketchPanned && this.mode === "pan")) return false;
     this.setMode(this.home);
     return true;
   }
@@ -402,6 +407,36 @@ export class ViewportView {
     }, { signal: this.listening.signal });
   }
 
+  /**
+   * A sketch being edited on a touch screen (SL #648, Ben 2026-11-12): one finger pans by default, since a drag meant to
+   * draw spun the sketch with no word; the view bar shows Pan lit, and its Orbit brings the spin back. While `on` and the
+   * view rests in its home mode, Pan is lit; once off, Pan lit by this goes back to the home mode (a mode the person chose
+   * on the bar meanwhile stays). With a mouse nothing changes.
+   */
+  sketchPans(on: boolean) {
+    if (on && !this.sketchPanned && this.mode === this.home && typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches) {
+      this.sketchPanned = true;
+      this.panTouchOnly = true;
+      this.setMode("pan");
+    } else if (!on && this.sketchPanned) {
+      this.sketchPanned = false;
+      this.panTouchOnly = false;
+      if (this.mode === "pan") this.setMode(this.home);
+    }
+  }
+  /** Pan was lit by sketchPans for the sketch being edited. */
+  private sketchPanned = false;
+  /**
+   * Pan lit by sketchPans is the finger's only: a mouse on the same touch screen keeps its home mode's left button, so
+   * its clicks still draw (merge queue 2026-11-12: Pan took the mouse's press and a rectangle never drew). A mode picked
+   * on the bar clears it.
+   */
+  private panTouchOnly = false;
+  /** The mode the mouse's buttons follow. */
+  private mouseMode(): NavMode {
+    return this.panTouchOnly && this.mode === "pan" ? this.home : this.mode;
+  }
+
   /** What a left-button drag does from now on: orbit, pan, zoom or nothing (the navigation bar's first three buttons, or none lit). */
   setMode(mode: NavMode) {
     this.mode = mode;
@@ -414,7 +449,8 @@ export class ViewportView {
   private applyButtons() {
     const flat = this.image !== null;
     // A flat (2D image) view keeps its left-drag pan whichever mouse preset rests the left button as a picker in 3D (U2d).
-    this.controls.mouseButtons.LEFT = this.mode === "orbit" || (flat && this.mode === "select") ? (flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE) : null;
+    const mouse = this.mouseMode();
+    this.controls.mouseButtons.LEFT = mouse === "orbit" || (flat && mouse === "select") ? (flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE) : null;
     this.controls.touches.ONE = this.mode === "pan" || flat ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
   }
 
@@ -476,7 +512,7 @@ export class ViewportView {
     let drag: { id: number; action: "pan" | "zoom"; x: number; y: number; start: { x: number; y: number } } | null = null;
     this.element.addEventListener("pointerdown", (e) => {
       if (e.target !== canvas || e.pointerType === "touch" || drag) return;
-      const action = dragAction(e.button, e.shiftKey, this.mode);
+      const action = dragAction(e.button, e.shiftKey, this.mouseMode());
       if (action === null || action === "orbit" || action === "select") return; // orbits are OrbitControls', and a picking left button is the click picker's
       e.preventDefault(); // no middle-button autoscroll
       e.stopPropagation(); // neither OrbitControls nor the click picker hears it
@@ -1781,7 +1817,9 @@ export class Viewer implements SharedViewport {
 
   /** Says on the element whether a sketch is being edited with the pointer on it (read by the e2e test). */
   private labelSketches() {
-    this.element.dataset.sketching = String(this.sketchHandler !== null && this.editedPlane !== null);
+    const editing = this.sketchHandler !== null && this.editedPlane !== null;
+    this.element.dataset.sketching = String(editing);
+    this.main.sketchPans(editing);
   }
 
   /**
