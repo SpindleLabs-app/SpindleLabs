@@ -3386,5 +3386,89 @@
     "original": "same.length > 1",
     "replacement": "same.length >= 1",
     "why": "resolveEdgeName: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof locks?.request !== \"function\"",
+    "replacement": "false",
+    "why": "browserLock with no locks.request: the returned lock then throws when called, renew() catches a failing lock and renews without it, which is what no lock does."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "t.kind === \"ok\"",
+    "replacement": "true",
+    "why": "asAnyone's bearer: when the token result is not ok, t.token is undefined, and request() adds no authorization header for an undefined bearer, so the same anonymous request goes out."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "code === \"\"",
+    "replacement": "true",
+    "why": "finishSignIn's cancel test: this line is reached only when error is not null or the code is falsy, and a null code with a null error returned 'none' above, so with error === null the code is always \"\" here."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "StringLiteral",
+    "original": "\"rejected\"",
+    "replacement": "\"\"",
+    "why": "finishSignIn's first failure value: the loop runs at least once (no secrets returned 'expired' above) and every pass either returns or sets failed, so the initial value is never read."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "stored === sessionToText(r.session)",
+    "replacement": "false",
+    "why": "token() after a renewal stored over its session: with the check gone, the stored text still differs from the renewed one, so samePerson() then token(false) reads that same fresh session and answers the same token."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!lock",
+    "replacement": "false",
+    "why": "renew with no lock: calling the undefined lock throws inside the try, and the catch renews without it, which is what the early return does."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v !== null && typeof v === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "LogicalOperator",
+    "original": "v !== null && typeof v === \"object\"",
+    "replacement": "v !== null || typeof v === \"object\"",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v !== null",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof v === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof r === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' typeof r === \"object\": a primitive left in passes r !== null but has no verifier property, so isVerifier(undefined) refuses it as before."
   }
 ]
