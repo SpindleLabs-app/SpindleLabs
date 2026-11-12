@@ -1,0 +1,119 @@
+{
+  "seed": 359814612,
+  "failure": {
+    "check": "combine reachable",
+    "message": "Combine's operation is out of reach with its bodies picked"
+  },
+  "shrunk": true,
+  "replayed": true,
+  "outOfTime": true,
+  "actions": [
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 205
+    },
+    {
+      "do": "canvas",
+      "x": 0.421,
+      "y": 0.187,
+      "double": false
+    },
+    {
+      "do": "canvas",
+      "x": 0.729,
+      "y": 0.922,
+      "double": false
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "-0",
+      "finish": "Escape"
+    },
+    {
+      "do": "key",
+      "key": "Enter"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 0
+    },
+    {
+      "do": "hover",
+      "x": 0.393,
+      "y": 0.529
+    },
+    {
+      "do": "drag",
+      "x": 0.797,
+      "y": 0.869,
+      "x2": 0.871,
+      "y2": 0.606,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "combine",
+      "a": 0.5822615867946297,
+      "b": 0.0015720296651124954,
+      "op": "intersect",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-cancel"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-4\"]"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "combine",
+      "a": 0.018412823788821697,
+      "b": 0.6846358033362776,
+      "op": "intersect",
+      "keep": false,
+      "ok": true
+    }
+  ]
+}
