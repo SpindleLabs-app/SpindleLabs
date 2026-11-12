@@ -134,6 +134,26 @@ await check("1280 px with a mouse: a sketch keeps Orbit (the left button turns i
   await context.close();
 });
 
+await check("a touch screen with a mouse too (1280 px): the sketch's Pan is the finger's only; mouse clicks still draw a rectangle (merge queue 2026-11-12)", async () => {
+  // A touch screen at desktop width, as laser-page.mjs opens it: Pan lit for the finger, but the mouse's left button
+  // stays the sketch's, so two clicks draw a rectangle (before the fix Pan took the mouse's press and nothing drew).
+  const { page, context } = await open(393, 852, true);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.click("#create-sketch");
+  await page.click("#sketch-plane-XY");
+  await sketching(page, true);
+  assert.equal(await nav(page), "pan", "Pan lit for the finger");
+  await page.click("#sketch-tool-rectangle");
+  const a = await clear(page, [0.45, 0.45]);
+  const b = await clear(page, [0.55, 0.55]);
+  assert.ok(a.canvas && b.canvas, "both corners on the 3D view");
+  await page.mouse.click(a.x, a.y);
+  await page.mouse.click(b.x, b.y);
+  await page.waitForFunction(() => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, { timeout: 10000 })
+    .catch(() => assert.fail("two mouse clicks draw a closed rectangle"));
+  await context.close();
+});
+
 await browser.close();
 await server.close();
 assert.deepEqual(errors, [], "no page errors");
