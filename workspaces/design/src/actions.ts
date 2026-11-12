@@ -6,6 +6,7 @@
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type SolidReport, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
+import { planeSeenAs } from "@fission/viewport";
 import { designBodies } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, isDuplicateItem, makesPieces, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
@@ -13,7 +14,7 @@ import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked } from "./solid-bad
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
-import { outlineSourceOf } from "./sketch.ts";
+import { outlineSourceOf, sketchPlane, sketchSide } from "./sketch.ts";
 
 export const DOWNLOAD_STL = "design.download-stl";
 export const COPY_SVG = "design.copy-svg";
@@ -270,7 +271,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         // Copies out go through the representation registry, like everything handed over.
         const { representation } = await ctx.representations.deliver(object, ["outline"]);
         if (representation.kind !== "outline") throw new Error(`the ${source.kind} came as ${representation.kind}, not an outline`);
-        const svg = outlineToSvg(representation.outline, source.label);
+        // A sketch on a back or bottom face is drawn looking against its plane's normal: the file is that picture, not its mirror image.
+        const seen = source.kind === "sketch" ? planeSeenAs(sketchPlane(doc, id), sketchSide(doc, id)) : undefined;
+        const svg = outlineToSvg(representation.outline, source.label, seen);
         await copy(svg.text);
         const mm = (v: number) => Number(v.toPrecision(6)).toString();
         return { message: `Copied as SVG: ${source.label}, ${mm(svg.width)} × ${mm(svg.height)} mm.`, bad: false };
