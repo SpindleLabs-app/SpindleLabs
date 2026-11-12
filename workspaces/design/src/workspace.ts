@@ -89,7 +89,7 @@ import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
 import { EXPORT_CHOICE_ID, EXPORT_CHOICE_LABEL, exportChoice } from "./export-choice.ts";
 import { registerMeshActions } from "./mesh-export.ts";
-import { COPY_SVG, DOWNLOAD_STL, failedItemsNote, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignOutcome, type DesignRun } from "./actions.ts";
+import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, printMissingNote, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignOutcome, type DesignRun } from "./actions.ts";
 
 /**
  * What the user last entered (as typed), kept while other workspaces are
@@ -652,14 +652,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
       if (!alive()) throw new SliceDropped();
       // A choice changed while it sliced: the preview says it shows the earlier ones, as Slice and download's result does.
-      // Failed timeline items are not in it, said over the time-lapse (export hunt 2026-11-12 D).
-      const warning = [doc ? failedItemsNote(doc, failedNow, "print") : "", changed() ? PREVIEW_EARLIER : ""].filter(Boolean).join(" ");
+      // Failed timeline items and hidden bodies are not in it, said over the time-lapse (export hunt 2026-11-12 D, SL #675 item 3).
+      const warning = [doc ? printMissingNote(doc, failedNow) : "", changed() ? PREVIEW_EARLIER : ""].filter(Boolean).join(" ");
       openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p), warning || undefined);
     },
-    // What the print leaves out: the timeline items that failed (export hunt 2026-11-12 D).
+    // What the print leaves out: the timeline items that failed (export hunt 2026-11-12 D) and the bodies hidden by their eyes (SL #675 item 3).
     missing: () => {
       const doc = designDoc();
-      return doc ? failedItemsNote(doc, failedNow, "print") : "";
+      return doc ? printMissingNote(doc, failedNow) : "";
     },
     // The bar follows the engine's own reports (Ben, 2026-11-01).
     onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),
