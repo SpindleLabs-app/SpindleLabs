@@ -1,0 +1,158 @@
+{
+ "formatVersion": 2,
+ "links": [],
+ "materials": [],
+ "name": "Holed box",
+ "units": {
+  "length": "mm"
+ },
+ "workspaces": {
+  "design": {
+   "version": 18,
+   "nextId": 6,
+   "profiles": [],
+   "sketches": [
+    {
+     "id": "sketch-2",
+     "points": [
+      {
+       "id": "point-3",
+       "x": 20,
+       "y": 15
+      }
+     ],
+     "curves": [
+      {
+       "id": "circle-4",
+       "kind": "circle",
+       "centre": "point-3",
+       "radius": 5
+      }
+     ],
+     "constraints": [],
+     "face": {
+      "frame": {
+       "origin": [
+        0,
+        0,
+        20
+       ],
+       "xAxis": [
+        1,
+        0,
+        0
+       ],
+       "normal": [
+        0,
+        0,
+        1
+       ]
+      },
+      "side": 1
+     }
+    }
+   ],
+   "timeline": {
+    "features": [
+     {
+      "id": "feature-1",
+      "intent": {
+       "type": "box",
+       "parameters": {
+        "width": 40,
+        "depth": 30,
+        "height": 20
+       },
+       "summary": "Box: 40 × 30 × 20 mm"
+      },
+      "provenance": {
+       "self": {
+        "workspace": "design",
+        "id": "feature-1",
+        "label": "Box 1"
+       },
+       "from": []
+      },
+      "dependsOn": [],
+      "suppressed": false
+     },
+     {
+      "id": "sketch-2",
+      "intent": {
+       "type": "sketch",
+       "parameters": {
+        "plane": "face:feature-1/top"
+       },
+       "summary": "Sketch 1 on a face of Box 1"
+      },
+      "provenance": {
+       "self": {
+        "workspace": "design",
+        "id": "sketch-2",
+        "label": "Sketch 1"
+       },
+       "from": [
+        {
+         "workspace": "design",
+         "id": "feature-1",
+         "label": "Box 1"
+        }
+       ]
+      },
+      "dependsOn": [
+       "feature-1"
+      ],
+      "suppressed": false
+     },
+     {
+      "id": "feature-5",
+      "intent": {
+       "type": "extrude",
+       "parameters": {
+        "sketch": "sketch-2",
+        "distance": 10,
+        "flip": true,
+        "operation": "cut",
+        "bodies": [
+         "body:feature-1"
+        ]
+       },
+       "summary": "Extrude Sketch 1 by 10 mm, flipped, cut from Box 1"
+      },
+      "provenance": {
+       "self": {
+        "workspace": "design",
+        "id": "feature-5",
+        "label": "Extrude 1"
+       },
+       "from": [
+        {
+         "workspace": "design",
+         "id": "sketch-2",
+         "label": "Sketch 1"
+        },
+        {
+         "workspace": "design",
+         "id": "feature-1",
+         "label": "Box 1"
+        }
+       ]
+      },
+      "dependsOn": [
+       "sketch-2",
+       "feature-1"
+      ],
+      "suppressed": false
+     }
+    ]
+   },
+   "bodies": [
+    {
+     "id": "body:feature-1",
+     "number": 1
+    }
+   ],
+   "nextBody": 2
+  }
+ }
+}

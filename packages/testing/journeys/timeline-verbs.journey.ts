@@ -83,10 +83,12 @@ test("hand-worked: a box and an extruded rectangle download as one STL of 24 tri
   // The toolbar's STL: every body shown, Body 1 then Body 2.
   const bodies = shownBodyRefs(doc);
   assert.deepEqual(bodies.map((b) => b.id), ["body:feature-1", `body:${extrude}`]);
-  // Both from z = 0, the extrude inside the box: the file's surfaces cross, so the export badge says not solid
-  // (the file is still saved, its header unstamped).
+  // Both from z = 0, the extrude inside the box: the file's surfaces cross, but each body alone is solid, so the export
+  // says the bodies overlap and offers Combine > Join, never "Not solid" (export hunt 2026-11-12 D; the file is still
+  // saved, its header unstamped, and the file's own check is kept).
   const out = await a.run(DOWNLOAD_STL, bodies);
-  assert.match(out.message, /^Exported spindlelabs-2-bodies\.stl\. Not solid: [^.]*crossings\. The 2 bodies are separate shells in one STL file\. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe\.$/);
+  assert.equal(out.message, "Exported spindlelabs-2-bodies.stl. The 2 bodies touch or overlap: each body is solid on its own, but where they meet their surfaces cross, and some slicers refuse such a file (Slice for printing sends them one by one, which is safe). Combine > Join makes them one part.");
+  assert.deepEqual((out as { notes?: unknown }).notes, { touching: 2 });
   assert.equal(out.bad, true);
   assert.equal(out.solid?.verdict, "problems");
   assert.equal(a.saved.length, 1);
