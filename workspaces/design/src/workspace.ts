@@ -1032,6 +1032,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.constraints) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.constraints.message}.` });
       // A Combine whose numbered pieces changed with an earlier edit (hunt 11-06): on its row, never a silent switch.
       if (r.pieces) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.pieces.message}.` });
+      // SL #506 item 4: a Move that moves only some of its bodies says which it can't move, never a silent jump.
+      if (r.missing) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.missing.message}.` });
       // A Cut or Join whose tools change nothing (Ben 11 Nov): OK asked first; an earlier edit since can't ask, so the row says it.
       if (r.misses) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.misses.message}.` });
     }

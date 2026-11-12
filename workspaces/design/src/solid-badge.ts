@@ -152,15 +152,31 @@ const HEADER = 80;
 export const CHECKED_HEADER = "SpindleLabs STL, checked solid: ";
 
 /**
+ * A binary STL's 80 header bytes for `text`: printable ASCII only (the format has no encoding), each other character,
+ * a newline or an "é" or an emoji alike, written as one "?", as the kernel writes its own header (kernel-results #103),
+ * so the 80 bytes are never cut inside a character and hold no control bytes; spaces after it.
+ */
+export function stlHeader(text: string): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(HEADER).fill(0x20);
+  let i = 0;
+  // By character (code point), not UTF-16 unit: a character outside the basic plane is one "?", not two.
+  for (const c of text) {
+    if (i === HEADER) break;
+    const code = c.codePointAt(0)!;
+    out[i++] = code >= 0x20 && code <= 0x7e ? code : 0x3f;
+  }
+  return out;
+}
+
+/**
  * The file with its header saying it was checked solid, then `name`, cut
- * to the 80 bytes (whole characters, printable ASCII only: the format has
- * no encoding). Only the header changes, so the check still holds.
+ * to the 80 bytes (`stlHeader`). Only the header changes, so the check
+ * still holds.
  */
 export function stampChecked(bytes: Uint8Array<ArrayBuffer>, name: string): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(bytes);
   if (out.length < HEADER) return out;
-  const text = (CHECKED_HEADER + name.replace(/[^\x20-\x7e]/g, "?")).slice(0, HEADER).padEnd(HEADER, " ");
-  for (let i = 0; i < HEADER; i++) out[i] = text.charCodeAt(i);
+  out.set(stlHeader(CHECKED_HEADER + name), 0);
   return out;
 }
 
