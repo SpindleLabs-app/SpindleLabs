@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -43,6 +43,7 @@ import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuil
 import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
 import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printMovesOf, printWords, SliceDropped, testPieceFile } from "@fission/print";
 import { openPrintPreview } from "./print-preview.ts";
+import { openTool, openToolRefusal, type OpenTool } from "./open-tool.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
@@ -606,9 +607,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let printExtras: FirstLayerExtras | null = null;
   /** Draws the build area again (set once the build area's own state exists below; the dialog may tick before then). */
   let refreshArea = () => {};
+  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice): the dialog, unless a tool is still open (#639), which it says. */
+  function sliceAsked() {
+    if (!exportWaits("Slice for printing")) printing.ask();
+  }
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
   const printing = slicePrint(ctx.toolbar, {
     async slice(choices, file, alive) {
+      const waits = openToolRefusal(toolOpen(), "Slice for printing"); // the dialog is modal, but a key may still have opened one (#639)
+      if (waits !== null) throw new Error(waits);
       const doc = designDoc();
       // By body (35f1: a Combine's pieces have no item of their own).
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
@@ -627,6 +634,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
     async preview(choices, file, alive, changed) {
+      const waits = openToolRefusal(toolOpen(), "Preview");
+      if (waits !== null) throw new Error(waits);
       const doc = designDoc();
       // By body (35f1: a Combine's pieces have no item of their own).
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
@@ -860,10 +869,42 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     panel.showActions(verbs, (id) => runAction(id, ctx.selection.items));
   }
 
+  /** The tool open now that changes the bodies (#639), or null: an export waits for it, as the file would not be what the view shows. */
+  function toolOpen(): OpenTool | null {
+    return openTool(
+      {
+        move: moveBox.shown ? { kind: moveBox.kind, editing: moveBox.editing, still: moveStill() } : null,
+        extrude: extruding !== null || extrudeBox.shown,
+        edit: editBox.editing,
+        combine: combineBox.shown ? { editing: combineBox.editing } : null,
+        sketch: mode.kind === "pick" ? { kind: "pick" } : mode.kind === "edit" ? { kind: "edit", id: editingSketch?.id ?? null } : null,
+      },
+      (id) => {
+        const f = designDoc().timeline.features.find((x) => x.id === id);
+        return f ? itemName(f) : id;
+      },
+    );
+  }
+  /**
+   * True when `verb` (an export) must wait for the tool open now, saying why in that tool's own panel, where the person
+   * looks (a phone's Properties sheet opened to it; a sketch's words also show by the pointer), or under the properties
+   * while a sketch's plane is being picked.
+   */
+  function exportWaits(verb: string): boolean {
+    const open = toolOpen();
+    const words = openToolRefusal(open, verb);
+    if (open === null || words === null) return false;
+    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true) }[open.tool];
+    say(words);
+    if (open.tool !== "sketch") ctx.properties.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a sketch's words show by the pointer
+    return true;
+  }
+
   /** Runs a registered verb on these targets and shows what it said. */
   async function runAction(id: string, targets: readonly Selected[], note = "") {
     const action = ctx.actions.get(id);
     if (!action) return panel.showActionNote(`No action ${id} is registered.`, true);
+    if (id === DOWNLOAD_STL && exportWaits("Export STL")) return;
     // Design's own runs know the bodies drawn (actions.ts, DesignRun: the precision overlay marks only those that warned);
     // the shell's context stays the prototype, so its getters (the project, the graph) read live as ever.
     const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene, failed: failedNow });
@@ -1047,7 +1088,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return { op: "set_part", shape, width, depth, height };
   }
 
-  /** The body the boxes describe (`boxesPart`, or `part` for an edit that waited its turn) in `doc` while it is a body that builds, else the last body; null with none. */
+  /** The body the boxes describe (`part`, `boxesPart` unless told) in `doc` while it is a body that builds, else the last body; null with none. */
   function boxesFeature(doc: DesignDocument, part = boxesPart): Feature | null {
     const f = part === null ? undefined : doc.timeline.features.find((x) => x.id === part);
     return f !== undefined && ownShape(f) && builds(doc, f) ? f : partFeature(doc);
@@ -1136,36 +1177,21 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const refused = refusedSize(kind);
       if (refused !== null) return panel.showError(refused);
     }
-    // The sizes as typed now, for the body the boxes describe now: an edit that waits its turn is this one, whatever is
-    // typed or selected while it waits.
-    const sizes = inputs.map((i) => i.value);
-    const part = boxesPart;
-    // A size or shape from the panel while an edit before it is still being settled (`settlesRunning`, #537) waits its turn,
-    // held in the history as the settle is: made on the settled design it is its own right step, and the step before
-    // is settled while it is still the present (recorded at once, that step stayed as first recorded for good, and
-    // Undo went back to a design nobody made). An edit that brings its design (`next`) was made from the design as it
-    // is now and can't wait: it is recorded at once, as before.
-    const waited = label !== undefined && next === undefined && (settlesRunning > 0 || editsWaiting.length > 0);
-    if (waited) await ctx.history.hold(new Promise<void>((go) => editsWaiting.push(go)));
-    let shown: Promise<void> | undefined;
-    try {
-      // Put away while it waited: the project is another Design's now, and this edit is dropped.
-      if (!(waited && putAway)) shown = makeEdit(kind, sizes, part, label, mergeKey, next);
-    } finally {
-      // Nothing of it left for the kernel to settle: the next edit waiting has its turn (else `settled` gives it).
-      if (waited && settlesRunning === 0) editsWaiting.shift()?.();
-    }
-    await shown;
+    // Made and recorded at once, in the order asked, even while an edit before it is still being settled on the kernel
+    // (#537): that settle is written into its own step when it comes (`settledBy`), so every step is the settled design.
+    // A size that waited its turn instead was not in the project until then, so a reload or another project dropped it
+    // (#627: "10" kept as 1), and an action meanwhile went ahead of it (#622: a Suppress made at the first digit).
+    await makeEdit(kind, inputs.map((i) => i.value), label, mergeKey, next);
   }
-  /** `update`'s edit made, recorded and shown as far as asking the kernel to settle it; resolves when it is drawn. `sizes` are the boxes' as typed, `part` the body they describe. */
-  function makeEdit(kind: PartKind, sizes: string[], part: string | null, label?: string, mergeKey?: string, next?: DesignDocument): Promise<void> {
+  /** `update`'s edit made, recorded and shown as far as asking the kernel to settle it; resolves when it is drawn. `sizes` are the boxes' as typed, for the body they describe (`boxesPart`). */
+  function makeEdit(kind: PartKind, sizes: string[], label?: string, mergeKey?: string, next?: DesignDocument): Promise<void> {
     viewport.clearOverlay(STL_OVERLAY); // it described the part before this edit
     // The panel edits the part's one solid feature, keeping the sketches; the
     // project holds it. An opened file's document is kept as it is until the
     // first edit. An extrude of a sketch has one size, its distance (the height box).
     const current = ctx.project.workspaces.design as DesignDocument | undefined;
     // The body the boxes describe (the selected one, else the last) is the one changed (bug hunt 2026-11-01).
-    const target = current && next === undefined && loaded === undefined && remounted === undefined ? boxesFeature(current, part) : null;
+    const target = current && next === undefined && loaded === undefined && remounted === undefined ? boxesFeature(current) : null;
     let doc: DesignDocument;
     if (next ?? loaded ?? remounted) doc = (next ?? loaded ?? remounted)!;
     else if (kind === "sketch-extrude" && current) doc = setExtrudeDistance(current, Number(sizes[2]), target?.id);
@@ -1176,9 +1202,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       doc = made.doc;
       // A new body (a preset shape chosen for an extruded sketch, which has none to become) is added at the marker;
       // the selection stays as it was (nothing leaves it unannounced, refind.journey.ts), so the boxes go back to
-      // the selected body when it is not the new one, as the Feature section does. Not when the boxes went to another
-      // body while this edit waited its turn.
-      if (boxesPart === part) boxesPart = made.id;
+      // the selected body when it is not the new one, as the Feature section does.
+      boxesPart = made.id;
     }
     // No shape is the part's while the design has no body (24f4): the Shape choice says "—".
     panel.setShape(kind, partFeature(doc) === null ? null : kind);
@@ -1621,28 +1646,29 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     // Held in the history until the kernel has answered and the step is settled (#537): Undo, Redo or a jump pressed
     // meanwhile waits (main.ts), so it never puts back a step still as first recorded. Let go however it ends (taken
-    // in, failed, timed out, the design replaced or Design put away); then the next panel edit waiting has its turn.
-    settlesRunning++;
-    const kept = settledBy(from, doc);
-    const done = () => {
-      if (--settlesRunning === 0) editsWaiting.shift()?.();
-    };
-    void ctx.history.hold(kept.then(done, done));
+    // in, failed, timed out, the design replaced or Design put away).
+    const kept = settledBy(from, doc, ctx.history.present());
+    void ctx.history.hold(kept).catch(() => {}); // `show` hears how it ended
     return kept;
   }
-  /** Edits recorded whose settle the kernel has not answered yet (`settled`: each held in the history). */
-  let settlesRunning = 0;
-  /** The panel edits waiting for them, oldest first, each let go by calling it (`update`). */
-  const editsWaiting: (() => void)[] = [];
-  /** `settled`'s work on the kernel: `doc` settled from `from` and taken into its undo step, or `doc` itself. */
-  async function settledBy(from: DesignDocument, doc: DesignDocument): Promise<DesignDocument> {
+  /**
+   * `settled`'s work on the kernel: `doc` settled from `from` and taken into its undo step `step`, or `doc` itself.
+   * When another action was recorded on top meanwhile (an eye, Insert, Rename, an OK, a size typed, an AI accept: #624,
+   * #622), the settled design is still written into `doc`'s own step (`History.amendStep`), so Undo, Redo and a history
+   * jump land on it settled; the steps on top settle from the same `unsettled`, since they were made on `doc`.
+   */
+  async function settledBy(from: DesignDocument, doc: DesignDocument, step: HistoryStep): Promise<DesignDocument> {
     let next: DesignDocument;
     try {
       next = await settleKept(kernel, from, doc, bodies);
     } catch {
       return doc; // the rebuild says what failed
     }
-    if (designDoc() !== doc || ctx.history.restoring()) return doc;
+    if (ctx.history.restoring()) return doc;
+    if (designDoc() !== doc) {
+      if (next !== doc) ctx.history.amendStep(step, (snapshot) => withWorkspaceDocument(snapshot, "design", doc, next));
+      return doc;
+    }
     unsettled = null;
     if (next !== doc) takeIn(doc, next);
     return next;
@@ -4043,6 +4069,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let moveFromInsert = false;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
   /** A new Move open whose boxes move and turn nothing yet: Cancel would lose nothing. */
+  /** The Move panel's boxes read and moving, turning and scaling nothing (an empty box counts as 0); a box that can't be read is not still. */
+  function moveStill(): boolean {
+    const read = readMoveBoxes(moveBox.typed);
+    return "values" in read && read.values.scale === undefined && (["x", "y", "z", "turnX", "turnY", "turnZ"] as const).every((k) => read.values[k] === 0);
+  }
   function moveUntouched(): boolean {
     if (!moveBox.shown || moveBox.editing !== null) return false;
     const read = readMoveBoxes(moveBox.typed);
@@ -4571,7 +4602,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           { id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => run({ op: "export_stl" }) },
           { id: EXPORT_CHOICE_ID, label: EXPORT_CHOICE_LABEL, title: `Export 3MF or OBJ: every body shown, as one 3MF file for a slicer (sizes in millimetres, each body its own object) or one OBJ file for another 3D program`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => meshChoice.ask() },
           { id: "file-save-picture", label: "Save picture (PNG)", title: "Save picture: the view as it is on screen, as a PNG file", off: viewport.picture ? undefined : "This browser can't make a picture of the view", run: () => void savePicture() },
-          { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => printing.ask() },
+          { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => sliceAsked() },
         ],
       };
     },

@@ -9,27 +9,34 @@ import { defaultLaserData, LASER_DATA_VERSION, laserWorkspace, readLaserProjectD
 
 const open = (laser: unknown) => projectFromJson(projectToJson({ ...emptyProject("Sign"), workspaces: { laser } }), [laserWorkspace]);
 
-test("the version this Laser writes is 2: hand-placed parts (`placed`) came with it", () => {
-  assert.equal(LASER_DATA_VERSION, 2);
-  assert.equal(defaultLaserData().version, 2);
+test("the version this Laser writes is 3: hand-placed parts (`placed`) came with 2, layers (`ops`) with 3", () => {
+  assert.equal(LASER_DATA_VERSION, 3);
+  assert.equal(defaultLaserData().version, 3);
+  assert.deepEqual(defaultLaserData().ops, {});
 });
 
-test("version 1 data (before parts were placed by hand) opens as version 2 with nothing placed and every choice kept", () => {
-  // By hand: version 1 held bed, gap, thickness and off. Version 2 adds `placed`, empty for a project that never had it.
+test("version 1 data (before parts were placed by hand) opens as version 3 with nothing placed, every part cut and every choice kept", () => {
+  // By hand: version 1 held bed, gap, thickness and off. Version 2 adds `placed`, empty for a project that never had it;
+  // version 3 adds `ops`, empty: every part of an older project was cut, which is what no entry says.
   const v1 = { version: 1, bed: { width: 600, height: 400 }, gap: 4, thickness: 6, off: ["sketch-2"] };
-  assert.deepEqual(open(v1).workspaces.laser, { version: 2, bed: { width: 600, height: 400 }, gap: 4, thickness: 6, off: ["sketch-2"], placed: {} });
+  assert.deepEqual(open(v1).workspaces.laser, { version: 3, bed: { width: 600, height: 400 }, gap: 4, thickness: 6, off: ["sketch-2"], placed: {}, ops: {} });
 });
 
-test("version 2 data opens as it is", () => {
+test("version 2 data (before layers) opens as version 3 with every part cut and its places kept", () => {
   const v2 = { version: 2, bed: { width: 600, height: 400 }, gap: 4, thickness: 6, off: [], placed: { "sketch-4": { x: 120, y: 80, angle: 90 } } };
-  assert.deepEqual(open(v2).workspaces.laser, v2);
+  assert.deepEqual(open(v2).workspaces.laser, { ...v2, version: 3, ops: {} });
+});
+
+test("version 3 data opens as it is", () => {
+  const v3 = { version: 3, bed: { width: 600, height: 400 }, gap: 4, thickness: 6, off: [], placed: { "sketch-4": { x: 120, y: 80, angle: 90 } }, ops: { "sketch-4": "engrave", "sketch-5": "score" } };
+  assert.deepEqual(open(v3).workspaces.laser, v3);
 });
 
 test("data from a later Laser is refused as newer, in words, so the project is kept for a build that reads it and nothing is dropped", () => {
-  const v3 = { version: 3, bed: { width: 600, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, engrave: [{ part: "sketch-4", power: 40 }] };
+  const v4 = { version: 4, bed: { width: 600, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, ops: {}, settings: [{ op: "engrave", power: 40 }] };
   assert.throws(
-    () => open(v3),
-    (e: unknown) => e instanceof NewerFormatError && e.message === "can't open the laser workspace's data: it was saved by a newer SpindleLabs (Laser data version 3; this one reads up to 2)",
+    () => open(v4),
+    (e: unknown) => e instanceof NewerFormatError && e.message === "can't open the laser workspace's data: it was saved by a newer SpindleLabs (Laser data version 4; this one reads up to 3)",
   );
 });
 
