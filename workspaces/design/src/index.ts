@@ -21,7 +21,7 @@ export { clickAt, hoverTool, SAME_LINE, SKETCH_TOOLS, startTool, switchTool, too
 export { CURVED_EXTRUDE, FACE_MATCH, FACE_NEW_BODY, FACE_TWO_REGIONS, faceLabel, faceOpen, faceProfile, faceRegion, matchesFace, onPlane, type FaceProfile } from "./face-extrude.ts";
 export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, featureBuild, featureSpec, isFlipped, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, previewSpec, setExtrudeDistance, setExtrudeFlip, signedDistance, ZERO_DISTANCE, ZERO_OK } from "./extrude.ts";
 export { PART_VIEW, syncGraph } from "./graph.ts";
-export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
+export { bodyFaces, designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
 export { bodyReference, designReference, NAME_NOTE, profileReference, readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
 export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type CurveOf, type PieceWays, type SideOf } from "./naming.ts";
 export { applyChange, pickChange, type SelectionChange } from "./picking.ts";
