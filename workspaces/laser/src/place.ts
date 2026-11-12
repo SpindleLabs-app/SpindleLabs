@@ -230,15 +230,17 @@ export function boxesOverlap(a: PlacedPart, b: PlacedPart): boolean {
 }
 
 /**
- * The pairs of placed parts whose shapes might overlap: their boxes do, and
- * at least one was placed by hand (two row parts never overlap: the rows
- * keep them `gap` apart). Each pair as its two places in `placed`, lower
- * first. Whether the shapes really overlap is the kernel's to say.
+ * The pairs of placed parts whose shapes might overlap or touch: their boxes
+ * overlap, or come within `within` mm of each other (0: overlap only), and
+ * at least one was placed by hand (two row parts never meet: the rows keep
+ * them `gap` apart). Each pair as its two places in `placed`, lower first.
+ * How the shapes themselves lie is the kernel's to say.
  */
-export function overlapCandidates(placed: readonly LaidPart[]): [number, number][] {
+export function overlapCandidates(placed: readonly LaidPart[], within = 0): [number, number][] {
+  const near = (a: PlacedPart, b: PlacedPart) =>
+    Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > EDGE_SLACK - within && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > EDGE_SLACK - within;
   const out: [number, number][] = [];
-  for (let i = 0; i < placed.length; i++)
-    for (let j = i + 1; j < placed.length; j++) if ((placed[i].by === "hand" || placed[j].by === "hand") && boxesOverlap(placed[i], placed[j])) out.push([i, j]);
+  for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) if ((placed[i].by === "hand" || placed[j].by === "hand") && near(placed[i], placed[j])) out.push([i, j]);
   return out;
 }
 
