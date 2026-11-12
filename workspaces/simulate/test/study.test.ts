@@ -8,6 +8,7 @@ import {
   addStudy,
   amountRefusal,
   chooseBody,
+  setMaterial,
   emptyTestLab,
   G,
   loadWords,
@@ -35,7 +36,7 @@ function bracket(): TestLabData {
   data = togglePushed(added.data, study.id, added.load.id, face("top", "Top face"));
   const r = setLoad(data, study.id, added.load.id, { amount: 5, unit: "kg" });
   assert.ok("data" in r);
-  return r.data;
+  return setMaterial(r.data, study.id, "pla");
 }
 
 test("hand-worked: a mass hanging weighs mass × G; newtons stay as typed; a pressure has no one force", () => {
@@ -110,7 +111,7 @@ test("an amount: above 0 and at most 1,000,000, at 0.9× and 1.1× of the limit;
 test("what stops a study, first problem first; none when held and pushed", () => {
   assert.deepEqual(readyProblems(addStudy(emptyTestLab(), null).study, []), ["Pick a body to test."]);
   const bare = addStudy(emptyTestLab(), body(1)).study;
-  assert.deepEqual(readyProblems(bare, []), ["Pick at least one face to hold in place: with nothing held the part would just fly away.", "Add a load: with nothing pushing, nothing bends."]);
+  assert.deepEqual(readyProblems(bare, []), ["Choose what the part is made of.", "Pick at least one face to hold in place: with nothing held the part would just fly away.", "Add a load: with nothing pushing, nothing bends."]);
   const s = bracket().studies[0];
   assert.deepEqual(readyProblems(s, []), []);
   assert.deepEqual(readyProblems(s, ["Load 1 lost its face Top face."]), ["Load 1 lost its face Top face."]);
@@ -133,7 +134,7 @@ test("the reader: nothing yet is an empty TestLab; a saved study reads back as w
 
 test("the reader refuses each broken rule in words, and data from a newer SpindleLabs as newer", () => {
   const good = () => JSON.parse(JSON.stringify(bracket()));
-  assert.throws(() => readTestLab({ ...good(), version: 2 }), (e: unknown) => e instanceof NewerFormatError && /version 2, from a newer SpindleLabs/.test(e.message));
+  assert.throws(() => readTestLab({ ...good(), version: 3 }), (e: unknown) => e instanceof NewerFormatError && /version 3, from a newer SpindleLabs/.test(e.message));
   const breaks: [string, (d: any) => void, RegExp][] = [
     ["not an object", (d) => Object.assign(d, { studies: 3 }), /studies are not a list/],
     ["version 0", (d) => (d.version = 0), /not one SpindleLabs ever wrote/],
@@ -151,10 +152,38 @@ test("the reader refuses each broken rule in words, and data from a newer Spindl
     ["a load as text", (d) => (d.studies[0].loads[0].amount = "5"), /as a number/],
     ["a pressure pushing down", (d) => Object.assign(d.studies[0].loads[0], { unit: "kPa", direction: "down" }), /only pushes square into its faces/],
     ["a mesh size of huge", (d) => (d.studies[0].mesh = "huge"), /mesh size huge/],
+    ["made of wood", (d) => (d.studies[0].material = "wood"), /made of wood, which is not in this SpindleLabs's materials library/],
+    ["a material as a number", (d) => (d.studies[0].material = 7), /material is not a material's name/],
+    ["no material at all", (d) => delete d.studies[0].material, /material is not a material's name/],
   ];
   for (const [what, bend, why] of breaks) {
     const d = good();
     bend(d);
     assert.throws(() => readTestLab(d), why, what);
   }
+});
+
+test("a study's material: set by the library's id, one change; version 1 data (from before materials) reads as not chosen", () => {
+  const data = bracket();
+  assert.equal(data.version, 2);
+  assert.equal(data.studies[0].material, "pla");
+  const steel = setMaterial(data, "study-1", "steel-a36");
+  assert.equal(steel.studies[0].material, "steel-a36");
+  assert.equal(setMaterial(steel, "study-1", "steel-a36"), steel, "the same material again changes nothing");
+  assert.throws(() => setMaterial(data, "study-1", "wood"), /no material wood/);
+  assert.equal(addStudy(emptyTestLab(), body(1)).study.material, null);
+  // A T1 file: version 1, no material key; it opens with the material not chosen, and is written back as version 2.
+  const v1 = JSON.parse(JSON.stringify(data));
+  v1.version = 1;
+  delete v1.studies[0].material;
+  const read = readTestLab(v1);
+  assert.equal(read.version, 2);
+  assert.equal(read.studies[0].material, null);
+  assert.deepEqual(readyProblems(read.studies[0], []), ["Choose what the part is made of."]);
+  // A version 1 file with a material key is read as version 1 says: the key is not one version 1 had, so it is not taken.
+  v1.studies[0].material = "abs";
+  assert.equal(readTestLab(v1).studies[0].material, null);
+  // Version 2 with no material chosen yet reads back as written.
+  const none = addStudy(emptyTestLab(), body(1)).data;
+  assert.deepEqual(readTestLab(JSON.parse(JSON.stringify(none))), none);
 });
