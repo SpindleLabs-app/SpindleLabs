@@ -306,7 +306,8 @@ export function pointNear(sketch: Sketch, at: readonly [number, number]): string
  * points a line already joins is that line, not a second one on top of it
  * (the line tool's SAME_LINE; app sweep 2026-10-28): `ids` are the four
  * sides, shared ones by their own ids. A projected line (27d) is traced
- * over, not shared: the outline leaves it out (27e). Corners on one row or column, or
+ * over, not shared: the outline leaves it out (27e); so is a construction
+ * line, which is never an ordinary side (hunt 2026-11-12). Corners on one row or column, or
  * closer to it than 2·SAME_PLACE (two corners that near could both be one
  * point already there), have no width or no height and are refused.
  */
@@ -320,7 +321,7 @@ export function drawRectangle(doc: DesignDocument, sketchId: string, a: readonly
   for (let i = 0; i < 4; i++) {
     const [from, to] = [corners[i], corners[(i + 1) % 4]];
     const now = sketchIn(next, sketchId);
-    const there = typeof from === "string" && typeof to === "string" ? now.curves.find((x) => x.kind === "line" && !now.projected?.some((p) => p.made === x.id) && ((x.start === from && x.end === to) || (x.start === to && x.end === from))) : undefined;
+    const there = typeof from === "string" && typeof to === "string" ? now.curves.find((x) => x.kind === "line" && x.construction !== true && !now.projected?.some((p) => p.made === x.id) && ((x.start === from && x.end === to) || (x.start === to && x.end === from))) : undefined;
     if (there) {
       ids.push(there.id);
       continue;
