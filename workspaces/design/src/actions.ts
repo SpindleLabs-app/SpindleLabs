@@ -6,11 +6,12 @@
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type SolidReport, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
+import { nameLead, printLead } from "@fission/print";
 import { planeSeenAs } from "@fission/viewport";
 import { designBodies } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, isDuplicateItem, makesPieces, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
-import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked, touchingWords, type ExportNotes } from "./solid-badge.ts";
+import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked, stlHeader, touchingWords, type ExportNotes } from "./solid-badge.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
@@ -181,7 +182,7 @@ const STL_TRIANGLE = 50;
 
 /**
  * Binary STL files joined into one (25c1): an 80-byte header with `name`
- * after "SpindleLabs STL: " (as the kernel writes its own), the sum of their
+ * after "SpindleLabs STL: " (as the kernel writes its own, `stlHeader`), the sum of their
  * triangle counts, then every file's triangles unchanged, in order. A file
  * whose length disagrees with its count throws, and nothing is written.
  */
@@ -194,10 +195,8 @@ export function joinStl(files: readonly Uint8Array[], name: string): Uint8Array<
   }
   if (triangles > 0xffffffff) throw new Error(`${triangles} triangles is more than one STL file can count`);
   const out = new Uint8Array(STL_HEADER + 4 + STL_TRIANGLE * triangles);
-  // Spaces after the name, as the kernel pads its header; never "solid" first (that reads as ASCII STL).
-  out.fill(0x20, 0, STL_HEADER);
-  const text = new TextEncoder().encode(`SpindleLabs STL: ${name}`).subarray(0, STL_HEADER);
-  out.set(text, 0);
+  // As the kernel writes its own header: printable ASCII, spaces after the name; never "solid" first (that reads as ASCII STL).
+  out.set(stlHeader(`SpindleLabs STL: ${name}`), 0);
   new DataView(out.buffer).setUint32(STL_HEADER, triangles, true);
   let at = STL_HEADER + 4;
   for (const f of files) {
@@ -267,7 +266,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const files: StlFile[] = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
-        const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
+        // Named after the design (Ben 2026-11-11): its own name, else the file it was saved to; with neither, the shape's name as before.
+        const lead = printLead(ctx.project.name, ctx.fileName?.());
+        const file = nameLead(lead) !== "spindlelabs" ? `${nameLead(lead)}.stl` : `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
         const bytes = one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name);
         // The export badge: the kernel checks the file's own bytes, as saved (every body, every corner rounded); a
         // solid one says so in its header. A check that can't run never stops the export, and never says solid.

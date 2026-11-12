@@ -2,7 +2,7 @@
 // page in a DOM (happy-dom). The real app in Chromium: apps/fission/e2e/laser-page.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RepresentationRegistry, type Outline, type WorkspaceContext } from "@fission/core";
+import { createSelection, RepresentationRegistry, type Outline, type WorkspaceContext } from "@fission/core";
 import { emptyBedNote, flatScene, laserWorkspace, layOut, layoutWords, mountLaserPage, OUTLINES_LISTER, pairWords, readLaserData, readParts, setLaserShown, sheetSvg, type PartsRelation, type Relate, type SaveText } from "../src/index.ts";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 
@@ -81,7 +81,7 @@ test("the words: nothing offered, parts on the bed, and each left off with why",
   assert.equal(layoutWords(one, 2), "1 part on the bed. Sketch 2 is left off: it is 500 × 10 mm, bigger than the bed (100 × 100 mm, 5 mm in from each edge).");
 });
 
-function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown) {
+function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown, listedFirst: typeof objects = objects) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = () => doc.body.appendChild(doc.createElement("div"));
@@ -92,8 +92,21 @@ function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: u
   const keys: (string | undefined)[] = [];
   const registry = fakeRegistry(["c"]);
   /** What Design lists now; `design` changes it, as an edit in Design would. */
-  let listed = objects;
+  let listed = listedFirst;
   const design = (now: typeof objects) => (listed = now);
+  /** The one selection, shared with every workspace (Design's picks land here too); `listeners` counts who listens now. */
+  const selection = createSelection();
+  let listening = 0;
+  const heard = selection.onChange.bind(selection);
+  selection.onChange = (l) => {
+    listening++;
+    const stop = heard(l);
+    return () => {
+      listening--;
+      stop();
+    };
+  };
+  const listeners = () => listening;
   registry.registerLister(OUTLINES_LISTER, () => listed);
   const project = { name: "Box", workspaces: (laser === undefined ? {} : { laser }) as Record<string, unknown> };
   const element = slot();
@@ -113,10 +126,11 @@ function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: u
     browser: slot(),
     properties: slot(),
     representations: registry,
+    selection,
     viewport: { element, showImage: (image: unknown) => viewport.push(`showImage(${image})`), clearImage: () => viewport.push("clearImage"), showBody: refuse("showBody"), setView: refuse("setView"), fit: refuse("fit") },
   } as unknown as WorkspaceContext;
   const drawn = () => [...element.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("d"));
-  return { ctx, element, viewport, drawn, design, changes, keys, project, mounted: mountLaserPage(ctx, save, relate), window };
+  return { ctx, element, viewport, drawn, design, changes, keys, project, selection, listeners, mounted: mountLaserPage(ctx, save, relate), window };
 }
 
 test("the page lists the parts with their sizes, lays them on the bed, draws them flat, and keeps a part turned off in the project", async () => {
@@ -281,7 +295,7 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
   const slot = () => doc.body.appendChild(doc.createElement("div"));
   const registry = fakeRegistry();
   registry.registerLister(OUTLINES_LISTER, () => []);
-  const ctx = { project: { workspaces: {} }, projectChanged: () => {}, kernel, toolbar: slot(), browser: slot(), properties: slot(), representations: registry, viewport: { element: slot(), showImage: () => {}, clearImage: () => {} } } as unknown as WorkspaceContext;
+  const ctx = { project: { workspaces: {} }, projectChanged: () => {}, kernel, toolbar: slot(), browser: slot(), properties: slot(), representations: registry, selection: createSelection(), viewport: { element: slot(), showImage: () => {}, clearImage: () => {} } } as unknown as WorkspaceContext;
   setLaserShown(false);
   const off = laserWorkspace.mount(ctx);
   assert.equal(ctx.browser.querySelector(".laser-page"), null);
@@ -340,8 +354,8 @@ test("a new gap leaves the view where the person put it; a new bed size shows th
 // Parts put by hand (L1b). The parts: Sketch a, 60 × 40, in the rows at (3, 3); Sketch b, 30 × 10, right of it at (66, 3).
 
 /** The page with Sketch b picked by a click on its outline, and what a test needs to type and press. */
-async function withPicked(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown) {
-  const all = mount(save, laser, relate, realKernel);
+async function withPicked(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown, listed: typeof objects = objects) {
+  const all = mount(save, laser, relate, realKernel, listed);
   await all.mounted.ready;
   const { ctx, element, window } = all;
   const fireOn = (target: Element, type: string, init: Record<string, unknown> = {}) => {
@@ -756,5 +770,102 @@ test("hand-worked: Flip mirrors the picked part where it sits, kept as a flip in
   assert.deepEqual(placed()!.b, { x: 90, y: 3, angle: 0, flip: true });
   fireOn(element.querySelector(".laser-flat svg")!, "keydown", { key: "ArrowLeft" }); // an arrow (and so a drag) keeps it too
   assert.deepEqual(placed()!.b, { x: 89, y: 3, angle: 0, flip: true });
+  mounted.unmount();
+});
+
+// L1b3: the picked part is the one selection. Design lists each flat shape with what the selection holds when it is
+// picked (`selectAs`, its outline's reference); a part without one is picked on the bed alone.
+const outlineRef = (id: string) => ({ kind: "outline" as const, id: `outline:${id}` });
+const shared = objects.map((o) => ({ ...o, selectAs: outlineRef(o.id) }));
+const ids = (items: readonly { kind: string; id: string }[]) => items.map((r) => `${r.kind} ${r.id}`);
+
+test("L1b3: a part picked on the bed is the one selection, so DesignLab has its sketch picked; Escape lets it go there too", async () => {
+  const { ctx, element, selection, fireOn, mounted } = await withPicked(undefined, undefined, undefined, undefined, shared); // clicks b
+  assert.deepEqual(ids(selection.items), ["outline outline:b"]);
+  assert.equal(element.querySelector<HTMLElement>(".laser-flat")!.dataset.picked, "b");
+  assert.equal(ctx.properties.querySelector("legend")!.textContent, "Sketch b");
+  fireOn(element.querySelector(".laser-flat svg")!, "keydown", { key: "Escape" });
+  assert.deepEqual(selection.items, []);
+  assert.equal(ctx.properties.querySelector<HTMLElement>(".laser-page-part")!.hidden, true);
+  mounted.unmount();
+});
+
+test("L1b3: a sketch picked elsewhere (as DesignLab picks it) is the part picked on the bed; a body is no part; the first part selected wins", async () => {
+  const { ctx, element, selection, mounted } = mount(undefined, undefined, undefined, undefined, shared);
+  await mounted.ready;
+  const legend = () => (ctx.properties.querySelector<HTMLElement>(".laser-page-part")!.hidden ? null : ctx.properties.querySelector("legend")!.textContent);
+  const onBed = () => element.querySelector<HTMLElement>(".laser-flat")!.dataset.picked;
+  selection.set([outlineRef("b")]);
+  assert.equal(legend(), "Sketch b");
+  assert.equal(onBed(), "b");
+  selection.set([{ kind: "body", id: "body:1" as never }]);
+  assert.equal(legend(), null);
+  assert.equal(onBed(), undefined);
+  // c is open (it can't be cut, so it is no part on the bed): the first selected part on the bed after it is picked.
+  selection.set([{ kind: "body", id: "body:1" as never }, outlineRef("c"), outlineRef("a"), outlineRef("b")]);
+  assert.equal(legend(), "Sketch a");
+  selection.clear();
+  assert.equal(legend(), null);
+  // Picking reads the selection only: nothing is stored in the project.
+  assert.equal(ctx.project.workspaces.laser, undefined);
+  mounted.unmount();
+});
+
+test("L1b3: moving a part by its numbers picks it in the selection; one taken off the bed is let go there too; one turned off in Laser but picked in DesignLab stays picked there", async () => {
+  const { ctx, selection, click, type, changes, window, mounted } = await withPicked(undefined, undefined, undefined, undefined, shared);
+  click("a");
+  type("x", "20");
+  assert.deepEqual(ids(selection.items), ["outline outline:a"]);
+  assert.equal(changes.at(-1), "Move Sketch a on the laser bed");
+  const tick = (id: string, on: boolean) => {
+    const b = ctx.browser.querySelector<HTMLInputElement>(`input[data-part="${id}"]`)!;
+    b.checked = on;
+    b.dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  tick("a", false);
+  assert.deepEqual(selection.items, []);
+  // Picked in Design while it is off the laser bed: the selection keeps it (Design's), the bed has nothing picked.
+  selection.set([outlineRef("a")]);
+  assert.equal(ctx.properties.querySelector<HTMLElement>(".laser-page-part")!.hidden, true);
+  assert.deepEqual(ids(selection.items), ["outline outline:a"]);
+  tick("a", true);
+  assert.equal(ctx.properties.querySelector("legend")!.textContent, "Sketch a"); // back on the bed, picked as the selection says
+  mounted.unmount();
+});
+
+test("L1b3: asleep, the page hears nothing of the selection; awake, it shows what was picked meanwhile; unmounted, it never listens again", async () => {
+  const { ctx, selection, listeners, mounted } = await withPicked(undefined, undefined, undefined, undefined, shared); // b
+  const shown = ctx.properties.querySelector("legend")!;
+  const legend = () => shown.textContent;
+  mounted.sleep!();
+  selection.set([outlineRef("a")]);
+  assert.equal(legend(), "Sketch b"); // not drawn while another workspace is on screen
+  mounted.wake!();
+  await new Promise((r) => setTimeout(r, 0)); // the fresh read of Design's shapes
+  assert.equal(legend(), "Sketch a");
+  selection.set([outlineRef("b")]);
+  assert.equal(legend(), "Sketch b");
+  assert.equal(listeners(), 1); // one listener, kept through sleep and wake, never a second
+  mounted.unmount();
+  assert.equal(listeners(), 0); // unmounted, it listens no more
+  selection.set([outlineRef("a")]);
+  assert.equal(legend(), "Sketch b");
+});
+
+test("L1b3: a part its owner gives no reference for is picked on the bed alone (the selection emptied); a pick elsewhere lets it go", async () => {
+  const mixed = [shared[0], objects[1], shared[2]]; // b has no reference
+  const { selection, click, element, mounted } = await withPicked(undefined, undefined, undefined, undefined, mixed); // clicks b
+  const onBed = () => element.querySelector<HTMLElement>(".laser-flat")!.dataset.picked;
+  assert.equal(onBed(), "b");
+  assert.deepEqual(selection.items, []);
+  click("a");
+  assert.deepEqual(ids(selection.items), ["outline outline:a"]);
+  click("b");
+  assert.deepEqual(selection.items, []);
+  assert.equal(onBed(), "b");
+  selection.set([{ kind: "body", id: "body:1" as never }]);
+  assert.equal(onBed(), undefined);
+  selection.clear();
+  assert.equal(onBed(), undefined); // let go for good, not picked again when the selection empties
   mounted.unmount();
 });
