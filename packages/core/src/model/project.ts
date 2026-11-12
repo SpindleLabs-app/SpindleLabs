@@ -131,14 +131,19 @@ export function projectToJson(project: Project): string {
  */
 export function withWorkspaceDocument(snapshot: string, id: WorkspaceId, was: unknown, now: unknown): string | null {
   const text = (x: unknown) => projectToJson(x as Project);
+  let data: unknown;
   try {
-    const data: unknown = JSON.parse(snapshot);
-    if (!isObject(data) || !isObject(data.workspaces) || !Object.hasOwn(data.workspaces, id)) return null;
-    if (text(data.workspaces[id]) !== text(was)) return null;
-    data.workspaces[id] = now;
+    data = JSON.parse(snapshot);
+  } catch {
+    return null;
+  }
+  if (!isObject(data) || !isObject(data.workspaces) || !Object.hasOwn(data.workspaces, id)) return null;
+  if (text(data.workspaces[id]) !== text(was)) return null;
+  data.workspaces[id] = now;
+  try {
     return text(data);
   } catch {
-    return null; // not a project's text, or `now` holds a number no file can (as `projectToJson` refuses it)
+    return null; // `now` holds a number no file can (as `projectToJson` refuses it)
   }
 }
 

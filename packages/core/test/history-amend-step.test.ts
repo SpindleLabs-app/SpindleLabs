@@ -159,6 +159,11 @@ test("null when the snapshot does not hold that document, or can't be read, or t
   assert.equal(withWorkspaceDocument(snapshot, "render", { box: { w: 50 } }, { box: { w: 55 } }), null, "no such workspace in it");
   assert.equal(withWorkspaceDocument("{not json", "design", {}, {}), null);
   assert.equal(withWorkspaceDocument("[1]", "design", {}, {}), null);
+  assert.equal(withWorkspaceDocument("null", "design", undefined, {}), null, "not an object");
+  assert.equal(withWorkspaceDocument('{"workspaces":null}', "design", undefined, {}), null, "no workspaces");
+  assert.equal(withWorkspaceDocument('{"workspaces":[]}', "design", undefined, {}), null, "workspaces not an object");
+  // A workspace the snapshot doesn't hold is never one whose document was `undefined`: nothing to put right.
+  assert.equal(withWorkspaceDocument(snapshot, "render", undefined, { box: { w: 55 } }), null, "no render document");
   assert.equal(withWorkspaceDocument(snapshot, "design", { box: { w: 50 } }, { box: { w: Infinity } }), null, "no file can hold it");
 });
 
@@ -182,4 +187,27 @@ test("the first state put right, and a removed present never lets the next key m
   assert.deepEqual(h.steps().map((s) => s.label), ["", "Width 50", "Width 70"]);
   h.undo();
   assert.equal(doc.w, 50);
+});
+
+test("a step below the present removed keeps the typing in the present one step; one a redo away removed leaves the present where it is", () => {
+  const { h, doc, edit, rename, widthTo, tick } = rig();
+  rename("Pad"); // X: {w: 40, name: "Pad"}
+  const x = h.present();
+  tick(100);
+  edit(60, "w"); // A, the present, typed in the width box
+  // X put right into the start's state ({w: 40, name: "Box"}): removed, A stays the present and still the last record.
+  assert.equal(h.amendStep(x, (s) => JSON.stringify({ ...JSON.parse(s), name: "Box" })), true);
+  assert.equal(h.undoLabel(), "Width 60");
+  tick(100);
+  edit(65, "w"); // the next key in the same box: merged into A
+  assert.deepEqual(h.steps().map((s) => s.label), ["", "Width 65"]);
+  // [start, Width 65, Width 70]; Undo once, so Width 70 is a redo away, then put it right into Width 65's state.
+  tick(2000);
+  edit(70);
+  const y = h.present();
+  h.undo();
+  assert.equal(h.amendStep(y, widthTo(65)), true);
+  assert.equal(h.canRedo(), false, "the redo had nothing to bring back");
+  assert.equal(h.undoLabel(), "Width 65", "the present is still Width 65");
+  assert.equal(doc.w, 65);
 });
