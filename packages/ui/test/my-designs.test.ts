@@ -29,9 +29,9 @@ test("hand-worked: sizes and space in plain words", () => {
 });
 
 test("tags are the workspaces' names", () => {
-  assert.equal(tagOf("design"), "Design");
-  assert.equal(tagOf("slice"), "Slice");
-  assert.equal(tagOf("laser"), "Laser");
+  assert.equal(tagOf("design"), "DesignLab");
+  assert.equal(tagOf("slice"), "SliceLab");
+  assert.equal(tagOf("laser"), "LaserLab");
   assert.equal(tagOf("future"), "Future", "a tag a newer build adds still shows");
 });
 
@@ -45,9 +45,9 @@ test("rows: name (Untitled when empty), tag, when, the open one marked", () => {
   assert.deepEqual(
     rows.map((r) => [r.id, r.name, r.tag, r.when, r.open]),
     [
-      ["d1", "Bracket", "Slice", "Saved 5 minutes ago", false],
+      ["d1", "Bracket", "SliceLab", "Saved 5 minutes ago", false],
       // 26 hours ago is more than a day: its date.
-      ["d2", "Untitled", "Design", "Saved day 2026-11-04 · open now", true],
+      ["d2", "Untitled", "DesignLab", "Saved day 2026-11-04 · open now", true],
     ],
   );
 });
@@ -97,7 +97,7 @@ test("the dialog lists the account's designs with pictures, tags and the space u
   assert.deepEqual(rows().map((r) => r.dataset.id), ["d1", "d2"]);
   assert.equal(row("d1").querySelector("img")!.getAttribute("src"), "data:image/png;base64,iVBORw0KGgo=");
   assert.equal(row("d2").querySelector("img"), null, "no picture: a plain box");
-  assert.equal(row("d1").querySelector(".my-design-tag")!.textContent, "Slice");
+  assert.equal(row("d1").querySelector(".my-design-tag")!.textContent, "SliceLab");
   assert.deepEqual(buttons("d1"), ["Open", "Delete"]);
   assert.deepEqual(buttons("d2"), ["Delete"], "the one open now has nothing to open");
   assert.equal(doc.getElementById("my-designs-space")!.textContent, "2 of 200 designs · 2 kB of 20.0 MB used");

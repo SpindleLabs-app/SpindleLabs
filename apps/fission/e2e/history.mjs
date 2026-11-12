@@ -139,7 +139,11 @@ try {
     assert.ok(Math.abs(b.width - 48) <= 1 && Math.abs(b.height - 48) <= 1, `48 px: ${b.width} x ${b.height}`);
     assert.ok(b.x + b.width <= 393 && b.y + b.height <= 852, "on the screen");
     const others = await Promise.all(["#undo", "#redo"].map((id) => page.locator(id).boundingBox()));
-    for (const o of others) assert.ok(b.y + b.height <= o.y + 0.5 || o.y + o.height <= b.y + 0.5, "the three buttons do not overlap");
+    // Apart one way or the other: a column in the view's corner, or a row when an open sheet lifts the group above it (undo-lift.ts;
+    // the sizes typed above leave the Properties sheet open here).
+    const apart = (a, o) => a.y + a.height <= o.y + 0.5 || o.y + o.height <= a.y + 0.5 || a.x + a.width <= o.x + 0.5 || o.x + o.width <= a.x + 0.5;
+    for (const o of others) assert.ok(apart(b, o), "the three buttons do not overlap");
+    assert.ok(apart(others[0], others[1]), "Undo and Redo do not overlap");
     await page.tap("#history");
     await page.waitForSelector("#history-panel:not([hidden])");
     const sheet = await page.locator("#history-panel").boundingBox();

@@ -188,7 +188,7 @@ try {
     assert.match(sent.p_picture, /^data:image\/(webp|jpeg|png);base64,/);
     assert.ok(sent.p_picture.length <= 32 * 1024, `picture ${sent.p_picture.length} bytes`);
     assert.match(sent.p_body, /"formatVersion"/);
-    assert.deepEqual(await rows(a.page), [{ name: "Untitled", tag: "Design", picture: true, open: true }]);
+    assert.deepEqual(await rows(a.page), [{ name: "Untitled", tag: "DesignLab", picture: true, open: true }]);
     assert.match(await a.page.textContent("#my-designs-space"), /^1 of 200 designs · \d+ kB of 20\.0 MB used$/);
     if (shots) await a.page.screenshot({ path: `${shots}/my-designs-1280.png` });
     await a.page.click("#my-designs-close");
