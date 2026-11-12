@@ -87,7 +87,7 @@ export function layoutWords(layout: Layout, offered: number): string {
 /** Words for the middle of a bed with nothing on it, a line each; none when a part is on it. */
 export function emptyBedNote(layout: Layout, offered: number): string[] {
   if (layout.placed.length > 0) return [];
-  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from Design appear here."] : ["No parts on the bed."];
+  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."] : ["No parts on the bed."];
 }
 
 /**

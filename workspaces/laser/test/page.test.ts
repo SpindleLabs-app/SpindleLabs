@@ -69,7 +69,7 @@ test("hand-worked: the flat view is given the bed and each placed part as the fi
 
 test("an empty bed says why in its middle: nothing offered yet, or every part turned off or left off", () => {
   const none = { placed: [], left: [] };
-  assert.deepEqual(emptyBedNote(none, 0), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
+  assert.deepEqual(emptyBedNote(none, 0), ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."]);
   assert.deepEqual(emptyBedNote(none, 2), ["No parts on the bed."]);
   assert.deepEqual(emptyBedNote(layOut([{ id: "a", label: "a", outline: rect(10, 10) }], { width: 100, height: 50 }, 5), 1), []);
 });
