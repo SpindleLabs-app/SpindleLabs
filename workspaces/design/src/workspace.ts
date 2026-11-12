@@ -43,6 +43,7 @@ import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuil
 import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
 import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printMovesOf, printWords, SliceDropped, testPieceFile } from "@fission/print";
 import { openPrintPreview } from "./print-preview.ts";
+import { openTool, openToolRefusal, type OpenTool } from "./open-tool.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
@@ -596,9 +597,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let printExtras: FirstLayerExtras | null = null;
   /** Draws the build area again (set once the build area's own state exists below; the dialog may tick before then). */
   let refreshArea = () => {};
+  /** File ▾ > Slice for printing (and DESIGN ▾'s Slice): the dialog, unless a tool is still open (#639), which it says. */
+  function sliceAsked() {
+    if (!exportWaits("Slice for printing")) printing.ask();
+  }
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
   const printing = slicePrint(ctx.toolbar, {
     async slice(choices, file, alive) {
+      const waits = openToolRefusal(toolOpen(), "Slice for printing"); // the dialog is modal, but a key may still have opened one (#639)
+      if (waits !== null) throw new Error(waits);
       const doc = designDoc();
       // By body (35f1: a Combine's pieces have no item of their own).
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
@@ -617,6 +624,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
     async preview(choices, file, alive, changed) {
+      const waits = openToolRefusal(toolOpen(), "Preview");
+      if (waits !== null) throw new Error(waits);
       const doc = designDoc();
       // By body (35f1: a Combine's pieces have no item of their own).
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => { const f = shownBodyFeature(r, doc, failedNow); return f ? [{ body: r.id as string, feature: f }] : []; }) : [];
@@ -843,10 +852,42 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     panel.showActions(verbs, (id) => runAction(id, ctx.selection.items));
   }
 
+  /** The tool open now that changes the bodies (#639), or null: an export waits for it, as the file would not be what the view shows. */
+  function toolOpen(): OpenTool | null {
+    return openTool(
+      {
+        move: moveBox.shown ? { kind: moveBox.kind, editing: moveBox.editing, still: moveStill() } : null,
+        extrude: extruding !== null || extrudeBox.shown,
+        edit: editBox.editing,
+        combine: combineBox.shown ? { editing: combineBox.editing } : null,
+        sketch: mode.kind === "pick" ? { kind: "pick" } : mode.kind === "edit" ? { kind: "edit", id: editingSketch?.id ?? null } : null,
+      },
+      (id) => {
+        const f = designDoc().timeline.features.find((x) => x.id === id);
+        return f ? itemName(f) : id;
+      },
+    );
+  }
+  /**
+   * True when `verb` (an export) must wait for the tool open now, saying why in that tool's own panel, where the person
+   * looks (a phone's Properties sheet opened to it; a sketch's words also show by the pointer), or under the properties
+   * while a sketch's plane is being picked.
+   */
+  function exportWaits(verb: string): boolean {
+    const open = toolOpen();
+    const words = openToolRefusal(open, verb);
+    if (open === null || words === null) return false;
+    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true) }[open.tool];
+    say(words);
+    if (open.tool !== "sketch") ctx.properties.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a sketch's words show by the pointer
+    return true;
+  }
+
   /** Runs a registered verb on these targets and shows what it said. */
   async function runAction(id: string, targets: readonly Selected[], note = "") {
     const action = ctx.actions.get(id);
     if (!action) return panel.showActionNote(`No action ${id} is registered.`, true);
+    if (id === DOWNLOAD_STL && exportWaits("Export STL")) return;
     // Design's own runs know the bodies drawn (actions.ts, DesignRun: the precision overlay marks only those that warned);
     // the shell's context stays the prototype, so its getters (the project, the graph) read live as ever.
     const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene, failed: failedNow });
@@ -4026,6 +4067,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let moveFromInsert = false;
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
   /** A new Move open whose boxes move and turn nothing yet: Cancel would lose nothing. */
+  /** The Move panel's boxes read and moving, turning and scaling nothing (an empty box counts as 0); a box that can't be read is not still. */
+  function moveStill(): boolean {
+    const read = readMoveBoxes(moveBox.typed);
+    return "values" in read && read.values.scale === undefined && (["x", "y", "z", "turnX", "turnY", "turnZ"] as const).every((k) => read.values[k] === 0);
+  }
   function moveUntouched(): boolean {
     if (!moveBox.shown || moveBox.editing !== null) return false;
     const read = readMoveBoxes(moveBox.typed);
@@ -4551,7 +4597,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         exports: [
           { id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => run({ op: "export_stl" }) },
           { id: "file-save-picture", label: "Save picture (PNG)", title: "Save picture: the view as it is on screen, as a PNG file", off: viewport.picture ? undefined : "This browser can't make a picture of the view", run: () => void savePicture() },
-          { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => printing.ask() },
+          { id: "file-slice-print", label: "Slice for printing", title: SLICE_PRINT_TITLE, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => sliceAsked() },
         ],
       };
     },
