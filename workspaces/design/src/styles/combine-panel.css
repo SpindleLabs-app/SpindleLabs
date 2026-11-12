@@ -38,10 +38,13 @@
   .combine-panel .combine-panel-op .combine-panel-legend { display: none; }
   .combine-panel .combine-panel-op select { min-width: 0; }
   .combine-panel .combine-panel-keep { order: 2; margin: 0; }
-  .combine-panel .combine-panel-field { order: 3; flex: 1 1 calc(50% - 4px); min-width: 0; margin: 0; padding: 4px 8px; }
+  /* A line break before the fields (SL #677 item 5): at 320 px Keep tools wrapped down beside Target body, which pushed
+     Tool bodies down beside OK; the fields now always start their own row. */
+  .combine-panel:not([hidden])::after { content: ""; order: 3; flex: 1 1 100%; height: 0; }
+  .combine-panel .combine-panel-field { order: 4; flex: 1 1 calc(50% - 4px); min-width: 0; margin: 0; padding: 4px 8px; }
   .combine-panel .combine-panel-legend { font-size: 0.8em; }
   .combine-panel .combine-panel-note { display: none; }
   .combine-panel #combine-why { order: 0; flex: 1 1 100%; margin: 0; }
-  .combine-panel #combine-error { order: 4; flex: 1 1 100%; margin: 0; }
-  .combine-panel .combine-panel-buttons { order: 5; margin: 0; }
+  .combine-panel #combine-error { order: 5; flex: 1 1 100%; margin: 0; }
+  .combine-panel .combine-panel-buttons { order: 6; margin: 0; }
 }
