@@ -5,6 +5,7 @@
 // The account side (apps/fission src/my-designs.ts, @fission/account designs.ts and sync.ts) does the requests; this
 // file is the dialog and its words. Styles: src/styles/my-designs.css.
 
+import { WORKSPACE_NAMES } from "@fission/core";
 import { savedWhen } from "./project-list.ts";
 
 /** What the dialog needs of a design in the account (@fission/account DesignRow). */
@@ -27,8 +28,8 @@ export interface DesignRowWords {
   open: boolean;
 }
 
-/** The workspaces' names as tags ("Slice"); a tag this build doesn't know shows as it is, capitalised. */
-const TAGS: Readonly<Record<string, string>> = { design: "Design", render: "Render", simulate: "Simulate", manufacture: "Manufacture", laser: "Laser", slice: "Slice", circuit: "Circuit", vector: "Vector", image: "Image", layout: "Layout" };
+/** The workspaces' names as tags ("SliceLab"); a tag this build doesn't know shows as it is, capitalised. */
+const TAGS: Readonly<Record<string, string>> = WORKSPACE_NAMES;
 export const tagOf = (source: string) => TAGS[source] ?? source.replace(/^./, (c) => c.toUpperCase());
 
 /** The rows, in the order given (the account's: newest first). Pure, so it is tested by hand. */

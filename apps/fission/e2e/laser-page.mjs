@@ -279,7 +279,7 @@ try {
     assert.deepEqual(shown.map((b) => b[0]), ["zoom-out", "zoom-in", "fit"]);
     for (const size of shown) assert.ok(size[1] >= 44 && size[2] >= 44, `a ${size} px button`);
     assert.equal(await boxOf(page, "#view-controls"), null);
-    assert.deepEqual(await page.$$eval(".laser-flat text.laser-flat-note", (t) => t.map((x) => x.textContent)), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
+    assert.deepEqual(await page.$$eval(".laser-flat text.laser-flat-note", (t) => t.map((x) => x.textContent)), ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."]);
     await page.screenshot({ path: "e2e/laser-page-375.png" });
     // A sheet opened over the fitted bed fits the bed again in the room left above it (here the bed keeps its size and
     // moves up to the middle of that room), and closing the sheet puts it back exactly.

@@ -17,3 +17,10 @@
 @media (max-width: 640px) {
   .workspace-menu .menu-button-toggle:not(#none) { letter-spacing: 0; padding-left: 6px; padding-right: 6px; font-size: 13px; }
 }
+/* Just over phone width (641 to 760 px) the bar is full: the Lab names
+   (DESIGNLAB ▾, 2026-11-12) are about 30 px wider than DESIGN ▾ was, and in
+   CI's wider fonts ran the pill to 10 px from AI at 641. The pill stays, with
+   the phone's tighter capitals and slimmer sides (phone-short.mjs: 40 px gap). */
+@media (min-width: 641px) and (max-width: 760px) {
+  .workspace-menu .menu-button-toggle:not(#none) { letter-spacing: 0; padding-left: 8px; padding-right: 8px; font-size: 13px; }
+}

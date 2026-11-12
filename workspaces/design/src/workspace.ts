@@ -4722,7 +4722,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
 export const designWorkspace: WorkspacePlugin = {
   id: "design",
-  title: "Design",
+  title: "DesignLab",
   summary: "Parametric modelling: sketches, features and the timeline. The source of truth for all geometry.",
   status: "working",
   representations: { produces: ["solid", "mesh", "outline"], accepts: [] },

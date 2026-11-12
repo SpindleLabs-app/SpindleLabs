@@ -70,13 +70,13 @@ test("hand-worked: the flat view is given the bed and each placed part as the fi
 
 test("an empty bed says why in its middle: nothing offered yet, or every part turned off or left off", () => {
   const none = { placed: [], left: [] };
-  assert.deepEqual(emptyBedNote(none, 0), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
+  assert.deepEqual(emptyBedNote(none, 0), ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."]);
   assert.deepEqual(emptyBedNote(none, 2), ["No parts on the bed."]);
   assert.deepEqual(emptyBedNote(layOut([{ id: "a", label: "a", outline: rect(10, 10) }], { width: 100, height: 50 }, 5), 1), []);
 });
 
 test("the words: nothing offered, parts on the bed, and each left off with why", () => {
-  assert.equal(layoutWords({ placed: [], left: [] }, 0), "Nothing to cut yet: draw a closed sketch in Design and it appears here.");
+  assert.equal(layoutWords({ placed: [], left: [] }, 0), "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.");
   const one = layOut([{ id: "a", label: "Sketch 1", outline: rect(10, 10) }, { id: "b", label: "Sketch 2", outline: rect(500, 10) }], { width: 100, height: 100 }, 5);
   assert.equal(layoutWords(one, 2), "1 part on the bed. Sketch 2 is left off: it is 500 × 10 mm, bigger than the bed (100 × 100 mm, 5 mm in from each edge).");
 });
@@ -289,7 +289,7 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
   setLaserShown(true);
   const on = laserWorkspace.mount(ctx);
   await on.ready;
-  assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "Nothing to cut yet: draw a closed sketch in Design and it appears here.");
+  assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.");
   on.unmount();
   setLaserShown(null);
 });
