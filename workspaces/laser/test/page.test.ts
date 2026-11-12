@@ -122,7 +122,7 @@ test("the page lists the parts with their sizes, lays them on the bed, draws the
   // The view: the shared viewport's empty 2D view (no body, no 3D grid, no view cube) with the flat drawing over it.
   // Sketch a (60 × 40) sits 3 mm in from the lower-left corner; Sketch b (30 × 10) 3 mm right of it, at x = 66.
   assert.deepEqual(viewport, ["showImage(null)"]);
-  assert.equal(element.classList.contains("laser-flat-host"), true);
+  assert.equal(element.children[1]?.className, "laser-flat"); // straight after the canvas, before the 3D row of buttons, which the style sheet then hides
   assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z", "M66 -3L96 -3L96 -13L66 -13Z"]);
   assert.deepEqual([...element.querySelectorAll("text.laser-flat-bed-name")].map((t) => t.textContent), ["Bed 400 × 400 mm"]);
   assert.deepEqual(asked, []); // nothing was asked of the kernel: no 3D parts are built for a flat view
@@ -141,7 +141,7 @@ test("the page lists the parts with their sizes, lays them on the bed, draws the
   // The viewport is given back: the flat drawing gone, the 3D view and its name as they were.
   assert.deepEqual(viewport, ["showImage(null)", "clearImage"]);
   assert.equal(element.querySelector(".laser-flat") === null, true, "the flat view is off the page");
-  assert.equal(element.classList.contains("laser-flat-host"), false);
+  assert.deepEqual([...element.children].map((c) => c.tagName + (c.className ? `.${c.className}` : "")), ["CANVAS", "DIV.view-controls"]);
   assert.equal(element.getAttribute("aria-label"), "3D view");
   assert.deepEqual(asked, []);
 });
@@ -152,7 +152,6 @@ test("asleep (another workspace on screen) the page gives the viewport back; awa
   mounted.sleep!();
   assert.deepEqual(viewport, ["showImage(null)", "clearImage"]);
   assert.equal(element.querySelector(".laser-flat") === null, true, "the flat view is off the page");
-  assert.equal(element.classList.contains("laser-flat-host"), false);
   mounted.sleep!(); // twice is nothing
   assert.deepEqual(viewport, ["showImage(null)", "clearImage"]);
   // Sketch b was deleted in Design meanwhile.

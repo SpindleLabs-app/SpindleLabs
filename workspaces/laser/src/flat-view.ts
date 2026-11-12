@@ -12,7 +12,7 @@
 // the arcs worked out here.
 //
 // The 3D view's row of buttons (Orbit, Top, Front, Right…) is hidden while
-// this view is up, and a row of its own, in the same look, takes its place:
+// this view is up (by the style sheet: it is a later sibling of this view), and a row of its own, in the same look, takes its place:
 // Zoom out, Zoom in, Fit. Dragging slides the view (one finger on a touch
 // screen), the wheel or a pinch zooms about the pointer, and with the
 // keyboard: + and − zoom, 0 fits, the arrows slide.
@@ -297,7 +297,6 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     pointers.clear();
     delete element.dataset.dragging;
     element.remove();
-    host.classList.remove("laser-flat-host");
     if (hostLabel === null) host.removeAttribute("aria-label");
     else host.setAttribute("aria-label", hostLabel);
     host = null;
@@ -311,8 +310,8 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
       host = to;
       hostLabel = to.getAttribute("aria-label");
       to.setAttribute("aria-label", "Laser bed, flat view");
-      to.classList.add("laser-flat-host");
-      // Straight over the 3D canvas and under everything else the app lays over the view (notes, phone buttons).
+      // Straight over the 3D canvas and under everything else the app lays over the view (notes, phone buttons). Being
+      // before the 3D view's row of buttons is also what hides that row (laser-flat.css: a later sibling of this view).
       const canvas = to.querySelector("canvas");
       if (canvas) canvas.after(element);
       else to.prepend(element);

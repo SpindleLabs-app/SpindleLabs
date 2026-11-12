@@ -42,11 +42,12 @@ test("attached, the view lies straight over the 3D canvas, the host is named for
   // After the canvas, under everything else laid over the view. (Compared as true or false: a failed comparison of two
   // elements would print the whole page.)
   assert.equal(host.children[1] === view.element, true, "the view comes straight after the canvas");
-  assert.equal(host.classList.contains("laser-flat-host"), true); // what hides the 3D row of buttons (laser-flat.css)
+  // The 3D view's row of buttons is a later sibling of the view: what the style sheet hides it by (.laser-flat ~ .view-controls).
+  assert.deepEqual([...host.children].map((c) => c.className), ["", "laser-flat", "view-cube", "view-controls"]);
+  assert.equal(view.element.querySelector(".view-controls.laser-flat-bar") !== null, true, "the view's own row is inside it, so it stays");
   assert.equal(host.getAttribute("aria-label"), "Laser bed, flat view");
   view.detach();
   assert.equal(host.querySelector(".laser-flat") === null, true, "the view is off the page");
-  assert.equal(host.classList.contains("laser-flat-host"), false);
   assert.equal(host.getAttribute("aria-label"), "3D view");
   assert.equal(host.children.length, 3);
   view.detach(); // twice is nothing
