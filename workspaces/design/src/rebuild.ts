@@ -252,6 +252,15 @@ type Bodies = Record<string, BuiltBody>;
  */
 const CLOSED = "Design was closed, so nothing more is built";
 
+/**
+ * One boolean step's result bodies as `combineNames` names them (SL #677 item 2), each with what Design keeps of it
+ * worked out from the meshes of the step's inputs and answer: its faces with their origins (`withOrigins`), their
+ * frames (`framesOfResult`) and which are turned round (`reversedOfResult`). Or the naming's refusal.
+ */
+export type NamedStep =
+  | { bodies: { id: string; handle: BodyHandle; faces: readonly FaceNames[]; made: NamedBody["made"]; frames?: (Plane | null)[]; reversed?: boolean[] }[]; renumbered: string[] }
+  | { failed: string };
+
 export class BodyCache {
   /** `hidden`: the kernel holds no display mesh for it (35d4, `showOnly`); a body is built with one. */
   private bodies = new Map<string, { handle: BodyHandle; view?: Promise<BodyView>; hidden?: true }>();
@@ -261,6 +270,18 @@ export class BodyCache {
   private booleans = new Map<string, BooleanResult>();
   /** Each body_move's answer by its input and moves (`moved`, 35f1f2a): the body it moved and the one it made, kept in `bodies` like built ones. */
   private moves = new Map<string, { from: BodyHandle; to: BodyHandle }>();
+  /**
+   * Each boolean answer's names (`keepNaming`), by what they were worked out from (`namingKey`): an unchanged step
+   * named again finds them here instead of asking the kernel to mesh its inputs and answer again. The kernel keeps a
+   * mesh only for the bodies on screen (`showOnly`), so every rebuild meshed every earlier Cut's inputs and answer
+   * again, about 0.4 s more for each Extrude Cut of a part (SL #677 item 2). Held by the answer itself, so they go
+   * when `boolean` lets that answer go, and an answer asked again (a new one) is named again. Only the last names of
+   * each answer are kept, so editing a step's other inputs never piles them up.
+   */
+  private namings = new WeakMap<BooleanResult, { key: string; named: NamedStep }>();
+  /** A number for each object `namingKey` names by identity (a Combine's result's names, which `keepNaming` hands out again unchanged). */
+  private objects = new WeakMap<object, number>();
+  private nextObject = 0;
   /** Bodies asked of the kernel and not answered yet: the same spec asked again waits for the same answer, so asking ahead never builds twice. */
   private building = new Map<string, Promise<BodyHandle>>();
   /** Booleans and moves asked of the kernel and not answered yet (`once`), by their keys. */
@@ -391,6 +412,40 @@ export class BodyCache {
     });
   }
 
+  /**
+   * What a boolean step's names (`NamedStep`) are worked out from, but the meshes, as one string: the item, the
+   * operation, each input's body id, handle, place in made order, kept id, frames and turned faces, and what its
+   * names come from (a Combine's result's kept names, by identity; else its item and curves: the handle stands for
+   * its spec, `body`'s key), the first piece number, the pieces remembered and the extrude's own body. A mesh is the
+   * kernel's of a kept body, the same for the same handle while the body is kept, so it needs no place here.
+   */
+  namingKey(feature: string, op: BooleanOp, inputs: readonly StepInput[], firstPiece: number, remembered: ReadonlyMap<string, readonly string[]>, own: string | undefined): string {
+    const idOf = (o: object): number => {
+      let n = this.objects.get(o);
+      if (n === undefined) this.objects.set(o, (n = this.nextObject++));
+      return n;
+    };
+    return JSON.stringify([
+      feature,
+      op,
+      inputs.map(({ id, handle, b, place, keepsId }) => [id, handle, place, keepsId ?? null, b.frames ?? null, b.reversed ?? null, b.named === undefined ? [b.feature, b.curves ?? null] : [idOf(b.named.faces), idOf(b.named.made)]]),
+      firstPiece,
+      [...remembered],
+      own ?? null,
+    ]);
+  }
+
+  /** The names `keepNaming` kept under `key` for this very answer of `boolean`, else undefined. */
+  naming(result: BooleanResult, key: string): NamedStep | undefined {
+    const kept = this.namings.get(result);
+    return kept?.key === key ? kept.named : undefined;
+  }
+
+  /** Keeps `named`, worked out from `key` for `result` (an answer of `boolean`), for `naming`. */
+  keepNaming(result: BooleanResult, key: string, named: NamedStep): void {
+    this.namings.set(result, { key, named });
+  }
+
   /** A kept body's view, asked of the kernel once it answers (a failed ask is forgotten, so the next look asks again: T6b). */
   view(handle: BodyHandle): Promise<BodyView> {
     const key = this.keys.get(handle);
@@ -508,6 +563,7 @@ export class BodyCache {
     this.building.clear();
     this.asking.clear();
     this.booleans.clear();
+    this.namings = new WeakMap();
     this.moves.clear();
     this.unfreed = [];
     this.wanted = new Set();
@@ -1503,6 +1559,47 @@ const KERNEL_OP: Record<string, BooleanOp> = { join: "union", cut: "subtract", i
 /** A body as boolean-names.ts names it (built-body.ts `namedBody`), its view asked of the cache. */
 const namedOf = async (id: string, b: BuiltBody, cache: BodyCache, place: number): Promise<NamedBody> => namedBody(id, b, await cache.view(b.handle), place);
 
+/** A boolean step's input (`booleanSteps`): its body id, kernel body, body, place in made order and the id it keeps (an Extrude join's). */
+export interface StepInput {
+  id: string;
+  handle: BodyHandle;
+  b: BuiltBody;
+  place: number;
+  keepsId?: number;
+}
+
+/** Each input of a step named, as boolean-names.ts names a body (each is meshed for it). */
+async function namedInputs(pending: readonly StepInput[], cache: BodyCache): Promise<NamedBody[]> {
+  const inputs: NamedBody[] = [];
+  for (const x of pending) {
+    const named = await namedOf(x.id, x.b, cache, x.place);
+    inputs.push(x.keepsId !== undefined ? { ...named, keepsId: x.keepsId } : named);
+  }
+  return inputs;
+}
+
+/**
+ * A boolean step's answer named (`combineNames`) from the meshes of its inputs and answer, with each result body's
+ * faces' origins, frames and turned faces (`NamedStep`): all that Design keeps of the step but the bodies' places.
+ */
+async function namedStep(feature: string, op: BooleanOp, inputs: readonly NamedBody[], result: BooleanResult, built: ReadonlyMap<BodyHandle, BuiltBody>, cache: BodyCache, firstPiece: number, remembered: ReadonlyMap<string, readonly string[]>, own: string | undefined): Promise<NamedStep> {
+  const [t, ...ts] = inputs;
+  const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
+  const named = combineNames(feature, op, t, ts, result, views, firstPiece, remembered, own);
+  if ("failed" in named) return named;
+  const bodies: Extract<NamedStep, { bodies: unknown }>["bodies"] = [];
+  for (const nb of named.bodies) {
+    {
+      const h = result.history[result.bodies.indexOf(nb.handle)];
+      const frames = framesOfResult(h, built);
+      const faces = withOrigins(nb.faces, h, inputs, frames);
+      const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
+      bodies.push({ id: nb.id, handle: nb.handle, faces, made: nb.made, ...(frames && { frames }), ...(reversed && { reversed }) });
+    }
+  }
+  return { bodies, renumbered: named.renumbered };
+}
+
 /**
  * A Combine's result (step 35f1; rules: docs/document-model.md section 8,
  * and the behaviour answers in the kernel repo's booleans plan): greyed
@@ -1568,7 +1665,8 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const renumbered: string[] = [];
   const misses: Miss[] = [];
   for (const step of steps) {
-    const inputs: NamedBody[] = [];
+    // Each input as it goes in: named (meshed) only when its step's names are not kept (`BodyCache.naming`).
+    const pending: StepInput[] = [];
     const built = new Map<BodyHandle, BuiltBody>();
     const joined = joins ? [step.target, ...step.tools].filter((b) => bodyItem(b) !== f.id).sort((a, b) => madeKey(a)[0] - madeKey(b)[0] || madeKey(a)[1] - madeKey(b)[1]) : [];
     for (const body of [step.target, ...step.tools]) {
@@ -1586,19 +1684,20 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey). A body
       // with no spec (a Combine's result, which its Copy shares: SL #624 item 3) gets its own from the kernel's
       // body_move by nothing, once more for each pick before it: the same faces in the same order, where they are.
-      const copies = inputs.filter((x) => x.handle === b.handle).length;
+      const copies = pending.filter((x) => x.handle === b.handle).length;
       const own = copies === 0 ? b : { ...b, handle: b.spec !== null ? await cache.body(b.spec, copies) : await cache.moved(b.handle, Array.from({ length: copies }, (): Motion => ({ move: [0, 0, 0] }))) };
       if (own !== b) made.push(own.handle);
       built.set(own.handle, own);
-      const named = await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!);
-      inputs.push(joined.includes(body) ? { ...named, keepsId: joined.indexOf(body) } : named);
+      pending.push({ id: body, handle: own.handle, b: own, place: places.get(b.feature) ?? places.get(maker)!, ...(joined.includes(body) ? { keepsId: joined.indexOf(body) } : {}) });
     }
-    const [t, ...ts] = inputs;
+    const [t, ...ts] = pending;
     const op = KERNEL_OP[operation];
+    // A grouped join needs each input's bounds, so its inputs are named first.
+    let inputs = grouped ? await namedInputs(pending, cache) : undefined;
     let result: BooleanResult;
     try {
       // An extrude of several profiles (`unitedRun`): only the groups that may share a face are joined (SL #611 C1).
-      if (grouped) result = await groupedJoin(cache, inputs, new Set(Object.values(work).filter((b) => !inputs.some((x) => x.handle === b.handle)).map((b) => b.handle)));
+      if (grouped) result = await groupedJoin(cache, inputs!, new Set(Object.values(work).filter((b) => !pending.some((x) => x.handle === b.handle)).map((b) => b.handle)));
       else {
       result = await cache.boolean(t.handle, ts.map((x) => x.handle), op);
       // Equal inputs give the cached answer: when an earlier Combine already holds it (two equal boxes each cut by
@@ -1619,8 +1718,14 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     // SL #583 item 3: a Join's tool none of whose faces is left lies wholly inside, so its words never say it doesn't reach.
     const inside = operation === "join" ? missed.filter((i) => leavesNoFace(ts[i].handle, result)).map((i) => step.tools[i]) : [];
     if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]), ...(inside.length > 0 && { inside }) });
-    const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
-    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
+    // The same step's names for this very answer, else worked out from the meshes and kept (SL #677 item 2).
+    const key = cache.namingKey(f.id, op, pending, firstPiece, remembered, own);
+    let named = cache.naming(result, key);
+    if (named === undefined) {
+      inputs ??= await namedInputs(pending, cache);
+      named = await namedStep(f.id, op, inputs, result, built, cache, firstPiece, remembered, own);
+      cache.keepNaming(result, key, named);
+    }
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
     // Each input's item, for a piece keeping its id (an Extrude join's other bodies, hunt 11-08).
@@ -1628,10 +1733,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];
     for (const nb of named.bodies) {
-      const h = result.history[result.bodies.indexOf(nb.handle)];
-      const frames = framesOfResult(h, built);
-      const faces = withOrigins(nb.faces, h, inputs, frames);
-      const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
+      const { faces, frames, reversed } = nb;
       const piece = !featureOf.has(nb.id) || nb.id === own;
       work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces, made: nb.made }, by: f.id, ...(frames && { frames }), ...(piece && { from: step.target }), ...(reversed && { reversed }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
@@ -1641,7 +1743,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       }
     }
     for (const id of named.renumbered) if (!renumbered.includes(id)) renumbered.push(id);
-    holds.push(...inputs.map((x) => x.handle));
+    holds.push(...pending.map((x) => x.handle));
   }
   for (const id of Object.keys(bodies)) if (!(id in work)) delete bodies[id];
   Object.assign(bodies, work);
