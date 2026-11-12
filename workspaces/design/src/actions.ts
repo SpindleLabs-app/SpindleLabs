@@ -6,10 +6,11 @@
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type SolidReport, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
+import { planeSeenAs } from "@fission/viewport";
 import { designBodies } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, isDuplicateItem, makesPieces, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
-import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked } from "./solid-badge.ts";
+import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked, touchingWords, type ExportNotes } from "./solid-badge.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
@@ -115,6 +116,33 @@ export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> =
   if (hidden.length === 1) return `Body ${hidden[0]} is hidden, so it is not in the STL: show it with its eye in the browser to include it.`;
   const list = `${hidden.slice(0, -1).join(", ")} and ${hidden.at(-1)}`;
   return `Bodies ${list} are hidden, so they are not in the STL: show them with their eyes in the browser to include them.`;
+}
+
+/** "Extrude 1", "Extrude 1 and Combine 2", "Extrude 1, Extrude 2 and Combine 3", "Extrude 1, Extrude 2, Extrude 3 and 2 more". */
+function namesWords(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  const shown = names.length > 4 ? [...names.slice(0, 3), `${names.length - 3} more`] : names;
+  return `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}`;
+}
+
+/**
+ * What an export (the STL, `what` "STL"; Slice for printing and its preview, "print") says of the timeline items the
+ * last rebuild failed (`failed`, browser.ts `failedIds`: the ones the timeline shows red), by their names, in timeline
+ * order: whatever they would have made or changed is not in the file, so the part comes out without it (a failed
+ * Extrude Cut's hole was left out without a word, the file still "Checked solid": export hunt 2026-11-12 D). Empty
+ * when nothing failed. The file is still made: the person may want what was built, and is told before they use it.
+ */
+export function failedItemsNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, what: "STL" | "print" = "STL"): string {
+  const names = doc.timeline.features.flatMap((f) => (failed.has(f.id) ? [f.provenance.self.label] : []));
+  if (names.length === 0) return "";
+  const they = names.length === 1 ? "it" : "them";
+  const made = what === "STL" ? `the part is saved without ${they}` : `the part is printed without ${they}`;
+  return `${namesWords(names)} failed, so ${names.length === 1 ? "it is" : "they are"} not in the ${what}: ${made}. Fix ${they} in the timeline (red) to include ${they}.`;
+}
+
+/** What Download STL returns in Design (35f1 export hunt D): the outcome, with what its export badge says beyond the file's check (`ExportNotes`), when anything. */
+export interface DesignOutcome extends ActionOutcome {
+  notes?: ExportNotes;
 }
 
 /**
@@ -228,9 +256,20 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         } catch (e) {
           unchecked = `The solid check could not run (${e instanceof Error ? e.message : String(e)}), so the file is not known to be solid.`;
         }
-        const saved = await save(solid?.verdict === "solid" ? stampChecked(bytes, name) : bytes, file);
+        // Several bodies whose file has problems: each body's own file is checked alone too. When every one is solid, the
+        // problems lie between them (they touch or overlap), which the badge says as that, never "Not solid" (hunt D, 2).
+        // A body that is not solid alone (or a check that can't run) keeps the file's own verdict.
+        let touching: number | undefined;
+        if (!one && solid?.verdict === "problems") {
+          const alone = await Promise.all(files.map((f) => ctx.kernel.call("check_solid", f.bytes).then((r) => r.verdict, () => "unchecked")));
+          if (alone.every((v) => v === "solid")) touching = files.length;
+        }
+        // Timeline items that failed are not in the file: never stamped or said "checked solid" as if it were the design.
+        const missing = failedItemsNote(doc, failed, "STL");
+        const notes: ExportNotes = { ...(missing && { missing }), ...(touching !== undefined && { touching }) };
+        const saved = await save(solid?.verdict === "solid" && !missing ? stampChecked(bytes, name) : bytes, file);
         if (saved === false) return { message: "Export STL cancelled: nothing was saved.", bad: false };
-        const marked = solid ? solidOverlay(solid) : null;
+        const marked = solid ? solidOverlay(solid, touching !== undefined) : null;
         if (marked) ctx.viewport.setOverlay(marked);
         else ctx.viewport.clearOverlay(SOLID_OVERLAY);
         // Mark the bodies that warned on screen too: every face of one moves in single precision.
@@ -240,9 +279,12 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         else ctx.viewport.clearOverlay(STL_OVERLAY);
         const place = (body: string) => `Body ${numbers.get(body)}`;
         const warnings = picked.flatMap((p, i) => (files[i].warning ? [one ? files[i].warning! : `${place(p.body)}: ${files[i].warning}`] : []));
-        const badge = solid ? `${badgeFor(solid).title}.` : unchecked;
-        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, badge, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
-        return { message, bad: warned.length > 0 || solid?.verdict !== "solid", ...(solid && { solid }) };
+        // Touching bodies: their own words in place of the badge's and the several-bodies note (which they say again).
+        const between = touching !== undefined ? touchingWords(touching) : null;
+        const badge = between ? `${between.title}: ${between.detail.charAt(0).toLowerCase()}${between.detail.slice(1)}` : solid ? (missing && solid.verdict === "solid" ? "What was built is checked solid." : `${badgeFor(solid).title}.`) : unchecked;
+        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, missing, badge, ...warnings, between ? "" : manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
+        const outcome: DesignOutcome = { message, bad: warned.length > 0 || solid?.verdict !== "solid" || missing !== "", ...(solid && { solid }), ...(Object.keys(notes).length > 0 && { notes }) };
+        return outcome;
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };
       }
@@ -270,7 +312,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         // Copies out go through the representation registry, like everything handed over.
         const { representation } = await ctx.representations.deliver(object, ["outline"]);
         if (representation.kind !== "outline") throw new Error(`the ${source.kind} came as ${representation.kind}, not an outline`);
-        const svg = outlineToSvg(representation.outline, source.label);
+        // A sketch on a back or bottom face is drawn looking against its plane's normal: the file is that picture, not its mirror image.
+        const seen = representation.side === -1 ? planeSeenAs(representation.plane, -1) : undefined;
+        const svg = outlineToSvg(representation.outline, source.label, seen);
         await copy(svg.text);
         const mm = (v: number) => Number(v.toPrecision(6)).toString();
         return { message: `Copied as SVG: ${source.label}, ${mm(svg.width)} × ${mm(svg.height)} mm.`, bad: false };

@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, NewerFormatError, projectToJson, type Project } from "@fission/core";
 import {
+  journalEntry,
   memoryKeyValue,
   NEWER_PREFIX,
   readJournalEntry,
@@ -529,4 +530,19 @@ test("recoverUnsaved: a kept newer entry is put back by a build that reads it, a
   assert.deepEqual(await recoverUnsaved(store, journal, []), [], "the newer build reads it");
   assert.equal(widthOf(await store.open("p")), 31);
   assert.equal(journal.items.size, 0);
+});
+
+test("recoverUnsaved: says which projects an entry was put back into, and no others (#627 item 7)", async () => {
+  const store = projectStore(memoryKeyValue(), []);
+  await store.save("p", part(10), new Date(1000));
+  await store.save("q", part(10), new Date(1000));
+  await store.save("r", part(10), new Date(5000));
+  const journal = fakeStorage();
+  journal.setItem(unsavedKey("p"), journalEntry(projectToJson(part(30)), new Date(2000))); // newer than the store: put back
+  journal.setItem(unsavedKey("q"), "not a project"); // can't be read: removed, q as it was
+  journal.setItem(unsavedKey("r"), journalEntry(projectToJson(part(30)), new Date(2000))); // older than the store holds: dropped
+  const restored: string[] = [];
+  await recoverUnsaved(store, journal, [], undefined, (id) => restored.push(id));
+  assert.deepEqual(restored, ["p"]);
+  assert.deepEqual([widthOf(await store.open("p")), widthOf(await store.open("q")), widthOf(await store.open("r"))], [30, 10, 10]);
 });
