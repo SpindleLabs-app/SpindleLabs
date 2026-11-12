@@ -21,5 +21,4 @@
   .app-bar.app-bar-file .menu-button-toggle:not(#none) { padding-left: 6px; padding-right: 6px; }
   /* File ▾'s sheet (phone-sheet.css: 70% of the screen) is let grow to 80%, so its ten rows (with Save picture) show
      whole on a 375 × 667 phone instead of the last one hiding under the screen's edge (e2e/app-bar.mjs). */
-  .app-bar.app-bar-file .menu-button > .menu-button-menu:not(#none):not(#no-such-id) { max-height: 80dvh; }
 }

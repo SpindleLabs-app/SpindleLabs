@@ -78,7 +78,7 @@
     "app.golden_f2_gap_join.relative_time": 0.0453,
     "app.golden_far_wall_outside.kernel_calls": 8,
     "app.golden_far_wall_outside.relative_time": 0.0715,
-    "app.golden_flush_blocks.kernel_calls": 7,
+    "app.golden_flush_blocks.kernel_calls": 8,
     "app.golden_flush_blocks.relative_time": 0.0586,
     "app.golden_gear.kernel_calls": 3,
     "app.golden_gear.relative_time": 0.2412,

@@ -64,7 +64,17 @@ test("every answer of the wrong shape is refused as malformed, never trusted", a
   const acc = fakeAccount();
   const ada = api(acc, "ada");
   const good = { id: "00000000-0000-4000-8000-000000000001", name: "Box", source: "design", picture: null, bytes: 2, saved_at: "2026-11-05T01:00:00Z", updated_at: "2026-11-05T01:00:01Z", revision: 1 };
-  assert.notEqual(rowFrom(good), null);
+  // The good row read field by field: the two times as dates, every other value as sent.
+  assert.deepEqual(rowFrom(good), {
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Box",
+    source: "design",
+    picture: null,
+    bytes: 2,
+    savedAt: new Date("2026-11-05T01:00:00Z"),
+    updatedAt: new Date("2026-11-05T01:00:01Z"),
+    revision: 1,
+  });
   const bads: unknown[] = [
     null,
     "text",

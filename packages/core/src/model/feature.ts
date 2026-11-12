@@ -21,12 +21,15 @@ export interface RegionParameter {
   centroid: readonly [number, number];
 }
 
+/** A Design extrude's profiles after its first (Design data version 18): each a sketch and, when it has several, the region of it. */
+export type ProfilesParameter = readonly { sketch: string; region?: RegionParameter }[];
+
 /** What a feature is for, in words and numbers. */
 export interface Intent {
   /** e.g. "box", "extrude", later "hole", "pocket", "engrave". */
   type: string;
-  /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies); a Design extrude's sketch region. */
-  parameters: Record<string, ParameterValue | readonly string[] | RegionParameter>;
+  /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies); a Design extrude's sketch region and its other profiles. */
+  parameters: Record<string, ParameterValue | readonly string[] | RegionParameter | ProfilesParameter>;
   /** One line for people, e.g. "Box: 40 × 30 × 20 mm". */
   summary: string;
   /** Optional: why it is there, e.g. "mounting hole for an M3 screw". */

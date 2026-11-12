@@ -2,11 +2,18 @@
 // what is on screen. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { chooseShape, closePanels, insertPreset, openPanel, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
+
+// The box this run saves with #save, written outside the repo: saving over the committed
+// e2e/saved.spindle changed the worktree and made the other checks that read it depend on
+// which run of smoke wrote it last. The later checks here read this run's own copy.
+const savedCopy = join(tmpdir(), `smoke-saved-${process.pid}.spindle`);
 
 const server = await preview({ preview: { port: 4174, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4174/";
@@ -1277,7 +1284,7 @@ try {
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
     const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);
     assert.equal(download.suggestedFilename(), "Untitled.spindle");
-    const saved = "e2e/saved.spindle";
+    const saved = savedCopy;
     await download.saveAs(saved);
     const file = JSON.parse(readFileSync(saved, "utf8"));
     assert.equal(file.formatVersion, 2);
@@ -1349,7 +1356,7 @@ try {
       };
       // saved.spindle is this same Untitled 50 × 30 × 20 box: opening it goes on with the stored copy, not a second
       // one (real-use hunt B3); a file that differs (another name) makes a new stored project, the autosaved one kept.
-      const file = readFileSync("e2e/saved.spindle", "utf8");
+      const file = readFileSync(savedCopy, "utf8");
       assert.equal(await open(file), id, "the same project, kept once");
       assert.equal(await stored(), 1);
       const other = await open(JSON.stringify({ ...JSON.parse(file), name: "Another" }));
@@ -1395,7 +1402,7 @@ try {
       await kept.reload({ waitUntil: "domcontentloaded" });
       const download = kept.waitForEvent("download");
       await kept.click("#save");
-      const wide = JSON.parse(readFileSync("e2e/saved.spindle", "utf8"));
+      const wide = JSON.parse(readFileSync(savedCopy, "utf8"));
       wide.workspaces.design.timeline.features[0].intent.parameters.width = 60;
       await kept.setInputFiles("#open-file", { name: "wide.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(wide)) });
       await holder.evaluate(() => (window.release = true));
@@ -1613,7 +1620,7 @@ try {
       await phone.goto(url + "#design");
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "error");
       const words = await phone.textContent("#save-status");
-      assert.match(words, /^Not saved: browser storage is full: can't save "project\/.+" \(use Save to keep your work as a file\)$/);
+      assert.match(words, /^Not saved: browser storage is full: can't save this project \(use Save to keep your work as a file\)$/);
       const shown = await phone.$eval("#save-status", (el) => ({ ...el.getBoundingClientRect().toJSON(), size: getComputedStyle(el).fontSize, cut: el.scrollWidth > el.clientWidth }));
       assert.ok(shown.width > 0 && shown.left >= 0 && shown.right <= 375 && shown.size === "12px" && !shown.cut, JSON.stringify(shown));
       assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");

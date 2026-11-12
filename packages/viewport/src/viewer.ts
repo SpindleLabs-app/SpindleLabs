@@ -245,7 +245,9 @@ export class ViewportView {
       // Extrude (UX1b): a click picks the closed outline under the pointer, or none.
       if (this.host.extruding()) {
         const profile = this.profileAt(e.clientX, e.clientY);
-        return this.host.extrudePointer({ kind: "pick", profile, face: profile === null ? this.faceAt(e.clientX, e.clientY) : null });
+        // Ctrl, Cmd or Shift held adds or takes away a profile (several extruded at once), as Fusion's Ctrl-click.
+        const add = e.ctrlKey || e.metaKey || e.shiftKey;
+        return this.host.extrudePointer({ kind: "pick", profile, face: profile === null ? this.faceAt(e.clientX, e.clientY) : null, ...(add ? { add: true as const } : {}) });
       }
       // Sketching: a click places a point on the sketch's plane, it picks nothing.
       const plane = this.host.sketchPlane();
@@ -874,6 +876,11 @@ export class ViewportView {
 
   /** The kernel face index under a point on screen (client pixels), or null for empty space. */
   private faceAt(clientX: number, clientY: number): number | null {
+    return this.faceHitAt(clientX, clientY)?.face ?? null;
+  }
+
+  /** The face under a point on screen (client pixels) and where the ray meets it in the world, or null. */
+  private faceHitAt(clientX: number, clientY: number): { face: number; point: [number, number, number] } | null {
     const mesh = this.host.mesh();
     const faceMesh = this.host.faceMesh();
     if (!mesh || !faceMesh || this.image) return null; // the body is not drawn under an image
@@ -882,15 +889,18 @@ export class ViewportView {
     this.raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), this.camera);
     // Nearest hit first; for indexed geometry faceIndex is the triangle number.
     const [hit] = this.raycaster.intersectObject(faceMesh, false);
-    return faceOfTriangle(mesh.triangle_faces, hit?.faceIndex);
+    const face = faceOfTriangle(mesh.triangle_faces, hit?.faceIndex);
+    return face === null || hit === undefined ? null : { face, point: [hit.point.x, hit.point.y, hit.point.z] };
   }
 
   /** While planes are offered (26d): the plane or the face a click there picks (picking.ts planeOrFace), any face, offered or not, so a curved one can be refused in words. */
-  private planeTarget(clientX: number, clientY: number): { plane: string | null; face: number | null } {
-    const face = this.faceAt(clientX, clientY);
+  private planeTarget(clientX: number, clientY: number): { plane: string | null; face: number | null; point?: [number, number, number] } {
+    const hit = this.faceHitAt(clientX, clientY);
+    const face = hit?.face ?? null;
     const plane = face === null ? this.planeAt(clientX, clientY) : null;
     const which = planeOrFace(plane !== null, face !== null);
-    return { plane: which === "plane" ? plane : null, face: which === "face" ? face : null };
+    // Where on the face (SL #502: a face merged from level faces is named by the one under the pointer).
+    return { plane: which === "plane" ? plane : null, face: which === "face" ? face : null, ...(which === "face" && hit !== null ? { point: hit.point } : {}) };
   }
 
   /**
@@ -1519,7 +1529,7 @@ export class Viewer implements SharedViewport {
    */
   showExtrude(show: ExtrudeShow | null) {
     this.extrude.show(show);
-    const said = { extrudeProfiles: show?.profiles.map((p) => p.id).join(" "), extrudeChosen: show?.chosen ?? undefined, extrudePreview: show ? String(show.preview !== null) : undefined, extrudeDistance: show?.arrow ? String(show.arrow.distance) : undefined };
+    const said = { extrudeProfiles: show?.profiles.map((p) => p.id).join(" "), extrudeChosen: show?.chosen ?? undefined, extrudeAlso: show?.alsoChosen?.length ? show.alsoChosen.join(" ") : undefined, extrudePreview: show ? String(show.preview !== null) : undefined, extrudeDistance: show?.arrow ? String(show.arrow.distance) : undefined };
     for (const [key, value] of Object.entries(said)) {
       if (value === undefined) delete this.element.dataset[key];
       else this.element.dataset[key] = value;

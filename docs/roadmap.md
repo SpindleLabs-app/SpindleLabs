@@ -390,12 +390,18 @@ Laser workspace (starts after CAD step 52, when the sketcher is solid)
 - [ ] L3. Job preview and time estimate
 - [ ] L4. Machine control for common controllers; sheet-metal flat patterns after step 87
 
-Simulate workspace (starts after CAD step 40, booleans and full topological naming)
-- [ ] S1. Studies in the project; loads and constraints on design faces by reference
-- [ ] S2. Tetrahedral meshing from the exact geometry (shares step 85)
-- [ ] S3. Static stress: stress, displacement, safety factor in the viewport
+TestLab, the Simulate workspace (owner's decision, 2026-11-12: start now with a basic version whose first job is proving the live link with DesignLab bodies, on a foundation that grows to world-class with no compromises; the full plan is in the project files, testlab/testlab-plan.txt, and the engine's details stay in the kernel repo). Its title is TestLab; its id in code and project files stays `simulate`, so old projects keep opening. Faces made by extrudes and flat booleans already have stable names, so it no longer waits for step 40; curved bodies join as 37–43 land.
+- [x] T0. The plan (2026-11-12).
+- [ ] T1. The live link, no solver yet: pick a DesignLab body, pick the faces it is held by and pushed on (by stable id), type the load in plain words ("5 kg hanging", "20 N down"), saved as a study in the project (a new data version). After a design edit the same faces stay picked and the result is marked out of date; a deleted face gives a plain warning that the load lost its face, never a silent drop; undo brings it back. The Run button says plainly that the solver is not there yet. Browser checks at 1280 and 375 px. (S1)
+- [ ] T2. Materials: the one materials library (I3) made real for five starter materials (PLA, PETG, ABS, aluminium 6061, steel), each with its stiffness, strength and density and where the numbers come from.
+- [ ] T3. The solver, checked on hand-made meshes: a bar in tension and a cantilever worked by hand, errors that shrink at the rate theory predicts as the mesh gets finer, forces that balance.
+- [ ] T4. Filling any accepted body with a fine mesh that keeps every face and stays truly round on curved faces, checked against the kernel's exact volume and face areas before anything is solved; a mesh that fails the check is refused with the reason. (S2, shares step 85)
+- [ ] T5. Run, cancel and progress in the worker; results in the shared viewport: colours for stress, the bent shape drawn exaggerated with the scale stated, the biggest bend, the highest stress, and the safety factor in green, amber or red with one sentence. Labelled a simulation, with a note that printed parts are weaker across layers. (S3)
+- [ ] T6. Textbook and published benchmarks every night (a hole in a plate, a thick tube under pressure, the standard NAFEMS cases), an outside FEA program as a second check, results frozen so they cannot drift, and the strength estimate (H4) always on the safe side of TestLab (H4c).
+- [ ] T7. Back into DesignLab: "Test strength in TestLab" on a selected body, stress paint on the part (marked out of date after an edit), and a zero-exports journey (I20): design a bracket, test it, make it thicker, rerun, and the bend drops by the hand-worked amount.
+- Later, each as its own piece without a rewrite: printed-part strength from SliceLab's build direction (weaker across layers), natural frequencies and heat (S4), parameter sweeps back into DesignLab ("thinnest wall with safety factor 2 or more", integration map row 5), assemblies and contact, yielding and buckling, automatic mesh refinement where the stress changes fast, and the AI setting up studies in plain words (A8).
 - [ ] S4. Thermal and modal studies
-- The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; S3's stress study becomes its outside oracle (H4c).
+- The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; TestLab's stress study (T5, S3) becomes its outside oracle (H4c).
 
 Manufacture workspace (starts after CAD step 40, booleans and full topological naming)
 - [ ] M1. Setups, stock, work coordinates; a tool library shared across projects
@@ -564,11 +570,16 @@ AI assistant (owner's spec "AI assistant — architecture and placeholders"; opt
 - Report back to the owner when A1–A6 and A9 land: built vs placeholdered, test status, decisions needed
 
 Community (free sharing only; starts after CAD step 25, needs a server first, see docs/community.md)
-- [ ] C1. Decide the server questions in docs/community.md with the owner
+- [ ] C1. Decide the server questions in docs/community.md with the owner (proposed 2026-11-11 in `docs/progress/community.md`; the money items wait on the owner)
 - [ ] C2. Accounts and uploads: share a whole project (editable timeline and every workspace's data) or a mesh, with a free licence
 - [ ] C3. Search and browse; download into a new local project; open it in any workspace
 - [ ] C4. Remix: a downloaded copy links back to the original and credits its author
 - [ ] C5. Moderation and reporting
+- [ ] C6. Profiles: a display name only, no messages
+- [ ] C7. Likes
+- [ ] C8. Comments, only if the legal check allows them
+- [ ] C9. The monthly design contest, after launch
+- Steps, decisions and the order they are built in: `docs/progress/community.md` (C2 starts with sharing links).
 - Sign-in (owner's decision, 2026-11-04): browsing and searching the community needs no account; posting, downloading and remixing need a signed-in account (AC1 below).
 
 Money (owner's decisions, 2026-10-29 and 2026-10-30; nothing built yet, planned for launch). The core CAD stays free for everyone, with no limits on projects or exports, and nothing is ever paid inside community sharing. Money comes only from the extras below, priced fairly and never pushed with pop-ups. AI stays free with the user's own key or a local model; paid AI credits are an optional convenience, priced above what the provider charges us. A payment account needs an adult to hold it, so a parent holds it at first.

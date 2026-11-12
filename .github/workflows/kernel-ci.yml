@@ -37,7 +37,7 @@ on:
         required: false
         default: ""
       label:
-        description: "pr-<number> or main"
+        description: "pr-<number>, train-<number> or main"
         required: true
 
 # A newer push to the same pull request cancels the older run; main's finish.
@@ -68,7 +68,7 @@ jobs:
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
@@ -116,7 +116,7 @@ jobs:
     steps:
       - name: Inputs are commit ids, a label and a part, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
@@ -164,6 +164,8 @@ jobs:
       # 1, 2, then 4 minutes before the next of four (up to 10 minutes each).
       - if: contains(fromJSON('["release","rest","all"]'), matrix.part)
         run: |
+          # Ubuntu's mirrors stopped resolving on 2026-11-11: see the script.
+          .github/scripts/apt-mirror.sh
           apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
           for try in 1 2 3 4; do
             sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
@@ -210,7 +212,7 @@ jobs:
   checks-report:
     needs: [checks-plan, checks]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: kernel
     timeout-minutes: 10
     steps:
@@ -350,7 +352,7 @@ jobs:
   mutants:
     needs: [mutants-plan, mutants-shard]
     if: always() && inputs.base != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: kernel
     timeout-minutes: 10
     steps:

@@ -8,12 +8,14 @@
 
 import { boxShown, type Command, type CommandSpec, type Feature, type Unit } from "@fission/core";
 import { insertAt, isSketchExtrude, isSketchItem, SKETCH_PLANES, withPart, type DesignDocument } from "./document.ts";
+import { squaredRectangle } from "./constraints.ts";
 import type { ShapeKind } from "./profiles.ts";
 import { extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, ZERO_DISTANCE } from "./extrude.ts";
 import { NAME_LIMIT, renameItem } from "./timeline-edits.ts";
 import { addSketch, drawCircle, drawLine, drawRectangle } from "./sketch.ts";
 import { freshDesign } from "./start-fresh.ts";
 import { lengthRefused } from "./typed-entry.ts";
+import { extrudeSketches } from "./extrude-profiles.ts";
 
 export const SHAPES: readonly ShapeKind[] = ["box", "cylinder", "sphere", "l-bracket", "plate", "slot", "star"];
 
@@ -122,9 +124,9 @@ export function drawRefused(doc: DesignDocument, id: string): string | null {
   return used ? `${used} is built from this sketch, so the AI can't draw in it yet: draw there yourself, or start a new sketch.` : null;
 }
 
-/** The name of the first extrude built from sketch `id`, or null. */
+/** The name of the first extrude built from sketch `id` (any of its profiles', SL #611), or null. */
 export function builtFrom(doc: DesignDocument, id: string): string | null {
-  return doc.timeline.features.find((f) => isSketchExtrude(f) && f.intent.parameters.sketch === id)?.provenance.self.label ?? null;
+  return doc.timeline.features.find((f) => isSketchExtrude(f) && extrudeSketches(f).includes(id))?.provenance.self.label ?? null;
 }
 
 /**
@@ -150,7 +152,9 @@ export function drawingFor(doc: DesignDocument, sketchId: string, command: Comma
       return drawCircle(doc, sketchId, [n("x"), n("y")], sized(command.diameter as number, (v) => `A circle ⌀${v} mm`) / 2).doc;
     case "draw_rectangle": {
       const [w, h] = [sized(command.width as number, (v) => `A rectangle's width of ${v} mm`), sized(command.height as number, (v) => `A rectangle's height of ${v} mm`)];
-      return drawRectangle(doc, sketchId, [n("x") - w / 2, n("y") - h / 2], [n("x") + w / 2, n("y") + h / 2]).doc;
+      const made = drawRectangle(doc, sketchId, [n("x") - w / 2, n("y") - h / 2], [n("x") + w / 2, n("y") + h / 2]);
+      // Level and upright sides kept so, as the Rectangle tool's (`squaredRectangle`; solver hunt 2026-11-11: without them a size on one side leant the assistant's rectangle into a trapezoid). The same rectangle again draws nothing and adds nothing.
+      return made.doc === doc ? doc : squaredRectangle(made.doc, sketchId, made.ids);
     }
     case "draw_line":
       if (n("x1") === n("x2") && n("y1") === n("y2")) throw new Error(`a line needs two different ends: both are (${n("x1")}, ${n("y1")})`);
