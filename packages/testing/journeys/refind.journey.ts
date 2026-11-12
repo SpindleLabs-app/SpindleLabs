@@ -201,7 +201,7 @@ test("hand-worked: a link another workspace holds to Extrude 1's top face follow
   assert.equal(await solid(redrawn), 35);
   assert.deepEqual(resolveLink(sideLink, await lookupOf(redrawn)), {
     state: "unresolved",
-    warning: "Linked to Right of Extrude 1 in Design, which can't be found after the last edit. Pick a new source or break the link to keep the last copy.",
+    warning: "Linked to Right of Extrude 1 in DesignLab, which can't be found after the last edit. Pick a new source or break the link to keep the last copy.",
   });
   await cache.clear();
 });

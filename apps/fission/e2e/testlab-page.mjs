@@ -141,7 +141,7 @@ try {
     await toTestLab(page);
     await until(page, () => document.querySelector(".testlab-page-state")?.dataset.stale === "true", null, "out of date");
     const notes = await page.locator(".change-note .note-text").allTextContents();
-    assert.ok(notes.some((n) => n === "Study 1 out of date: you changed the box in Design. Rerun it in Simulate."), notes.join(" | "));
+    assert.ok(notes.some((n) => n === "Study 1 out of date: you changed the box in DesignLab. Rerun it in TestLab."), notes.join(" | "));
     await until(page, () => (document.querySelector(".testlab-page-status")?.textContent ?? "x") === "", null, "both faces found again");
     // The top's paint at z = 35 (where it is now), and the plain body colour at z = 20 on the front, held, so painted too.
     const atTop = await pixel(page, [20, 15, 35]);
