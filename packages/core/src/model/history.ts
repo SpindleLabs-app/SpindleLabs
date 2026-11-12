@@ -99,11 +99,23 @@ export interface History {
    * back that step, not the one before (clumsy hunt 2026-11-04: the step was lost, and the one before it undone).
    */
   hold<T>(work: Promise<T>): Promise<T>;
+  /** The present step, for `amendStep` to name later: the same step until a record merges into it or an amend changes it. */
+  present(): HistoryStep;
+  /**
+   * Puts right a step recorded earlier, the present or one since built on (Design's settle answered after the next
+   * action was recorded: #624, #622): `rewrite` gets `step`'s snapshot and returns what it should have held all along,
+   * or null to leave it. Nothing happens once `step` is gone or was changed since (`present`), nor during a restore or
+   * a step. A step left the same as the one before it has nothing to undo, so it is removed. Returns whether it changed.
+   */
+  amendStep(step: HistoryStep, rewrite: (snapshot: string) => string | null): boolean;
   /** Whether held work is still running. */
   busy(): boolean;
   /** Settles once no held work runs, including work held while waiting; at once when none does. */
   whenIdle(): Promise<void>;
 }
+
+/** One step of a history, as `History.present` names it (opaque). */
+export type HistoryStep = object;
 
 /** The steps of a history, kept by `History.save` (opaque). */
 export interface SavedHistory {
@@ -333,6 +345,21 @@ export function createHistory(options: HistoryOptions): History {
       );
       held.add(done);
       return work;
+    },
+    present: () => entries[index],
+    amendStep(step, rewrite) {
+      if (restoring || grouping > 0) return false;
+      const at = entries.indexOf(step as Entry);
+      if (at < 0) return false;
+      const snapshot = rewrite(entries[at].snapshot);
+      if (snapshot === null || snapshot === entries[at].snapshot) return false;
+      if (at > 0 && snapshot === entries[at - 1].snapshot) {
+        entries.splice(at, 1);
+        if (at === index) lastWasRecord = false;
+        if (at <= index) index--;
+      } else entries[at] = { ...entries[at], snapshot };
+      changed();
+      return true;
     },
     busy: () => held.size > 0,
     async whenIdle() {
