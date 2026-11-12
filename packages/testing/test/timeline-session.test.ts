@@ -82,6 +82,8 @@ test("seeded sessions on the model pass, and reach every kind of outcome", async
     // 35f1f2a: a Move of a Combine's result, built.
     "move:combine-result",
     "duplicate:combine-result",
+    // SL #506 item 4: a Move moving only some of its bodies, naming the rest.
+    "move:partly",
   ];
   const missing = wanted.filter((k) => !total[k]);
   assert.deepEqual(missing, [], `never reached: ${missing.join(", ")}`);
@@ -121,6 +123,7 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "face-sketch-unbound": "outcome differs from the model",
   "move-shift-then-turn": "the rebuild differs from the model",
   "move-not-held": "the rebuild differs from the model",
+  "move-all-or-none": "the rebuild differs from the model",
   "sketch-not-carried": "the rebuild differs from the model",
   "move-bodies-kept": "the rebuild differs from the model",
   // SL #506 item 1: a Combine or Move dragged past the Move or Combine that placed or changed its bodies.

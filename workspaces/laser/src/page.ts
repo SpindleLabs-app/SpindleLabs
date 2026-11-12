@@ -23,11 +23,12 @@
 
 import { NewerFormatError, type ListedObject, type MountedWorkspace, type Outline, type RepresentationRegistry, type WorkspaceContext } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
+import { planeSeenAs } from "@fission/viewport";
 import { sheetDxf } from "./dxf.ts";
 import { createFlatView, type FlatScene } from "./flat-view.ts";
 import { OP_LOOK, opOf, overlapMatters, readOps, withOp, type LaserOp } from "./ops.ts";
 import { BOX_MARGIN, partsRelation, type PartsRelation } from "./overlap.ts";
-import { cleanMm, layOutPlaced, normalAngle, offBedWords, overlapCandidates, placementRefusal, readPlacements, turnedOnTheSpot, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
+import { cleanMm, flippedOnTheSpot, layOutPlaced, mirrorOutline, normalAngle, offBedWords, overlapCandidates, placementRefusal, readPlacements, turnedOnTheSpot, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
 import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, thicknessRefusal, mmWords, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
 
 /** Design's lister for flat shapes (Design's representations.ts DESIGN_OUTLINES). */
@@ -38,7 +39,7 @@ export const DXF_KIND: SaveKind = { description: "DXF drawing for a laser cutter
 
 /** What the project keeps for Laser: its own choices only, never Design's shapes. */
 export interface LaserData {
-  version: 3;
+  version: 4;
   bed: Bed;
   gap: number;
   /** The sheet's thickness, mm: kept for what engraving focuses on and joints are sized by later; nothing reads it yet, so the page has no box for it. */
@@ -53,11 +54,11 @@ export interface LaserData {
 
 /**
  * The version of Laser's data this build writes. 1: bed, gap, thickness, off. 2: `placed` (parts placed by hand, L1b1).
- * 3: `ops` (cut, score or engrave per part, L1c).
+ * 3: `ops` (cut, score or engrave per part, L1c). 4: a placement may hold `flip` (mirrored left to right, L1b4).
  * A change to what the data holds takes the next number and a step in `readLaserProjectData`, so a build from before
  * it refuses the data instead of storing it again without the new part.
  */
-export const LASER_DATA_VERSION = 3;
+export const LASER_DATA_VERSION = 4;
 
 export const defaultLaserData = (): LaserData => ({ version: LASER_DATA_VERSION, bed: { ...DEFAULT_BED }, gap: DEFAULT_GAP, thickness: DEFAULT_THICKNESS, off: [], placed: {}, ops: {} });
 
@@ -78,6 +79,9 @@ export function readLaserProjectData(data: unknown): unknown {
   if (d.version === 1) d = { ...d, version: 2, placed: {} };
   // 2 → 3: layers arrive (L1c). Every part of version 2 was cut, which is what no entry says.
   if (d.version === 2) d = { ...d, version: 3, ops: {} };
+  // 3 → 4: a part may be flipped (L1b4). Version 3 flipped none, which is what no `flip` says; the number goes up so a
+  // build from before refuses data with a flip instead of storing it again without it.
+  if (d.version === 3) d = { ...d, version: 4 };
   return d;
 }
 
@@ -111,8 +115,12 @@ export async function readParts(registry: RepresentationRegistry, objects: reado
     try {
       const { representation } = await registry.deliver(o, ["outline"]);
       if (representation.kind !== "outline") throw new Error(`it came as ${representation.kind}, not an outline`);
-      outlineBox(representation.outline); // a malformed outline is refused here, in words
-      out.push({ id: o.id, label: o.label, outline: representation.outline });
+      // A sketch seen from behind its plane (a bottom, back or left face: `side` −1) was drawn looking at the face from
+      // outside, where its own x and y run mirrored; it is laid out as it was seen, by the rule Design's Look At uses
+      // (viewport `planeSeenAs`), so the part on the bed and in the files is what was drawn, never its mirror (L1b4).
+      const outline = representation.side === -1 ? mirrorOutline(representation.outline, planeSeenAs(representation.plane, -1)) : representation.outline;
+      outlineBox(outline); // a malformed outline is refused here, in words
+      out.push({ id: o.id, label: o.label, outline });
     } catch (e) {
       out.push({ id: o.id, label: o.label, refused: e instanceof Error ? e.message : String(e) });
     }
@@ -254,7 +262,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
 <label class="laser-page-field">Y <input name="y" type="number" step="any" inputmode="decimal"> mm</label>
 <label class="laser-page-field">Angle <input name="angle" type="number" step="any" inputmode="decimal"> °</label>
 <p class="laser-page-part-words" role="status"></p>
-<div class="laser-page-turns"><button type="button" data-turn="90">Turn left</button><button type="button" data-turn="-90">Turn right</button><button type="button" data-rows>Back in the rows</button></div>
+<div class="laser-page-turns"><button type="button" data-turn="90">Turn left</button><button type="button" data-turn="-90">Turn right</button><button type="button" data-flip>Flip</button><button type="button" data-rows>Back in the rows</button></div>
 </fieldset>
 <div class="laser-page-files"><button type="button" data-save="svg">Save SVG</button><button type="button" data-save="dxf">Save DXF</button></div>
 <p class="laser-page-note">Drag a part on the bed to move it; X and Y are its lower-left corner from the bed's. Sizes are exact, in mm, with arcs kept as arcs. Each part is cut, scored or engraved: in the files cut is red, score blue and engrave black, done in the order engrave, score, cut. A DXF can't hold a filled shape, so an engraving is its outline on the ENGRAVE layer: set that layer to fill in your laser program. Kerf, power and speed are set in your laser program for now.</p>`;
@@ -282,9 +290,10 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
     },
     onMove: (id, dx, dy, key) => {
       const p = layout.placed.find((x) => x.id === id);
-      if (p) put(p, { x: cleanMm(p.x + dx), y: cleanMm(p.y + dy), angle: p.angle }, `Move ${p.label} on the laser bed`, key ? `laser-move-${id}` : undefined);
+      if (p) put(p, { x: cleanMm(p.x + dx), y: cleanMm(p.y + dy), angle: p.angle, ...(p.flip && { flip: true as const }) }, `Move ${p.label} on the laser bed`, key ? `laser-move-${id}` : undefined);
     },
     onTurn: (id, degrees) => turn(id, degrees),
+    onFlip: (id) => flip(id),
   });
   const showView = () => {
     ctx.viewport.showImage(null);
@@ -311,8 +320,8 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
     }
     const now = data();
     const placed: Record<string, Placement> = { ...now.placed };
-    for (const q of layout.placed) if (!Object.hasOwn(placed, q.id)) placed[q.id] = { x: q.x, y: q.y, angle: q.angle };
-    placed[p.id] = { x: at.x, y: at.y, angle: normalAngle(at.angle) };
+    for (const q of layout.placed) if (!Object.hasOwn(placed, q.id)) placed[q.id] = { x: q.x, y: q.y, angle: q.angle }; // a part not yet in `placed` is in the rows: unturned, unflipped
+    placed[p.id] = { x: at.x, y: at.y, angle: normalAngle(at.angle), ...(at.flip && { flip: true as const }) };
     store({ ...now, placed }, label, mergeKey);
     draw(false);
     return true;
@@ -327,7 +336,14 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
       partWords.textContent = "A part's place and angle must be numbers.";
       return;
     }
-    put(p, turnedOnTheSpot(source.outline, p, angle), `Turn ${p.label} on the laser bed`);
+    put(p, turnedOnTheSpot(source.outline, p, angle, p.flip), `Turn ${p.label} on the laser bed`);
+  };
+  /** Mirrors part `id` left to right where it sits (L1b4): what was drawn on a sheet's other side, or a part wanted the other way round. */
+  const flip = (id: string) => {
+    const p = layout.placed.find((x) => x.id === id);
+    const source = offered.find((o) => o.id === id);
+    if (!p || !source || !("outline" in source)) return;
+    put(p, flippedOnTheSpot(source.outline, p), `Flip ${p.label} on the laser bed`);
   };
 
   const draw = (frame: boolean): void => {
@@ -420,10 +436,11 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
     if (!p) return;
     const typed = input(name).value.trim() === "" ? NaN : Number(input(name).value);
     if (name === "angle") return turn(p.id, 0, typed);
-    put(p, { x: name === "x" ? typed : p.x, y: name === "y" ? typed : p.y, angle: p.angle }, `Move ${p.label} on the laser bed`);
+    put(p, { x: name === "x" ? typed : p.x, y: name === "y" ? typed : p.y, angle: p.angle, ...(p.flip && { flip: true as const }) }, `Move ${p.label} on the laser bed`);
   };
   for (const name of ["x", "y", "angle"]) input(name).addEventListener("change", () => onPart(name));
   for (const b of panel.querySelectorAll<HTMLButtonElement>("button[data-turn]")) b.addEventListener("click", () => picked !== null && turn(picked, Number(b.dataset.turn)));
+  panel.querySelector<HTMLButtonElement>("button[data-flip]")!.addEventListener("click", () => picked !== null && flip(picked));
   panel.querySelector<HTMLButtonElement>("button[data-rows]")!.addEventListener("click", () => {
     const p = layout.placed.find((x) => x.id === picked);
     const now = data();
