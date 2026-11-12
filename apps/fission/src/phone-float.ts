@@ -3,7 +3,7 @@
 // end of the toolbar's sideways scroll, out of sight, so a beginner could not
 // find how to finish a sketch or an extrude. While a tool is open this bar
 // sits along the top of the view with what ends it: a big green Finish
-// (Finish Sketch, Finish Extrude, Finish Move, Finish Rotate, Finish Scale, Finish Edit) and Cancel where the tool has
+// (Finish Sketch, Finish Extrude, Finish Move, Finish Rotate, Finish Scale, Finish Combine, Finish Edit) and Cancel where the tool has
 // one; while a sketch's plane is being picked, the words "Tap a plane or
 // face" with the three planes and Cancel, so the plane prompt no longer needs
 // the sheet that covered the view. Every button only presses the tool's own
@@ -28,6 +28,8 @@ interface Ender {
   errors: readonly string[];
   /** The panel's line saying why OK is off, shown on the bar while it is; null when the tool has none. */
   status: string | null;
+  /** The tool's usual next step, on the bar beside Finish so it needs no hunt along the toolbar: its button's id, words and the tool's own button it presses. */
+  next?: { id: string; label: string; target: string };
 }
 
 /** In order: Extrude first (it is started from inside a sketch, which it leaves). */
@@ -38,8 +40,13 @@ export const ENDERS: readonly Ender[] = [
   // Scale (step 35e2) is Move's panel opened as Scale, likewise.
   { kind: "scale", panel: '#move-panel[data-kind="scale"]', ok: "#move-ok", cancel: "#move-cancel", label: "Finish Scale", errors: ["#move-error"], status: null },
   { kind: "move", panel: "#move-panel", ok: "#move-ok", cancel: "#move-cancel", label: "Finish Move", errors: ["#move-error"], status: null },
+  // Combine (#504): the sheet opens by itself once a tool is picked and shuts again by a tap on the view; the bar keeps Finish and Cancel in reach.
+  { kind: "combine", panel: "#combine-panel", ok: "#combine-ok", cancel: "#combine-cancel", label: "Finish Combine", errors: ["#combine-error"], status: null },
   { kind: "edit", panel: "#feature-edit", ok: "#feature-edit-ok", cancel: "#feature-edit-cancel", label: "Finish Edit", errors: ["#feature-edit-error"], status: null },
-  { kind: "sketch", panel: ".sketchbar-finish", ok: "#finish-sketch", cancel: null, label: "Finish Sketch", errors: [], status: null },
+  // Extrude beside Finish Sketch (UI audit 2026-11-12): the sketch toolbar's Extrude sits past the screen's right edge at
+  // phone width, so a box took Finish Sketch then Extrude along the main toolbar. It presses the toolbar's own Extrude,
+  // which finishes the sketch and offers it (a shape half drawn waits once, as there).
+  { kind: "sketch", panel: ".sketchbar-finish", ok: "#finish-sketch", cancel: null, label: "Finish Sketch", errors: [], status: null, next: { id: "float-extrude", label: "Extrude", target: "#extrude" } },
 ];
 
 /** The sketch's three planes, by the sketch panel's button ids. */
@@ -118,6 +125,12 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     finish.disabled = okButton?.disabled ?? false;
     if (finish.disabled) finish.title = why || "Not yet: the panel in Properties says why";
     bar.replaceChildren(finish);
+    const next = state.ender.next;
+    if (next && workspace.querySelector(next.target)) {
+      const button = withIcon(proxy(next.id, next.label, next.target, "phone-float-next"), "extrude");
+      button.setAttribute("aria-label", next.label); // its name when the narrowest phones show only the icon (phone-float.css)
+      bar.append(button);
+    }
     if (state.ender.cancel) bar.append(proxy("float-cancel", "Cancel", state.ender.cancel));
     if (why) {
       const words = Object.assign(document.createElement("span"), { id: "float-why", className: "phone-float-words phone-float-why", textContent: why });

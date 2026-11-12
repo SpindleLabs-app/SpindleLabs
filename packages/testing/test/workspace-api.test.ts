@@ -97,7 +97,7 @@ test("placeholders register no actions; a working workspace's verbs are its own"
   }
   const design = new ActionRegistry();
   plugins.find((p) => p.id === "design")!.registerActions!(design);
-  assert.deepEqual(design.byWorkspace("design").map((a) => a.id), ["design.download-stl", "design.copy-svg"]);
+  assert.deepEqual(design.byWorkspace("design").map((a) => a.id), ["design.download-stl", "design.copy-svg", "design.download-3mf", "design.download-obj"]);
 });
 
 // Downstream chips (X4b): no workspace makes anything from the design yet,
@@ -512,7 +512,7 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   const file = view.fileEntries!();
   assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);
   const none = "There is no body to download: nothing in the timeline builds.";
-  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", none], ["file-save-picture", "Save picture (PNG)", "This browser can't make a picture of the view"], ["file-slice-print", "Slice for printing", none]]);
+  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", none], ["file-export-mesh", "Export 3MF or OBJ…", none], ["file-save-picture", "Save picture (PNG)", "This browser can't make a picture of the view"], ["file-slice-print", "Slice for printing", none]]);
   assert.match(file.exports![0].title, /^Export STL: Download every body shown/);
   // The part's shape is the panel's Shape choice now: the box.
   assert.equal(ctx.properties.querySelector<HTMLSelectElement>("#shape")!.value, "box");
@@ -552,7 +552,7 @@ test("Design offers the registry's verbs for the selection, and its STL button r
   // The box built: its Body row selects it, and the registry's verb for a body is offered.
   (ctx.browser.querySelector("[data-node=body-1]") as HTMLElement).click();
   assert.deepEqual(ctx.selection.items.map((i) => i.id), ["body:feature-1"]);
-  assert.deepEqual(verbs(), ["design.download-stl"]);
+  assert.deepEqual(verbs(), ["design.download-stl", "design.download-3mf", "design.download-obj"]);
   assert.equal(row.hidden, false);
   // The kernel refuses the export: the verb's outcome shows in the note, nothing throws.
   (ctx.properties.querySelector("[data-action='design.download-stl']") as HTMLElement).click();
@@ -749,7 +749,7 @@ test("Design says the project changed when it writes the part; placeholders neve
     } else {
       // Mounting on an empty project writes the empty design a new project starts with (U0c): one change, no body.
       assert.equal(changes.get(ctx), 1);
-      assert.deepEqual(ctx.project.workspaces.design, { version: 19, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
+      assert.deepEqual(ctx.project.workspaces.design, { version: 20, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
       const before = ctx.project.workspaces.design;
       const width = ctx.properties.querySelector("#width") as HTMLInputElement; // the width box (the tool panels above it have boxes of their own)
       width.value = "50";

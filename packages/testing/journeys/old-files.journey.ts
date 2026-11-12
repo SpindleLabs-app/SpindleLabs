@@ -341,7 +341,7 @@ test("every old file is as its SpindleLabs saved it: the outer format 2 and Desi
   }
 });
 
-test("every old file opens through today's reader, upgraded to version 19 with its items, names, flags, marker and counter as worked out", () => {
+test("every old file opens through today's reader, upgraded to version 20 with its items, names, flags, marker and counter as worked out", () => {
   for (const file of files()) {
     const want = CORPUS[file];
     const doc = open(text(file)).workspaces.design as DesignDocument;

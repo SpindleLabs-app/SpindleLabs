@@ -271,7 +271,7 @@ export type ItemResult =
    * there, "plane-lost"; an extrude of a held sketch names it as its lost
    * `source` (26e).
    */
-  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; turn?: Turn; plane?: PlaneCause; source?: string; pieces?: ModelBody[]; down?: true; takes?: string[] }
+  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; turn?: Turn; plane?: PlaneCause; source?: string; pieces?: ModelBody[]; down?: true; missing?: string[]; takes?: string[] }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others: off, with no warning (Q3, 26e). */
   | { status: "greyed"; by: string }
@@ -357,8 +357,11 @@ export type ModelFault =
   | "face-sketch-unbound"
   | "move-shift-then-turn"
   | "move-not-held"
+  | "move-all-or-none"
   | "sketch-not-carried"
   | "move-bodies-kept"
+  /** SL #506 item 1: reordering ignores the Moves and Combines that shaped an item's bodies. */
+  | "reorder-past-shaper"
   | "combine-tool-kept"
   | "combine-not-held"
   | "combine-pieces-dropped"
@@ -406,8 +409,10 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "face-sketch-unbound",
   "move-shift-then-turn",
   "move-not-held",
+  "move-all-or-none",
   "sketch-not-carried",
   "move-bodies-kept",
+  "reorder-past-shaper",
   "combine-tool-kept",
   "combine-not-held",
   "combine-pieces-dropped",
@@ -775,18 +780,28 @@ function lost(item: Extract<ModelItem, { kind: "extrude" }>, cause: LostCause, f
  * greyed (Q3); failed naming the first body that is deleted or not built;
  * else built, with no body of its own, and every body it moves replaced in
  * `done` by that body moved, so everything after it finds the body where
- * the Move put it. All or none.
+ * the Move put it. A body no longer there is left out and named in
+ * `missing` (SL #506 item 4); with none left it fails.
  */
 function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: ReadonlySet<string>, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
   for (const id of dependsOn(item)) {
     const by = greyedBy(done[id], id);
     if (by !== null) return { status: "greyed", by };
   }
+  // SL #506 item 4: a body no longer there (deleted, not built or used up) is left out and named in `missing`, the rest
+  // moved; with none left the Move fails naming the first.
+  const missing: string[] = [];
+  let first: ItemResult | null = null;
   for (const id of item.bodies) {
     const r = done[id];
-    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id };
-    if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: id };
+    const failed: ItemResult | null = r === undefined ? { status: "failed", cause: "deleted-input", input: id } : r.status !== "built" || r.body === undefined ? { status: "failed", cause: "failed-input", input: id } : null;
+    if (failed === null) continue;
+    first ??= failed;
+    missing.push(id);
   }
+  // Planted bug ("move-all-or-none"): one body missing fails the whole Move, as before #506, so the others drop back.
+  if (first !== null && (missing.length === item.bodies.length || faults.has("move-all-or-none"))) return first;
+  const there = item.bodies.filter((id) => !missing.includes(id));
   // SL #583 item 2: the pieces it holds, and each piece not yet seen of a Combine whose target it moves (split from it
   // since the Move was made: `takes`). A piece held that its Combine no longer makes is no failure while the Move moves
   // that Combine's target, which holds it again.
@@ -815,10 +830,10 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
   }
   // 35f1f2a: a Combine's result moves like any body (Design asks the kernel's body_move), each face carrying its own motion.
   // Planted bug ("combine-move-refused"): a Combine's result can't be moved, as before 35f1f2a.
-  if (faults.has("combine-move-refused") && item.bodies.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
+  if (faults.has("combine-move-refused") && there.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
   // Planted bug ("move-not-held"): the Move builds but its bodies stay where they were.
   if (!faults.has("move-not-held"))
-    for (const id of item.bodies) {
+    for (const id of there) {
       const r = done[id] as Extract<ItemResult, { status: "built" }>;
       done[id] = { ...r, body: movedForm(r.body!, moved(r.body!, item, faults), item, place) };
     }
@@ -829,7 +844,7 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
       all[k - 1] = movedForm(all[k - 1], moved(all[k - 1], item, faults), item, place);
       done[c] = { ...r, pieces: all };
     }
-  return { status: "built", ...(takes.length > 0 && { takes }) };
+  return { status: "built", ...(missing.length > 0 && { missing }), ...(takes.length > 0 && { takes }) };
 }
 
 /**
@@ -1379,6 +1394,18 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
         const deps = (i: ModelItem) => (faults.has("face-sketch-unbound") && i.kind === "sketch" ? [] : dependsOn(i));
         if (deps(item).some((d) => at(d) > op.to)) return { kind: "refused", cause: "before-dependency" };
         if (doc.items.some((i, j) => j < op.to && deps(i).includes(item.id))) return { kind: "refused", cause: "after-dependent" };
+        // SL #506 item 1: an item never passes one that placed or changed a body it works on (a Move's bodies, a
+        // Combine's target and its tool unless kept), nor one working on a body it placed or changed, as they stood.
+        if (!faults.has("reorder-past-shaper")) {
+          const before = [...doc.items];
+          before.splice(op.to, 1);
+          before.splice(k, 0, item);
+          const uses = (i: ModelItem) => (i.kind === "move" ? i.bodies : i.kind === "combine" ? [i.target, i.tool] : i.kind === "duplicate" ? [i.body] : []);
+          const changes = (i: ModelItem) => (i.kind === "move" ? i.bodies : i.kind === "combine" ? (i.keep ? [i.target] : [i.target, i.tool]) : []);
+          const shapes = (a: ModelItem, b: ModelItem) => before.indexOf(a) < before.indexOf(b) && uses(b).some((x) => changes(a).includes(x));
+          if (before.some((a) => shapes(a, item) && at(a.id) > op.to)) return { kind: "refused", cause: "before-dependency" };
+          if (before.some((b) => shapes(item, b) && at(b.id) < op.to)) return { kind: "refused", cause: "after-dependent" };
+        }
       }
       if (k !== op.to) doc.marker = marker;
       return { kind: "done", ids: [] };
@@ -1443,7 +1470,8 @@ export function resolveFace(r: Rebuild, name: FaceName, faults: ReadonlySet<Mode
 /**
  * `doc` with what a rebuild settles taken in, as Design takes it into the
  * edit's own step (SL #583 item 2): every piece shown is seen from now on,
- * and each Move holds the pieces it took (`takes`). The same document when
+ * and each Move holds the pieces it took (`takes`), a Move that is off the
+ * new pieces of a body it holds (SL #624 item 2). The same document when
  * nothing changes.
  */
 export function takeIn(doc: ModelDoc): ModelDoc {
@@ -1451,6 +1479,18 @@ export function takeIn(doc: ModelDoc): ModelDoc {
   const seen = new Set(doc.seen ?? []);
   for (const [id, res] of Object.entries(r.results)) if (res.status === "built") (res.pieces ?? []).forEach((_, k) => seen.add(pieceKey(id, k + 1)));
   const takes = new Map(Object.entries(r.results).flatMap(([id, res]) => (res.status === "built" && res.takes ? [[id, res.takes] as const] : [])));
+  // SL #624 item 2: a Move that is off (suppressed, rolled back, greyed or failed) when a Combine before it first shows a
+  // piece split from a body it holds takes the piece too, though it moved nothing: it holds the whole body.
+  const before = new Set(doc.seen ?? []);
+  for (const [at, item] of doc.items.entries()) {
+    if (item.kind !== "move" || r.results[item.id]?.status === "built") continue;
+    const fresh = doc.items.slice(0, at).flatMap((c) => {
+      const res = r.results[c.id];
+      if (c.kind !== "combine" || !item.bodies.includes(c.target) || res?.status !== "built") return [];
+      return (res.pieces ?? []).map((_, k) => pieceKey(c.id, k + 1)).filter((key) => !before.has(key) && !(item.pieces ?? []).includes(key));
+    });
+    if (fresh.length > 0) takes.set(item.id, fresh);
+  }
   if (takes.size === 0 && seen.size === (doc.seen ?? []).length) return doc;
   return {
     ...doc,

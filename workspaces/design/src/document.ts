@@ -271,7 +271,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 19;
+  version: 20;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -1185,6 +1185,8 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   if (face.side !== 1 && face.side !== -1) throw new Error(`${at}'s side must be 1 or -1, not ${shown(face.side)}`);
   if (Object.hasOwn(face, "held")) checkPlane(face.held, `${at}'s held plane`);
   if (Object.hasOwn(face, "body")) checkPlane(face.body, `${at}'s body frame`);
+  // SL #583 item 3 (version 19): whether its face was its name's face turned round when drawn.
+  if (Object.hasOwn(face, "reversed") && typeof face.reversed !== "boolean") throw new Error(`${at}'s reversed must be true or false, not ${shown(face.reversed)}`);
   // SL #539: the body's size when drawn (its scale factors multiplied), a number above 0.
   const body = face.body as Record<string, unknown> | undefined;
   if (body !== undefined && Object.hasOwn(body, "size") && !(typeof body.size === "number" && Number.isFinite(body.size) && body.size > 0)) throw new Error(`${at}'s body frame's size must be a number above 0, not ${shown(body.size)}`);
@@ -1484,6 +1486,7 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   if (!(COMBINE_OPERATIONS as readonly unknown[]).includes(p.operation)) throw new Error(`${at}'s operation ${shown(p.operation)} is not join, cut or intersect`);
   if (typeof p.keepTools !== "boolean") throw new Error(`${at}'s keepTools ${shown(p.keepTools)} is not true or false`);
   if (!Array.isArray(p.tools) || p.tools.length === 0) throw new Error(`${at} has no tool bodies`);
+  notTooMany(p.tools.length, DESIGN_LIMITS.items, `${at} names`, "tools");
   const bodies = [p.target, ...(p.tools as unknown[])];
   const once = new Set<unknown>();
   for (const [i, id] of bodies.entries()) {
@@ -1659,6 +1662,11 @@ function hasVersion14Fields(d: Record<string, unknown>): boolean {
 }
 
 /** Whether version 14 data holds what only version 15 brought (35f1f2b): a pin or projection by a Combine result's edge name (design-edges.ts). */
+/** Whether version 18 data has a face sketch recording which way its face was drawn (SL #583 item 3), which only version 19 holds. */
+function hasVersion19Fields(d: Record<string, unknown>): boolean {
+  return (Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "reversed"));
+}
+
 /** Whether version 17 data has an extrude holding more profiles (`more`), which only version 18 allows. */
 function hasVersion18Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
@@ -1733,20 +1741,20 @@ export function migrateDesignV15(d: Record<string, unknown>): Record<string, unk
 }
 
 /**
- * Version 18 data as version 19 (SL #632): version 18 filed the kept shape
+ * Version 19 data as version 20 (SL #632): version 19 (and 18) filed the kept shape
  * of every profile of a sketch under one key, the extrude's id for its
  * first profile's sketch and "<extrude>/<sketch>" for another sketch, so
- * the first of them lost froze the shape for them all; version 19 gives
+ * the first of them lost froze the shape for them all; version 20 gives
  * each profile after the first its own, "<extrude>/profile:k" (`keptKey`,
  * k its place in `more` from 1). Each takes a copy of the shape it read,
  * so the design builds as it did; the "<extrude>/<sketch>" keys go. A key
  * no profile read is left for the checks to refuse, and one already in
- * version 19's form is refused here: version 18 never wrote one.
+ * version 20's form is refused here: no earlier version wrote one.
  */
-export function migrateDesignV18(d: Record<string, unknown>): Record<string, unknown> {
-  if (!isRecord(d.kept)) return { ...d, version: 19 };
+export function migrateDesignV19(d: Record<string, unknown>): Record<string, unknown> {
+  if (!isRecord(d.kept)) return { ...d, version: 20 };
   const old = d.kept;
-  for (const id of Object.keys(old)) if (id.includes("/profile:")) throw new Error(`Design data says version 18 but keeps a shape for ${shown(id)}, a profile's own, which version 19 brought`);
+  for (const id of Object.keys(old)) if (id.includes("/profile:")) throw new Error(`Design data from before version 20 keeps a shape for ${shown(id)}, a profile's own, which version 20 brought`);
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
   const read = new Set<string>();
   const added: [string, unknown][] = [];
@@ -1763,7 +1771,7 @@ export function migrateDesignV18(d: Record<string, unknown>): Record<string, unk
     }
   }
   const kept = Object.fromEntries([...Object.entries(old).filter(([id]) => !read.has(id)), ...added]);
-  return { ...d, version: 19, kept };
+  return { ...d, version: 20, kept };
 }
 
 /**
@@ -1837,7 +1845,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 19;
+export const DESIGN_VERSION = 20;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1901,12 +1909,16 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 18 lets an extrude of a sketch hold more profiles (`more`), which version 17 never held; its fields are read as they are.
   if (v17.version === 17 && hasVersion18Fields(v17)) throw new Error(`Design data says version ${shown(given)} but has an extrude of several profiles, which version 18 brought`);
   const v18 = v17.version === 17 ? { ...v17, version: 18 } : v17;
-  // Version 19 (SL #632) files each profile's kept shape under its own key, where version 18 filed every profile of a
-  // sketch under one: copied to each profile that read it (`migrateDesignV18`).
-  const d = (v18.version === 18 ? migrateDesignV18(v18) : v18) as Partial<DesignDocument>;
+  // Version 19 (SL #583 item 3) lets a face sketch record whether its face was its name's face turned round (a Cut's
+  // wall); version 18 data never held it, and opens with none, never judged so.
+  if (v18.version === 18 && hasVersion19Fields(v18)) throw new Error(`Design data says version ${shown(given)} but has a sketch recording which way its face was drawn, which version 19 brought`);
+  const v19 = v18.version === 18 ? { ...v18, version: 19 } : v18;
+  // Version 20 (SL #632) files each profile's kept shape under its own key, where version 19 filed every profile of a
+  // sketch under one: copied to each profile that read it (`migrateDesignV19`).
+  const d = (v19.version === 19 ? migrateDesignV19(v19) : v19) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 or 19)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 or 20)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1994,7 +2006,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   if (Object.hasOwn(d, "kept")) {
     if (!isRecord(d.kept)) throw new Error("Design data's kept shapes are not an object of extrude ids");
     for (const [id, kept] of Object.entries(d.kept)) {
-      // An extrude's id (its first profile's), or (version 19) its id and the place of another of its profiles (`keptKey`).
+      // An extrude's id (its first profile's), or (version 20) its id and the place of another of its profiles (`keptKey`).
       const slash = id.indexOf("/");
       const f = byId.get(slash < 0 ? id : id.slice(0, slash))?.item;
       if (!f || !isSketchExtrude(f) || (slash >= 0 && !isMoreKeptKey(f, id))) throw new Error(slash < 0 ? `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline` : `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline and the place of another of its profiles`);
@@ -2175,7 +2187,7 @@ function buildsNow(a: Asked, f: Feature): boolean {
   // An extrude with an operation also needs every body it works on (version 10).
   if (!makersOf(a.byId, f).every((x) => buildsIn(a, x))) return false;
   // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2); so for each of its profiles (version 18),
-  // each under its own key (`profileParts`' ids, version 19).
+  // each under its own key (`profileParts`' ids, version 20).
   return profileParts(f).every((part) => {
     const sketch = a.sketches.get(part.intent.parameters.sketch as string);
     return sketch === undefined ? keptOf(document, part) !== undefined : buildsIn(a, sketch);
@@ -2228,7 +2240,7 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
     const extruded = isSketchExtrude(f) ? extrudeSketches(f) : [];
     const own = extruded.flatMap((id) => sketches.get(id) ?? []);
     const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...own, ...makersOf(byId, f)];
-    // Each profile's sketch, or its own kept shape when the sketch is gone (version 19: one per profile, `profileParts`).
+    // Each profile's sketch, or its own kept shape when the sketch is gone (version 20: one per profile, `profileParts`).
     const partBuilds = (part: Feature) => {
       const input = sketches.get(part.intent.parameters.sketch);
       return input === undefined ? keptOf(document, part) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input));

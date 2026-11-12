@@ -44,7 +44,7 @@ export function extrudeSketches(f: Feature): string[] {
 
 /**
  * The key the kept shape of an extrude's profile `k` is filed under in the
- * document's `kept` (Design data version 19, SL #632): the extrude's id for
+ * document's `kept` (Design data version 20, SL #632): the extrude's id for
  * its first profile (k = 0, as before version 18), else the extrude's id
  * and "profile:k", k its place in `more` counted from 1 (a "/" and a ":",
  * in no id Design makes). Each profile keeps its own shape, so two of one

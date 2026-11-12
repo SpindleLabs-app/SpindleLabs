@@ -1,11 +1,11 @@
 // SL #632 item 1 (hunt 2026-11-12 C, finding C4/C5; broken-solids hunt D4): two profiles of ONE sketch shared one
 // kept shape (filed "<extrude>" or "<extrude>/<sketch>"), so once one was lost the shape was frozen; the other,
 // edited and then lost too, came back at its shape from before the edit, not its last shape (the owner's rule, 24d2).
-// From Design data version 19 each profile keeps its own shape (`keptKey`: "<extrude>/profile:<k>").
+// From Design data version 20 each profile keeps its own shape (`keptKey`: "<extrude>/profile:<k>").
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DESIGN_VERSION, migrateDesignV18, readDesignDocument, type DesignDocument } from "../src/document.ts";
+import { DESIGN_VERSION, migrateDesignV19, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { settleKept } from "../src/rebuild.ts";
 import { addSketch, deleteCurve, drawRectangle, movePoint } from "../src/sketch.ts";
@@ -65,12 +65,16 @@ test("hand-worked upgrade: version 18's shared key (the first profile's sketch) 
   const doc = readDesignDocument(file);
   // B is `more`'s first (k = 1), of the first profile's sketch, so it read "feature-18": it gets "feature-18/profile:1",
   // the same 8 points and 8 curves; A keeps "feature-18" as it was.
-  assert.equal(doc.version, 19);
+  assert.equal(doc.version, 20);
   assert.deepEqual(doc.kept, { "feature-18": file.kept["feature-18"], "feature-18/profile:1": file.kept["feature-18"] });
   // Builds as it did: A from the sketch, the trapezium (0,0) (10,0) (20,10) (0,10), area (10 + 20) / 2 x 10 = 150,
   // x 1 mm = 150; B from its shape, 10 x 10 x 1 = 100.
   const built = await volumesOf(doc, "feature-18");
   assert.deepEqual(built.vols.map((v) => Math.round(v * 1e6) / 1e6), [150, 100]);
+  // The same file as version 19 writes it (18 to 19 changes no field this file has) upgrades the same way.
+  assert.deepEqual(readDesignDocument({ ...JSON.parse(JSON.stringify(file)), version: 19 }), doc);
+  // A version 19 file holding a key only version 20 writes is refused too.
+  assert.throws(() => readDesignDocument({ ...JSON.parse(JSON.stringify(file)), version: 19, kept: { "feature-18/profile:1": file.kept["feature-18"] } }), /from before version 20 keeps a shape for feature-18\/profile:1/);
   // Saved and opened again: unchanged.
   assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(doc))), doc);
   // The first edit after opening: A's top side deleted, A lost. Its last shape is the trapezium, 150, not the square
@@ -93,9 +97,9 @@ test("hand-worked upgrade: version 18's \"<extrude>/<sketch>\" key becomes a cop
   const doc = readDesignDocument(file);
   // B is `more`'s first (profile:1), C its second (profile:2), both of sketch-10: each a copy; the old key goes.
   assert.deepEqual(doc.kept, { "feature-27/profile:1": shape, "feature-27/profile:2": shape });
-  // The same upgrade alone (the step the reader runs): version 19, nothing else changed.
-  const up = migrateDesignV18(file);
-  assert.deepEqual({ ...up, kept: undefined }, { ...file, version: 19, kept: undefined });
+  // The same upgrade alone (the step the reader runs): version 20, nothing else changed.
+  const up = migrateDesignV19(file);
+  assert.deepEqual({ ...up, kept: undefined }, { ...file, version: 20, kept: undefined });
   // Builds as it did: A 100, B from its shape 100, C from the sketch 100, apart: three bodies, 300 in all.
   const built = await volumesOf(doc, "feature-27");
   assert.deepEqual(built.vols.map((v) => Math.round(v * 1e6) / 1e6), [100, 100, 100]);
@@ -103,16 +107,16 @@ test("hand-worked upgrade: version 18's \"<extrude>/<sketch>\" key becomes a cop
 
 test("the reader takes a profile's own key and refuses any other after the slash, saying so", () => {
   const doc = readDesignDocument(v18("v18-other-sketch-kept"));
-  assert.equal(DESIGN_VERSION, 19);
+  assert.equal(DESIGN_VERSION, 20);
   const shape = doc.kept!["feature-27/profile:1"];
   const withKey = (key: string) => JSON.parse(JSON.stringify({ ...doc, kept: { [key]: shape } }));
   // The two profiles after the first, and the first's own (the extrude's id), open.
   for (const key of ["feature-27/profile:1", "feature-27/profile:2", "feature-27"]) assert.deepEqual(Object.keys(readDesignDocument(withKey(key)).kept!), [key]);
-  // Version 18's form in a version 19 file, a place past the two, the first's place (its key is the bare id), a
+  // Version 18's form in a version 20 file, a place past the two, the first's place (its key is the bare id), a
   // place written with a 0 before it, and words after the number: each refused, naming the key.
   for (const key of ["feature-27/sketch-10", "feature-27/profile:3", "feature-27/profile:0", "feature-27/profile:01", "feature-27/profile:1x"])
     assert.throws(() => readDesignDocument(withKey(key)), { message: `Design data keeps a shape for ${key}, which is not an extrude of a sketch in the timeline and the place of another of its profiles` });
-  // A version 18 file holding a key only version 19 writes is refused, saying so.
+  // A version 18 file holding a key only version 20 writes is refused, saying so.
   const file = v18("v18-shared-kept");
-  assert.throws(() => readDesignDocument({ ...file, kept: { "feature-18/profile:1": file.kept["feature-18"] } }), { message: "Design data says version 18 but keeps a shape for feature-18/profile:1, a profile's own, which version 19 brought" });
+  assert.throws(() => readDesignDocument({ ...file, kept: { "feature-18/profile:1": file.kept["feature-18"] } }), { message: "Design data from before version 20 keeps a shape for feature-18/profile:1, a profile's own, which version 20 brought" });
 });

@@ -133,10 +133,12 @@ test("a design deleted from the account is never sent back; the project here sta
   await a.sync.syncAll();
   await designsApi(acc.as("ada") as AuthClient).remove(acc.rows[0]!.id); // deleted on another device
   a.edit("p1", "v2");
-  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [] });
+  // Not sent, and said by name (issue #628 item 2: it was silent, round after round).
+  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [], gone: ["Gear"] });
   assert.deepEqual(acc.rows, []);
+  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [] }, "nothing changed since: nothing to say");
   a.edit("p1", "v3");
-  await a.sync.syncAll();
+  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [], gone: ["Gear"] });
   assert.deepEqual(acc.rows, [], "still not sent after more changes");
   assert.equal(a.projects.get("p1")!.text, "v3");
   assert.equal(a.sync.remoteOf("p1"), null);

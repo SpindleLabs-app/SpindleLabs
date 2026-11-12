@@ -313,7 +313,7 @@ test("regression (35e2b's browser check): a moved body downloads as STL, and is 
   const ctx = { project, kernel, representations, viewport: { setOverlay() {}, clearOverlay() {} } } as never;
   const out = await actions.get(DOWNLOAD_STL)!.run(shownBodyRefs(doc), ctx);
   // A box moved is still a box: the export badge checks it solid.
-  assert.deepEqual([out.message, out.bad, out.solid?.verdict], ["Exported spindlelabs-box.stl. Checked solid.", false, "solid"]);
+  assert.deepEqual([out.message, out.bad, out.solid?.verdict], ["Exported Moved.stl. Checked solid.", false, "solid"]);
   const bytes = saved[0];
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const pts: number[][] = [];

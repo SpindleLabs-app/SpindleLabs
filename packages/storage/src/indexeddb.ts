@@ -26,8 +26,9 @@ function request<T>(r: IDBRequest<T>, doing: string): Promise<T> {
  * The KeyValue kept in this browser's IndexedDB database `name`. A browser
  * without IndexedDB (some private modes) still gets a KeyValue, whose every
  * call is refused with a message, so the app around it keeps working.
+ * `lost` is called when the browser closes the database under the page (site data cleared, the origin evicted).
  */
-export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefined = globalThis.indexedDB): KeyValue {
+export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefined = globalThis.indexedDB, lost: () => void = () => {}): KeyValue {
   let db: Promise<IDBDatabase> | undefined;
   let promise: Promise<IDBDatabase> | undefined;
   const open = () =>
@@ -42,7 +43,12 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
         const forget = () => {
           if (db === promise) db = undefined;
         };
-        opened.onclose = forget;
+        // `lost` hears it: whatever was stored may be gone with it, and only the open tab still has the design
+        // (#643 item 4: the mark went on saying "Saved" over an empty store).
+        opened.onclose = () => {
+          forget();
+          lost();
+        };
         opened.onversionchange = () => {
           opened.close();
           forget();

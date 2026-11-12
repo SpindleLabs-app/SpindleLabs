@@ -1,5 +1,5 @@
 // Hunt 2026-11-12 C: deleting a multi-profile extrude after one of its other sketches was deleted
-// (its kept shape filed as "<extrude>/profile:1", "<extrude>/<sketch>" before version 19): the design must still open.
+// (its kept shape filed as "<extrude>/profile:1", "<extrude>/<sketch>" before version 20): the design must still open.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readDesignDocument } from "../src/document.ts";

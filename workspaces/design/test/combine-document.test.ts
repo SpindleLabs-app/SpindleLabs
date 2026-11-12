@@ -73,6 +73,8 @@ test("a Combine read from a file is checked: its parameters, bodies and dependen
   refused(file({ keepTools: "no" }), "Design combine feature-3's keepTools no is not true or false");
   refused(file({ tools: [] }), "Design combine feature-3 has no tool bodies");
   refused(file({ tools: "body:feature-2" }), "Design combine feature-3 has no tool bodies");
+  // #507: a Combine's tools are capped as an extrude's bodies are (5,000 a file holds), the made-up ids refused before anything walks them.
+  refused(file({ tools: Array.from({ length: 5_001 }, (_, i) => `body:feature-${i + 100}`) }), "Design combine feature-3 names 5001 tools, more than the 5000 this SpindleLabs opens");
   // The target among the tools, or a tool twice.
   refused(file({ tools: ["body:feature-2", "body:feature-1"] }), "Design combine feature-3's target body:feature-1 is also a tool");
   refused(file({ tools: ["body:feature-2", "body:feature-2"] }), "Design combine feature-3 picks body:feature-2 twice");
