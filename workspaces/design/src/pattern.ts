@@ -32,6 +32,12 @@ export const MAX_SPACING = 1_000_000;
 /** A full turn, in degrees: the copies spaced evenly all the way round. */
 export const FULL_TURN = 360;
 
+/** The kernel's ANGULAR (radians): a partial angle's step must be more, and it must be more short of a full turn. */
+const ANGULAR = 1e-9;
+
+/** How far from the origin the centre may be: the kernel's model space, ±100 km. */
+export const MAX_COORD = 1e8;
+
 /** A row (with an optional second direction, a grid). Spacings in mm, negative the other way. */
 export interface LinearValues {
   kind: "linear";
@@ -63,7 +69,7 @@ export type PatternRequest =
 const UNIT: Record<PatternAxis, [number, number, number]> = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
 
 /** How many instances a pattern makes, the original included. */
-export const instanceCount = (v: PatternValues): number => (v.kind === "linear" ? v.count * (v.count2 ?? 1) : v.count);
+export const instanceCount = (v: PatternValues): number => (v.kind === "linear" ? v.count * (v.direction2 === undefined ? 1 : (v.count2 ?? 1)) : v.count);
 
 const whole = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n);
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
@@ -76,14 +82,20 @@ function spacingProblem(s: unknown, which: string): string | null {
   return null;
 }
 
+/** Degrees to radians, as the request sends them (the check uses the same). */
+const radians = (deg: number) => (deg * Math.PI) / 180;
+
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /**
  * Why these values make no pattern, in plain words, or null when the kernel
  * may be asked: counts whole numbers, at least 1 along each direction, 2 to
  * MAX_INSTANCES in all; spacings 1 µm to 1 km either way; a grid's second
- * direction another axis; round an axis: the centre's numbers finite, the
- * angle above 0 and at most a full turn either way.
+ * direction another axis (a second count or spacing with no second
+ * direction is a leftover and ignored, as the request ignores it); round an
+ * axis: the centre three finite numbers within ±100 km, the angle above 0
+ * and at most a full turn either way, and a partial angle the kernel can
+ * tell from a full turn and whose steps it can tell from no turn.
  */
 export function patternProblem(v: PatternValues): string | null {
   if (v.kind === "linear") {
@@ -101,9 +113,14 @@ export function patternProblem(v: PatternValues): string | null {
   } else {
     if (!PATTERN_AXES.includes(v.axis)) return `${shown(v.axis)} is not X, Y or Z.`;
     if (!whole(v.count)) return "Type how many, a whole number from 2.";
-    if (!v.centre.every(finite)) return "Type the centre in mm.";
+    if (!Array.isArray(v.centre) || v.centre.length !== 3 || !v.centre.every(finite)) return "Type the centre in mm.";
+    if (v.centre.some((c) => Math.abs(c) > MAX_COORD)) return `The centre must be within 100 km (${MAX_COORD.toLocaleString("en")} mm) of the origin.`;
     if (!finite(v.angle) || v.angle === 0) return "Type the angle in degrees, above 0 (negative turns the other way).";
     if (Math.abs(v.angle) > FULL_TURN) return `The angle can be at most ${FULL_TURN}°, a full turn.`;
+    // The kernel's own limits on a partial angle, in the radians it is sent in.
+    const theta = Math.abs(radians(v.angle));
+    if (Math.abs(v.angle) !== FULL_TURN && theta >= 2 * Math.PI - ANGULAR) return "The angle is too close to a full turn to tell apart: type 360 for a full turn.";
+    if (Math.abs(v.angle) !== FULL_TURN && v.count >= 2 && theta / (v.count - 1) <= ANGULAR) return "The angle is too small for that many: each step must be more than about 0.00000006°.";
   }
   const n = instanceCount(v);
   if (n < 2) return "A pattern needs at least 2, the body and one copy.";
@@ -124,7 +141,7 @@ export function patternRequest(v: PatternValues): PatternRequest {
   }
   const full = Math.abs(v.angle) === FULL_TURN;
   // A full turn the other way round lands on the same places, in the other order.
-  return { circular: { pivot: [...v.centre] as [number, number, number], axis: v.angle < 0 && full ? [...UNIT[v.axis].map((x) => -x)] as [number, number, number] : [...UNIT[v.axis]] as [number, number, number], count: v.count, ...(full ? {} : { angle: (v.angle * Math.PI) / 180 }) } };
+  return { circular: { pivot: [...v.centre] as [number, number, number], axis: v.angle < 0 && full ? [...UNIT[v.axis].map((x) => -x)] as [number, number, number] : [...UNIT[v.axis]] as [number, number, number], count: v.count, ...(full ? {} : { angle: radians(v.angle) }) } };
 }
 
 /** A pattern's description: "3 of Box 1 in a row along X, 10 mm apart", "6 of Box 1 round the Z axis", ", joined". */

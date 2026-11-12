@@ -105,3 +105,48 @@ test("insertPattern by hand, at the marker, and every refusal", () => {
   // Names count Patterns: a second is Pattern 2.
   assert.equal(insertPattern(doc, ["body:feature-1"], round()).doc.timeline.features.at(-1)!.provenance.self.label, "Pattern 2");
 });
+
+// From the patterns bug hunt of 2026-11-12: values the check passed (or
+// refused) differently from what the kernel is then asked for.
+test("a row whose second direction is off counts as a row, leftover second count or not", () => {
+  // 200 along X, the second direction off: the request is a row of 200 (no
+  // `across`), so 200 instances, under 256 (the check said 200 × 2 = 400).
+  const left = row({ count: 200, count2: 2 });
+  assert.deepEqual(patternRequest(left), { linear: { along: [1, 0, 0], spacing: 10, count: 200 } });
+  assert.equal(instanceCount(left), 200);
+  assert.equal(patternProblem(left), null);
+  // 1 along X with a leftover 3: a row of 1, which is no pattern (the check counted 1 × 3).
+  assert.equal(patternProblem(row({ count: 1, count2: 3 })), "A pattern needs at least 2, the body and one copy.");
+  assert.equal(instanceCount(row({ count: 3, count2: 2, spacing2: 5 })), 3);
+});
+
+test("angles the kernel can't tell from a full turn or from no turn are refused in words", () => {
+  // The kernel's ANGULAR is 1e-9 rad = 1e-9 × 180/π ≈ 5.73e-8°. 359.99999999°
+  // is 1e-8° = 1.75e-10 rad short of a full turn, inside it: refused.
+  // 359.9999° is 1e-4° = 1.75e-6 rad short, well outside: fine.
+  const close = "The angle is too close to a full turn to tell apart: type 360 for a full turn.";
+  assert.equal(patternProblem(round({ angle: 359.99999999 })), close);
+  assert.equal(patternProblem(round({ angle: -359.99999999 })), close);
+  ok(round({ angle: 359.9999 }));
+  // A step of θ/(n−1): 1e-8° over 2 is 1.75e-10 rad a step, under ANGULAR;
+  // 1e-6° over 2 is 1.75e-8 rad, over it. At the edge: 0.9× and 1.1× of
+  // ANGULAR in degrees, one step (count 2).
+  const small = "The angle is too small for that many: each step must be more than about 0.00000006°.";
+  const step = (1e-9 * 180) / Math.PI;
+  assert.equal(patternProblem(round({ count: 2, angle: 1e-8 })), small);
+  assert.equal(patternProblem(round({ count: 2, angle: 0.9 * step })), small);
+  ok(round({ count: 2, angle: 1.1 * step }));
+  ok(round({ count: 2, angle: 1e-6 }));
+  // Over 255 steps the whole angle must be 255 times that.
+  assert.equal(patternProblem(round({ count: 256, angle: 255 * 0.9 * step })), small);
+  ok(round({ count: 256, angle: 255 * 1.1 * step }));
+});
+
+test("the centre is three numbers in model space (±100 km)", () => {
+  ok(round({ centre: [0, 1e8, 0] })), ok(round({ centre: [-1e8, 0, 0] })), ok(round({ centre: [0, 0.9e8, 0] }));
+  assert.equal(patternProblem(round({ centre: [0, 1.1e8, 0] })), "The centre must be within 100 km (100,000,000 mm) of the origin.");
+  assert.equal(patternProblem(round({ centre: [0, 0] as unknown as [number, number, number] })), "Type the centre in mm.");
+  assert.equal(patternProblem(round({ centre: [0, 0, 0, 0] as unknown as [number, number, number] })), "Type the centre in mm.");
+});
+
+const ok = (v: PatternValues) => assert.equal(patternProblem(v), null, JSON.stringify(v));
