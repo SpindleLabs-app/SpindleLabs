@@ -1257,7 +1257,7 @@ const keepError = (text: string) => {
 window.addEventListener("error", (e) => keepError(`${e.message}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
 window.addEventListener("unhandledrejection", (e) => keepError(`Unhandled: ${e.reason instanceof Error ? `${e.reason.name}: ${e.reason.message}` : String(e.reason)}`));
 const bugReport = bugReportDialog(document, {
-  facts: () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
+  facts: () => ({ version: `${__APP_VERSION__ ?? "unknown"} (${$("version").textContent || "kernel not started"})`, browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
   design: () => ({ name: projectFile || ctx.project.name || "Untitled", text: projectToJson(ctx.project) }),
   open: (url) => void window.open(url, "_blank", "noopener"),
   download: (name, text) => {
