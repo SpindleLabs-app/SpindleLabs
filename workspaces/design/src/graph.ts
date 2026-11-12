@@ -2,6 +2,7 @@
 
 import type { ChangeNotes, DependencyGraph, Feature } from "@fission/core";
 import { buildingItems, isCombineItem, isDuplicateItem, isMoveItem, isSketchExtrude, isSketchItem, keptOf, partFeature, type DesignDocument } from "./document.ts";
+import { extrudeSketches, moreProfiles } from "./extrude-profiles.ts";
 
 /** Graph id of the part's mass properties and mesh: cheap, rebuilt at once after every change. */
 export const PART_VIEW = "design.part-view";
@@ -75,8 +76,9 @@ export function syncGraph(graph: DependencyGraph, doc: DesignDocument, before: D
    */
   const differing = new Set(doc.timeline.features.filter(ownDiffers).map((f) => f.id));
   const followsSketch = (f: Feature, was: Feature) => {
-    const bare = (x: Feature) => JSON.stringify({ ...x, intent: { ...x.intent, parameters: { ...x.intent.parameters, region: undefined } } });
-    return isSketchExtrude(f) && differing.has(f.intent.parameters.sketch as string) && bare(f) === bare(was);
+    // Every profile's region (SL #611 C3: a `more` profile's follows its sketch too), by the sketches of its profiles.
+    const bare = (x: Feature) => JSON.stringify({ ...x, intent: { ...x.intent, parameters: { ...x.intent.parameters, region: undefined, more: moreProfiles(x).map((m) => m.sketch) } } });
+    return isSketchExtrude(f) && extrudeSketches(f).some((sk) => differing.has(sk)) && bare(f) === bare(was);
   };
   const direct: { id: string; label: string; words: string }[] = [];
   const derived: { id: string; label: string }[] = [];
