@@ -1,11 +1,11 @@
-// Shared pieces of save-picker.mjs (export hunt 2026-11-12, SL #644): the page launcher and a stand-in save picker whose files are real browser files. Port 4796.
+// Shared pieces of save-picker.mjs (export hunt 2026-11-12, SL #644): the page launcher (also open-file.mjs's and browser-tabs.mjs's, on their own ports) and a stand-in save picker whose files are real browser files. Port 4796.
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 export const PORT = 4796;
-export async function boot() {
-  const server = await preview({ preview: { port: PORT, strictPort: true }, logLevel: "error" });
+export async function boot(port = PORT) {
+  const server = await preview({ preview: { port, strictPort: true }, logLevel: "error" });
   const browser = await launch();
-  return { server, browser, url: `http://localhost:${PORT}/`, close: async () => { await browser.close(); await server.close(); } };
+  return { server, browser, url: `http://localhost:${port}/`, close: async () => { await browser.close(); await server.close(); } };
 }
 let failed = 0;
 export const fails = () => failed;
@@ -73,3 +73,34 @@ export function shapeOf(text) {
 }
 export const mark = (page) => page.evaluate(() => document.querySelector("#save-status")?.textContent);
 export const status = (page) => page.evaluate(() => document.querySelector("#file-status")?.textContent);
+/** Every key of the app's store (IndexedDB "fission", store "kv") with its value; only once the app has opened it. */
+export const stored = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((done, fail) => {
+        const r = indexedDB.open("fission");
+        r.onsuccess = () => {
+          const tx = r.result.transaction("kv", "readonly");
+          const kv = tx.objectStore("kv");
+          const out = {};
+          const keys = kv.getAllKeys();
+          keys.onsuccess = () => {
+            for (const k of keys.result) kv.get(k).onsuccess = (e) => (out[k] = e.target.result);
+          };
+          tx.oncomplete = () => (r.result.close(), done(out));
+          tx.onerror = () => fail(tx.error);
+        };
+        r.onerror = () => fail(r.error);
+      }),
+  );
+/** The stored projects as {id, name, modified (the summary's save time), sizes (the first feature's parameters)}. */
+export async function storedProjects(page) {
+  const all = await stored(page);
+  return Object.keys(all).filter((k) => k.startsWith("project/")).map((k) => {
+    const p = JSON.parse(all[k]);
+    const id = k.slice(8);
+    return { id, name: p.name, modified: all[`summary/${id}`] ? JSON.parse(all[`summary/${id}`]).modified : null, sizes: JSON.stringify(p.workspaces?.design?.timeline?.features?.[0]?.intent?.parameters ?? {}) };
+  });
+}
+export const savedMark = (page) => page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved", null, { timeout: 15000 });
+export const volumeIs = (page, want) => page.waitForFunction((w) => document.querySelector("#volume")?.textContent === w, want, { timeout: 15000 });

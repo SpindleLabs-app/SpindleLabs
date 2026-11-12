@@ -22,7 +22,7 @@ import { shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
@@ -74,7 +74,20 @@ if (import.meta.env.PROD) openLatest();
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
 // The shell opens whole projects, dropped or pasted like any other file (X6).
-representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(bytes, name) });
+representations.registerImporter({
+  formats: ["project"],
+  workspace: null,
+  open: async (name, bytes) => {
+    // A browser that can't keep projects holds the design on screen nowhere else: Open asks before it replaces one
+    // with changes (it was gone without a question, export hunt 2026-11-12, #644 item 2). A file that can't be read
+    // is refused first, in its own words, so no one is asked about an Open that won't happen.
+    if (!canKeep && ctx.history.canUndo()) {
+      projectFromJson(bytes, workspaces);
+      if (!window.confirm(`Open "${name}" in place of your design? This browser can't keep projects, so the design on screen is saved nowhere: Cancel, then use Save to keep it as a file first.`)) return;
+    }
+    openProject(bytes, name);
+  },
+});
 // The one action registry: the verbs each workspace offers for a selection.
 const actions = new ActionRegistry();
 for (const w of workspaces) w.registerActions?.(actions);
@@ -820,7 +833,11 @@ function replaceProject(project: Project) {
  * freezes the tab while it builds is never stored, so never reopened.
  */
 function openProject(file: string | Uint8Array, fileName = "") {
-  const project = projectFromJson(file, workspaces);
+  const read = projectFromJson(file, workspaces);
+  // A project never named takes its file's name, so two opened files can be told apart in Projects in this browser
+  // (every one said "Untitled", export hunt 2026-11-12, #644 item 3); a name of its own it keeps.
+  const fromFile = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$|\.spindle$/i, "").trim().slice(0, MAX_PROJECT_NAME);
+  const project = (read.name === "" || read.name === "Untitled") && fromFile !== "" ? { ...read, name: fromFile } : read;
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
@@ -850,8 +867,20 @@ function openProject(file: string | Uint8Array, fileName = "") {
       statusBeforeOpening = null;
       // Its first save writes it (so it is the project a reload opens), checking no other tab changed the copy since.
       openedFile = true;
-      keep(found?.id ?? newId(), false, found?.modified ?? null);
-      autosave?.changed(); // store the opened file, with anything changed while it opened
+      // A file already kept here as it is, and not changed while it opened, is not stored again: only brought
+      // forward (the same save time), as a project opened from the list is. Stored again it got a new save time, and
+      // another tab still on that project had every later edit refused as "changed in another tab" (export hunt
+      // 2026-11-12, #642 item 1).
+      if (found === undefined || ctx.history.canUndo()) {
+        keep(found?.id ?? newId(), false, found?.modified ?? null);
+        return autosave?.changed(); // store the opened file, with anything changed while it opened
+      }
+      keep(found.id, true, found.modified);
+      const waiting: AutosaveStatus = { state: "saving" };
+      saveStatus(waiting);
+      const mine = autosave;
+      const done = () => void (autosave === mine && shownStatus === waiting && saveStatus({ state: "saved" }));
+      bringForward(store, found.id, found.modified).then(done, () => (autosave === mine ? autosave?.changed() : undefined)); // can't be brought forward: stored as before
     });
   // Changed before it has shown (the engine still downloading on a first visit, a big file's first build): a tab that
   // takes an edit is not frozen, so the file is kept now, with the edit. It waited for the build, and a reload or a
