@@ -12,7 +12,8 @@ const STORE = "kv";
  */
 function failure(e: DOMException | null, doing: string): Error {
   if (e?.name === "QuotaExceededError") return new Error(`browser storage is full: can't ${doing} (use Save to keep your work as a file)`);
-  return new Error(`browser storage failed: can't ${doing}${e ? ` (${e.name}: ${e.message})` : ""}`);
+  // Every failure says the way out, not only a full store (export hunt 2026-11-12, #643 item 6).
+  return new Error(`browser storage failed: can't ${doing}${e ? ` (${e.name}: ${e.message})` : ""}. Use Save to keep your work as a file.`);
 }
 
 function request<T>(r: IDBRequest<T>, doing: string): Promise<T> {
@@ -26,8 +27,9 @@ function request<T>(r: IDBRequest<T>, doing: string): Promise<T> {
  * The KeyValue kept in this browser's IndexedDB database `name`. A browser
  * without IndexedDB (some private modes) still gets a KeyValue, whose every
  * call is refused with a message, so the app around it keeps working.
+ * `lost` is called when the browser closes the database under the page (site data cleared, the origin evicted).
  */
-export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefined = globalThis.indexedDB): KeyValue {
+export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefined = globalThis.indexedDB, lost: () => void = () => {}): KeyValue {
   let db: Promise<IDBDatabase> | undefined;
   let promise: Promise<IDBDatabase> | undefined;
   const open = () =>
@@ -42,7 +44,12 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
         const forget = () => {
           if (db === promise) db = undefined;
         };
-        opened.onclose = forget;
+        // `lost` hears it: whatever was stored may be gone with it, and only the open tab still has the design
+        // (#643 item 4: the mark went on saying "Saved" over an empty store).
+        opened.onclose = () => {
+          forget();
+          lost();
+        };
         opened.onversionchange = () => {
           opened.close();
           forget();

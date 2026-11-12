@@ -106,15 +106,17 @@ async function staleTab() {
 // ---------- C1 ----------
 
 test("C1: a tab refused as another tab's change keeps its edit through the reload its message asks for, as a kept copy (worked by hand)", async () => {
-  // B stored 60 with save time 1000. A's 25 was made from save time 0, so A's save expecting 0 is refused. A reloads:
-  // leaving() at t = 2200 journals 25 naming base 0, written at 2200. The next visit's recovery tries 25 over save time 0, finds
+  // B stored 60 with save time 1000. A's 25 (changed at t = 1100) was made from save time 0, so A's save expecting 0,
+  // a quiet second later at t = 2100, is refused, and journals 25 there and then, naming base 0 (export hunt
+  // 2026-11-12, #642 item 2: it waited for leaving(), so a crash first lost it). A reloads at t = 2200: leaving()
+  // finds the entry there, written at 2100. The next visit's recovery tries 25 over save time 0, finds
   // 1000, and keeps it apart: the store is then exactly Box = 60 (B's work, still the one a visit opens) and
   // "Box (kept copy)" = 25.
   const { store, journal, said, tabA } = await staleTab();
   assert.equal(said.at(-1), "This project was changed in another tab. Reload to see the newer version.");
   assert.equal(tabA.leaving(), true, "the edit is kept, so the page need not ask");
   const entry = readJournalEntry(journal.items.get(unsavedKey("p"))!);
-  assert.deepEqual([widthOf(JSON.parse(entry.text)), entry.base?.getTime(), entry.written?.getTime(), entry.kept], [25, 0, 2200, false]);
+  assert.deepEqual([widthOf(JSON.parse(entry.text)), entry.base?.getTime(), entry.written?.getTime(), entry.kept], [25, 0, 2100, false]);
   tabA.stop();
   const problems = await recoverUnsaved(store, journal, [], () => "copy-r");
   assert.deepEqual(await listed(store), [["Box", 60], ["Box (kept copy)", 25]]);
@@ -141,9 +143,16 @@ test("C1: the other tab's saves never remove the stale tab's entry, and a later 
 });
 
 test("C1: with the journal full the refused tab's edit can't be kept, so leaving() still says the page should ask", async () => {
-  const { journal, tabA } = await staleTab();
+  // The refusal journalled 25 while there was room (#642 item 2). The journal is full from then on, so the next
+  // change, 26, can be kept nowhere: the page asks.
+  const { clock, journal, tabA, setA } = await staleTab();
   journal.full = true;
+  assert.equal(tabA.leaving(), true, "25 is in the journal already");
+  setA(26);
+  tabA.changed();
   assert.equal(tabA.leaving(), false);
+  await clock.advance(1100);
+  assert.equal(tabA.leaving(), false, "nor after its refused save");
 });
 
 test("C1: a tab that won't save over the last visit's kept changes keeps its own edit aside, and the next visit keeps both (worked by hand)", async () => {
@@ -348,7 +357,7 @@ test("C5: any other storage failure names no internal key either", async () => {
   const refuse = { error: new DOMException("planted write failure", "UnknownError") as DOMException | null };
   const store = projectStore(indexedDbKeyValue("t", fakeIndexedDb(refuse)), []);
   const e = await store.save("b64de7ae-1", part(40)).then(() => null, (x: Error) => x);
-  assert.equal(e?.message, "browser storage failed: can't save this project (UnknownError: planted write failure)");
+  assert.equal(e?.message, "browser storage failed: can't save this project (UnknownError: planted write failure). Use Save to keep your work as a file."); // the way out, said for every failure (#643 item 6)
   assert.doesNotMatch(e?.message ?? "", /project\/|summary\/|"order"/);
 });
 

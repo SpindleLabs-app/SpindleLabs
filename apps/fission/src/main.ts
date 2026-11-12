@@ -606,7 +606,9 @@ if (everyWorkspace) {
 // after each change; the top bar says "Saving…", "Saved" or what went wrong.
 // Each project has its own stored id: an opened file becomes a new stored
 // project rather than overwriting the one that was open.
-const store = localStore(workspaces);
+// The browser closing the database under the page (site data cleared): the open project is stored again at once
+// (export hunt 2026-11-12, #643 item 4: the mark said "Saved" over an empty store, and a reload opened nothing).
+const store = localStore(workspaces, () => autosave?.lost());
 // The kept project's undo steps, kept beside it in this browser (step 89), so a reload carries on where it was.
 // Written as each save lands, never by a tab whose saves are refused (another tab stored the project since).
 const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), {
@@ -653,9 +655,15 @@ let autosave: Autosave | null = null;
 // this browser's storage failed at the start. A new project not changed yet has nothing to lose.
 // (#627 item 1, a size still waiting its turn in Design, is flushed here by the Undo and edit thread's fix.)
 const leaving = () => (steps.flush(), autosave ? autosave.leaving() : statusBeforeOpening === null && (canKeep || !ctx.history.canUndo()));
+// Shown again, or its window chosen again: a tab left open while another tab changed the project is told at once, before
+// anything is edited, saved to a file or exported from the older state (export hunt 2026-11-12, #642 item 3: it went
+// on saying "Saved"). Known stale before its next edit, it also writes no undo steps over the other tab's (item 4).
+const backInView = () => void autosave?.check();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") leaving();
+  else backInView();
 });
+window.addEventListener("focus", backInView);
 window.addEventListener("pagehide", leaving);
 function askBeforeLeaving(e: BeforeUnloadEvent) {
   if (leaving()) return;
