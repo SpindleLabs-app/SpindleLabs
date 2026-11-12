@@ -175,3 +175,18 @@ test("My links (links only): lists the links, has no Make a link and no terms, i
   await click(d, "#my-links .share-item-keep");
   assert.deepEqual(log.filter((l) => l.startsWith("off")), [], "Keep it on turns nothing off");
 });
+
+test("regression: the shared view says when the link was made in plain words, never “shared Saved just now”", async () => {
+  const parts = { openCopy: async () => {}, report: async () => "kept", closed: () => {} };
+  const words = async (createdAt: Date) => {
+    const d = new (await import("happy-dom")).Window().document as unknown as Document;
+    sharedView(d, { name: "Box", picture: null, createdAt }, { ...parts, now: () => NOW });
+    return d.querySelector("#shared .share-note")?.textContent ?? "";
+  };
+  assert.match(await words(NOW), /^A frozen copy, shared just now\./);
+  // NOW is 12:00; 5 minutes before is 11:55.
+  assert.match(await words(new Date(NOW.getTime() - 5 * 60_000)), /^A frozen copy, shared 5 minutes ago\./);
+  // Two days before: a date, said with "on".
+  assert.match(await words(new Date(NOW.getTime() - 2 * 86_400_000)), /^A frozen copy, shared on \S/);
+  assert.doesNotMatch(await words(NOW), /Saved/);
+});

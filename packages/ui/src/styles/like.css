@@ -1,0 +1,14 @@
+/* The like button and count (like.ts, community C7b), on the shared view's card. Colours are tokens only (theme.css). */
+.like { display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-2) var(--look-space-3); }
+.like[hidden] { display: none; }
+.like .like-button { display: inline-flex; align-items: center; gap: var(--look-space-2); font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
+.like .like-button:hover { border-color: var(--look-accent); color: var(--look-accent-text); }
+.like .like-button[aria-pressed="true"] { border-color: var(--look-accent); color: var(--look-accent-text); }
+.like .like-heart { font-size: 16px; line-height: 1; }
+.like .like-count { font-size: 13px; color: var(--text-dim); }
+.like .like-status { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.45; color: var(--danger); }
+.like .like-status:empty { display: none; }
+.like[aria-busy="true"] .like-button { opacity: 0.6; pointer-events: none; }
+@media (max-width: 640px), (pointer: coarse) {
+  .like .like-button { min-height: var(--look-target-touch); }
+}

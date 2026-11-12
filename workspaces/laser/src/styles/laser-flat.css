@@ -1,0 +1,23 @@
+/* The Laser page's flat view (flat-view.ts): the bed from above as an SVG drawing over the shared viewport, with its own
+   row of buttons in the 3D row's look (packages/ui styles/view-controls.css, by its classes). Colours are tokens only. */
+
+/* While the flat view is up, the 3D view's own row (Orbit, Top, Front, Right…) is away: nothing here turns. The flat
+   view sits straight after the 3D canvas, so that row is a later sibling of it; the flat view's own row is inside it. */
+.laser-flat ~ .view-controls { display: none; }
+
+.laser-flat { position: absolute; inset: 0; overflow: hidden; }
+.laser-flat .laser-flat-sheet { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; outline: none; }
+.laser-flat .laser-flat-sheet:focus-visible { outline: 2px solid var(--look-accent); outline-offset: -2px; }
+.laser-flat[data-dragging] .laser-flat-sheet { cursor: grabbing; }
+
+/* The bed: a sheet, lighter than the page behind it, with a firm edge. Lines keep their width at every zoom. */
+.laser-flat .laser-flat-bed { fill: var(--surface-raised); stroke: var(--text-dim); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.laser-flat .laser-flat-grid { fill: none; stroke: var(--line-white-018); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+/* A part: its outline in the accent colour, tinted inside (holes stay clear: even-odd). */
+.laser-flat .laser-flat-part { fill: var(--shade-74-168-255-016); fill-rule: evenodd; stroke: var(--look-accent); stroke-width: 1.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+
+/* The words: small, with an edge in the colour behind them so they read over lines. They never take a press. */
+.laser-flat .laser-flat-marks text { font-size: 11px; fill: var(--text-dim); stroke: var(--page); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; pointer-events: none; font-variant-numeric: tabular-nums; }
+.laser-flat .laser-flat-marks .laser-flat-bed-name { font-size: 12px; font-weight: 600; fill: var(--text-body); }
+.laser-flat .laser-flat-marks .laser-flat-part-name { fill: var(--text-body); stroke: var(--surface-raised); }
+.laser-flat .laser-flat-marks .laser-flat-note { font-size: 13px; fill: var(--text-dim); stroke: var(--surface-raised); }

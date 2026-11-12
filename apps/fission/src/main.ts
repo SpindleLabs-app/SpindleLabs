@@ -73,7 +73,7 @@ if (import.meta.env.PROD) openLatest();
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
 // The shell opens whole projects, dropped or pasted like any other file (X6).
-representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(new TextDecoder().decode(bytes), name) });
+representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(bytes, name) });
 // The one action registry: the verbs each workspace offers for a selection.
 const actions = new ActionRegistry();
 for (const w of workspaces) w.registerActions?.(actions);
@@ -796,8 +796,8 @@ function replaceProject(project: Project) {
  * kept in this browser only once it has shown (security audit S2): one that
  * freezes the tab while it builds is never stored, so never reopened.
  */
-function openProject(text: string, fileName = "") {
-  const project = projectFromJson(text, workspaces);
+function openProject(file: string | Uint8Array, fileName = "") {
+  const project = projectFromJson(file, workspaces);
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
@@ -1256,7 +1256,7 @@ const keepError = (text: string) => {
 window.addEventListener("error", (e) => keepError(`${e.message}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
 window.addEventListener("unhandledrejection", (e) => keepError(`Unhandled: ${e.reason instanceof Error ? `${e.reason.name}: ${e.reason.message}` : String(e.reason)}`));
 const bugReport = bugReportDialog(document, {
-  facts: () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
+  facts: () => ({ version: `${__APP_VERSION__ ?? "unknown"} (${$("version").textContent || "kernel not started"})`, browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
   design: () => ({ name: projectFile || ctx.project.name || "Untitled", text: projectToJson(ctx.project) }),
   open: (url) => void window.open(url, "_blank", "noopener"),
   download: (name, text) => {
