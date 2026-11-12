@@ -262,10 +262,25 @@ test("lost(): the browser emptied the store under the tab; the open project is s
   assert.equal(widthOf(await store.open("p")), 45);
 });
 
-test("a storage failure that is not 'full' also says how to keep the work, and the database closing under the tab is reported (#643 items 4, 6)", async () => {
-  // A stand-in IDBFactory whose open fails as a database of a newer version does.
-  const failing = { open: () => { const r: Record<string, unknown> = { error: new DOMException("The requested version (1) is less than the existing version (2).", "VersionError") }; setImmediate(() => (r.onerror as () => void)()); return r; } } as unknown as IDBFactory;
-  await assert.rejects(indexedDbKeyValue("x", failing).get("k"), (e: Error) => (assert.equal(e.message, "browser storage failed: can't open the project database (VersionError: The requested version (1) is less than the existing version (2).). Use Save to keep your work as a file."), true));
+test("a failed save that is not 'full' also says how to keep the work; the full and refused words are left as they are (#643 item 6)", async () => {
+  const said = async (error: Error) => {
+    const clock = fakeClock();
+    const store: ProjectStore = { ...projectStore(memoryKeyValue(), [], clock.now), save: async () => Promise.reject(error) };
+    let p = part(1);
+    const out: string[] = [];
+    const tab = startAutosave(store, "q", () => p, (s) => out.push(s.state === "error" ? s.message : s.state), { timers: clock.timers, now: clock.now });
+    p = part(2);
+    tab.changed();
+    await clock.advance(1000);
+    tab.stop();
+    return out.at(-1);
+  };
+  assert.equal(await said(new Error("browser storage failed: can't save this project (UnknownError: planted write failure)")), "browser storage failed: can't save this project (UnknownError: planted write failure). Use Save to keep your work as a file.");
+  const full = "browser storage is full: can't save this project (use Save to keep your work as a file)";
+  assert.equal(await said(new Error(full)), full);
+});
+
+test("the database closing under the tab is reported (#643 item 4)", async () => {
   // One that opens, then is closed by the browser (site data cleared): `lost` hears it.
   let opened: Record<string, unknown> = {};
   const closing = { open: () => { const r: Record<string, unknown> = { result: opened }; setImmediate(() => (r.onsuccess as () => void)()); return r; } } as unknown as IDBFactory;

@@ -12,8 +12,7 @@ const STORE = "kv";
  */
 function failure(e: DOMException | null, doing: string): Error {
   if (e?.name === "QuotaExceededError") return new Error(`browser storage is full: can't ${doing} (use Save to keep your work as a file)`);
-  // Every failure says the way out, not only a full store (export hunt 2026-11-12, #643 item 6).
-  return new Error(`browser storage failed: can't ${doing}${e ? ` (${e.name}: ${e.message})` : ""}. Use Save to keep your work as a file.`);
+  return new Error(`browser storage failed: can't ${doing}${e ? ` (${e.name}: ${e.message})` : ""}`);
 }
 
 function request<T>(r: IDBRequest<T>, doing: string): Promise<T> {

@@ -35,6 +35,7 @@
 
 import { projectToJson, type Project } from "@fission/core";
 import { ProjectChangedError, writerId, type ProjectStore } from "./store.ts";
+import { storageFull } from "./versions.ts";
 import { asideKey, keptCopyName, journalEntry, putAsideOthers, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
 
 export type AutosaveStatus =
@@ -166,6 +167,8 @@ export const STORAGE_ANSWER_MS = 15_000;
  * freeing room). Never for a save refused as another tab's: trying again can't change that.
  */
 export const RETRY_MS: readonly number[] = [10_000, 30_000, 60_000];
+/** The way out added to a failed save's words. */
+export const USE_SAVE = "Use Save to keep your work as a file.";
 /** The words for a save storage hasn't answered (the status line puts "Not saved: " before them). */
 export const STORAGE_NOT_ANSWERING = "browser storage isn't answering, so your latest changes aren't stored yet (use Save to keep your work as a file)";
 
@@ -419,7 +422,9 @@ export function startAutosave(
       rebase(at);
     } catch (e) {
       if (e instanceof ProjectChangedError) conflicted = true;
-      failure = message(e);
+      // A failed save says the way out, whatever failed: the storage-full words do already, the others did not
+      // (export hunt 2026-11-12, #643 item 6). A refusal's own words say what to do instead.
+      failure = conflicted || storageFull(e) ? message(e) : `${message(e)}. ${USE_SAVE}`;
     }
     timers.clearTimeout(watch);
     overdue = false;

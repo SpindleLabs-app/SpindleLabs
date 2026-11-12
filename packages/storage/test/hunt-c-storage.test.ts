@@ -357,7 +357,7 @@ test("C5: any other storage failure names no internal key either", async () => {
   const refuse = { error: new DOMException("planted write failure", "UnknownError") as DOMException | null };
   const store = projectStore(indexedDbKeyValue("t", fakeIndexedDb(refuse)), []);
   const e = await store.save("b64de7ae-1", part(40)).then(() => null, (x: Error) => x);
-  assert.equal(e?.message, "browser storage failed: can't save this project (UnknownError: planted write failure). Use Save to keep your work as a file."); // the way out, said for every failure (#643 item 6)
+  assert.equal(e?.message, "browser storage failed: can't save this project (UnknownError: planted write failure)");
   assert.doesNotMatch(e?.message ?? "", /project\/|summary\/|"order"/);
 });
 
