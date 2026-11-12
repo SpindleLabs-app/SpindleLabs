@@ -1470,7 +1470,8 @@ export function resolveFace(r: Rebuild, name: FaceName, faults: ReadonlySet<Mode
 /**
  * `doc` with what a rebuild settles taken in, as Design takes it into the
  * edit's own step (SL #583 item 2): every piece shown is seen from now on,
- * and each Move holds the pieces it took (`takes`). The same document when
+ * and each Move holds the pieces it took (`takes`), a Move that is off the
+ * new pieces of a body it holds (SL #624 item 2). The same document when
  * nothing changes.
  */
 export function takeIn(doc: ModelDoc): ModelDoc {
@@ -1478,6 +1479,18 @@ export function takeIn(doc: ModelDoc): ModelDoc {
   const seen = new Set(doc.seen ?? []);
   for (const [id, res] of Object.entries(r.results)) if (res.status === "built") (res.pieces ?? []).forEach((_, k) => seen.add(pieceKey(id, k + 1)));
   const takes = new Map(Object.entries(r.results).flatMap(([id, res]) => (res.status === "built" && res.takes ? [[id, res.takes] as const] : [])));
+  // SL #624 item 2: a Move that is off (suppressed, rolled back, greyed or failed) when a Combine before it first shows a
+  // piece split from a body it holds takes the piece too, though it moved nothing: it holds the whole body.
+  const before = new Set(doc.seen ?? []);
+  for (const [at, item] of doc.items.entries()) {
+    if (item.kind !== "move" || r.results[item.id]?.status === "built") continue;
+    const fresh = doc.items.slice(0, at).flatMap((c) => {
+      const res = r.results[c.id];
+      if (c.kind !== "combine" || !item.bodies.includes(c.target) || res?.status !== "built") return [];
+      return (res.pieces ?? []).map((_, k) => pieceKey(c.id, k + 1)).filter((key) => !before.has(key) && !(item.pieces ?? []).includes(key));
+    });
+    if (fresh.length > 0) takes.set(item.id, fresh);
+  }
   if (takes.size === 0 && seen.size === (doc.seen ?? []).length) return doc;
   return {
     ...doc,

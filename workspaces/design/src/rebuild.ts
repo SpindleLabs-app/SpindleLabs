@@ -1120,9 +1120,30 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
   // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
   // workspace numbers them (`numberPieces`; its own call after this one gives them their remembered faces), so they
   // stay moved after this rebuild.
+  // A Move that is off when a body it holds is first split (suppressed, rolled back by the marker, greyed or failed:
+  // SL #624 item 2) moved nothing, so named nothing in `takes`; it holds the whole body all the same, and this rebuild
+  // is about to number the new piece, after which no later one could tell it from a piece left unpicked. So it takes
+  // the piece now: one split (`from`) from a body it holds, not numbered yet, made by an item before the Move.
+  const numbered = followed.bodies === undefined ? null : new Set(followed.bodies.map((b) => b.id));
+  const place = new Map(followed.timeline.features.map((f, i) => [f.id, i] as const));
   const takers = followed.timeline.features.flatMap((f) => {
+    if (!isMoveItem(f)) return [];
     const r = build.results[f.id];
-    return isMoveItem(f) && r?.status === "built" && r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (r?.status === "built") return r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (numbered === null) return [];
+    const held = movedBodies(f);
+    const takes: string[] = [];
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const [id, b] of Object.entries(build.bodies)) {
+        const made = place.get(bodyItem(id) ?? "");
+        if (b.from === undefined || numbered.has(id) || held.includes(id) || takes.includes(id) || made === undefined || made > place.get(f.id)!) continue;
+        if (!held.includes(b.from) && !takes.includes(b.from)) continue;
+        takes.push(id);
+        grew = true;
+      }
+    }
+    return takes.length > 0 ? [[f, takes] as const] : [];
   });
   if (takers.length === 0) return followed;
   let next = numberPieces(followed, Object.keys(build.bodies));
@@ -1562,9 +1583,11 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const b = work[body];
       if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't use ${body === bodyIdOf(maker) ? nameOf(maker) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
       // Equal bodies share one kernel body (`BodyCache.body`): a second pick of it gets a body of its own, so the
-      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
+      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey). A body
+      // with no spec (a Combine's result, which its Copy shares: SL #624 item 3) gets its own from the kernel's
+      // body_move by nothing, once more for each pick before it: the same faces in the same order, where they are.
       const copies = inputs.filter((x) => x.handle === b.handle).length;
-      const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+      const own = copies === 0 ? b : { ...b, handle: b.spec !== null ? await cache.body(b.spec, copies) : await cache.moved(b.handle, Array.from({ length: copies }, (): Motion => ({ move: [0, 0, 0] }))) };
       if (own !== b) made.push(own.handle);
       built.set(own.handle, own);
       const named = await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!);
