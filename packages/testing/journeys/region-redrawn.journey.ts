@@ -60,7 +60,7 @@ test("A3: a corner dragged, then the moved side deleted and drawn again between 
   assert.ok(await a.close());
 });
 
-test("a side drawn again, then a corner dragged: the region found by its shape is named by its curves as they are, so the extrude follows its sketch: 36000 mm³", async () => {
+test("a side drawn again, then a corner dragged: the region found by its shape is named by its curves as they are, so the extrude follows its sketch: 30000 mm³", async () => {
   const { doc, sketch, extrude } = await plate();
   const a = await app(doc, designWorkspace);
   const files = [file(a)];
@@ -77,12 +77,9 @@ test("a side drawn again, then a corner dragged: the region found by its shape i
   await dragPoint(a, [40, 0], [60, 0]);
   files.push(file(a));
   await a.finish();
-  // The side drawn again with the Line tool is exactly upright, so it took Vertical (SL #630, as Fusion's line tool):
-  // the drag carries its top end along, (40,30) to (60,30). The plate is now (0,0) (60,0) (60,30) (0,30): 60 · 30 =
-  // 1800 mm² × 20 = 36000 mm³, its centroid the middle, (30, 15). (Without the Vertical it was the slanted shape of
-  // the test above, 30000 mm³.)
-  assert.deepEqual({ ...(await state(a)), ...named }, { volume: 36000, warning: null, kept: false, settled: true, named: [...curves].sort(), old: 3 }, JSON.stringify(seen(a)));
-  assert.ok(near(saved(a, extrude).centroid, [30, 15]));
+  // The same four-sided shape as in the test above: 1500 mm² × 20.
+  assert.deepEqual({ ...(await state(a)), ...named }, { volume: 30000, warning: null, kept: false, settled: true, named: [...curves].sort(), old: 3 }, JSON.stringify(seen(a)));
+  assert.ok(near(saved(a, extrude).centroid, [76 / 3, 14]));
   // Undo and redo are the files recorded, byte for byte: the delete, the line and the drag are one step each.
   assert.equal(file(a), files[3]);
   for (const k of [2, 1, 0]) {

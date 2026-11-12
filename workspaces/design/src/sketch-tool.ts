@@ -308,9 +308,7 @@ function lineClick(doc: DesignDocument, tool: LineTool, at: SketchXY): { doc: De
   if (there !== null && sketch.curves.some((c) => c.kind === "line" && c.construction !== true && ((c.start === from && c.end === there) || (c.start === there && c.end === from)))) return { doc, tool, drew: false, note: SAME_LINE };
   const drawn = drawLine(doc, tool.sketch, tool.from, end);
   const line = sketchOf(drawn.doc, tool.sketch).curves.find((c) => c.id === drawn.id) as SketchLineCurve;
-  // A line drawn exactly level gets Horizontal, one exactly upright Vertical, as the Rectangle tool's sides do (SL #630):
-  // a rectangle drawn line by line, or a side drawn again, then stays square when a size is typed on it.
-  return { doc: squaredRectangle(drawn.doc, tool.sketch, [drawn.id]), tool: { ...tool, from: there ? null : line.end }, drew: true };
+  return { doc: drawn.doc, tool: { ...tool, from: there ? null : line.end }, drew: true };
 }
 
 /** A rectangle's two clicks, the second at the opposite corner, sharing points; `note` says why a second click on the first corner's row or column, or one making it under MIN_SIZE wide or high (`SMALL_RECTANGLE`), draws nothing. */
