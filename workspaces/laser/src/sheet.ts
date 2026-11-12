@@ -17,6 +17,7 @@
 // said so in words, never placed over the edge or over another part.
 
 import { outlineToSvg, svgNumber, type Loop, type Outline } from "@fission/core";
+import { OP_LOOK, opOf, OPS, type LaserOp } from "./ops.ts";
 
 /** An outline's box in model coordinates (y up). */
 export interface OutlineBox {
@@ -171,17 +172,28 @@ const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").rep
  * The bed as an SVG file: the page is the bed (width and height in mm, so
  * one user unit is one mm, and a laser program places every part where it
  * sits on the bed), one <path> per part (its outer loop and holes, closed),
- * titled with the part's name. Black hairline strokes, no fill: LightBurn
- * and the like read them as closed cut shapes.
+ * titled with the part's name. Parts are grouped by layer (ops.ts), engrave
+ * first, then score, then cut, each group named and painted as laser
+ * programs read colours: cut a red hairline, score a blue hairline, engrave
+ * filled black (even-odd, so holes stay clear). A group with no part is
+ * left out. `ops` gives each part's layer by its id; a part not in it is cut.
  */
-export function sheetSvg(layout: Layout, bed: Bed, title = "Laser sheet"): string {
+export function sheetSvg(layout: Layout, bed: Bed, title = "Laser sheet", ops: Readonly<Record<string, LaserOp>> = {}): string {
   const [w, h] = [svgNumber(bed.width), svgNumber(bed.height)];
+  const groups = OPS.flatMap((op) => {
+    const parts = layout.placed.filter((p) => opOf(ops, p.id) === op);
+    if (parts.length === 0) return [];
+    const look = OP_LOOK[op];
+    return [
+      `<g id="${op}"><title>${look.name}</title>`,
+      ...parts.map((p) => `<path id="part-${escape(p.id)}" d="${outlinePath(p.outline).d}" fill-rule="evenodd" ${look.svgPaint}><title>${escape(p.label)}</title></path>`),
+      "</g>",
+    ];
+  });
   const lines = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 -${h} ${w} ${h}">`,
     `<title>${escape(title)}</title>`,
-    ...layout.placed.map(
-      (p) => `<path id="part-${escape(p.id)}" d="${outlinePath(p.outline).d}" fill="none" fill-rule="evenodd" stroke="#000" stroke-width="0.1" vector-effect="non-scaling-stroke"><title>${escape(p.label)}</title></path>`,
-    ),
+    ...groups,
     "</svg>",
     "",
   ];
