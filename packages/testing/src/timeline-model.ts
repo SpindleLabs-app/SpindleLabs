@@ -362,6 +362,8 @@ export type ModelFault =
   | "move-bodies-kept"
   /** SL #506 item 1: reordering ignores the Moves and Combines that shaped an item's bodies. */
   | "reorder-past-shaper"
+  /** SL #676 item 1: reordering ignores a later item changing a body an earlier one (a Copy, a Combine keeping tools) works on. */
+  | "reorder-past-reader"
   | "combine-tool-kept"
   | "combine-not-held"
   | "combine-pieces-dropped"
@@ -413,6 +415,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "sketch-not-carried",
   "move-bodies-kept",
   "reorder-past-shaper",
+  "reorder-past-reader",
   "combine-tool-kept",
   "combine-not-held",
   "combine-pieces-dropped",
@@ -1405,6 +1408,12 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
           const shapes = (a: ModelItem, b: ModelItem) => before.indexOf(a) < before.indexOf(b) && uses(b).some((x) => changes(a).includes(x));
           if (before.some((a) => shapes(a, item) && at(a.id) > op.to)) return { kind: "refused", cause: "before-dependency" };
           if (before.some((b) => shapes(item, b) && at(b.id) < op.to)) return { kind: "refused", cause: "after-dependent" };
+          // SL #676 item 1: and the other way round, an item working on a body never passes a later one changing it.
+          if (!faults.has("reorder-past-reader")) {
+            const reads = (a: ModelItem, b: ModelItem) => before.indexOf(a) < before.indexOf(b) && uses(a).some((x) => changes(b).includes(x));
+            if (before.some((a) => reads(a, item) && at(a.id) > op.to)) return { kind: "refused", cause: "before-dependency" };
+            if (before.some((b) => reads(item, b) && at(b.id) < op.to)) return { kind: "refused", cause: "after-dependent" };
+          }
         }
       }
       if (k !== op.to) doc.marker = marker;

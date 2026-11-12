@@ -440,6 +440,13 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "outcome differs from the model",
   },
+  "reorder-past-reader": {
+    what: "a reorder lets a Copy or a Combine keeping its tools pass a later item that changes a body it works on (SL #676 item 1)",
+    edits: [{ file: EDITS, find: "  for (const r of readings(doc.timeline.features)) {", replace: "  for (const r of readings([])) {" }],
+    run: ["timeline"],
+    caught: "outcome differs from the model",
+    why: "Design's seeds 1 to 30 don't reach it (a Copy or kept tool's Combine dragged past a later change of its body is rare); its 7 steps shrunk from seed 49 are saved in test/regressions/timeline-design/plant-reorder-past-reader-49.json, which planted/session.ts replays after the seeds (2026-11-12); workspaces/design/test/combine-shaping.test.ts catches it by hand",
+  },
   "duplicate-no-body": {
     what: "a Duplicate builds but makes no copy (35e2)",
     edits: [{ file: REBUILD, find: "  bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };\n  return { status: \"built\", bodies: [id] };", replace: "  return { status: \"built\" };" }],

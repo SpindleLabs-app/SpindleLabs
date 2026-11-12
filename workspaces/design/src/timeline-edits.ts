@@ -12,7 +12,7 @@
 // one before, or the start; a reorder is refused when the item would come
 // before an item it is built from, or after one built from it.
 
-import { bodyWords, shapings } from "./body-uses.ts";
+import { bodyWords, readings, shapings } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
 import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
@@ -223,6 +223,12 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   for (const s of shapings(doc.timeline.features)) {
     if (s.of === item && place(s.by.id) > to) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(s.by)}: it uses ${bodyWords(doc, s.body)} as ${itemName(s.by)} leaves it` };
     if (s.by === item && place(s.of.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(s.of)}: ${itemName(s.of)} uses ${bodyWords(doc, s.body)} as ${itemName(item)} leaves it` };
+  }
+  // SL #676 item 1: nor the other way round. An item that works on a body (a Copy, a Mirror, a Combine keeping its tools)
+  // stays before a later item that changes that body, or it would silently work on the changed body.
+  for (const r of readings(doc.timeline.features)) {
+    if (r.then === item && place(r.first.id) > to) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(r.first)}: ${itemName(r.first)} uses ${bodyWords(doc, r.body)} as it is before ${itemName(item)}` };
+    if (r.first === item && place(r.then.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(r.then)}: it uses ${bodyWords(doc, r.body)} as it is before ${itemName(r.then)}` };
   }
   const k = doc.timeline.features.indexOf(item);
   if (k === to) return { doc };
