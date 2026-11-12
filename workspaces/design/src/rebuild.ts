@@ -992,10 +992,30 @@ const originPlacement = (item: Feature): SketchPlacement | null => (item.intent.
 
 const XY_PLACEMENT: SketchPlacement = { plane: planeOf("XY"), side: 1 };
 
-/** A sketch's points that are its own (SL #539): neither pinned to an edge or corner nor made by a projection, so only an edit of the sketch moves them. */
+/**
+ * A sketch's points that are its own (SL #539), so only an edit of the sketch moves them: neither pinned to an edge or
+ * corner nor made by a projection, nor tied to one of those through any chain of constraints or arcs (SL #641 item 1),
+ * which the solve after a followed point moved (`solvedAgain`) moves too, so that a middle of them would move with every
+ * rebuild. The ties are the solver's own equations (constraints.ts `solverRequest`): an arc ties its centre and ends, a
+ * constraint the points it names (a diameter none).
+ */
 export function ownPoints(content: Sketch): Sketch["points"] {
   const followed = new Set([...(content.pins ?? []).map((p) => p.point), ...(content.projected ?? []).flatMap((p) => madePoints(content, p))]);
-  return followed.size === 0 ? content.points : content.points.filter((p) => !followed.has(p.id));
+  if (followed.size === 0) return content.points;
+  const parent = new Map<string, string>();
+  const root = (p: string): string => {
+    let r = p;
+    while (parent.has(r)) r = parent.get(r)!;
+    return r;
+  };
+  const tie = (ids: readonly string[]) => {
+    const [first, ...rest] = ids.map(root);
+    for (const r of rest) if (r !== first) parent.set(r, first);
+  };
+  for (const c of content.curves) if (c.kind === "arc") tie([c.centre, c.start, c.end]);
+  for (const c of content.constraints) tie(c.kind === "fix" ? [c.point] : c.kind === "diameter" ? [] : [c.a, c.b]);
+  const tied = new Set([...followed].map(root));
+  return content.points.filter((p) => !followed.has(p.id) && !tied.has(root(p.id)));
 }
 
 /**
@@ -1033,7 +1053,9 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false): Promise<FeatureResult> => {
     // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried);
     // SL #539: a change of size since by a Scale carries the middle of its own points (not those pinned or projected, which follow
-    // edges by name and are written back after: the middle never moves by settling) as the body's point under it, its sizes kept.
+    // edges by name and are written back after, nor those a constraint or arc ties to them, which settling moves: SL #641 item 1;
+    // so the middle never moves by settling, and a design saved after a rebuild rebuilds the same) as the body's point under it,
+    // its sizes kept. None left (every point follows or is tied to one that does): carried as a sketch drawn before the rule.
     // SL #583 item 3: drawn on a Cut's wall (its name's face turned round) and found now as that face itself (the Combine
     // made a Join or Intersect, or suppressed), or the other way about: not the face it was drawn on, which is gone. A
     // sketch from before version 19 records neither, and is placed as before.
