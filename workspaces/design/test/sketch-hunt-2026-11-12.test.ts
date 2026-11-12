@@ -13,6 +13,8 @@ import { partDocument, type DesignDocument } from "../src/document.ts";
 import { sketchRegions } from "../src/regions.ts";
 import { addSketch, drawLine, drawRectangle } from "../src/sketch.ts";
 import { clickAt, SAME_LINE, startTool } from "../src/sketch-tool.ts";
+import { FLAT_CENTRE_RECTANGLE } from "../src/sketch-shapes.ts";
+import { snapOnSketch } from "../src/snap.ts";
 
 const kernel = nodeKernel();
 const sk = (d: DesignDocument, id: string) => d.sketches.find((s) => s.id === id)!;
@@ -119,4 +121,23 @@ test("hand-worked: a lone line sized keeps its start, the point drawn first, eit
     const p = corners(got.doc, s.id).map(([x, y]) => [Math.round(x * 1e9) / 1e9, Math.round(y * 1e9) / 1e9]);
     assert.deepEqual(p, [[2, 1], [8, 9]]);
   }
+});
+
+test("hand-worked (hunt A3): a 40 × 1.6 mm centre rectangle round the origin at 0.1 mm a pixel is drawn as clicked, not pulled flat", () => {
+  // Centre (0, 0); pointer at (20, 0.8), 8 px above the centre's own row at 0.1 mm a pixel (the snap's reach is 10 px =
+  // 1 mm). The centre's row and column are never offered, as a plain Rectangle's first corner's aren't: the corner stays
+  // (20, 0.8), a rectangle 2·20 = 40 wide and 2·0.8 = 1.6 high. Another point's row is still offered: with a point at
+  // (−5, 0.5), the pointer 3 px off that row lands on y = 0.5.
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const rect = clickAt(s.doc, startTool("rectangle", s.id), [0, 0]).tool;
+  assert.deepEqual(snapOnSketch(s.doc, rect, [20, 0.8], [20, 0.8], 0.1).at, [20, 0.8]);
+  const centre = clickAt(s.doc, startTool("centre-rectangle", s.id), [0, 0]).tool;
+  const at = snapOnSketch(s.doc, centre, [20, 0.8], [20, 0.8], 0.1).at;
+  assert.deepEqual(at, [20, 0.8]);
+  const r = clickAt(s.doc, centre, at);
+  assert.notEqual(r.note, FLAT_CENTRE_RECTANGLE);
+  assert.ok(r.drew, `refused: ${r.note}`);
+  const withPoint = clickAt(s.doc, startTool("point", s.id), [-5, 0.5]).doc;
+  const centre2 = clickAt(withPoint, startTool("centre-rectangle", s.id), [0, 0]).tool;
+  assert.deepEqual(snapOnSketch(withPoint, centre2, [20, 0.8], [20, 0.8], 0.1).at, [20, 0.5]);
 });
