@@ -38,6 +38,7 @@ monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #
 monkey no result: the session never finished (job out of time, or the tester crashed)
 monkey save: Save gave no file
 monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
+monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in" (in in)
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in" (in in); with Body # (Box: # × # × # mm) selecte
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in"; with Body # (Box: # × # × # mm) selected the Bo
 monkey selection agrees: with Body # (Cylinder: ⌀# × # mm) selected the Body panel shows # × #¹³ mm³, but that body is # mm³
@@ -51,3 +52,4 @@ monkey the monkey never said how many Combines it made (no "monkey: N Combines m
 monkey the tester itself: locator.click: Timeout #ms exceeded.
 monkey the tester itself: page.evaluate: Execution context was destroyed, most likely because of a navigation
 monkey timeline bar matches the file: shown [{"id":"feature#","suppressed":false,"rolledBack":false},{"id":"sketch#","suppressed":true,"rolledBack":false},{"
+monkey timeline bar matches the file: shown [{"id":"feature#","suppressed":true,"rolledBack":false},{"id":"sketch#","suppressed":true,"rolledBack":false},{"i

@@ -1,0 +1,480 @@
+{
+  "seed": 359814969,
+  "failure": {
+    "check": "combine reachable",
+    "message": "Combine's operation is out of reach with its bodies picked"
+  },
+  "shrunk": true,
+  "replayed": true,
+  "outOfTime": true,
+  "actions": [
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-9\"]"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "canvas",
+      "x": 0.342,
+      "y": 0.197,
+      "double": false
+    },
+    {
+      "do": "drag",
+      "x": 0.896,
+      "y": 0.844,
+      "x2": 0.07,
+      "y2": 0.612,
+      "button": "left",
+      "shift": false
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 158
+    },
+    {
+      "do": "canvas",
+      "x": 0.527,
+      "y": 0.13,
+      "double": false
+    },
+    {
+      "do": "open",
+      "edit": "same",
+      "at": 977
+    },
+    {
+      "do": "key",
+      "key": "Control+Shift+z"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "open",
+      "edit": "swap",
+      "at": 676
+    },
+    {
+      "do": "combine",
+      "a": 0.6635536539833993,
+      "b": 0.1609521904028952,
+      "op": "join",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.315,
+      "y": 0.718,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "canvas",
+      "x": 0.283,
+      "y": 0.686,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#combine-keep"
+    },
+    {
+      "do": "click",
+      "sel": "#combine-cancel"
+    },
+    {
+      "do": "menu",
+      "sel": "li[data-item=\"sketch-1\"]"
+    },
+    {
+      "do": "key",
+      "key": "Backspace"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#account-open"
+    },
+    {
+      "do": "click",
+      "sel": "#account-emails"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 630
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 768
+    },
+    {
+      "do": "combine",
+      "a": 0.22243547765538096,
+      "b": 0.9183584076818079,
+      "op": "cut",
+      "keep": false,
+      "ok": false
+    },
+    {
+      "do": "drag",
+      "x": 0.847,
+      "y": 0.066,
+      "x2": 0.837,
+      "y2": 0.415,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "click",
+      "sel": "#account-emails"
+    },
+    {
+      "do": "key",
+      "key": "Delete"
+    },
+    {
+      "do": "click",
+      "sel": "#account-emails"
+    },
+    {
+      "do": "open",
+      "edit": "swap",
+      "at": 895
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 83
+    },
+    {
+      "do": "combine",
+      "a": 0.52850994723849,
+      "b": 0.8575356877408922,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "click",
+      "sel": "#account-emails"
+    },
+    {
+      "do": "canvas",
+      "x": 0.844,
+      "y": 0.851,
+      "double": false
+    },
+    {
+      "do": "combine",
+      "a": 0.12688054097816348,
+      "b": 0.0026214702520519495,
+      "op": "cut",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Control+c"
+    },
+    {
+      "do": "key",
+      "key": "h"
+    },
+    {
+      "do": "resize",
+      "size": [
+        820,
+        600
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "summary:text-is(\"Profiles\")"
+    },
+    {
+      "do": "combine",
+      "a": 0.7958207707852125,
+      "b": 0.8737333188764751,
+      "op": "join",
+      "keep": false,
+      "ok": true
+    },
+    {
+      "do": "canvas",
+      "x": 0.647,
+      "y": 0.475,
+      "double": false
+    },
+    {
+      "do": "combine",
+      "a": 0.6297837172169238,
+      "b": 0.9702657572925091,
+      "op": "join",
+      "keep": true,
+      "ok": true
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "wheel",
+      "x": 0.524,
+      "y": 0.235,
+      "dy": -400
+    },
+    {
+      "do": "wheel",
+      "x": 0.546,
+      "y": 0.928,
+      "dy": -400
+    },
+    {
+      "do": "key",
+      "key": "Backspace"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "canvas",
+      "x": 0.848,
+      "y": 0.242,
+      "double": false
+    },
+    {
+      "do": "drag",
+      "x": 0.415,
+      "y": 0.683,
+      "x2": 0.488,
+      "y2": 0.799,
+      "button": "middle",
+      "shift": false
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"feature-35\"]"
+    },
+    {
+      "do": "drag",
+      "x": 0.602,
+      "y": 0.135,
+      "x2": 0.595,
+      "y2": 0.412,
+      "button": "right",
+      "shift": true
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 497
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "wheel",
+      "x": 0.45,
+      "y": 0.691,
+      "dy": -400
+    },
+    {
+      "do": "key",
+      "key": "Control+Shift+z"
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "resize",
+      "size": [
+        1280,
+        800
+      ]
+    },
+    {
+      "do": "canvas",
+      "x": 0.272,
+      "y": 0.716,
+      "double": false
+    },
+    {
+      "do": "double",
+      "sel": "li[data-item=\"sketch-10\"]"
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "999999999",
+      "finish": "Enter"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "Infinity",
+      "finish": "none"
+    },
+    {
+      "do": "hover",
+      "x": 0.427,
+      "y": 0.589
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": "40",
+      "finish": "Escape"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"⋯\")"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "canvas",
+      "x": 0.373,
+      "y": 0.075,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "li[data-item=\"sketch-1\"]"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "canvas",
+      "x": 0.463,
+      "y": 0.576,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "key",
+      "key": "c"
+    },
+    {
+      "do": "canvas",
+      "x": 0.329,
+      "y": 0.121,
+      "double": false
+    },
+    {
+      "do": "combine",
+      "a": 0.12199614103883505,
+      "b": 0.5409012562595308,
+      "op": "cut",
+      "keep": false,
+      "ok": false
+    },
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "drag",
+      "x": 0.417,
+      "y": 0.668,
+      "x2": 0.926,
+      "y2": 0.541,
+      "button": "middle",
+      "shift": true
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "combine",
+      "a": 0.8943835170939565,
+      "b": 0.36514515755698085,
+      "op": "join",
+      "keep": true,
+      "ok": true
+    }
+  ]
+}
