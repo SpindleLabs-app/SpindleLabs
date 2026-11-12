@@ -22,14 +22,14 @@ export function postProcess(_ops: Operation[], _machine: string): string {
 
 export const manufactureWorkspace: WorkspacePlugin = {
   id: "manufacture",
-  title: "Manufacture",
+  title: "CNCLab",
   summary: "CNC toolpaths from the design: setups, stock, tools, strategies, simulation and G-code.",
   status: "placeholder",
   representations: { produces: [], accepts: [] },
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
-      title: "Manufacture",
+      title: "CNCLab",
       summary: "CNC toolpaths from the design: setups, stock, tools, strategies, simulation and G-code.",
       plans: ["Setups with stock and work coordinates", "A tool library shared across projects", "2D, 2.5D and 3D strategies on design faces and edges, by reference", "Toolpath simulation in the shared viewport", "G-code through post-processors for different machines"],
       startsAfter: "after CAD step 40 (booleans and full topological naming), so a toolpath stays on the right pocket",

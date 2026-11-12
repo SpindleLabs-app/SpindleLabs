@@ -81,8 +81,26 @@ test("hand-worked: the sheet's SVG is the bed's size in mm, y flipped, one close
   // The page is the bed: 100 × 50 mm, model y 0..50 written as −50..0, so the viewBox starts at (0, −50).
   assert.match(svg, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" width="100mm" height="50mm" viewBox="0 -50 100 50">\n<title>Box &amp; lid<\/title>\n/);
   // A's corners (5,5) (65,5) (65,45) (5,45) with y flipped.
-  assert.match(svg, /<path id="part-A" d="M5 -5L65 -5L65 -45L5 -45Z" fill="none"[^>]*><title>Sketch A<\/title><\/path>/);
+  // Every part is cut when nothing says otherwise: one group, "cut", a red hairline with nothing filled.
+  assert.match(svg, /<g id="cut"><title>Cut<\/title>\n<path id="part-A" d="M5 -5L65 -5L65 -45L5 -45Z" fill-rule="evenodd" fill="none" stroke="#f00" stroke-width="0.1" vector-effect="non-scaling-stroke"><title>Sketch A<\/title><\/path>/);
   // B, the circle round (80, 15) of radius 10: four quarter arcs counter-clockwise from its east point (90, 15).
   assert.match(svg, /d="M90 -15A10 10 0 0 0 80 -25A10 10 0 0 0 70 -15A10 10 0 0 0 80 -5A10 10 0 0 0 90 -15Z"/);
   assert.equal((svg.match(/<path /g) ?? []).length, 2);
+});
+
+test("hand-worked: layers in the SVG: engrave filled black first, then score in blue, then cut in red, a group each, an empty one left out", () => {
+  // Three 10 × 10 squares in one row, gap 5: A at x 5..15, B at 20..30, C at 35..45, all y 5..15 (y flipped: −5..−15).
+  const { placed } = layOut([part("A", rect(0, 0, 10, 10)), part("B", rect(0, 0, 10, 10)), part("C", rect(0, 0, 10, 10))], BED, 5);
+  const svg = sheetSvg({ placed, left: [] }, BED, "Tag", { A: "cut", B: "engrave", C: "score" });
+  const groups = [...svg.matchAll(/<g id="(\w+)">/g)].map((m) => m[1]);
+  // The beam's order: nothing is cut loose before what lies on it is done.
+  assert.deepEqual(groups, ["engrave", "score", "cut"]);
+  assert.match(svg, /<g id="engrave"><title>Engrave<\/title>\n<path id="part-B" d="M20 -5L30 -5L30 -15L20 -15Z" fill-rule="evenodd" fill="#000" stroke="none"><title>Sketch B<\/title><\/path>\n<\/g>/);
+  assert.match(svg, /<g id="score"><title>Score<\/title>\n<path id="part-C" d="M35 -5L45 -5L45 -15L35 -15Z" fill-rule="evenodd" fill="none" stroke="#00f" [^>]*><title>Sketch C<\/title><\/path>\n<\/g>/);
+  assert.match(svg, /<g id="cut"><title>Cut<\/title>\n<path id="part-A" [^>]*stroke="#f00" [^>]*>/);
+  // Only engraving: one group, no empty score or cut groups.
+  const only = sheetSvg({ placed: placed.slice(1, 2), left: [] }, BED, "Tag", { B: "engrave" });
+  assert.deepEqual([...only.matchAll(/<g id="(\w+)">/g)].map((m) => m[1]), ["engrave"]);
+  // A part's layer is found by its id: an entry for a part not on the bed changes nothing.
+  assert.equal(sheetSvg({ placed, left: [] }, BED, "Tag", { Z: "engrave" }), sheetSvg({ placed, left: [] }, BED, "Tag"));
 });

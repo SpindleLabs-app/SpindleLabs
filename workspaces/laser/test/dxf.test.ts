@@ -22,11 +22,13 @@ test("hand-worked: a slot with a round hole is one closed POLYLINE with its bulg
   );
 });
 
-test("the header says R12 and millimetres, the extents are the bed, the CUT layer is in the table, and it ends with EOF", () => {
+test("the header says R12 and millimetres, the extents are the bed, the three layers are in the table with their colours, and it ends with EOF", () => {
   const dxf = sheetDxf({ placed: [], left: [] }, BED);
   assert.ok(dxf.startsWith("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n9\n$MEASUREMENT\n70\n1\n"));
   assert.match(dxf, /9\n\$EXTMAX\n10\n100\n20\n50\n30\n0\n/);
-  assert.match(dxf, /0\nLAYER\n2\nCUT\n70\n0\n62\n7\n6\nCONTINUOUS\n/);
+  // The DXF colour table's numbers: 1 red, 5 blue, 7 black or white (the colour a laser program's own layers start
+  // with for cut, score and engrave). The table says it holds 3 layers (group 70 after TABLE/LAYER).
+  assert.match(dxf, /0\nTABLE\n2\nLAYER\n70\n3\n0\nLAYER\n2\nENGRAVE\n70\n0\n62\n7\n6\nCONTINUOUS\n0\nLAYER\n2\nSCORE\n70\n0\n62\n5\n6\nCONTINUOUS\n0\nLAYER\n2\nCUT\n70\n0\n62\n1\n6\nCONTINUOUS\n0\nENDTAB\n/);
   assert.ok(dxf.endsWith("0\nEOF\n"));
   // Every group code is followed by its value: an even number of lines before the final newline.
   assert.equal(dxf.trimEnd().split("\n").length % 2, 0);
@@ -43,4 +45,29 @@ test("bulges keep 15 decimals (a small one's rounding would move a long arc), po
   assert.equal(bulgeNumber(1.4e-6), "0.0000014");
   const layout: Layout = { placed: [{ id: "a", label: "a", x: 0, y: 0, width: 1, height: 1, outline: { outer: { path: { corners: [0.1234567, 0, 1, 0, 1, 1], bulges: [] } }, holes: [] } }], left: [] };
   assert.match(sheetDxf(layout, BED), /10\n0.123457\n/);
+});
+
+test("hand-worked: each part's loops on its layer, engrave first, then score, then cut; a part not named is cut", () => {
+  // Three parts: a cut square, an engraved ring (outer square, round hole), a scored circle; written in that layer order
+  // whatever order they sit on the bed.
+  const sq = (x: number) => ({ path: { corners: [x, 0, x + 10, 0, x + 10, 10, x, 10], bulges: [] } });
+  const layout: Layout = {
+    placed: [
+      { id: "c", label: "Cut", x: 0, y: 0, width: 10, height: 10, outline: { outer: sq(0), holes: [] } },
+      { id: "e", label: "Engraved", x: 20, y: 0, width: 10, height: 10, outline: { outer: sq(20), holes: [{ circle: { center: [25, 5], radius: 2 } }] } },
+      { id: "s", label: "Scored", x: 40, y: 0, width: 10, height: 10, outline: { outer: { circle: { center: [45, 5], radius: 5 } }, holes: [] } },
+    ],
+    left: [],
+  };
+  const dxf = sheetDxf(layout, BED, { e: "engrave", s: "score" });
+  const entities = dxf.slice(dxf.indexOf("ENTITIES\n"));
+  // Each entity's type and layer, in order: the engraved square and its hole, the scored circle, the cut square.
+  const kinds = [...entities.matchAll(/0\n(POLYLINE|CIRCLE)\n8\n(\w+)\n/g)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(kinds, ["POLYLINE ENGRAVE", "CIRCLE ENGRAVE", "CIRCLE SCORE", "POLYLINE CUT"]);
+  // Every VERTEX and SEQEND sits on its POLYLINE's layer.
+  assert.deepEqual([...entities.matchAll(/0\nVERTEX\n8\n(\w+)\n10\n(\d+)\n/g)].map((m) => `${m[1]} ${m[2]}`), ["ENGRAVE 20", "ENGRAVE 30", "ENGRAVE 30", "ENGRAVE 20", "CUT 0", "CUT 10", "CUT 10", "CUT 0"]);
+  assert.deepEqual([...entities.matchAll(/0\nSEQEND\n8\n(\w+)\n/g)].map((m) => m[1]), ["ENGRAVE", "CUT"]);
+  // Nothing named: all three on CUT, in the bed's order.
+  const plain = sheetDxf(layout, BED);
+  assert.deepEqual([...plain.slice(plain.indexOf("ENTITIES\n")).matchAll(/0\n(POLYLINE|CIRCLE)\n8\n(\w+)\n/g)].map((m) => `${m[1]} ${m[2]}`), ["POLYLINE CUT", "POLYLINE CUT", "CIRCLE CUT", "CIRCLE CUT"]);
 });

@@ -39,6 +39,7 @@ Several threads run at once, one per workstream. So they never edit the same lin
 - `slice.md`: the Slice workspace, 3D printing (P0–P14: design decisions and every substep's test plan).
 - `ui.md`: the UI look and feel (U1–U8: top bar icons, light mode, settings, panels, phone, home screen).
 - `community.md`: sharing designs and the community (C1–C9: sharing links, profiles, moderation, the public library, remixes, likes, comments, the contest).
+- `laser.md`: the Laser workspace, laser cutting (L1–L5: the flat sheet layout, layers, kerf, machine settings, the job's path and time, sending to a laser from the browser).
 - A new workstream (Render, Vector, Layout…) gets a new file here the day it starts, added to this list in its own small PR.
 
 Rules:

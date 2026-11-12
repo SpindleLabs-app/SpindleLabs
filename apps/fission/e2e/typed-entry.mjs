@@ -349,8 +349,10 @@ await check("375 × 667 with taps, then turned sideways to 667 × 375 and back: 
     point = { x: c1.x + (point.x - c0.x) * k, y: c1.y + (point.y - c0.y) * k };
     canvasBefore = canvas;
     const ok = (a, b) => Math.abs(a - b) <= 3;
-    // Sideways (667 px, wider than the phone rule's 640) the boxes' own CSS puts them 18 px right of and 14 px below the point.
-    const offset = size.width > 640 ? { x: 18, y: 14 } : upright;
+    // Sideways (667 × 375, a touch screen 500 px tall or less) the phone rule holds too since #614 (typed-entry.css: translate(-50%, 28px)):
+    // the boxes centred under the point, half their width left of it, and 28 px below; upright they sit as at the start.
+    // A tablet's offset (18 px right, 14 px below) would mean the boxes take the next tap again.
+    const offset = size.width > 640 ? { x: -boxes.width / 2, y: 28 } : upright;
     assert.ok(ok(boxes.x - point.x, offset.x) && ok(boxes.y - point.y, offset.y), `${what}: beside the point at ${JSON.stringify(point)} (offset ${JSON.stringify(offset)}, now ${JSON.stringify({ x: boxes.x - point.x, y: boxes.y - point.y })})`);
     assert.equal(await focused(page), "typed-length", `${what}: the keys still go to Length`);
     if (shots) await page.screenshot({ path: `${shots}/typed-turned-${size.width}.png` });
