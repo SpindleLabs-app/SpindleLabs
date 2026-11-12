@@ -39,7 +39,7 @@ export const simulateWorkspace: WorkspacePlugin = {
       title: "Simulate",
       summary: SUMMARY,
       plans: ["Static stress, then thermal and modal studies", "Materials from the shared library (density, stiffness, strength)", "Loads and constraints placed on design faces by reference: they follow the face when the design changes", "Meshing from the exact geometry", "Results: stress, displacement and safety factor drawn in the shared viewport"],
-      startsAfter: "with TestLab's solver (steps T3 to T5), so loads stay on the right faces",
+      startsAfter: "after CAD step 40 (booleans and full topological naming), so loads stay on the right faces",
     });
     return { unmount: () => ctx.properties.replaceChildren() };
   },
