@@ -21,7 +21,7 @@
 // shapes themselves do (overlap.ts), and the answer is said in words and
 // marked on both parts. Styles: src/styles/laser-page.css.
 
-import { NewerFormatError, type ListedObject, type MountedWorkspace, type Outline, type RepresentationRegistry, type WorkspaceContext } from "@fission/core";
+import { NewerFormatError, type GeometryReference, type ListedObject, type MountedWorkspace, type Outline, type RepresentationRegistry, type WorkspaceContext } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
 import { planeSeenAs } from "@fission/viewport";
 import { sheetDxf } from "./dxf.ts";
@@ -106,7 +106,8 @@ export function readLaserData(data: unknown): LaserData {
 }
 
 /** A shape Design offers: its outline when it has one, else why not, in words. */
-export type OfferedPart = { id: string; label: string; outline: Outline } | { id: string; label: string; refused: string };
+/** A part Design offers: its outline, or why it can't be cut; `selectAs` is what the one selection holds when it is picked (L1b3). */
+export type OfferedPart = ({ id: string; label: string; outline: Outline } | { id: string; label: string; refused: string }) & { selectAs?: GeometryReference };
 
 /** Reads every flat shape Design lists, as exact outlines, through the registry; one that can't be read says why. */
 export async function readParts(registry: RepresentationRegistry, objects: readonly ListedObject[]): Promise<OfferedPart[]> {
@@ -120,9 +121,9 @@ export async function readParts(registry: RepresentationRegistry, objects: reado
       // (viewport `planeSeenAs`), so the part on the bed and in the files is what was drawn, never its mirror (L1b4).
       const outline = representation.side === -1 ? mirrorOutline(representation.outline, planeSeenAs(representation.plane, -1)) : representation.outline;
       outlineBox(outline); // a malformed outline is refused here, in words
-      out.push({ id: o.id, label: o.label, outline });
+      out.push({ id: o.id, label: o.label, outline, ...(o.selectAs && { selectAs: o.selectAs }) });
     } catch (e) {
-      out.push({ id: o.id, label: o.label, refused: e instanceof Error ? e.message : String(e) });
+      out.push({ id: o.id, label: o.label, refused: e instanceof Error ? e.message : String(e), ...(o.selectAs && { selectAs: o.selectAs }) });
     }
   }
   return out;
@@ -225,8 +226,41 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
   let reading = 0;
   let offered: OfferedPart[] = [];
   let layout: LaidLayout = { placed: [], left: [] };
-  /** The part picked on the bed, by id: the one "Part" in the properties is about. */
+  /**
+   * The part picked on the bed, by id: the one "Part" in the properties is about. It is the one selection's (L1b3): the
+   * first selected thing that is a part on the bed now, so a sketch picked in Design is picked here and back. A part its
+   * owner gives no reference for is picked here alone (`loose`), while nothing is selected.
+   */
   let picked: string | null = null;
+  let loose: string | null = null;
+  /** True while this page changes the selection itself, so its own change draws once. */
+  let selecting = false;
+  const pickedNow = (): string | null => {
+    const items = ctx.selection.items;
+    for (const r of items) {
+      const p = offered.find((o) => o.selectAs?.kind === r.kind && o.selectAs.id === r.id);
+      if (p && layout.placed.some((q) => q.id === p.id)) return p.id; // one Design picked that isn't on the bed is passed over
+    }
+    return items.length === 0 ? loose : null;
+  };
+  /** Makes part `id` (or nothing) the selection; draws nothing. */
+  const select = (id: string | null) => {
+    const ref = id === null ? undefined : offered.find((o) => o.id === id)?.selectAs;
+    loose = ref || id === null ? null : id;
+    selecting = true;
+    try {
+      if (ref) ctx.selection.set([ref]);
+      else ctx.selection.clear();
+    } finally {
+      selecting = false;
+    }
+    picked = pickedNow();
+  };
+  // Heard for as long as the page is mounted; drawn only while on screen (waking draws what was picked meanwhile).
+  const stopFollowing = ctx.selection.onChange((items) => {
+    if (items.length > 0) loose = null;
+    if (!selecting && awake) draw(false);
+  });
 
   const data = () => readLaserData(ctx.project.workspaces.laser);
   const store = (next: LaserData, label: string, mergeKey?: string) => {
@@ -285,7 +319,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
   const flat = createFlatView(doc, {
     cards: () => [ctx.browser, ctx.properties],
     onPick: (id) => {
-      picked = id;
+      select(id);
       draw(false);
     },
     onMove: (id, dx, dy, key) => {
@@ -312,7 +346,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
    */
   const put = (p: LaidPart, at: Placement, label: string, mergeKey?: string): boolean => {
     const why = placementRefusal(at);
-    picked = p.id;
+    select(p.id);
     if (why) {
       draw(false);
       partWords.textContent = why;
@@ -349,8 +383,12 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
   const draw = (frame: boolean): void => {
     const d = data();
     layout = layOutPlaced(partsOn(offered, d.off), d.bed, d.gap, d.placed);
+    picked = pickedNow();
     const part = layout.placed.find((p) => p.id === picked) ?? null;
-    if (!part) picked = null;
+    if (!part) {
+      if (picked === loose) loose = null; // a part picked here alone that is gone from the bed is let go
+      picked = null; // one picked elsewhere stays in the selection: it is just not on the bed
+    }
     // Pairs whose boxes overlap or all but touch (further apart, the parts are apart and nothing is asked): the answer kept
     // for them as they sit, or the kernel asked (the page is drawn again when it answers).
     pairs = [];
@@ -385,6 +423,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
         box.checked = !d.off.includes(p.id);
         box.dataset.part = p.id;
         box.addEventListener("change", () => {
+          if (!box.checked && picked === p.id) select(null); // taken off the bed, it is let go
           const now = data();
           store({ ...now, off: box.checked ? now.off.filter((x) => x !== p.id) : [...now.off, p.id] }, box.checked ? `Put ${p.label} on the laser bed` : `Take ${p.label} off the laser bed`);
           draw(false);
@@ -508,6 +547,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
     },
     unmount() {
       live = false;
+      stopFollowing();
       if (awake) hideView();
       awake = false;
       list.remove();

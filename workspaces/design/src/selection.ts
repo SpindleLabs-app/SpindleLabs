@@ -137,7 +137,12 @@ export function panelFocus(items: readonly GeometryReference[], scene: Scene | n
     // A selected body is the scene's body of that id: one item can make several (a Combine's pieces), and a body
     // keeps its id when a later item (a Combine, a Move) is the one that made it last (#501).
     if (r!.kind === "body") return { feature, body: scene?.bodies.find((b) => b.body === items[i].id) ?? null };
-    return focus(feature);
+    // A face or edge is described by the body the scene finds it on, never by the item in its name: a split-off piece's
+    // faces keep the cut body's names, and the cut's walls are on every piece (SL #538 item 4). One the scene does not
+    // find (gone, on a body not shown, or a name two share) is on no body it can name.
+    const found = scene ? findInScene(items[i], scene) : null;
+    const hit = found?.status === "found" ? sceneHit(scene!, r!.kind as "face" | "edge", found.index) : null;
+    return { feature, body: hit === null ? null : scene!.bodies[hit.body] };
   }
   const part = partFeature(doc);
   return part === null ? null : focus(part);
