@@ -44,6 +44,7 @@ import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody, reversedOfResult } from "./built-body.ts";
+import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
@@ -109,6 +110,8 @@ export type FeatureResult =
       pieceFaces?: Record<string, string[]>;
       /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
       pieces?: { message: string; renumbered: string[] };
+      /** A Move some of whose bodies are no longer there (SL #506 item 4): it moves the rest, and says which it can't and why; their body ids. */
+      missing?: { message: string; bodies: string[] };
       /** A Cut or Join whose tools change nothing (misses.ts; Ben 11 Nov, SL #506 item 5, #521): which, and the row's words. */
       misses?: { message: string; list: Miss[] };
     }
@@ -1118,9 +1121,30 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
   // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
   // workspace numbers them (`numberPieces`; its own call after this one gives them their remembered faces), so they
   // stay moved after this rebuild.
+  // A Move that is off when a body it holds is first split (suppressed, rolled back by the marker, greyed or failed:
+  // SL #624 item 2) moved nothing, so named nothing in `takes`; it holds the whole body all the same, and this rebuild
+  // is about to number the new piece, after which no later one could tell it from a piece left unpicked. So it takes
+  // the piece now: one split (`from`) from a body it holds, not numbered yet, made by an item before the Move.
+  const numbered = followed.bodies === undefined ? null : new Set(followed.bodies.map((b) => b.id));
+  const place = new Map(followed.timeline.features.map((f, i) => [f.id, i] as const));
   const takers = followed.timeline.features.flatMap((f) => {
+    if (!isMoveItem(f)) return [];
     const r = build.results[f.id];
-    return isMoveItem(f) && r?.status === "built" && r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (r?.status === "built") return r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (numbered === null) return [];
+    const held = movedBodies(f);
+    const takes: string[] = [];
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const [id, b] of Object.entries(build.bodies)) {
+        const made = place.get(bodyItem(id) ?? "");
+        if (b.from === undefined || numbered.has(id) || held.includes(id) || takes.includes(id) || made === undefined || made > place.get(f.id)!) continue;
+        if (!held.includes(b.from) && !takes.includes(b.from)) continue;
+        takes.push(id);
+        grew = true;
+      }
+    }
+    return takes.length > 0 ? [[f, takes] as const] : [];
   });
   if (takers.length === 0) return followed;
   let next = numberPieces(followed, Object.keys(build.bodies));
@@ -1339,7 +1363,10 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
  * everything after the Move (a sketch on its face, the view, the STL)
  * finds it where the Move put it. All or none: a body the kernel refuses
  * to move (out past model space) leaves every body where it was and fails
- * the Move with the kernel's words. The Move holds the bodies as they
+ * the Move with the kernel's words. A body no longer there (deleted, not
+ * built, or used up by an earlier Combine) is left out with a warning
+ * (`missing`, SL #506 item 4), the rest moved; with none left it fails.
+ * The Move holds the bodies as they
  * were (`holds`), so the next rebuild finds them built. Its bodies are
  * stored by body id (`movedBodies`, Design data version 6, 35ec), each
  * made by an item it depends on (`bodyItem`).
@@ -1360,21 +1387,30 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
     if (r?.status === "greyed") return { status: "greyed", by: r.by };
   }
   const label = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const name = f.provenance.self.label;
   const motions = moveMotions(moveValues(f));
   const from: [string, BuiltBody][] = [];
+  // SL #506 item 4: a body that is no longer there is left out, and the Move moves the rest with a warning naming it,
+  // so a body it also moves never jumps back for it. With none left the Move fails, naming the first as before.
+  const gone: { body: string; said: string; failed: Extract<FeatureResult, { status: "failed" }> }[] = [];
   const held = movedBodies(f);
   for (const body of held) {
     const id = bodyItem(body)!;
     const r = done[id];
     const b = r?.status === "built" ? bodies[body] : undefined;
-    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
-    if (r?.status !== "built") return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
-    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again.
-    if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
+    const what = body === bodyIdOf(id) ? label(id) : `a piece of ${label(id)}`;
+    if (r === undefined) gone.push({ body, said: `${label(id)} was deleted`, failed: { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${name} has nothing to move` } });
+    else if (r.status !== "built") gone.push({ body, said: `${label(id)} is not built`, failed: { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${name} can't move it` } });
+    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again (SL #583 item 2).
+    else if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
     // Built, but gone from here on: an earlier Combine or extrude used it up, or left no such piece (as `booleanSteps` says it; hunts 11-06, 11-08).
-    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${f.provenance.self.label} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
-    from.push([body, b]);
+    else if (b === undefined) gone.push({ body, said: `an earlier Combine or extrude used up ${what} or left no such piece`, failed: { status: "failed", cause: "failed-input", input: id, message: `${name} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` } });
+    else from.push([body, b]);
   }
+  if (from.length === 0 && gone.length > 0) return gone[0].failed;
+  const list = (names: readonly string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+  const words = (body: string) => (isPiece(body) ? `a piece of ${label(bodyItem(body)!)}` : label(bodyItem(body)!));
+  const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
   // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
   const numbered = doc.bodies === undefined ? null : new Set(doc.bodies.map((b) => b.id));
   const takes: string[] = [];
@@ -1409,7 +1445,7 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
   }
   const holds = from.map(([, b]) => b.handle);
   for (const [id, b] of moved) bodies[id] = b;
-  return { status: "built", holds, ...(takes.length > 0 ? { takes } : {}) };
+  return { status: "built", holds, ...missing, ...(takes.length > 0 ? { takes } : {}) };
 }
 
 /** The bodies item `id`'s booleans split pieces from (SL #583 item 2): a Combine's target, an operation extrude's bodies. */
@@ -1530,7 +1566,9 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const madeKey = (id: string): [number, number] => [places.get(bodyItem(id)!) ?? Infinity, isPiece(id) ? Number(id.slice(id.lastIndexOf(":") + 1)) : 0];
   const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && (isPiece(b.id) || b.id === own) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
   const pieceFaces: Record<string, string[]> = {};
-  const renumbered: string[] = [];
+  // Two of the item's bodies under one id would lose one of them without a word (SL #538 item 1): the numbering below
+  // never gives one, and were it ever to, the item fails here and no body changes.
+  const clash = (id: string): FeatureResult => ({ status: "failed", cause: "error", message: `${label} can't be made: two of its bodies would both be ${id}, so one would be lost (a fault in SpindleLabs, not in the design)`, ...(made.length > 0 ? { holds: made } : {}) });
   const misses: Miss[] = [];
   for (const step of steps) {
     const inputs: NamedBody[] = [];
@@ -1548,9 +1586,11 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const b = work[body];
       if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't use ${body === bodyIdOf(maker) ? nameOf(maker) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
       // Equal bodies share one kernel body (`BodyCache.body`): a second pick of it gets a body of its own, so the
-      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
+      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey). A body
+      // with no spec (a Combine's result, which its Copy shares: SL #624 item 3) gets its own from the kernel's
+      // body_move by nothing, once more for each pick before it: the same faces in the same order, where they are.
       const copies = inputs.filter((x) => x.handle === b.handle).length;
-      const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+      const own = copies === 0 ? b : { ...b, handle: b.spec !== null ? await cache.body(b.spec, copies) : await cache.moved(b.handle, Array.from({ length: copies }, (): Motion => ({ move: [0, 0, 0] }))) };
       if (own !== b) made.push(own.handle);
       built.set(own.handle, own);
       const named = await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!);
@@ -1583,13 +1623,16 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     const inside = operation === "join" ? missed.filter((i) => leavesNoFace(ts[i].handle, result)).map((i) => step.tools[i]) : [];
     if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]), ...(inside.length > 0 && { inside }) });
     const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
-    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
+    // Numbered here by rank alone, on from the last boolean's; the remembered pieces are found once all are made (below).
+    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, undefined, own);
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
     // Each input's item, for a piece keeping its id (an Extrude join's other bodies, hunt 11-08).
     const featureOf = new Map([step.target, ...step.tools].map((b) => [b, work[b].feature] as const));
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];
+    const twice = named.bodies.find((nb, i) => nb.id in work || named.bodies.findIndex((x) => x.id === nb.id) !== i);
+    if (twice !== undefined) return clash(twice.id);
     for (const nb of named.bodies) {
       const h = result.history[result.bodies.indexOf(nb.handle)];
       const frames = framesOfResult(h, built);
@@ -1603,9 +1646,26 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
         if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
       }
     }
-    for (const id of named.renumbered) if (!renumbered.includes(id)) renumbered.push(id);
     holds.push(...inputs.map((x) => x.handle));
   }
+  // One numbering for the whole item (docs/document-model.md section 8, "one feature, one renaming"): each remembered
+  // piece stays on the piece with its faces, whichever boolean made it, and the others take the numbers no piece has.
+  // Numbered a boolean at a time, a new chunk of one body took the number a chunk of another body was remembered with,
+  // and one overwrote the other: a whole chunk gone from the design, by the order the bodies were picked in.
+  const numbered = Object.keys(pieceFaces);
+  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), remembered, own);
+  const pieces = numbered.map((id) => ({ body: work[id], faces: pieceFaces[id] }));
+  for (const id of numbered) {
+    delete work[id];
+    delete pieceFaces[id];
+  }
+  for (const [i, { body, faces }] of pieces.entries()) {
+    if (settled.ids[i] in work || settled.ids[i] in pieceFaces) return clash(settled.ids[i]);
+    if (body !== undefined) work[settled.ids[i]] = body;
+    pieceFaces[settled.ids[i]] = faces;
+  }
+  const renumbered = settled.renumbered;
+  for (const [i, id] of ids.entries()) if (numbered.includes(id)) ids[i] = settled.ids[numbered.indexOf(id)];
   for (const id of Object.keys(bodies)) if (!(id in work)) delete bodies[id];
   Object.assign(bodies, work);
   const kept = ids.filter((id) => id in work);

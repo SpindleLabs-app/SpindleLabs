@@ -30,9 +30,9 @@ test("readParts reads every shape as an outline, and one that can't be read says
 });
 
 test("the saved choices read back; anything missing or unusable falls back to the default and never throws", () => {
-  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 3, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {}, ops: {} });
+  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 4, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {}, ops: {} });
   for (const bad of [undefined, null, 7, "x", {}, { bed: { width: -1, height: 5 } }, { gap: 1e9 }, { thickness: 0 }, { thickness: 51 }])
-    assert.deepEqual(readLaserData(bad), { version: 3, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, ops: {} }, JSON.stringify(bad));
+    assert.deepEqual(readLaserData(bad), { version: 4, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, ops: {} }, JSON.stringify(bad));
   assert.deepEqual(readLaserData({ off: ["a", 3, null, "b"] }).off, ["a", "b"]);
 });
 
@@ -207,7 +207,7 @@ test("the sheet thickness has no box while nothing uses it, and a thickness a pr
   assert.equal(width.value, "300");
   width.value = "310";
   width.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
-  assert.deepEqual(project.workspaces.laser, { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {}, ops: {} });
+  assert.deepEqual(project.workspaces.laser, { version: 4, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {}, ops: {} });
   mounted.unmount();
 });
 
@@ -217,10 +217,10 @@ test("a change in the page keeps what the project's Laser data holds beside the 
   const { ctx, project, type, mounted } = await withPicked(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
   const held = () => project.workspaces.laser as Record<string, unknown>;
   type("width", "310");
-  assert.deepEqual(held(), { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept", ops: {} });
+  assert.deepEqual(held(), { version: 4, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept", ops: {} });
   // Sketch b (picked) typed to X 100: the first hand move, which also fixes Sketch a where the rows put it, (2, 2).
   type("x", "100");
-  assert.deepEqual(held(), { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept", ops: {} });
+  assert.deepEqual(held(), { version: 4, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept", ops: {} });
   const box = ctx.browser.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
   box.checked = false;
   box.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change", { bubbles: true }));
@@ -690,5 +690,71 @@ test("an engraving or a score lying on a cut part is not asked about or warned o
   choose("a", "engrave"); // the kept answer is not shown for a pair that no longer matters
   assert.equal(words(), "2 parts on the bed.");
   assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-engrave");
+  mounted.unmount();
+});
+
+// Sketches seen from behind their plane (L1b4; export hunt 2026-11-12, SL #639 item 2): a sketch on a bottom, back or
+// left face is drawn looking at the face from outside, which is from behind its plane, so its own x and y look mirrored
+// there. Design says so with the outline (`side: -1`); the part lies on the bed as it was drawn, never as its mirror.
+
+/** An L in the sketch's own x and y: foot along x, 20 long and 10 high, stem 10 wide and 30 tall, counter-clockwise. */
+const ELL: Outline = { outer: { path: { corners: [0, 0, 20, 0, 20, 10, 10, 10, 10, 30, 0, 30], bulges: [] } }, holes: [] };
+
+function sidedRegistry(plane: { origin: [number, number, number]; xAxis: [number, number, number]; normal: [number, number, number] }, side?: -1) {
+  const r = new RepresentationRegistry();
+  r.registerProducer("fake.sketch", "outline", () => ({ kind: "outline", plane, ...(side === -1 && { side }), outline: ELL }));
+  return r;
+}
+
+test("hand-worked: an L sketched on a box's bottom face lies on the bed as it was drawn, not mirrored; on the top it is as before", async () => {
+  const bed = { width: 100, height: 50 };
+  const one = [{ type: "fake.sketch", id: "l", label: "L" }];
+  const xy = { origin: [0, 0, 0] as [number, number, number], xAxis: [1, 0, 0] as [number, number, number], normal: [0, 0, 1] as [number, number, number] };
+  // The top face (seen from the normal's side): the L as its numbers say, moved 3 mm in from the corner:
+  // (3,3) (23,3) (23,13) (13,13) (13,33) (3,33).
+  const top = await readParts(sidedRegistry(xy), one);
+  const topLaid = layOut([{ id: "l", label: "L", outline: (top[0] as { outline: Outline }).outline }], bed, 3).placed[0];
+  assert.deepEqual(topLaid.outline.outer, { path: { corners: [3, 3, 23, 3, 23, 13, 13, 13, 13, 33, 3, 33], bulges: [] } });
+  // The bottom face: the same plane seen from below (side −1). Look At from below turns the plane's y down the screen
+  // (viewport planeSeenAs: right 1, up −1), so what was drawn is (x, −y): the foot at the top, the stem hanging down.
+  // Its box is x 0..20, y −30..0, moved by (3, 33): (3,33) (23,33) (23,23) (13,23) (13,3) (3,3). A mirror turns the loop
+  // clockwise, so it is written the other way round to stay counter-clockwise as every outline is:
+  // (3,33) (3,3) (13,3) (13,23) (23,23) (23,33).
+  const bottom = await readParts(sidedRegistry(xy, -1), one);
+  const laid = layOut([{ id: "l", label: "L", outline: (bottom[0] as { outline: Outline }).outline }], bed, 3);
+  assert.deepEqual(laid.placed[0].outline.outer, { path: { corners: [3, 33, 3, 3, 13, 3, 13, 23, 23, 23, 23, 33], bulges: [0, 0, 0, 0, 0, 0] } });
+  assert.match(sheetSvg(laid, bed), /d="M3 -33L3 -3L13 -3L13 -23L23 -23L23 -33Z"/);
+});
+
+test("hand-worked: an L sketched on a back face lies on the bed mirrored left to right, as it was seen; arcs keep their way round", async () => {
+  // A back face: the plane y = 30 with its normal −y (into the box) and x along +x, seen from outside (side −1). Look
+  // At from behind keeps the plane's y up and runs its x to the left (planeSeenAs: right −1, up 1): what was drawn is
+  // (−x, y). The L's box is x −20..0, y 0..30, moved by (23, 3): (23,3) (3,3) (3,13) (13,13) (13,33) (23,33), written
+  // the other way round to stay counter-clockwise: (23,3) (23,33) (13,33) (13,13) (3,13) (3,3).
+  const back = { origin: [0, 30, 0] as [number, number, number], xAxis: [1, 0, 0] as [number, number, number], normal: [0, -1, 0] as [number, number, number] };
+  const parts = await readParts(sidedRegistry(back, -1), [{ type: "fake.sketch", id: "l", label: "L" }]);
+  const laid = layOut([{ id: "l", label: "L", outline: (parts[0] as { outline: Outline }).outline }], { width: 100, height: 50 }, 3).placed[0];
+  assert.deepEqual(laid.outline.outer, { path: { corners: [23, 3, 23, 33, 13, 33, 13, 13, 3, 13, 3, 3], bulges: [0, 0, 0, 0, 0, 0] } });
+});
+
+test("hand-worked: Flip mirrors the picked part where it sits, kept as a flip in its place, one undo step; a turned part flipped turns the other way; twice is no flip", async () => {
+  const { placed, press, type, changes, element, fireOn, mounted } = await withPicked();
+  // Sketch b, 30 × 10, in the rows at (66, 3) (right of a, 60 wide, gap 3). Flip keeps its box, so its place too.
+  press("button[data-flip]");
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 66, y: 3, angle: 0, flip: true } });
+  assert.equal(changes.at(-1), "Flip Sketch b on the laser bed");
+  // Turned left (90) about its middle (81, 8): 10 × 30 from (76, −7). Flipped then: angle −90 = 270, same box.
+  press('button[data-turn="90"]');
+  assert.deepEqual(placed()!, { a: { x: 3, y: 3, angle: 0 }, b: { x: 76, y: -7, angle: 90, flip: true } });
+  press("button[data-flip]");
+  assert.deepEqual(placed()!, { a: { x: 3, y: 3, angle: 0 }, b: { x: 76, y: -7, angle: 270 } });
+  // A move keeps a flip, and so does turning a flipped part.
+  press("button[data-flip]");
+  type("x", "100");
+  assert.deepEqual(placed()!.b, { x: 100, y: -7, angle: 90, flip: true });
+  press('button[data-turn="-90"]');
+  assert.deepEqual(placed()!.b, { x: 90, y: 3, angle: 0, flip: true });
+  fireOn(element.querySelector(".laser-flat svg")!, "keydown", { key: "ArrowLeft" }); // an arrow (and so a drag) keeps it too
+  assert.deepEqual(placed()!.b, { x: 89, y: 3, angle: 0, flip: true });
   mounted.unmount();
 });

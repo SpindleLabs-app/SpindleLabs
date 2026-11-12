@@ -24,9 +24,11 @@ function expect(m: M) {
         const st = status[b];
         if (st === "suppressed" || st === "greyed") { s = "greyed"; break; }
       }
-      if (s === "built") for (const b of it.bodies) { if (status[b] === undefined) { s = "failed"; break; } if (status[b] !== "built") { s = "failed"; break; } }
+      // SL #506 item 4: a body deleted or not built is left out and the rest moved; with none left the Move fails.
+      const there = it.bodies.filter((b) => status[b] === "built");
+      if (s === "built" && there.length === 0) s = "failed";
       status[it.id] = s;
-      if (s === "built") for (const b of it.bodies) at[b] = at[b].map((x, i) => x + it.shift[i]) as [number, number, number];
+      if (s === "built") for (const b of there) at[b] = at[b].map((x, i) => x + it.shift[i]) as [number, number, number];
     }
     if (m.marker === it.id) rolled = true;
   }

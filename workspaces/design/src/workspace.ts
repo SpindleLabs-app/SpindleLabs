@@ -1061,6 +1061,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (r.constraints) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.constraints.message}.` });
       // A Combine whose numbered pieces changed with an earlier edit (hunt 11-06): on its row, never a silent switch.
       if (r.pieces) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.pieces.message}.` });
+      // SL #506 item 4: a Move that moves only some of its bodies says which it can't move, never a silent jump.
+      if (r.missing) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.missing.message}.` });
       // A Cut or Join whose tools change nothing (Ben 11 Nov): OK asked first; an earlier edit since can't ask, so the row says it.
       if (r.misses) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.misses.message}.` });
     }
@@ -4608,12 +4610,24 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   panel.shapeChoice.addEventListener("change", () => {
     if (!shown) return;
     const kind = panel.shapeChoice.value as ShapeKind;
-    if (kind) void setPart({ op: "set_part", shape: kind });
+    if (!kind) return;
+    leaveEdit(); // as a typed size below
+    void setPart({ op: "set_part", shape: kind });
   });
+  /**
+   * A size typed in the Size boxes (or a Shape chosen) changes the design under an open Edit feature panel, whose boxes
+   * would go on showing the sizes from before and whose OK wrote them back over the one just typed (Undo hunt
+   * 2026-11-12, #623: Height 35 typed below an open Edit Box 1, OK, 20 again). The panel goes, as it does when its
+   * item is deleted (`showBuilt`); always true, for the listener's chain.
+   */
+  function sizeTyped(): true {
+    leaveEdit();
+    return true;
+  }
   // Typing in one box is one undo step (the merge key), named for the box; typing for another body is another step
   // (the key names the body: Undo after typing for Body 1 put back Body 2's width typed before it, bug hunt 2026-11-01).
   inputs.forEach((input, i) => {
-    input.addEventListener("input", () => shown && update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
+    input.addEventListener("input", () => shown && sizeTyped() && update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
     // Left (or Enter): a refused size gives way to the last one. Blur too: Firefox gives no change for a number box
     // left empty after 0 and -5 (hunt 26h, CI's browsers job).
     input.addEventListener("change", () => restoreRefused(i));
@@ -4623,6 +4637,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // A new project's design starts empty (U0c, the owner's ask), never as a box made from the size boxes.
   const first = held === undefined ? update(undefined, undefined, freshDesign()) : update();
   enterSketch(); // after an Undo or Redo inside a sketch: still in it
+  // Exploded view is the view's, not the design's, and is kept beside the workspace (`explodeSpread`), so an Undo or
+  // Redo, which opens Design anew, still drew the bodies pulled apart, with this one's Spread bar hidden and its
+  // button unlit: nothing said why they were out of place or how to put them back (Undo hunt 2026-11-12, #623). The
+  // bar and the button say so again. Opened any other way (another project, another workspace left) it starts off.
+  if (explodeSpread !== null) setExploded(ctx.history.restoring() ? explodeSpread : null);
   return {
     ready: first.then(
       () => {},
@@ -4666,11 +4685,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const picked = pickedBodies(ctx.selection.items, lastScene);
         const data = (e as ClipboardEvent | undefined)?.clipboardData;
         if (picked.length === 0 || !data) return false;
-        data.setData("text/plain", copiedText(designToken, picked));
+        data.setData("text/plain", copiedText(designToken, picked, designDoc()));
         return true;
       }
       if (id === "paste-bodies") {
-        const bodies = mode.kind === "none" ? pastedBodies((e as ClipboardEvent | undefined)?.clipboardData?.getData("text/plain") ?? "", designToken) : null;
+        const bodies = mode.kind === "none" ? pastedBodies((e as ClipboardEvent | undefined)?.clipboardData?.getData("text/plain") ?? "", designToken, designDoc()) : null;
         return bodies === null ? false : (void duplicateBodies(bodies), true);
       }
       // Escape during a drag on the timeline bar calls the drag off, and only that (timeline hunt, finding 7).

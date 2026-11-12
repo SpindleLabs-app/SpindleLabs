@@ -416,6 +416,12 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "move-all-or-none": {
+    what: "a Move with one body no longer there fails whole, so the other bodies it moves drop back (SL #506 item 4)",
+    edits: [{ file: REBUILD, find: "  if (from.length === 0 && gone.length > 0) return gone[0].failed;", replace: "  if (gone.length > 0) return gone[0].failed;" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
   "sketch-not-carried": {
     what: "a sketch on a moved face follows its height but not a Move's slide along it or turn about it (35e2h's compromise back)",
     edits: [{ file: REBUILD, find: "const carry = p.body === undefined ? null : carried(", replace: "const carry = Number(\"1\") ? null : carried(" }],
@@ -833,7 +839,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   // Hunt 11-06: a Combine's numbered pieces kept by their faces.
   "pieces-by-rank": {
     what: "a Combine's pieces are numbered by rank order on every rebuild, the faces the data remembers ignored, so an earlier edit that changes their sizes moves a number to another piece silently",
-    edits: [{ file: REBUILD, find: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);", replace: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, new Map(), own);" }],
+    edits: [{ file: REBUILD, find: "  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), remembered, own);", replace: "  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), new Map(), own);" }],
     run: ["naming"],
     caught: "combine-piece-identity: hand-worked: Combine 2 stays on the far piece when a slot moves",
   },
