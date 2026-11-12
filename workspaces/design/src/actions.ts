@@ -14,7 +14,7 @@ import { badgeFor, SOLID_OVERLAY, solidOverlay, stampChecked } from "./solid-bad
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
-import { outlineSourceOf, sketchPlane, sketchSide } from "./sketch.ts";
+import { outlineSourceOf } from "./sketch.ts";
 
 export const DOWNLOAD_STL = "design.download-stl";
 export const COPY_SVG = "design.copy-svg";
@@ -272,7 +272,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const { representation } = await ctx.representations.deliver(object, ["outline"]);
         if (representation.kind !== "outline") throw new Error(`the ${source.kind} came as ${representation.kind}, not an outline`);
         // A sketch on a back or bottom face is drawn looking against its plane's normal: the file is that picture, not its mirror image.
-        const seen = source.kind === "sketch" ? planeSeenAs(sketchPlane(doc, id), sketchSide(doc, id)) : undefined;
+        const seen = representation.side === -1 ? planeSeenAs(representation.plane, -1) : undefined;
         const svg = outlineToSvg(representation.outline, source.label, seen);
         await copy(svg.text);
         const mm = (v: number) => Number(v.toPrecision(6)).toString();

@@ -6,7 +6,7 @@ import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { lastFeature, partDocument, specOf } from "../src/document.ts";
 import { addFaceSketch, drawLine } from "../src/sketch.ts";
 import { outline } from "../src/profiles.ts";
-import { registerDesign } from "../src/representations.ts";
+import { designObjects, registerDesign } from "../src/representations.ts";
 import { SOLID_OVERLAY } from "../src/solid-badge.ts";
 
 const box = partDocument("box", 40, 30, 20);
@@ -280,10 +280,12 @@ async function copiedL(face: { plane: string; feature: string }, drawn: Paramete
   project.workspaces.design = doc;
   const outcome = await r.get(COPY_SVG)!.run([{ kind: "outline", id: `outline:${id}` }], { project, representations, kernel } as unknown as WorkspaceContext);
   assert.equal(outcome.bad, false, outcome.message);
+  // What any workspace is handed: the outline in the sketch's own x and y, with the side it is seen from when that is from behind.
+  const handed = (await representations.deliver(designObjects(doc, kernel).find((o) => o.type === "design.sketch" && o.id === id)!, ["outline"])).representation;
   const d = /<path d="([^"]+)"/.exec(copied[0])![1];
   // The path's corners, sorted, so the corner the kernel starts from and the way round it goes don't matter.
   const at = [...d.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((m) => `${Number(m[1])},${Number(m[2])}`).sort();
-  return { at, viewBox: / viewBox="([^"]*)"/.exec(copied[0])![1], message: outcome.message };
+  return { at, viewBox: / viewBox="([^"]*)"/.exec(copied[0])![1], message: outcome.message, handed };
 }
 
 test("hand-worked: an L sketched on the bottom face is copied as it was seen from below, not as its mirror image", async () => {
@@ -292,11 +294,14 @@ test("hand-worked: an L sketched on the bottom face is copied as it was seen fro
   const top = await copiedL({ plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 20], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1, body: UNMOVED });
   assert.deepEqual(top.at, ["10,-30", "10,0", "20,-10", "20,-30", "30,-10", "30,0"].sort());
   assert.equal(top.viewBox, "10 -30 20 30");
+  assert.ok(top.handed.kind === "outline" && !("side" in top.handed), "seen from the normal's side: no side is said");
   // Bottom face (same frame, side −1), seen from below: the bottom view has −Y up and +X still to the right, so
   // (x, y) is seen at (x, −y) and written (x, y): the foot still points right, the arm runs DOWN the page to y = 30.
   const bottom = await copiedL({ plane: "face:feature-1/bottom", feature: "feature-1" }, { plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: -1, body: UNMOVED });
   assert.deepEqual(bottom.at, ["10,0", "10,30", "20,10", "20,30", "30,0", "30,10"].sort());
   assert.equal(bottom.viewBox, "10 0 20 30");
+  assert.ok(bottom.handed.kind === "outline" && bottom.handed.side === -1, "the outline is handed over with the side it is seen from");
+  assert.deepEqual(bottom.handed.kind === "outline" && bottom.handed.plane, { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] });
   assert.match(bottom.message, /20 × 30 mm\.$/);
   // Back face (frame XZ moved to y = 30: normal −Y, x +X, sketch y = world Z; side −1), seen from behind with Z
   // up: +X runs to the left, so (x, y) is seen at (−x, y) and written (−x, −y).

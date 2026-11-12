@@ -42,6 +42,8 @@ export interface SolidRep {
 export interface OutlineRep {
   kind: "outline";
   plane: Plane;
+  /** The side of the plane the outline was drawn and is seen from: −1 for against the normal (a sketch on a back or bottom face), where the same x and y look mirrored; left out means the normal's side. A flat copy (SVG, a laser bed) follows it so it is the picture that was drawn (viewport's `planeSeenAs`). */
+  side?: -1;
   outline: Outline;
 }
 
