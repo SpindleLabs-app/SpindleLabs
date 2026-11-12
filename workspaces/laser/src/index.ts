@@ -1,6 +1,6 @@
-// @fission/laser: the Laser workspace. Laser step L1a, behind `?laser`
-// (flag.ts): Design's sketches and profiles laid out on the laser's bed and
-// saved as SVG or DXF at true size (page.ts). Without the flag it is the
+// @fission/laser: the Laser workspace. Laser steps L1a and L1a2, behind `?laser`
+// (flag.ts): Design's sketches and profiles laid out on the laser's bed, shown
+// flat from above (flat-view.ts) and saved as SVG or DXF at true size (page.ts). Without the flag it is the
 // placeholder it was. Next steps: cut, engrave and score layers with
 // power, speed and passes; kerf; a path preview with the job's time and
 // G-code; flat faces of bodies; sending to the machine (docs/progress/laser.md).
@@ -12,8 +12,10 @@ import { mountLaserPage } from "./page.ts";
 
 export { bulgeNumber, CUT_LAYER, sheetDxf } from "./dxf.ts";
 export { LASER_KEY, laserShown, readLaserFlag, setLaserShown } from "./flag.ts";
-export { BED_DROP, bedMesh, defaultLaserData, DXF_KIND, layoutWords, mountLaserPage, OUTLINES_LISTER, partMeshes, partsOn, readLaserData, readParts, SVG_KIND, type LaserData, type OfferedPart, type SaveText } from "./page.ts";
+export { createFlatView, type FlatPart, type FlatScene, type FlatView, type FlatViewOptions } from "./flat-view.ts";
+export { defaultLaserData, DXF_KIND, emptyBedNote, flatScene, layoutWords, mountLaserPage, OUTLINES_LISTER, partsOn, readLaserData, readParts, SVG_KIND, type LaserData, type OfferedPart, type SaveText } from "./page.ts";
 export { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, MAX_BED, MAX_THICKNESS, thicknessRefusal, moveOutline, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type PlacedPart, type SheetPart } from "./sheet.ts";
+export { CARD_GAP, CARD_MOST, FIT_MARGINS, fitView, marginsClearOf, marginsFor, PHONE_TOP, PHONE_WIDTH, KEEP_IN_SIGHT, keepInSight, MARK_GAP, marksBetween, markStep, MAX_SCALE, MIN_BED_PX, minScale, nameFits, panBy, toBed, toScreen, wheelZoom, wordsWidth, ZOOM_STEP, zoomAt, type Card, type Margins, type ScreenPoint, type Size, type View } from "./view-box.ts";
 
 const SUMMARY = "2D jobs for laser and vinyl cutters: cut, engrave and score layers, preview and machine control.";
 

@@ -231,6 +231,12 @@ try {
       await drop(page, "#viewport", [{ name: "half.fission.json", bytes: bytes('{"formatVersion": 2, "name": "Cut') }]);
       await waitStatus(page, /^Couldn't open “half\.fission\.json”: not a SpindleLabs project: the file is not valid JSON/);
       assert.equal(await page.textContent("#volume"), "30,000 mm³");
+      // Saved again by an editor as Latin-1 (#511 item 5): "é" is the one byte E9, not UTF-8. It is refused in plain
+      // words, never opened as "Caf\uFFFD" for the next save to keep; the open project stays.
+      const renamed = JSON.stringify({ ...JSON.parse(saved.toString("utf8")), name: "Café" });
+      await drop(page, "#viewport", [{ name: "Café.fission.json", bytes: Buffer.from(renamed, "latin1") }]);
+      await waitStatus(page, /^Couldn't open “Café\.fission\.json”: can't open this project: its text isn't saved as UTF-8/);
+      assert.equal(await page.textContent("#volume"), "30,000 mm³");
     } finally {
       await page.close();
     }
