@@ -10,10 +10,11 @@ import { designsApi } from "../src/designs.ts";
 import { designSync, LINKS_PREFIX } from "../src/sync.ts";
 import { fakeAccount } from "./fake-designs.ts";
 import { memoryStore } from "./fake-service.ts";
+import { repoFile } from "./repo-file.ts";
 
 const g = globalThis as unknown as { addEventListener?: unknown };
 g.addEventListener ??= () => {};
-const app = await import("../../../apps/fission/src/my-designs.ts");
+const app = (await import(repoFile("apps/fission/src/my-designs.ts").href)) as typeof import("../../../apps/fission/src/my-designs.ts");
 const { startDesigns, reportWords, REQUEST_WORDS, RETRY_FIRST_MS, RETRY_MAX_MS, storageLock, LEASE_KEY, LEASE_MS } = app;
 
 type Projects = Map<string, { name: string; text: string; modified: Date }>;

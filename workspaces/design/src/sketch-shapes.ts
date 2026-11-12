@@ -437,7 +437,8 @@ export function shapeClick(doc: DesignDocument, tool: ShapeTool, at: SketchXY): 
   const drawn = drawPlan(doc, tool.sketch, plan);
   const done: ShapeTool = { ...tool, clicks: [] };
   if (drawn === null) return { doc, tool, drew: false, note: TOO_CLOSE };
-  if (drawn === doc) return { doc, tool: done, drew: false, note: tool.kind === "point" ? POINT_THERE : SAME_SHAPE };
+  // Drawn already: nothing placed, so the clicks before stay, as for any refusal (and the typed boxes with them, hunt 2026-11-12).
+  if (drawn === doc) return { doc, tool, drew: false, note: tool.kind === "point" ? POINT_THERE : SAME_SHAPE };
   return { doc: drawn, tool: done, drew: true };
 }
 
@@ -581,7 +582,8 @@ export function shapeAim(tool: ShapeTool, p: SketchXY | null, locks: Locks): Ske
 
 /** The tool a click with these locks goes to: a polygon with a typed number of sides takes it (kept for the next polygon); any other tool is itself. */
 export function shapeWithLocks(tool: ShapeTool, locks: Locks): ShapeTool {
-  return locks.sides !== undefined && (tool.kind === "polygon" || tool.kind === "outside-polygon") ? { ...tool, sides: locks.sides } : tool;
+  // The same tool when the sides typed are its own already: the workspace tells a placed click by a new tool (hunt 2026-11-12).
+  return locks.sides !== undefined && locks.sides !== tool.sides && (tool.kind === "polygon" || tool.kind === "outside-polygon") ? { ...tool, sides: locks.sides } : tool;
 }
 
 /** What each box shows while not typed in: the size the aim would draw (twice the centre's distance for a centre rectangle's width and height and a slot's width, the polygon's sides as they stand). */

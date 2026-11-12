@@ -6,27 +6,30 @@
 // profiles are one kind; sketches (step 21b) register as another type with
 // this same producer, so there is no sketch-only path.
 
-import type { BodySpec, KernelCalls, Outline, Plane, Producible, Producer, RepresentationRegistry, SourceLookup } from "@fission/core";
+import type { BodyFaces, BodyReference, BodySpec, FaceFound, FaceReference, KernelCalls, Outline, Plane, Producible, Producer, Project, RepresentationRegistry, SourceLookup } from "@fission/core";
 import { bodyFeatures, designBodies } from "./browser.ts";
-import { bodyHidden, bodyIdOf, bodyNumbers, makesPieces, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, makesPieces, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { outline } from "./profiles.ts";
-import { readDesignReference, readProfileReference } from "./references.ts";
-import { bodyOf, findInScene, type Scene } from "./scene.ts";
-import { sketchOutline, sketchPlane } from "./sketch.ts";
+import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
+import { bodyOf, findInScene, joinBodies, sceneHit, shownBodies, shownReference, type Scene } from "./scene.ts";
+import { referenceLabel } from "./selection.ts";
+import { sketchOutline, sketchPlane, sketchSide } from "./sketch.ts";
 import { buildSpec } from "./spec.ts";
 
 /** Anything in Design that is a closed 2D shape on a plane; a sketch's outline comes from the kernel, so it may be a promise. */
 export interface OutlineSource extends Producible {
   plane: Plane;
+  /** −1 when it is drawn and seen against the plane's normal (a sketch on a back or bottom face, `sketchSide`); left out otherwise. */
+  side?: -1;
   outline(): Outline | Promise<Outline>;
 }
 
 /** Outline of any OutlineSource: profiles and sketches. */
 export const outlineProducer: Producer = async (object) => {
   const source = object as OutlineSource;
-  return { kind: "outline", plane: source.plane, outline: await source.outline() };
+  return { kind: "outline", plane: source.plane, ...(source.side === -1 && { side: -1 as const }), outline: await source.outline() };
 };
 
 /**
@@ -87,6 +90,7 @@ export function designObjects(document: DesignDocument, kernel: KernelCalls): (O
     type: "design.sketch",
     id: s.id,
     plane: sketchPlane(document, s.id),
+    ...(sketchSide(document, s.id) === -1 && { side: -1 as const }),
     outline: () => sketchOutline(kernel, document, s.id),
   }));
   // Every body shown, not only the part's (25c1); a design with no body (24f4) offers no solid.
@@ -129,6 +133,43 @@ export function designLookup(document: DesignDocument, scene: Scene | null, kern
   };
 }
 
+/**
+ * Body `body`'s faces as the design names them now (TestLab's picks), from
+ * one rebuild on a body store of its own, and where each of `refs` is: the
+ * same scene, names and finding Design's own selection and links use
+ * (`shownReference`, `findInScene`), so a face held in another workspace
+ * follows an edit exactly as one held here does. A reference found on
+ * another body is gone from this one, said so. A body the design doesn't
+ * show (hidden, failed, deleted) is refused in words.
+ */
+export async function bodyFaces(kernel: KernelCalls, project: Project, body: BodyReference, refs: readonly FaceReference[]): Promise<BodyFaces> {
+  const document = readDesignDocument(project.workspaces.design);
+  if (bodyItem(body.id) === null) throw new Error(`${JSON.stringify(body.id)} is not a body of the design`);
+  if (bodyHidden(document, body.id)) throw new Error("it is hidden in Design: show it there to pick its faces");
+  const cache = new BodyCache(kernel);
+  try {
+    const build = await rebuildTimeline(document, cache, kernel);
+    const scene = joinBodies(await shownBodies(document, build, cache), build);
+    const b = scene.bodies.findIndex((x) => x.body === body.id);
+    if (b < 0) throw new Error("the design doesn't build it now");
+    const view = scene.bodies[b].view;
+    const faces = Array.from({ length: view.faces }, (_, i) => shownReference(scene, b, "face", i) as FaceReference | null);
+    const labels = faces.map((f, i) => (f === null ? `Face ${i + 1} (no name of its own)` : referenceLabel(f)));
+    const found = refs.map((ref): FaceFound => {
+      const f = findInScene(ref, scene);
+      if (f.status === "shared") return { status: "shared", count: f.count };
+      if (f.status === "gone") return { status: "gone", why: "the last edit took it off the body" };
+      const hit = sceneHit(scene, "face", f.index);
+      if (hit === null || hit.body !== b) return { status: "gone", why: "it is on another body now" };
+      return { status: "found", face: hit.index };
+    });
+    const m = view.mesh;
+    return { mesh: { positions: [...m.positions], normals: [...m.normals], indices: [...m.indices], triangle_faces: [...m.triangle_faces], edge_lines: [...m.edge_lines], edge_line_edges: [...m.edge_line_edges] }, faces, labels, found, inputs: document.timeline.features.map((f) => f.id) };
+  } finally {
+    await cache.close();
+  }
+}
+
 /** The name Design's flat outlines (profiles and sketches) are listed under, for Laser: `registry.objectsOf(DESIGN_OUTLINES, project)`. */
 export const DESIGN_OUTLINES = "design:outlines";
 
@@ -160,7 +201,7 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
       const key = pieces ? body : feature.id;
       if (bodyHidden(doc, body) || seen.has(key)) return [];
       seen.add(key);
-      return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}`, ...(pieces && { body }) }];
+      return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}`, ref: bodyReference(body) as BodyReference, ...(pieces && { body }) }];
     });
   });
   // What Laser (and any workspace that takes flat shapes) can list: every ready-made profile and every sketch with
@@ -186,6 +227,8 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
       return [{ ...o, label: item.provenance.self.label }];
     });
   });
+  // Where a body's faces are now, by name (TestLab's held and pushed faces).
+  registry.registerFaceFinder("design", (project, body, refs) => bodyFaces(kernel, project, body, refs));
   registry.registerProducer("design.feature", "solid", async (o) => ({ kind: "solid", spec: await spec(o) }));
   registry.registerProducer("design.feature", "mesh", async (o) => {
     const { document, body } = o as FeatureHandle;

@@ -108,6 +108,24 @@ export function planeViewBasis(plane: Plane, framing: Framing, fovDeg = 45, aspe
   return { position, target, up };
 }
 
+/**
+ * How a plane's own x and y run on screen in Look At from `side`
+ * (planeViewBasis): each to the right or up (+1) or the other way (−1).
+ * From the normal's side both are +1. From the other side the picture is a
+ * mirror image, so exactly one is −1: y when Look At turns the plane's −y
+ * up (a bottom face), else x (a back or left face, where up stays y and x
+ * runs to the left).
+ */
+export function planeSeenAs(plane: Plane, side: 1 | -1 = 1): { right: 1 | -1; up: 1 | -1 } {
+  if (side !== -1) return { right: 1, up: 1 };
+  const n = plane.normal;
+  const x = plane.xAxis;
+  const y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
+  const up = planeViewBasis(plane, { centre: plane.origin, radius: 1 }, 45, 1, -1).up;
+  // Seen from behind with the plane's y up, x runs to the left; with −y up, x runs to the right.
+  return up[0] * y[0] + up[1] * y[1] + up[2] * y[2] < 0 ? { right: 1, up: -1 } : { right: -1, up: 1 };
+}
+
 /** The face views of the cube, in the order a tie is broken. */
 const FACE_VIEWS: readonly ViewName[] = ["top", "bottom", "front", "back", "left", "right"];
 

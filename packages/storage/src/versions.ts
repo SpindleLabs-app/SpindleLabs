@@ -77,6 +77,7 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
   return {
     list: () => store.list(),
     open: (id) => store.open(id),
+    text: (id) => store.text(id),
     async save(id, project, read, unchangedSince, behind, writer) {
       // The state this save replaces, read first: after the save it is gone.
       let before: string | undefined;

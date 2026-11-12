@@ -3,8 +3,8 @@
 // account; opening one needs none, and never changes the link or says who shared it. Nothing here is ever needed for CAD
 // or saving.
 
-import { type AuthClient, FAILURE_WORDS, sharesApi } from "@fission/account";
-import { SHARE_REFUSALS, shareDialog, sharedView, type ShareDialog, type ShareParts } from "@fission/ui";
+import { type AuthClient, FAILURE_WORDS, LIKE_WORDS, likesApi, sharesApi } from "@fission/account";
+import { type LikeParts, type LikeState, SHARE_REFUSALS, shareDialog, sharedView, type ShareDialog, type ShareParts } from "@fission/ui";
 import { textForShare } from "./share-text.ts";
 
 /** What the shell lends the sharing code (main.ts). */
@@ -25,6 +25,40 @@ export const linkAddress = (base: string, id: string) => `${base}?${SHARE_SWITCH
 
 type Failed = { kind: "failed"; reason: keyof typeof FAILURE_WORDS } | { kind: "signed-out" };
 const words = (r: Failed) => (r.kind === "signed-out" ? "You're signed out. Sign in again to share." : FAILURE_WORDS[r.reason]);
+
+/**
+ * The like button's requests for link `id` (community C7b): the count for anyone, the person's own like when signed in.
+ * A service without the likes functions yet (a 404: the owner applies the migration) or with sharing off leaves the row out.
+ */
+export function likeParts(client: Pick<AuthClient, "asPerson" | "asAnyone" | "state">, id: string): LikeParts {
+  const api = likesApi(client);
+  const failed = (r: Failed) => (r.kind === "signed-out" ? "You're signed out. Sign in again to like it." : FAILURE_WORDS[r.reason]);
+  async function read(): Promise<LikeState | null> {
+    const count = await api.count(id);
+    if (count.kind !== "ok" || count.value === null) return null;
+    if (client.state().kind !== "signed-in") return { count: count.value, mine: null };
+    const mine = await api.mine(id);
+    return { count: count.value, mine: mine.kind === "ok" ? mine.value : mine.kind === "signed-out" ? null : false };
+  }
+  return {
+    read,
+    async set(like) {
+      if (like) {
+        const r = await api.like(id);
+        if (r.kind !== "ok") throw new Error(failed(r));
+        if (r.value !== "liked" && r.value !== "already") throw new Error(LIKE_WORDS[r.value]);
+      } else {
+        const r = await api.unlike(id);
+        if (r.kind !== "ok") throw new Error(failed(r));
+        if (r.value === "daily") throw new Error(LIKE_WORDS["daily-unlike"]);
+      }
+      // The count again from the service, so it is the database's (other people may have liked it meanwhile).
+      const now = await read();
+      if (!now) throw new Error(LIKE_WORDS.off);
+      return now;
+    },
+  };
+}
 
 export function startShares(client: AuthClient, host: ShareHost, signInWords: (words: string) => void) {
   const api = sharesApi(client);
@@ -115,6 +149,7 @@ export function startShares(client: AuthClient, host: ShareHost, signInWords: (w
             cleanAddress();
             view.element.remove();
           },
+          like: likeParts(client, id),
         },
       );
       await view.show();

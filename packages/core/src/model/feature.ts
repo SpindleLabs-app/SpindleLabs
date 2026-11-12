@@ -21,12 +21,15 @@ export interface RegionParameter {
   centroid: readonly [number, number];
 }
 
+/** A Design extrude's profiles after its first (Design data version 18): each a sketch and, when it has several, the region of it. */
+export type ProfilesParameter = readonly { sketch: string; region?: RegionParameter }[];
+
 /** What a feature is for, in words and numbers. */
 export interface Intent {
   /** e.g. "box", "extrude", later "hole", "pocket", "engrave". */
   type: string;
-  /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies); a Design extrude's sketch region. */
-  parameters: Record<string, ParameterValue | readonly string[] | RegionParameter>;
+  /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies); a Design extrude's sketch region and its other profiles. */
+  parameters: Record<string, ParameterValue | readonly string[] | RegionParameter | ProfilesParameter>;
   /** One line for people, e.g. "Box: 40 × 30 × 20 mm". */
   summary: string;
   /** Optional: why it is there, e.g. "mounting hole for an M3 screw". */
@@ -64,27 +67,36 @@ export interface Timeline {
   features: Feature[];
 }
 
-const workspaceNames: Record<WorkspaceId, string> = {
-  design: "Design",
-  render: "Render",
-  simulate: "Simulate",
-  manufacture: "Manufacture",
-  laser: "Laser",
-  slice: "Slice",
-  circuit: "Circuit",
-  vector: "Vector",
-  image: "Image",
-  layout: "Layout",
+/**
+ * Each workspace's name as people read it: the one place the names live (Ben,
+ * 2026-11-12: the app is SpindleLabs and each workspace is a "Lab"). Only the
+ * words change here; the ids ("simulate", "manufacture", …) stay as they are
+ * in code, links and project files, so every saved project still opens.
+ * Simulate is TestLab (Ben's name); Manufacture is CNCLab and Circuit is
+ * PCBLab, the plain words makers use for them.
+ */
+export const WORKSPACE_NAMES: Readonly<Record<WorkspaceId, string>> = {
+  design: "DesignLab",
+  render: "RenderLab",
+  simulate: "TestLab",
+  manufacture: "CNCLab",
+  laser: "LaserLab",
+  slice: "SliceLab",
+  circuit: "PCBLab",
+  vector: "VectorLab",
+  image: "ImageLab",
+  layout: "LayoutLab",
 };
+const workspaceNames = WORKSPACE_NAMES;
 
-/** A workspace's name as people read it, e.g. "Design". */
+/** A workspace's name as people read it, e.g. "DesignLab". */
 export const workspaceName = (id: WorkspaceId): string => workspaceNames[id];
 
 const where = (o: Origin) => `${o.label} in ${workspaceNames[o.workspace]}`;
 
 /**
  * "Where did I come from?" in one sentence for the properties panel, e.g.
- * "This engraving comes from Logo v3 in Vector, applied to Body 2 in Design."
+ * "This engraving comes from Logo v3 in VectorLab, applied to Body 2 in DesignLab."
  */
 export function describeProvenance(p: Provenance): string {
   if (p.from.length === 0) return `${p.self.label} was made in ${workspaceNames[p.self.workspace]}.`;

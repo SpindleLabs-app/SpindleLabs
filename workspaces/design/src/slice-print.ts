@@ -43,6 +43,12 @@ export interface SlicePrintEvents {
    * shows the earlier choices (PREVIEW_EARLIER).
    */
   preview(choices: PrintChoices, file: FileChoices, alive: () => boolean, changed: () => boolean): Promise<void>;
+  /**
+   * What the print leaves out of the design, in plain words: the timeline items the last rebuild failed (actions.ts
+   * `failedItemsNote`), or "" when nothing failed. Said on its own line as the dialog opens, and again with each
+   * slice's result, as a warning (export hunt 2026-11-12 D: a failed hole was printed away without a word). Left out: nothing.
+   */
+  missing?(): string;
   /** Calls `listener` as a slice reports how far it has got (KernelCalls.onProgress); returns the way to stop. Left out: the bar just says it is slicing. */
   onProgress?(listener: (progress: SliceProgress) => void): () => void;
   /** Called when the warm-up loop or Better grip is ticked or unticked (the build area counts them). */
@@ -91,6 +97,15 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const printer = el("p", "slice-print-printer", "For a Bambu Lab P1S with a 0.4 mm nozzle and PLA. Every body shown is printed, placed in the middle of the plate.");
   // Placeholders never pretend to work: until a real test print passes (H3a), the dialog says so.
   const untested = el("p", "slice-print-untested", "First version: these files haven't been test-printed yet, so open one in Bambu Studio or a G-code viewer to check it before printing it.");
+  // What the print leaves out (failed timeline items): filled each time the dialog opens, hidden when nothing.
+  const missingNote = el("p", "slice-print-missing");
+  missingNote.hidden = true;
+  const showMissing = () => {
+    const words = events.missing?.() ?? "";
+    missingNote.textContent = words;
+    missingNote.hidden = words === "";
+    return words;
+  };
   const choice = <T extends string | number>(id: string, label: string, options: readonly { label: string; value: T }[], value: T) => {
     const wrap = document.createElement("label");
     wrap.className = "slice-print-choice";
@@ -318,7 +333,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const top = document.createElement("div");
   top.className = "slice-print-top";
   top.append(heading, presets.element);
-  dialog.append(top, printer, untested, choices6, fitsRow, bar, status, cost, hint, actions);
+  dialog.append(top, printer, untested, missingNote, choices6, fitsRow, bar, status, cost, hint, actions);
   slot.append(dialog);
   let busy = false;
   /** Shows the bar from now until `end` is called, following the engine's reports. */
@@ -434,7 +449,8 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
       const { print, saved, name } = await events.slice(choices(), file(), mine);
       end();
       const earlier = changedWhileBusy ? SLICE_EARLIER : null;
-      const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
+      const missing = showMissing() || null;
+      const warnings = [missing, unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
       showHint(print.overhangMm2);
       showCost(print);
@@ -484,6 +500,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
         showCost(null);
       }
       presets.refresh(); // another tab may have changed them
+      showMissing(); // the design may have changed since it last opened
       dialog.showModal();
       go.focus();
     },

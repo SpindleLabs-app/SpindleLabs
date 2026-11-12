@@ -245,7 +245,7 @@ Interoperability
 - [ ] 75. STEP import (simple parts)
 - [ ] L2. After 75: a fixed subset of the ABC dataset (Onshape models as STEP) imported, validated and put through random booleans; L4 (Thingi10K through the STL reader) can run any time, L5 (OSS-Fuzz) once the repository is public (`docs/progress/frontier-testing.md`)
 - [ ] 76. Healing imported geometry
-- [ ] 77. 3MF and OBJ export
+- [x] 77. 3MF and OBJ export. Done (2026-11-11): File ▾ Export 3MF or OBJ… (asks which) and the Download 3MF / OBJ verbs on selected bodies, made from the kernel's STL triangles (the same numbers, so the same solid check holds), shared corners written once, each body its own object; 3MF in millimetres as a stored zip with a fixed date (the same bodies give the same bytes). Checked by hand-worked meshes, Python's zip reader (CRCs) and divergence-theorem volume, the 3MF Consortium's lib3mf in strict mode (no warnings, every object manifold and oriented), deliberate breaks, and the browser at 1280 and 375 px. Not yet: colours and materials in the 3MF (with 66), and a double-precision mesh straight from the kernel.
 
 Assemblies and drawings
 - [ ] 78. Components with their own bodies/timelines. Before 78 or X12, whichever comes first (architecture review): ids get a namespace per component, so bringing in a component or a recipe never renumbers existing ids
@@ -390,12 +390,18 @@ Laser workspace (starts after CAD step 52, when the sketcher is solid)
 - [ ] L3. Job preview and time estimate
 - [ ] L4. Machine control for common controllers; sheet-metal flat patterns after step 87
 
-Simulate workspace (starts after CAD step 40, booleans and full topological naming)
-- [ ] S1. Studies in the project; loads and constraints on design faces by reference
-- [ ] S2. Tetrahedral meshing from the exact geometry (shares step 85)
-- [ ] S3. Static stress: stress, displacement, safety factor in the viewport
+TestLab, the Simulate workspace (owner's decision, 2026-11-12: start now with a basic version whose first job is proving the live link with DesignLab bodies, on a foundation that grows to world-class with no compromises; the full plan is in the project files, testlab/testlab-plan.txt, and the engine's details stay in the kernel repo). Its title is TestLab; its id in code and project files stays `simulate`, so old projects keep opening. Faces made by extrudes and flat booleans already have stable names, so it no longer waits for step 40; curved bodies join as 37–43 land.
+- [x] T0. The plan (2026-11-12).
+- [ ] T1. The live link, no solver yet: pick a DesignLab body, pick the faces it is held by and pushed on (by stable id), type the load in plain words ("5 kg hanging", "20 N down"), saved as a study in the project (a new data version). After a design edit the same faces stay picked and the result is marked out of date; a deleted face gives a plain warning that the load lost its face, never a silent drop; undo brings it back. The Run button says plainly that the solver is not there yet. Browser checks at 1280 and 375 px. (S1)
+- [ ] T2. Materials: the one materials library (I3) made real for five starter materials (PLA, PETG, ABS, aluminium 6061, steel), each with its stiffness, strength and density and where the numbers come from.
+- [ ] T3. The solver, checked on hand-made meshes: a bar in tension and a cantilever worked by hand, errors that shrink at the rate theory predicts as the mesh gets finer, forces that balance.
+- [ ] T4. Filling any accepted body with a fine mesh that keeps every face and stays truly round on curved faces, checked against the kernel's exact volume and face areas before anything is solved; a mesh that fails the check is refused with the reason. (S2, shares step 85)
+- [ ] T5. Run, cancel and progress in the worker; results in the shared viewport: colours for stress, the bent shape drawn exaggerated with the scale stated, the biggest bend, the highest stress, and the safety factor in green, amber or red with one sentence. Labelled a simulation, with a note that printed parts are weaker across layers. (S3)
+- [ ] T6. Textbook and published benchmarks every night (a hole in a plate, a thick tube under pressure, the standard NAFEMS cases), an outside FEA program as a second check, results frozen so they cannot drift, and the strength estimate (H4) always on the safe side of TestLab (H4c).
+- [ ] T7. Back into DesignLab: "Test strength in TestLab" on a selected body, stress paint on the part (marked out of date after an edit), and a zero-exports journey (I20): design a bracket, test it, make it thicker, rerun, and the bend drops by the hand-worked amount.
+- Later, each as its own piece without a rewrite: printed-part strength from SliceLab's build direction (weaker across layers), natural frequencies and heat (S4), parameter sweeps back into DesignLab ("thinnest wall with safety factor 2 or more", integration map row 5), assemblies and contact, yielding and buckling, automatic mesh refinement where the stress changes fast, and the AI setting up studies in plain words (A8).
 - [ ] S4. Thermal and modal studies
-- The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; S3's stress study becomes its outside oracle (H4c).
+- The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; TestLab's stress study (T5, S3) becomes its outside oracle (H4c).
 
 Manufacture workspace (starts after CAD step 40, booleans and full topological naming)
 - [ ] M1. Setups, stock, work coordinates; a tool library shared across projects

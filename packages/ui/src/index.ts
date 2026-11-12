@@ -25,6 +25,7 @@ export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, home
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
 export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type DesignRowWords, type MyDesigns, type MyDesignsParts } from "./my-designs.ts";
 export { NO_LINKS, REPORT_ANSWERS, REPORT_KIND_WORDS, SHARE_NOTE, SHARE_REFUSALS, SHARE_TERMS_PLACEHOLDER, SHARE_TITLE, shareDialog, sharedView, SIGN_IN_TO_SHARE, turnOffQuestion, type Dialog as ShareDialog, type SharedCopy, type SharedParts, type ShareLinkRow, type ShareParts } from "./share.ts";
+export { likeCountText, likeRow, type LikeParts, type LikeRow, type LikeState, SIGN_IN_TO_LIKE } from "./like.ts";
 export { ACCOUNT_NOTE, ACCOUNT_TAG, NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIONS_TITLE, versionList, versionRows, versionTime, type AccountVersions, type VersionList, type VersionListParts, type VersionPlace, type VersionRow } from "./version-list.ts";
 export { startTooltips, tipWords, quickInfoFor, TIP_SHORT_MAX, type TipWords, type Tooltips } from "./tooltip.ts";
 export { agoWords, historyPanel, stepWords, type HistoryPanel, type HistoryPanelParts } from "./history-panel.ts";
