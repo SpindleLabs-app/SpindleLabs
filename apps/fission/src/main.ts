@@ -266,6 +266,9 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       wasmBytes: () => kernel.call("wasm_bytes"),
       kernelCall: (op: Parameters<typeof kernel.call>[0], ...args: unknown[]) => (kernel.call as (op: string, ...a: unknown[]) => Promise<unknown>)(op, ...args),
       gpu: () => viewer.memoryCounts(),
+      // Whether the undo history holds work still to be recorded (a delete the kernel still plans, an OK it still checks):
+      // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
+      historyBusy: () => ctx.history.busy(),
     },
   });
 
