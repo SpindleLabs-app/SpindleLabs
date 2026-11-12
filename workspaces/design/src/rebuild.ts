@@ -43,7 +43,7 @@ import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from 
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
-import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody } from "./built-body.ts";
+import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody, reversedOfResult } from "./built-body.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
@@ -213,6 +213,12 @@ export interface BuiltBody {
   frames?: readonly (Plane | null)[];
   /** A piece (SL #583 item 2): the body whose boolean it split from (its item's target), so a Move holding that body finds it. */
   from?: string;
+  /**
+   * SL #583 item 3: by kernel face index, whether each face of a boolean's result is the face its first name comes from
+   * turned round (a Cut's wall: the tool's face facing into the hole), carried through later booleans, Moves and
+   * copies; left out when none is. A face sketch records it when drawn (`SketchFace.reversed`).
+   */
+  reversed?: readonly boolean[];
 }
 
 
@@ -1023,10 +1029,15 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const plane = f.intent.parameters.plane as string;
   const p = content.face!;
   let cause: PlaneWarning["cause"] = "plane-lost";
+  const held = (): FeatureResult => ({ status: "built", placement: { plane: squared(p.held ?? p.frame)!, side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } });
   const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false): Promise<FeatureResult> => {
     // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried);
     // SL #539: a change of size since by a Scale carries the middle of its own points (not those pinned or projected, which follow
     // edges by name and are written back after: the middle never moves by settling) as the body's point under it, its sizes kept.
+    // SL #583 item 3: drawn on a Cut's wall (its name's face turned round) and found now as that face itself (the Combine
+    // made a Join or Intersect, or suppressed), or the other way about: not the face it was drawn on, which is gone. A
+    // sketch from before version 19 records neither, and is placed as before.
+    if (p.reversed !== undefined && (on.reversed?.[face] ?? false) !== p.reversed) return held();
     const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
@@ -1060,7 +1071,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
       if (sharedBy(ref, names) > 1) cause = "plane-ambiguous";
     }
   }
-  return { status: "built", placement: { plane: squared(p.held ?? p.frame)!, side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } };
+  return held();
 }
 
 /**
@@ -1244,7 +1255,8 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch
   const at = solvedPoints(followed, request, answer.points);
   const tiny = shrunk(followed, at);
   if (tiny !== null) return { message: constraintsWords(label, `${curveWord(followed, tiny, "a")} would shrink below the smallest size`) };
-  // #545 item 1: an arc the solve would turn inside out (its sweep past half a turn), refused as a drag refuses it.
+  // #545 item 1: an arc the solve would turn inside out (its end past its start, or its sweep jumping to its other branch;
+  // passing a half turn is fine, SL #612), refused as a drag refuses it (point-drag.ts `turnedOver`).
   const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
   if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
   return { solved: followed.points.flatMap((p) => {
@@ -1442,7 +1454,7 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
     const motions = plane === undefined ? [] : [mirrorMotion(plane)];
     const handle = motions.length === 0 ? b.handle : await cache.moved(b.handle, motions);
     const frames = motions.length === 0 ? b.frames : b.named!.faces.map((_, k) => movedFrame(b.frames?.[k] ?? null, motions));
-    bodies[id] = { feature: f.id, handle, spec: null, named: copiedNames(b.named!, f.id, b.feature, (id) => Object.hasOwn(done, id)), ...(frames && { frames }) };
+    bodies[id] = { feature: f.id, handle, spec: null, named: copiedNames(b.named!, f.id, b.feature, (id) => Object.hasOwn(done, id)), ...(frames && { frames }), ...(b.reversed && { reversed: b.reversed }) };
     return { status: "built", bodies: [id] };
   }
   const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane)]);
@@ -1582,8 +1594,9 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const h = result.history[result.bodies.indexOf(nb.handle)];
       const frames = framesOfResult(h, built);
       const faces = withOrigins(nb.faces, h, inputs, frames);
+      const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
       const piece = !featureOf.has(nb.id) || nb.id === own;
-      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces, made: nb.made }, by: f.id, ...(frames && { frames }), ...(piece && { from: step.target }) };
+      work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces, made: nb.made }, by: f.id, ...(frames && { frames }), ...(piece && { from: step.target }), ...(reversed && { reversed }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
       if (piece) {
         firstPiece++;

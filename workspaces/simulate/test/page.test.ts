@@ -105,6 +105,13 @@ test("a design with one body tests it without being asked, framed in the view", 
   page.unmount();
 });
 
+/** Chooses what the study's part is made of, as a person would in the Made of box. */
+function chooseMaterial(c: ReturnType<typeof context>, id: string) {
+  const select = [...c.ctx.properties.querySelectorAll<HTMLSelectElement>("select[name=material]")].at(-1)!;
+  select.value = id;
+  select.dispatchEvent(new (c.ctx.properties.ownerDocument.defaultView as unknown as typeof globalThis).Event("change"));
+}
+
 test("with two bodies it asks which; picking one makes the study, one undo step", async () => {
   const c = context(2);
   const page = mountTestLabPage(c.ctx);
@@ -125,6 +132,7 @@ test("hold a face and push another by tapping them: each tap one named undo step
   const c = context(1);
   const page = mountTestLabPage(c.ctx);
   await page.ready;
+  chooseMaterial(c, "pla");
   c.click("[data-testlab=pick-held]");
   await c.tap(1);
   assert.deepEqual(c.data().studies[0].fixtures[0].faces.map((f) => f.label), ["Bottom face"]);
@@ -132,7 +140,7 @@ test("hold a face and push another by tapping them: each tap one named undo step
   await c.tap(0);
   const s = c.data().studies[0];
   assert.deepEqual(s.loads[0].faces.map((f) => f.ref.id), ["body:feature-1/top"]);
-  assert.deepEqual(c.steps, ["Test Body 1", "Hold Bottom face", "Add load", "Push Top face with Load 1"]);
+  assert.deepEqual(c.steps, ["Test Body 1", "Make it of PLA", "Hold Bottom face", "Add load", "Push Top face with Load 1"]);
   assert.deepEqual(c.overlays.get(HELD_OVERLAY)!.marks, [{ target: { face: 1 }, severity: "info" }]);
   assert.deepEqual(c.overlays.get(loadOverlay(s.loads[0].id))!.marks, [{ target: { face: 0 }, severity: "warning" }]);
   assert.equal(c.status(), "Tap faces of the body to pick them; tap a picked face to let it go.");
@@ -152,6 +160,7 @@ test("a design edit: the faces found again by name, one taken away said in words
   design.names["body:feature-1"] = ["top", "bottom", "front", null];
   const page = mountTestLabPage(c.ctx);
   await page.ready;
+  chooseMaterial(c, "abs");
   c.click("[data-testlab=pick-held]");
   await c.tap(1);
   c.click("[data-testlab=add-load]");
@@ -163,6 +172,13 @@ test("a design edit: the faces found again by name, one taken away said in words
   const node = studyNode("study-1");
   assert.equal(c.graph.isStale(node), false);
   assert.equal(c.ctx.properties.querySelector(".testlab-page-state")!.textContent, "Up to date with the design: set up and checked.");
+  // A change to the set-up after Run (here what it is made of) means Run checked another set-up.
+  chooseMaterial(c, "pla");
+  assert.equal([...c.ctx.properties.querySelectorAll(".testlab-page-state")].at(-1)!.textContent, "Not run yet.");
+  c.click("[data-testlab=run]");
+  await c.settle();
+  await c.settle();
+  assert.equal([...c.ctx.properties.querySelectorAll(".testlab-page-state")].at(-1)!.textContent, "Up to date with the design: set up and checked.");
 
   // The edit renumbers the faces and takes the front away: the bottom is found at its new index.
   design.names["body:feature-1"] = ["bottom", "top", "left"];
@@ -191,6 +207,36 @@ test("a design edit: the faces found again by name, one taken away said in words
   assert.deepEqual(c.overlays.get(HELD_OVERLAY)!.marks, []);
   design.shared.clear();
   design.names["body:feature-1"] = ["top", "bottom", "front", null];
+  page.unmount();
+});
+
+test("Made of: asked once, each choice one named undo step, the numbers used and every source shown; kept through a remount", async () => {
+  const c = context(1);
+  let page = mountTestLabPage(c.ctx);
+  await page.ready;
+  // querySelectorAll, never querySelector: happy-dom can answer querySelector with an element a redraw already replaced.
+  const select = () => [...c.ctx.properties.querySelectorAll<HTMLSelectElement>("select[name=material]")].at(-1)!;
+  assert.deepEqual([...select().options].map((o) => o.textContent), ["Choose a material", "PLA", "PETG", "ABS", "Aluminium 6061-T6", "Steel (A36 structural)"]);
+  assert.match(c.status(), /Choose what the part is made of\./);
+  chooseMaterial(c, "petg");
+  assert.equal(c.data().studies[0].material, "petg");
+  assert.equal(c.steps.at(-1), "Make it of PETG");
+  assert.doesNotMatch(c.status(), /Choose what the part is made of/);
+  const box = () => [...c.ctx.properties.querySelectorAll(".testlab-page-material")].at(-1)!;
+  // PETG across the layers: min(1540, 1810) = 1540 MPa, 23 MPa; 1.28 g/cm³.
+  assert.match(box().textContent!, /Stiffness 1,540 MPa, breaking strength 23 MPa, 1\.28 g\/cm³\./);
+  assert.match(box().textContent!, /Poisson's ratio is assumed/);
+  assert.equal(box().querySelectorAll(".testlab-page-sources p").length, 4);
+  assert.deepEqual([...select().options].map((o) => o.value), ["pla", "petg", "abs", "aluminium-6061", "steel-a36"], "no Choose once chosen");
+  chooseMaterial(c, "aluminium-6061");
+  assert.deepEqual(c.steps.slice(-2), ["Make it of PETG", "Make it of Aluminium 6061-T6"]);
+  assert.match(box().textContent!, /Stiffness 68,900 MPa, yield strength 276 MPa/);
+  assert.doesNotMatch(box().textContent!, /across the layers/);
+  // An Undo remounts TestLab: the choice is the project's, so it is still there.
+  page.unmount();
+  page = mountTestLabPage(c.ctx);
+  await page.ready;
+  assert.equal(select().value, "aluminium-6061");
   page.unmount();
 });
 

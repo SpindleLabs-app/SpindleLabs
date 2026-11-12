@@ -266,6 +266,9 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       wasmBytes: () => kernel.call("wasm_bytes"),
       kernelCall: (op: Parameters<typeof kernel.call>[0], ...args: unknown[]) => (kernel.call as (op: string, ...a: unknown[]) => Promise<unknown>)(op, ...args),
       gpu: () => viewer.memoryCounts(),
+      // Whether the undo history holds work still to be recorded (a delete the kernel still plans, an OK it still checks):
+      // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
+      historyBusy: () => ctx.history.busy(),
     },
   });
 
@@ -595,7 +598,12 @@ if (everyWorkspace) {
 const store = localStore(workspaces);
 // The kept project's undo steps, kept beside it in this browser (step 89), so a reload carries on where it was.
 // Written as each save lands, never by a tab whose saves are refused (another tab stored the project since).
-const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), { refused: () => autosave?.refused() ?? false });
+const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), {
+  refused: () => autosave?.refused() ?? false,
+  upgrade: (snapshot) => projectToJson(projectFromJson(snapshot, workspaces)), // as the project itself is read when it opens
+});
+/** Projects whose last change came back from the unsaved-changes journal at this start: their kept steps end before it (#627 item 7). */
+const leftWithChange = new Set<string>();
 /** The browser's localStorage, or null when storage is turned off (then the guard and the journal keep nothing). */
 const local = (() => {
   try {
@@ -629,7 +637,11 @@ let autosave: Autosave | null = null;
 // starts too. Only when the journal can't be written (storage off or full)
 // does the page ask before going, and only while a change waits, so a saved
 // page never asks and stays fit for the back/forward cache.
-const leaving = () => (steps.flush(), autosave?.leaving() ?? true);
+// With no autosave nothing is journalled, so the page asks instead (lost-work hunt 2026-11-12, issue #627 items 3 and
+// 4; it answered "all kept" and went without a word): while an opened file is not kept yet, and after a change when
+// this browser's storage failed at the start. A new project not changed yet has nothing to lose.
+// (#627 item 1, a size still waiting its turn in Design, is flushed here by the Undo and edit thread's fix.)
+const leaving = () => (steps.flush(), autosave ? autosave.leaving() : statusBeforeOpening === null && (canKeep || !ctx.history.canUndo()));
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") leaving();
 });
@@ -685,7 +697,7 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  steps.follow(id); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
+  steps.follow(id, leftWithChange.delete(id)); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
   autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (steps.saved(), openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
   tabs?.sync();
@@ -818,16 +830,24 @@ function openProject(file: string | Uint8Array, fileName = "") {
   // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
   statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
   if (canKeep) saveStatus({ state: "saving" });
-  const ticket = whileOpening(OPENING_FILE, () =>
+  let kept = false;
+  const keepIt = () =>
     void copy.then((found) => {
+      if (kept) return;
+      kept = true;
+      unfollow();
       if (ticket !== openings) return; // another opening, or Start fresh, since
       statusBeforeOpening = null;
       // Its first save writes it (so it is the project a reload opens), checking no other tab changed the copy since.
       openedFile = true;
       keep(found?.id ?? newId(), false, found?.modified ?? null);
       autosave?.changed(); // store the opened file, with anything changed while it opened
-    }),
-  );
+    });
+  // Changed before it has shown (the engine still downloading on a first visit, a big file's first build): a tab that
+  // takes an edit is not frozen, so the file is kept now, with the edit. It waited for the build, and a reload or a
+  // closed tab meanwhile brought the last project back without the file or the edit (#627 item 3).
+  const unfollow = ctx.history.onChange(() => ctx.history.canUndo() && keepIt());
+  const ticket: number = whileOpening(OPENING_FILE, keepIt);
 }
 
 /**
@@ -849,11 +869,15 @@ async function openStored(id: string, modified: Date | null) {
   guard.finished();
   fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
-  statusBeforeOpening ??= shownStatus;
+  const before = shownStatus;
+  // Kept under its id at once, as start() keeps the last project: its autosave must take the project as the store
+  // holds it. Started once it had shown, it took a size typed meanwhile for the stored state, said "Saved" and never
+  // stored it (#627 item 2). Only bringing it forward waits for the build, so one that freezes the tab is not reopened.
+  keep(id, kept === null, kept === null ? modified : null, kept !== null);
+  statusBeforeOpening ??= before;
   saveStatus({ state: "saving" });
   whileOpening(OPENING_FILE, () => {
     statusBeforeOpening = null;
-    keep(id, kept === null, kept === null ? modified : null, kept !== null);
     if (kept !== null) return saveStatus({ state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
     if (modified === null) return autosave?.changed(); // no save time to expect: its first save stores it, and lists it first
     // "Saving…" until it is the project a reload opens (leaving meanwhile asks first), unless an edit's own save took over the mark.
@@ -1286,6 +1310,14 @@ if (__ACCOUNTS__)
             return null; // gone, or can't be read: not sent
           }
         },
+        stored: (id) => store.text(id),
+        asRead: (text) => {
+          try {
+            return projectToJson(projectFromJson(text, workspaces));
+          } catch {
+            return null;
+          }
+        },
         put: async (id, text, name, savedAt) => {
           const project = projectFromJson(text, workspaces);
           project.name = name;
@@ -1563,13 +1595,15 @@ async function start() {
   let newestAt: Date | null = null;
   try {
     // Changes the last visit left with before they were stored go back first, so the project reopens with them.
-    const unsaved = await answered(recoverUnsaved(store, local, workspaces));
+    const unsaved = await answered(recoverUnsaved(store, local, workspaces, undefined, (id) => leftWithChange.add(id)));
     if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
     const top = (await answered(store.list()))[0];
     newest = top?.id;
     newestAt = top && !top.problem ? top.modified : null; // a summary that can't be read gives no save time to expect
   } catch (e) {
     canKeep = false;
+    // Said for as long as it is so: the words below go with the next message (#627 item 4).
+    saveStatus({ state: "error", message: "nothing is kept in this browser. Use Save to keep your work as a file." });
     fileStatus(`Projects can't be kept in this browser (${why(e)}). Use Save to keep your work as a file.`);
     show(fromHash());
     return ctx.history.reset();

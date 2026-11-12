@@ -28,9 +28,10 @@
 //
 // Styles: src/styles/laser-flat.css.
 
+import { OP_LOOK, OPS, type LaserOp } from "./ops.ts";
 import { mmWords, type Bed, type OutlineBox } from "./sheet.ts";
 import { snapMm } from "./place.ts";
-import { fitView, marginsClearOf, marginsFor, marksBetween, markStep, nameFits, panBy, toBed, toScreen, wheelZoom, ZOOM_STEP, zoomAt, type Card, type ScreenPoint, type Size, type View } from "./view-box.ts";
+import { fitView, marginsClearOf, marginsFor, marksBetween, markStep, nameFits, panBy, toBed, toScreen, wheelZoom, wordsWidth, ZOOM_STEP, zoomAt, type Card, type ScreenPoint, type Size, type View } from "./view-box.ts";
 
 /** A part as the view draws it: its path data in bed mm with y flipped (as the SVG file's), and its box on the bed (y up). */
 export interface FlatPart {
@@ -38,6 +39,8 @@ export interface FlatPart {
   label: string;
   d: string;
   box: OutlineBox;
+  /** What the beam does to it (L1c), drawn in that layer's look; left out, cut. */
+  op?: LaserOp;
   /** What is wrong with where the part sits ("off the bed: 5 mm past the right side"), drawn as a warning on it. */
   warn?: string;
 }
@@ -104,6 +107,9 @@ export interface FlatViewOptions {
   /** The person asked for part `id` turned by `degrees` (90 or −90, counter-clockwise positive). Left out, there is no Turn button. */
   onTurn?: (id: string, degrees: number) => void;
 }
+
+/** The side of a layer's swatch in the key, px. */
+const KEY_SWATCH = 10;
 
 /** Makes the view. */
 export function createFlatView(doc: Document, options: FlatViewOptions = {}): FlatView {
@@ -226,6 +232,25 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     for (const x of xs) out.push(text("laser-flat-mark", mmWords(x), { x: toScreen(view, size, x, 0).x, y: below }, "middle"));
     for (const y of ys) if (y !== 0) out.push(text("laser-flat-mark", mmWords(y), { x: left, y: toScreen(view, size, 0, y).y + 4 }, "end"));
     out.push(text("laser-flat-bed-name", `Bed ${mmWords(bed.width)} × ${mmWords(bed.height)} mm`, { x: Math.max(8, corner.x), y: Math.max(16, corner.y - 8) }));
+    // The key to the layers on the bed (L1c), above the bed's top-right corner, right to left: only the layers in use.
+    const inUse = OPS.filter((op) => scene.parts.some((p) => (p.op ?? "cut") === op));
+    if (inUse.length > 0) {
+      const topRight = toScreen(view, size, bed.width, bed.height);
+      let x = Math.min(size.width - 8, topRight.x);
+      const y = Math.max(16, corner.y - 8);
+      for (const op of [...inUse].reverse()) {
+        const name = text(`laser-flat-key laser-flat-key-${op}`, OP_LOOK[op].name, { x, y }, "end");
+        x -= wordsWidth(OP_LOOK[op].name) + 4 + KEY_SWATCH;
+        const swatch = doc.createElementNS(SVG, "rect");
+        swatch.setAttribute("class", `laser-flat-swatch laser-flat-part-${op}`);
+        swatch.setAttribute("x", x.toFixed(1));
+        swatch.setAttribute("y", (y - KEY_SWATCH + 1).toFixed(1));
+        swatch.setAttribute("width", String(KEY_SWATCH));
+        swatch.setAttribute("height", String(KEY_SWATCH));
+        out.push(swatch, name);
+        x -= 12;
+      }
+    }
     for (const p of scene.parts) {
       const w = (p.box.maxX - p.box.minX) * s;
       const h = (p.box.maxY - p.box.minY) * s;
@@ -253,10 +278,10 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
       ...parts.map((p) => {
         const path = doc.createElementNS(SVG, "path");
         const picked = p.id === scene.picked;
-        path.setAttribute("class", `laser-flat-part${p.warn ? " laser-flat-part-warn" : ""}${picked ? " laser-flat-part-picked" : ""}`);
+        path.setAttribute("class", `laser-flat-part laser-flat-part-${p.op ?? "cut"}${p.warn ? " laser-flat-part-warn" : ""}${picked ? " laser-flat-part-picked" : ""}`);
         path.setAttribute("d", p.d);
         path.dataset.part = p.id;
-        const words = `${p.label}, ${mmWords(p.box.maxX - p.box.minX)} × ${mmWords(p.box.maxY - p.box.minY)} mm${p.warn ? `, ${p.warn}` : ""}`;
+        const words = `${p.label}, ${OP_LOOK[p.op ?? "cut"].name.toLowerCase()}, ${mmWords(p.box.maxX - p.box.minX)} × ${mmWords(p.box.maxY - p.box.minY)} mm${p.warn ? `, ${p.warn}` : ""}`;
         if (options.onPick) {
           // Reachable by the keyboard: Tab to a part, Enter picks it.
           path.setAttribute("tabindex", "0");
@@ -459,10 +484,15 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     detach,
     show(next, frame) {
       const resized = next.bed.width !== scene.bed.width || next.bed.height !== scene.bed.height;
+      // A part being dragged goes on being dragged through a redraw that left it as it was (a late answer about other
+      // parts); if the scene moved or dropped it, the drag is over.
+      const held = press?.moved && press.drags ? press.part : null;
+      const same = held !== null && scene.parts.find((p) => p.id === held)?.d === next.parts.find((p) => p.id === held)?.d;
       scene = next;
       shown = true;
-      if (press?.part && press.moved) endPress(); // the scene changed under a part being dragged: the drag is over
+      if (held !== null && !same) endPress();
       drawScene();
+      if (held !== null && same && press) partPath(held)?.setAttribute("transform", `translate(${press.by[0]} ${-press.by[1]})`);
       if (frame || fitted) return fit(); // a view the person has not moved keeps the whole bed in sight, clear of the parts list as it grows
       if (resized) view = zoomAt(view, scene.bed, measure(), { x: 0, y: 0 }, 1); // the same view, kept within the new bed's limits
       draw();
