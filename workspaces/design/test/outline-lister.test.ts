@@ -51,3 +51,17 @@ test("an empty sketch and a suppressed one are not listed (a test that can fail:
 test("no Design data, or data that does not read, lists nothing and never throws", () => {
   for (const data of [undefined, null, 7, "x", {}, { version: 99 }]) assert.deepEqual(registry().objectsOf(DESIGN_OUTLINES, projectWith(data)), [], JSON.stringify(data));
 });
+
+test("each listed sketch and profile is picked in the one selection as Design picks it from its browser row (Laser L1b3)", () => {
+  // Design's own rows select a sketch or a profile as "outline:<its id>" (references.ts profileReference); Laser must
+  // put the same thing in the selection, so a part picked there is the row lit here and back.
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  const doc = drawRectangle(s.doc, s.id, [0, 0], [60, 40]).doc;
+  const listed = registry().objectsOf(DESIGN_OUTLINES, projectWith(doc));
+  const sketch = listed.find((o) => o.type === "design.sketch")!;
+  assert.deepEqual(sketch.selectAs, { kind: "outline", id: `outline:${s.id}` });
+  // A ready-made profile (a slot is extruded from one, "profile-1") the same way.
+  const profiles = registry().objectsOf(DESIGN_OUTLINES, projectWith(partDocument("slot", 60, 20, 5))).filter((o) => o.type === "design.profile");
+  assert.equal(profiles.length, 1);
+  assert.deepEqual(profiles[0].selectAs, { kind: "outline", id: "outline:profile-1" });
+});
