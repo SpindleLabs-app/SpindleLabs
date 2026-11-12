@@ -240,34 +240,60 @@ export function combineNames(
     if (!kept.has(p)) kept.set(p, b.id);
   }
   const rest = order.filter((p) => !kept.has(p));
-  // Each remembered piece of this Combine to the one piece with its faces, when no other remembered piece has them too.
+  // The pieces keeping no id are numbered (`pieceIds`), each remembered one found again by its faces.
+  const numbered = pieceIds(feature, rest.map((p) => shownFaces(named[p])), remembered, own, firstPiece);
+  const body = (p: number, id: string): NamedBody => ({ id, handle: result.bodies[p], view: views[p], faces: named[p], made });
+  return {
+    bodies: [...[...kept].map(([p, id]) => body(p, id)), ...rest.map((p, i) => body(p, numbered.ids[i]))],
+    nextPiece: numbered.next,
+    renumbered: numbered.renumbered,
+  };
+}
+
+/**
+ * The ids of the pieces item `feature` (a Combine, an extrude with an
+ * operation) leaves that keep no body's id, numbered once for the whole
+ * item (SL #538 item 1): `faces` holds each such piece's shown face names
+ * (`shownFaces`), the item's booleans in order and each one's pieces in
+ * rank order. `remembered` holds the pieces the data numbered, each by
+ * its id and the shown names of its faces when first numbered: each goes
+ * to the one piece of the item with exactly those faces, when it is the
+ * only remembered piece with them; the rest take the lowest numbers from
+ * `firstPiece` that no piece of the item has, in the order given. So no
+ * two pieces ever get one id, whatever is remembered and whichever
+ * boolean made them (numbered one boolean at a time, a new chunk of one
+ * body took the number a chunk of another body was remembered with, and
+ * one overwrote the other). With `own` (an Extrude join's own body id,
+ * version 16), number 1 is that id and number k + 1 is piece k. Also the
+ * remembered ids now on a piece whose faces are not the ones remembered
+ * (`renumbered`), and the next piece number free (`next`).
+ */
+export function pieceIds(feature: string, faces: readonly (readonly string[])[], remembered: ReadonlyMap<string, readonly string[]> = new Map(), own?: string, firstPiece = 1): { ids: string[]; renumbered: string[]; next: number } {
   const prefix = `body:${feature}/piece:`;
   // With `own`, number 1 is its id and number k + 1 piece k (version 15 named it piece 1; Design data's upgrade renames so).
   const shift = own === undefined ? 0 : 1;
   const numberOf = (id: string) => (id === own ? 1 : id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) ? Number(id.slice(prefix.length)) + shift : null);
   const idOf = (k: number) => (k === shift ? own! : `${prefix}${k - shift}`);
   const key = (names: readonly string[]) => JSON.stringify([...new Set(names)].sort());
-  const keys = rest.map((p) => key(shownFaces(named[p])));
+  const keys = faces.map(key);
   const ours = [...remembered].filter(([id]) => numberOf(id) !== null).map(([id, names]) => ({ id, k: numberOf(id)!, key: key(names) }));
-  const given = new Map<number, number>(); // piece → its number
+  const given = new Map<number, number>(); // piece (its place in `faces`) → its number
   for (const r of ours) {
     const at = keys.flatMap((k, i) => (k === r.key ? [i] : []));
-    if (at.length === 1 && ours.filter((o) => o.key === r.key).length === 1) given.set(rest[at[0]], r.k);
+    if (at.length === 1 && ours.filter((o) => o.key === r.key).length === 1) given.set(at[0], r.k);
   }
   const taken = new Set(given.values());
   let free = firstPiece;
-  for (const p of rest) {
-    if (given.has(p)) continue;
+  keys.forEach((_, i) => {
+    if (given.has(i)) return;
     while (taken.has(free)) free++;
-    given.set(p, free);
+    given.set(i, free);
     taken.add(free);
-  }
-  const renumbered = ours.filter((r) => rest.some((p) => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key)).map((r) => r.id);
-  const body = (p: number, id: string): NamedBody => ({ id, handle: result.bodies[p], view: views[p], faces: named[p], made });
+  });
   return {
-    bodies: [...[...kept].map(([p, id]) => body(p, id)), ...rest.map((p) => body(p, idOf(given.get(p)!)))],
-    nextPiece: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1 - shift)),
-    renumbered,
+    ids: keys.map((_, i) => idOf(given.get(i)!)),
+    renumbered: ours.filter((r) => keys.some((k, i) => given.get(i) === r.k && k !== r.key)).map((r) => r.id),
+    next: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1 - shift)),
   };
 }
 
