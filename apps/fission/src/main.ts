@@ -148,6 +148,7 @@ const ctx: WorkspaceContext = {
   startedFresh: () => {
     savedTo = null;
     projectFile = null;
+    fileOwner++;
   },
   fileName: () => (projectFile === null ? null : baseNameOf(projectFile, PROJECT_KIND.extension)),
 };
@@ -722,18 +723,29 @@ let savedTo: FileHandle | null = null;
  * a new or other project lets it go.
  */
 let projectFile: string | null = null;
+/** Goes up each time another project takes the open one's place (new, opened, restored): a save that was still asking then knows its file is not this project's. */
+let fileOwner = 0;
+/** A Save is asking where or under what name: Save and Save As pressed again meanwhile (Ctrl+S held or mashed, the menu, the key behind the name box) do nothing, so there is one question and one file (export hunt 2026-11-12, SL #644 item 4; the Save icon's repeat guard only covered the icon). */
+let saveAsking = false;
 async function save(asNew = false) {
+  if (saveAsking) return;
+  saveAsking = true;
   try {
     await started; // the project shown, not the empty one the app starts with
+    const owner = fileOwner;
     const result = await saveFile(document, { suggestedName: projectFile || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
     if (result.status === "failed") return fileStatus(result.message);
-    if (result.status === "saved") {
+    // Another project opened while this save was asking: the file holds the last project, so it is not kept as
+    // this one's, or the next Save would write this project over it without asking (SL #644 item 5).
+    if (result.status === "saved" && owner === fileOwner) {
       savedTo = result.handle;
       projectFile = result.name;
     }
     fileStatus("");
   } catch (e) {
     fileStatus(e instanceof Error ? e.message : String(e));
+  } finally {
+    saveAsking = false;
   }
 }
 // The phone's keyboard opening never hides the box being typed in (clumsy-human hunt 11-04, keep-typing-visible.ts).
@@ -790,6 +802,7 @@ const keptApartWords = (name: string) => `Your changes in this tab couldn't be s
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
   projectFile = null; // and so did its name
+  fileOwner++;
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
