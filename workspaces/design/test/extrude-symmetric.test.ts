@@ -286,6 +286,22 @@ test("buildSpec (Edit feature's reach, other workspaces' views) builds an extrud
   nearBox(plain.bounds, [[0, 0, 0], [10, 10, 4]], "plain, as before");
 });
 
+test("buildSpec frees the body it built even when the kernel fails the first free (fault injection T6b)", async () => {
+  // Regression (journeys' fault injection, every kernel call failing once in turn): with a framed or flipped extrude now built
+  // in the body store, a body_free failing once left the body held for good. Tried once more at once, as the cache does when
+  // closed (there is no next chance): the store's count is back where it started, and the view is still the 5 mm flipped square.
+  const before = await kernel.call("body_count");
+  let frees = 0;
+  const failing = { call: ((op: string, ...args: unknown[]) => {
+    if (op === "body_free" && ++frees === 1) return Promise.reject(new Error("injected kernel failure (body_free)"));
+    return (kernel.call as (op: string, ...a: unknown[]) => Promise<unknown>)(op, ...args);
+  }) as typeof kernel.call };
+  const view = await buildSpec(failing as typeof kernel, { extrude: { profile: square, distance: 5, flip: true } });
+  nearBox(view.bounds, [[0, 0, -5], [10, 10, 0]], "flipped, free failed once");
+  assert.equal(frees, 2, "the free was tried a second time");
+  assert.equal(await kernel.call("body_count"), before, "nothing left held");
+});
+
 const { Window } = await import("happy-dom");
 
 test("the panel: Symmetric makes a negative distance positive, greys Flip and says so; pressed again, Flip is back", () => {

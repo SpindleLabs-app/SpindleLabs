@@ -16,7 +16,7 @@ export function specFor(kind: ShapeKind, w: number, d: number, h: number): BodyS
 /**
  * Builds a BodySpec with the kernel. A moved body, and an extrude placed by
  * a frame or flipped, have no one-shot call, so each is built in the body store, viewed and freed (freed even when the
- * view fails, so nothing is left held).
+ * view fails, so nothing is left held; a failed free is tried once more).
  */
 export async function buildSpec(kernel: KernelCalls, spec: BodySpec): Promise<BodyView> {
   // An extrude placed by a frame or flipped (26c, a symmetric one 53a1) too: make_extrude takes only the outline and the
@@ -26,7 +26,9 @@ export async function buildSpec(kernel: KernelCalls, spec: BodySpec): Promise<Bo
     try {
       return await kernel.call("body_view", body);
     } finally {
-      await kernel.call("body_free", body);
+      // A free the kernel fails is tried once more at once, as a closed BodyCache does: nothing here gets a next chance
+      // (fault injection T6b).
+      await kernel.call("body_free", body).catch(() => kernel.call("body_free", body).catch(() => {}));
     }
   }
   if ("box" in spec) return kernel.call("make_box", spec.box.width, spec.box.depth, spec.box.height);
