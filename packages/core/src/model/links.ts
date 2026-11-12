@@ -12,7 +12,7 @@
 // The data structure and its rules are real; no workspace pastes into
 // another yet (the first will be Slice plates or Laser jobs).
 
-import type { Origin } from "./feature.ts";
+import { workspaceName, type Origin } from "./feature.ts";
 import type { GeometryReference } from "./references.ts";
 import type { Producible, Representation, RepresentationKind, RepresentationRegistry } from "./representation.ts";
 
@@ -64,7 +64,7 @@ export function resolveLink(link: Link, lookup: SourceLookup): LinkStatus {
   const why = object ? object.unresolved : "can't be found after the last edit";
   return {
     state: "unresolved",
-    warning: `Linked to ${label} in ${workspace[0].toUpperCase()}${workspace.slice(1)}, which ${why}. Pick a new source or break the link to keep the last copy.`,
+    warning: `Linked to ${label} in ${workspaceName(workspace)}, which ${why}. Pick a new source or break the link to keep the last copy.`,
   };
 }
 

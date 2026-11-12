@@ -143,9 +143,11 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * the store refuses is kept, so the next visit tries again. An entry that
  * names the stored state it was made from is put back only over that state;
  * over another (a stale tab's change) it is stored as a new project, under
- * an id from `newId`, named `keptCopyName`, and says so.
+ * an id from `newId`, named `keptCopyName`, and says so. `restored` hears the
+ * id of each project an entry was put back into (its kept undo steps end one
+ * change short of it: kept-steps.ts in the app adds that change as a step).
  */
-export async function recoverUnsaved(store: ProjectStore, journal: JournalStorage | null, readers: readonly DataReader[], newId: () => string = freshId): Promise<string[]> {
+export async function recoverUnsaved(store: ProjectStore, journal: JournalStorage | null, readers: readonly DataReader[], newId: () => string = freshId, restored: (id: string) => void = () => {}): Promise<string[]> {
   const problems: string[] = [];
   const keys: string[] = [];
   if (!journal) return problems;
@@ -257,6 +259,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
       continue;
     }
     remove(journal, k);
+    restored(id);
   }
   return problems;
 }
