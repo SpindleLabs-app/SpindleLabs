@@ -69,31 +69,38 @@ export function volumeWords(mm3: number): string {
  * items that failed, so the file is not the whole design (`failedItemsNote`); a file checked solid then never reads as
  * "Checked solid", and a file with problems says them after it. `touching`: the file holds this many bodies, each
  * checked solid on its own, so every problem the file has lies between them (they touch or overlap): a milder card
- * that says so and offers Combine > Join, never "Not solid".
+ * that says so and offers Combine > Join, never "Not solid". `separate`: the file keeps each body its own object (3MF,
+ * OBJ: #640 5), so a slicer reads them apart and the words say only that they touch or overlap.
  */
 export interface ExportNotes {
   missing?: string;
   touching?: number;
+  separate?: boolean;
 }
 
-/** What the export says when its bodies are each solid but touch or overlap one another (`ExportNotes.touching`). */
-export function touchingWords(bodies: number): { title: string; detail: string } {
+/**
+ * What the export says when its bodies are each solid but touch or overlap one another (`ExportNotes.touching`);
+ * `separate`: each body is its own object in the file (3MF, OBJ), which slicers read apart.
+ */
+export function touchingWords(bodies: number, separate = false): { title: string; detail: string } {
   return {
     title: bodies === 2 ? "The 2 bodies touch or overlap" : `Some of the ${bodies} bodies touch or overlap`,
-    detail: "Each body is solid on its own, but where they meet their surfaces cross, and some slicers refuse such a file (Slice for printing sends them one by one, which is safe). Combine > Join makes them one part.",
+    detail: separate
+      ? "Each body is solid on its own and is its own object in the file, but they touch or overlap where they meet, so a slicer prints them as separate parts pressed together. Combine > Join makes them one part."
+      : "Each body is solid on its own, but where they meet their surfaces cross, and some slicers refuse such a file (Slice for printing sends them one by one, which is safe). Combine > Join makes them one part.",
   };
 }
 
 /** What the card says for a report, with what the export knows beyond it (`notes`). */
 export function badgeFor(report: SolidReport, notes: ExportNotes = {}): Badge {
-  const b = checkedBadge(report, notes.touching);
+  const b = checkedBadge(report, notes.touching, notes.separate);
   if (!notes.missing) return b;
   if (b.state === "solid") return { state: "missing", title: "Not the whole design", detail: `${notes.missing} What was built is solid.`, facts: b.facts, items: [] };
   return { ...b, detail: `${notes.missing} ${b.detail}` };
 }
 
 /** The card for the file's own check; `touching`, the bodies in it when each was checked solid alone. */
-function checkedBadge(report: SolidReport, touching: number | undefined): Badge {
+function checkedBadge(report: SolidReport, touching: number | undefined, separate = false): Badge {
   if (report.verdict === "solid") {
     const pieces = report.shells === 1 ? "" : `, ${report.shells} closed pieces`;
     return {
@@ -113,7 +120,7 @@ function checkedBadge(report: SolidReport, touching: number | undefined): Badge 
       items: report.problems.map((p) => ({ words: problemWords(p), means: problemMeaning(p.kind) })),
     };
   }
-  if (report.verdict === "problems" && touching !== undefined && touching >= 2) return { state: "touching", ...touchingWords(touching), facts: "", items: [] };
+  if (report.verdict === "problems" && touching !== undefined && touching >= 2) return { state: "touching", ...touchingWords(touching, separate), facts: "", items: [] };
   const words = report.problems.map(problemWords);
   const title = `Not solid: ${words.slice(0, 2).join(", ")}${words.length > 2 ? ` and ${words.length - 2} more` : ""}`;
   return {
@@ -145,15 +152,31 @@ const HEADER = 80;
 export const CHECKED_HEADER = "SpindleLabs STL, checked solid: ";
 
 /**
+ * A binary STL's 80 header bytes for `text`: printable ASCII only (the format has no encoding), each other character,
+ * a newline or an "é" or an emoji alike, written as one "?", as the kernel writes its own header (kernel-results #103),
+ * so the 80 bytes are never cut inside a character and hold no control bytes; spaces after it.
+ */
+export function stlHeader(text: string): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(HEADER).fill(0x20);
+  let i = 0;
+  // By character (code point), not UTF-16 unit: a character outside the basic plane is one "?", not two.
+  for (const c of text) {
+    if (i === HEADER) break;
+    const code = c.codePointAt(0)!;
+    out[i++] = code >= 0x20 && code <= 0x7e ? code : 0x3f;
+  }
+  return out;
+}
+
+/**
  * The file with its header saying it was checked solid, then `name`, cut
- * to the 80 bytes (whole characters, printable ASCII only: the format has
- * no encoding). Only the header changes, so the check still holds.
+ * to the 80 bytes (`stlHeader`). Only the header changes, so the check
+ * still holds.
  */
 export function stampChecked(bytes: Uint8Array<ArrayBuffer>, name: string): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(bytes);
   if (out.length < HEADER) return out;
-  const text = (CHECKED_HEADER + name.replace(/[^\x20-\x7e]/g, "?")).slice(0, HEADER).padEnd(HEADER, " ");
-  for (let i = 0; i < HEADER; i++) out[i] = text.charCodeAt(i);
+  out.set(stlHeader(CHECKED_HEADER + name), 0);
   return out;
 }
 

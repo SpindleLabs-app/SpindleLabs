@@ -88,6 +88,43 @@ for (const width of [641, 700, 760]) {
   await context.close();
 }
 
+// A failed save is on screen (export hunt 2026-11-12, SL #643 item 1): at 641 to 760 px the save status is clipped
+// away with "Saved", and "Not saved: …" went with it, so a sideways phone showed nothing at all. Every write is
+// refused as a full store refuses it (QuotaExceededError on the transaction); the words then take a row of their
+// own under the bar, in view and overlapping nothing, while "Saved" before the failure stays out of the row.
+for (const [width, height] of [[641, 375], [667, 375], [740, 360], [760, 400]]) {
+  const { page, context } = await open(width, height);
+  await page.waitForFunction(() => document.querySelector("#save-status").dataset.state === "saved");
+  const size = () => page.$eval("#save-status", (e) => [Math.round(e.getBoundingClientRect().width), Math.round(e.getBoundingClientRect().height)]);
+  assert.deepEqual(await size(), [1, 1], `${width}: "Saved" takes no room (the tick beside the name shows it)`);
+  await page.evaluate(() => {
+    IDBObjectStore.prototype.put = function () {
+      const tx = this.transaction;
+      const r = { onerror: null, onsuccess: null, error: new DOMException("", "QuotaExceededError") };
+      setTimeout(() => {
+        r.onerror?.({ target: r, preventDefault() {} });
+        try { tx.abort(); } catch {}
+      });
+      return r;
+    };
+  });
+  await page.tap("#insert");
+  await page.tap("#insert-cylinder");
+  await page.waitForFunction(() => document.querySelector("#save-status").dataset.state === "error", null, { timeout: 30000 });
+  const seen = await page.$eval("#save-status", (e) => {
+    const r = e.getBoundingClientRect();
+    const under = document.elementFromPoint(r.left + 20, r.top + r.height / 2);
+    return { words: e.textContent, width: r.width, height: r.height, top: r.top, bottom: r.bottom, clip: getComputedStyle(e).clipPath, onTop: under === e };
+  });
+  assert.match(seen.words, /^Not saved: browser storage is full/, `${width}: the words`);
+  assert.ok(seen.width > 200 && seen.height >= 12 && seen.clip === "none" && seen.onTop, `${width}: the failed save's words are not on screen: ${JSON.stringify(seen)}`);
+  assert.ok(seen.top >= 0 && seen.bottom <= height, `${width}: the words are outside the screen: ${JSON.stringify(seen)}`);
+  assert.equal(await topBarOverlap(page), null, `${width}: top bar overlap with a failed save showing`);
+  assert.equal(await sideways(page), 0, `${width}: sideways scroll with a failed save showing`);
+  if (shots) await page.screenshot({ path: `${shots}/phone-short-failed-save-${width}x${height}.png` });
+  await context.close();
+}
+
 // A desktop window keeps the roomy toolbar and the words.
 {
   const { page, context } = await open(1280, 720);

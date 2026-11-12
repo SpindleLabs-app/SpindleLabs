@@ -1,6 +1,8 @@
 // Earlier versions of a kept project (missing basics 3b; audit item 11): each save keeps the state it replaces as a
-// version, at most one every VERSION_GAP_MS and the newest VERSION_LIMIT, so a project can go back to how it was
-// earlier today even after the undo history is gone (a reload, another project opened). Each version is one entry:
+// version, at most one every VERSION_GAP_MS while the work goes on, and always a state that stood for VERSION_GAP_MS
+// before it was replaced (the state a session ended in: issue #628, item 3), the newest VERSION_LIMIT, so a project
+// can go back to how it was earlier today even after the undo history is gone (a reload, another project opened).
+// Each version is one entry:
 //   version/<id>/<ms>  the exact .spindlelabs.json text the project had, <ms> its save time (the summary's `modified`)
 // Versions are an extra and never cost a save: one that can't be written is passed over, and a save refused for want
 // of room is tried once more after this project's versions, and every project's kept undo steps (undo-steps.ts), are
@@ -11,7 +13,7 @@ import type { KeyValue } from "./key-value.ts";
 import { ProjectChangedError, type ProjectStore } from "./store.ts";
 import { stepsStore, type StepsStore } from "./undo-steps.ts";
 
-/** Ten minutes: a version at most this often, so a burst of edits is one version, not twenty. */
+/** Ten minutes: a version at most this often while the work goes on, so a burst of edits is one version, not twenty; and how long a state must have stood to be kept whatever came before it. */
 export const VERSION_GAP_MS = 10 * 60_000;
 /** The newest twenty are kept: three hours or more of steady work. */
 export const VERSION_LIMIT = 20;
@@ -57,11 +59,15 @@ async function times(kv: KeyValue, id: string): Promise<number[]> {
  * version as `open` does.
  */
 export function versionedStore(store: ProjectStore, kv: KeyValue, readers: readonly DataReader[], { gapMs = VERSION_GAP_MS, limit = VERSION_LIMIT, steps = stepsStore(kv) } = {}): VersionedStore {
-  /** Keeps `text`, saved at `at`, as a version of `id` when the newest is at least `gapMs` older; then the newest `limit` only. Never throws. */
-  async function keep(id: string, text: string, at: number) {
+  /**
+   * Keeps `text`, saved at `at` and replaced at `replaced` (null when that time can't be read), as a version of `id`
+   * when the newest is at least `gapMs` older or it stood for `gapMs`; then the newest `limit` only. Never throws.
+   */
+  async function keep(id: string, text: string, at: number, replaced: number | null) {
     try {
       const kept = await times(kv, id);
-      if (kept.length === 0 || at - kept[0] >= gapMs) {
+      // A version already kept at that very time stays as it is (two saves in one millisecond).
+      if (!kept.includes(at) && (kept.length === 0 || at - kept[0] >= gapMs || (replaced !== null && replaced - at >= gapMs))) {
         await kv.set(prefix(id) + at, text);
         kept.unshift(at);
       }
@@ -77,6 +83,7 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
   return {
     list: () => store.list(),
     open: (id) => store.open(id),
+    text: (id) => store.text(id),
     async save(id, project, read, unchangedSince, behind, writer) {
       // The state this save replaces, read first: after the save it is gone.
       let before: string | undefined;
@@ -120,7 +127,8 @@ export function versionedStore(store: ProjectStore, kv: KeyValue, readers: reado
       } catch {
         return;
       }
-      if (now !== before) await keep(id, before, at); // a save of the same state (brought forward, say) is no new version
+      if (now === before) return; // a save of the same state (brought forward, say) is no new version
+      await keep(id, before, at, savedAt(await kv.get(`summary/${id}`).catch(() => undefined)));
     },
     async remove(id) {
       await store.remove(id);

@@ -15,6 +15,7 @@ export { LASER_KEY, laserShown, readLaserFlag, setLaserShown } from "./flag.ts";
 export { createFlatView, type FlatPart, type FlatScene, type FlatView, type FlatViewOptions } from "./flat-view.ts";
 export { defaultLaserData, DXF_KIND, emptyBedNote, flatScene, layoutWords, mountLaserPage, OUTLINES_LISTER, pairWords, partsOn, readLaserData, readParts, SVG_KIND, type LaserData, type OfferedPart, type PairRelation, type Relate, type SaveText } from "./page.ts";
 export { LASER_DATA_VERSION, readLaserProjectData } from "./page.ts";
+export { DEFAULT_OP, isOp, OP_LOOK, opOf, OPS, overlapMatters, readOps, withOp, type LaserOp } from "./ops.ts";
 export { BOX_MARGIN, CLEARANCE, NUDGE, outlineCurves, partsRelation, type OutlineCurves, type PartsRelation } from "./overlap.ts";
 export { boxesOverlap, cleanMm, EDGE_SLACK, layOutPlaced, MAX_REACH, normalAngle, offBed, offBedWords, overlapCandidates, placementRefusal, placeOutline, readPlacements, snapMm, turnedOnTheSpot, turnOutline, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
 export { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, MAX_BED, MAX_THICKNESS, thicknessRefusal, moveOutline, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type PlacedPart, type SheetPart } from "./sheet.ts";

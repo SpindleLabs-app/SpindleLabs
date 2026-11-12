@@ -1,7 +1,8 @@
 // Browser check of Undo and Redo (step 20b): the top bar's buttons say what
 // they would take back and are off at the ends; Ctrl+Z undoes, Ctrl+Shift+Z
-// and Ctrl+Y redo; typing in one box is one step; inside a text field the
-// browser's own undo runs, not the project's; undo survives a workspace
+// and Ctrl+Y redo; typing in one box is one step; in a size box Ctrl+Z is the
+// project's Undo, in any other text field the browser's own undo of that
+// field's typing, which never reaches a size box; undo survives a workspace
 // switch; a default Design fills in when first shown is never a step.
 // Step 20c: the selection follows undo (dropped with the note when the face
 // is gone), undo never re-frames the camera (an opened file still does), and
@@ -151,30 +152,93 @@ try {
     }
   });
 
-  await check("inside a text field Ctrl+Z is the browser's own undo of the typing, not the project's", async () => {
+  // Undo hunt 2026-11-12 (#623): Ctrl+Z was left to the browser in every field, and the browser's undo of typing is
+  // one for the whole page: it untyped the last size typed, in whichever box, as a NEW step (Width 60 became 6).
+  // A size box's typing is the project's own step, so there Ctrl+Z is the project's Undo.
+  const state = async (page) => `${await page.textContent("#volume")}; ${(await buttons(page)).map((b) => b[1].replace(/ \(.*/, "")).join("; ")}`;
+  /** The 40 · 30 · 20 box made 60 wide, typed key by key and entered: 60 · 30 · 20 = 36,000 mm³, one step. */
+  async function sixtyWide() {
+    const page = await fresh();
+    await typeWidth(page, "60");
+    await page.keyboard.press("Enter");
+    await volume(page, "36,000 mm³");
+    return page;
+  }
+  await check("Ctrl+Z in a size box is the project's Undo of the size typed, never a new size", async () => {
+    for (const from of ["#width", "#height"]) {
+      const page = await sixtyWide();
+      try {
+        await page.click(from);
+        await page.keyboard.press("Control+z");
+        await volume(page, "24,000 mm³"); // 40 · 30 · 20: the width typed is taken back
+        assert.equal(await state(page), "24,000 mm³; Undo Insert Box; Redo Change width", `Ctrl+Z with the keys in ${from}`);
+        assert.equal(await width(page), "40");
+      } finally {
+        await page.close();
+      }
+    }
+  });
+  await check("Ctrl+Z with the keys on the Shape list takes back the shape chosen", async () => {
+    const page = await sixtyWide();
+    try {
+      await page.selectOption("#shape", "cylinder");
+      await shape(page, "cylinder");
+      await page.focus("#shape");
+      await page.keyboard.press("Control+z");
+      await shape(page, "box");
+      assert.equal(await state(page), "36,000 mm³; Undo Change width; Redo Change shape to Cylinder");
+    } finally {
+      await page.close();
+    }
+  });
+  await check("Ctrl+Z in another text field (the command search, a panel's box) undoes its own typing and never a size box's", async () => {
+    const page = await sixtyWide();
+    try {
+      const before = await state(page);
+      const view = await page.locator("#viewport canvas").boundingBox();
+      await page.mouse.click(view.x + 40, view.y + view.height - 60); // empty space: the keys leave the box
+      await page.keyboard.press("s");
+      await page.waitForSelector("#command-search-input", { state: "visible" });
+      await page.keyboard.type("ex", { delay: 30 });
+      for (let i = 0; i < 4; i++) await page.keyboard.press("Control+z");
+      await page.waitForTimeout(600);
+      assert.equal(await state(page), before, "the design is as it was");
+      assert.equal(await width(page), "60");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "command-search-input", "the keys stay in the search box");
+      if (browserName === "chromium") assert.equal(await page.inputValue("#command-search-input"), "", "the browser's own undo took the search's typing back");
+    } finally {
+      await page.close();
+    }
+  });
+  await check("Ctrl+Z after a line placed by typed sizes takes the line back (the keys are in its empty Length box)", async () => {
     const page = await fresh();
     try {
-      await page.fill("#width", "50");
-      await volume(page, "30,000 mm³");
-      await page.waitForTimeout(1100); // past the merge time: the next typing is a step of its own
-      await typeWidth(page, "70");
-      await volume(page, "42,000 mm³"); // 70 · 30 · 20
-      // Mark the box: the project's undo mounts Design afresh, which would make a new one.
-      await page.$eval("#width", (el) => (el.dataset.mark = "same"));
+      sheetsClearFor(page);
+      await page.click("#create-sketch");
+      await openPanel(page, "properties", false);
+      await pickPlane(page, "XY", false);
+      await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+      await closePanels(page, false);
+      const lines = (n) => page.waitForFunction((w) => document.querySelector("#viewport").dataset.sketchLines === String(w), n, { timeout: 5000 });
+      const view = await page.locator("#viewport canvas").boundingBox();
+      const at = (xy) => screenPoint(view, [...xy, 0], TOP);
+      await page.keyboard.press("l");
+      await page.mouse.click(at([0, 0]).x, at([0, 0]).y);
+      await page.mouse.move(at([20, 0]).x, at([20, 0]).y);
+      await page.waitForTimeout(300);
+      await page.keyboard.type("10");
+      await page.keyboard.press("Tab");
+      await page.keyboard.type("0");
+      await page.keyboard.press("Enter");
+      await lines(1);
+      assert.match(await page.getAttribute("#undo", "title"), /^Undo Draw line/);
+      assert.match(await page.evaluate(() => document.activeElement?.id ?? ""), /^typed-/, "the keys stay in the typed boxes for the next line");
       await page.keyboard.press("Control+z");
-      assert.equal(await page.$eval("#width", (el) => el.dataset.mark ?? "remounted"), "same", "the shell's undo ran inside the field");
-      // What Ctrl+Z does in a plain field of this browser, away from the app: Chromium takes the
-      // typing back; another engine under test automation may not, and the app's field must then
-      // behave exactly as the plain one does (the shell neither blocks nor fakes the browser's undo).
-      const plain = await page.context().newPage();
-      await plain.setContent('<input id="f">');
-      await plain.click("#f");
-      await plain.keyboard.type("70");
-      await plain.keyboard.press("Control+z");
-      const plainUndoes = (await plain.inputValue("#f")) !== "70";
-      await plain.close();
-      if (browserName === "chromium") assert.equal(plainUndoes, true, "Chromium's own undo takes typing back in a plain field");
-      assert.equal((await width(page)) !== "70", plainUndoes, plainUndoes ? "the browser's own undo took the typing back" : `in ${browserName} a plain field keeps the typing after Ctrl+Z, and so must the app's`);
+      await lines(0);
+      assert.match(await page.getAttribute("#redo", "title"), /^Redo Draw line/);
+      // Half a number typed for the next line is the box's own to untype: the project keeps its steps.
+      await page.keyboard.press("Control+Shift+z");
+      await lines(1);
     } finally {
       await page.close();
     }

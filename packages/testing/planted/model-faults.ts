@@ -416,6 +416,12 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "move-all-or-none": {
+    what: "a Move with one body no longer there fails whole, so the other bodies it moves drop back (SL #506 item 4)",
+    edits: [{ file: REBUILD, find: "  if (from.length === 0 && gone.length > 0) return gone[0].failed;", replace: "  if (gone.length > 0) return gone[0].failed;" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
   "sketch-not-carried": {
     what: "a sketch on a moved face follows its height but not a Move's slide along it or turn about it (35e2h's compromise back)",
     edits: [{ file: REBUILD, find: "const carry = p.body === undefined ? null : carried(", replace: "const carry = Number(\"1\") ? null : carried(" }],
@@ -427,6 +433,12 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [{ file: MOVE, find: "const kept = sameBodies ? null : items!;", replace: "const kept = Number(\"1\") ? null : items!;" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
+  },
+  "reorder-past-shaper": {
+    what: "a reorder lets an item pass the Move or Combine that placed or changed a body it works on (SL #506 item 1)",
+    edits: [{ file: EDITS, find: "  for (const s of shapings(doc.timeline.features)) {", replace: "  for (const s of shapings([])) {" }],
+    run: ["timeline"],
+    caught: "outcome differs from the model",
   },
   "duplicate-no-body": {
     what: "a Duplicate builds but makes no copy (35e2)",

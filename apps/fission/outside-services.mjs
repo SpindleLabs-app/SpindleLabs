@@ -24,6 +24,8 @@ export const ACCOUNT_SERVICES = [
 /** Addresses in the source that are never contacted, each with why. */
 export const NOT_CONTACTED = [
   { host: "www.w3.org", why: "XML namespace names in SVG, never fetched" },
+  { host: "schemas.microsoft.com", why: "XML namespace names inside an exported 3MF file (the 3MF format's own), never fetched" },
+  { host: "schemas.openxmlformats.org", why: "XML package namespace names inside an exported 3MF file, never fetched" },
   { host: "example.com", why: "an example address shown as a hint" },
   { host: "your-fission-address", why: "a placeholder shown as a hint" },
   { host: "192.168.1.50", why: "an example address shown as a hint (a computer the person names is asked first, and is Ollama)" },
