@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { emptyProject, projectFromJson, projectToJson } from "@fission/core";
-import { bodyNumbers, insertPreset, makesBody, numberBodies, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
+import { bodyNumbers, insertPreset, makesBody, numberBodies, numberedWhenBuilt, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { deleteItem, moveMarker, reorderItem, suppressItem } from "../src/timeline-edits.ts";
@@ -109,7 +109,7 @@ test("hand-worked: a version 4 file gets the numbers it showed: the bodies that 
   ]);
   assert.equal(read.nextBody, 5);
   assert.deepEqual(labels(read), ["Body 1", "Body 2"]);
-  assert.equal(read.version, 17);
+  assert.equal(read.version, 18);
   // Unsuppressed and rolled forward, A and D come back as Body 3 and Body 4.
   assert.deepEqual(labels(moveMarker(suppressItem(read, "feature-1", false), null)), ["Body 3", "Body 1", "Body 2", "Body 4"]);
 });
@@ -162,8 +162,11 @@ test("every saved project in the repo opens with each body row named as before 3
       // Every body has a number, none twice, the counter above them all.
       const numbers = doc.bodies!.map((b) => b.number);
       assert.equal(new Set(numbers).size, numbers.length, where);
-      // One body for each feature that makes one, besides a Combine's new pieces (35f, "body:<combine>/piece:<n>").
-      const own = doc.bodies!.filter((b) => !b.id.includes("/piece:"));
+      // One body for each feature that makes one, besides those numbered only once a rebuild makes them: a Combine's or
+      // an operation extrude's new pieces (35f, "body:<item>/piece:<n>") and an Extrude Join's own body, its piece apart
+      // from the bodies it joins (version 16: the first saved file with one is old-files/later/v15-join-piece, #512).
+      const items = new Map(doc.timeline.features.map((f) => [f.id, f] as const));
+      const own = doc.bodies!.filter((b) => !numberedWhenBuilt(b.id, items.get(b.id.slice(5))));
       assert.equal(own.length, doc.timeline.features.filter(makesBody).length, where);
       if (version <= 4) assert.equal(own.length, doc.bodies!.length, where);
       assert.ok(numbers.every((n) => n < doc.nextBody!), where);
