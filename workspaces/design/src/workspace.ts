@@ -4600,7 +4600,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           if (combineBox.ready) void ctx.history.hold(finishCombine());
           return true;
         }
-        if (!extrudeBox.shown || !onView) return false;
+        // Extrude's own Distance box counts as the view too: it has the focus as the panel opens with a mouse (UI audit
+        // 2026-11-12, `typesStraightAway`), and its Enter is this OK. In the app the box's keydown takes Enter itself (the
+        // shell sends no plain key from a text field), so this never records twice.
+        const inDistance = active !== null && active.id === "extrude-distance" && ctx.properties.contains(active);
+        if (!extrudeBox.shown || !(onView || inDistance)) return false;
         if (extrudeBox.ready) void ctx.history.hold(finishExtrude(extrudeBox.typed));
         return true;
       }
