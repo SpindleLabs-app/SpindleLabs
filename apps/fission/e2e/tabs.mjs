@@ -1,9 +1,9 @@
-// Browser check of the design tabs (tabs step 1; they are part of the home screen's switch, home.config.mjs), in a real
-// Chromium. On the normal build (home screen off until released) there is no strip; `npm run e2e:tabs` builds one with the
-// switch on (dist-home/, E2E_DIST names another) and checks:
-// - A first visit shows one tab, "Untitled" with a DESIGN chip; "+" opens a second tab with a new empty design while the first
+// Browser check of the design tabs (their own switch, tabs.config.mjs; a build with the home screen has them too), in a
+// real Chromium. On the normal build (tabs off until released) there is no strip; `npm run e2e:tabs` builds one with the
+// switch on (dist-tabs/; E2E_DIST names another, such as the home screen's dist-home/) and checks:
+// - A first visit shows one tab, "Untitled" with a DESIGNLAB chip; "+" opens a second tab with a new empty design while the first
 //   keeps its box (24,000 mm³) and comes back when chosen.
-// - A tab says what it is for: after Slice is chosen in the second tab its chip reads SLICE and the first still reads DESIGN;
+// - A tab says what it is for: after Slice is chosen in the second tab its chip reads SLICELAB and the first still reads DESIGNLAB;
 //   choosing a tab shows the workspace that tab was in.
 // - × on a tab that is not on screen only takes it off the strip; × on the one on screen brings up its neighbour; × on the
 //   last tab leaves one new empty design.
@@ -62,8 +62,10 @@ async function newPage(width = 1280, touch = false, scheme = "dark") {
   await page.goto(url + "?test-hooks#design");
   return { context, page };
 }
-/** Past the home screen, which a build with the tabs also has. */
+/** Past the home screen, when the build has it (dist-home/); a build with only the tabs opens straight on the design. */
 async function pastHome(page) {
+  await page.locator("#design-tabs").waitFor({ state: "attached" }); // made in the same run of the shell's code as the home screen
+  if ((await page.$("#home")) === null) return;
   await page.locator("#home-close").waitFor({ state: "visible" });
   await page.click("#home-close");
   await page.locator("#home").waitFor({ state: "hidden" });
@@ -84,51 +86,51 @@ if (!WITH_TABS) {
     await startWithBox(page, touch);
     await saved(page);
     await press(page, "#design-tabs-add", touch);
-    await tabsAre(page, ["Untitled|DESIGN|", "Untitled|DESIGN|on"], "two tabs, the new one on screen");
+    await tabsAre(page, ["Untitled|DESIGNLAB|", "Untitled|DESIGNLAB|on"], "two tabs, the new one on screen");
     await page.locator("#start-hint").waitFor();
     return { context, page };
   }
 
-  await check("a first visit has one DESIGN tab; + opens a new design in a second tab and the first keeps its box", async () => {
+  await check("a first visit has one DESIGNLAB tab; + opens a new design in a second tab and the first keeps its box", async () => {
     const { context, page } = await newPage();
     await pastHome(page);
     await page.locator("#start-hint").waitFor();
-    assert.deepEqual(await tabsOf(page), [{ name: "Untitled", kind: "DESIGN", on: true }]);
+    assert.deepEqual(await tabsOf(page), [{ name: "Untitled", kind: "DESIGNLAB", on: true }]);
     await context.close();
     const t = await two();
     await t.page.click(".design-tabs-tab:first-child .design-tabs-main");
-    await tabsAre(t.page, ["Untitled|DESIGN|on", "Untitled|DESIGN|"], "the first tab on screen");
+    await tabsAre(t.page, ["Untitled|DESIGNLAB|on", "Untitled|DESIGNLAB|"], "the first tab on screen");
     await volume(t.page, "24,000 mm³");
     await t.page.click(".design-tabs-tab:last-child .design-tabs-main");
     await t.page.locator("#start-hint").waitFor();
     await t.context.close();
   });
 
-  await check("a tab says what it is for: SLICE after Slice is chosen in the tab with the box, and choosing a tab shows the workspace it was in", async () => {
+  await check("a tab says what it is for: SLICELAB after Slice is chosen in the tab with the box, and choosing a tab shows the workspace it was in", async () => {
     const { context, page } = await two();
     await page.click(".design-tabs-tab:first-child .design-tabs-main");
     await volume(page, "24,000 mm³");
     // In the public app DESIGN ▾'s Slice opens a dialog over Design; the Slice page itself is reached by its link (#slice).
     await page.evaluate(() => (location.hash = "#slice"));
     await until(page, () => document.body.dataset.activeWorkspace === "slice", null, "Slice shown");
-    await tabsAre(page, ["Untitled|SLICE|on", "Untitled|DESIGN|"], "the first tab reads SLICE, the second still DESIGN");
+    await tabsAre(page, ["Untitled|SLICELAB|on", "Untitled|DESIGNLAB|"], "the first tab reads SLICELAB, the second still DESIGNLAB");
     await page.click(".design-tabs-tab:last-child .design-tabs-main");
     await page.locator("#start-hint").waitFor();
     assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design");
     await page.click(".design-tabs-tab:first-child .design-tabs-main");
     await until(page, () => document.body.dataset.activeWorkspace === "slice", null, "Slice shown again for the first tab");
-    await tabsAre(page, ["Untitled|SLICE|on", "Untitled|DESIGN|"], "chips unchanged after switching");
+    await tabsAre(page, ["Untitled|SLICELAB|on", "Untitled|DESIGNLAB|"], "chips unchanged after switching");
     await context.close();
   });
 
   await check("× takes a tab off the strip; the last one leaves a new empty design", async () => {
     const { context, page } = await two();
     await page.click(".design-tabs-tab:first-child .design-tabs-close"); // not on screen: just leaves the strip
-    await tabsAre(page, ["Untitled|DESIGN|on"], "one tab left");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on"], "one tab left");
     await page.locator("#start-hint").waitFor();
     await saved(page);
     await page.click(".design-tabs-tab .design-tabs-close"); // the last one
-    await tabsAre(page, ["Untitled|DESIGN|on"], "one new tab");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on"], "one new tab");
     await page.locator("#start-hint").waitFor();
     await context.close();
   });
@@ -137,7 +139,7 @@ if (!WITH_TABS) {
     const { context, page } = await two();
     await saved(page);
     await page.click(".design-tabs-tab:last-child .design-tabs-close");
-    await tabsAre(page, ["Untitled|DESIGN|on"], "the first tab, on screen");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on"], "the first tab, on screen");
     await volume(page, "24,000 mm³");
     await context.close();
   });
@@ -192,7 +194,7 @@ if (!WITH_TABS) {
     await page.reload();
     await pastHome(page);
     await volume(page, "24,000 mm³");
-    await tabsAre(page, ["Untitled|DESIGN|on", "Untitled|DESIGN|"], "both tabs back");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on", "Untitled|DESIGNLAB|"], "both tabs back");
     await context.close();
   });
 
@@ -214,7 +216,7 @@ if (!WITH_TABS) {
     const { context, page } = await two(393, true);
     // The strip is the switcher and +, not the wide row of tabs.
     assert.equal(await page.isVisible(".design-tabs-list"), false);
-    assert.match(await page.textContent("#design-tabs-switch"), /Untitled\s*DESIGN\s*2/);
+    assert.match(await page.textContent("#design-tabs-switch"), /Untitled\s*DESIGNLAB\s*2/);
     assert.equal(await page.isHidden("#design-tabs-menu"), true);
     await page.tap("#design-tabs-switch");
     await page.locator("#design-tabs-menu").waitFor({ state: "visible" });
@@ -231,11 +233,11 @@ if (!WITH_TABS) {
     await tapTab(page, 0);
     await volume(page, "24,000 mm³");
     assert.equal(await page.isHidden("#design-tabs-menu"), true);
-    await tabsAre(page, ["Untitled|DESIGN|on", "Untitled|DESIGN|"], "the first tab on screen");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on", "Untitled|DESIGNLAB|"], "the first tab on screen");
     // × in the list closes that tab.
     await page.tap("#design-tabs-switch");
     await page.tap("#design-tabs-menu .design-tabs-tab:nth-child(2) .design-tabs-close");
-    await tabsAre(page, ["Untitled|DESIGN|on"], "one tab left");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on"], "one tab left");
     // Many tabs: the list scrolls inside half the screen.
     for (let i = 0; i < 9; i++) {
       await page.tap("#design-tabs-add");
