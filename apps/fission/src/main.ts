@@ -1455,12 +1455,15 @@ function undoRedo(which: "undo" | "redo") {
   pressesWaiting++;
   waitingOn[which]++;
   showUndoRedo();
+  // What it waits for may end with nothing recorded (an OK refused, a question cancelled or still open: the history's
+  // `callOff`). The press was for that, so it is dropped: carried out, it took back the step before (#622).
+  const calledOff = ctx.history.callsOff();
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
       waitingOn[which]--;
-      undoRedoNow(which);
+      if (ctx.history.callsOff() === calledOff) undoRedoNow(which);
       showUndoRedo();
     });
 }

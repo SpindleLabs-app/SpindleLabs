@@ -1573,7 +1573,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       void update(step, undefined, next);
     },
     ask: (q, go) => deleting.ask(q, go),
-    hold: (work) => ctx.history.hold(work), // a delete the kernel still plans, held like an OK it still checks (#537)
+    hold: (work) => holdAsked(work), // a delete the kernel still plans, held like an OK it still checks (#537)
     refuse: (message) => panel.showError(message),
     edit: (id) => openEdit(id),
     editSketch: (id) => openSketch(id),
@@ -1590,6 +1590,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let showing = 0;
   /** Set once unmounted: a show() still waiting on the kernel then draws nothing. */
   let putAway = false;
+  /**
+   * `work`, something the person asked for that records once the kernel has answered (an OK it checks, a delete it
+   * plans), held in the history so that an Undo or Redo pressed meanwhile waits for it. When it ends with nothing
+   * recorded (refused, cancelled, a question left open) the presses that waited are called off: they were for this,
+   * and carried out they took back the step before (Undo hunt 2026-11-12, #622).
+   */
+  function holdAsked<T>(work: Promise<T>): Promise<T> {
+    const before = ctx.history.present();
+    const told = () => {
+      if (!putAway && ctx.history.present() === before) ctx.history.callOff();
+    };
+    return ctx.history.hold(work.finally(told));
+  }
   async function show(doc: DesignDocument, kind: PartKind) {
     shownDoc = doc;
     const n = ++showing;
@@ -2745,7 +2758,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     distance: (typed) => extrudeDistance(signedDistance(typed)),
     flip: (typed) => extrudeDistance(signedDistance(typed)),
     clear: () => chooseProfile(null),
-    ok: (typed) => void ctx.history.hold(finishExtrude(typed)),
+    ok: (typed) => void holdAsked(finishExtrude(typed)),
     cancel: () => leaveExtrude(),
     operation: (op) => {
       if (!extruding) return;
@@ -3254,7 +3267,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   // Edit feature (step 25a2): an earlier feature's sizes from its timeline item or browser row.
   const editBox = featureEditPanel(ctx.properties, {
-    ok: (typed, flip) => void ctx.history.hold(finishEdit(typed, flip)),
+    ok: (typed, flip) => void holdAsked(finishEdit(typed, flip)),
     cancel: () => leaveEdit(),
     operation: (op) => {
       if (editOps === null) return;
@@ -3350,7 +3363,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // Move (step 35e2b): a new Move of the bodies picked, or a Move's numbers edited from its timeline item.
   const moveBox = movePanel(ctx.properties, {
     typed: () => previewMove(),
-    ok: (typed) => void ctx.history.hold(finishMove(typed)),
+    ok: (typed) => void holdAsked(finishMove(typed)),
     cancel: () => leaveMove(),
     snap: () => (snapping ? stopSnap() : startSnap()),
     centre: () => void centreOfBodies(),
@@ -3465,7 +3478,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       showCombineHint();
     },
     changed: () => combineBox.showError(""),
-    ok: () => void ctx.history.hold(finishCombine()), // held like Move's and Extrude's OK: an Undo pressed while the kernel checks waits, then takes this back (#503)
+    ok: () => void holdAsked(finishCombine()), // held like Move's and Extrude's OK: an Undo pressed while the kernel checks waits, then takes this back (#503)
     cancel: () => leaveCombine(),
   });
   // Measure (35e2l2, measure-view.ts): Inspect ▾ Measure's panel; while open the view's clicks pick what to measure, and select nothing.
@@ -3696,6 +3709,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveCombine();
     if (mode.kind !== "none") leaveSketch();
     leaveExplode(); // a tool works on the bodies where they are
+    editOpenings++;
     editBox.show(feature);
     leaveEditRegions(); // another item's, still offered: its body is drawn again
     editOps = null;
@@ -3710,7 +3724,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     void offerEditRegions(id);
   }
 
+  /** How many times Edit feature was opened or left: an OK still with the kernel is for the panel as it was open then. */
+  let editOpenings = 0;
   function leaveEdit() {
+    editOpenings++;
     editBox.hide();
     editOps = null;
     leaveEditRegions();
@@ -3803,6 +3820,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   async function finishEdit(typed: Partial<Record<SizeKey, string>>, flip?: boolean) {
     const id = editBox.editing;
     if (id === null) return;
+    // The panel as it is open now: closed and opened again on the same item while the kernel checks, this OK is still
+    // the closed one's and records nothing (Undo hunt 2026-11-12, #622: OK, Cancel, open again recorded the cancelled
+    // edit and shut the new panel). Extrude, Move and Combine count their openings the same way.
+    const opened = editOpenings;
     const before = designDoc();
     let next: DesignDocument;
     try {
@@ -3838,14 +3859,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       refused = e instanceof Error ? e.message : String(e);
     }
     // Closed, or the design changed while the kernel looked: this edit is out of date.
-    if (editBox.editing !== id) return;
+    if (editBox.editing !== id || editOpenings !== opened) return;
     editBox.busy(false);
     if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
     if (refused !== null) return editBox.showError(refused);
     // Its Cut or Join now reaches nothing (#521): asked first; Cancel leaves the panel open.
     const op = extrudeOperation(next.timeline.features.find((f) => f.id === id)!)?.operation;
     if (misses.length > 0 && (op === "cut" || op === "join")) {
-      if (!(await askExtrudeMisses(next, id, op, misses)) || editBox.editing !== id) return;
+      if (!(await askExtrudeMisses(next, id, op, misses)) || editBox.editing !== id || editOpenings !== opened) return;
       if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
     }
     menuHost.record(editStep(before, id), next);
@@ -4208,7 +4229,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** `turn` in line behind the clicks before it. */
   const inTurn = (turn: () => Promise<void>) => {
     waiting++;
-    clicks = clicks.then(turn).finally(() => void waiting--);
+    // Held in the history until it is recorded, as an OK the kernel still checks is: every turn asks the kernel before
+    // it records, and an Undo pressed meanwhile was carried out first, taking back the shape before and dropping this
+    // one (Undo hunt 2026-11-12, #622: within 0.2 s of the click in a browser). Not called off when it records
+    // nothing: a line's first point is no step, and Undo after it does what it does when waited for.
+    clicks = ctx.history.hold(clicks.then(turn).finally(() => void waiting--));
   };
   const onSketchPointer = (pointer: SketchPointer) => {
     if (mode.kind !== "edit") return;
@@ -4667,13 +4692,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // Enter is the Move panel's OK the same way (35e2b).
         if (moveBox.shown && !extrudeBox.shown) {
           if (!onView) return false;
-          if (moveBox.ready) void ctx.history.hold(finishMove(moveBox.typed)); // busy while the kernel checks: a second Enter records nothing twice
+          if (moveBox.ready) void holdAsked(finishMove(moveBox.typed)); // busy while the kernel checks: a second Enter records nothing twice
           return true;
         }
         // And the Combine panel's (35f1c).
         if (combineBox.shown && !extrudeBox.shown) {
           if (!onView) return false;
-          if (combineBox.ready) void ctx.history.hold(finishCombine());
+          if (combineBox.ready) void holdAsked(finishCombine());
           return true;
         }
         // Extrude's own Distance box counts as the view too: it has the focus as the panel opens with a mouse (UI audit
@@ -4681,7 +4706,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // shell sends no plain key from a text field), so this never records twice.
         const inDistance = active !== null && active.id === "extrude-distance" && ctx.properties.contains(active);
         if (!extrudeBox.shown || !(onView || inDistance)) return false;
-        if (extrudeBox.ready) void ctx.history.hold(finishExtrude(extrudeBox.typed));
+        if (extrudeBox.ready) void holdAsked(finishExtrude(extrudeBox.typed));
         return true;
       }
       if (id === "clear-selection" && editBox.editing !== null) return leaveEdit(), true;

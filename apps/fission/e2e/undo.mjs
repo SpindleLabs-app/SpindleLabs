@@ -488,6 +488,73 @@ try {
     }
   });
 
+  // Undo hunt 2026-11-12 (#622). The kernel's answers are held back on their way to its worker, so the key always
+  // comes while the action just made is still being worked out, on any machine.
+  const slowKernel = (page, ms) =>
+    page.evaluate((wait) => {
+      const send = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (message, ...rest) {
+        if (message?.op === undefined) return send.call(this, message, ...rest);
+        return void setTimeout(() => send.call(this, message, ...rest), wait);
+      };
+    }, ms);
+  await check("Ctrl+Z straight after the click that draws a rectangle takes back that rectangle, not the one before", async () => {
+    const page = await fresh();
+    try {
+      sheetsClearFor(page);
+      await page.click("#create-sketch");
+      await openPanel(page, "properties", false);
+      await pickPlane(page, "XY", false);
+      await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+      await closePanels(page, false);
+      const lines = (n) => page.waitForFunction((w) => document.querySelector("#viewport").dataset.sketchLines === String(w), n, { timeout: 8000 });
+      const view = await page.locator("#viewport canvas").boundingBox();
+      const click = (xy) => page.mouse.click(screenPoint(view, [...xy, 0], TOP).x, screenPoint(view, [...xy, 0], TOP).y);
+      await page.keyboard.press("r");
+      await click([0, 0]);
+      await click([10, 10]);
+      await lines(4); // rectangle A
+      await click([20, 0]);
+      await page.waitForTimeout(500);
+      await slowKernel(page, 150);
+      await click([30, 10]); // rectangle B, still with the kernel when the key comes
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(2500);
+      // A's four sides stay; B was drawn and taken back, so Redo offers it.
+      assert.equal(await page.$eval("#viewport", (v) => v.dataset.sketchLines), "4");
+      assert.match(await page.getAttribute("#undo", "title"), /^Undo Draw rectangle/);
+      assert.match(await page.getAttribute("#redo", "title"), /^Redo Draw rectangle/);
+      await page.keyboard.press("Control+Shift+z");
+      await lines(8);
+    } finally {
+      await page.close();
+    }
+  });
+  await check("Ctrl+Z straight after a Delete that asks first leaves the step before alone, and the question open", async () => {
+    // Box 1, Sketch 1 and Extrude 1 of it: deleting Sketch 1 asks, since Extrude 1 is built from it.
+    const page = await fresh("#design", { box: false });
+    try {
+      await page.setInputFiles("#open-file", { name: "ask.spindle", mimeType: "application/json", buffer: readFileSync(new URL("./regressions/undo-delete-ask.spindle", import.meta.url)) });
+      await page.waitForFunction(() => document.querySelectorAll("#timeline li[data-item]").length === 3, null, { timeout: 30000 });
+      await page.waitForTimeout(1000);
+      const bar = () => page.$$eval("#timeline .timeline-bar-item", (ls) => ls.map((li) => li.title.split("\n")[0] + (li.dataset.suppressed ? " (suppressed)" : "")));
+      await page.locator("#timeline .timeline-bar-item").nth(0).click({ button: "right" });
+      await page.click("#row-menu-suppress"); // the step before
+      await page.waitForFunction(() => document.getElementById("undo").title.startsWith("Undo Suppress Box 1"));
+      await page.waitForTimeout(1000);
+      await page.locator("#timeline .timeline-bar-item").nth(1).focus();
+      await slowKernel(page, 100);
+      await page.keyboard.press("Delete");
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(2500);
+      assert.deepEqual(await bar(), ["1. Box 1 (suppressed)", "2. Sketch 1", "3. Extrude 1"], "nothing was deleted and the Suppress stays");
+      assert.match(await page.getAttribute("#undo", "title"), /^Undo Suppress Box 1/);
+      assert.equal(await page.$eval("#delete-ask", (d) => d.open), true, "the question is still there to answer");
+    } finally {
+      await page.close();
+    }
+  });
+
   await check("Undo pressed while an OK is still with the kernel takes back that OK, not the step before (clumsy hunt 2026-11-04)", async () => {
     // Move: Box 1 and Cylinder 1, Move Body 1 by X 10, OK, and Ctrl+Z while the kernel still checks the Move. On main the
     // Undo ran first: it took back Insert Cylinder, and the OK, finding the design changed, recorded nothing, so the Move
