@@ -30,9 +30,9 @@ test("readParts reads every shape as an outline, and one that can't be read says
 });
 
 test("the saved choices read back; anything missing or unusable falls back to the default and never throws", () => {
-  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {} });
+  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 3, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {}, ops: {} });
   for (const bad of [undefined, null, 7, "x", {}, { bed: { width: -1, height: 5 } }, { gap: 1e9 }, { thickness: 0 }, { thickness: 51 }])
-    assert.deepEqual(readLaserData(bad), { version: 2, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {} }, JSON.stringify(bad));
+    assert.deepEqual(readLaserData(bad), { version: 3, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, ops: {} }, JSON.stringify(bad));
   assert.deepEqual(readLaserData({ off: ["a", 3, null, "b"] }).off, ["a", "b"]);
 });
 
@@ -53,7 +53,7 @@ test("hand-worked: the flat view is given the bed and each placed part as the fi
   assert.deepEqual(scene.bed, bed);
   assert.deepEqual(scene.note, []);
   // a: a 10 × 10 square placed 5 mm in from the lower-left corner: (5,5) (15,5) (15,15) (5,15), y flipped in the path.
-  assert.deepEqual(scene.parts[0], { id: "a", label: "a", d: "M5 -5L15 -5L15 -15L5 -15Z", box: { minX: 5, minY: 5, maxX: 15, maxY: 15 } });
+  assert.deepEqual(scene.parts[0], { id: "a", label: "a", op: "cut", d: "M5 -5L15 -5L15 -15L5 -15Z", box: { minX: 5, minY: 5, maxX: 15, maxY: 15 } });
   // Slot: a 20 × 10 rectangle whose two ends are half circles of radius 5 (bulge 1), so its box is 5 mm wider each end:
   // 30 × 10. It goes right of a: its box starts at x = 5 + 10 + 5 = 20, so the outline moves by 20 − (−5) = 25 across and
   // 5 up: corners (25,5) (45,5) (45,15) (25,15). Each half circle is drawn as two quarter turns of radius 5 through its
@@ -122,7 +122,7 @@ function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: u
 test("the page lists the parts with their sizes, lays them on the bed, draws them flat, and keeps a part turned off in the project", async () => {
   const { ctx, element, viewport, drawn, changes, project, mounted } = mount();
   await mounted.ready;
-  const rows = [...ctx.browser.querySelectorAll("li")].map((l) => l.textContent!.trim());
+  const rows = [...ctx.browser.querySelectorAll("li")].map((l) => (l.querySelector("label") ?? l).textContent!.trim());
   assert.deepEqual(rows, ["Sketch a, 60 × 40 mm", "Sketch b, 30 × 10 mm", "Sketch c: can't be cut: the sketch is not closed"]);
   assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "2 parts on the bed.");
   // The view: the shared viewport's empty 2D view (no body, no 3D grid, no view cube) with the flat drawing over it.
@@ -207,7 +207,7 @@ test("the sheet thickness has no box while nothing uses it, and a thickness a pr
   assert.equal(width.value, "300");
   width.value = "310";
   width.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
-  assert.deepEqual(project.workspaces.laser, { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {} });
+  assert.deepEqual(project.workspaces.laser, { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {}, ops: {} });
   mounted.unmount();
 });
 
@@ -217,10 +217,10 @@ test("a change in the page keeps what the project's Laser data holds beside the 
   const { ctx, project, type, mounted } = await withPicked(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
   const held = () => project.workspaces.laser as Record<string, unknown>;
   type("width", "310");
-  assert.deepEqual(held(), { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
+  assert.deepEqual(held(), { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept", ops: {} });
   // Sketch b (picked) typed to X 100: the first hand move, which also fixes Sketch a where the rows put it, (2, 2).
   type("x", "100");
-  assert.deepEqual(held(), { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept" });
+  assert.deepEqual(held(), { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept", ops: {} });
   const box = ctx.browser.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
   box.checked = false;
   box.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change", { bubbles: true }));
@@ -407,14 +407,14 @@ test("hand-worked: Turn left turns the part a quarter turn about its middle; rea
   // 7 mm of it is below the bed's bottom edge.
   assert.equal(words(), "2 parts on the bed. Sketch b is off the bed: 7 mm past the bottom.");
   assert.equal(partWords(), "Sketch b is off the bed: 7 mm past the bottom.");
-  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-warn laser-flat-part-picked");
-  assert.equal(path("b").querySelector("title")!.textContent, "Sketch b, 10 × 30 mm, off the bed: 7 mm past the bottom");
-  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-warn laser-flat-part-picked");
+  assert.equal(path("b").querySelector("title")!.textContent, "Sketch b, cut, 10 × 30 mm, off the bed: 7 mm past the bottom");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
   // Y typed as 0 brings it wholly onto the bed: the warning goes.
   type("y", "0");
   assert.equal(drawn()[1], "M120 0L120 -30L110 -30L110 0Z");
   assert.equal(words(), "2 parts on the bed.");
-  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-picked");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-picked");
   // The angle typed back to 0: 10 × 30 at (110, 0) has its middle at (115, 15); 30 × 10 about it starts at (100, 10).
   type("angle", "0");
   assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 100, y: 10, angle: 0 } });
@@ -531,10 +531,10 @@ test("a part put over another is asked about once, said in words and marked on b
   assert.deepEqual(askedOf, [JSON.stringify([{ path: { corners: [3, 3, 63, 3, 63, 43, 3, 43], bulges: [] } }, { path: { corners: [10, 3, 40, 3, 40, 13, 10, 13], bulges: [] } }])]);
   assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b overlap.");
   assert.equal(partWords(), "Sketch a and Sketch b overlap.");
-  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-warn");
-  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-warn laser-flat-part-picked");
-  assert.equal(path("a").querySelector("title")!.textContent, "Sketch a, 60 × 40 mm, overlaps Sketch b");
-  assert.equal(path("b").querySelector("title")!.textContent, "Sketch b, 30 × 10 mm, overlaps Sketch a");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-warn");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-warn laser-flat-part-picked");
+  assert.equal(path("a").querySelector("title")!.textContent, "Sketch a, cut, 60 × 40 mm, overlaps Sketch b");
+  assert.equal(path("b").querySelector("title")!.textContent, "Sketch b, cut, 30 × 10 mm, overlaps Sketch a");
   click("a"); // a redraw that moved nothing asks nothing
   await tick();
   assert.equal(askedOf.length, 1);
@@ -543,7 +543,7 @@ test("a part put over another is asked about once, said in words and marked on b
   await tick();
   assert.equal(askedOf.length, 1);
   assert.equal(words(), "2 parts on the bed.");
-  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
   answer = { relation: "apart" }; // were it asked again, the warning would not come back
   type("x", "10");
   assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b overlap."); // at once, from the answer kept for these two as they sit
@@ -557,19 +557,19 @@ test("a touch is said but not marked; too close to tell is said and marked; a ch
   type("x", "63"); // b's left side on a's right side: the boxes touch, so the pair is asked about
   await tick();
   assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b touch: their cuts would share a line.");
-  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
   answer = async () => ({ relation: "unknown", why: "an edge lies along another", meet: true });
   type("x", "62");
   await tick();
   assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b touch or overlap: they are too close to tell which.");
-  assert.equal(path("a").querySelector("title")!.textContent, "Sketch a, 60 × 40 mm, touches or overlaps Sketch b");
+  assert.equal(path("a").querySelector("title")!.textContent, "Sketch a, cut, 60 × 40 mm, touches or overlaps Sketch b");
   answer = async () => {
     throw new Error("the kernel was restarted");
   };
   type("x", "61");
   await tick();
   assert.equal(words(), "2 parts on the bed. Couldn't check whether Sketch a and Sketch b overlap: the kernel was restarted.");
-  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
   // A slow answer: the part is moved clear before it comes, and the answer, about where the part was, is not shown.
   let late: (r: PartsRelation) => void = () => {};
   answer = () => new Promise<PartsRelation>((r) => (late = r));
@@ -578,7 +578,7 @@ test("a touch is said but not marked; too close to tell is said and marked; a ch
   late({ relation: "overlap" });
   await tick();
   assert.equal(words(), "2 parts on the bed.");
-  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-picked");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-picked");
   // Boxes 0.5 mm apart are apart: nothing is asked at all.
   let asked = 0;
   answer = async () => (asked++, { relation: "overlap" });
@@ -606,5 +606,89 @@ test("hand-worked, on the real kernel: a part inside another overlaps it, one sh
   await settled("2 parts on the bed. Sketch a and Sketch b overlap.");
   type("x", "63.5");
   await settled("2 parts on the bed.");
+  mounted.unmount();
+});
+
+// Layers (L1c): each part cut, scored or engraved, chosen in its row of the parts list.
+
+test("a part's layer is chosen in its row: kept in the project by its id (cut keeps nothing), one undo step each, drawn in its look, carried into both files", async () => {
+  const saved: string[] = [];
+  const { ctx, project, changes, element, mounted, window } = mount(async (text) => {
+    saved.push(text);
+    return "x";
+  });
+  await mounted.ready;
+  const choose = (id: string, op: string) => {
+    const s = ctx.browser.querySelector<HTMLSelectElement>(`select[data-op="${id}"]`)!;
+    s.value = op;
+    s.dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  const select = (id: string) => ctx.browser.querySelector<HTMLSelectElement>(`select[data-op="${id}"]`)!;
+  // Each part with an outline has a choice, cut at first, offered in the order Cut, Score, Engrave; the refused one has none.
+  assert.deepEqual([...ctx.browser.querySelectorAll<HTMLSelectElement>("select")].map((s) => [s.dataset.op, s.value]), [["a", "cut"], ["b", "cut"]]);
+  assert.deepEqual([...select("a").querySelectorAll("option")].map((o) => [o.value, o.textContent]), [["cut", "Cut"], ["score", "Score"], ["engrave", "Engrave"]]);
+  assert.equal(select("a").getAttribute("aria-label"), "What the laser does to Sketch a");
+  choose("a", "engrave");
+  choose("b", "score");
+  const ops = () => (project.workspaces.laser as { ops?: unknown }).ops;
+  assert.deepEqual(ops(), { a: "engrave", b: "score" });
+  assert.deepEqual(changes.slice(-2), ["Engrave Sketch a on the laser", "Score Sketch b on the laser"]);
+  // Drawn in the layer's look, and said in the part's words.
+  const part = (id: string) => element.querySelector(`path.laser-flat-part[data-part="${id}"]`)!;
+  assert.equal(part("a").getAttribute("class"), "laser-flat-part laser-flat-part-engrave");
+  assert.equal(part("b").getAttribute("class"), "laser-flat-part laser-flat-part-score");
+  assert.equal(part("a").querySelector("title")!.textContent, "Sketch a, engrave, 60 × 40 mm");
+  // The files: the SVG's groups engrave then score (no cut group: nothing is cut), the DXF's entities on those layers.
+  for (const b of ctx.properties.querySelectorAll<HTMLButtonElement>("button[data-save]")) {
+    b.click();
+    await tick();
+  }
+  assert.deepEqual([...saved[0].matchAll(/<g id="(\w+)">/g)].map((m) => m[1]), ["engrave", "score"]);
+  assert.deepEqual([...saved[1].matchAll(/0\nPOLYLINE\n8\n(\w+)\n/g)].map((m) => m[1]), ["ENGRAVE", "SCORE"]);
+  // Back to cut: the entry goes; the choice reads back from the project after the page is drawn again.
+  choose("a", "cut");
+  assert.deepEqual(ops(), { b: "score" });
+  assert.equal(select("b").value, "score");
+  assert.equal(part("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
+  mounted.unmount();
+});
+
+test("layers a project holds are used when the page opens; one for a part that isn't there changes nothing", async () => {
+  const { ctx, element, mounted } = mount(undefined, { version: 3, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, ops: { b: "engrave", gone: "score" } });
+  await mounted.ready;
+  assert.deepEqual([...ctx.browser.querySelectorAll<HTMLSelectElement>("select")].map((s) => s.value), ["cut", "engrave"]);
+  assert.deepEqual([...element.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("class")), ["laser-flat-part laser-flat-part-cut", "laser-flat-part laser-flat-part-engrave"]);
+  mounted.unmount();
+});
+
+test("an engraving or a score lying on a cut part is not asked about or warned of; two cut parts still are", async () => {
+  const askedOf: string[] = [];
+  const { ctx, path, type, words, mounted, window } = await withPicked(undefined, undefined, async (a) => {
+    askedOf.push(JSON.stringify(a.outer));
+    return { relation: "overlap" };
+  });
+  const choose = (id: string, op: string) => {
+    const s = ctx.browser.querySelector<HTMLSelectElement>(`select[data-op="${id}"]`)!;
+    s.value = op;
+    s.dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  choose("b", "engrave");
+  type("x", "10"); // Sketch b, now engraved, inside Sketch a's box (as in the overlap test above)
+  await tick();
+  assert.deepEqual(askedOf, []);
+  assert.equal(words(), "2 parts on the bed.");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut");
+  choose("b", "score");
+  await tick();
+  assert.deepEqual(askedOf, []);
+  assert.equal(words(), "2 parts on the bed.");
+  choose("b", "cut"); // two cut parts: asked, said and marked
+  await tick();
+  assert.equal(askedOf.length, 1);
+  assert.equal(words(), "2 parts on the bed. Sketch a and Sketch b overlap.");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-cut laser-flat-part-warn");
+  choose("a", "engrave"); // the kept answer is not shown for a pair that no longer matters
+  assert.equal(words(), "2 parts on the bed.");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-engrave");
   mounted.unmount();
 });
