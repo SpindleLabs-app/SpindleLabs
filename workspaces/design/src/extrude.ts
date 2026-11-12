@@ -10,12 +10,14 @@
 // Every extrude is a new body ("New body", step 24d1) until booleans join
 // them: it is added to the timeline at the marker and replaces nothing.
 
+import { bodiesUsed } from "./body-uses.ts";
 import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fission/core";
-import { bodyIdOf, bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, extrudeOperation, isCombineItem, isDuplicateItem, isMoveItem, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, numberedWhenBuilt, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, COMBINE_OPERATIONS, counted, extrudeOperation, freshName, insertAt, insertItem, isPiece, isSketchExtrude, makesBody, makesPieces, numberBodies, numberedWhenBuilt, takenNames, partFeature, shown, specOf, type CombineOperation, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 import { lengthRefused } from "./typed-entry.ts";
 import type { RegionRef } from "./regions.ts";
+import { extrudeSketches, hasMoreProfiles, MORE_PROFILES_LIMIT, moreProfiles, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /**
  * How far a new extrude goes until the user drags the arrow or types a
@@ -46,7 +48,31 @@ export const extrudeStep = (doc: DesignDocument, sketchId: string) => `Extrude $
 /** The undo step a typed distance is recorded as, merged per box like the other sizes. */
 export const DISTANCE_STEP = "Change extrude distance";
 
-const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel} by ${distance} mm${flip ? ", flipped" : ""}${operationWords(f)}`;
+const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel}${profilesWords(f)} by ${distance} mm${flip ? ", flipped" : ""}${operationWords(f)}`;
+
+/** After the first sketch's name in an extrude's summary, its other profiles (version 18): " and 2 more profiles"; nothing for one profile. */
+function profilesWords(f: Feature): string {
+  const n = Array.isArray(f.intent.parameters.more) ? f.intent.parameters.more.length : 0;
+  return n === 0 ? "" : ` and ${n} more profile${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * Refuses an extrude's other profiles (version 18): more than
+ * MORE_PROFILES_LIMIT, one that is the first or another picked again, one
+ * of something that is no sketch before the marker, or several with Join,
+ * Cut or Intersect (one profile for those until the next substep).
+ */
+function checkMore(doc: DesignDocument, first: ProfileRef, more: readonly ProfileRef[], choice: OperationChoice | null): void {
+  if (more.length === 0) return;
+  if (more.length > MORE_PROFILES_LIMIT) throw new Error(`an extrude takes at most ${MORE_PROFILES_LIMIT + 1} profiles, not ${more.length + 1}`);
+  if (choice !== null) throw new Error("Join, Cut and Intersect take one profile for now: pick one, or make a new body");
+  const end = insertAt(doc);
+  more.forEach((p, i) => {
+    const at = doc.timeline.features.findIndex((f) => f.id === p.sketch && f.intent.type === "sketch");
+    if (typeof p.sketch !== "string" || at < 0 || at >= end || doc.timeline.features[at].suppressed) throw new Error(`${shown(p.sketch)} is not a sketch an extrude put in at the marker can use`);
+    if ([first, ...more.slice(0, i)].some((q) => sameProfile(p, q))) throw new Error(`a profile of ${sketchItem(doc, p.sketch).provenance.self.label} is picked twice`);
+  });
+}
 
 /** An operation extrude's bodies and what they are called, as it names them (its provenance): an item's name, or "a piece of" the item that made it. */
 function bodyWords(f: Feature, bodies: readonly string[]): string[] {
@@ -102,7 +128,11 @@ function makersFor(doc: DesignDocument, bodies: readonly string[], end: number, 
 /** An extrude's parameters, dependencies and provenance with `choice` (null: a new body), for sketch `sketchId` named `label`. */
 function withOperation(base: Feature, sketchId: string, label: string, choice: OperationChoice | null, makers: readonly Feature[]): Feature {
   const { operation: _o, bodies: _b, ...rest } = base.intent.parameters;
-  if (choice === null) return { ...base, intent: { ...base.intent, parameters: rest }, dependsOn: [sketchId], provenance: { ...base.provenance, from: base.provenance.from.filter((x) => x.id === sketchId) } };
+  // A new body depends on its sketches only (several with version 18's profiles, `extrudeSketches`).
+  const sketches = extrudeSketches(base);
+  if (choice === null) return { ...base, intent: { ...base.intent, parameters: rest }, dependsOn: sketches, provenance: { ...base.provenance, from: base.provenance.from.filter((x) => sketches.includes(x.id)) } };
+  // Several profiles of one sketch count too (SL #611, broken-solids hunt D2: Edit feature dropped all but the first).
+  if (sketches.length > 1 || hasMoreProfiles(base)) throw new Error("Join, Cut and Intersect take one profile for now: make it a new body, or extrude one profile");
   const ids = [...new Set(makers.map((m) => m.id))].filter((m) => m !== sketchId);
   const from = [{ workspace: "design" as const, id: sketchId, label }, ...ids.map((id) => ({ workspace: "design" as const, id, label: makers.find((m) => m.id === id)!.provenance.self.label }))];
   return { ...base, intent: { ...base.intent, parameters: { ...rest, operation: choice.operation, bodies: [...choice.bodies] } }, dependsOn: [sketchId, ...ids], provenance: { ...base.provenance, from } };
@@ -122,8 +152,9 @@ export const isFlipped = (f: Feature): boolean => f.intent.parameters.flip === t
  * (step 26c, Fusion's Flip). `region` (step 48) names the region of the
  * sketch it extrudes; without it, the sketch's one closed outline.
  */
-export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: number, flip = false, region?: RegionRef, choice: OperationChoice | null = null): { doc: DesignDocument; id: string } {
+export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: number, flip = false, region?: RegionRef, choice: OperationChoice | null = null, more: readonly ProfileRef[] = []): { doc: DesignDocument; id: string } {
   const sketch = sketchItem(doc, sketchId);
+  checkMore(doc, { sketch: sketchId, ...(region ? { region } : {}) }, more, choice);
   if (choice !== null && !(COMBINE_OPERATIONS as readonly string[]).includes(choice.operation)) throw new Error(`${shown(choice.operation)} is not join, cut or intersect`);
   const makers = choice === null ? [] : makersFor(doc, choice.bodies, insertAt(doc), "the rollback marker, so an extrude put in at the marker");
   if (!Number.isFinite(distance)) throw new Error(`an extrude needs its distance in mm, not ${shown(distance)}`);
@@ -133,12 +164,15 @@ export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: n
   const name = freshName("Extrude", doc.timeline.features.filter(isSketchExtrude).length, takenNames(doc));
   const plain: Feature = {
     id,
-    intent: { type: "extrude", parameters: { sketch: sketchId, distance, ...(flip ? { flip: true } : {}), ...(region ? { region } : {}) }, summary: "" },
+    intent: { type: "extrude", parameters: { sketch: sketchId, distance, ...(flip ? { flip: true } : {}), ...(region ? { region } : {}), ...(more.length > 0 ? { more: more.map((p) => ({ sketch: p.sketch, ...(p.region ? { region: p.region } : {}) })) } : {}) }, summary: "" },
     provenance: { self: { workspace: "design", id, label: name }, from: [{ workspace: "design", id: sketchId, label }] },
     dependsOn: [sketchId],
     suppressed: false,
   };
-  const made = withOperation(plain, sketchId, label, choice, makers);
+  // Its other profiles' sketches (version 18): depended on and named, each once, after the first profile's.
+  const others = extrudeSketches(plain).slice(1);
+  const several: Feature = { ...plain, dependsOn: [sketchId, ...others], provenance: { ...plain.provenance, from: [...plain.provenance.from, ...others.map((s) => ({ workspace: "design" as const, id: s, label: sketchItem(doc, s).provenance.self.label }))] } };
+  const made = withOperation(several, sketchId, label, choice, makers);
   const feature: Feature = { ...made, intent: { ...made.intent, summary: summary(label, distance, flip, made) } };
   return { id, doc: numberBodies({ ...doc, nextId: counted(doc.nextId + 1), timeline: insertItem(doc, feature) }) };
 }
@@ -177,6 +211,9 @@ export function setExtrudeFlip(doc: DesignDocument, on: boolean, id?: string): D
   return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
 }
 
+/** Edit feature's words for a region that is already another of the extrude's profiles (SL #611 C2). */
+export const alreadyPicked = (label: string): string => `That region is already one of ${label}'s profiles: pick another region`;
+
 /**
  * The document with extrude `id` of a sketch extruding region `region` of
  * its sketch (step 48d4, Edit feature picking another region): the same
@@ -189,6 +226,9 @@ export function setExtrudeRegion(doc: DesignDocument, region: RegionRef, id: str
   if (!old) throw new Error(`there is no feature ${shown(id)} in the design`);
   if (!isSketchExtrude(old)) throw new Error(`${old.intent.summary} is not an extrude of a sketch, so it has no region to pick`);
   if (JSON.stringify(old.intent.parameters.region) === JSON.stringify({ outer: region.outer, centroid: region.centroid })) return doc;
+  // SL #611 C2: a region that is already another of its profiles would be extruded twice (and the file refused).
+  const ref: RegionRef = { outer: region.outer.map((p) => ({ curve: p.curve, reversed: p.reversed })), centroid: [region.centroid[0], region.centroid[1]] };
+  if (moreProfiles(old).some((p) => sameProfile(p, { sketch: old.intent.parameters.sketch as string, region: ref }))) throw new Error(alreadyPicked(old.provenance.self.label));
   const feature: Feature = { ...old, intent: { ...old.intent, parameters: { ...old.intent.parameters, region: { outer: region.outer.map((p) => ({ curve: p.curve, reversed: p.reversed })), centroid: [region.centroid[0], region.centroid[1]] } } } };
   return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
 }
@@ -235,17 +275,6 @@ export function setExtrudeOperation(doc: DesignDocument, id: string, choice: Ope
   // A Join made a new body again: its own body is that body, which remembers no faces (version 16 keeps them only on a Join's).
   if (choice === null && eyes.bodies?.some((b) => b.id === bodyIdOf(id) && b.faces !== undefined)) eyes.bodies = eyes.bodies.map((b) => (b.id === bodyIdOf(id) ? { id: b.id, number: b.number } : b));
   return numberBodies({ ...eyes, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } });
-}
-
-/** The bodies item `f` works on, by body id: a Move's, a Combine's target and tools, a Duplicate's (Combine bug hunt 11-08), an extrude's operation's. */
-function bodiesUsed(f: Feature): string[] {
-  if (isDuplicateItem(f)) return typeof f.intent.parameters.body === "string" ? [f.intent.parameters.body] : [];
-  if (isMoveItem(f)) return Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : [];
-  if (isCombineItem(f)) {
-    const c = combineBodies(f);
-    return [c.target, ...c.tools];
-  }
-  return extrudeOperation(f)?.bodies ?? [];
 }
 
 /**

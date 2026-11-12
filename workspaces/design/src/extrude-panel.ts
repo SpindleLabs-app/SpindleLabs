@@ -33,6 +33,8 @@ export interface ExtrudePanelEvents {
   operation?(operation: ExtrudeOperation): void;
   /** A body in the list ticked or unticked. */
   tick?(body: string, on: boolean): void;
+  /** Pick several turned on or off (a phone's Ctrl: each tap adds or takes away a profile). */
+  several?(on: boolean): void;
 }
 
 export interface ExtrudePanel {
@@ -63,8 +65,22 @@ export interface ExtrudePanel {
 /** What the panel says an extrude makes with New body chosen (or no Operation row). */
 export const NEW_BODY_NOTE = "The extrude is a new body, put in the timeline at the marker.";
 
+/** Pick several's tooltip: what it does, and the keys that do the same with a mouse. */
+export const SEVERAL_TITLE = "Pick several profiles: each click or tap adds a profile, or takes one away. With a mouse, hold Ctrl (⌘ on a Mac) or Shift while clicking to do the same.";
+
+/** The words beside Pick several: the mouse's way of doing the same (Fusion's "Hold Ctrl to modify selection"). */
+export const SEVERAL_HINT = "or hold Ctrl (⌘) or Shift as you click";
+
+/** The same on a touch screen, which has no Ctrl or Shift: tap each profile. */
+export const SEVERAL_HINT_TOUCH = "then tap each profile";
+
 /** What the profile row says while none is chosen. */
 export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
+
+/** Whether a typed distance can go straight into the box as Extrude opens: a mouse or trackpad (it hovers, it points finely), not a finger. */
+export function typesStraightAway(document: Document): boolean {
+  return document.defaultView?.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? false;
+}
 
 export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): ExtrudePanel {
   const document = slot.ownerDocument;
@@ -98,8 +114,23 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       clear.title = "Clear the profile: click another closed sketch in the view";
       clear.setAttribute("aria-label", "Clear the profile");
       clear.addEventListener("click", () => on.clear());
+      // Pick several (version 18): Ctrl, Cmd or Shift with a click does the same; a phone has only this.
+      const several = el("button", "extrude-several", "extrude-several-pick", "Pick several");
+      several.type = "button";
+      several.title = SEVERAL_TITLE;
+      several.setAttribute("aria-pressed", "false");
+      several.addEventListener("click", () => {
+        const pressed = several.getAttribute("aria-pressed") !== "true";
+        several.setAttribute("aria-pressed", String(pressed));
+        on.several?.(pressed);
+      });
       const profileRow = el("div", "", "extrude-row extrude-profile-row");
       profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear);
+      const severalRow = el("div", "", "extrude-several");
+      // A mouse reads the keys; a touch screen, with neither, reads to tap (extrude-several.css shows one of them).
+      const hint = el("span", "", "extrude-several-hint");
+      hint.append(el("span", "", "extrude-several-keys", SEVERAL_HINT), el("span", "", "extrude-several-tap", SEVERAL_HINT_TOUCH));
+      severalRow.append(several, hint);
       const input = el("input", "extrude-distance");
       Object.assign(input, { type: "number", step: "any" });
       const field = sizeBox(input, () => currentUnit(document));
@@ -165,6 +196,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
         el("h2", "", "", "Extrude"),
         profileRow,
         distanceRow,
+        severalRow,
         el("p", "", "extrude-note", "Drag the arrow in the view or type the distance; a negative one goes the other way."),
         ...rows,
         status,
@@ -186,6 +218,13 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       followUnit(document, onUnit);
       this.showProfile(chosen);
       box.hidden = false;
+      // With a mouse the cursor waits in the Distance box, its number selected, so typing a distance and Enter make the
+      // extrude with no click on the box first (UI audit 2026-11-12, Fusion's feel). Never on a touch screen: its keyboard
+      // would cover the view the moment Extrude opens (Ben's phone rule, 10-28).
+      if (typesStraightAway(document)) {
+        input.focus({ preventScroll: true });
+        input.select();
+      }
     },
     showProfile(chosen) {
       if (!parts) return;

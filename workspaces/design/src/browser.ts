@@ -95,7 +95,11 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
     if (isPiece(b.id)) pieces.set(bodyItem(b.id)!, [...(pieces.get(bodyItem(b.id)!) ?? []), b.id]);
   for (const f of document.timeline.features) {
     if (!building.has(f) || failed.has(f.id)) continue;
-    if (makesBody(f)) out.set(bodyIdOf(f.id), { body: bodyIdOf(f.id), feature: f });
+    if (makesBody(f)) {
+      out.set(bodyIdOf(f.id), { body: bodyIdOf(f.id), feature: f });
+      // An extrude of several profiles apart (version 18): its other bodies are its pieces, once numbered.
+      for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
+    }
     else if (isCombineItem(f)) {
       const { target, tools, keepTools } = combineBodies(f);
       if (![target, ...tools].every((b) => out.has(b))) continue;

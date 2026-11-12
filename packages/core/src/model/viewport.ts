@@ -231,6 +231,8 @@ export interface ExtrudeShow {
   /** The outlines a click picks, drawn as see-through fills on their planes (brighter under the pointer, brightest when chosen). */
   profiles: readonly OfferedProfile[];
   chosen: string | null;
+  /** The other profiles chosen with it (several profiles extruded at once, Design data version 18), drawn chosen too. */
+  alsoChosen?: readonly string[];
   /** The extrude as OK would make it, drawn see-through; null while there is none (nothing chosen yet, or the kernel refused it). */
   preview: DisplayMesh | null;
   arrow: ExtrudeArrow | null;
@@ -242,11 +244,13 @@ export interface ExtrudeShow {
  * The pointer while Extrude is shown: a click on an offered outline, by
  * id (the nearest one the body doesn't hide), or on none (null), with
  * the body's face under the pointer when no outline is (`face`, joined
- * numbering, so a curved face can be refused in words; UX1c); or the
+ * numbering, so a curved face can be refused in words; UX1c), `add` when
+ * Ctrl, Cmd or Shift was held (adds or takes away a profile, as Fusion's
+ * Ctrl-click; Design data version 18); or the
  * arrow dragged, with the distance where the pointer's ray passes nearest
  * the arrow's line (not snapped), `done` when the button is let go.
  */
-export type ExtrudePointer = { kind: "pick"; profile: string | null; face?: number | null } | { kind: "drag"; distance: number; done: boolean };
+export type ExtrudePointer = { kind: "pick"; profile: string | null; face?: number | null; add?: true } | { kind: "drag"; distance: number; done: boolean };
 
 /** A handle of the Move tool's gizmo (35e2c): the arrow along X, Y or Z, or the ring turning about it. */
 export type MoveHandle = "x" | "y" | "z" | "turnX" | "turnY" | "turnZ";
