@@ -359,6 +359,8 @@ export type ModelFault =
   | "move-not-held"
   | "sketch-not-carried"
   | "move-bodies-kept"
+  /** SL #506 item 1: reordering ignores the Moves and Combines that shaped an item's bodies. */
+  | "reorder-past-shaper"
   | "combine-tool-kept"
   | "combine-not-held"
   | "combine-pieces-dropped"
@@ -408,6 +410,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "move-not-held",
   "sketch-not-carried",
   "move-bodies-kept",
+  "reorder-past-shaper",
   "combine-tool-kept",
   "combine-not-held",
   "combine-pieces-dropped",
@@ -1379,6 +1382,18 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
         const deps = (i: ModelItem) => (faults.has("face-sketch-unbound") && i.kind === "sketch" ? [] : dependsOn(i));
         if (deps(item).some((d) => at(d) > op.to)) return { kind: "refused", cause: "before-dependency" };
         if (doc.items.some((i, j) => j < op.to && deps(i).includes(item.id))) return { kind: "refused", cause: "after-dependent" };
+        // SL #506 item 1: an item never passes one that placed or changed a body it works on (a Move's bodies, a
+        // Combine's target and its tool unless kept), nor one working on a body it placed or changed, as they stood.
+        if (!faults.has("reorder-past-shaper")) {
+          const before = [...doc.items];
+          before.splice(op.to, 1);
+          before.splice(k, 0, item);
+          const uses = (i: ModelItem) => (i.kind === "move" ? i.bodies : i.kind === "combine" ? [i.target, i.tool] : i.kind === "duplicate" ? [i.body] : []);
+          const changes = (i: ModelItem) => (i.kind === "move" ? i.bodies : i.kind === "combine" ? (i.keep ? [i.target] : [i.target, i.tool]) : []);
+          const shapes = (a: ModelItem, b: ModelItem) => before.indexOf(a) < before.indexOf(b) && uses(b).some((x) => changes(a).includes(x));
+          if (before.some((a) => shapes(a, item) && at(a.id) > op.to)) return { kind: "refused", cause: "before-dependency" };
+          if (before.some((b) => shapes(item, b) && at(b.id) < op.to)) return { kind: "refused", cause: "after-dependent" };
+        }
       }
       if (k !== op.to) doc.marker = marker;
       return { kind: "done", ids: [] };
