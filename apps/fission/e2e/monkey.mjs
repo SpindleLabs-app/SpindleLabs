@@ -49,7 +49,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { switchTo } from "./start.mjs";
-import { summaryShown, volumeShown } from "./monkey-units.mjs";
+import { shownNumber, summaryShown, volumeShown } from "./monkey-units.mjs";
 import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, settledText, shrinkFailure, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
@@ -162,6 +162,10 @@ function shown() {
     // page still has a change to come though nothing on it moves meanwhile (issue #445: the bar read before the Combine
     // landed, the file saved after).
     checking: document.getElementById("combine-ok")?.dataset.busy === "1",
+    // Work the undo history holds (main.ts `historyBusy`): a timeline Delete the kernel still plans is recorded when it
+    // answers, with nothing on the page marking it meanwhile (issue #650: the bar read before Delete Sketch landed, the
+    // file saved after it).
+    held: window.fissionTest?.historyBusy?.() === true,
     data: { ...(view?.dataset ?? {}) },
     undo: document.getElementById("undo")?.title,
     redo: document.getElementById("redo")?.title,
@@ -197,7 +201,7 @@ async function settle(page) {
   while (Date.now() < until) {
     const now = JSON.stringify(await page.evaluate(shown));
     const view = JSON.parse(now);
-    if (now === last && !view.rebuilding && !view.checking) return view;
+    if (now === last && !view.rebuilding && !view.checking && !view.held) return view;
     last = now;
     await page.waitForTimeout(150);
   }
@@ -331,7 +335,9 @@ async function check(s) {
 }
 
 /** Controls that leave the app for another site (Sign in with Google goes to Google's page): a session that left can't be checked, so the tester never presses them. */
-const LEAVES = ".account-google";
+// A link that loads another page leaves too: a click meant for the view landed on the sign-in dialog's "Privacy and
+// terms" link at 375 px and the page navigated away (issue #568, seed 359812416). A blob: link is a download.
+const LEAVES = '.account-google, a[href]:not([href^="#"]):not([href^="blob:"])';
 /** Is the point (page pixels) on a control that leaves the app, as when a dialog lies over the view? */
 const leavesAt = (page, x, y) => page.evaluate(([px, py, leaves]) => document.elementFromPoint(px, py)?.closest(leaves) != null, [x, y, LEAVES]);
 
@@ -553,7 +559,7 @@ async function act(s, a) {
         if (!got.stale) {
           // A Combine's target and pieces are what the kernel made of them, which the file alone can't say.
           const want = combined ? null : volumeShown(modelVolume(design, f), got.unit);
-          const volume = Number(got.volume.replace(/[^\d.]/g, ""));
+          const volume = shownNumber(got.volume); // powers of ten too ("9.15 × 10⁻⁴ in³", issues #473, #480, #481)
           // The panel rounds to a few figures (fmt in properties.ts); 0.5% is far inside the gap between any two different bodies the monkey makes, and far outside the kernel's 1e-6 relative volume error.
           if (want !== null && !(Math.abs(volume - want) <= 0.005 * want)) wrong.push(`with ${name} selected the Body panel shows ${got.volume}, but that body is ${want.toPrecision(6)} ${got.unit}³`);
           // With every body selected (one body alone) the app lights none of them on purpose (scene.ts), so the count is checked from two bodies up.
@@ -694,6 +700,34 @@ async function main() {
       } catch (e) {
         failed++;
         console.log(`self-test save beside a stray download: FAIL: ${e.detail ?? e.message}`);
+      } finally {
+        await s.context.close();
+      }
+    }
+    // And the check waits for a timeline Delete the kernel still plans (issue #650): with every kernel answer 800 ms
+    // late, the bar read at once still shows the deleted Move while the file saved after it has none.
+    {
+      const s = await open(browser);
+      try {
+        await openFile(s, readFileSync(here("./timeline-card.spindle"), "utf8"), "timeline-card.spindle");
+        await s.page.locator('#timeline li[data-item="feature-15"]').waitFor({ timeout: 20000 });
+        await settle(s.page);
+        await s.page.evaluate(() => {
+          const send = Worker.prototype.postMessage;
+          Worker.prototype.postMessage = function (message, ...rest) {
+            setTimeout(() => send.call(this, message, ...rest), 800);
+          };
+        });
+        await s.page.click('#timeline li[data-item="feature-15"]', { button: "right" });
+        await s.page.locator("dialog[open] button", { hasText: /^Delete$/ }).click();
+        const items = (await settle(s.page)).items.map((i) => i.id);
+        const file = JSON.parse(await save(s)).workspaces.design.timeline.features.map((f) => f.id);
+        if (JSON.stringify(items) !== JSON.stringify(file)) throw new Error(`bar ${items.join(",")}, file ${file.join(",")}`);
+        if (file.includes("feature-15")) throw new Error("the Delete was never recorded");
+        console.log("self-test check waits for a planned delete: pass");
+      } catch (e) {
+        failed++;
+        console.log(`self-test check waits for a planned delete: FAIL: ${e.detail ?? e.message}`);
       } finally {
         await s.context.close();
       }

@@ -2,8 +2,10 @@
 // the kernel into its own undo step (workspace.ts `settled`: a kept shape, a held sketch place, followed points). Undo
 // pressed before the kernel answered used to put the project back first, the settle was dropped, and Redo brought back
 // the step as first recorded: a design nobody made (an extrude failed instead of keeping its shape, a lost sketch
-// drawn where it was first drawn). The settle is now held in the history, so the shell's Undo waits for it, and a size
-// or shape from the panel made meanwhile waits its turn, so every step is the settled design.
+// drawn where it was first drawn). The settle is now held in the history, so the shell's Undo waits for it, and an
+// edit made meanwhile is recorded at once, in the order made, the settle written into its own step when it comes
+// (`History.amendStep`, undo hunt 2026-11-12: a size that waited its turn instead was lost on a reload or another
+// project, #627; more in undo-unsettled-next.journey.ts), so every step is the settled design.
 // Undo and Redo are pressed as the shell presses them (`pressUndo`, `pressRedo` in design-app.ts: main.ts `undoRedo`).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -191,9 +193,10 @@ test("the shape changed, then a height typed before the kernel has answered, the
   a.hold();
   chooseShape(a, "Cylinder");
   await turns();
-  type(a, "#height", "25"); // a second edit, while the first still settles: it waits its turn
+  type(a, "#height", "25"); // a second edit, while the first still settles: recorded at once, its own step
   await turns();
-  assert.equal(a.history.undoLabel(), "Change shape to Cylinder", "the height waits for the shape to be settled");
+  assert.equal(a.history.undoLabel(), "Change height", "the height is recorded at once, after the shape (#627: it waited outside the project)");
+  assert.deepEqual(a.history.steps().slice(-2).map((s) => s.label), ["Change shape to Cylinder", "Change height"]);
   await a.release();
   assert.equal(a.history.busy(), false);
   assert.equal(a.history.undoLabel(), "Change height");
@@ -218,9 +221,9 @@ test("the shape changed, a height typed and then Undo pressed, all before the ke
   chooseShape(a, "Cylinder");
   await turns();
   type(a, "#height", "25");
-  a.pressUndo(); // pressed after the height was typed: it takes back the height, once that has been made and settled
+  a.pressUndo(); // pressed after the height was typed: it takes back the height, once both are settled
   await turns();
-  assert.equal(a.history.undoLabel(), "Change shape to Cylinder", "the height and the Undo both wait");
+  assert.equal(a.history.undoLabel(), "Change height", "the height is recorded at once; the Undo waits");
   assert.equal(a.history.redoLabel(), null);
   await a.release();
   await a.presses();
@@ -269,8 +272,9 @@ test("the hold is let go when the kernel fails the settle, and when Design is pu
   await a.presses();
   await a.settle();
   assert.deepEqual(drawn(a), [{ origin: [60, 0, 0], lost: false }]);
-  // Design mounted afresh (moved to the other pane) while a settle runs, a height typed meanwhile still waiting: the
-  // old Design's waiting edit is dropped, and the history is let go once the kernel has answered.
+  // Design mounted afresh (moved to the other pane) while a settle runs, a height typed meanwhile: the height is kept as
+  // its own step (it used to wait its turn outside the project and was dropped: #627), and the history is let go once
+  // the kernel has answered.
   a.failCall(0);
   a.hold();
   chooseShape(a, "Cylinder");
@@ -283,6 +287,6 @@ test("the hold is let go when the kernel fails the settle, and when Design is pu
   await a.release();
   await remounted;
   assert.equal(a.history.busy(), false, "nothing is held once the kernel has answered");
-  assert.equal(a.history.undoLabel(), "Change shape to Cylinder", "the height typed in the Design put away was dropped");
+  assert.equal(a.history.undoLabel(), "Change height", "the height typed before Design was put away is kept");
   assert.ok(await a.close());
 });

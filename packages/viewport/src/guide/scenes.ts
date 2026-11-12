@@ -7,6 +7,7 @@
 // guide pins words to on screen.
 
 import * as THREE from "three";
+import { WORKSPACE_NAMES } from "@fission/core";
 import { cameraDistance, stageLayout, type SceneId } from "./chapters.ts";
 import { bracket, explodeAmount, segmentPoints, holeCircle, D, H1, H2, HOLE_R, HOLE_Z, W, type Vec3 } from "./bracket.ts";
 
@@ -1131,8 +1132,8 @@ function testing(): GuideScene {
   );
 }
 
-export const WORKSPACES = ["Design", "Render", "Simulate", "Manufacture", "Laser", "Slice", "Circuit", "Vector", "Image", "Layout"];
-/** Where workspace tile i of n sits round the ring: the angle in degrees, Design at 0. */
+export const WORKSPACES = Object.values(WORKSPACE_NAMES);
+/** Where workspace tile i of n sits round the ring: the angle in degrees, DesignLab at 0. */
 export function tileAngle(i: number, n: number): number {
   return (360 * i) / n;
 }
@@ -1144,8 +1145,8 @@ function workspaces(): GuideScene {
   model.position.multiplyScalar(0.45);
   root.add(model);
   const tiles = WORKSPACES.map((name, i) => {
-    const colour = name === "Design" ? 0x93c5fd : name === "Image" ? 0xc4b5fd : 0x64748b;
-    const t = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.36, 0.08), skin(colour, name === "Design" || name === "Image" ? 1 : 0.6));
+    const colour = name === WORKSPACE_NAMES.design ? 0x93c5fd : name === WORKSPACE_NAMES.image ? 0xc4b5fd : 0x64748b;
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.36, 0.08), skin(colour, name === WORKSPACE_NAMES.design || name === WORKSPACE_NAMES.image ? 1 : 0.6));
     const a = (tileAngle(i, WORKSPACES.length) * Math.PI) / 180;
     t.position.set(2.4 * Math.sin(a), 0, 2.4 * Math.cos(a));
     t.up.set(0, 1, 0); // y-up here, whatever the app's default

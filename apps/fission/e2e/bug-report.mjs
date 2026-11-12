@@ -12,6 +12,12 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
+import { readFileSync } from "node:fs";
+
+// The version line names the app's own version and the kernel release the app ships (kernel.json, written by the
+// kernel's Release workflow), never the kernel crate's unbumped 0.1.0 (bug-reports #1 and #2 both said "kernel v0.1.0").
+const KERNEL = JSON.parse(readFileSync(new URL("../../../packages/core/src/kernel/wasm/kernel.json", import.meta.url), "utf8")).version;
+const VERSION_LINE = new RegExp(`- Version: (\\d+\\.\\d+\\.\\d+|unknown) \\(kernel v${KERNEL.replaceAll(".", "\\.")}\\)\n`);
 
 const server = await preview({ preview: { port: 4303, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4303/";
@@ -85,6 +91,7 @@ try {
         assert.equal(u.searchParams.get("title"), "Bug report from design");
         let body = u.searchParams.get("body");
         for (const part of ["### What happened\n\n(not given)", "- Workspace: design", `- Screen: ${width} × ${height}`, "Your design was downloaded as Untitled.spindle.json (", "KB): drag it into this issue"]) assert.ok(body.includes(part), `the body lacks ${JSON.stringify(part)}`);
+        assert.match(body, VERSION_LINE, "the app's version and the shipped kernel's");
         assert.equal(await page.evaluate(() => document.getElementById("bug-report").open), false, "the form closes");
         // Again with words: the title is their first line.
         if (tap) await press("#menu-toggle");

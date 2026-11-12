@@ -26,6 +26,12 @@ export interface AuthDeps {
    * the browser has it). Given as undefined, or with no navigator.locks, renewals take no lock.
    */
   readonly lock?: (<T>(name: string, fn: () => Promise<T>) => Promise<T>) | undefined;
+  /**
+   * Told when the service refuses to renew the stored session and it is dropped (the service's own time limit, the
+   * account's sessions ended elsewhere): nothing is kept in the account from then on, which the shell must say. It
+   * was silent, the top bar still showing the person's name (lost-work hunt 2026-11-12, issue #628 item 4).
+   */
+  readonly sessionLost?: () => void;
 }
 
 type LockFn = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
@@ -395,7 +401,10 @@ export function authClient(deps: AuthDeps) {
     if (!r.ok) {
       if (r.reason === "rejected") {
         // Only when the stored session is still the one refreshed: another tab may have refreshed it meanwhile.
-        if (stored === renewedText) remove(SESSION_KEY);
+        if (stored === renewedText) {
+          remove(SESSION_KEY);
+          deps.sessionLost?.();
+        }
         return samePerson() ? token(false) : { kind: "signed-out" };
       }
       return { kind: "failed", reason: r.reason };

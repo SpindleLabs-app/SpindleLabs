@@ -188,7 +188,7 @@ try {
     assert.match(sent.p_picture, /^data:image\/(webp|jpeg|png);base64,/);
     assert.ok(sent.p_picture.length <= 32 * 1024, `picture ${sent.p_picture.length} bytes`);
     assert.match(sent.p_body, /"formatVersion"/);
-    assert.deepEqual(await rows(a.page), [{ name: "Untitled", tag: "Design", picture: true, open: true }]);
+    assert.deepEqual(await rows(a.page), [{ name: "Untitled", tag: "DesignLab", picture: true, open: true }]);
     assert.match(await a.page.textContent("#my-designs-space"), /^1 of 200 designs · \d+ kB of 20\.0 MB used$/);
     if (shots) await a.page.screenshot({ path: `${shots}/my-designs-1280.png` });
     await a.page.click("#my-designs-close");
@@ -310,6 +310,27 @@ try {
     assert.equal(await p.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
     if (shots) await p.page.screenshot({ path: `${shots}/my-designs-375.png` });
     await p.context.close();
+  });
+
+  await check("the service ends the session: the next change says so at the foot of the page, and the button offers Sign in (issue #628 item 4)", async () => {
+    // The account's sessions ended from the service's side: its tokens are refused, and so is their renewal.
+    svc.tokens.clear();
+    svc.live.clear();
+    assert.doesNotMatch(await a.page.textContent("#account-open"), /^Sign in$/, "signed in until now");
+    const sent = svc.saves.length;
+    // A new project, so the round has something to send (the one open was deleted from the account above).
+    await chooseFile(a.page, "start-fresh");
+    await a.page.click("#start-fresh-confirm");
+    await a.page.locator("#start-hint").waitFor();
+    await insertPreset(a.page, "sphere");
+    await until(a.page, () => document.querySelector('#app-update[data-kind="signed-out"]') !== null, undefined, "the signed-out notice");
+    assert.equal(await a.page.textContent("#app-update span"), "You're signed out, so your changes are no longer kept in your account. Sign in again to keep them.");
+    assert.equal(svc.saves.length, sent, "nothing reached the account");
+    assert.match(await a.page.textContent("#account-open"), /Sign in/, "the button no longer shows the name");
+    if (shots) await a.page.screenshot({ path: `${shots}/signed-out-notice-1280.png` });
+    await a.page.click("#app-update-reload");
+    await until(a.page, () => document.querySelector("#account")?.open === true && document.querySelector("#app-update") === null, undefined, "the sign-in dialog, the notice gone");
+    await a.page.click("#account .account-close");
   });
 
   await check("no page errors", async () => assert.deepEqual(errors, []));

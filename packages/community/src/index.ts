@@ -45,7 +45,7 @@ export const communityPage = {
     "Publish a project or a mesh with a free licence of your choice",
     "Search and browse what others have shared",
     "Download into a new project: a SpindleLabs project opens with its editable timeline, not just a mesh",
-    "Open a download in any workspace (Design, Render, Slice…) since it is all one project",
+    "Open a download in any workspace (DesignLab, RenderLab, SliceLab…) since it is all one project",
     "Remix: your copy links back to the original and credits its author",
   ],
   startsAfter: "after CAD step 25 (the timeline), with STL/3MF export (77) for meshes; it needs a server first (see docs/community.md)",

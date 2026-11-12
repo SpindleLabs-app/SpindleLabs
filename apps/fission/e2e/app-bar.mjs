@@ -167,7 +167,7 @@ try {
       const page = await fresh(width, tap);
       try {
         await press(page, "#file-menu", tap);
-        assert.deepEqual(await menuRows(page), [
+        const project = [
           ["start-fresh", "new", true],
           ["open", "open", false],
           ["file-projects", "folder", false],
@@ -175,11 +175,18 @@ try {
           ["file-my-designs", "account", false],
           ["file-save", "save", false],
           ["file-save-as", "save", false],
+        ];
+        const exports = [
           ["file-export-stl", "export", true],
+          ["file-export-mesh", "export", true],
           ["file-save-picture", "export", false],
           ["file-slice-print", "export", true],
-        ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…Ctrl+O", "Projects in this browser…", "Earlier versions…", "My designs…", "SaveCtrl+S", "Save As…Ctrl+Shift+S", "Export STL", "Save picture (PNG)", "Slice for printing"]);
+        ];
+        // On a phone the exports come first, above the sheet's fold (SL #648, phone-file-exports.mjs).
+        assert.deepEqual(await menuRows(page), tap ? [...exports, ...project] : [...project, ...exports]);
+        const projectWords = ["New", "Open…Ctrl+O", "Projects in this browser…", "Earlier versions…", "My designs…", "SaveCtrl+S", "Save As…Ctrl+Shift+S"];
+        const exportWords = ["Export STL", "Export 3MF or OBJ…", "Save picture (PNG)", "Slice for printing"];
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), tap ? [...exportWords, ...projectWords] : [...projectWords, ...exportWords]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
         assert.equal(await page.getAttribute("#file-slice-print", "title"), NO_BODY);
@@ -276,12 +283,12 @@ try {
         await page.keyboard.press("Escape");
         await page.goto(url + "#slice");
         await until(page, () => document.body.dataset.activeWorkspace === "slice", null, "Slice");
-        assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: Slice has nothing to clear yet. New clears the design in Design."]);
-        assert.deepEqual(await fileItem(page, "file-export-stl"), [true, "Export STL: Slice has nothing to export yet. Design exports its bodies as STL."]);
+        assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: SliceLab has nothing to clear yet. New clears the design in DesignLab."]);
+        assert.deepEqual(await fileItem(page, "file-export-stl"), [true, "Export STL: SliceLab has nothing to export yet. DesignLab exports its bodies as STL."]);
         assert.equal((await fileItem(page, "file-save"))[0], false, "Save works everywhere");
         if (!tap) {
           await page.click("#community");
-          assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: Community has nothing to clear yet. New clears the design in Design."]);
+          assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: Community has nothing to clear yet. New clears the design in DesignLab."]);
         }
       } finally {
         await page.context().close();
@@ -295,7 +302,7 @@ try {
       const page = await fresh(width, tap, "?all-workspaces");
       try {
         const label = () => page.textContent("#workspace-menu");
-        assert.equal(await label(), "Design ▾");
+        assert.equal(await label(), "DesignLab ▾");
         await press(page, "#workspace-menu", tap);
         // At phone width the list is a bottom sheet that scrolls inside itself (U5): a person scrolls an item into view before reading or tapping it.
         const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (bs) => bs.map((b) => { b.scrollIntoView({ block: "center" }); return b.getBoundingClientRect().toJSON(); }));
@@ -307,7 +314,7 @@ try {
         if (shots) await page.screenshot({ path: `${shots}/workspace-menu-${width}.png` });
         await press(page, '#workspace-menu-menu [data-workspace="image"]', tap);
         await until(page, () => document.body.dataset.activeWorkspace === "image", null, "Image");
-        assert.equal(await label(), "Image ▾");
+        assert.equal(await label(), "ImageLab ▾");
         assert.equal(new URL(page.url()).hash, "#image");
         await press(page, "#workspace-menu", tap);
         assert.deepEqual(await page.$$eval("#workspace-menu-menu [aria-current=true]", (bs) => bs.map((b) => b.dataset.workspace)), ["image"], "the one on screen marked");
@@ -316,10 +323,10 @@ try {
         // A placeholder is chosen as before: its page says Coming soon.
         await switchTo(page, "laser", tap);
         assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
-        assert.equal(await label(), "Laser ▾");
+        assert.equal(await label(), "LaserLab ▾");
         await switchTo(page, "design", tap);
         await until(page, () => document.body.dataset.activeWorkspace === "design", null, "Design again");
-        assert.equal(await label(), "Design ▾");
+        assert.equal(await label(), "DesignLab ▾");
         if (!tap) {
           await page.click("#community");
           assert.equal(await label(), "Community ▾", "Community, not a workspace, named on the button too");

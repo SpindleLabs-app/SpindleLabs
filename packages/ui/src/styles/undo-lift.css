@@ -1,0 +1,4 @@
+/* Undo and Redo lifted over an open sheet on a phone (apps/fission/src/undo-lift.ts, SL #623 item 6): laid out in a row
+   along the sheet's top edge rather than the corner's column, so the lifted pair takes 48 px of the view's height, not
+   160, and stays clear of the view cube at 320 × 568. */
+.undo-lift.undo-redo.docked:not(#none) { flex-direction: row; }

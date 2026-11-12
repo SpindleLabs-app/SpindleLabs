@@ -209,3 +209,47 @@ test("the name box opens inside a modal dialog that is open, or it would sit beh
   assert.equal(doc.querySelector(".save-name")!.parentElement, doc.body, "no dialog open: on the page, as before");
   doc.querySelector<HTMLButtonElement>(".save-name .cancel")!.click();
 });
+
+// ---- A write that fails part way (export hunt 2026-11-12, SL #644 item 6) ----
+
+/** A handle whose write fails with `why` after the stream opened; closing a stream whose write failed throws the browser's own "Cannot close a ERRORED writable stream", as Chromium does. */
+function erroring(name: string, why: string, log: string[]): FileHandle {
+  return {
+    name,
+    async createWritable() {
+      let errored = false;
+      return {
+        write: async () => {
+          errored = true;
+          throw new Error(why);
+        },
+        close: async () => {
+          log.push("close");
+          if (errored) throw new TypeError("Cannot close a ERRORED writable stream");
+        },
+        abort: async () => void log.push("abort"),
+      };
+    },
+  };
+}
+
+test("a write that fails says why it failed, not that the stream can't be closed, and the half-written copy is thrown away", async () => {
+  const log: string[] = [];
+  const { doc, downloads } = page({ picker: async () => erroring("Full.spindle", "The disk is full", log) });
+  const r = await saveFile(doc, { suggestedName: "x", kind: PROJECT_KIND, bytes: "DATA" });
+  assert.deepEqual(r, { status: "failed", message: 'Couldn\'t write "Full.spindle": The disk is full. Nothing was saved there; try again, or pick another place.' });
+  // Aborted, never closed: closing is what would replace the good file on disk.
+  assert.deepEqual(log, ["abort"]);
+  assert.deepEqual(downloads, []);
+});
+
+test("Save again to a file that can no longer be written, then the picker closed: it says nothing was saved, rather than nothing at all", async () => {
+  const log: string[] = [];
+  const abort = Object.assign(new Error("The user aborted a request."), { name: "AbortError" });
+  const { doc, downloads } = page({ picker: async () => Promise.reject(abort) });
+  const r = await saveFile(doc, { suggestedName: "x", kind: PROJECT_KIND, bytes: "DATA", handle: erroring("Kept.spindle", "permission was taken away", log) });
+  assert.deepEqual(r, { status: "failed", message: 'Couldn\'t write "Kept.spindle" again: permission was taken away. No other place was chosen, so nothing was saved.' });
+  assert.deepEqual(downloads, []);
+  // A first save cancelled at the picker is still just cancelled: nothing went wrong.
+  assert.deepEqual(await saveFile(doc, { suggestedName: "x", kind: PROJECT_KIND, bytes: "DATA" }), { status: "cancelled" });
+});
