@@ -116,12 +116,12 @@ async function staleCopyId(): Promise<string> {
   return ids[0];
 }
 
-test("the copy of a stale tab's change gets a fresh id: the browser's random UUID, else one made of the time and a random number (catches each change to freshId)", async () => {
-  // With the browser's crypto: its UUID (8-4-4-4-12 hex digits).
-  assert.match(await staleCopyId(), /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-  // No crypto at all, or one with no randomUUID (an old browser): "p-", the time in base 36, "-", the random digits
-  // after "0." in base 36. The "0." is cut, so there is no dot.
-  for (const crypto of [undefined, {}]) assert.match(await withCrypto(crypto, staleCopyId), /^p-[0-9a-z]+-[0-9a-z]+$/);
+test("the copy of a stale tab's change gets an id made from the entry: the project's id, its time and its writer (export hunt 2026-11-12, #642 item 6; worked by hand)", async () => {
+  // It was a fresh random id, so two tabs recovering the same entry at once stored two copies. The entry here is for
+  // project "p", written at 1300 ms by writer "b": 1300 = 1 x 36^2 + 0 x 36 + 4, "104" in base 36, so "p-kept-104-b",
+  // with or without the browser's crypto (nothing random is in it).
+  assert.equal(await staleCopyId(), "p-kept-104-b");
+  for (const crypto of [undefined, {}]) assert.equal(await withCrypto(crypto, staleCopyId), "p-kept-104-b");
 });
 
 test("journal keys only count with an id after the prefix; other keys are left alone (catches the NEWER_PREFIX check made || or >=, or its length check true)", async () => {

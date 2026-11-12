@@ -123,7 +123,7 @@ for (const fault of ["write fails", "write never answers"]) {
     await p.waitForFunction(() => document.querySelector("#volume")?.textContent === "37,500 mm³");
     if (fault === "write fails") {
       await p.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "error");
-      assert.match(await p.textContent("#save-status"), /^Not saved: browser storage failed: can't save this project \(UnknownError: planted write failure\)$/);
+      assert.match(await p.textContent("#save-status"), /^Not saved: browser storage failed: can't save this project \(UnknownError: planted write failure\)\. Use Save to keep your work as a file\.$/); // the way out, said for every failed save (SL #643 item 6)
     } else {
       // Still waiting at 0.9 × the deadline (after the 1 s quiet moment); the words by 1.1 ×.
       await p.waitForTimeout(1000 + ANSWER_MS * 0.9);

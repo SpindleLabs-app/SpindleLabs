@@ -41,7 +41,7 @@ export function outlinePath(outline: Outline): { d: string; box: OutlineBox } {
   const view = /viewBox="(\S+) (\S+) /.exec(svg.text);
   if (d === undefined || view === null) throw new Error("core's SVG writer gave no path");
   const minX = Number(view[1]);
-  const maxY = -Number(view[2]);
+  const maxY = -Number(view[2]) + 0; // never −0 (a top edge on y = 0)
   return { d, box: { minX, minY: maxY - svg.height, maxX: minX + svg.width, maxY } };
 }
 
