@@ -50,7 +50,7 @@ function linked() {
   /** The print plate's note after the design becomes `next`: the words after its colon. */
   const edit = (next: DesignDocument) => {
     syncGraph(g, next, e.doc, notes);
-    return notes.current(g).filter((n) => n.node === "plate").map((n) => n.text.replace(/^[^:]*: /, "").replace(/ in Design\..*$/, ""));
+    return notes.current(g).filter((n) => n.node === "plate").map((n) => n.text.replace(/^[^:]*: /, "").replace(/ in DesignLab\..*$/, ""));
   };
   return { doc: e.doc, sketch: s.id, extrude: e.id, ids: rect.ids, edit };
 }

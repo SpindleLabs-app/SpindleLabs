@@ -177,7 +177,7 @@ test("drawing a line changes the sketch in the graph, not the part", () => {
   syncGraph(g, drawLine(s.doc, s.id, [0, 0], [1, 0]).doc, s.doc, notes);
   assert.deepEqual(g.stale(), ["laser.cut"]);
   assert.equal(g.isStale(PART_VIEW), false);
-  assert.match(notes.current(g)[0].text, /you changed Sketch 1 in Design/);
+  assert.match(notes.current(g)[0].text, /you changed Sketch 1 in DesignLab/);
 });
 
 // ---- Saving and opening (docs/project-format.md, Design's data version 2) ----
@@ -198,11 +198,11 @@ test("a real version 1 file (saved by the SpindleLabs before 21b) opens as versi
   const p = projectFromJson(REAL_V1, DESIGN);
   const doc = p.workspaces.design as DesignDocument;
   v1.timeline.features[0].provenance.self.label = "L-bracket 1";
-  assert.deepEqual(doc, { ...v1, version: 18, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
+  assert.deepEqual(doc, { ...v1, version: 19, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
   assert.deepEqual(partOf(doc), { shape: "l-bracket", sizes: { width: 40, depth: 30, height: 20 } });
   // Saved, it is version 6; opened and saved again, byte-identical.
   const saved = projectToJson(p);
-  assert.equal(JSON.parse(saved).workspaces.design.version, 18);
+  assert.equal(JSON.parse(saved).workspaces.design.version, 19);
   assert.equal(projectToJson(projectFromJson(saved, DESIGN)), saved);
 });
 

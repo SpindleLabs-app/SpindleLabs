@@ -17,6 +17,7 @@ export const HELPERS = [
   "monkey-units.mjs",
   "png.mjs",
   "properties.mjs",
+  "save-picker-lib.mjs",
   "sketch-screen.mjs",
   "soak-judge.mjs",
   "soak-model.mjs",

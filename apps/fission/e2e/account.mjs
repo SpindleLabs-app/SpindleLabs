@@ -349,7 +349,8 @@ try {
   });
 
   // Regression: at 761 to 899 px Sign in pushed "Saving…" under DESIGN ▾ (CI's phone-short.mjs at 844 × 390).
-  for (const width of [761, 844, 900, 999, 1000, 1100]) {
+  // 1059 and 1060: either side of the words coming back (account.css), with the wider Lab names (DESIGNLAB ▾ ran into "Saving…" at 1000 in CI's fonts).
+  for (const width of [761, 844, 900, 999, 1000, 1059, 1060, 1100]) {
     await check(`switch on, ${width} px: signed out and signed in with a long name, the top bar is one row with nothing overlapping`, async () => {
       const { page, svc, context } = await fresh(ON_URL, width, width < 900);
       svc.fullName = "Maximilianus Wolfeschlegel";

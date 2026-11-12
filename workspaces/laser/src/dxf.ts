@@ -14,14 +14,19 @@
 // - Points are rounded to 1e-6 mm (100× below the kernel's 10 nm); bulges
 //   keep 15 decimals, since a small bulge's rounding is multiplied by the
 //   chord (a 100 mm chord with b rounded by 1e-6 would move the arc 50 nm).
-// - Every part's loops sit on the layer CUT (colour 7, black/white), named
-//   in the LAYER table so readers that check find it.
+// - Every part's loops sit on its layer (ops.ts, step L1c): ENGRAVE (colour
+//   7, black/white), SCORE (5, blue) or CUT (1, red), all three named in the
+//   LAYER table so readers that check find them, and the parts written in
+//   the beam's order: engrave, then score, then cut. R12 has no filled
+//   areas, so an engraved part is its outline on ENGRAVE (the laser program
+//   fills that layer).
 
 import { svgNumber, type Loop } from "@fission/core";
+import { OP_LOOK, opOf, OPS, type LaserOp } from "./ops.ts";
 import type { Bed, Layout } from "./sheet.ts";
 
-/** The layer every outline is on until layers arrive (step L1b). */
-export const CUT_LAYER = "CUT";
+/** The layer a cut part's outline is on. */
+export const CUT_LAYER = OP_LOOK.cut.dxfLayer;
 
 /** A bulge as DXF writes it: 15 decimals, no trailing zeros, never "-0" or an exponent. */
 export function bulgeNumber(b: number): string {
@@ -53,8 +58,8 @@ function loopEntities(loop: Loop, layer: string): string[] {
   return out;
 }
 
-/** The bed as a DXF file (the file's comment): every placed part's outer loop and holes on the CUT layer. */
-export function sheetDxf(layout: Layout, bed: Bed): string {
+/** The bed as a DXF file (the file's comment): every placed part's outer loop and holes on its layer (`ops` by the part's id; a part not in it is cut), engrave first, then score, then cut. */
+export function sheetDxf(layout: Layout, bed: Bed, ops: Readonly<Record<string, LaserOp>> = {}): string {
   const n = svgNumber;
   const lines = [
     ...pairs(0, "SECTION", 2, "HEADER"),
@@ -65,12 +70,12 @@ export function sheetDxf(layout: Layout, bed: Bed): string {
     ...pairs(9, "$EXTMAX", 10, n(bed.width), 20, n(bed.height), 30, 0),
     ...pairs(0, "ENDSEC"),
     ...pairs(0, "SECTION", 2, "TABLES"),
-    ...pairs(0, "TABLE", 2, "LAYER", 70, 1),
-    ...pairs(0, "LAYER", 2, CUT_LAYER, 70, 0, 62, 7, 6, "CONTINUOUS"),
+    ...pairs(0, "TABLE", 2, "LAYER", 70, OPS.length),
+    ...OPS.flatMap((op) => pairs(0, "LAYER", 2, OP_LOOK[op].dxfLayer, 70, 0, 62, OP_LOOK[op].dxfColour, 6, "CONTINUOUS")),
     ...pairs(0, "ENDTAB"),
     ...pairs(0, "ENDSEC"),
     ...pairs(0, "SECTION", 2, "ENTITIES"),
-    ...layout.placed.flatMap((p) => [p.outline.outer, ...p.outline.holes].flatMap((l) => loopEntities(l, CUT_LAYER))),
+    ...OPS.flatMap((op) => layout.placed.filter((p) => opOf(ops, p.id) === op).flatMap((p) => [p.outline.outer, ...p.outline.holes].flatMap((l) => loopEntities(l, OP_LOOK[op].dxfLayer)))),
     ...pairs(0, "ENDSEC"),
     ...pairs(0, "EOF"),
   ];

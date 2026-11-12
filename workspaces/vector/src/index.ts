@@ -31,21 +31,21 @@ export function exportSvg(_drawing: Drawing): string {
 
 export const vectorWorkspace: WorkspacePlugin = {
   id: "vector",
-  title: "Vector",
+  title: "VectorLab",
   summary,
   status: "placeholder",
   representations: { produces: [], accepts: [] },
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
-      title: "Vector",
+      title: "VectorLab",
       summary,
       plans: [
         "Paths and shapes with Bézier editing",
         "Boolean path operations (join, cut, intersect)",
         "Text to outlines, layers",
         "SVG import and export",
-        "Use a graphic as an emboss or deboss in Design, an engraving or cut in Laser, a decal in Render or silkscreen in Circuit, live-linked",
+        "Use a graphic as an emboss or deboss in DesignLab, an engraving or cut in LaserLab, a decal in RenderLab or silkscreen in PCBLab, live-linked",
       ],
       startsAfter: "after CAD step 52 (when the sketcher is solid: it reuses its curves and constraints)",
     });

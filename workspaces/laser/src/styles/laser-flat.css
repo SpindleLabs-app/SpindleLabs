@@ -15,9 +15,24 @@
 .laser-flat .laser-flat-grid { fill: none; stroke: var(--line-white-018); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 /* A part: its outline in the accent colour, tinted inside (holes stay clear: even-odd). */
 .laser-flat .laser-flat-part { fill: var(--shade-74-168-255-016); fill-rule: evenodd; stroke: var(--look-accent); stroke-width: 1.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* Layers (L1c): cut as above; score a thin line with nothing inside (it marks, it doesn't free a part); engrave the area
+   filled (holes clear), as the beam burns it. The same classes paint the key's swatches above the bed. */
+.laser-flat .laser-flat-part-cut { fill: var(--shade-74-168-255-016); fill-rule: evenodd; stroke: var(--look-accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.laser-flat .laser-flat-part-score { fill: transparent; fill-rule: evenodd; stroke: var(--text-info); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.laser-flat .laser-flat-part-engrave { fill: var(--text-dim); fill-rule: evenodd; stroke: var(--text-body); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.laser-flat .laser-flat-marks .laser-flat-swatch { pointer-events: none; }
 
 /* The words: small, with an edge in the colour behind them so they read over lines. They never take a press. */
 .laser-flat .laser-flat-marks text { font-size: 11px; fill: var(--text-dim); stroke: var(--page); stroke-width: 3px; stroke-linejoin: round; paint-order: stroke; pointer-events: none; font-variant-numeric: tabular-nums; }
 .laser-flat .laser-flat-marks .laser-flat-bed-name { font-size: 12px; font-weight: 600; fill: var(--text-body); }
 .laser-flat .laser-flat-marks .laser-flat-part-name { fill: var(--text-body); stroke: var(--surface-raised); }
 .laser-flat .laser-flat-marks .laser-flat-note { font-size: 13px; fill: var(--text-dim); stroke: var(--surface-raised); }
+
+/* Parts moved by hand (L1b). A part takes the press (a mouse drags it); the picked one has a heavier edge; one that
+   reaches past the bed is edged in the warning colour, dashed, so it also reads without colour. */
+.laser-flat .laser-flat-part { cursor: pointer; outline: none; }
+.laser-flat .laser-flat-part:focus-visible { stroke-width: 3px; }
+.laser-flat .laser-flat-part-picked { stroke-width: 3px; cursor: move; }
+.laser-flat .laser-flat-part-warn { stroke: var(--warn); stroke-dasharray: 6 4; }
+.laser-flat[data-moving] .laser-flat-sheet, .laser-flat[data-moving] .laser-flat-part { cursor: grabbing; }
+.laser-flat .laser-flat-turn[hidden] { display: none; }
