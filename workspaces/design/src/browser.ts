@@ -195,6 +195,20 @@ export function bodyLabel(document: DesignDocument, body: string, failed: Readon
 }
 
 /**
+ * The Bodies rows' tags while Combine is open (SL #677 item 5): "Target"
+ * on the target's row and "Tool" on each tool's, by row id ("body-2"),
+ * in the list's order; words, so they don't rest on colour alone.
+ */
+export function combineRowTags(document: DesignDocument, failed: ReadonlySet<string>, target: string | null, tools: readonly string[]): Map<string, "Target" | "Tool"> {
+  const tags = new Map<string, "Target" | "Tool">();
+  for (const r of bodyRows(document, failed)) {
+    if (r.body === target) tags.set(r.id, "Target");
+    else if (tools.includes(r.body)) tags.set(r.id, "Tool");
+  }
+  return tags;
+}
+
+/**
  * The browser's tree for a document. Each feature is a row in build order
  * by its short name ("Box 1", U0e), its tooltip the name with its
  * description (intent summary) under it, so a name cut short is still
