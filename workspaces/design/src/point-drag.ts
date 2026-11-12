@@ -18,12 +18,16 @@
 //   screen, at most MAX_DRAG_STEPS of them (a longer jump takes longer
 //   steps), each solved from the last one's answer, so Newton (arcs)
 //   always starts near its answer and follows the branch it is on.
-// - After each solve, no triangle turned over (BS3's own addition): the
-//   triangles whose turning is a jump the user didn't ask for are each
-//   arc's centre, start and end (its centre on the other side of its chord
-//   is the arc sweeping the other way round); a step that turns one over,
-//   against the step before or against where the drag began (so a step
-//   landing exactly flat can't carry it across: 47d4 review), is refused. (Three points the drag itself carries across each other,
+// - After each solve, no arc turned inside out (BS3's own addition): an
+//   arc's counter-clockwise sweep from its start to its end (`sweepOf`, in
+//   [0, 2π)) changes smoothly while its points move, through a half turn
+//   too (a quarter arc dragged round to three quarters is an ordinary
+//   bigger arc, SL #612). It turns inside out only when its end passes its
+//   start, where the sweep wraps through 0 (or 2π) to the other end of the
+//   range, or when the solver jumps to the arc's other branch (its centre
+//   mirrored across its chord), a jump the user didn't ask for: a step
+//   whose sweep changes by more than MAX_SWEEP_STEP from the step before
+//   is refused. (Three points the drag itself carries across each other,
 //   like a rectangle's corner pulled past the opposite corner, turn over
 //   because the user moved them, as in Fusion, so other triangles are free.)
 // - A step that the solver refuses, that conflicts, that turns an arc
@@ -104,17 +108,41 @@ export function grabProblem(sketch: Sketch, pointId: string): string | null {
 export const turn = (a: XY, b: XY, c: XY): number => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 
 /**
- * The first arc whose triangle (centre, start, end) turned over between
- * the points `before` and `after` (its signed area changed from one sign
- * to the other; one that was or is now flat is not turned over), by id,
- * or null.
+ * The counter-clockwise sweep of an arc round `centre` from `start` to
+ * `end`, in radians in [0, 2π): the angle from start − centre to
+ * end − centre (atan2 of their cross and dot products), a turn added when
+ * that is below 0.
+ */
+export function sweepOf(centre: XY, start: XY, end: XY): number {
+  const [ux, uy, vx, vy] = [start[0] - centre[0], start[1] - centre[1], end[0] - centre[0], end[1] - centre[1]];
+  const a = Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+  return a < 0 ? a + 2 * Math.PI : a;
+}
+
+/**
+ * The most an arc's sweep may change in one solve, a third of a turn (SL
+ * #612). An end passing its start wraps the sweep across [0, 2π), a change
+ * of nearly a whole turn; the solver jumping to the arc's other branch
+ * changes it from s to 2π − s, by 2π − 2s, half a turn for a quarter arc. A
+ * drag step moves its point at most DRAG_STEP_PIXELS, so an arc more than
+ * a few pixels across sweeps far less than this in one step, and a quarter
+ * turn (a centre moved onto its chord) is still taken.
+ */
+export const MAX_SWEEP_STEP = (2 * Math.PI) / 3;
+
+/**
+ * The first arc whose sweep (`sweepOf`) changed by more than MAX_SWEEP_STEP
+ * between the points `before` and `after`, by id, or null: an arc turned
+ * inside out (its end carried past its start) or jumped to its other
+ * branch. An arc passing a half turn, or an exact half circle a rounding
+ * either side of it, is not turned over.
  */
 export function turnedOver(sketch: Sketch, before: ReadonlyMap<string, XY>, after: ReadonlyMap<string, XY>): string | null {
   for (const c of sketch.curves) {
     if (c.kind !== "arc") continue;
-    const was = turn(before.get(c.centre)!, before.get(c.start)!, before.get(c.end)!);
-    const now = turn(after.get(c.centre)!, after.get(c.start)!, after.get(c.end)!);
-    if ((was > 0 && now < 0) || (was < 0 && now > 0)) return c.id;
+    const was = sweepOf(before.get(c.centre)!, before.get(c.start)!, before.get(c.end)!);
+    const now = sweepOf(after.get(c.centre)!, after.get(c.start)!, after.get(c.end)!);
+    if (Math.abs(now - was) > MAX_SWEEP_STEP) return c.id;
   }
   return null;
 }
@@ -129,7 +157,7 @@ const pointsOf = (sketch: Sketch): Map<string, XY> => new Map(sketch.points.map(
  * point moved there and the sketch solved with it held (see the top
  * comment for what is refused). The caller has checked grabProblem.
  */
-export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY, origin: DesignDocument = doc): Promise<DragStep> {
+export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY): Promise<DragStep> {
   const moved = movePoint(doc, sketchId, pointId, to[0], to[1]).sketches.find((s) => s.id === sketchId)!; // throws for a sketch or point not there
   const sketch = doc.sketches.find((s) => s.id === sketchId)!;
   const request = solverRequest(moved, [pointId], [pointId]); // its own connected part only (#545 item 2)
@@ -139,8 +167,7 @@ export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchI
   const solved = solvedPoints(moved, request, answer.points);
   const tiny = shrunk(moved, solved);
   if (tiny !== null) return { refused: `That would shrink ${curveWord(moved, tiny, "a")} below ${MIN_FEATURE} mm, so the point stays where it last was.` };
-  const began = origin.sketches.find((s) => s.id === sketchId);
-  if (turnedOver(sketch, pointsOf(sketch), solved) !== null || (began && turnedOver(sketch, pointsOf(began), solved) !== null)) return { refused: ARC_TURNED };
+  if (turnedOver(sketch, pointsOf(sketch), solved) !== null) return { refused: ARC_TURNED };
   const points = sketch.points.map((p) => {
     const [x, y] = solved.get(p.id)!;
     return x === p.x && y === p.y ? p : { ...p, x, y };
@@ -159,16 +186,15 @@ export function pointOf(doc: DesignDocument, sketchId: string, pointId: string):
  * Drags point `pointId` from where it is in `doc` to `to` (`pixel` mm a
  * screen pixel), step by step (dragSteps): each step's answer to `shown`
  * as it comes, stopping at the first refused step, or as soon as `newer()`
- * says a newer target came (the rest of these steps are dropped); no arc
- * turned over against `origin`, where the drag began, either. Gives
+ * says a newer target came (the rest of these steps are dropped). Gives
  * the last solved document (`doc` itself when no step solved) and the
  * refusal, if one stopped it.
  */
-export async function dragTo(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY, pixel: number | undefined, newer: () => boolean = () => false, shown: (doc: DesignDocument) => void = () => {}, origin: DesignDocument = doc): Promise<{ doc: DesignDocument; refused: string | null }> {
+export async function dragTo(kernel: KernelCalls, doc: DesignDocument, sketchId: string, pointId: string, to: XY, pixel: number | undefined, newer: () => boolean = () => false, shown: (doc: DesignDocument) => void = () => {}): Promise<{ doc: DesignDocument; refused: string | null }> {
   let at = doc;
   for (const step of dragSteps(pointOf(doc, sketchId, pointId), to, pixel)) {
     if (newer()) break;
-    const got = await dragStep(kernel, at, sketchId, pointId, step, origin);
+    const got = await dragStep(kernel, at, sketchId, pointId, step);
     if ("refused" in got) return { doc: at, refused: got.refused };
     at = got.doc;
     shown(at);
