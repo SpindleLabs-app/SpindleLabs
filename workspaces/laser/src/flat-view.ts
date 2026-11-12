@@ -128,16 +128,24 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
   element.append(bar);
 
   let scene: FlatScene = { bed: { width: 1, height: 1 }, parts: [] };
+  /** The page has said what the bed is. Until then nothing is drawn: the view never shows a bed of its own making. */
+  let shown = false;
   let view: View = { cx: 0, cy: 0, scale: 1 };
   /** The view is as Fit left it: a change of the view's size fits again, where a view the person moved stays put. */
   let fitted = true;
   let host: HTMLElement | null = null;
   let hostLabel: string | null = null;
   let watch: ResizeObserver | null = null;
+  let switched: MutationObserver | null = null;
 
   const measure = (): Size => {
     const size = sizeOf ? sizeOf() : { width: element.clientWidth, height: element.clientHeight };
     return size.width > 0 && size.height > 0 ? size : UNSIZED;
+  };
+  /** The app's window, whose width decides the phone layout (the app's own break is on the window, not on this view). */
+  const windowSize = (size: Size): Size => {
+    const w = doc.defaultView;
+    return w && w.innerWidth > 0 ? { width: w.innerWidth, height: w.innerHeight } : size;
   };
 
   const text = (cls: string, words: string, at: ScreenPoint, anchor: "start" | "middle" | "end" = "start") => {
@@ -152,6 +160,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
 
   /** Draws the camera's part: where the sheet sits, the ruler for this zoom, and the names. */
   const draw = () => {
+    if (!shown) return;
     const size = measure();
     const { bed } = scene;
     const s = view.scale;
@@ -181,6 +190,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
       const h = (p.box.maxY - p.box.minY) * s;
       if (!nameFits(p.label, w, h)) continue; // too small to carry its name at this zoom: the list names it, and its tooltip
       const mid = toScreen(view, size, (p.box.minX + p.box.maxX) / 2, (p.box.minY + p.box.maxY) / 2);
+      if (mid.x + w / 2 < 0 || mid.x - w / 2 > size.width || mid.y + h / 2 < 0 || mid.y - h / 2 > size.height) continue; // out of sight
       out.push(text("laser-flat-part-name", p.label, { x: mid.x, y: mid.y + 4 }, "middle"));
     }
     (scene.note ?? []).forEach((line, i, all) => {
@@ -223,12 +233,13 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
   };
   const fit = () => {
     const size = measure();
-    view = fitView(scene.bed, size, marginsClearOf(scene.bed, size, marginsFor(size), cardBoxes()));
+    view = fitView(scene.bed, size, marginsClearOf(scene.bed, size, marginsFor(windowSize(size)), cardBoxes()));
     fitted = true;
     draw();
   };
-  /** A move the person made: the view stays where they put it. */
+  /** A move the person made: the view stays where they put it. A move that moved nothing (the wheel turned sideways, a slide at its limit) is none. */
   const move = (next: View) => {
+    if (!shown || (next.cx === view.cx && next.cy === view.cy && next.scale === view.scale)) return;
     view = next;
     fitted = false;
     draw();
@@ -246,6 +257,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
   };
   svg.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
+    if (e.isPrimary) pointers.clear(); // the first pointer down: any other still held here is one whose release was never heard
     if (pointers.size >= 2) return;
     pointers.set(e.pointerId, local(e));
     element.dataset.dragging = "";
@@ -255,6 +267,8 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
   svg.addEventListener("pointermove", (e) => {
     const before = pointers.get(e.pointerId);
     if (!before) return;
+    // A mouse or pen moving with neither the left nor the middle button held is no drag: its release went missing (as the 3D view's `releaseLost`).
+    if (e.pointerType !== "touch" && (e.buttons & 5) === 0) return release(e);
     const now = local(e);
     const size = measure();
     const other = [...pointers].find(([id]) => id !== e.pointerId)?.[1];
@@ -268,6 +282,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
   });
   svg.addEventListener("pointerup", release);
   svg.addEventListener("pointercancel", release);
+  svg.addEventListener("lostpointercapture", release);
   svg.addEventListener(
     "wheel",
     (e) => {
@@ -294,6 +309,8 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     if (!host) return;
     watch?.disconnect();
     watch = null;
+    switched?.disconnect();
+    switched = null;
     pointers.clear();
     delete element.dataset.dragging;
     element.remove();
@@ -315,9 +332,21 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
       const canvas = to.querySelector("canvas");
       if (canvas) canvas.after(element);
       else to.prepend(element);
+      // A pane whose view the app has switched off (a workspace it shows as "Coming soon") shows no bed either.
+      const onOff = () => {
+        element.hidden = to.dataset.drawing === "off";
+      };
+      onOff();
+      const Mutations = doc.defaultView?.MutationObserver;
+      if (Mutations) {
+        switched = new Mutations(onOff);
+        switched.observe(to, { attributes: true, attributeFilter: ["data-drawing"] });
+      }
       if (typeof ResizeObserver === "function") {
+        // The view's own size, and the cards': a list that grows, or a sheet that opens or closes over a fitted bed, fits it again.
         watch = new ResizeObserver(() => (fitted ? fit() : draw()));
         watch.observe(element);
+        for (const card of options.cards?.() ?? []) watch.observe(card);
       }
       if (fitted) fit();
       else draw();
@@ -326,6 +355,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     show(next, frame) {
       const resized = next.bed.width !== scene.bed.width || next.bed.height !== scene.bed.height;
       scene = next;
+      shown = true;
       drawScene();
       if (frame || fitted) return fit(); // a view the person has not moved keeps the whole bed in sight, clear of the parts list as it grows
       if (resized) view = zoomAt(view, scene.bed, measure(), { x: 0, y: 0 }, 1); // the same view, kept within the new bed's limits

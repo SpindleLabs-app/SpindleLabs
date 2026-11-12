@@ -269,3 +269,46 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
   on.unmount();
   setLaserShown(null);
 });
+
+// Found by the review of L1a2 (each failed before its fix).
+
+test("before the parts have been read the view already shows the project's own bed, empty, and never a made-up one", async () => {
+  const { element, mounted } = mount(undefined, { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [] });
+  const names = () => [...element.querySelectorAll("text.laser-flat-bed-name")].map((t) => t.textContent);
+  // Straight after mounting: the read of Design's shapes has not answered yet.
+  assert.deepEqual(names(), ["Bed 300 × 200 mm"]);
+  assert.equal(element.querySelectorAll("path.laser-flat-part").length, 0);
+  assert.deepEqual([...element.querySelectorAll("text.laser-flat-note")].map((t) => t.textContent), []); // not "nothing to cut" either: it is not known yet
+  await mounted.ready;
+  assert.deepEqual(names(), ["Bed 300 × 200 mm"]);
+  assert.equal(element.querySelectorAll("path.laser-flat-part").length, 2);
+  mounted.unmount();
+});
+
+test("a new gap leaves the view where the person put it; a new bed size shows the whole bed again", async () => {
+  const { ctx, element, mounted, window } = mount();
+  // The view's size, which the test page has none of: 980 × 756 (view-box.test.ts's worked view).
+  const flat = element.querySelector<HTMLElement>(".laser-flat")!;
+  Object.defineProperty(flat, "clientWidth", { value: 980 });
+  Object.defineProperty(flat, "clientHeight", { value: 756 });
+  await mounted.ready;
+  const change = (n: string, v: string) => {
+    const field = ctx.properties.querySelector<HTMLInputElement>(`input[name="${n}"]`)!;
+    field.value = v;
+    field.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
+  };
+  change("width", "400"); // any bed change frames it: 1.59 px per mm
+  assert.equal(flat.dataset.scale, "1.59");
+  const wheel = new window.Event("wheel", { bubbles: true, cancelable: true });
+  Object.assign(wheel, { clientX: 186, clientY: 672, deltaY: -100, deltaMode: 0 });
+  flat.querySelector("svg")!.dispatchEvent(wheel as unknown as Event);
+  const moved = flat.dataset.scale;
+  assert.notEqual(moved, "1.59");
+  change("gap", "10");
+  assert.equal(flat.dataset.scale, moved, "the gap moved the parts, not the view");
+  assert.deepEqual([...flat.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("d")), ["M10 -10L70 -10L70 -50L10 -50Z", "M80 -10L110 -10L110 -20L80 -20Z"]); // 10 mm in, 10 mm apart
+  change("height", "300");
+  // 400 × 300 in the 912 × 636 room: 912 / 400 = 2.28 across, 636 / 300 = 2.12 down; the smaller fits both.
+  assert.equal(flat.dataset.scale, "2.12");
+  mounted.unmount();
+});

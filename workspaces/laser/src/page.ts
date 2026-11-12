@@ -173,6 +173,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
     flat.detach();
     ctx.viewport.clearImage(); // the body and the 3D camera come back as they were
   };
+  flat.show({ bed: data().bed, parts: [] }, true); // the project's own bed at once, empty until Design's shapes have been read
   showView();
 
   const draw = (frame: boolean): void => {
@@ -218,8 +219,9 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
       for (const b of buttons) b.disabled = true;
       return;
     }
-    store({ ...data(), bed: { width, height }, gap }, "Change the laser bed");
-    draw(true);
+    const before = data();
+    store({ ...before, bed: { width, height }, gap }, "Change the laser bed");
+    draw(width !== before.bed.width || height !== before.bed.height); // a new bed is shown whole; a new gap moves the parts, not the view
   };
   for (const name of ["width", "height", "gap"]) input(name).addEventListener("change", onBed);
 

@@ -277,6 +277,36 @@ try {
     assert.equal(await boxOf(page, "#view-controls"), null);
     assert.deepEqual(await page.$$eval(".laser-flat text.laser-flat-note", (t) => t.map((x) => x.textContent)), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
     await page.screenshot({ path: "e2e/laser-page-375.png" });
+    // A sheet opened over the fitted bed fits the bed again in the room left above it (here the bed keeps its size and
+    // moves up to the middle of that room), and closing the sheet puts it back exactly.
+    const fitted = await scaleNow(page);
+    await page.click("#browser-toggle");
+    await until(page, () => document.querySelector("#browser-toggle").getAttribute("aria-expanded") === "true", null, "the Browser sheet open");
+    await until(page, (top) => document.querySelector(".laser-flat-bed").getBoundingClientRect().top < top - 1, bed[1], "the bed moved up as the sheet opened");
+    const sheet = await boxOf(page, "#browser");
+    const raised = await boxOf(page, ".laser-flat-bed");
+    assert.ok(raised[3] <= sheet[1] - 12, `the bed ${raised} clear of the sheet ${sheet}`);
+    assert.ok(apart(raised, await boxOf(page, "#panel-toggles")), "and still clear of the app's buttons");
+    closeTo(raised[2] - raised[0], 400 * (await scaleNow(page)), 2, "the bed's width on screen, sheet open");
+    await page.click("#browser-toggle");
+    await until(page, (top) => Math.abs(document.querySelector(".laser-flat-bed").getBoundingClientRect().top - top) < 0.5, bed[1], "the bed back where it was once the sheet is closed");
+    assert.equal(await scaleNow(page), fitted);
+    await context.close();
+  });
+
+  await check("in the second pane, where Laser is still shown as coming soon, no bed is drawn over the words", async () => {
+    const { context, page } = await newPage("?laser&all-workspaces");
+    await page.locator("#start-hint").waitFor();
+    await page.click("#split-toggle");
+    await page.waitForSelector("#split-choice");
+    await page.selectOption("#split-choice", "laser");
+    await until(page, () => document.body.dataset.split === "laser", null, "Laser in the second pane");
+    await until(page, () => /Coming soon/.test(document.querySelector("#split-viewport .split-soon")?.textContent ?? ""), null, "the pane saying Coming soon");
+    assert.equal(await page.evaluate(() => document.querySelector("#split-viewport").dataset.drawing), "off");
+    assert.equal(await boxOf(page, "#split-viewport .laser-flat"), null, "no flat view over the words");
+    // The words are what a press in the pane's middle lands on.
+    const hit = await page.evaluate(() => { const r = document.querySelector("#split-viewport").getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(".split-soon, .laser-flat")?.className; });
+    assert.equal(hit, "split-soon");
     await context.close();
   });
 

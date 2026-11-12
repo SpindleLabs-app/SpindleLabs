@@ -11,8 +11,9 @@ const SIZE = { width: 980, height: 756 };
 const RECT = { id: "s1", label: "Sketch 1", d: "M3 -3L43 -3L43 -33L3 -33Z", box: { minX: 3, minY: 3, maxX: 43, maxY: 33 } };
 const SCENE: FlatScene = { bed: { width: 400, height: 400 }, parts: [RECT] };
 
-function setUp(size = SIZE) {
-  const window = new Window();
+function setUp(size = SIZE, windowWidth = size.width) {
+  // The app's window: as wide as the view unless a test says the view is only part of it.
+  const window = new Window({ innerWidth: windowWidth, innerHeight: size.height });
   const doc = window.document as unknown as Document;
   const host = doc.body.appendChild(doc.createElement("div"));
   host.setAttribute("aria-label", "3D view");
@@ -21,7 +22,7 @@ function setUp(size = SIZE) {
   const svg = view.element.querySelector("svg")!;
   const fire = (type: string, init: Record<string, unknown>) => {
     const e = new window.Event(type, { bubbles: true, cancelable: true });
-    Object.assign(e, { pointerType: "mouse", button: 0, ...init });
+    Object.assign(e, { pointerType: "mouse", button: 0, buttons: type === "pointerup" ? 0 : 1, ...init }); // a held left button, as a real drag reports
     svg.dispatchEvent(e as unknown as Event);
     return e;
   };
@@ -233,4 +234,119 @@ test("the fitted bed keeps clear of the parts list lying over the view", () => {
   const m = /^matrix\((\S+) 0 0 \S+ (\S+) \S+\)$/.exec(view.element.querySelector(".laser-flat-world")!.getAttribute("transform")!)!;
   near(Number(m[1]), 1.59, "scale");
   near(Number(m[2]), 292, "left edge");
+});
+
+// Found by the review of L1a2 (each failed before its fix).
+
+test("before the page has said what the bed is, the view draws no bed of its own making", () => {
+  const { host, view, texts } = setUp();
+  view.attach(host);
+  assert.deepEqual(texts("laser-flat-bed-name"), []);
+  assert.deepEqual(texts("laser-flat-mark"), []);
+  assert.equal(view.element.querySelector(".laser-flat-world")!.getAttribute("transform"), null);
+  view.show(SCENE, true);
+  assert.deepEqual(texts("laser-flat-bed-name"), ["Bed 400 × 400 mm"]);
+});
+
+test("a drag whose release was never heard ends at the next move with no button held, and a new press starts clean", () => {
+  const { host, view, fire, matrix } = setUp();
+  view.attach(host);
+  view.show(SCENE, true);
+  // Pressed at (300, 300); the release goes missing (a menu opened, the window lost the pointer). The mouse then only hovers.
+  fire("pointerdown", { pointerId: 1, clientX: 300, clientY: 300 });
+  fire("pointermove", { pointerId: 1, clientX: 400, clientY: 300, buttons: 0 });
+  near(matrix()[1], 186, "a hover slides nothing");
+  assert.equal(view.element.dataset.dragging, undefined);
+  fire("pointermove", { pointerId: 1, clientX: 500, clientY: 300, buttons: 0 });
+  near(matrix()[1], 186, "nor the next");
+  // Left held, right pressed, left let go: only the right button is down (buttons 2), so the drag is over.
+  fire("pointerdown", { pointerId: 1, clientX: 300, clientY: 300 });
+  fire("pointermove", { pointerId: 1, clientX: 310, clientY: 300, buttons: 3 }); // both down: still the drag, 10 px
+  near(matrix()[1], 196, "both buttons");
+  fire("pointermove", { pointerId: 1, clientX: 400, clientY: 300, buttons: 2 });
+  near(matrix()[1], 196, "the right button alone drags nothing");
+  // The browser taking the pointer away ends the drag too.
+  fire("pointerdown", { pointerId: 1, clientX: 300, clientY: 300 });
+  fire("lostpointercapture", { pointerId: 1 });
+  assert.equal(view.element.dataset.dragging, undefined);
+  fire("pointermove", { pointerId: 1, clientX: 390, clientY: 300 });
+  near(matrix()[1], 196, "after the capture was lost");
+  // A finger whose lift went missing: the next first finger down slides the view by itself, 30 px, and is no pinch against a ghost.
+  fire("pointerdown", { pointerId: 5, pointerType: "touch", isPrimary: true, clientX: 100, clientY: 100 });
+  fire("pointerdown", { pointerId: 6, pointerType: "touch", isPrimary: true, clientX: 300, clientY: 300 });
+  fire("pointermove", { pointerId: 6, pointerType: "touch", clientX: 330, clientY: 300 });
+  near(matrix()[0], 1.59, "no pinch");
+  near(matrix()[1], 226, "slid by one finger");
+});
+
+test("a move that moves nothing leaves a fitted view fitted, so it still follows the view's size", () => {
+  const size = { ...SIZE };
+  const { host, view, fire, matrix } = setUp(size);
+  view.attach(host);
+  view.show(SCENE, true);
+  fire("wheel", { clientX: 186, clientY: 672, deltaY: 0, deltaMode: 0 }); // a sideways swipe: no zoom at all
+  fire("keydown", { key: "ArrowLeft" }); // the fitted bed is whole in sight… this one does slide it
+  fire("keydown", { key: "0" });
+  fire("wheel", { clientX: 186, clientY: 672, deltaY: 0, deltaMode: 0 });
+  // The view narrows to 580 px (window 980): room 580 − 48 − 20 = 512 across, 636 down, so 512 / 400 = 1.28 px per mm.
+  size.width = 580;
+  view.show(SCENE, false);
+  near(matrix()[0], 1.28, "fitted again at the new size");
+  // A real move still holds the view where the person put it.
+  fire("wheel", { clientX: 100, clientY: 100, deltaY: -100, deltaMode: 0 });
+  const moved = view.view();
+  size.width = 980;
+  view.show(SCENE, false);
+  assert.deepEqual(view.view(), moved); // the same middle and zoom (on screen the sheet follows the view's middle)
+});
+
+test("hand-worked: a narrow view in a wide window is fitted with the desktop's margins, a phone's window with the phone's", () => {
+  // A 580 × 756 view beside an open panel in a 1200 px window: no phone buttons over it. Room 512 × 636: 1.28 px per mm,
+  // the bed 512 px tall, centred down the room: 36 + (636 − 512) / 2 = 98 to 610. So the bed's lower-left corner is at y = 610.
+  const desk = setUp({ width: 580, height: 756 }, 1200);
+  desk.view.attach(desk.host);
+  desk.view.show(SCENE, true);
+  near(desk.matrix()[0], 1.28, "scale");
+  near(desk.matrix()[2], 610, "origin y, desktop margins");
+  // The same view in a 580 px window (a phone on its side): the top margin is 92, the room 512 × 580, the bed
+  // centred from 92 + (580 − 512) / 2 = 126 to 638.
+  const phone = setUp({ width: 580, height: 756 });
+  phone.view.attach(phone.host);
+  phone.view.show(SCENE, true);
+  near(phone.matrix()[0], 1.28, "scale");
+  near(phone.matrix()[2], 638, "origin y, phone margins");
+});
+
+test("in a pane whose view is switched off (a workspace shown as coming soon) the flat view is hidden, and back when it is on", async () => {
+  const { host, view } = setUp();
+  host.dataset.drawing = "off";
+  view.attach(host);
+  assert.equal(view.element.hidden, true);
+  delete host.dataset.drawing;
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(view.element.hidden, false);
+  host.dataset.drawing = "off"; // the app switches it off after the page has mounted
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(view.element.hidden, true);
+  view.detach();
+  delete host.dataset.drawing;
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(view.element.hidden, true, "a detached view listens to nothing");
+});
+
+test("hand-worked: a part out of sight gets no name; the wheel with Ctrl held (a trackpad pinch) zooms five times as fast", () => {
+  const { host, view, fire, matrix, texts } = setUp();
+  view.attach(host);
+  view.show(SCENE, true);
+  // A pinch of 20 px on a trackpad arrives as a wheel of −20 with Ctrl: ×e^(0.002 × 20 × 5) = e^0.2.
+  fire("wheel", { clientX: 186, clientY: 672, deltaY: -20, deltaMode: 0, ctrlKey: true });
+  near(matrix()[0], 1.59 * Math.E ** 0.2, "pinch on a trackpad");
+  view.fit();
+  assert.deepEqual(texts("laser-flat-part-name"), ["Sketch 1"]);
+  // Zoom ×4 about the bed's top-right corner, (822, 36) on screen: the part's box, 3…43 mm across from the origin at
+  // 186, lands at 822 − 4 × (822 − 186 − 1.59 × 43) = −1448.52 on its right side: wholly left of the view.
+  fire("wheel", { clientX: 822, clientY: 36, deltaY: -10000, deltaMode: 0 }); // clamped to ×4 a turn
+  near(matrix()[0], 6.36, "×4");
+  assert.deepEqual(texts("laser-flat-part-name"), []);
+  assert.equal(view.element.querySelectorAll("path.laser-flat-part").length, 1); // the outline itself is still there
 });
