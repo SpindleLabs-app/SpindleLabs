@@ -50,7 +50,7 @@ import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
-import { HELD_STILL, turnedOver } from "./point-drag.ts";
+import { cornerTurned, HELD_STILL, turnedOver } from "./point-drag.ts";
 import { findRegion, refusalReason, regionCurveIds, regionName, regionNow, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
 import { leavesNoFace, missedTools, missWords, type Miss } from "./misses.ts";
 
@@ -1238,11 +1238,35 @@ export const constraintsWords = (label: string, why: string): string => `${label
  * Sketch `followed` (its followed points where the body put them) solved
  * with them fixed (constraints.ts `solverRequest`): the other points the
  * solve moved and where to, or why its constraints can't hold there (a
- * conflict, a refusal, a line or arc shrunk below MIN_FEATURE, or the
- * solver failing or taking too long).
+ * conflict, a refusal, a line or arc shrunk below MIN_FEATURE, the solver
+ * failing or taking too long, or a shape turned over).
+ *
+ * One solve from the stored points can land on the shape's mirror image,
+ * the nearer answer the lengths allow: an arc turned inside out
+ * (point-drag.ts `turnedOver`, #545 item 1) or a corner where two curves
+ * meet turned over (`cornerTurned`, SL #630: a sized rectangle drawn from
+ * a box's corner mirrored past it, a slot's ends turned inward). Nobody
+ * moved these points by hand, so every corner counts, and it is said
+ * rather than taken.
  */
 async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch, label: string): Promise<{ solved: { point: string; at: SketchXY }[] } | { message: string }> {
-  const request = solverRequest(followed);
+  const got = await solvedOnce(kernel, followed, label);
+  if ("message" in got) return got;
+  const { at } = got;
+  const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
+  // #545 item 1: an arc the solve would turn inside out (its end past its start, or its sweep jumping to its other branch;
+  // passing a half turn is fine, SL #612), refused as a drag refuses it.
+  if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
+  if (cornerTurned(followed, was, at, false) !== null) return { message: constraintsWords(label, "the shape would turn over") };
+  return { solved: followed.points.flatMap((p) => {
+    const [x, y] = at.get(p.id)!;
+    return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
+  }) };
+}
+
+/** Sketch `sketch` solved once with its followed points fixed: every point's place, or why not (solvedAgain). */
+async function solvedOnce(kernel: KernelCalls, sketch: Sketch, label: string): Promise<{ at: Map<string, readonly [number, number]> } | { message: string }> {
+  const request = solverRequest(sketch);
   let answer: ReturnType<typeof readAnswer>;
   try {
     answer = readAnswer(await kernel.call("solve_sketch", request.text));
@@ -1252,17 +1276,10 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch
   }
   if (answer.result === "refused") return { message: constraintsWords(label, `the solver refused it: ${answer.message}`) };
   if (answer.result === "conflict") return { message: constraintsWords(label, "they fight there") };
-  const at = solvedPoints(followed, request, answer.points);
-  const tiny = shrunk(followed, at);
-  if (tiny !== null) return { message: constraintsWords(label, `${curveWord(followed, tiny, "a")} would shrink below the smallest size`) };
-  // #545 item 1: an arc the solve would turn inside out (its end past its start, or its sweep jumping to its other branch;
-  // passing a half turn is fine, SL #612), refused as a drag refuses it (point-drag.ts `turnedOver`).
-  const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
-  if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
-  return { solved: followed.points.flatMap((p) => {
-    const [x, y] = at.get(p.id)!;
-    return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
-  }) };
+  const at = solvedPoints(sketch, request, answer.points);
+  const tiny = shrunk(sketch, at);
+  if (tiny !== null) return { message: constraintsWords(label, `${curveWord(sketch, tiny, "a")} would shrink below the smallest size`) };
+  return { at };
 }
 
 /**
