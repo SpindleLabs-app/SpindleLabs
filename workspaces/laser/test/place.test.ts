@@ -242,3 +242,19 @@ test("PlacedPart from the rows and LaidPart are the same shape plus the angle an
   const laid = layOutPlaced([part("A", rect(10, 10))], BED, 5).placed[0];
   assert.deepEqual(laid, { ...rows, angle: 0, by: "rows" });
 });
+
+test("hand-worked: pairs are worth asking about when their boxes overlap or come within the margin given, and one of the two was placed by hand", () => {
+  const laid = (x: number, y: number, w: number, h: number, by: "hand" | "rows"): LaidPart => ({ id: `${x},${y}`, label: "p", outline: { outer: { path: { corners: [], bulges: [] } }, holes: [] }, x, y, width: w, height: h, angle: 0, by });
+  // A 10 × 10 at the origin placed by hand; one touching its right side; one 5 away; a row part over it; two row parts over each other.
+  const parts = [laid(0, 0, 10, 10, "hand"), laid(10, 0, 10, 10, "rows"), laid(15, 0, 10, 10, "rows"), laid(5, 5, 10, 10, "rows")];
+  // Overlap only: part 0 with part 3 (5 × 5 shared). Parts 1, 2 and 3 overlap each other but are all row parts.
+  assert.deepEqual(overlapCandidates(parts), [[0, 3]]);
+  // Within 0.002 mm: the touching one (gap 0) counts too; the one 5 away still not.
+  assert.deepEqual(overlapCandidates(parts, 0.002), [[0, 1], [0, 3]]);
+  // The margin's own line: a gap of 0.9 × 0.002 counts, 1.1 × 0.002 does not (across, and up).
+  for (const [gap, counts] of [[0.0018, true], [0.0022, false]] as const) {
+    assert.equal(overlapCandidates([parts[0], laid(10 + gap, 0, 10, 10, "rows")], 0.002).length === 1, counts, `across, ${gap}`);
+    assert.equal(overlapCandidates([parts[0], laid(0, 10 + gap, 10, 10, "rows")], 0.002).length === 1, counts, `up, ${gap}`);
+    assert.equal(overlapCandidates([parts[0], laid(10 + gap, 10 + gap, 10, 10, "rows")], 0.002).length === 1, counts, `corner to corner, ${gap}`);
+  }
+});
