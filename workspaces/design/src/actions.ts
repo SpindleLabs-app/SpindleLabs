@@ -6,6 +6,7 @@
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type SolidReport, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
+import { nameLead, printLead } from "@fission/print";
 import { planeSeenAs } from "@fission/viewport";
 import { designBodies } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, isDuplicateItem, makesPieces, partFeature, shapeOf, type DesignDocument } from "./document.ts";
@@ -109,13 +110,22 @@ export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> =
  * their browser numbers: they were left out without a word (beginner
  * play-test 2026-10-28). Empty when none is hidden.
  */
-export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string {
+export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, what: "STL" | "print" = "STL"): string {
   const numbers = bodyNumbers(doc);
   const hidden = designBodies(doc, failed).flatMap(({ body }) => (bodyHidden(doc, body) && numbers.has(body) ? [numbers.get(body)!] : [])).sort((a, b) => a - b);
   if (hidden.length === 0) return "";
-  if (hidden.length === 1) return `Body ${hidden[0]} is hidden, so it is not in the STL: show it with its eye in the browser to include it.`;
+  if (hidden.length === 1) return `Body ${hidden[0]} is hidden, so it is not in the ${what}: show it with its eye in the browser to include it.`;
   const list = `${hidden.slice(0, -1).join(", ")} and ${hidden.at(-1)}`;
-  return `Bodies ${list} are hidden, so they are not in the STL: show them with their eyes in the browser to include them.`;
+  return `Bodies ${list} are hidden, so they are not in the ${what}: show them with their eyes in the browser to include them.`;
+}
+
+/**
+ * What Slice for printing and its preview say the print leaves out (SL #675 item 3): the failed timeline items
+ * (`failedItemsNote`), then the bodies their eyes hide (`hiddenStlNote`), in the print's words; the print takes the
+ * shown bodies only, as the whole design's STL does. Empty when nothing is left out.
+ */
+export function printMissingNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string {
+  return [failedItemsNote(doc, failed, "print"), hiddenStlNote(doc, failed, "print")].filter(Boolean).join(" ");
 }
 
 /** "Extrude 1", "Extrude 1 and Combine 2", "Extrude 1, Extrude 2 and Combine 3", "Extrude 1, Extrude 2, Extrude 3 and 2 more". */
@@ -265,7 +275,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const files: StlFile[] = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
-        const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
+        // Named after the design (Ben 2026-11-11): its own name, else the file it was saved to; with neither, the shape's name as before.
+        const lead = printLead(ctx.project.name, ctx.fileName?.());
+        const file = nameLead(lead) !== "spindlelabs" ? `${nameLead(lead)}.stl` : `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
         const bytes = one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name);
         // The export badge: the kernel checks the file's own bytes, as saved (every body, every corner rounded); a
         // solid one says so in its header. A check that can't run never stops the export, and never says solid.

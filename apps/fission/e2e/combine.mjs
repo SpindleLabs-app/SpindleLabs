@@ -212,6 +212,8 @@ try {
         assert.equal(await page.$eval("#combine-target", (b) => b.getAttribute("aria-pressed")), "true");
         assert.equal(await page.$eval("#combine-ok", (b) => b.disabled), true);
         assert.equal(await page.$eval("#combine-hint", (h) => [h.hidden, h.textContent].join()), "false,Combine: click or tap the body to change");
+        // #504 (a11y): a screen reader hears the hint change, as it is a live region.
+        assert.equal(await page.$eval("#combine-hint", (h) => h.getAttribute("role")), "status", "the hint is a live region");
         if (shots) await page.screenshot({ path: `${shots}/combine-${width}-empty.png` });
         await at(page, TOP1, tap);
         await fields(page, `Body 1 | ${verb} the bodies to use as tools`, "Box 1 the target");
@@ -268,6 +270,111 @@ try {
       }
     });
   }
+
+  // #504: on a phone the sheet shuts by a tap on the view, a drag or a finger orbiting, and then nothing said Combine was open.
+  // The bar over the view (phone-float.ts) now holds Finish Combine and Cancel, whatever the sheet does.
+  for (const finish of [true, false]) {
+    await check(`375 px, taps: with the Combine sheet shut the bar over the view has Finish Combine and Cancel, and ${finish ? "Finish records the Combine" : "Cancel records nothing"}`, async () => {
+      const page = await fresh(375, 667, true, "&combine");
+      try {
+        await press(page, '[data-view="top"]', true);
+        await settle(page);
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+        const bar = () => page.evaluate(() => {
+          const b = document.getElementById("phone-float");
+          return b && !b.hidden ? { kind: b.dataset.kind, finish: document.getElementById("float-finish")?.textContent, off: document.getElementById("float-finish")?.disabled, cancel: !!document.getElementById("float-cancel") } : null;
+        });
+        await at(page, TOP1, true);
+        await at(page, TOP2, true);
+        await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+        await page.waitForTimeout(300);
+        // The sheet opened by itself on the operation and OK; a tap on the view puts it away (a tap on empty space).
+        await closePanels(page, true);
+        assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet is shut");
+        assert.deepEqual(await bar(), { kind: "combine", finish: "Finish Combine", off: false, cancel: true }, "the bar says Combine is open and what ends it");
+        // It never covers most of the view: one row along the top.
+        const [barBox, view] = await Promise.all([page.locator("#phone-float").boundingBox(), page.locator("#viewport").boundingBox()]);
+        assert.ok(barBox.height / view.height < 0.2, `the bar covers ${((barBox.height / view.height) * 100).toFixed(0)}% of the view`);
+        if (shots) await page.screenshot({ path: `${shots}/combine-375-bar.png` });
+        await page.tap(finish ? "#float-finish" : "#float-cancel");
+        await closed(page);
+        await rebuilt(page);
+        assert.equal(await bar(), null, "the bar goes with the tool");
+        await until(page, (n) => document.querySelectorAll("#timeline li[data-item]").length === n, finish ? 6 : 5, finish ? "Combine 1 in the timeline" : "no Combine recorded");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  // #586: Combine started again while one is open with its bodies picked (no hint to wait for) and its sheet shut by a tap on the view:
+  // the sheet with the operation and OK only opened when the picked state changed, and never did here, so Combine looked closed.
+  await check("375 px, taps: Combine pressed again with its bodies already picked and the sheet shut opens the sheet with the operation and OK", async () => {
+    const page = await fresh(375, 667, true, "&combine");
+    try {
+      await press(page, '[data-view="top"]', true);
+      await settle(page);
+      const start = async () => {
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+      };
+      await start();
+      await at(page, TOP1, true);
+      await at(page, TOP2, true);
+      await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+      await page.waitForTimeout(300);
+      await closePanels(page, true); // the sheet shut by a tap on the view
+      assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet is shut");
+      await start();
+      await page.waitForTimeout(600);
+      assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "true", "the sheet with the operation and OK is open");
+      assert.equal(await page.locator("#combine-ok").isVisible(), true, "OK can be reached");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  // #504: the shell's `#workspace button:hover` outranked the panel's OK, so on hover (and on a phone after a tap, where hover sticks) OK turned dark grey and looked switched off.
+  await check("1280 px: OK keeps its colour under the pointer", async () => {
+    const page = await fresh(1280, 800, false, "&combine");
+    try {
+      await page.click('[data-view="top"]');
+      await settle(page);
+      await at(page, TOP1);
+      await page.click("#modify-menu");
+      await page.click("#modify-menu-combine");
+      await opened(page);
+      await at(page, TOP2);
+      await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+      await page.mouse.move(5, 5);
+      const colour = () => page.$eval("#combine-ok", (b) => getComputedStyle(b).backgroundColor);
+      const rest = await colour();
+      await page.hover("#combine-ok");
+      await page.waitForTimeout(250);
+      assert.equal(await colour(), rest, "OK's fill under the pointer is its fill at rest");
+      await page.keyboard.press("Escape");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  // #504: any touch screen (a 768 × 1024 tablet too) gets finger-sized controls, not only widths up to 700 px.
+  await check("768 px touch tablet: the Combine panel's controls are finger-sized", async () => {
+    const page = await fresh(768, 1024, true, "&combine");
+    try {
+      await press(page, "#modify-menu", true);
+      await press(page, "#modify-menu-combine", true);
+      await opened(page);
+      const sizes = await page.evaluate(() => Object.fromEntries(["combine-ok", "combine-cancel", "combine-operation", "combine-keep"].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, [Math.round(r.width), Math.round(r.height)]]; })));
+      for (const id of ["combine-ok", "combine-cancel", "combine-operation"]) assert.ok(sizes[id][1] >= 44, `${id} is ${sizes[id][1]} px tall: ${JSON.stringify(sizes)}`);
+      assert.ok(sizes["combine-keep"][0] >= 22 && sizes["combine-keep"][1] >= 22, `Keep tools box ${sizes["combine-keep"]}`);
+    } finally {
+      await page.context().close();
+    }
+  });
 
   await check("1280 px: Combine 1 edited to Intersect, Escape leaves without a change, an Intersect of bodies apart is refused, and the flag stays for the tab", async () => {
     const page = await fresh(1280, 800, false, "&combine");

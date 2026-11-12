@@ -237,7 +237,7 @@ test("a planted collision: were two of an item's bodies ever given one id, the i
     assert.deepEqual(clean.ids, [s.a, s.b, s.piece(1), s.piece(2)].sort());
     near(clean.total, 41600);
     const numbering = "pieceIds(f.id, numbered.map((id) => pieceFaces[id]), remembered, own)";
-    const naming = "combineNames(f.id, op, t, ts, result, views, firstPiece, undefined, own)";
+    const naming = "combineNames(feature, op, t, ts, result, views, firstPiece, undefined, own)";
     const plants = [
       // The item's numbering answers with its first piece's id for every piece: A's chunk is given 2 (as above), so both would be piece 2.
       { name: "all-first", find: numbering, replace: `((s) => ({ ...s, ids: s.ids.map(() => s.ids[0]) }))(${numbering})`, id: s.piece(2) },
