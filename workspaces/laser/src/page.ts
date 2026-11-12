@@ -76,7 +76,7 @@ export const partsOn = (offered: readonly OfferedPart[], off: readonly string[])
 
 /** The words under the bed: how many parts are on it, and each one left off with why. */
 export function layoutWords(layout: Layout, offered: number): string {
-  if (offered === 0) return "Nothing to cut yet: draw a closed sketch in Design and it appears here.";
+  if (offered === 0) return "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.";
   const n = layout.placed.length;
   const on = n === 0 ? "No parts on the bed." : `${n} ${n === 1 ? "part" : "parts"} on the bed.`;
   return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`)].join(" ");

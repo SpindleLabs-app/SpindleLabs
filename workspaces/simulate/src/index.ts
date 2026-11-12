@@ -23,14 +23,14 @@ export function solve(_study: Study): Promise<never> {
 
 export const simulateWorkspace: WorkspacePlugin = {
   id: "simulate",
-  title: "Simulate",
+  title: "TestLab",
   summary: "Finite element analysis on the kernel's exact geometry: static stress first, then thermal and modal.",
   status: "placeholder",
   representations: { produces: [], accepts: [] },
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
-      title: "Simulate",
+      title: "TestLab",
       summary: "Finite element analysis on the kernel's exact geometry: static stress first, then thermal and modal.",
       plans: ["Static stress, then thermal and modal studies", "Materials from the shared library (density, stiffness, strength)", "Loads and constraints placed on design faces by reference: they follow the face when the design changes", "Meshing from the exact geometry", "Results: stress, displacement and safety factor drawn in the shared viewport"],
       startsAfter: "after CAD step 40 (booleans and full topological naming), so loads stay on the right faces",

@@ -31,7 +31,7 @@ test("an extrusion depends on its profile, and says it came from it", () => {
   const doc = partDocument("l-bracket", 40, 30, 20);
   const f = lastFeature(doc);
   assert.deepEqual(f.dependsOn, ["profile-1"]);
-  assert.equal(describeProvenance(f.provenance), "L-bracket 1 comes from L-bracket profile in Design.");
+  assert.equal(describeProvenance(f.provenance), "L-bracket 1 comes from L-bracket profile in DesignLab.");
 });
 
 test("the body is built from the intent: changing a parameter changes the body", () => {

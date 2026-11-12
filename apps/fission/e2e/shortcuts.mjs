@@ -89,7 +89,7 @@ try {
       assert.equal(await selection(page), "body:feature-1", "Design is asleep: Escape in Image leaves its selection alone");
       // The list from Image: Design is not on screen, so the app's keys come first.
       await page.keyboard.press("?");
-      assert.deepEqual((await listed(page)).map((s) => s.title), ["Everywhere", "Design"]);
+      assert.deepEqual((await listed(page)).map((s) => s.title), ["Everywhere", "DesignLab"]);
       await page.keyboard.press("Escape");
       await switchTo(page, "design");
       await page.waitForFunction(() => document.body.dataset.activeWorkspace === "design");
@@ -122,7 +122,7 @@ try {
       await page.keyboard.press("Escape");
       assert.equal(await selection(page), "", "Design is on screen in the second pane, so Escape still reaches it");
       await page.keyboard.press("?");
-      assert.deepEqual((await listed(page)).map((s) => s.title), ["Design on screen", "Everywhere"]);
+      assert.deepEqual((await listed(page)).map((s) => s.title), ["DesignLab on screen", "Everywhere"]);
     } finally {
       await page.close();
     }

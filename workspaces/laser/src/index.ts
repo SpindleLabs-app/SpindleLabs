@@ -19,7 +19,7 @@ const SUMMARY = "2D jobs for laser and vinyl cutters: cut, engrave and score lay
 
 export const laserWorkspace: WorkspacePlugin = {
   id: "laser",
-  title: "Laser",
+  title: "LaserLab",
   summary: SUMMARY,
   status: "placeholder",
   representations: { produces: [], accepts: [] }, // a placeholder to the app until Ben releases the page; the page reads outlines through the registry
@@ -27,9 +27,9 @@ export const laserWorkspace: WorkspacePlugin = {
   mount(ctx) {
     if (laserShown()) return mountLaserPage(ctx);
     showPlaceholder(ctx.properties, {
-      title: "Laser",
+      title: "LaserLab",
       summary: SUMMARY,
-      plans: ["Cut, engrave and score layers with power and speed settings", "Flat faces and sketches taken straight from Design, by reference (sheet-metal flat patterns later)", "Job preview with time estimate", "DXF and SVG import and export", "Machine control for common controllers"],
+      plans: ["Cut, engrave and score layers with power and speed settings", "Flat faces and sketches taken straight from DesignLab, by reference (sheet-metal flat patterns later)", "Job preview with time estimate", "DXF and SVG import and export", "Machine control for common controllers"],
       startsAfter: "after CAD step 52 (when the sketcher is solid)",
     });
     return { unmount: () => ctx.properties.replaceChildren() };

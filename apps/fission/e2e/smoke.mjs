@@ -172,7 +172,7 @@ try {
     assert.equal(await text("topology"), "8 V · 12 E · 6 F");
     assert.equal(await text("status"), "valid");
     assert.equal(await text("intent"), "Box: 40 × 30 × 20 mm");
-    assert.equal(await text("provenance"), "Box 1 was made in Design.");
+    assert.equal(await text("provenance"), "Box 1 was made in DesignLab.");
   });
 
   await check("no Downstream section shows while no workspace makes anything from the design (X4b)", async () => {
@@ -717,7 +717,7 @@ try {
     assert.equal(await text("height-label"), "Extrude by");
     // The part is feature #1 of the timeline, and knows what it is and where it came from.
     assert.equal(await text("intent"), "Extrude: L-bracket profile 40 × 30 mm, by 20 mm");
-    assert.equal(await text("provenance"), "L-bracket 1 comes from L-bracket profile in Design.");
+    assert.equal(await text("provenance"), "L-bracket 1 comes from L-bracket profile in DesignLab.");
     // A new shape is framed: r = √(40² + 30² + 20²)/2 ≈ 26.93.
     const r = Number(await page.$eval("#viewport", (el) => el.dataset.framedRadius));
     assert.ok(Math.abs(r - Math.sqrt(2900) / 2) < 1e-4, `framed radius ${r}`);
@@ -959,14 +959,14 @@ try {
   });
 
   await check("DESIGN ▾ names Design and lists Design and Slice only (the public app's, src/listed-workspaces.ts), Design marked, neither greyed", async () => {
-    assert.equal(await page.textContent("#workspace-menu"), "Design ▾");
+    assert.equal(await page.textContent("#workspace-menu"), "DesignLab ▾");
     assert.equal(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DESIGN ▾, as Fusion's");
     assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "design");
     await page.click("#workspace-menu");
     const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (ts) => ts.map((t) => [t.querySelector(".menu-button-name").textContent, t.querySelector(".menu-button-note")?.textContent ?? "", t.getAttribute("aria-current") === "true"]));
     assert.deepEqual(items, [
-      ["Design", "", true],
-      ["Slice", "", false],
+      ["DesignLab", "", true],
+      ["SliceLab", "", false],
     ]);
     // Not greyed: Slice is no placeholder (data-soon dims one, styles/workspace-menu.css) and is not off.
     assert.deepEqual(await page.$eval('#workspace-menu-menu [data-workspace="slice"]', (b) => ["soon" in b.dataset, b.getAttribute("aria-disabled")]), [false, null]);
@@ -984,7 +984,7 @@ try {
     const radius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
     const before = await pixel(0.5, 0.5);
     // Each opened by its link: none is listed in the public app, and Slice's item opens Slice for printing (src/listed-workspaces.ts).
-    for (const [id, title] of [["render", "Render"], ["simulate", "Simulate"], ["manufacture", "Manufacture"], ["laser", "Laser"], ["slice", "Slice"], ["circuit", "Circuit"], ["vector", "Vector"], ["layout", "Layout"]]) {
+    for (const [id, title] of [["render", "RenderLab"], ["simulate", "TestLab"], ["manufacture", "CNCLab"], ["laser", "LaserLab"], ["slice", "SliceLab"], ["circuit", "PCBLab"], ["vector", "VectorLab"], ["layout", "LayoutLab"]]) {
       await page.evaluate((hash) => (location.hash = hash), `#${id}`);
       await page.waitForFunction((want) => document.body.dataset.activeWorkspace === want, id);
       assert.equal(await page.textContent(".placeholder h2"), title);
@@ -1020,8 +1020,8 @@ try {
 
   await check("opening a workspace link goes straight to it", async () => {
     await page.goto(`${url}#laser`);
-    assert.equal(await page.textContent(".placeholder h2"), "Laser");
-    assert.equal(await page.textContent("#workspace-menu"), "Laser ▾");
+    assert.equal(await page.textContent(".placeholder h2"), "LaserLab");
+    assert.equal(await page.textContent("#workspace-menu"), "LaserLab ▾");
     assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "laser");
   });
 
@@ -1478,7 +1478,7 @@ try {
       // The longest workspace name still fits whole: MANUFACTURE ▾.
       await phone.goto(url + "#manufacture");
       await phone.waitForFunction(() => document.body.dataset.activeWorkspace === "manufacture");
-      assert.equal(await phone.textContent("#workspace-menu"), "Manufacture ▾");
+      assert.equal(await phone.textContent("#workspace-menu"), "CNCLab ▾");
       const named = await rect("#workspace-menu");
       assert.ok(named.left >= 0 && named.right <= (await rect("#menu-toggle")).left, `MANUFACTURE ▾ whole: ${JSON.stringify(named)}`);
       // Again in DejaVu Sans, the wide font CI's Linux uses (it ran 23 px into Menu there before 13 px capitals on phones).
@@ -1766,10 +1766,10 @@ try {
       // drawing, its canvas, cube and bar are hidden, its properties column too.
       await wide.selectOption("#split-choice", "slice");
       await wide.waitForFunction(() => document.body.dataset.split === "slice");
-      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "Slice");
+      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "SliceLab");
       assert.equal(await wide.textContent("#split-viewport .split-soon .coming-soon"), "Coming soon");
       assert.equal(await wide.isVisible("#split-viewport .split-soon"), true);
-      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "Slice", "the workspace's own page, where the card comes from");
+      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "SliceLab", "the workspace's own page, where the card comes from");
       assert.equal(await wide.isVisible("#split-properties"), false, "no second copy beside the card");
       assert.equal(await wide.$eval("#split-viewport", (el) => el.dataset.drawing), "off");
       for (const part of ["canvas", ".view-cube", ".view-controls"]) assert.equal(await wide.isVisible(`#split-viewport > ${part}`), false, `no ${part} in the placeholder's pane`);
