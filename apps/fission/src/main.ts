@@ -856,7 +856,15 @@ function openProject(file: string | Uint8Array, fileName = "") {
   // copy no one can reach (real-use hunt B3). Looked up while it opens, once the last project's saves have landed
   // (#331: one still landing, Save's new name stored by New's last save, left the save time read here stale, and
   // the opened file's first save was refused as another tab's); a store that can't answer means a new copy.
-  const copy = canKeep ? lastWrites.then(() => storedCopy(store, project)).catch(() => undefined) : Promise.resolve(undefined);
+  // A file whose project took the file's name is also looked up under the name inside it: the project it was saved
+  // from, still "Untitled" here, goes on under its id with the new name, not as a second copy beside it.
+  const nothing = { found: undefined, exact: false } as { found: Awaited<ReturnType<typeof storedCopy>>; exact: boolean };
+  const lookUp = async () => {
+    const exact = await storedCopy(store, project);
+    if (exact !== undefined || project === read) return { found: exact, exact: exact !== undefined };
+    return { found: await storedCopy(store, read), exact: false };
+  };
+  const copy = canKeep ? lastWrites.then(lookUp).catch(() => nothing) : Promise.resolve(nothing);
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
@@ -867,7 +875,9 @@ function openProject(file: string | Uint8Array, fileName = "") {
   if (canKeep) saveStatus({ state: "saving" });
   let kept = false;
   const keepIt = () =>
-    void copy.then((found) => {
+    void copy.then((looked) => {
+      const found = looked.found;
+      let exact = looked.exact;
       if (kept) return;
       kept = true;
       unfollow();
@@ -879,7 +889,14 @@ function openProject(file: string | Uint8Array, fileName = "") {
       // forward (the same save time), as a project opened from the list is. Stored again it got a new save time, and
       // another tab still on that project had every later edit refused as "changed in another tab" (export hunt
       // 2026-11-12, #642 item 1).
-      if (found === undefined || ctx.history.canUndo()) {
+      // Kept here already under the name inside the file (the project it was saved from) and not changed while it
+      // opened: it stays that project, name and all, so nothing is stored and no other tab on it is overtaken.
+      if (found !== undefined && !exact && !ctx.history.canUndo()) {
+        ctx.project = { ...ctx.project, name: read.name };
+        ctx.history.reset();
+        exact = true;
+      }
+      if (found === undefined || !exact || ctx.history.canUndo()) {
         keep(found?.id ?? newId(), false, found?.modified ?? null);
         return autosave?.changed(); // store the opened file, with anything changed while it opened
       }

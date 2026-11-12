@@ -60,7 +60,7 @@ try {
     const before = (await storedProjects(a)).find((p) => p.id === id).modified;
     const bTab = await fresh(context);
     await volumeIs(bTab, "24,000 mm³");
-    await openFile(bTab, "Untitled.spindle", file);
+    await openFile(bTab, "bracket.spindle", file); // saved under a name of the person's own: still the project it was saved from
     await bTab.waitForTimeout(3000);
     await savedMark(bTab);
     assert.equal(await bTab.evaluate(() => document.body.dataset.projectId), id, "tab B carries on under the kept project's id");
@@ -74,6 +74,7 @@ try {
     console.log(`  tab A after its edit: ${await mark(a)}`);
     assert.equal(await mark(a), "Saved");
     assert.match((await storedProjects(a))[0].sizes, /"height":10/);
+    assert.equal((await storedProjects(a))[0].name, "Untitled", "the kept project keeps its name");
     // and tab B's project is the one a reload opens, with an edit of its own still stored
     await context.close();
   });
