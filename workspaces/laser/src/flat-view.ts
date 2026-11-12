@@ -77,6 +77,7 @@ const ICONS: Record<string, string> = {
   "zoom-in": '<circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L21 21M7 10h6M10 7v6"/>',
   fit: '<path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/><rect x="8" y="8" width="8" height="8"/>',
   turn: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/>',
+  flip: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 6L3 18h6zM15 6l6 12h-6z"/>',
 };
 
 const BUTTONS: readonly [string, string, string][] = [
@@ -106,6 +107,8 @@ export interface FlatViewOptions {
   onMove?: (id: string, dx: number, dy: number, key: boolean) => void;
   /** The person asked for part `id` turned by `degrees` (90 or −90, counter-clockwise positive). Left out, there is no Turn button. */
   onTurn?: (id: string, degrees: number) => void;
+  /** The person asked for part `id` mirrored left to right (L1b4). Left out, there is no Flip button. */
+  onFlip?: (id: string) => void;
 }
 
 /** The side of a layer's swatch in the key, px. */
@@ -167,6 +170,19 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS.turn}</svg>`;
     b.addEventListener("click", () => {
       if (scene.picked) options.onTurn?.(scene.picked, 90);
+    });
+    turnGroup.append(b);
+  }
+  if (options.onFlip) {
+    const b = doc.createElement("button");
+    b.type = "button";
+    b.className = "nav-button";
+    b.title = "Flip the picked part left to right (F)";
+    b.setAttribute("aria-label", "Flip");
+    b.dataset.view = "flip";
+    b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS.flip}</svg>`;
+    b.addEventListener("click", () => {
+      if (scene.picked) options.onFlip?.(scene.picked);
     });
     turnGroup.append(b);
   }
@@ -300,7 +316,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     const picked = parts.find((p) => p.id === scene.picked);
     if (picked) element.dataset.picked = picked.id;
     else delete element.dataset.picked;
-    turnGroup.hidden = !picked || !options.onTurn;
+    turnGroup.hidden = !picked || (!options.onTurn && !options.onFlip);
   };
 
   /** The cards' boxes in the view's own px. */
@@ -424,6 +440,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     if ((e.key === "Enter" || e.key === " ") && on !== undefined && options.onPick) options.onPick(on);
     else if (picked !== null && e.key in nudge && options.onMove) options.onMove(picked, ...nudge[e.key], true);
     else if (picked !== null && (e.key === "r" || e.key === "R") && options.onTurn) options.onTurn(picked, e.shiftKey ? -90 : 90);
+    else if (picked !== null && (e.key === "f" || e.key === "F") && options.onFlip) options.onFlip(picked);
     else if (picked !== null && e.key === "Escape" && options.onPick) options.onPick(null);
     else if (e.key === "+" || e.key === "=") move(zoomAt(view, scene.bed, size, middle, ZOOM_STEP));
     else if (e.key === "-" || e.key === "_") move(zoomAt(view, scene.bed, size, middle, 1 / ZOOM_STEP));
