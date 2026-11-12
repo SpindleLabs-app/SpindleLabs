@@ -1530,9 +1530,11 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const b = work[body];
       if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't use ${body === bodyIdOf(maker) ? nameOf(maker) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
       // Equal bodies share one kernel body (`BodyCache.body`): a second pick of it gets a body of its own, so the
-      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
+      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey). A body
+      // with no spec (a Combine's result, which its Copy shares: SL #624 item 3) gets its own from the kernel's
+      // body_move by nothing, once more for each pick before it: the same faces in the same order, where they are.
       const copies = inputs.filter((x) => x.handle === b.handle).length;
-      const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+      const own = copies === 0 ? b : { ...b, handle: b.spec !== null ? await cache.body(b.spec, copies) : await cache.moved(b.handle, Array.from({ length: copies }, (): Motion => ({ move: [0, 0, 0] }))) };
       if (own !== b) made.push(own.handle);
       built.set(own.handle, own);
       const named = await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!);
