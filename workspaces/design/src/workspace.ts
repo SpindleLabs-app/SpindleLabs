@@ -73,7 +73,8 @@ import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
-import { PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { PICK_PIXELS, deleteCurves, deleteStep, labelPicks, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { addsToSelection } from "./select-keys.ts";
 import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep, dimensionLine, isConstraintTool, selectAt } from "./constraint-tool.ts";
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import { toggleConstruction } from "./construction.ts";
@@ -439,7 +440,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         row.dataset.label = n.label;
         row.dataset.tip = row.title;
         row.dataset.node = n.id;
-        if (ref) row.addEventListener("click", (e) => onSelect(ref, (e as MouseEvent).shiftKey));
+        if (ref) row.addEventListener("click", (e) => onSelect(ref, addsToSelection(e as MouseEvent))); // Shift, Ctrl or Cmd adds (SL #524)
         if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith("body-")) {
           row.addEventListener("dblclick", () => onOpen(n.id));
           // The row's menu: a right-click at the pointer, or the ⋯ button under itself.
@@ -2549,6 +2550,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const onLabelClick = (e: MouseEvent) => {
     const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
     if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
+    // With Select a click on a dimension's number picks the dimension, as a click on its line does (SL #524 item 4).
+    if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "select") {
+      const tool = mode.tool;
+      const picked = labelPicks(designDoc().sketches.find((s) => s.id === tool.sketch), tool.picked, label.dataset.dimension, e.shiftKey);
+      if (picked === null) return;
+      mode.tool = { ...tool, picked, hover: null };
+      sketchBox.showError("");
+      showSketchStatus();
+      drawSketches();
+    }
   };
 
   function constrain(sketchId: string, add: NewConstraint, refused: () => void = () => {}) {

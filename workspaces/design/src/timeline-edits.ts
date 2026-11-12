@@ -262,5 +262,19 @@ export function renameItem(doc: DesignDocument, id: string, typed: string): Rena
     const other = doc.timeline.features.find((f) => f.id !== id && nameKey(itemName(f)) === nameKey(name))!;
     return { refused: "taken", message: `${itemName(other)} is already the name of another item: each item needs its own name, since messages name items by them` };
   }
-  return { doc: withTimeline(doc, relabelled(doc.timeline.features, id, name), doc.timeline.marker) };
+  return { doc: withTimeline(doc, renamedInWords(relabelled(doc.timeline.features, id, name), id, old, name), doc.timeline.marker) };
+}
+
+/**
+ * The features with the old name `old` of item `id` said as `name` in the descriptions of the items made from it (their
+ * provenance names it): "Mirror of Base across the YZ plane", "Move Base by …", "Cut Box 2 from Base" (SL #524 item 1, as
+ * Fusion names an item by its name now). Only the whole name: renaming "Box 1" leaves "Box 10" alone.
+ */
+function renamedInWords(features: readonly Feature[], id: string, old: string, name: string): Feature[] {
+  const whole = new RegExp(`(?<![\\p{L}\\p{N}])${old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "gu");
+  return features.map((f) => {
+    if (f.id === id || !f.provenance.from.some((p) => p.workspace === "design" && p.id === id)) return f;
+    const summary = f.intent.summary.replace(whole, () => name);
+    return summary === f.intent.summary ? f : { ...f, intent: { ...f.intent, summary } };
+  });
 }
