@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHistory, emptyProject, projectToJson, type DataReader, type Project, type SavedHistory } from "@fission/core";
 import { alignSteps, decodeSteps, encodeSteps, memoryKeyValue, projectStore, stepsStore, STEPS_CHAR_LIMIT, STEPS_FORMAT, STEPS_PROJECTS, versionedStore, type KeyValue } from "../src/index.ts";
+import * as storage from "../src/index.ts";
 
 const entry = (snapshot: string, label = snapshot, at = 0, mergeKey?: string) => ({ snapshot, label, mergeKey, at });
 /** Steps a, b, c, d (four characters each), the present at c. */
@@ -315,4 +316,16 @@ test("seeded sessions: edits, undos, redos, writes and reloads; after each reloa
       }
     }
   }
+});
+
+test("extendSteps: the project as it opened becomes one more step after the present, and the redo steps go (worked by hand)", () => {
+  const step = (snapshot: string, label: string, at: number) => ({ snapshot, label, mergeKey: undefined, at });
+  const kept: SavedHistory = { kept: [step("a", "", 1), step("b", "B", 2), step("c", "C", 3)], index: 1 };
+  // By hand: the present is "b" (index 1) with "c" a redo away. A new change "d" at time 9 drops "c" as any new change
+  // does: the steps are a, b, d and the present is the last, index 2.
+  const { extendSteps } = storage;
+  assert.deepEqual(extendSteps(kept, "d", 9, "Left"), { kept: [step("a", "", 1), step("b", "B", 2), step("d", "Left", 9)], index: 2 });
+  assert.deepEqual(kept.kept.map((e) => e.snapshot), ["a", "b", "c"], "the steps given are not changed");
+  // The present the last step: nothing dropped.
+  assert.deepEqual(extendSteps({ kept: kept.kept, index: 2 }, "d", 9, "Left").kept.map((e) => e.snapshot), ["a", "b", "c", "d"]);
 });
