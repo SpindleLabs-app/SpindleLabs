@@ -271,7 +271,7 @@ export type ItemResult =
    * there, "plane-lost"; an extrude of a held sketch names it as its lost
    * `source` (26e).
    */
-  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; turn?: Turn; plane?: PlaneCause; source?: string; pieces?: ModelBody[]; down?: true; takes?: string[] }
+  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; turn?: Turn; plane?: PlaneCause; source?: string; pieces?: ModelBody[]; down?: true; missing?: string[]; takes?: string[] }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others: off, with no warning (Q3, 26e). */
   | { status: "greyed"; by: string }
@@ -357,6 +357,7 @@ export type ModelFault =
   | "face-sketch-unbound"
   | "move-shift-then-turn"
   | "move-not-held"
+  | "move-all-or-none"
   | "sketch-not-carried"
   | "move-bodies-kept"
   /** SL #506 item 1: reordering ignores the Moves and Combines that shaped an item's bodies. */
@@ -408,6 +409,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "face-sketch-unbound",
   "move-shift-then-turn",
   "move-not-held",
+  "move-all-or-none",
   "sketch-not-carried",
   "move-bodies-kept",
   "reorder-past-shaper",
@@ -778,18 +780,28 @@ function lost(item: Extract<ModelItem, { kind: "extrude" }>, cause: LostCause, f
  * greyed (Q3); failed naming the first body that is deleted or not built;
  * else built, with no body of its own, and every body it moves replaced in
  * `done` by that body moved, so everything after it finds the body where
- * the Move put it. All or none.
+ * the Move put it. A body no longer there is left out and named in
+ * `missing` (SL #506 item 4); with none left it fails.
  */
 function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: ReadonlySet<string>, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>, place: number): ItemResult {
   for (const id of dependsOn(item)) {
     const by = greyedBy(done[id], id);
     if (by !== null) return { status: "greyed", by };
   }
+  // SL #506 item 4: a body no longer there (deleted, not built or used up) is left out and named in `missing`, the rest
+  // moved; with none left the Move fails naming the first.
+  const missing: string[] = [];
+  let first: ItemResult | null = null;
   for (const id of item.bodies) {
     const r = done[id];
-    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id };
-    if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: id };
+    const failed: ItemResult | null = r === undefined ? { status: "failed", cause: "deleted-input", input: id } : r.status !== "built" || r.body === undefined ? { status: "failed", cause: "failed-input", input: id } : null;
+    if (failed === null) continue;
+    first ??= failed;
+    missing.push(id);
   }
+  // Planted bug ("move-all-or-none"): one body missing fails the whole Move, as before #506, so the others drop back.
+  if (first !== null && (missing.length === item.bodies.length || faults.has("move-all-or-none"))) return first;
+  const there = item.bodies.filter((id) => !missing.includes(id));
   // SL #583 item 2: the pieces it holds, and each piece not yet seen of a Combine whose target it moves (split from it
   // since the Move was made: `takes`). A piece held that its Combine no longer makes is no failure while the Move moves
   // that Combine's target, which holds it again.
@@ -818,10 +830,10 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
   }
   // 35f1f2a: a Combine's result moves like any body (Design asks the kernel's body_move), each face carrying its own motion.
   // Planted bug ("combine-move-refused"): a Combine's result can't be moved, as before 35f1f2a.
-  if (faults.has("combine-move-refused") && item.bodies.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
+  if (faults.has("combine-move-refused") && there.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
   // Planted bug ("move-not-held"): the Move builds but its bodies stay where they were.
   if (!faults.has("move-not-held"))
-    for (const id of item.bodies) {
+    for (const id of there) {
       const r = done[id] as Extract<ItemResult, { status: "built" }>;
       done[id] = { ...r, body: movedForm(r.body!, moved(r.body!, item, faults), item, place) };
     }
@@ -832,7 +844,7 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
       all[k - 1] = movedForm(all[k - 1], moved(all[k - 1], item, faults), item, place);
       done[c] = { ...r, pieces: all };
     }
-  return { status: "built", ...(takes.length > 0 && { takes }) };
+  return { status: "built", ...(missing.length > 0 && { missing }), ...(takes.length > 0 && { takes }) };
 }
 
 /**
