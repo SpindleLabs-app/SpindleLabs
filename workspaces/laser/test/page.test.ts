@@ -1,9 +1,9 @@
-// The Laser page (page.ts): reading parts through a registry, the saved choices, the view's mesh, and the page in a DOM
-// (happy-dom). The real app in Chromium: apps/fission/e2e/laser-page.mjs.
+// The Laser page (page.ts): reading parts through a registry, the saved choices, what the flat view is given, and the
+// page in a DOM (happy-dom). The real app in Chromium: apps/fission/e2e/laser-page.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RepresentationRegistry, type Outline, type WorkspaceContext } from "@fission/core";
-import { bedMesh, laserWorkspace, layOut, layoutWords, mountLaserPage, OUTLINES_LISTER, partMeshes, readLaserData, readParts, setLaserShown, type SaveText } from "../src/index.ts";
+import { emptyBedNote, flatScene, laserWorkspace, layOut, layoutWords, mountLaserPage, OUTLINES_LISTER, readLaserData, readParts, setLaserShown, sheetSvg, type SaveText } from "../src/index.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -35,43 +35,43 @@ test("the saved choices read back; anything missing or unusable falls back to th
   assert.deepEqual(readLaserData({ off: ["a", 3, null, "b"] }).off, ["a", "b"]);
 });
 
-/** A stand-in kernel: make_extrude answers one triangle and one line per corner of the outline's outer path, at the given height. */
-const extrudes: { outline: Outline; height: number }[] = [];
+/** A stand-in kernel that counts what it is asked: the flat page asks it nothing (the view is drawn from the file's own path data). */
+const asked: string[] = [];
 const kernel = {
-  call: async (op: string, outline: Outline, height: number) => {
-    if (op !== "make_extrude") throw new Error(`unexpected ${op}`);
-    if ("circle" in outline.outer) throw new Error("the kernel said no");
-    extrudes.push({ outline, height });
-    const n = outline.outer.path.corners.length / 2;
-    return { mesh: { positions: [0, 0, height, 1, 0, height, 0, 1, height], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], triangle_faces: [0], edge_lines: new Array(6 * n).fill(height), edge_line_edges: Array.from({ length: n }, (_, i) => i) } };
+  call: async (op: string) => {
+    asked.push(op);
+    throw new Error(`unexpected ${op}`);
   },
 };
 
-test("hand-worked: the view is the bed just under z = 0, outlined, with each part as the kernel made it, indices counting on", async () => {
+test("hand-worked: the flat view is given the bed and each placed part as the file's own path data, with its box on the bed", () => {
   const bed = { width: 100, height: 50 };
-  const layout = layOut([{ id: "a", label: "a", outline: rect(10, 10) }, { id: "b", label: "b", outline: rect(20, 10) }], bed, 5);
-  const { meshes, failed } = await partMeshes(kernel as never, layout, 3);
-  assert.equal(failed.length, 0);
-  // Each placed outline goes to make_extrude as it sits on the bed, 3 mm thick: a at (5,5), b at 5 + 10 + 5 = 20.
-  assert.deepEqual(extrudes.slice(-2).map((e) => [e.outline.outer, e.height]), [
-    [{ path: { corners: [5, 5, 15, 5, 15, 15, 5, 15], bulges: [] } }, 3],
-    [{ path: { corners: [20, 5, 40, 5, 40, 15, 20, 15], bulges: [] } }, 3],
-  ]);
-  const m = bedMesh(bed, meshes);
-  // The bed: (0,0) (100,0) (100,50) (0,50) at z = −0.05, two triangles, four outline lines.
-  assert.deepEqual(m.positions.slice(0, 12), [0, 0, -0.05, 100, 0, -0.05, 100, 50, -0.05, 0, 50, -0.05]);
-  assert.deepEqual(m.indices, [0, 1, 2, 0, 2, 3, 4, 5, 6, 7, 8, 9]); // each part's triangle after the bed's 4 points, then 3 more
-  assert.deepEqual(m.triangle_faces, [0, 0, 1, 2]); // the bed is face 0; each part's faces count on
-  assert.equal(m.edge_lines.length / 6, 4 + 4 + 4);
-  assert.equal(m.edge_line_edges.length, 12);
+  const slot: Outline = { outer: { path: { corners: [0, 0, 20, 0, 20, 10, 0, 10], bulges: [0, 1, 0, 1] } }, holes: [{ circle: { center: [10, 5], radius: 2 } }] };
+  const layout = layOut([{ id: "a", label: "a", outline: rect(10, 10) }, { id: "b", label: "Slot", outline: slot }], bed, 5);
+  const scene = flatScene(layout, bed, 2);
+  assert.deepEqual(scene.bed, bed);
+  assert.deepEqual(scene.note, []);
+  // a: a 10 × 10 square placed 5 mm in from the lower-left corner: (5,5) (15,5) (15,15) (5,15), y flipped in the path.
+  assert.deepEqual(scene.parts[0], { id: "a", label: "a", d: "M5 -5L15 -5L15 -15L5 -15Z", box: { minX: 5, minY: 5, maxX: 15, maxY: 15 } });
+  // Slot: a 20 × 10 rectangle whose two ends are half circles of radius 5 (bulge 1), so its box is 5 mm wider each end:
+  // 30 × 10. It goes right of a: its box starts at x = 5 + 10 + 5 = 20, so the outline moves by 20 − (−5) = 25 across and
+  // 5 up: corners (25,5) (45,5) (45,15) (25,15). Each half circle is drawn as two quarter turns of radius 5 through its
+  // outermost point, (50,10) on the right and (20,10) on the left; the hole, radius 2 round (35,10), as four quarter turns
+  // from its east point (37,10).
+  assert.deepEqual(scene.parts[1].box, { minX: 20, minY: 5, maxX: 50, maxY: 15 });
+  assert.equal(scene.parts[1].d, "M25 -5L45 -5A5 5 0 0 0 50 -10A5 5 0 0 0 45 -15L25 -15A5 5 0 0 0 20 -10A5 5 0 0 0 25 -5Z" + "M37 -10A2 2 0 0 0 35 -12A2 2 0 0 0 33 -10A2 2 0 0 0 35 -8A2 2 0 0 0 37 -10Z");
+  // What is drawn is what is saved: the same path data is in the SVG file.
+  for (const p of scene.parts) assert.ok(sheetSvg(layout, bed).includes(`d="${p.d}"`), p.label);
+  // A part left off the bed (too big) is not drawn.
+  const tight = layOut([{ id: "a", label: "a", outline: rect(10, 10) }, { id: "big", label: "Big", outline: rect(500, 10) }], bed, 5);
+  assert.deepEqual(flatScene(tight, bed, 2).parts.map((p) => p.id), ["a"]);
 });
 
-test("a part the kernel refuses is counted with why, never drawn", async () => {
-  const bed = { width: 100, height: 50 };
-  const layout = layOut([{ id: "c", label: "Sketch c", outline: { outer: { circle: { center: [0, 0], radius: 5 } }, holes: [] } }], bed, 5);
-  const { meshes, failed } = await partMeshes(kernel as never, layout, 3);
-  assert.equal(meshes.length, 0);
-  assert.deepEqual(failed, [{ label: "Sketch c", why: "the kernel said no" }]);
+test("an empty bed says why in its middle: nothing offered yet, or every part turned off or left off", () => {
+  const none = { placed: [], left: [] };
+  assert.deepEqual(emptyBedNote(none, 0), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
+  assert.deepEqual(emptyBedNote(none, 2), ["No parts on the bed."]);
+  assert.deepEqual(emptyBedNote(layOut([{ id: "a", label: "a", outline: rect(10, 10) }], { width: 100, height: 50 }, 5), 1), []);
 });
 
 test("the words: nothing offered, parts on the bed, and each left off with why", () => {
@@ -80,16 +80,25 @@ test("the words: nothing offered, parts on the bed, and each left off with why",
   assert.equal(layoutWords(one, 2), "1 part on the bed. Sketch 2 is left off: it is 500 × 10 mm, bigger than the bed (100 × 100 mm, 5 mm in from each edge).");
 });
 
-function mount(save?: SaveText) {
+function mount(save?: SaveText, laser?: unknown) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = () => doc.body.appendChild(doc.createElement("div"));
-  const shown: number[] = [];
-  const views: string[] = [];
+  /** What the page asked of the shared viewport, in order. */
+  const viewport: string[] = [];
   const changes: string[] = [];
   const registry = fakeRegistry(["c"]);
-  registry.registerLister(OUTLINES_LISTER, () => objects);
-  const project = { name: "Box", workspaces: {} as Record<string, unknown> };
+  /** What Design lists now; `design` changes it, as an edit in Design would. */
+  let listed = objects;
+  const design = (now: typeof objects) => (listed = now);
+  registry.registerLister(OUTLINES_LISTER, () => listed);
+  const project = { name: "Box", workspaces: (laser === undefined ? {} : { laser }) as Record<string, unknown> };
+  const element = slot();
+  element.setAttribute("aria-label", "3D view");
+  element.innerHTML = `<canvas></canvas><div class="view-controls"></div>`;
+  const refuse = (what: string) => () => {
+    throw new Error(`the flat page must not call viewport.${what}`);
+  };
   const ctx = {
     project,
     projectChanged: (label: string) => changes.push(label),
@@ -98,20 +107,26 @@ function mount(save?: SaveText) {
     browser: slot(),
     properties: slot(),
     representations: registry,
-    viewport: { showBody: (m: { edge_lines: number[] }) => shown.push(m.edge_lines.length / 6), fit: () => null, setView: (v: string) => views.push(v) },
+    viewport: { element, showImage: (image: unknown) => viewport.push(`showImage(${image})`), clearImage: () => viewport.push("clearImage"), showBody: refuse("showBody"), setView: refuse("setView"), fit: refuse("fit") },
   } as unknown as WorkspaceContext;
-  return { ctx, shown, views, changes, project, mounted: mountLaserPage(ctx, save), window };
+  const drawn = () => [...element.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("d"));
+  return { ctx, element, viewport, drawn, design, changes, project, mounted: mountLaserPage(ctx, save), window };
 }
 
-test("the page lists the parts with their sizes, lays them on the bed, draws them from above, and keeps a part turned off in the project", async () => {
-  const { ctx, shown, views, changes, project, mounted } = mount();
+test("the page lists the parts with their sizes, lays them on the bed, draws them flat, and keeps a part turned off in the project", async () => {
+  const { ctx, element, viewport, drawn, changes, project, mounted } = mount();
   await mounted.ready;
   const rows = [...ctx.browser.querySelectorAll("li")].map((l) => l.textContent!.trim());
   assert.deepEqual(rows, ["Sketch a, 60 × 40 mm", "Sketch b, 30 × 10 mm", "Sketch c: can't be cut: the sketch is not closed"]);
   assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "2 parts on the bed.");
-  assert.deepEqual(shown, [12]); // the bed's four lines and two rectangles' four each
-  assert.deepEqual(views, ["top"]);
-  // Turning Sketch b off: one change, kept in the project's Laser data; one part left, drawn without re-framing.
+  // The view: the shared viewport's empty 2D view (no body, no 3D grid, no view cube) with the flat drawing over it.
+  // Sketch a (60 × 40) sits 3 mm in from the lower-left corner; Sketch b (30 × 10) 3 mm right of it, at x = 66.
+  assert.deepEqual(viewport, ["showImage(null)"]);
+  assert.equal(element.children[1]?.className, "laser-flat"); // straight after the canvas, before the 3D row of buttons, which the style sheet then hides
+  assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z", "M66 -3L96 -3L96 -13L66 -13Z"]);
+  assert.deepEqual([...element.querySelectorAll("text.laser-flat-bed-name")].map((t) => t.textContent), ["Bed 400 × 400 mm"]);
+  assert.deepEqual(asked, []); // nothing was asked of the kernel: no 3D parts are built for a flat view
+  // Turning Sketch b off: one change, kept in the project's Laser data; one part left.
   const box = ctx.browser.querySelector<HTMLInputElement>('input[data-part="b"]')!;
   box.checked = false;
   box.dispatchEvent(new ctx.browser.ownerDocument.defaultView!.Event("change"));
@@ -119,11 +134,43 @@ test("the page lists the parts with their sizes, lays them on the bed, draws the
   assert.deepEqual(changes, ["Take Sketch b off the laser bed"]);
   assert.deepEqual((project.workspaces.laser as { off: string[] }).off, ["b"]);
   assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "1 part on the bed.");
-  assert.deepEqual(shown, [12, 8]);
-  assert.deepEqual(views, ["top"]);
+  assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z"]);
   mounted.unmount();
   assert.equal(ctx.browser.children.length, 0);
   assert.equal(ctx.properties.children.length, 0);
+  // The viewport is given back: the flat drawing gone, the 3D view and its name as they were.
+  assert.deepEqual(viewport, ["showImage(null)", "clearImage"]);
+  assert.equal(element.querySelector(".laser-flat") === null, true, "the flat view is off the page");
+  assert.deepEqual([...element.children].map((c) => c.tagName + (c.className ? `.${c.className}` : "")), ["CANVAS", "DIV.view-controls"]);
+  assert.equal(element.getAttribute("aria-label"), "3D view");
+  assert.deepEqual(asked, []);
+});
+
+test("asleep (another workspace on screen) the page gives the viewport back; awake again it draws the design as it is now", async () => {
+  const { element, viewport, drawn, design, mounted } = mount();
+  await mounted.ready;
+  mounted.sleep!();
+  assert.deepEqual(viewport, ["showImage(null)", "clearImage"]);
+  assert.equal(element.querySelector(".laser-flat") === null, true, "the flat view is off the page");
+  mounted.sleep!(); // twice is nothing
+  assert.deepEqual(viewport, ["showImage(null)", "clearImage"]);
+  // Sketch b was deleted in Design meanwhile.
+  design([objects[0]]);
+  mounted.wake!();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(viewport, ["showImage(null)", "clearImage", "showImage(null)"]);
+  assert.equal(element.querySelectorAll(".laser-flat").length, 1);
+  assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z"]);
+  mounted.unmount();
+  assert.deepEqual(viewport, ["showImage(null)", "clearImage", "showImage(null)", "clearImage"]);
+});
+
+test("unmounted while asleep, the page takes nothing more from the viewport", async () => {
+  const { viewport, mounted } = mount();
+  await mounted.ready;
+  mounted.sleep!();
+  mounted.unmount();
+  assert.deepEqual(viewport, ["showImage(null)", "clearImage"]);
 });
 
 test("a bed size typed in is kept; one that can't be used is refused in words and the files can't be saved", async () => {
@@ -138,40 +185,48 @@ test("a bed size typed in is kept; one that can't be used is refused in words an
   // 50 wide less two 3 mm gaps leaves 44: Sketch a (60 wide) no longer fits.
   assert.deepEqual((project.workspaces.laser as { bed: unknown }).bed, { width: 50, height: 400 });
   assert.match(ctx.properties.querySelector(".laser-page-words")!.textContent!, /^1 part on the bed\. Sketch a is left off: it is 60 × 40 mm, bigger than the bed/);
-  change("thickness", "0");
-  assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "The sheet's thickness must be a number of mm above 0.");
-  change("thickness", "3");
   change("height", "0");
   assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "The bed's height must be a number of mm above 0.");
   assert.ok([...ctx.properties.querySelectorAll("button")].every((b) => b.disabled));
-  assert.equal(changes.length, 2); // the width, then the thickness put back; the refused numbers were not kept
+  assert.equal(changes.length, 1); // the width; the refused number was not kept
+  assert.deepEqual((project.workspaces.laser as { bed: unknown }).bed, { width: 50, height: 400 });
   mounted.unmount();
 });
 
-test("a view still asking the kernel when a newer one is asked for is dropped: the newer one is what stays drawn", async () => {
-  const { ctx, shown, mounted } = mount();
+test("the sheet thickness has no box while nothing uses it, and a thickness a project already holds is kept through a change", async () => {
+  const { ctx, project, mounted } = mount(undefined, { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: [] });
   await mounted.ready;
-  // The kernel now answers the first call late and the second at once: the late answer (both parts) must not be drawn last.
-  const answers: (() => void)[] = [];
-  let calls = 0;
-  (ctx as unknown as { kernel: unknown }).kernel = {
-    call: async (op: string, outline: Outline, height: number) => {
-      calls++;
-      if (calls <= 2) await new Promise<void>((r) => answers.push(r));
-      return kernel.call(op, outline, height);
-    },
+  assert.deepEqual([...ctx.properties.querySelectorAll("input")].map((i) => i.name), ["width", "height", "gap"]);
+  const width = ctx.properties.querySelector<HTMLInputElement>('input[name="width"]')!;
+  assert.equal(width.value, "300");
+  width.value = "310";
+  width.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
+  assert.deepEqual(project.workspaces.laser, { version: 1, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [] });
+  mounted.unmount();
+});
+
+test("a slow read of the parts that a newer read overtook is dropped: the newest design is what stays drawn", async () => {
+  const { ctx, drawn, design, mounted } = mount();
+  await mounted.ready;
+  // Asleep and awake twice in a row: the first read is made to answer after the second, with a part the design no longer has.
+  const registry = ctx.representations as unknown as { deliver: (o: { id: string }, kinds: string[]) => Promise<unknown> };
+  const deliver = registry.deliver.bind(registry);
+  let reads = 0;
+  let late: (() => void) | null = null;
+  registry.deliver = async (o, kinds) => {
+    if (o.id === "a" && ++reads === 1) await new Promise<void>((r) => (late = r));
+    return deliver(o, kinds);
   };
-  const box = ctx.browser.querySelector<HTMLInputElement>('input[data-part="b"]')!;
-  const flip = (on: boolean) => {
-    box.checked = on;
-    box.dispatchEvent(new ctx.browser.ownerDocument.defaultView!.Event("change"));
-  };
-  flip(false); // asks for a's view: its one call waits
-  flip(true); // asks for a and b: the first of its two calls waits too, then the second answers
+  mounted.sleep!();
+  mounted.wake!(); // reads a (waits), b, c
+  mounted.sleep!();
+  design([objects[1]]);
+  mounted.wake!(); // reads b only, at once
   await new Promise((r) => setTimeout(r, 0));
-  for (const r of answers) r();
+  assert.deepEqual(drawn(), ["M3 -3L33 -3L33 -13L3 -13Z"]);
+  late!();
   await new Promise((r) => setTimeout(r, 10));
-  assert.deepEqual(shown, [12, 12]); // the first view (12 lines) and the newest (both parts again); never a view of a alone (8)
+  assert.deepEqual(drawn(), ["M3 -3L33 -3L33 -13L3 -13Z"]); // the overtaken read (a and b) drew nothing
   mounted.unmount();
 });
 
@@ -202,7 +257,7 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
   const slot = () => doc.body.appendChild(doc.createElement("div"));
   const registry = fakeRegistry();
   registry.registerLister(OUTLINES_LISTER, () => []);
-  const ctx = { project: { workspaces: {} }, projectChanged: () => {}, kernel, toolbar: slot(), browser: slot(), properties: slot(), representations: registry, viewport: { showBody: () => {}, fit: () => null, setView: () => null } } as unknown as WorkspaceContext;
+  const ctx = { project: { workspaces: {} }, projectChanged: () => {}, kernel, toolbar: slot(), browser: slot(), properties: slot(), representations: registry, viewport: { element: slot(), showImage: () => {}, clearImage: () => {} } } as unknown as WorkspaceContext;
   setLaserShown(false);
   const off = laserWorkspace.mount(ctx);
   assert.equal(ctx.browser.querySelector(".laser-page"), null);
@@ -213,4 +268,47 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
   assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "Nothing to cut yet: draw a closed sketch in Design and it appears here.");
   on.unmount();
   setLaserShown(null);
+});
+
+// Found by the review of L1a2 (each failed before its fix).
+
+test("before the parts have been read the view already shows the project's own bed, empty, and never a made-up one", async () => {
+  const { element, mounted } = mount(undefined, { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [] });
+  const names = () => [...element.querySelectorAll("text.laser-flat-bed-name")].map((t) => t.textContent);
+  // Straight after mounting: the read of Design's shapes has not answered yet.
+  assert.deepEqual(names(), ["Bed 300 × 200 mm"]);
+  assert.equal(element.querySelectorAll("path.laser-flat-part").length, 0);
+  assert.deepEqual([...element.querySelectorAll("text.laser-flat-note")].map((t) => t.textContent), []); // not "nothing to cut" either: it is not known yet
+  await mounted.ready;
+  assert.deepEqual(names(), ["Bed 300 × 200 mm"]);
+  assert.equal(element.querySelectorAll("path.laser-flat-part").length, 2);
+  mounted.unmount();
+});
+
+test("a new gap leaves the view where the person put it; a new bed size shows the whole bed again", async () => {
+  const { ctx, element, mounted, window } = mount();
+  // The view's size, which the test page has none of: 980 × 756 (view-box.test.ts's worked view).
+  const flat = element.querySelector<HTMLElement>(".laser-flat")!;
+  Object.defineProperty(flat, "clientWidth", { value: 980 });
+  Object.defineProperty(flat, "clientHeight", { value: 756 });
+  await mounted.ready;
+  const change = (n: string, v: string) => {
+    const field = ctx.properties.querySelector<HTMLInputElement>(`input[name="${n}"]`)!;
+    field.value = v;
+    field.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
+  };
+  change("width", "400"); // any bed change frames it: 1.59 px per mm
+  assert.equal(flat.dataset.scale, "1.59");
+  const wheel = new window.Event("wheel", { bubbles: true, cancelable: true });
+  Object.assign(wheel, { clientX: 186, clientY: 672, deltaY: -100, deltaMode: 0 });
+  flat.querySelector("svg")!.dispatchEvent(wheel as unknown as Event);
+  const moved = flat.dataset.scale;
+  assert.notEqual(moved, "1.59");
+  change("gap", "10");
+  assert.equal(flat.dataset.scale, moved, "the gap moved the parts, not the view");
+  assert.deepEqual([...flat.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("d")), ["M10 -10L70 -10L70 -50L10 -50Z", "M80 -10L110 -10L110 -20L80 -20Z"]); // 10 mm in, 10 mm apart
+  change("height", "300");
+  // 400 × 300 in the 912 × 636 room: 912 / 400 = 2.28 across, 636 / 300 = 2.12 down; the smaller fits both.
+  assert.equal(flat.dataset.scale, "2.12");
+  mounted.unmount();
 });
