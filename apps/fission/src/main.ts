@@ -30,6 +30,7 @@ import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
 import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
+import { liftOverSheets } from "./undo-lift.ts";
 import { appLoaded } from "./loading.ts";
 import { ALL_WORKSPACES_SWITCH, listedWorkspaces } from "./listed-workspaces.ts";
 import { designWorkspace } from "@fission/design";
@@ -1256,7 +1257,7 @@ const keepError = (text: string) => {
 window.addEventListener("error", (e) => keepError(`${e.message}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
 window.addEventListener("unhandledrejection", (e) => keepError(`Unhandled: ${e.reason instanceof Error ? `${e.reason.name}: ${e.reason.message}` : String(e.reason)}`));
 const bugReport = bugReportDialog(document, {
-  facts: () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
+  facts: () => ({ version: `${__APP_VERSION__ ?? "unknown"} (${$("version").textContent || "kernel not started"})`, browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
   design: () => ({ name: projectFile || ctx.project.name || "Untitled", text: projectToJson(ctx.project) }),
   open: (url) => void window.open(url, "_blank", "noopener"),
   download: (name, text) => {
@@ -1379,6 +1380,8 @@ function placeUndoRedo() {
 }
 phone.addEventListener("change", placeUndoRedo);
 placeUndoRedo();
+// An open sheet lifts the docked pair above its top edge, so a size mistyped in it can be undone (SL #623 item 6).
+liftOverSheets(document, $("undo-redo"), phone);
 for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id)); // named by aria-label
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
@@ -1524,7 +1527,7 @@ $("workspace").addEventListener("properties-conceal", () => {
 {
   const phone = window.matchMedia("(max-width: 640px)");
   $("workspace").addEventListener("pointerdown", (e) => {
-    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float")) return; // the bar over the view ends a tool, which puts the sheet away itself
+    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float") || e.target.closest("#undo-redo")) return; // the bar over the view ends a tool, which puts the sheet away itself; Undo and Redo leave it open, so the size is seen going back
     for (const slot of ["browser", "properties"]) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();

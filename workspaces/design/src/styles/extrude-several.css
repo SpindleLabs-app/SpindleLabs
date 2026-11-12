@@ -5,6 +5,13 @@
 .extrude-several .extrude-several-pick:not(#none) { padding: 3px 10px; }
 .extrude-several .extrude-several-pick:not(#none)[aria-pressed="true"] { background: var(--fill-23384f); border-color: var(--look-accent, var(--accent)); color: var(--look-accent-text, var(--accent-text)); }
 .extrude-several .extrude-several-hint { color: var(--text-8b95a3); font-size: 0.85em; }
-@media (max-width: 700px) {
+/* A touch screen of any width (a phone upright or sideways, a tablet): a 44 px target (Ben's rule, 2026-11-11), and
+   the words name taps, not the keys it has none of (phone hunt 2026-11-12, #614). */
+.extrude-several .extrude-several-tap { display: none; }
+@media (hover: none), (pointer: coarse), (max-width: 700px) {
   .extrude-several .extrude-several-pick:not(#none) { min-height: 44px; }
+}
+@media (hover: none), (pointer: coarse) {
+  .extrude-several .extrude-several-keys { display: none; }
+  .extrude-several .extrude-several-tap { display: inline; }
 }
