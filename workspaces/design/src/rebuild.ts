@@ -1697,6 +1697,42 @@ async function unitedRun(doc: DesignDocument, f: Feature, built: readonly Omit<B
   return { ...r, ...rest };
 }
 
+/**
+ * The bodies an extrude of several profiles makes from these prisms
+ * (each profile's spec and curves, the first profile's first), as
+ * `unitedRun` makes them, for Extrude's preview (SL #632 item 3: the
+ * preview drew the prisms apart and added their volumes, counting an
+ * overlap twice): the regions of one sketch merged (`joinedRegions`), each
+ * group that may share a face joined by the kernel, a prism alone in its
+ * group as it is. On a body store of its own, closed after; only the views
+ * are kept. A join the kernel refuses rejects, with its error.
+ */
+export async function unitedViews(kernel: KernelCalls, prisms: readonly { spec: BodySpec; curves?: CurveIds }[]): Promise<BodyView[]> {
+  const cache = new BodyCache(kernel);
+  try {
+    const built = await Promise.all(prisms.map(async (p, k) => ({ handle: await cache.body(p.spec, k), spec: p.spec, ...(p.curves ? { curves: p.curves } : {}) })));
+    const joined = await joinedRegions(built, cache);
+    const views = await Promise.all(joined.map((p) => cache.view(p.handle)));
+    const out: BodyView[] = [];
+    for (const group of contactGroups(views.map((v) => v.bounds))) {
+      if (group.length === 1) {
+        out.push(views[group[0]]);
+        continue;
+      }
+      const [t, ...ts] = group.map((i) => joined[i].handle);
+      const r = await cache.boolean(t, ts, "union").catch(async (err: unknown) => {
+        // In the same plain words as OK's refusal (`unitedRun`), never the kernel's.
+        if (await curvedMeeting(joined, cache)) throw new Error(`These profiles can't be extruded together: ${CURVED_TOUCHING}`);
+        throw err;
+      });
+      for (const h of r.bodies) out.push(await cache.view(h));
+    }
+    return out;
+  } finally {
+    await cache.close();
+  }
+}
+
 /** Why an extrude of several profiles whose curved prisms touch is refused, while the kernel's booleans take flat faces only. */
 export const CURVED_TOUCHING = "profiles with curved sides can only be extruded together when they don't touch or overlap, or are side by side regions of one sketch, for now: extrude them one at a time";
 
