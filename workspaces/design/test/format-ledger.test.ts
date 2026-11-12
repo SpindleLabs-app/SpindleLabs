@@ -45,7 +45,10 @@ export function propertyNames(source: string, name: string): string[] {
 // fields already listed, so nothing new below; a version 16 reader would refuse the file.
 // Design data version 18 (Ben 11-11): an extrude of a sketch may hold more profiles (`more` in its parameters, a list of
 // ProfileRef, held to its fields below), which a version 17 reader would build as the first profile alone.
-const LEDGER_VERSION = 18;
+// Design data version 19 (SL #632): each profile of an extrude after its first keeps its own shape, under the key
+// "<extrude>/profile:k" of `kept` (a map, its keys not listed here), where version 18 filed every profile of a sketch
+// under one; a version 18 reader would refuse the key.
+const LEDGER_VERSION = 19;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

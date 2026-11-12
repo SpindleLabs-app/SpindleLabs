@@ -1,5 +1,5 @@
 // Hunt 2026-11-12 C: deleting a multi-profile extrude after one of its other sketches was deleted
-// (its kept shape filed as "<extrude>/<sketch>"): the design must still open.
+// (its kept shape filed as "<extrude>/profile:1", "<extrude>/<sketch>" before version 19): the design must still open.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readDesignDocument } from "../src/document.ts";
@@ -18,7 +18,7 @@ test("delete sketch 2, then delete the extrude: the file opens (planDelete, and 
   const d2 = drawRectangle(two.doc, two.id, [30, 0], [40, 10]).doc;
   const made = extrudeSketch(d2, one.id, 2, false, undefined, null, [{ sketch: two.id }]);
   const gone = await settleKept(kernel, made.doc, deleteItem(made.doc, two.id));
-  assert.deepEqual(Object.keys(gone.kept ?? {}), [`${made.id}/${two.id}`]);
+  assert.deepEqual(Object.keys(gone.kept ?? {}), [`${made.id}/profile:1`]);
   const planned = (await planDelete(kernel, gone, made.id)).next;
   assert.doesNotThrow(() => readDesignDocument(JSON.parse(JSON.stringify(planned))), "planDelete");
   const bare = deleteItem(gone, made.id);

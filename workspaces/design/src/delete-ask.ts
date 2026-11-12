@@ -13,13 +13,13 @@
 // it can't promise a kept shape the rebuild then doesn't have.
 // Styles: src/styles/delete-ask.css.
 
-import type { KernelCalls } from "@fission/core";
+import type { Feature, KernelCalls } from "@fission/core";
 import { bodyItem, isMoveItem, isSketchExtrude, isSketchItem, type DesignDocument } from "./document.ts";
 import { movedBodies } from "./move.ts";
 import { faceFeature, isFaceSketch } from "./face-sketch.ts";
 import { settleKept, type BodyCache } from "./rebuild.ts";
 import { deleteItem, itemName } from "./timeline-edits.ts";
-import { extrudeSketches, keptKey } from "./extrude-profiles.ts";
+import { profileParts } from "./extrude-profiles.ts";
 
 /** What the box asks before a used item is deleted. */
 export interface DeleteQuestion {
@@ -54,8 +54,13 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   const name = itemName(item);
   const users = before.timeline.features.filter((f) => f.dependsOn.includes(id));
   if (users.length === 0) return null;
-  // The shape kept of this sketch, filed by the extrude and the sketch (`keptKey`: a second profile's sketch's is "<extrude>/<sketch>", SL #611).
-  const keeps = users.filter((f) => isSketchExtrude(f) && after.kept !== undefined && Object.hasOwn(after.kept, extrudeSketches(f).includes(id) ? keptKey(f, id) : f.id)).map(itemName);
+  // The shapes kept of this sketch's profiles, each filed under its own key (`profileParts`' ids: "<extrude>/profile:k"
+  // after the first, version 19, SL #632; SL #611): it keeps its last shape when each of them does.
+  const keptAll = (f: Feature) => {
+    const parts = profileParts(f).filter((p) => p.intent.parameters.sketch === id);
+    return (parts.length > 0 ? parts : [f]).every((p) => after.kept !== undefined && Object.hasOwn(after.kept, p.id));
+  };
+  const keeps = users.filter((f) => isSketchExtrude(f) && keptAll(f)).map(itemName);
   const staying = users.filter((f) => isFaceSketch(f) && faceFeature(f.intent.parameters.plane as string) === id);
   const stays = staying.map(itemName);
   // 27c and 27d (rule 13): a sketch only pinned to its edges, or projecting them, keeps those points and edges where they are.
