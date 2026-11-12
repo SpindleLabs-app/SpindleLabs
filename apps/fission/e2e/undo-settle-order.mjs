@@ -11,6 +11,7 @@
 //     first recorded had Extrude 1 red and no Body 2.
 //   - "10" typed key by key in Extrude 1's distance box, then the page reloaded before the kernel has answered: the
 //     reloaded page holds 10, not 1: Body 2 2100 · 10 = 21,000 mm³ (with 1 it would be 2,100).
+//   - the same "10" typed, then Ctrl+S at once: the file written holds 10 (the export and save hunt found it held 1).
 // Run with `npm run e2e` (after `npm run build`); `E2E_BROWSER` picks the engine.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -37,7 +38,7 @@ const until = (page, fn, arg, what, timeout = 20000) =>
 
 /** A page with the design opened and kept, every kernel request held back `window.kernelDelay` ms once set. */
 async function opened() {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => {
     const send = Worker.prototype.postMessage;
@@ -103,6 +104,23 @@ await check('"10" typed key by key in the distance box, then reloaded before the
   await page.reload();
   await until(page, () => document.querySelector("#volume")?.textContent === "21,000 mm³", null, "10 kept: 2100 · 10");
   assert.equal(await page.inputValue("#height"), "10");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+await check('"10" typed key by key in the distance box, then Ctrl+S at once: the file saved holds 10 (export and save hunt 2026-11-12)', async () => {
+  const { context, page, errors } = await opened();
+  await until(page, () => document.querySelector("#height")?.value === "5", null, "the boxes describe Extrude 1's distance");
+  await page.evaluate(() => (window.kernelDelay = 400));
+  await page.click("#height");
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type("10", { delay: 120 });
+  const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Control+s")]);
+  const saved = JSON.parse(readFileSync(await download.path(), "utf8"));
+  const extrude = saved.workspaces.design.timeline.features.find((f) => f.intent.type === "extrude");
+  assert.equal(extrude.intent.summary, "Extrude Sketch 1 by 10 mm", "the file holds what the box shows");
+  await page.evaluate(() => (window.kernelDelay = 0));
+  await until(page, () => document.querySelector("#volume")?.textContent === "21,000 mm³", null, "and the page builds 10: 2100 · 10");
   assert.deepEqual(errors, []);
   await context.close();
 });
