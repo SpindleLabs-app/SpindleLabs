@@ -42,6 +42,22 @@ class CiState(unittest.TestCase):
         # The kernel job's script tests failing (CHANGELOG.md and changelog.d/ among them) still blocks it.
         self.assertEqual(ci_state([check("kernel", conclusion="failure")] + docs[1:]), "failure")
 
+    def test_cancelled_shares_of_an_older_run_do_not_block_a_later_green_run(self):
+        # An earlier run was cancelled while sharding: its e2e (1/5)..(5/5) stay
+        # cancelled. The later run skipped its shares (named with the unexpanded
+        # matrix text) and its e2e gate passed after them, so the old shares are
+        # superseded and the head may merge.
+        old = [check(f"e2e ({k}/5)", conclusion="cancelled", started="2026-11-12T01:00:00Z", id=k) for k in range(1, 6)]
+        new = [check(n, started="2026-11-12T02:00:00Z", id=10 + i)
+               for i, n in enumerate(["kernel", "app", "baseline", "mutants-in-diff", "e2e"])]
+        new.append(check("e2e (${{ matrix.shard }}/5)", conclusion="skipped", started="2026-11-12T02:00:00Z", id=20))
+        self.assertEqual(ci_state(old + new), "success")
+        # A share newer than the gate (a rerun that is failing) still decides.
+        bad = check("e2e (3/5)", conclusion="failure", started="2026-11-12T03:00:00Z", id=30)
+        self.assertEqual(ci_state(old + new + [bad]), "failure")
+        # Without a later gate the cancelled shares still block (nothing replaced them).
+        self.assertEqual(ci_state(old + [c for c in new if c["name"] != "e2e"]), "failure")
+
     def test_a_drafts_run_never_counts_as_green(self):
         # ci.yml's run of a draft skips phone and browsers and marks itself
         # with the `draft run` check: every required check passed, yet the
