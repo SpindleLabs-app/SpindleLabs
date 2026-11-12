@@ -29,9 +29,9 @@ test("readParts reads every shape as an outline, and one that can't be read says
 });
 
 test("the saved choices read back; anything missing or unusable falls back to the default and never throws", () => {
-  assert.deepEqual(readLaserData({ version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] });
+  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {} });
   for (const bad of [undefined, null, 7, "x", {}, { bed: { width: -1, height: 5 } }, { gap: 1e9 }, { thickness: 0 }, { thickness: 51 }])
-    assert.deepEqual(readLaserData(bad), { version: 1, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [] }, JSON.stringify(bad));
+    assert.deepEqual(readLaserData(bad), { version: 2, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {} }, JSON.stringify(bad));
   assert.deepEqual(readLaserData({ off: ["a", 3, null, "b"] }).off, ["a", "b"]);
 });
 
@@ -87,6 +87,8 @@ function mount(save?: SaveText, laser?: unknown) {
   /** What the page asked of the shared viewport, in order. */
   const viewport: string[] = [];
   const changes: string[] = [];
+  /** The merge key given with each change (undefined: a step of its own). */
+  const keys: (string | undefined)[] = [];
   const registry = fakeRegistry(["c"]);
   /** What Design lists now; `design` changes it, as an edit in Design would. */
   let listed = objects;
@@ -101,7 +103,10 @@ function mount(save?: SaveText, laser?: unknown) {
   };
   const ctx = {
     project,
-    projectChanged: (label: string) => changes.push(label),
+    projectChanged: (label: string, mergeKey?: string) => {
+      changes.push(label);
+      keys.push(mergeKey);
+    },
     kernel,
     toolbar: slot(),
     browser: slot(),
@@ -110,7 +115,7 @@ function mount(save?: SaveText, laser?: unknown) {
     viewport: { element, showImage: (image: unknown) => viewport.push(`showImage(${image})`), clearImage: () => viewport.push("clearImage"), showBody: refuse("showBody"), setView: refuse("setView"), fit: refuse("fit") },
   } as unknown as WorkspaceContext;
   const drawn = () => [...element.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("d"));
-  return { ctx, element, viewport, drawn, design, changes, project, mounted: mountLaserPage(ctx, save), window };
+  return { ctx, element, viewport, drawn, design, changes, keys, project, mounted: mountLaserPage(ctx, save), window };
 }
 
 test("the page lists the parts with their sizes, lays them on the bed, draws them flat, and keeps a part turned off in the project", async () => {
@@ -187,21 +192,39 @@ test("a bed size typed in is kept; one that can't be used is refused in words an
   assert.match(ctx.properties.querySelector(".laser-page-words")!.textContent!, /^1 part on the bed\. Sketch a is left off: it is 60 × 40 mm, bigger than the bed/);
   change("height", "0");
   assert.equal(ctx.properties.querySelector(".laser-page-words")!.textContent, "The bed's height must be a number of mm above 0.");
-  assert.ok([...ctx.properties.querySelectorAll("button")].every((b) => b.disabled));
+  assert.deepEqual([...ctx.properties.querySelectorAll<HTMLButtonElement>("button[data-save]")].map((b) => b.disabled), [true, true]); // Save SVG, Save DXF
   assert.equal(changes.length, 1); // the width; the refused number was not kept
   assert.deepEqual((project.workspaces.laser as { bed: unknown }).bed, { width: 50, height: 400 });
   mounted.unmount();
 });
 
 test("the sheet thickness has no box while nothing uses it, and a thickness a project already holds is kept through a change", async () => {
-  const { ctx, project, mounted } = mount(undefined, { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: [] });
+  const { ctx, project, mounted } = mount(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: [], placed: {} });
   await mounted.ready;
-  assert.deepEqual([...ctx.properties.querySelectorAll("input")].map((i) => i.name), ["width", "height", "gap"]);
+  assert.deepEqual([...ctx.properties.querySelectorAll("input")].map((i) => i.name), ["width", "height", "gap", "x", "y", "angle"]); // the bed's, and the picked part's (L1b)
   const width = ctx.properties.querySelector<HTMLInputElement>('input[name="width"]')!;
   assert.equal(width.value, "300");
   width.value = "310";
   width.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
-  assert.deepEqual(project.workspaces.laser, { version: 1, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [] });
+  assert.deepEqual(project.workspaces.laser, { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {} });
+  mounted.unmount();
+});
+
+test("a change in the page keeps what the project's Laser data holds beside the fields the page knows (lost-work hunt, 2026-11-12)", async () => {
+  // A bed change, a part moved and a part turned off each store the data again: `note` (a field this page has no name
+  // for) must come through all three.
+  const { ctx, project, type, mounted } = await withPicked(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
+  const held = () => project.workspaces.laser as Record<string, unknown>;
+  type("width", "310");
+  assert.deepEqual(held(), { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
+  // Sketch b (picked) typed to X 100: the first hand move, which also fixes Sketch a where the rows put it, (2, 2).
+  type("x", "100");
+  assert.deepEqual(held(), { version: 2, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept" });
+  const box = ctx.browser.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  box.checked = false;
+  box.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change", { bubbles: true }));
+  assert.equal(held().note, "kept");
+  assert.deepEqual(held().off, ["a"]);
   mounted.unmount();
 });
 
@@ -273,7 +296,7 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
 // Found by the review of L1a2 (each failed before its fix).
 
 test("before the parts have been read the view already shows the project's own bed, empty, and never a made-up one", async () => {
-  const { element, mounted } = mount(undefined, { version: 1, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [] });
+  const { element, mounted } = mount(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [], placed: {} });
   const names = () => [...element.querySelectorAll("text.laser-flat-bed-name")].map((t) => t.textContent);
   // Straight after mounting: the read of Design's shapes has not answered yet.
   assert.deepEqual(names(), ["Bed 300 × 200 mm"]);
@@ -310,5 +333,171 @@ test("a new gap leaves the view where the person put it; a new bed size shows th
   change("height", "300");
   // 400 × 300 in the 912 × 636 room: 912 / 400 = 2.28 across, 636 / 300 = 2.12 down; the smaller fits both.
   assert.equal(flat.dataset.scale, "2.12");
+  mounted.unmount();
+});
+
+// Parts put by hand (L1b). The parts: Sketch a, 60 × 40, in the rows at (3, 3); Sketch b, 30 × 10, right of it at (66, 3).
+
+/** The page with Sketch b picked by a click on its outline, and what a test needs to type and press. */
+async function withPicked(save?: SaveText, laser?: unknown) {
+  const all = mount(save, laser);
+  await all.mounted.ready;
+  const { ctx, element, window } = all;
+  const fireOn = (target: Element, type: string, init: Record<string, unknown> = {}) => {
+    const e = new window.Event(type, { bubbles: true, cancelable: true });
+    Object.assign(e, { pointerType: "mouse", button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 1, clientX: 0, clientY: 0, ...init });
+    target.dispatchEvent(e as unknown as Event);
+  };
+  const path = (id: string) => element.querySelector(`path.laser-flat-part[data-part="${id}"]`)!;
+  const click = (id: string) => {
+    fireOn(path(id), "pointerdown");
+    fireOn(path(id), "pointerup");
+  };
+  const field = (n: string) => ctx.properties.querySelector<HTMLInputElement>(`input[name="${n}"]`)!;
+  const type = (n: string, v: string) => {
+    field(n).value = v;
+    field(n).dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  const press = (selector: string) => ctx.properties.querySelector<HTMLButtonElement>(selector)!.click();
+  const words = () => ctx.properties.querySelector(".laser-page-words")!.textContent;
+  const partWords = () => ctx.properties.querySelector(".laser-page-part-words")!.textContent;
+  const placed = () => (all.project.workspaces.laser as { placed?: unknown } | undefined)?.placed;
+  click("b");
+  return { ...all, fireOn, path, click, field, type, press, words, partWords, placed };
+}
+
+test("hand-worked: a picked part shows its place; a typed X moves it there, every other part stays, and the file is saved with it moved", async () => {
+  let saved = "";
+  const { ctx, drawn, changes, field, type, press, placed, partWords, mounted } = await withPicked(async (text) => {
+    saved = text;
+    return "Box.svg";
+  });
+  const box = ctx.properties.querySelector<HTMLElement>(".laser-page-part")!;
+  assert.equal(box.hidden, false);
+  assert.equal(box.querySelector("legend")!.textContent, "Sketch b");
+  assert.deepEqual([field("x").value, field("y").value, field("angle").value], ["66", "3", "0"]);
+  assert.equal(partWords(), "In the rows. Move or turn it and every part stays where it is.");
+  assert.equal(ctx.properties.querySelector<HTMLElement>("button[data-arrange]")!.hidden, true); // nothing placed by hand yet
+  assert.equal(placed(), undefined); // picking changes nothing in the project
+  assert.deepEqual(changes, []);
+  type("x", "100");
+  // Sketch b's corner is at (100, 3) now; Sketch a, never touched, is fixed where the rows had it, (3, 3), so it can't shift.
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 100, y: 3, angle: 0 } });
+  assert.deepEqual(changes, ["Move Sketch b on the laser bed"]);
+  assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z", "M100 -3L130 -3L130 -13L100 -13Z"]);
+  assert.equal(partWords(), "");
+  assert.equal(ctx.properties.querySelector<HTMLElement>("button[data-arrange]")!.hidden, false);
+  press("button[data-save=svg]");
+  await new Promise((r) => setTimeout(r, 0));
+  assert.match(saved, /<path id="part-b" d="M100 -3L130 -3L130 -13L100 -13Z"/);
+  mounted.unmount();
+});
+
+test("hand-worked: Turn left turns the part a quarter turn about its middle; reaching past the bed is said in words and marked, never mended", async () => {
+  const { drawn, path, type, press, placed, words, partWords, changes, mounted } = await withPicked();
+  type("x", "100");
+  press('button[data-turn="90"]');
+  // Sketch b, 30 × 10 at (100, 3), has its middle at (115, 8). A quarter turn makes it 10 × 30 about the same middle:
+  // from (110, −7) to (120, 23). Its corners (0,0) (30,0) (30,10) (0,10) turn to (0,0) (0,30) (−10,30) (−10,0), then
+  // move by (120, −7): (120,−7) (120,23) (110,23) (110,−7). In the path y is flipped.
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 110, y: -7, angle: 90 } });
+  assert.equal(drawn()[1], "M120 7L120 -23L110 -23L110 7Z");
+  assert.equal(changes.at(-1), "Turn Sketch b on the laser bed");
+  // 7 mm of it is below the bed's bottom edge.
+  assert.equal(words(), "2 parts on the bed. Sketch b is off the bed: 7 mm past the bottom.");
+  assert.equal(partWords(), "Sketch b is off the bed: 7 mm past the bottom.");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-warn laser-flat-part-picked");
+  assert.equal(path("b").querySelector("title")!.textContent, "Sketch b, 10 × 30 mm, off the bed: 7 mm past the bottom");
+  assert.equal(path("a").getAttribute("class"), "laser-flat-part");
+  // Y typed as 0 brings it wholly onto the bed: the warning goes.
+  type("y", "0");
+  assert.equal(drawn()[1], "M120 0L120 -30L110 -30L110 0Z");
+  assert.equal(words(), "2 parts on the bed.");
+  assert.equal(path("b").getAttribute("class"), "laser-flat-part laser-flat-part-picked");
+  // The angle typed back to 0: 10 × 30 at (110, 0) has its middle at (115, 15); 30 × 10 about it starts at (100, 10).
+  type("angle", "0");
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 100, y: 10, angle: 0 } });
+  // Turn right from there: a quarter turn the other way is 270°; 10 × 30 about (115, 15) starts at (110, 0). The corners
+  // turn by (x, y) → (y, −x): (0,0) (0,−30) (10,−30) (10,0), moved by (110, 30): (110,30) (110,0) (120,0) (120,30).
+  press('button[data-turn="-90"]');
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 110, y: 0, angle: 270 } });
+  assert.equal(drawn()[1], "M110 -30L110 0L120 0L120 -30Z");
+  // And left again: 270° + 90° is a whole turn, 0°, back at (100, 10).
+  press('button[data-turn="90"]');
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 100, y: 10, angle: 0 } });
+  mounted.unmount();
+});
+
+test("a picked part taken off the bed is let go: back on the bed, it is not picked", async () => {
+  const { ctx, window, mounted } = await withPicked();
+  const box = ctx.properties.querySelector<HTMLElement>(".laser-page-part")!;
+  assert.equal(box.hidden, false);
+  const tick = (on: boolean) => {
+    const b = ctx.browser.querySelector<HTMLInputElement>('input[data-part="b"]')!;
+    b.checked = on;
+    b.dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  tick(false);
+  assert.equal(box.hidden, true);
+  tick(true);
+  assert.equal(box.hidden, true);
+  mounted.unmount();
+});
+
+test("a place that can't be used is refused in words and nothing is kept; the arrows move the picked part in one undo step", async () => {
+  const { element, fireOn, type, placed, partWords, changes, keys, mounted } = await withPicked();
+  type("x", "20000");
+  assert.equal(partWords(), "A part can be put at most 10000 mm from the bed's corner.");
+  type("y", "");
+  assert.equal(partWords(), "A part's place and angle must be numbers.");
+  type("angle", "");
+  assert.equal(partWords(), "A part's place and angle must be numbers.");
+  assert.equal(placed(), undefined);
+  assert.deepEqual(changes, []);
+  // → twice and Shift+↑: 66 + 1 + 1 = 68 across, 3 + 10 = 13 up; each press carries the same key, so they undo as one step.
+  const svg = element.querySelector(".laser-flat svg")!;
+  fireOn(svg, "keydown", { key: "ArrowRight" });
+  fireOn(svg, "keydown", { key: "ArrowRight" });
+  fireOn(svg, "keydown", { key: "ArrowUp", shiftKey: true });
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 68, y: 13, angle: 0 } });
+  assert.deepEqual(keys, ["laser-move-b", "laser-move-b", "laser-move-b"]);
+  // R turns it (a step of its own); Escape lets it go and the part's numbers are put away.
+  fireOn(svg, "keydown", { key: "r" });
+  assert.equal(changes.at(-1), "Turn Sketch b on the laser bed");
+  assert.equal(keys.at(-1), undefined);
+  fireOn(svg, "keydown", { key: "Escape" });
+  assert.equal(element.ownerDocument.querySelector<HTMLElement>(".laser-page-part")!.hidden, true);
+  mounted.unmount();
+});
+
+test("hand-worked: Back in the rows gives one part back to the rows, round the parts still placed by hand; Arrange in rows forgets every place", async () => {
+  const { ctx, drawn, click, type, press, placed, changes, mounted } = await withPicked();
+  type("x", "200");
+  click("a");
+  type("x", "20"); // Sketch a, 60 × 40, now from (20, 3) to (80, 43)
+  assert.deepEqual(placed(), { a: { x: 20, y: 3, angle: 0 }, b: { x: 200, y: 3, angle: 0 } });
+  click("b");
+  press("button[data-rows]");
+  // Sketch b goes back to the rows: its first spot, (3, 3), would come within the 3 mm gap of Sketch a (30 wide from 3
+  // reaches 33, past a's 20 − 3), so it steps on past a: 80 + 3 = 83.
+  assert.deepEqual(placed(), { a: { x: 20, y: 3, angle: 0 } });
+  assert.equal(changes.at(-1), "Put Sketch b back in the rows");
+  assert.deepEqual(drawn(), ["M20 -3L80 -3L80 -43L20 -43Z", "M83 -3L113 -3L113 -13L83 -13Z"]);
+  assert.equal(ctx.properties.querySelector<HTMLElement>("button[data-rows]")!.hidden, true); // it is in the rows now
+  press("button[data-arrange]");
+  assert.deepEqual(placed(), {});
+  assert.equal(changes.at(-1), "Arrange the laser parts in rows");
+  assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z", "M66 -3L96 -3L96 -13L66 -13Z"]);
+  assert.equal(ctx.properties.querySelector<HTMLElement>("button[data-arrange]")!.hidden, true);
+  mounted.unmount();
+});
+
+test("places a project holds are used as they are, and ones that are not usable are dropped without a word", async () => {
+  assert.deepEqual(readLaserData({ placed: { a: { x: 1, y: 2, angle: 450 }, b: { x: "1", y: 2 }, c: null, d: { x: 1e9, y: 0 }, e: { x: 5, y: 6 } } }).placed, { a: { x: 1, y: 2, angle: 90 }, e: { x: 5, y: 6, angle: 0 } });
+  assert.deepEqual(readLaserData({ placed: [1, 2] }).placed, {});
+  const { drawn, mounted } = mount(undefined, { version: 2, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: { b: { x: 200, y: 50, angle: 0 } } });
+  await mounted.ready;
+  // Sketch a in the rows at (3, 3); Sketch b where it was put, (200, 50).
+  assert.deepEqual(drawn(), ["M3 -3L63 -3L63 -43L3 -43Z", "M200 -50L230 -50L230 -60L200 -60Z"]);
   mounted.unmount();
 });

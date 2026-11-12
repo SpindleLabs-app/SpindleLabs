@@ -1,4 +1,4 @@
-// The Laser page (steps L1a and L1a2, behind `?laser`, flag.ts): Design's flat
+// The Laser page (steps L1a, L1a2 and L1b, behind `?laser`, flag.ts): Design's flat
 // shapes (its sketches and ready-made profiles) laid out on the laser's bed,
 // shown flat from above (flat-view.ts: laser cutting is 2D, so the view only
 // slides and zooms), and saved as SVG or DXF at true size.
@@ -8,13 +8,22 @@
 // own code, and never copied into the project: every time the page shows
 // it reads them again, so a sketch changed in Design is changed here. The
 // project keeps only Laser's own choices (`LaserData`: the bed, the gap,
-// the parts turned off). Styles: src/styles/laser-page.css.
+// the parts turned off, where parts were put by hand).
+//
+// Parts start in rows. Once the person moves or turns one (a drag on the
+// bed, the arrows, the Turn button, or numbers typed under "Part"), every
+// part on the bed keeps the place it has (`LaserData.placed`, by the part's
+// id in Design), so nothing else shifts; parts drawn later find room in rows
+// round them, and "Arrange in rows" forgets every place. A part may be put
+// anywhere, so one reaching past the bed's edge is said so in words and
+// marked on the bed, never moved back silently. Styles: src/styles/laser-page.css.
 
-import type { ListedObject, MountedWorkspace, Outline, RepresentationRegistry, WorkspaceContext } from "@fission/core";
+import { NewerFormatError, type ListedObject, type MountedWorkspace, type Outline, type RepresentationRegistry, type WorkspaceContext } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
 import { sheetDxf } from "./dxf.ts";
 import { createFlatView, type FlatScene } from "./flat-view.ts";
-import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, thicknessRefusal, mmWords, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
+import { cleanMm, layOutPlaced, normalAngle, offBedWords, placementRefusal, readPlacements, turnedOnTheSpot, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
+import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, thicknessRefusal, mmWords, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
 
 /** Design's lister for flat shapes (Design's representations.ts DESIGN_OUTLINES). */
 export const OUTLINES_LISTER = "design:outlines";
@@ -24,18 +33,45 @@ export const DXF_KIND: SaveKind = { description: "DXF drawing for a laser cutter
 
 /** What the project keeps for Laser: its own choices only, never Design's shapes. */
 export interface LaserData {
-  version: 1;
+  version: 2;
   bed: Bed;
   gap: number;
   /** The sheet's thickness, mm: kept for what engraving focuses on and joints are sized by later; nothing reads it yet, so the page has no box for it. */
   thickness: number;
   /** The parts turned off, by their id in Design. */
   off: string[];
+  /** Where parts were put by hand (place.ts), by their id in Design; a part not here is laid out in rows. */
+  placed: Record<string, Placement>;
 }
 
-export const defaultLaserData = (): LaserData => ({ version: 1, bed: { ...DEFAULT_BED }, gap: DEFAULT_GAP, thickness: DEFAULT_THICKNESS, off: [] });
+/**
+ * The version of Laser's data this build writes. 1: bed, gap, thickness, off. 2: `placed` (parts placed by hand, L1b1).
+ * A change to what the data holds takes the next number and a step in `readLaserProjectData`, so a build from before
+ * it refuses the data instead of storing it again without the new part.
+ */
+export const LASER_DATA_VERSION = 2;
 
-/** The project's Laser data, read defensively: anything missing or not usable falls back to the default, never throws. */
+export const defaultLaserData = (): LaserData => ({ version: LASER_DATA_VERSION, bed: { ...DEFAULT_BED }, gap: DEFAULT_GAP, thickness: DEFAULT_THICKNESS, off: [], placed: {} });
+
+/**
+ * Laser's part of a project as it is opened (the plugin's `readData`, asked by core's `projectFromJson`): brought up to
+ * the version this build writes, one step at a time, with everything else it holds kept. Data from a later Laser is
+ * refused as newer (core's `NewerFormatError`: the project is then kept for a build that reads it, never stored again
+ * with the unknown parts dropped); data that is not Laser's is refused in words.
+ */
+export function readLaserProjectData(data: unknown): unknown {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) throw new Error("Laser data must be an object");
+  let d = data as Record<string, unknown>;
+  const v = d.version;
+  if (typeof v !== "number") throw new Error("Laser data has no version");
+  if (!Number.isInteger(v) || v < 1) throw new Error(`Laser data version ${v} is not one this SpindleLabs reads`);
+  if (v > LASER_DATA_VERSION) throw new NewerFormatError(`it was saved by a newer SpindleLabs (Laser data version ${v}; this one reads up to ${LASER_DATA_VERSION})`);
+  // 1 → 2: parts placed by hand arrive (L1b1). Version 1 had none.
+  if (d.version === 1) d = { ...d, version: 2, placed: {} };
+  return d;
+}
+
+/** The project's Laser data as the page uses it, read defensively: anything missing or not usable falls back to the default, never throws. */
 export function readLaserData(data: unknown): LaserData {
   const out = defaultLaserData();
   if (typeof data !== "object" || data === null) return out;
@@ -50,6 +86,7 @@ export function readLaserData(data: unknown): LaserData {
   }
   if (typeof d.thickness === "number" && thicknessRefusal(d.thickness) === null) out.thickness = d.thickness;
   if (Array.isArray(d.off)) out.off = d.off.filter((x): x is string => typeof x === "string");
+  out.placed = readPlacements(d.placed);
   return out;
 }
 
@@ -76,12 +113,13 @@ export async function readParts(registry: RepresentationRegistry, objects: reado
 export const partsOn = (offered: readonly OfferedPart[], off: readonly string[]): SheetPart[] =>
   offered.flatMap((p) => ("outline" in p && !off.includes(p.id) ? [{ id: p.id, label: p.label, outline: p.outline }] : []));
 
-/** The words under the bed: how many parts are on it, and each one left off with why. */
-export function layoutWords(layout: Layout, offered: number): string {
+/** The words under the bed: how many parts are on it, each one left off with why, and (given the bed) each one reaching past its edge. */
+export function layoutWords(layout: Layout, offered: number, bed?: Bed): string {
   if (offered === 0) return "Nothing to cut yet: draw a closed sketch in DesignLab and it appears here.";
   const n = layout.placed.length;
   const on = n === 0 ? "No parts on the bed." : `${n} ${n === 1 ? "part" : "parts"} on the bed.`;
-  return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`)].join(" ");
+  const off = bed ? layout.placed.flatMap((p) => offBedWords(p, bed) ?? []) : [];
+  return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`), ...off].join(" ");
 }
 
 /** Words for the middle of a bed with nothing on it, a line each; none when a part is on it. */
@@ -95,11 +133,16 @@ export function emptyBedNote(layout: Layout, offered: number): string[] {
  * the saved SVG file gets (sheet.ts `outlinePath`, core's writer), so the
  * screen and the file can't differ, and no arc is worked out here.
  */
-export function flatScene(layout: Layout, bed: Bed, offered: number): FlatScene {
+export function flatScene(layout: Layout, bed: Bed, offered: number, picked: string | null = null): FlatScene {
   return {
     bed,
-    parts: layout.placed.map((p) => ({ id: p.id, label: p.label, d: outlinePath(p.outline).d, box: { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height } })),
+    parts: layout.placed.map((p) => {
+      const off = offBedWords(p, bed);
+      // The warning without the part's name ("off the bed: 5 mm past the right side"): it is said on the part itself.
+      return { id: p.id, label: p.label, d: outlinePath(p.outline).d, box: { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height }, ...(off && { warn: off.slice(p.label.length + 4, -1) }) };
+    }),
     note: emptyBedNote(layout, offered),
+    picked,
   };
 }
 
@@ -122,12 +165,16 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
   let awake = true;
   let reading = 0;
   let offered: OfferedPart[] = [];
-  let layout: Layout = { placed: [], left: [] };
+  let layout: LaidLayout = { placed: [], left: [] };
+  /** The part picked on the bed, by id: the one "Part" in the properties is about. */
+  let picked: string | null = null;
 
   const data = () => readLaserData(ctx.project.workspaces.laser);
-  const store = (next: LaserData, label: string) => {
-    ctx.project.workspaces.laser = next;
-    ctx.projectChanged(label);
+  const store = (next: LaserData, label: string, mergeKey?: string) => {
+    // Over what the project holds, so anything there beside the fields this page knows stays in the project.
+    const held = ctx.project.workspaces.laser;
+    ctx.project.workspaces.laser = typeof held === "object" && held !== null && !Array.isArray(held) ? { ...held, ...next } : next;
+    ctx.projectChanged(label, mergeKey);
   };
 
   // The parts, in the browser.
@@ -149,12 +196,24 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
 <label class="laser-page-field">Height <input name="height" type="number" min="1" max="3000" step="any" inputmode="decimal"> mm</label>
 <label class="laser-page-field">Gap between parts <input name="gap" type="number" min="0" step="any" inputmode="decimal"> mm</label>
 <p class="laser-page-words" role="status"></p>
+<button type="button" class="laser-page-arrange" data-arrange>Arrange in rows</button>
+<fieldset class="laser-page-part" hidden>
+<legend></legend>
+<label class="laser-page-field">X <input name="x" type="number" step="any" inputmode="decimal"> mm</label>
+<label class="laser-page-field">Y <input name="y" type="number" step="any" inputmode="decimal"> mm</label>
+<label class="laser-page-field">Angle <input name="angle" type="number" step="any" inputmode="decimal"> °</label>
+<p class="laser-page-part-words" role="status"></p>
+<div class="laser-page-turns"><button type="button" data-turn="90">Turn left</button><button type="button" data-turn="-90">Turn right</button><button type="button" data-rows>Back in the rows</button></div>
+</fieldset>
 <div class="laser-page-files"><button type="button" data-save="svg">Save SVG</button><button type="button" data-save="dxf">Save DXF</button></div>
-<p class="laser-page-note">Sizes are exact, in mm, with arcs kept as arcs. Kerf, power and speed are set in your laser program for now.</p>`;
+<p class="laser-page-note">Drag a part on the bed to move it; X and Y are its lower-left corner from the bed's. Sizes are exact, in mm, with arcs kept as arcs. Kerf, power and speed are set in your laser program for now.</p>`;
   ctx.properties.append(panel);
   const input = (name: string) => panel.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
   const words = panel.querySelector<HTMLElement>(".laser-page-words")!;
   const buttons = [...panel.querySelectorAll<HTMLButtonElement>("button[data-save]")];
+  const arrange = panel.querySelector<HTMLButtonElement>("button[data-arrange]")!;
+  const partBox = panel.querySelector<HTMLFieldSetElement>(".laser-page-part")!;
+  const partWords = panel.querySelector<HTMLElement>(".laser-page-part-words")!;
 
   const fill = () => {
     const d = data();
@@ -164,7 +223,18 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
   };
 
   // The view: flat, over the shared viewport's empty 2D view (the body, the 3D grid and the view cube are away meanwhile).
-  const flat = createFlatView(doc, { cards: () => [ctx.browser, ctx.properties] });
+  const flat = createFlatView(doc, {
+    cards: () => [ctx.browser, ctx.properties],
+    onPick: (id) => {
+      picked = id;
+      draw(false);
+    },
+    onMove: (id, dx, dy, key) => {
+      const p = layout.placed.find((x) => x.id === id);
+      if (p) put(p, { x: cleanMm(p.x + dx), y: cleanMm(p.y + dy), angle: p.angle }, `Move ${p.label} on the laser bed`, key ? `laser-move-${id}` : undefined);
+    },
+    onTurn: (id, degrees) => turn(id, degrees),
+  });
   const showView = () => {
     ctx.viewport.showImage(null);
     flat.attach(ctx.viewport.element);
@@ -176,9 +246,44 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
   flat.show({ bed: data().bed, parts: [] }, true); // the project's own bed at once, empty until Design's shapes have been read
   showView();
 
+  /**
+   * Puts part `p` at `at` (said in words and left alone when it can't be). The first part put by hand fixes every part
+   * on the bed where it is now, so nothing else shifts as the rows close up behind it.
+   */
+  const put = (p: LaidPart, at: Placement, label: string, mergeKey?: string): boolean => {
+    const why = placementRefusal(at);
+    picked = p.id;
+    if (why) {
+      draw(false);
+      partWords.textContent = why;
+      return false;
+    }
+    const now = data();
+    const placed: Record<string, Placement> = { ...now.placed };
+    for (const q of layout.placed) if (!Object.hasOwn(placed, q.id)) placed[q.id] = { x: q.x, y: q.y, angle: q.angle };
+    placed[p.id] = { x: at.x, y: at.y, angle: normalAngle(at.angle) };
+    store({ ...now, placed }, label, mergeKey);
+    draw(false);
+    return true;
+  };
+  /** Turns part `id` to `angle` degrees (or by `by`) about the middle of its box, so it turns on the spot. */
+  const turn = (id: string, by: number, to?: number) => {
+    const p = layout.placed.find((x) => x.id === id);
+    const source = offered.find((o) => o.id === id);
+    if (!p || !source || !("outline" in source)) return;
+    const angle = to ?? p.angle + by;
+    if (!Number.isFinite(angle)) {
+      partWords.textContent = "A part's place and angle must be numbers.";
+      return;
+    }
+    put(p, turnedOnTheSpot(source.outline, p, angle), `Turn ${p.label} on the laser bed`);
+  };
+
   const draw = (frame: boolean): void => {
     const d = data();
-    layout = layOut(partsOn(offered, d.off), d.bed, d.gap);
+    layout = layOutPlaced(partsOn(offered, d.off), d.bed, d.gap, d.placed);
+    const part = layout.placed.find((p) => p.id === picked) ?? null;
+    if (!part) picked = null;
     items.replaceChildren(
       ...offered.map((p) => {
         const li = doc.createElement("li");
@@ -203,10 +308,43 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
         return li;
       }),
     );
-    words.textContent = layoutWords(layout, offered.length);
+    words.textContent = layoutWords(layout, offered.length, d.bed);
     for (const b of buttons) b.disabled = layout.placed.length === 0;
-    flat.show(flatScene(layout, d.bed, offered.length), frame);
+    arrange.hidden = Object.keys(d.placed).length === 0;
+    partBox.hidden = part === null;
+    if (part) {
+      partBox.querySelector("legend")!.textContent = part.label;
+      input("x").value = String(part.x);
+      input("y").value = String(part.y);
+      input("angle").value = String(part.angle);
+      partWords.textContent = offBedWords(part, d.bed) ?? (part.by === "rows" ? "In the rows. Move or turn it and every part stays where it is." : "");
+      partBox.querySelector<HTMLButtonElement>("button[data-rows]")!.hidden = part.by === "rows";
+    }
+    flat.show(flatScene(layout, d.bed, offered.length, picked), frame);
   };
+
+  // The picked part's numbers, typed.
+  const onPart = (name: string) => {
+    const p = layout.placed.find((x) => x.id === picked);
+    if (!p) return;
+    const typed = input(name).value.trim() === "" ? NaN : Number(input(name).value);
+    if (name === "angle") return turn(p.id, 0, typed);
+    put(p, { x: name === "x" ? typed : p.x, y: name === "y" ? typed : p.y, angle: p.angle }, `Move ${p.label} on the laser bed`);
+  };
+  for (const name of ["x", "y", "angle"]) input(name).addEventListener("change", () => onPart(name));
+  for (const b of panel.querySelectorAll<HTMLButtonElement>("button[data-turn]")) b.addEventListener("click", () => picked !== null && turn(picked, Number(b.dataset.turn)));
+  panel.querySelector<HTMLButtonElement>("button[data-rows]")!.addEventListener("click", () => {
+    const p = layout.placed.find((x) => x.id === picked);
+    const now = data();
+    if (!p || !Object.hasOwn(now.placed, p.id)) return;
+    const { [p.id]: _gone, ...placed } = now.placed;
+    store({ ...now, placed }, `Put ${p.label} back in the rows`);
+    draw(false);
+  });
+  arrange.addEventListener("click", () => {
+    store({ ...data(), placed: {} }, "Arrange the laser parts in rows");
+    draw(false);
+  });
 
   const onBed = () => {
     const width = Number(input("width").value);
@@ -232,7 +370,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
       const svg = b.dataset.save === "svg";
       try {
         const saved = await saveText(svg ? sheetSvg(layout, d.bed, ctx.project.name || "Laser sheet") : sheetDxf(layout, d.bed), name(), svg ? SVG_KIND : DXF_KIND);
-        if (live) words.textContent = saved === false ? `Save ${svg ? "SVG" : "DXF"} cancelled: nothing was saved.` : `Saved ${saved}: ${layoutWords(layout, offered.length)}`;
+        if (live) words.textContent = saved === false ? `Save ${svg ? "SVG" : "DXF"} cancelled: nothing was saved.` : `Saved ${saved}: ${layoutWords(layout, offered.length, d.bed)}`;
       } catch (e) {
         if (live) words.textContent = `Could not save the file: ${e instanceof Error ? e.message : String(e)}`;
       }

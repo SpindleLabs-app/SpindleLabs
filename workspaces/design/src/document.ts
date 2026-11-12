@@ -1207,8 +1207,8 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
 /** Whether a pin or projection named `name` can be on item `item`'s body: one with its own faces, or (35f1f2b, version 15) a Combine, by a name its result gives (design-edges.ts). */
 export const pinnable = (item: Feature, name: string): boolean => hasOwnFaces(item) || (isCombineItem(item) && isHeldDesignName(name));
 
-/** Whether an item's body can be a Combine's result whose edges pins hold by their design names (35f1f2b): a Combine, (35f1f2c) a Duplicate of one, or (Combine hunt 2) an extrude that joins, cuts or intersects, by which snapping to a body it changed names it. */
-const holdsDesignNames = (item: Feature): boolean => isCombineItem(item) || isDuplicateItem(item) || isOperationExtrude(item);
+/** Whether an item's body can be a Combine's result whose edges pins hold by their design names (35f1f2b): a Combine, (35f1f2c) a Duplicate of one, or (Combine hunt 2) an extrude that joins, cuts or intersects, by which snapping to a body it changed names it; or (SL #611, broken-solids hunt D5) an extrude of several profiles, whose bodies are a join's result. */
+const holdsDesignNames = (item: Feature): boolean => isCombineItem(item) || isDuplicateItem(item) || makesPieces(item);
 
 function checkPins(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
   const at = `Design sketch ${f.id}`;
