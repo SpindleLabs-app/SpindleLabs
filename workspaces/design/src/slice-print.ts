@@ -44,8 +44,8 @@ export interface SlicePrintEvents {
    */
   preview(choices: PrintChoices, file: FileChoices, alive: () => boolean, changed: () => boolean): Promise<void>;
   /**
-   * What the print leaves out of the design, in plain words: the timeline items the last rebuild failed (actions.ts
-   * `failedItemsNote`), or "" when nothing failed. Said on its own line as the dialog opens, and again with each
+   * What the print leaves out of the design, in plain words: the timeline items the last rebuild failed and the bodies
+   * hidden by their eyes (actions.ts `printMissingNote`, SL #675 item 3), or "" when nothing is left out. Said on its own line as the dialog opens, and again with each
    * slice's result, as a warning (export hunt 2026-11-12 D: a failed hole was printed away without a word). Left out: nothing.
    */
   missing?(): string;
