@@ -104,8 +104,8 @@ test("a part too small on screen for its name goes without it; an empty bed says
   near(phone.matrix()[0], 0.7675, "a phone's fitted scale"); // the part is 30.7 px wide: under the 57.6 its name needs
   assert.deepEqual(phone.texts("laser-flat-part-name"), []);
   assert.equal(phone.view.element.querySelectorAll("path.laser-flat-part").length, 1); // still drawn
-  phone.view.show({ bed: SCENE.bed, parts: [], note: ["Nothing to cut yet.", "Closed sketches from Design appear here."] }, false);
-  assert.deepEqual(phone.texts("laser-flat-note"), ["Nothing to cut yet.", "Closed sketches from Design appear here."]);
+  phone.view.show({ bed: SCENE.bed, parts: [], note: ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."] }, false);
+  assert.deepEqual(phone.texts("laser-flat-note"), ["Nothing to cut yet.", "Closed sketches from DesignLab appear here."]);
   assert.equal(phone.view.element.querySelector("svg")!.getAttribute("aria-label"), "The laser bed from above, 400 × 400 mm, with no parts.");
   assert.equal(phone.view.element.dataset.parts, "0");
 });
