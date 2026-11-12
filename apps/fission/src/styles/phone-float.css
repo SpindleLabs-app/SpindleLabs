@@ -43,3 +43,15 @@
 @media (max-width: 389px) {
   .phone-float .phone-float-next:not(#none) { display: none; }
 }
+/* A phone held sideways and narrow too (640 px wide or less, 500 px tall or less: 568 × 320, 600 × 340, 640 × 300): the view is
+   about 150 px tall, so the bar goes on the row of the Browser and Properties toggles (two toggles, 8 px in, 6 px apart: 220 px),
+   not under them where it lay over the view bar's Orbit, Pan and Zoom (phone hunt 2026-11-12, #614). Two lines of words at most. */
+@media (max-width: 640px) and (max-height: 500px) {
+  .phone-float:not([hidden]) { top: 6px; left: 220px; max-width: calc(100% - 332px); gap: 4px; padding: 4px; }
+  .phone-float button:not(#none) { padding: 0 8px; pointer-events: auto; }
+  .phone-float .phone-float-why { -webkit-line-clamp: 2; }
+  /* Only its buttons take taps: the words and the card's padding let a tap through to the part under them (a box's top face at the prompt). */
+  .phone-float:not([hidden]) { pointer-events: none; }
+  /* No room on that row for Extrude beside Finish Sketch either (about 266 px against 268 at 600 px wide): the toolbar's. */
+  .phone-float .phone-float-next:not(#none) { display: none; }
+}
