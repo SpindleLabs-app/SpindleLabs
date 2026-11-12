@@ -74,6 +74,11 @@ export const SEVERAL_HINT = "or hold Ctrl (⌘) or Shift as you click";
 /** What the profile row says while none is chosen. */
 export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
 
+/** Whether a typed distance can go straight into the box as Extrude opens: a mouse or trackpad (it hovers, it points finely), not a finger. */
+export function typesStraightAway(document: Document): boolean {
+  return document.defaultView?.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? false;
+}
+
 export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): ExtrudePanel {
   const document = slot.ownerDocument;
   const box = document.createElement("section");
@@ -207,6 +212,13 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       followUnit(document, onUnit);
       this.showProfile(chosen);
       box.hidden = false;
+      // With a mouse the cursor waits in the Distance box, its number selected, so typing a distance and Enter make the
+      // extrude with no click on the box first (UI audit 2026-11-12, Fusion's feel). Never on a touch screen: its keyboard
+      // would cover the view the moment Extrude opens (Ben's phone rule, 10-28).
+      if (typesStraightAway(document)) {
+        input.focus({ preventScroll: true });
+        input.select();
+      }
     },
     showProfile(chosen) {
       if (!parts) return;
