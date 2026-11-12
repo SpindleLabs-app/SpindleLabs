@@ -113,7 +113,8 @@ export type FeatureResult =
       /** A Move some of whose bodies are no longer there (SL #506 item 4): it moves the rest, and says which it can't and why; their body ids. */
       missing?: { message: string; bodies: string[] };
       /** A Cut or Join whose tools change nothing (misses.ts; Ben 11 Nov, SL #506 item 5, #521): which, and the row's words. */
-      misses?: { message: string; list: Miss[] };
+      /** `operation` is kept so the words can be said again once the build's new bodies have their numbers (`missesMessage`, SL #677 item 5). */
+      misses?: { message: string; list: Miss[]; operation: "cut" | "join" };
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -1804,13 +1805,26 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
   const shown = renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
   const warn = shown.length === 0 ? {} : { pieces: { renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
-  // Named as the browser shows them ("Body 2"), else by the item (an operation extrude's own body).
-  const numbers = bodyNumbers(doc);
-  const bodyWords = (b: string) => (numbers.has(b) ? `Body ${numbers.get(b)}` : bodyItem(b) === f.id ? label : nameOf(bodyItem(b)!));
   // A Combine Join of bodies that don't meet keeps them as separate bodies with no warning (Ben's Fusion answer F2); an
   // Extrude Join that reaches nothing still warns (#521).
-  const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, message: missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined) } };
+  const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, operation, message: missesMessage(doc, f, misses, operation) } };
   return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn, ...missing };
+}
+
+/**
+ * The row's words for item `f`'s Cut or Join whose tools change nothing,
+ * each body named as the browser shows it ("Body 2"), else by its item. A
+ * piece the build itself made (an Extrude Join's own block) has no number
+ * until the build is over, so the app says the words again with the
+ * numbered document (workspace.ts `warningsOf`): the same file then reads
+ * the same on its first build as when opened again (SL #677 item 5).
+ */
+export function missesMessage(doc: DesignDocument, f: Feature, misses: readonly Miss[], operation: "cut" | "join"): string {
+  const label = f.provenance.self.label;
+  const nameOf = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const numbers = bodyNumbers(doc);
+  const bodyWords = (b: string) => (numbers.has(b) ? `Body ${numbers.get(b)}` : bodyItem(b) === f.id ? label : nameOf(bodyItem(b)!));
+  return missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined);
 }
 
 /**

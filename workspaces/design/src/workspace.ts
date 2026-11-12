@@ -9,7 +9,7 @@ import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS
 import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
-import { bodyChoices, operationNote, tickedBodies, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
+import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { copiedText, copiesOf, DUPLICATE_STEP, insertDuplicates, MIRROR_STEP, pastedBodies } from "./duplicate.ts";
@@ -18,7 +18,7 @@ import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { changedCombine, COMBINE_STEP, forgetPieces, insertCombine } from "./combine.ts";
-import { combinePanel } from "./combine-panel.ts";
+import { combineHintWords, combinePanel } from "./combine-panel.ts";
 import { askWords, bodyNamer, checkedItem, cutAsk, type Checked } from "./cut-ask.ts";
 import type { Miss } from "./misses.ts";
 import { combineShown } from "./combine-flag.ts";
@@ -33,7 +33,7 @@ import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
-import { bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { bodyLabel, bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, editOff, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
@@ -56,7 +56,7 @@ import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { sketchPlaceScene } from "./sketch-place.ts";
-import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, missesMessage, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { measureView } from "./measure-view.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
@@ -1042,7 +1042,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
     // A part whose body a later Combine used up did not fail (part-failure.ts).
     const failure = partFailure(doc.timeline.features, feature, build);
-    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build), failure, followed: numberPieces(followedDoc(doc, build), Object.keys(build.bodies), builtPieceFaces(build)) };
+    const followed = numberPieces(followedDoc(doc, build), Object.keys(build.bodies), builtPieceFaces(build));
+    return { scene: joinBodies(drawn, build), results: build.results, warnings: warningsOf(doc, build, followed), failure, followed };
   }
   /**
    * The rebuild's warnings in timeline order: an extrude built from its kept
@@ -1050,9 +1051,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * sketch whose plane is lost (Q1, Q6: it stays where it was, drawn red)
    * and an extrude built from one (its source is lost); from 26f a
    * sketch's points whose edges are lost, and from 27d its projections;
-   * a Combine whose numbered pieces changed (hunt 11-06).
+   * a Combine whose numbered pieces changed (hunt 11-06). `numbered` is
+   * the document with this build's new pieces numbered, so a Cut or Join
+   * that changes nothing names them as the Bodies list does (SL #677 item 5).
    */
-  function warningsOf(doc: DesignDocument, build: TimelineBuild): Warned[] {
+  function warningsOf(doc: DesignDocument, build: TimelineBuild, numbered: DesignDocument): Warned[] {
     const out: Warned[] = [];
     for (const f of doc.timeline.features) {
       const r = build.results[f.id];
@@ -1069,7 +1072,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // SL #506 item 4: a Move that moves only some of its bodies says which it can't move, never a silent jump.
       if (r.missing) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.missing.message}.` });
       // A Cut or Join whose tools change nothing (Ben 11 Nov): OK asked first; an earlier edit since can't ask, so the row says it.
-      if (r.misses) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${r.misses.message}.` });
+      if (r.misses) out.push({ item: f.id, rows: [f.id], sketch: f.id, words: `${missesMessage(numbered, f, r.misses.list, r.misses.operation)}.` });
     }
     return out;
   }
@@ -2860,7 +2863,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!e || e.operation === "new") return;
     const listed = (lastScene?.bodies ?? []).map((b) => ({ body: b.body, label: `Body ${b.place}`, bounds: b.view.bounds }));
     e.choices = e.preview === null ? [] : bodyChoices(e.preview.bounds, listed, e.unticked);
-    const note = e.preview === null ? { text: OPERATION_WAITS, ready: false } : operationNote(e.operation, e.choices);
+    const note = e.preview === null ? { text: OPERATION_WAITS, ready: false } : operationNote(e.operation, e.choices, touchingOnly(e.preview.bounds, listed));
     extrudeBox.showBodies(e.choices, note.text, note.ready);
   }
   const sketchLabel = (id: string) => sketchItem(designDoc(), id).provenance.self.label;
@@ -3368,7 +3371,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (e === null || e.operation === "new") return;
     if (e.candidates === null || e.own === null) return editBox.showBodies([], "Finding the bodies the extrude reaches…", false);
     e.choices = bodyChoices(e.own, e.candidates, e.unticked, e.kept);
-    const note = operationNote(e.operation, e.choices);
+    const note = operationNote(e.operation, e.choices, touchingOnly(e.own, e.candidates));
     editBox.showBodies(e.choices, note.text, note.ready);
   }
   /**
@@ -3599,16 +3602,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   combineHint.hidden = true;
   viewport.element.append(combineHint);
   function showCombineHint() {
-    combineHint.textContent = combineBox.field === "target" ? "Combine: click or tap the body to change" : "Now click or tap the bodies to use as tools";
+    combineHint.textContent = combineHintWords(combineBox.field, bodyRows(designDoc(), failedNow).length);
     combineHint.hidden = !(shown && combineBox.shown && combineBox.editing === null && (combineTarget === null || combineTools.length === 0));
   }
-  /** What the panel calls body `id`: "Body 2" as the browser numbers it, else its item's name. */
+  /** What the panel calls body `id`: its Bodies row ("Body 2"), else its item's name; a deleted one as the edited Combine remembers it (browser.ts `bodyLabel`, SL #677 item 5). */
   const combineLabel = (id: string) => {
     const doc = designDoc();
-    const n = bodyNumbers(doc).get(id);
-    if (n !== undefined) return `Body ${n}`;
-    const item = doc.timeline.features.find((f) => f.id === bodyItem(id));
-    return item === undefined ? id : isPiece(id) ? `a piece of ${itemName(item)}` : itemName(item);
+    const editing = combineBox.editing;
+    return bodyLabel(doc, id, failedNow, editing === null ? undefined : doc.timeline.features.find((f) => f.id === editing));
   };
 
   /**
@@ -3632,7 +3633,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const c = combineBodies(f);
       combineTarget = c.target;
       combineTools = [...c.tools];
-      combineBox.show({ id, name: itemName(f), target: combineLabel(c.target), tools: c.tools.map(combineLabel), operation: c.operation, keepTools: c.keepTools, failed: failedNow.has(id) ? reasonsNow.get(id) : undefined });
+      const label = (b: string) => bodyLabel(doc, b, failedNow, f);
+      combineBox.show({ id, name: itemName(f), target: label(c.target), tools: c.tools.map(label), operation: c.operation, keepTools: c.keepTools, failed: failedNow.has(id) ? reasonsNow.get(id) : undefined });
       ctx.selection.clear();
       return showCombineHint();
     }
