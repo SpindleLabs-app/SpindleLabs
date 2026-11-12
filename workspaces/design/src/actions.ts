@@ -6,6 +6,7 @@
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type SolidReport, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
+import { nameLead, printLead } from "@fission/print";
 import { planeSeenAs } from "@fission/viewport";
 import { designBodies } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyNumbers, isDuplicateItem, makesPieces, partFeature, shapeOf, type DesignDocument } from "./document.ts";
@@ -265,7 +266,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const files: StlFile[] = await endStls(ctx.kernel, doc, picked.map((p) => ({ ...p, name: kindOf(p.feature) })));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
-        const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
+        // Named after the design (Ben 2026-11-11): its own name, else the file it was saved to; with neither, the shape's name as before.
+        const lead = printLead(ctx.project.name, ctx.fileName?.());
+        const file = nameLead(lead) !== "spindlelabs" ? `${nameLead(lead)}.stl` : `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
         const bytes = one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name);
         // The export badge: the kernel checks the file's own bytes, as saved (every body, every corner rounded); a
         // solid one says so in its header. A check that can't run never stops the export, and never says solid.
