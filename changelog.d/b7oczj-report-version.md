@@ -4,4 +4,4 @@ fix
 - The nightly monkey tester no longer clicks a link that loads another page (the sign-in dialog's "Privacy and terms"), which ended its session with "Execution context was destroyed".
 
 public:
-- Bug reports and the version shown in the top bar name the real app and kernel versions.
+- Bug reports and the version in the top bar now give the real version of the app and of its geometry engine.
