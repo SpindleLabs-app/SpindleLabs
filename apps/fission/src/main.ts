@@ -30,6 +30,7 @@ import { startOffline } from "./offline.ts";
 import { openLatest, watchKernel } from "./kernel-lost.ts";
 import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
+import { liftOverSheets } from "./undo-lift.ts";
 import { appLoaded } from "./loading.ts";
 import { ALL_WORKSPACES_SWITCH, listedWorkspaces } from "./listed-workspaces.ts";
 import { designWorkspace } from "@fission/design";
@@ -73,7 +74,7 @@ if (import.meta.env.PROD) openLatest();
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
 // The shell opens whole projects, dropped or pasted like any other file (X6).
-representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(new TextDecoder().decode(bytes), name) });
+representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(bytes, name) });
 // The one action registry: the verbs each workspace offers for a selection.
 const actions = new ActionRegistry();
 for (const w of workspaces) w.registerActions?.(actions);
@@ -594,7 +595,12 @@ if (everyWorkspace) {
 const store = localStore(workspaces);
 // The kept project's undo steps, kept beside it in this browser (step 89), so a reload carries on where it was.
 // Written as each save lands, never by a tab whose saves are refused (another tab stored the project since).
-const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), { refused: () => autosave?.refused() ?? false });
+const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), {
+  refused: () => autosave?.refused() ?? false,
+  upgrade: (snapshot) => projectToJson(projectFromJson(snapshot, workspaces)), // as the project itself is read when it opens
+});
+/** Projects whose last change came back from the unsaved-changes journal at this start: their kept steps end before it (#627 item 7). */
+const leftWithChange = new Set<string>();
 /** The browser's localStorage, or null when storage is turned off (then the guard and the journal keep nothing). */
 const local = (() => {
   try {
@@ -628,7 +634,11 @@ let autosave: Autosave | null = null;
 // starts too. Only when the journal can't be written (storage off or full)
 // does the page ask before going, and only while a change waits, so a saved
 // page never asks and stays fit for the back/forward cache.
-const leaving = () => (steps.flush(), autosave?.leaving() ?? true);
+// With no autosave nothing is journalled, so the page asks instead (lost-work hunt 2026-11-12, issue #627 items 3 and
+// 4; it answered "all kept" and went without a word): while an opened file is not kept yet, and after a change when
+// this browser's storage failed at the start. A new project not changed yet has nothing to lose.
+// (#627 item 1, a size still waiting its turn in Design, is flushed here by the Undo and edit thread's fix.)
+const leaving = () => (steps.flush(), autosave ? autosave.leaving() : statusBeforeOpening === null && (canKeep || !ctx.history.canUndo()));
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") leaving();
 });
@@ -684,7 +694,7 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  steps.follow(id); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
+  steps.follow(id, leftWithChange.delete(id)); // its kept steps put back once read, if they end at the project as it is (after the reset that follows)
   autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (steps.saved(), openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
   tabs?.sync();
@@ -796,8 +806,8 @@ function replaceProject(project: Project) {
  * kept in this browser only once it has shown (security audit S2): one that
  * freezes the tab while it builds is never stored, so never reopened.
  */
-function openProject(text: string, fileName = "") {
-  const project = projectFromJson(text, workspaces);
+function openProject(file: string | Uint8Array, fileName = "") {
+  const project = projectFromJson(file, workspaces);
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
@@ -817,16 +827,24 @@ function openProject(text: string, fileName = "") {
   // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
   statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
   if (canKeep) saveStatus({ state: "saving" });
-  const ticket = whileOpening(OPENING_FILE, () =>
+  let kept = false;
+  const keepIt = () =>
     void copy.then((found) => {
+      if (kept) return;
+      kept = true;
+      unfollow();
       if (ticket !== openings) return; // another opening, or Start fresh, since
       statusBeforeOpening = null;
       // Its first save writes it (so it is the project a reload opens), checking no other tab changed the copy since.
       openedFile = true;
       keep(found?.id ?? newId(), false, found?.modified ?? null);
       autosave?.changed(); // store the opened file, with anything changed while it opened
-    }),
-  );
+    });
+  // Changed before it has shown (the engine still downloading on a first visit, a big file's first build): a tab that
+  // takes an edit is not frozen, so the file is kept now, with the edit. It waited for the build, and a reload or a
+  // closed tab meanwhile brought the last project back without the file or the edit (#627 item 3).
+  const unfollow = ctx.history.onChange(() => ctx.history.canUndo() && keepIt());
+  const ticket: number = whileOpening(OPENING_FILE, keepIt);
 }
 
 /**
@@ -848,11 +866,15 @@ async function openStored(id: string, modified: Date | null) {
   guard.finished();
   fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
-  statusBeforeOpening ??= shownStatus;
+  const before = shownStatus;
+  // Kept under its id at once, as start() keeps the last project: its autosave must take the project as the store
+  // holds it. Started once it had shown, it took a size typed meanwhile for the stored state, said "Saved" and never
+  // stored it (#627 item 2). Only bringing it forward waits for the build, so one that freezes the tab is not reopened.
+  keep(id, kept === null, kept === null ? modified : null, kept !== null);
+  statusBeforeOpening ??= before;
   saveStatus({ state: "saving" });
   whileOpening(OPENING_FILE, () => {
     statusBeforeOpening = null;
-    keep(id, kept === null, kept === null ? modified : null, kept !== null);
     if (kept !== null) return saveStatus({ state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
     if (modified === null) return autosave?.changed(); // no save time to expect: its first save stores it, and lists it first
     // "Saving…" until it is the project a reload opens (leaving meanwhile asks first), unless an edit's own save took over the mark.
@@ -1256,7 +1278,7 @@ const keepError = (text: string) => {
 window.addEventListener("error", (e) => keepError(`${e.message}${e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : ""}`));
 window.addEventListener("unhandledrejection", (e) => keepError(`Unhandled: ${e.reason instanceof Error ? `${e.reason.name}: ${e.reason.message}` : String(e.reason)}`));
 const bugReport = bugReportDialog(document, {
-  facts: () => ({ version: $("version").textContent || "unknown", browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
+  facts: () => ({ version: `${__APP_VERSION__ ?? "unknown"} (${$("version").textContent || "kernel not started"})`, browser: navigator.userAgent, screen: `${innerWidth} × ${innerHeight}`, workspace: current, errors: [...recentErrors] }),
   design: () => ({ name: projectFile || ctx.project.name || "Untitled", text: projectToJson(ctx.project) }),
   open: (url) => void window.open(url, "_blank", "noopener"),
   download: (name, text) => {
@@ -1379,6 +1401,8 @@ function placeUndoRedo() {
 }
 phone.addEventListener("change", placeUndoRedo);
 placeUndoRedo();
+// An open sheet lifts the docked pair above its top edge, so a size mistyped in it can be undone (SL #623 item 6).
+liftOverSheets(document, $("undo-redo"), phone);
 for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id)); // named by aria-label
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
@@ -1524,7 +1548,7 @@ $("workspace").addEventListener("properties-conceal", () => {
 {
   const phone = window.matchMedia("(max-width: 640px)");
   $("workspace").addEventListener("pointerdown", (e) => {
-    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float")) return; // the bar over the view ends a tool, which puts the sheet away itself
+    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float") || e.target.closest("#undo-redo")) return; // the bar over the view ends a tool, which puts the sheet away itself; Undo and Redo leave it open, so the size is seen going back
     for (const slot of ["browser", "properties"]) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
@@ -1560,13 +1584,15 @@ async function start() {
   let newestAt: Date | null = null;
   try {
     // Changes the last visit left with before they were stored go back first, so the project reopens with them.
-    const unsaved = await answered(recoverUnsaved(store, local, workspaces));
+    const unsaved = await answered(recoverUnsaved(store, local, workspaces, undefined, (id) => leftWithChange.add(id)));
     if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
     const top = (await answered(store.list()))[0];
     newest = top?.id;
     newestAt = top && !top.problem ? top.modified : null; // a summary that can't be read gives no save time to expect
   } catch (e) {
     canKeep = false;
+    // Said for as long as it is so: the words below go with the next message (#627 item 4).
+    saveStatus({ state: "error", message: "nothing is kept in this browser. Use Save to keep your work as a file." });
     fileStatus(`Projects can't be kept in this browser (${why(e)}). Use Save to keep your work as a file.`);
     show(fromHash());
     return ctx.history.reset();

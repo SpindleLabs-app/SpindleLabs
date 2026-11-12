@@ -45,7 +45,10 @@ export function propertyNames(source: string, name: string): string[] {
 // fields already listed, so nothing new below; a version 16 reader would refuse the file.
 // Design data version 18 (Ben 11-11): an extrude of a sketch may hold more profiles (`more` in its parameters, a list of
 // ProfileRef, held to its fields below), which a version 17 reader would build as the first profile alone.
-const LEDGER_VERSION = 18;
+// Design data version 19 (SL #583 item 3): a face sketch's `face` may record `reversed`, whether its face was its name's
+// face turned round when drawn (a Cut's wall); it changes what is built (a face found the other way about holds the
+// sketch with its plane lost), and a version 18 reader would place it silently.
+const LEDGER_VERSION = 19;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
@@ -55,7 +58,7 @@ const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "SketchArcCurve", names: ["id", "kind", "start", "end", "centre", "construction"] },
   { file: "workspaces/design/src/document.ts", type: "SketchDistance", names: ["id", "kind", "a", "b", "value"] },
   { file: "workspaces/design/src/document.ts", type: "SketchDiameter", names: ["id", "kind", "circle", "value"] },
-  { file: "workspaces/design/src/face-sketch.ts", type: "SketchFace", names: ["frame", "side", "held", "body"] },
+  { file: "workspaces/design/src/face-sketch.ts", type: "SketchFace", names: ["frame", "side", "held", "body", "reversed"] },
   { file: "workspaces/design/src/regions.ts", type: "RegionRef", names: ["outer", "centroid"] },
   { file: "workspaces/design/src/regions.ts", type: "RegionPiece", names: ["curve", "reversed"] },
   { file: "workspaces/design/src/document.ts", type: "BodyRecord", names: ["id", "number", "faces"] },

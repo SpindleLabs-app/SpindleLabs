@@ -6,7 +6,7 @@ import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
-import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
+import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
 import { bodyChoices, operationNote, tickedBodies, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
@@ -47,6 +47,7 @@ import { deleteAsk } from "./delete-ask.ts";
 import { deleteKeyTarget } from "./delete-key.ts";
 import { renameBox } from "./rename-box.ts";
 import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
+import { extrudeSketches, moreProfiles } from "./extrude-profiles.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { showEntries, viewMenuEntries, viewMenuTarget } from "./view-menu.ts";
 import { showAllBodies, showOnlyBody } from "./show-only.ts";
@@ -3171,7 +3172,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     try {
       made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined, choice, more);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
-      if (choice !== null) {
+      // Several profiles are joined only in the rebuild (SL #611 C1): the whole item is built before it is recorded.
+      if (choice !== null || more.length > 0) {
         const checked = await onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id));
         if (checked.refused !== null) throw new Error(checked.refused);
         misses = checked.misses;
@@ -3192,7 +3194,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
     boxesPart = made.id;
     // Recorded as update starts (before its first wait), so the Undo held for this OK (`hold`) can go while it shows.
-    void update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, usedSketchHidden(made.doc, source.sketch));
+    // SL #611 C6: every sketch its profiles come from is hidden, not only the first's.
+    const madeItem = made.doc.timeline.features.find((x) => x.id === made.id)!;
+    const hidden = extrudeSketches(madeItem).reduce((d, sk) => usedSketchHidden(d, sk), made.doc);
+    void update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, hidden);
   }
 
   /** Asks whether to record operation extrude `id` of `doc` whose Cut or Join changes nothing (#521); true to record. */
@@ -3743,6 +3748,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const offer = r?.offers.find((o) => o.id === offerId);
     if (!r || !offer || offer.sketch !== r.sketch) return;
     if (offer.refused !== undefined) return void editBox.showError(regionRefusedWords(r.name, offer.refused));
+    // SL #611 C2: a region that is already another of the extrude's profiles can't be its first as well.
+    const f = designDoc().timeline.features.find((x) => x.id === r.id);
+    if (f && moreProfiles(f).some((p) => p.sketch === r.sketch && p.region !== undefined && offerOf(r.offers, r.sketch, p.region)?.id === offer.id)) return void editBox.showError(alreadyPicked(f.provenance.self.label));
     Object.assign(r, { chosen: offer.id, picked: offer.ref });
     editBox.showError("");
     editBox.showRegion(editRegionWords(r.name, r.offers.length, true, true));
@@ -4607,7 +4615,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           if (combineBox.ready) void ctx.history.hold(finishCombine());
           return true;
         }
-        if (!extrudeBox.shown || !onView) return false;
+        // Extrude's own Distance box counts as the view too: it has the focus as the panel opens with a mouse (UI audit
+        // 2026-11-12, `typesStraightAway`), and its Enter is this OK. In the app the box's keydown takes Enter itself (the
+        // shell sends no plain key from a text field), so this never records twice.
+        const inDistance = active !== null && active.id === "extrude-distance" && ctx.properties.contains(active);
+        if (!extrudeBox.shown || !(onView || inDistance)) return false;
         if (extrudeBox.ready) void ctx.history.hold(finishExtrude(extrudeBox.typed));
         return true;
       }
@@ -4721,7 +4733,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
 export const designWorkspace: WorkspacePlugin = {
   id: "design",
-  title: "Design",
+  title: "DesignLab",
   summary: "Parametric modelling: sketches, features and the timeline. The source of truth for all geometry.",
   status: "working",
   representations: { produces: ["solid", "mesh", "outline"], accepts: [] },
