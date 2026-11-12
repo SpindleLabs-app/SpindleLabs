@@ -1,0 +1,48 @@
+{
+ "seed": "49",
+ "steps": [
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    47
+   ]
+  },
+  {
+   "op": "marker",
+   "pick": 0.6565164693885487
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    47,
+    8,
+    40
+   ]
+  },
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    6
+   ]
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.8009964918183368
+  },
+  {
+   "op": "add-combine",
+   "target": 0.36179503723204076,
+   "tool": 0.3219923039118142,
+   "operation": "intersect",
+   "keep": false
+  },
+  {
+   "op": "reorder",
+   "pick": 0.41432832590943913,
+   "to": 0.8451937008030406
+  }
+ ]
+}
