@@ -3622,7 +3622,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const row = ctx.browser.querySelector<HTMLElement>(`.tree-row[data-node="${node}"]`);
       if (row === null) continue;
       const span = row.ownerDocument.createElement("span");
-      span.className = `combine-tag combine-tag-${tag.toLowerCase()}`; // styles/combine-tags.css
+      span.className = `combine-tag combine-tag-${tag.toLowerCase()}`; // styles/combine-tag.css
       span.textContent = tag;
       row.after(span);
     }
