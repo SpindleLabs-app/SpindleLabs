@@ -183,6 +183,7 @@ await check("a polygon refused as drawn already keeps its typed boxes, and Escap
     await until(page, () => /^This shape is there already/.test(document.querySelector("#sketch-grid-error").textContent), null, "the drawn-already note");
     assert.equal(await typed("sides"), "8", "Sides kept after the refusal");
     assert.equal(await typed("diameter"), "20", "Diameter kept after the refusal");
+    if (shots) await page.screenshot({ path: `${shots}/polygon-refused-kept-1280.png` });
     await status(page, /^8 lines, a closed outline/, "still one octagon");
     // The refused click kept its centre. Escape empties and leaves the boxes, a second drops the centre; the next polygon
     // still has 8 sides (the panel: kept from one polygon to the next).
