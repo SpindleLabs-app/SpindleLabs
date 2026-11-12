@@ -2416,7 +2416,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
             // Counted on the view at once: the drag's end (pointDrags) can be said before this loop's finally runs.
             viewport.element.dataset.dragSolves = String(++dragSolves);
             drawSketches();
-          }, drag.before);
+          });
           if (stale()) return endDrag(drag);
           drag.doc = got.doc;
           sketchBox.showError(got.refused ?? "");

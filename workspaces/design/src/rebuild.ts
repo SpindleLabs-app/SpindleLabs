@@ -1217,7 +1217,8 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch
   const at = solvedPoints(followed, request, answer.points);
   const tiny = shrunk(followed, at);
   if (tiny !== null) return { message: constraintsWords(label, `${curveWord(followed, tiny, "a")} would shrink below the smallest size`) };
-  // #545 item 1: an arc the solve would turn inside out (its sweep past half a turn), refused as a drag refuses it.
+  // #545 item 1: an arc the solve would turn inside out (its end past its start, or its sweep jumping to its other branch;
+  // passing a half turn is fine, SL #612), refused as a drag refuses it (point-drag.ts `turnedOver`).
   const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
   if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
   return { solved: followed.points.flatMap((p) => {
