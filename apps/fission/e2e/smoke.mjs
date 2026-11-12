@@ -1034,7 +1034,7 @@ try {
     await page.click("#assistant-toggle");
     assert.equal(await page.isDisabled("#ai-ask-button"), true, "nothing to ask with until a provider is chosen");
     assert.match(await page.textContent("#ai-status-detail"), /Nothing is sent anywhere/);
-    assert.match(await page.textContent("#assistant"), /Planned in Design.*Plain-English commands/s);
+    assert.match(await page.textContent("#assistant"), /Planned in DesignLab.*Plain-English commands/s);
     // The settings list the four providers and say which keep data local.
     assert.equal(await page.locator("#assistant [data-provider]").count(), 4);
     assert.match(await page.textContent('[data-provider="ollama"]'), /stays on your machine.*OLLAMA_ORIGINS/s);
@@ -1999,7 +1999,7 @@ try {
       await wide.waitForTimeout(50);
       // The note is about Slice, which is not on screen: Design's pane shows none.
       assert.deepEqual(await notesIn("#viewport"), []);
-      const text = "Print plate out of date: you changed the box in Design. Rerun it in Slice.";
+      const text = "Print plate out of date: you changed the box in DesignLab. Rerun it in SliceLab.";
       // Slice beside Design: the note shows over Slice's pane.
       await wide.click("#split-toggle");
       await wide.selectOption("#split-choice", "slice");
@@ -2010,13 +2010,13 @@ try {
       assert.equal(await wide.getAttribute("#split-viewport .change-note", "role"), "status");
       // Why? opens the chain from the cause to the result.
       await wide.click("#split-viewport .change-note summary");
-      assert.deepEqual(await wide.$$eval("#split-viewport .change-note li", (li) => li.map((l) => l.textContent)), ["Box: 42 × 30 × 20 mm in Design", "Print plate in Slice"]);
+      assert.deepEqual(await wide.$$eval("#split-viewport .change-note li", (li) => li.map((l) => l.textContent)), ["Box: 42 × 30 × 20 mm in DesignLab", "Print plate in SliceLab"]);
       assert.equal(await wide.isVisible("#split-viewport .change-note li"), true);
       await wide.screenshot({ path: "e2e/change-note.png" });
       // The plate is rebuilt (the graph marks it fresh): the same note says so, its chain still open.
       await wide.evaluate(() => window.fissionTest.graph.markFresh("e2e.plate"));
       await wide.waitForFunction(() => document.querySelector("#split-viewport .change-note")?.dataset.state === "updated");
-      assert.deepEqual(await notesIn("#split-viewport"), ["Print plate updated: you changed the box in Design."]);
+      assert.deepEqual(await notesIn("#split-viewport"), ["Print plate updated: you changed the box in DesignLab."]);
       assert.equal(await wide.isVisible("#split-viewport .change-note li"), true, "a redraw keeps Why? open");
       // × dismisses it, for good.
       await wide.click("#split-viewport .note-dismiss");
@@ -2056,7 +2056,7 @@ try {
       await wide.selectOption("#split-choice", "slice");
       await wide.waitForFunction(() => document.body.dataset.split === "slice");
       // The marker to the start: the box's own data is unchanged, but it builds nothing now, so its plate is out of date.
-      const text = "Print plate out of date: you moved the timeline marker in Design. Rerun it in Slice.";
+      const text = "Print plate out of date: you moved the timeline marker in DesignLab. Rerun it in SliceLab.";
       await wide.click('#timeline [data-button="start"]');
       await wide.waitForSelector("#split-viewport .change-note");
       assert.deepEqual(await notesIn("#split-viewport"), [text]);
