@@ -309,6 +309,34 @@ try {
     });
   }
 
+  // #586: Combine started again while one is open with its bodies picked (no hint to wait for) and its sheet shut by a tap on the view:
+  // the sheet with the operation and OK only opened when the picked state changed, and never did here, so Combine looked closed.
+  await check("375 px, taps: Combine pressed again with its bodies already picked and the sheet shut opens the sheet with the operation and OK", async () => {
+    const page = await fresh(375, 667, true, "&combine");
+    try {
+      await press(page, '[data-view="top"]', true);
+      await settle(page);
+      const start = async () => {
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+      };
+      await start();
+      await at(page, TOP1, true);
+      await at(page, TOP2, true);
+      await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+      await page.waitForTimeout(300);
+      await closePanels(page, true); // the sheet shut by a tap on the view
+      assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet is shut");
+      await start();
+      await page.waitForTimeout(600);
+      assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "true", "the sheet with the operation and OK is open");
+      assert.equal(await page.locator("#combine-ok").isVisible(), true, "OK can be reached");
+    } finally {
+      await page.context().close();
+    }
+  });
+
   // #504: the shell's `#workspace button:hover` outranked the panel's OK, so on hover (and on a phone after a tap, where hover sticks) OK turned dark grey and looked switched off.
   await check("1280 px: OK keeps its colour under the pointer", async () => {
     const page = await fresh(1280, 800, false, "&combine");

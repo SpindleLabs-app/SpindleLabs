@@ -158,6 +158,7 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
       delete ok.dataset.busy;
       this.setBodies(c.target, c.tools);
       setField(c.target === null ? "target" : "tools");
+      box.dataset.shows = String(Number(box.dataset.shows ?? 0) + 1); // the phone's sheet opens again for a Combine started over an open one (#586)
       box.hidden = false;
     },
     setBodies(t, ts) {
