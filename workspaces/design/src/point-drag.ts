@@ -30,6 +30,10 @@
 //   is refused. (Three points the drag itself carries across each other,
 //   like a rectangle's corner pulled past the opposite corner, turn over
 //   because the user moved them, as in Fusion, so other triangles are free.)
+//   An arc joined smoothly to its neighbour (a slot's end, a tangent arc)
+//   turns inside out too when the neighbour reverses past a zero length
+//   and the smooth joint becomes a cusp, with the arc's own sweep
+//   unchanged (SL #630): `cornerTurned` refuses that step as well.
 // - A step that the solver refuses, that conflicts, that turns an arc
 //   over or that would shrink a line or arc below MIN_FEATURE is refused:
 //   the sketch stays where the last step left it, and the drag goes on
@@ -147,6 +151,69 @@ export function turnedOver(sketch: Sketch, before: ReadonlyMap<string, XY>, afte
   return null;
 }
 
+/**
+ * How a curve leaves its end `p` (one of its start and end), as a
+ * direction: a line toward its other end; an arc along itself, its tangent
+ * there (it runs counter-clockwise from its start, so it leaves its start
+ * a quarter turn left of the radius and its end a quarter turn right).
+ */
+function leaving(c: Sketch["curves"][number], p: string, at: ReadonlyMap<string, XY>): XY {
+  const q = at.get(p)!;
+  if (c.kind === "line") {
+    const o = at.get(c.start === p ? c.end : c.start)!;
+    return [o[0] - q[0], o[1] - q[1]];
+  }
+  const m = at.get((c as { centre: string }).centre)!;
+  const [rx, ry] = [q[0] - m[0], q[1] - m[1]];
+  return (c as { start: string }).start === p ? [-ry, rx] : [ry, -rx];
+}
+
+/** The signed angle from direction `u` to direction `v`, in (−π, π]. */
+const angleFrom = (u: XY, v: XY): number => Math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]);
+
+/**
+ * How near (radians) two curves must leave a shared end to opposite
+ * directions to count as joined smoothly (tangent), as a slot's sides and
+ * ends, a tangent arc or a rounded corner are: a twelfth of a turn, so one
+ * bent a little by a drag (a tilted slot is not held tangent yet, step
+ * 49) still counts.
+ */
+export const SMOOTH_JOINT = Math.PI / 6;
+
+/**
+ * The first point where two of the sketch's lines and arcs meet (an end of
+ * each, construction curves left out) whose corner turned over between the
+ * points `before` and `after`, or null: the angle from one curve's way out
+ * of the point to the other's changed by more than MAX_SWEEP_STEP, as when
+ * a side reverses past a zero length or the solver jumps to the shape's
+ * mirror image (SL #630). Corners move smoothly in a drag step, so only a
+ * flip changes one that much. With `smoothArcs`, only joints with an arc
+ * that were smooth before (within SMOOTH_JOINT of a straight run) count:
+ * those turn into a cusp, the arc turned inside out against its
+ * neighbour, while a plain corner the drag carries across turns over
+ * because the user moved it (the top comment).
+ */
+export function cornerTurned(sketch: Sketch, before: ReadonlyMap<string, XY>, after: ReadonlyMap<string, XY>, smoothArcs: boolean): string | null {
+  const ends = new Map<string, Sketch["curves"][number][]>();
+  for (const c of sketch.curves) {
+    if (c.kind === "circle" || c.construction === true) continue;
+    for (const p of [c.start, c.end]) ends.set(p, [...(ends.get(p) ?? []), c]);
+  }
+  for (const [p, cs] of ends) {
+    for (let i = 0; i < cs.length; i++) {
+      for (let j = i + 1; j < cs.length; j++) {
+        if (smoothArcs && cs[i].kind !== "arc" && cs[j].kind !== "arc") continue;
+        const was = angleFrom(leaving(cs[i], p, before), leaving(cs[j], p, before));
+        if (smoothArcs && Math.abs(was) < Math.PI - SMOOTH_JOINT) continue;
+        const now = angleFrom(leaving(cs[i], p, after), leaving(cs[j], p, after));
+        const change = Math.abs(now - was);
+        if (Math.min(change, 2 * Math.PI - change) > MAX_SWEEP_STEP) return p;
+      }
+    }
+  }
+  return null;
+}
+
 /** One step of a drag: the document with the point there and the sketch solved, or why the step was refused. */
 export type DragStep = { doc: DesignDocument } | { refused: string };
 
@@ -167,7 +234,7 @@ export async function dragStep(kernel: KernelCalls, doc: DesignDocument, sketchI
   const solved = solvedPoints(moved, request, answer.points);
   const tiny = shrunk(moved, solved);
   if (tiny !== null) return { refused: `That would shrink ${curveWord(moved, tiny, "a")} below ${MIN_FEATURE} mm, so the point stays where it last was.` };
-  if (turnedOver(sketch, pointsOf(sketch), solved) !== null) return { refused: ARC_TURNED };
+  if (turnedOver(sketch, pointsOf(sketch), solved) !== null || cornerTurned(sketch, pointsOf(sketch), solved, true) !== null) return { refused: ARC_TURNED };
   const points = sketch.points.map((p) => {
     const [x, y] = solved.get(p.id)!;
     return x === p.x && y === p.y ? p : { ...p, x, y };

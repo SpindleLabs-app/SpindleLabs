@@ -1486,6 +1486,7 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   if (!(COMBINE_OPERATIONS as readonly unknown[]).includes(p.operation)) throw new Error(`${at}'s operation ${shown(p.operation)} is not join, cut or intersect`);
   if (typeof p.keepTools !== "boolean") throw new Error(`${at}'s keepTools ${shown(p.keepTools)} is not true or false`);
   if (!Array.isArray(p.tools) || p.tools.length === 0) throw new Error(`${at} has no tool bodies`);
+  notTooMany(p.tools.length, DESIGN_LIMITS.items, `${at} names`, "tools");
   const bodies = [p.target, ...(p.tools as unknown[])];
   const once = new Set<unknown>();
   for (const [i, id] of bodies.entries()) {

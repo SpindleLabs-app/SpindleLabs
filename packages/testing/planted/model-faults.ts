@@ -231,8 +231,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "      const frames = framesOfResult(h, built);",
-        replace: "      const frames = framesOfResult(h, new Map([...built.keys()].map((k) => [k, built.get(t.handle)!] as const)));",
+        find: "    const frames = framesOfResult(h, built);",
+        replace: "    const frames = framesOfResult(h, new Map([...built.keys()].map((k) => [k, built.get(t.handle)!] as const)));",
       },
     ],
     run: ["timeline"],
@@ -839,7 +839,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   // Hunt 11-06: a Combine's numbered pieces kept by their faces.
   "pieces-by-rank": {
     what: "a Combine's pieces are numbered by rank order on every rebuild, the faces the data remembers ignored, so an earlier edit that changes their sizes moves a number to another piece silently",
-    edits: [{ file: REBUILD, find: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);", replace: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, new Map(), own);" }],
+    edits: [{ file: REBUILD, find: "  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), remembered, own);", replace: "  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), new Map(), own);" }],
     run: ["naming"],
     caught: "combine-piece-identity: hand-worked: Combine 2 stays on the far piece when a slot moves",
   },

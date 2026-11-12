@@ -65,17 +65,30 @@ export function leavesNoFace(tool: BodyHandle, result: Pick<BooleanResult, "hist
  * sketch does. In doubt it answers false: no question, as before.
  */
 export function joinsInside(target: BodyHandle, faces: number, tool: BodyHandle, result: Pick<BooleanResult, "history">): boolean {
-  return result.history.some((h) => {
+  return targetFacesKept(target, tool, result).includes(faces);
+}
+
+/**
+ * Whether `joinsInside` could hold whatever the target's number of faces: told from the history alone, so the caller
+ * asks for the target's faces (which meshes it) only for a Join that may add nothing, never for one that adds.
+ */
+export function mayJoinInside(target: BodyHandle, tool: BodyHandle, result: Pick<BooleanResult, "history">): boolean {
+  return targetFacesKept(target, tool, result).length > 0;
+}
+
+/** For each result body that could be the target unchanged with the tool inside it: how many of the target's faces it keeps. */
+function targetFacesKept(target: BodyHandle, tool: BodyHandle, result: Pick<BooleanResult, "history">): number[] {
+  return result.history.flatMap((h) => {
     const from = h.faces.map((f, i) => [f, ...(h.also?.[i] ?? [])]);
-    if (!from.some((l) => l.some((x) => x.body === tool)) || from.some((l) => l.every((x) => x.body === tool))) return false;
+    if (!from.some((l) => l.some((x) => x.body === tool)) || from.some((l) => l.every((x) => x.body === tool))) return [];
     const there = new Set<number>();
     for (const l of from)
       for (const x of l) {
         if (x.body !== target) continue;
-        if (!x.whole && !l.some((y) => y.body === tool)) return false;
+        if (!x.whole && !l.some((y) => y.body === tool)) return [];
         there.add(x.face);
       }
-    return there.size === faces;
+    return [there.size];
   });
 }
 

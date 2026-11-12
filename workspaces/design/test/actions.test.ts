@@ -261,6 +261,24 @@ test("a clipboard the browser refuses comes back as a bad outcome, never thrown"
   assert.deepEqual(await run([profile]), { message: "Could not copy the profile: Write permission denied.", bad: true });
 });
 
+// Ben 2026-11-11 (#507): a downloaded STL is named after the design, not after the target's first shape.
+test("Download STL is named after the design: its name, else the file it was saved to, else the old shape name", async () => {
+  const run = async (name: string, fileName: string | null) => {
+    const { r, saved } = registry();
+    const { ctx } = context(box, kernel({ bytes: stl(""), rounding: 0, warning: null }));
+    (ctx.project as { name: string }).name = name;
+    (ctx as { fileName?: () => string | null }).fileName = () => fileName;
+    await r.get(DOWNLOAD_STL)!.run([body], ctx);
+    return saved[0].name;
+  };
+  assert.equal(await run("Bracket", null), "Bracket.stl", "the design's own name");
+  assert.equal(await run("Bracket", "other-file"), "Bracket.stl", "the name wins over the file");
+  assert.equal(await run("", "bracket-v3"), "bracket-v3.stl", "no name: the file it was saved to or opened from");
+  assert.equal(await run("Untitled", "bracket-v3"), "bracket-v3.stl", "the starting name Untitled counts as none");
+  assert.equal(await run("", null), "spindlelabs-box.stl", "nothing named: as before");
+  assert.equal(await run("Untitled", null), "spindlelabs-box.stl");
+});
+
 // ---- Copy as SVG of a sketch on a face seen from behind (export hunt 11-12, #639 item 2) ----
 
 /** An L (foot along +x at y 0..10, arm up to y 30 at x 10..20) drawn in a sketch on the box's face, copied as SVG with the real kernel. */

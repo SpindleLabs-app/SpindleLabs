@@ -14,7 +14,7 @@ import { partDocument, type DesignDocument } from "../src/document.ts";
 import { extrudeSketch, type OperationChoice } from "../src/extrude.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
-import { joinsInside } from "../src/misses.ts";
+import { joinsInside, mayJoinInside } from "../src/misses.ts";
 
 const kernel = nodeKernel();
 const near = (got: number, want: number) => assert.ok(Math.abs(got - want) <= 1e-6 * Math.max(1, want), `${got}, expected ${want}`);
@@ -154,4 +154,8 @@ test("joinsInside: the target's every face still there, the tool's faces all mer
   // No face of the tool at all (inside, touching nothing), or a body of its own (far away): `missedTools` has those.
   assert.equal(joinsInside(1, 2, 2, { history: [{ faces: [face(1, 0), face(1, 1)], edges: [] }] }), false);
   assert.equal(joinsInside(1, 2, 2, { history: [{ faces: [face(1, 0), face(1, 1)], edges: [] }, { faces: [face(2, 0)], edges: [] }] }), false);
+  // mayJoinInside is the same reading before the body's faces are counted: yes while it could be so for some count
+  // (the face gone above: one face kept, so a body of one face), no once a face is the tool's alone.
+  assert.equal(mayJoinInside(1, 2, { history: [{ faces: [face(1, 1)], also: [[face(2, 0)]], edges: [] }] }), true);
+  assert.equal(mayJoinInside(1, 2, { history: [{ faces: [face(1, 0), face(1, 1), face(2, 1)], also: [[], [face(2, 0)], []], edges: [] }] }), false);
 });
