@@ -17,6 +17,7 @@ import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 import { lengthRefused } from "./typed-entry.ts";
 import type { RegionRef } from "./regions.ts";
+import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { extrudeSketches, hasMoreProfiles, MORE_PROFILES_LIMIT, moreProfiles, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /**
@@ -48,7 +49,7 @@ export const extrudeStep = (doc: DesignDocument, sketchId: string) => `Extrude $
 /** The undo step a typed distance is recorded as, merged per box like the other sizes. */
 export const DISTANCE_STEP = "Change extrude distance";
 
-const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel}${profilesWords(f)} by ${distance} mm${flip ? ", flipped" : ""}${operationWords(f)}`;
+const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel}${profilesWords(f)} by ${distance} mm${flip ? ", flipped" : ""}${isSymmetric(f) ? ", symmetric" : ""}${operationWords(f)}`;
 
 /** After the first sketch's name in an extrude's summary, its other profiles (version 18): " and 2 more profiles"; nothing for one profile. */
 function profilesWords(f: Feature): string {
@@ -141,6 +142,12 @@ function withOperation(base: Feature, sketchId: string, label: string, choice: O
 /** Whether an extrude of a sketch goes the other way from its sketch's plane (step 26c; Fusion's Flip). */
 export const isFlipped = (f: Feature): boolean => f.intent.parameters.flip === true;
 
+/** Whether an extrude of a sketch goes half its distance each way from its sketch's plane (step 53a1; Fusion's Symmetric). */
+export const isSymmetric = (f: Feature): boolean => isSymmetricParams(f.intent.parameters);
+
+/** Why a symmetric extrude can't be flipped: both ways are the same body. */
+export const SYMMETRIC_NO_FLIP = "A symmetric extrude goes both ways from its sketch, so it has no Flip: untick Symmetric first.";
+
 /**
  * The document with an extrude of this sketch by `distance` mm added: a
  * new feature with the next id, put in at the marker (insertItem), which
@@ -203,11 +210,36 @@ export function setExtrudeFlip(doc: DesignDocument, on: boolean, id?: string): D
   if (!isSketchExtrude(old)) throw new Error(`${old.intent.summary} is not an extrude of a sketch`);
   if (typeof on !== "boolean") throw new Error(`flipping ${old.provenance.self.label} needs true or false, not ${shown(on)}`);
   if (isFlipped(old) === on) return doc;
+  if (on && isSymmetric(old)) throw new Error(SYMMETRIC_NO_FLIP);
   const { flip: _, ...rest } = old.intent.parameters;
   const sketchId = old.intent.parameters.sketch as string;
   const there = doc.timeline.features.some((f) => f.id === sketchId);
   const sketchLabel = there ? sketchItem(doc, sketchId).provenance.self.label : (old.provenance.from.find((p) => p.id === sketchId)?.label ?? sketchId);
   const feature: Feature = { ...old, intent: { ...old.intent, parameters: on ? { ...rest, flip: true } : rest, summary: summary(sketchLabel, old.intent.parameters.distance as number, on, old) } };
+  return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
+}
+
+/**
+ * The document with an extrude of a sketch (the part unless `id` names
+ * another) symmetric (`on`) or not (step 53a1): half its distance each way
+ * from its sketch's plane, the distance still the whole thickness. Turning
+ * it on drops Flip (both ways are the same body); `symmetric` is left out
+ * when off, so a file without it reads as before. The same document back
+ * when it already is.
+ */
+export function setExtrudeSymmetric(doc: DesignDocument, on: boolean, id?: string): DesignDocument {
+  const old = id === undefined ? partFeature(doc) : doc.timeline.features.find((f) => f.id === id);
+  if (!old) throw new Error(id === undefined ? "the design has no body to make symmetric" : `there is no feature ${shown(id)} in the design`);
+  if (!isSketchExtrude(old)) throw new Error(`${old.intent.summary} is not an extrude of a sketch`);
+  if (typeof on !== "boolean") throw new Error(`making ${old.provenance.self.label} symmetric needs true or false, not ${shown(on)}`);
+  if (isSymmetric(old) === on) return doc;
+  const { flip: _f, symmetric: _s, ...rest } = old.intent.parameters;
+  const parameters = on ? { ...rest, symmetric: true } : { ...rest, ...(isFlipped(old) ? { flip: true } : {}) };
+  const sketchId = old.intent.parameters.sketch as string;
+  const there = doc.timeline.features.some((f) => f.id === sketchId);
+  const sketchLabel = there ? sketchItem(doc, sketchId).provenance.self.label : (old.provenance.from.find((p) => p.id === sketchId)?.label ?? sketchId);
+  const changed: Feature = { ...old, intent: { ...old.intent, parameters } };
+  const feature: Feature = { ...changed, intent: { ...changed.intent, summary: summary(sketchLabel, old.intent.parameters.distance as number, !on && isFlipped(old), changed) } };
   return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
 }
 
@@ -329,13 +361,17 @@ export function signedDistance(typed: string): number | null {
  * (a sketch on a back or bottom face faces into the body, rebuild.ts
  * `placedSpec`) is kept and turned by the sign, so the result is exactly
  * what `featureSpec` gives for `extrudeSketch(doc, sketch, |signed|,
- * signed < 0)`.
+ * signed < 0)`. With `symmetric` (step 53a1) the sign is dropped and the
+ * extrude centred on the sketch's plane, as `featureSpec` gives for a
+ * symmetric extrude of |signed| mm.
  */
-export function previewSpec(base: BodySpec, signed: number): BodySpec {
+export function previewSpec(base: BodySpec, signed: number, symmetric = false): BodySpec {
   if (!("extrude" in base)) throw new Error("a preview is of an extrude of a sketch");
   const { flip: baseFlip, ...rest } = base.extrude;
-  const flip = (baseFlip === true) !== signed < 0;
-  return { extrude: { ...rest, distance: Math.abs(signed), ...(flip ? { flip: true } : {}) } };
+  // Symmetric (53a1): no way to turn, so the sign is dropped and the base's own way kept, then centred on the plane.
+  const flip = symmetric ? baseFlip === true : (baseFlip === true) !== signed < 0;
+  const spec: BodySpec = { extrude: { ...rest, distance: Math.abs(signed), ...(flip ? { flip: true } : {}) } };
+  return symmetric ? centredSpec(spec) : spec;
 }
 
 /**
@@ -347,18 +383,30 @@ export function previewSpec(base: BodySpec, signed: number): BodySpec {
  * extrude's direction, so for a negative distance the direction turns
  * back). Null for a view without the two caps (not an extrude).
  */
-export function arrowOf(view: BodyView, signed: number): ExtrudeArrow | null {
+export function arrowOf(view: BodyView, signed: number, symmetric = false): ExtrudeArrow | null {
   const start = view.face_roles.findIndex((r) => r?.role === "start");
   const end = view.face_roles.findIndex((r) => r?.role === "end");
   if (start < 0 || end < 0 || !(signed !== 0)) return null;
   const s = view.face_centroids[start], e = view.face_centroids[end];
-  const way = [0, 1, 2].map((i) => (e[i] - s[i]) / signed);
+  // Symmetric (53a1): the caps are |signed| apart whatever the sign, the arrow standing on the sketch's plane, half way
+  // between them, half the distance long, so a drag of the tip to s puts the distance at 2s (`symmetricDrag`).
+  const over = symmetric ? Math.abs(signed) : signed;
+  const way = [0, 1, 2].map((i) => (e[i] - s[i]) / over);
   const n = Math.hypot(...way);
   if (!(n > 0) || !Number.isFinite(n)) return null;
+  if (symmetric) return { base: [(s[0] + e[0]) / 2, (s[1] + e[1]) / 2, (s[2] + e[2]) / 2], direction: [way[0] / n + 0, way[1] / n + 0, way[2] / n + 0], distance: over / 2 };
   const base = onFace(view, start, [s[0], s[1], s[2]]);
   // + 0: a component 0 divided by a negative distance is −0, the same direction.
   return { base, direction: [way[0] / n + 0, way[1] / n + 0, way[2] / n + 0], distance: signed };
 }
+
+/**
+ * A symmetric extrude's distance from its arrow dragged to `s` mm from the
+ * sketch's plane (53a1): each side is s, so the whole thickness is 2s,
+ * snapped by `snap` (the viewport's whole millimetres) and never negative
+ * (dragging past the plane is the same body).
+ */
+export const symmetricDrag = (s: number, snap: (d: number) => number): number => Math.abs(snap(2 * s));
 
 type Vec3 = [number, number, number];
 

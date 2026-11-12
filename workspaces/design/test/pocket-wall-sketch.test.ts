@@ -201,7 +201,7 @@ test("control: a sketch from before version 19 (no record of its side) is placed
 
 test("data version 19: the record reads back, version 18 data opens with none, and a wrong one is refused in words", async () => {
   const p = await pocketPad(false, false);
-  assert.equal(p.doc.version, 19);
+  assert.equal(p.doc.version, 20);
   const json = JSON.parse(JSON.stringify(p.doc));
   assert.deepEqual(readDesignDocument(json), p.doc);
   // Version 18 data never holds the record: opened as 19, its sketch with none, so never judged.
@@ -209,7 +209,7 @@ test("data version 19: the record reads back, version 18 data opens with none, a
   v18.version = 18;
   delete v18.sketches.find((k: { id: string }) => k.id === p.sketch).face.reversed;
   const opened = readDesignDocument(v18);
-  assert.equal(opened.version, 19);
+  assert.equal(opened.version, 20);
   assert.equal(opened.sketches.find((k) => k.id === p.sketch)!.face!.reversed, undefined);
   // Version 18 or 17 data holding it is refused: only version 19 brought it.
   for (const version of [18, 17]) {

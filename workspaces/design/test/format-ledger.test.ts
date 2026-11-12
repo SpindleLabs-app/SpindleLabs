@@ -48,7 +48,9 @@ export function propertyNames(source: string, name: string): string[] {
 // Design data version 19 (SL #583 item 3): a face sketch's `face` may record `reversed`, whether its face was its name's
 // face turned round when drawn (a Cut's wall); it changes what is built (a face found the other way about holds the
 // sketch with its plane lost), and a version 18 reader would place it silently.
-const LEDGER_VERSION = 19;
+// Design data version 20 (step 53a1): an extrude of a sketch may say `symmetric: true` in its parameters (going half its
+// distance each way from the sketch's plane), which a version 19 reader would build all on one side.
+const LEDGER_VERSION = 20;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

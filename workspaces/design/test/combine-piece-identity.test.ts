@@ -166,7 +166,7 @@ test("an old version 12 file with pieces opens and gets each piece's faces, as i
   const v12 = { ...JSON.parse(JSON.stringify(second.doc)), version: 12 };
   for (const b of v12.bodies) delete b.faces;
   const opened = readDesignDocument(v12);
-  assert.equal(opened.version, 19);
+  assert.equal(opened.version, 20);
   assert.ok(opened.bodies!.every((b) => b.faces === undefined));
   const first = await built(opened);
   await first.cache.close();

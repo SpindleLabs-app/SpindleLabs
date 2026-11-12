@@ -271,7 +271,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 19;
+  version: 20;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -463,7 +463,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 19, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 20, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -1666,6 +1666,12 @@ function hasVersion19Fields(d: Record<string, unknown>): boolean {
   return (Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "reversed"));
 }
 
+/** Whether version 19 data has a symmetric extrude (step 53a1), which only version 20 holds. */
+function hasVersion20Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "symmetric"));
+}
+
 /** Whether version 17 data has an extrude holding more profiles (`more`), which only version 18 allows. */
 function hasVersion18Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
@@ -1810,7 +1816,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 19;
+export const DESIGN_VERSION = 20;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1877,10 +1883,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 19 (SL #583 item 3) lets a face sketch record whether its face was its name's face turned round (a Cut's
   // wall); version 18 data never held it, and opens with none, never judged so.
   if (v18.version === 18 && hasVersion19Fields(v18)) throw new Error(`Design data says version ${shown(given)} but has a sketch recording which way its face was drawn, which version 19 brought`);
-  const d = (v18.version === 18 ? { ...v18, version: 19 } : v18) as Partial<DesignDocument>;
+  const v19 = v18.version === 18 ? { ...v18, version: 19 } : v18;
+  // Version 20 (step 53a1) lets an extrude go half its distance each way from its sketch (`symmetric`), which version 19
+  // never held (a version 19 reader would build it all on one side); other version 19 data is read as it is.
+  if (v19.version === 19 && hasVersion20Fields(v19)) throw new Error(`Design data says version ${shown(given)} but has a symmetric extrude, which version 20 brought`);
+  const d = (v19.version === 19 ? { ...v19, version: 20 } : v19) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 19 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 or 19)`);
+  // A whole number above 20 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 or 20)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1963,6 +1973,9 @@ export function readDesignDocument(data: unknown): DesignDocument {
       throw new Error(extruded.length === 1 ? `Design feature ${f.id} extrudes ${p.sketch} but does not depend on it` : `Design feature ${f.id} extrudes ${extruded.join(" and ")} but does not depend on exactly them, in that order`);
     if (!isFiniteNumber(p.distance)) throw new Error(`Design feature ${f.id}: distance ${shown(p.distance)} is not a number of mm`);
     if (Object.hasOwn(p, "flip") && p.flip !== true) throw new Error(`Design feature ${f.id}: flip must be true or left out, not ${shown(p.flip)}`);
+    // Symmetric (version 20): true or left out, and never with Flip, which a body going both ways can't have.
+    if (Object.hasOwn(p, "symmetric") && p.symmetric !== true) throw new Error(`Design feature ${f.id}: symmetric must be true or left out, not ${shown(p.symmetric)}`);
+    if (p.symmetric === true && Object.hasOwn(p, "flip")) throw new Error(`Design feature ${f.id} is symmetric and flipped: a symmetric extrude goes both ways, so it has no Flip`);
     if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
   }
   if (Object.hasOwn(d, "kept")) {

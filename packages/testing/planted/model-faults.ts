@@ -327,9 +327,9 @@ export const PLANTS: Record<ModelFault, Plant> = {
       { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch, regionOf(f))) {", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch, regionOf(f)))) {" },
       {
         file: REBUILD,
-        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);",
+        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region, both);",
         replace:
-          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
+          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region, both);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
       },
     ],
     run: ["timeline"],
