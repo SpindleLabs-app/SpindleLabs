@@ -37,7 +37,7 @@ export type { ChangeCause, ChangeNote, ChangeNoteState } from "./model/change-no
 export { ChangeNotes, noteText } from "./model/change-notes.ts";
 export type { Command, CommandSpec, ParamSpec, Parsed } from "./model/commands.ts";
 export { commandListSchema, commandSchema, MAX_EXPLANATION, parseCommand, parseCommandList } from "./model/commands.ts";
-export type { Feature, Intent, Origin, ParameterValue, Provenance, RegionParameter, Timeline } from "./model/feature.ts";
+export type { Feature, Intent, Origin, ParameterValue, ProfilesParameter, Provenance, RegionParameter, Timeline } from "./model/feature.ts";
 export { describeProvenance, workspaceName } from "./model/feature.ts";
 export type { FileFormat, FileFormatInfo, FileHead, FileImporter, FileRoute, Identified } from "./model/files.ts";
 export { claimedFormat, FILE_FORMATS, formatInfo, HEAD_BYTES, identifyFile, routeFiles } from "./model/files.ts";
