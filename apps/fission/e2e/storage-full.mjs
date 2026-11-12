@@ -3,6 +3,9 @@
 // next write of any size gets a real QuotaExceededError. Then the ways out a person would try:
 // - deleting an old project from File > Projects in this browser makes room (item 2: it was refused, in the words of
 //   a save, because a full store refuses any step that writes, even one that makes it smaller).
+// - opening the other project and coming back shows the change the store had no room for, not the older state (item 3);
+// - once there is room again the save is tried again by itself (item 5);
+// - site data cleared under the open app: the design on screen is stored again, so a reload opens it (item 4).
 // Chromium only: the other engines have no quota override (the storage package's unit tests cover the rule there).
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
@@ -133,6 +136,51 @@ try {
     );
     assert.equal(left, 1, "one project's text is left in the store");
     assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  await check("storage full: the open project's change survives opening the other project and coming back (it showed the older state, marked Saved)", async () => {
+    const { context, page, cdp } = await twoProjects();
+    await fillStorage(page, cdp);
+    await typeWidth(page, "60");
+    await volume(page, "36,000 mm³");
+    await notSaved(page);
+    await showList(page);
+    await page.locator("#projects-items .project-row:not([data-open]) .project-open").first().click();
+    await volume(page, "30,000 mm³"); // "Untitled", 50 wide
+    await page.waitForTimeout(1500);
+    await showList(page);
+    await page.locator("#projects-items .project-row", { has: page.locator(".project-row-name", { hasText: "Second" }) }).locator(".project-open").click();
+    await page.waitForFunction(() => /mm³/.test(document.querySelector("#volume")?.textContent ?? "") && document.querySelector("#volume").textContent !== "30,000 mm³", null, { timeout: 15000 });
+    await page.waitForTimeout(1500);
+    console.log(`  Second opened again: ${await page.textContent("#volume")} | ${await status(page)}`);
+    assert.equal(await page.textContent("#volume"), "36,000 mm³", "the width 60 the person last gave it");
+    assert.match(await status(page), /^Not saved: this browser's storage had no room for your latest changes/);
+    assert.match(await saveFile(page), /"width": ?60/, "Save to a file holds the width 60");
+    await context.close();
+  });
+
+  await check("storage full, then room again: the save is tried again by itself, with no edit and no reload", async () => {
+    const { context, page, cdp } = await twoProjects();
+    await fillStorage(page, cdp);
+    await typeWidth(page, "63");
+    await volume(page, "37,800 mm³");
+    await notSaved(page);
+    await cdp.send("Storage.overrideQuotaForOrigin", { origin }); // the cap taken away: room again
+    await until(page, () => document.querySelector("#save-status").dataset.state === "saved", null, "Saved by itself within 45 s (tries after 10 s, then 30 s)", 45000);
+    await context.close();
+  });
+
+  await check("site data cleared under the open app: the design is stored again at once, and a reload still opens it", async () => {
+    const { context, page, cdp } = await twoProjects();
+    await cdp.send("Storage.clearDataForOrigin", { origin, storageTypes: "all" });
+    await page.waitForTimeout(3500);
+    const asked = [];
+    page.on("dialog", (d) => (asked.push(d.type()), void d.accept()));
+    await page.reload({ waitUntil: "load" });
+    await page.waitForTimeout(4000);
+    console.log(`  after the clear and a reload: ${await page.textContent("#volume")} | ${await status(page)}`);
+    assert.equal(await page.textContent("#volume"), "27,000 mm³", "the design that was on screen, marked Saved, is gone");
     await context.close();
   });
 } finally {
