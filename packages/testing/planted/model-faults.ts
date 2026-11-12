@@ -505,7 +505,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "lost-plane-silent": {
     fault: "lost-plane-silent",
     what: "a face sketch held at its last placement says nothing",
-    edits: [{ file: REBUILD, find: "side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } };", replace: "side: p.side } };" }],
+    edits: [{ file: REBUILD, find: "side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } });", replace: "side: p.side } });" }],
     run: ["naming"],
     caught: "hand-worked: a sketch on a cylinder's flat top",
     why: "the hand-worked file naming a cylinder's side comes before the Fusion answers",

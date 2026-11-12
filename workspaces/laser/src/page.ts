@@ -1,18 +1,33 @@
-// The Laser page (step L1a, behind `?laser`, flag.ts): Design's flat shapes
-// (its sketches and ready-made profiles) laid out on the laser's bed, drawn
-// from above in the shared view, and saved as SVG or DXF at true size.
+// The Laser page (steps L1a, L1a2 and L1b, behind `?laser`, flag.ts): Design's flat
+// shapes (its sketches and ready-made profiles) laid out on the laser's bed,
+// shown flat from above (flat-view.ts: laser cutting is 2D, so the view only
+// slides and zooms), and saved as SVG or DXF at true size.
 //
 // The shapes are read through the representation registry (Design's
 // "design:outlines" lister and its outline producer), never from Design's
 // own code, and never copied into the project: every time the page shows
 // it reads them again, so a sketch changed in Design is changed here. The
 // project keeps only Laser's own choices (`LaserData`: the bed, the gap,
-// the parts turned off). Styles: src/styles/laser-page.css.
+// the parts turned off, where parts were put by hand).
+//
+// Parts start in rows. Once the person moves or turns one (a drag on the
+// bed, the arrows, the Turn button, or numbers typed under "Part"), every
+// part on the bed keeps the place it has (`LaserData.placed`, by the part's
+// id in Design), so nothing else shifts; parts drawn later find room in rows
+// round them, and "Arrange in rows" forgets every place. A part may be put
+// anywhere, so one reaching past the bed's edge is said so in words and
+// marked on the bed, never moved back silently. So are two parts that
+// overlap: for each pair whose boxes overlap the kernel is asked whether the
+// shapes themselves do (overlap.ts), and the answer is said in words and
+// marked on both parts. Styles: src/styles/laser-page.css.
 
-import type { DisplayMesh, KernelCalls, ListedObject, MountedWorkspace, Outline, RepresentationRegistry, WorkspaceContext } from "@fission/core";
+import { NewerFormatError, type ListedObject, type MountedWorkspace, type Outline, type RepresentationRegistry, type WorkspaceContext } from "@fission/core";
 import { saveFile, type SaveKind } from "@fission/ui";
 import { sheetDxf } from "./dxf.ts";
-import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, layOut, thicknessRefusal, mmWords, outlineBox, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
+import { createFlatView, type FlatScene } from "./flat-view.ts";
+import { BOX_MARGIN, partsRelation, type PartsRelation } from "./overlap.ts";
+import { cleanMm, layOutPlaced, normalAngle, offBedWords, overlapCandidates, placementRefusal, readPlacements, turnedOnTheSpot, type LaidLayout, type LaidPart, type Placement } from "./place.ts";
+import { bedRefusal, DEFAULT_BED, DEFAULT_GAP, DEFAULT_THICKNESS, thicknessRefusal, mmWords, outlineBox, outlinePath, sheetSvg, type Bed, type Layout, type SheetPart } from "./sheet.ts";
 
 /** Design's lister for flat shapes (Design's representations.ts DESIGN_OUTLINES). */
 export const OUTLINES_LISTER = "design:outlines";
@@ -22,18 +37,45 @@ export const DXF_KIND: SaveKind = { description: "DXF drawing for a laser cutter
 
 /** What the project keeps for Laser: its own choices only, never Design's shapes. */
 export interface LaserData {
-  version: 1;
+  version: 2;
   bed: Bed;
   gap: number;
-  /** The sheet's thickness, mm: how the parts are drawn now; what engraving focuses on and joints are sized by later. */
+  /** The sheet's thickness, mm: kept for what engraving focuses on and joints are sized by later; nothing reads it yet, so the page has no box for it. */
   thickness: number;
   /** The parts turned off, by their id in Design. */
   off: string[];
+  /** Where parts were put by hand (place.ts), by their id in Design; a part not here is laid out in rows. */
+  placed: Record<string, Placement>;
 }
 
-export const defaultLaserData = (): LaserData => ({ version: 1, bed: { ...DEFAULT_BED }, gap: DEFAULT_GAP, thickness: DEFAULT_THICKNESS, off: [] });
+/**
+ * The version of Laser's data this build writes. 1: bed, gap, thickness, off. 2: `placed` (parts placed by hand, L1b1).
+ * A change to what the data holds takes the next number and a step in `readLaserProjectData`, so a build from before
+ * it refuses the data instead of storing it again without the new part.
+ */
+export const LASER_DATA_VERSION = 2;
 
-/** The project's Laser data, read defensively: anything missing or not usable falls back to the default, never throws. */
+export const defaultLaserData = (): LaserData => ({ version: LASER_DATA_VERSION, bed: { ...DEFAULT_BED }, gap: DEFAULT_GAP, thickness: DEFAULT_THICKNESS, off: [], placed: {} });
+
+/**
+ * Laser's part of a project as it is opened (the plugin's `readData`, asked by core's `projectFromJson`): brought up to
+ * the version this build writes, one step at a time, with everything else it holds kept. Data from a later Laser is
+ * refused as newer (core's `NewerFormatError`: the project is then kept for a build that reads it, never stored again
+ * with the unknown parts dropped); data that is not Laser's is refused in words.
+ */
+export function readLaserProjectData(data: unknown): unknown {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) throw new Error("Laser data must be an object");
+  let d = data as Record<string, unknown>;
+  const v = d.version;
+  if (typeof v !== "number") throw new Error("Laser data has no version");
+  if (!Number.isInteger(v) || v < 1) throw new Error(`Laser data version ${v} is not one this SpindleLabs reads`);
+  if (v > LASER_DATA_VERSION) throw new NewerFormatError(`it was saved by a newer SpindleLabs (Laser data version ${v}; this one reads up to ${LASER_DATA_VERSION})`);
+  // 1 → 2: parts placed by hand arrive (L1b1). Version 1 had none.
+  if (d.version === 1) d = { ...d, version: 2, placed: {} };
+  return d;
+}
+
+/** The project's Laser data as the page uses it, read defensively: anything missing or not usable falls back to the default, never throws. */
 export function readLaserData(data: unknown): LaserData {
   const out = defaultLaserData();
   if (typeof data !== "object" || data === null) return out;
@@ -48,6 +90,7 @@ export function readLaserData(data: unknown): LaserData {
   }
   if (typeof d.thickness === "number" && thicknessRefusal(d.thickness) === null) out.thickness = d.thickness;
   if (Array.isArray(d.off)) out.off = d.off.filter((x): x is string => typeof x === "string");
+  out.placed = readPlacements(d.placed);
   return out;
 }
 
@@ -74,58 +117,64 @@ export async function readParts(registry: RepresentationRegistry, objects: reado
 export const partsOn = (offered: readonly OfferedPart[], off: readonly string[]): SheetPart[] =>
   offered.flatMap((p) => ("outline" in p && !off.includes(p.id) ? [{ id: p.id, label: p.label, outline: p.outline }] : []));
 
-/** The words under the bed: how many parts are on it, and each one left off with why. */
-export function layoutWords(layout: Layout, offered: number): string {
+/** How two parts on the bed lie, as the page keeps it: their places in `layout.placed`, and the kernel's answer (overlap.ts). */
+export interface PairRelation {
+  a: number;
+  b: number;
+  relation: PartsRelation;
+}
+
+/**
+ * What a pair's answer means for the person, or null when there is nothing to say (the parts lie apart). `mark` is set
+ * when both parts are marked on the bed: they overlap, or they are too close to tell a touch from an overlap. Parts
+ * that only touch are said, not marked: their cuts would share a line, which is the person's to judge.
+ */
+export function pairWords(aLabel: string, bLabel: string, r: PartsRelation): { words: string; mark: boolean } | null {
+  if (r.relation === "apart") return null;
+  if (r.relation === "overlap") return { words: `${aLabel} and ${bLabel} overlap.`, mark: true };
+  if (r.relation === "touch") return { words: `${aLabel} and ${bLabel} touch: their cuts would share a line.`, mark: false };
+  if (r.meet) return { words: `${aLabel} and ${bLabel} touch or overlap: they are too close to tell which.`, mark: true };
+  return { words: `Couldn't check whether ${aLabel} and ${bLabel} overlap: ${r.why ?? "the kernel gave no answer"}.`, mark: false };
+}
+
+/** The words under the bed: how many parts are on it, each one left off with why, and (given the bed) each one reaching past its edge and each pair that overlaps or touches. */
+export function layoutWords(layout: Layout, offered: number, bed?: Bed, pairs: readonly PairRelation[] = []): string {
   if (offered === 0) return "Nothing to cut yet: draw a closed sketch in Design and it appears here.";
   const n = layout.placed.length;
   const on = n === 0 ? "No parts on the bed." : `${n} ${n === 1 ? "part" : "parts"} on the bed.`;
-  return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`)].join(" ");
+  const off = bed ? layout.placed.flatMap((p) => offBedWords(p, bed) ?? []) : [];
+  const meet = pairs.flatMap((p) => pairWords(layout.placed[p.a]?.label ?? "?", layout.placed[p.b]?.label ?? "?", p.relation)?.words ?? []);
+  return [on, ...layout.left.map((l) => `${l.label} is left off: ${l.why}.`), ...off, ...meet].join(" ");
 }
 
-/** The parts as the kernel draws them: each placed outline made a sheet `thickness` thick (make_extrude), so the view is the
- * kernel's own tessellation of the exact arcs, never one worked out here (packages/CLAUDE.md: 2D curve maths lives in the
- * kernel). A part the kernel refuses is counted with why, never drawn wrong. */
-export async function partMeshes(kernel: KernelCalls, layout: Layout, thickness: number): Promise<{ meshes: DisplayMesh[]; failed: { label: string; why: string }[] }> {
-  const meshes: DisplayMesh[] = [];
-  const failed: { label: string; why: string }[] = [];
-  for (const p of layout.placed) {
-    try {
-      meshes.push((await kernel.call("make_extrude", p.outline, thickness)).mesh);
-    } catch (e) {
-      failed.push({ label: p.label, why: e instanceof Error ? e.message : String(e) });
-    }
-  }
-  return { meshes, failed };
+/** Words for the middle of a bed with nothing on it, a line each; none when a part is on it. */
+export function emptyBedNote(layout: Layout, offered: number): string[] {
+  if (layout.placed.length > 0) return [];
+  return offered === 0 ? ["Nothing to cut yet.", "Closed sketches from Design appear here."] : ["No parts on the bed."];
 }
 
-/** How far under the parts the bed is drawn, mm, so their bottoms never flicker against it. */
-export const BED_DROP = 0.05;
-
-/** The bed seen from above (two triangles just under z = 0, outlined) with the parts' meshes on it, as one mesh. Pure. */
-export function bedMesh(bed: Bed, parts: readonly DisplayMesh[]): DisplayMesh {
-  const { width: w, height: h } = bed;
-  const z = -BED_DROP;
-  const out: DisplayMesh = {
-    positions: [0, 0, z, w, 0, z, w, h, z, 0, h, z],
-    normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
-    indices: [0, 1, 2, 0, 2, 3],
-    triangle_faces: [0, 0],
-    edge_lines: [0, 0, z, w, 0, z, w, 0, z, w, h, z, w, h, z, 0, h, z, 0, h, z, 0, 0, z],
-    edge_line_edges: [0, 0, 0, 0],
+/**
+ * What the flat view draws: the bed, and each placed part by the path data
+ * the saved SVG file gets (sheet.ts `outlinePath`, core's writer), so the
+ * screen and the file can't differ, and no arc is worked out here.
+ */
+export function flatScene(layout: Layout, bed: Bed, offered: number, picked: string | null = null, pairs: readonly PairRelation[] = []): FlatScene {
+  return {
+    bed,
+    parts: layout.placed.map((p, i) => {
+      const off = offBedWords(p, bed);
+      // The warnings without the part's own name ("off the bed: 5 mm past the right side", "overlaps Sketch 2"): they are said on the part itself.
+      const warns = off ? [off.slice(p.label.length + 4, -1)] : [];
+      for (const pair of pairs) {
+        if (pair.a !== i && pair.b !== i) continue;
+        const other = layout.placed[pair.a === i ? pair.b : pair.a];
+        if (other && pairWords(p.label, other.label, pair.relation)?.mark) warns.push(pair.relation.relation === "overlap" ? `overlaps ${other.label}` : `touches or overlaps ${other.label}`);
+      }
+      return { id: p.id, label: p.label, d: outlinePath(p.outline).d, box: { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height }, ...(warns.length > 0 && { warn: warns.join("; ") }) };
+    }),
+    note: emptyBedNote(layout, offered),
+    picked,
   };
-  let face = 1;
-  for (const m of parts) {
-    const base = out.positions.length / 3;
-    out.positions.push(...m.positions);
-    out.normals.push(...m.normals);
-    out.indices.push(...m.indices.map((i) => i + base));
-    const faces = m.triangle_faces.length === 0 ? 0 : Math.max(...m.triangle_faces) + 1;
-    out.triangle_faces.push(...m.triangle_faces.map((f) => f + face));
-    face += faces;
-    out.edge_lines.push(...m.edge_lines);
-    out.edge_line_edges.push(...m.edge_line_edges.map(() => 0));
-  }
-  return out;
 }
 
 /** Hands a file to the person (the browser's save box); a test passes its own. */
@@ -139,20 +188,37 @@ const browserSave =
     return r.status === "saved" ? r.name : false;
   };
 
-/** The page's mounting; `save` replaces the browser's save box (tests). */
-export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedWorkspace {
+/** Asks how two parts lie (overlap.ts `partsRelation`, the kernel's answer); a test passes its own. */
+export type Relate = (a: Outline, b: Outline) => Promise<PartsRelation>;
+
+/** The most answers about pairs of parts kept at once (each a pair of outlines as text and a word): past it the oldest go. */
+const ANSWERS_KEPT = 400;
+
+/** The page's mounting; `save` replaces the browser's save box and `relate` the kernel's answer about two parts (tests). */
+export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: Relate): MountedWorkspace {
   const doc = ctx.toolbar.ownerDocument;
   const saveText = save ?? browserSave(doc);
+  const relation: Relate = relate ?? ((a, b) => partsRelation(ctx.kernel, a, b));
+  /** The kernel's answers about pairs of parts as they sit (both outlines, as text), so a redraw that moved neither asks nothing again. */
+  const answers = new Map<string, PartsRelation>();
+  /** The pairs being asked about now, by the same text. */
+  const asking = new Set<string>();
+  /** The pairs of the layout drawn whose answer is known. */
+  let pairs: PairRelation[] = [];
   let live = true;
   let awake = true;
   let reading = 0;
   let offered: OfferedPart[] = [];
-  let layout: Layout = { placed: [], left: [] };
+  let layout: LaidLayout = { placed: [], left: [] };
+  /** The part picked on the bed, by id: the one "Part" in the properties is about. */
+  let picked: string | null = null;
 
   const data = () => readLaserData(ctx.project.workspaces.laser);
-  const store = (next: LaserData, label: string) => {
-    ctx.project.workspaces.laser = next;
-    ctx.projectChanged(label);
+  const store = (next: LaserData, label: string, mergeKey?: string) => {
+    // Over what the project holds, so anything there beside the fields this page knows stays in the project.
+    const held = ctx.project.workspaces.laser;
+    ctx.project.workspaces.laser = typeof held === "object" && held !== null && !Array.isArray(held) ? { ...held, ...next } : next;
+    ctx.projectChanged(label, mergeKey);
   };
 
   // The parts, in the browser.
@@ -173,28 +239,114 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
 <label class="laser-page-field">Width <input name="width" type="number" min="1" max="3000" step="any" inputmode="decimal"> mm</label>
 <label class="laser-page-field">Height <input name="height" type="number" min="1" max="3000" step="any" inputmode="decimal"> mm</label>
 <label class="laser-page-field">Gap between parts <input name="gap" type="number" min="0" step="any" inputmode="decimal"> mm</label>
-<label class="laser-page-field">Sheet thickness <input name="thickness" type="number" min="0" max="50" step="any" inputmode="decimal"> mm</label>
 <p class="laser-page-words" role="status"></p>
+<button type="button" class="laser-page-arrange" data-arrange>Arrange in rows</button>
+<fieldset class="laser-page-part" hidden>
+<legend></legend>
+<label class="laser-page-field">X <input name="x" type="number" step="any" inputmode="decimal"> mm</label>
+<label class="laser-page-field">Y <input name="y" type="number" step="any" inputmode="decimal"> mm</label>
+<label class="laser-page-field">Angle <input name="angle" type="number" step="any" inputmode="decimal"> °</label>
+<p class="laser-page-part-words" role="status"></p>
+<div class="laser-page-turns"><button type="button" data-turn="90">Turn left</button><button type="button" data-turn="-90">Turn right</button><button type="button" data-rows>Back in the rows</button></div>
+</fieldset>
 <div class="laser-page-files"><button type="button" data-save="svg">Save SVG</button><button type="button" data-save="dxf">Save DXF</button></div>
-<p class="laser-page-note">Sizes are exact, in mm, with arcs kept as arcs. Kerf, power and speed are set in your laser program for now.</p>`;
+<p class="laser-page-note">Drag a part on the bed to move it; X and Y are its lower-left corner from the bed's. Sizes are exact, in mm, with arcs kept as arcs. Kerf, power and speed are set in your laser program for now.</p>`;
   ctx.properties.append(panel);
   const input = (name: string) => panel.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
   const words = panel.querySelector<HTMLElement>(".laser-page-words")!;
   const buttons = [...panel.querySelectorAll<HTMLButtonElement>("button[data-save]")];
+  const arrange = panel.querySelector<HTMLButtonElement>("button[data-arrange]")!;
+  const partBox = panel.querySelector<HTMLFieldSetElement>(".laser-page-part")!;
+  const partWords = panel.querySelector<HTMLElement>(".laser-page-part-words")!;
 
   const fill = () => {
     const d = data();
     input("width").value = String(d.bed.width);
     input("height").value = String(d.bed.height);
     input("gap").value = String(d.gap);
-    input("thickness").value = String(d.thickness);
   };
 
-  /** Counts the view's builds: a later one replaces an earlier one still asking the kernel. */
-  let drawing = 0;
-  const draw = async (frame: boolean): Promise<void> => {
+  // The view: flat, over the shared viewport's empty 2D view (the body, the 3D grid and the view cube are away meanwhile).
+  const flat = createFlatView(doc, {
+    cards: () => [ctx.browser, ctx.properties],
+    onPick: (id) => {
+      picked = id;
+      draw(false);
+    },
+    onMove: (id, dx, dy, key) => {
+      const p = layout.placed.find((x) => x.id === id);
+      if (p) put(p, { x: cleanMm(p.x + dx), y: cleanMm(p.y + dy), angle: p.angle }, `Move ${p.label} on the laser bed`, key ? `laser-move-${id}` : undefined);
+    },
+    onTurn: (id, degrees) => turn(id, degrees),
+  });
+  const showView = () => {
+    ctx.viewport.showImage(null);
+    flat.attach(ctx.viewport.element);
+  };
+  const hideView = () => {
+    flat.detach();
+    ctx.viewport.clearImage(); // the body and the 3D camera come back as they were
+  };
+  flat.show({ bed: data().bed, parts: [] }, true); // the project's own bed at once, empty until Design's shapes have been read
+  showView();
+
+  /**
+   * Puts part `p` at `at` (said in words and left alone when it can't be). The first part put by hand fixes every part
+   * on the bed where it is now, so nothing else shifts as the rows close up behind it.
+   */
+  const put = (p: LaidPart, at: Placement, label: string, mergeKey?: string): boolean => {
+    const why = placementRefusal(at);
+    picked = p.id;
+    if (why) {
+      draw(false);
+      partWords.textContent = why;
+      return false;
+    }
+    const now = data();
+    const placed: Record<string, Placement> = { ...now.placed };
+    for (const q of layout.placed) if (!Object.hasOwn(placed, q.id)) placed[q.id] = { x: q.x, y: q.y, angle: q.angle };
+    placed[p.id] = { x: at.x, y: at.y, angle: normalAngle(at.angle) };
+    store({ ...now, placed }, label, mergeKey);
+    draw(false);
+    return true;
+  };
+  /** Turns part `id` to `angle` degrees (or by `by`) about the middle of its box, so it turns on the spot. */
+  const turn = (id: string, by: number, to?: number) => {
+    const p = layout.placed.find((x) => x.id === id);
+    const source = offered.find((o) => o.id === id);
+    if (!p || !source || !("outline" in source)) return;
+    const angle = to ?? p.angle + by;
+    if (!Number.isFinite(angle)) {
+      partWords.textContent = "A part's place and angle must be numbers.";
+      return;
+    }
+    put(p, turnedOnTheSpot(source.outline, p, angle), `Turn ${p.label} on the laser bed`);
+  };
+
+  const draw = (frame: boolean): void => {
     const d = data();
-    layout = layOut(partsOn(offered, d.off), d.bed, d.gap);
+    layout = layOutPlaced(partsOn(offered, d.off), d.bed, d.gap, d.placed);
+    const part = layout.placed.find((p) => p.id === picked) ?? null;
+    if (!part) picked = null;
+    // Pairs whose boxes overlap or all but touch (further apart, the parts are apart and nothing is asked): the answer kept
+    // for them as they sit, or the kernel asked (the page is drawn again when it answers).
+    pairs = [];
+    for (const [a, b] of overlapCandidates(layout.placed, BOX_MARGIN)) {
+      const key = JSON.stringify([layout.placed[a].outline, layout.placed[b].outline]);
+      const known = answers.get(key);
+      if (known) pairs.push({ a, b, relation: known });
+      else if (!asking.has(key)) {
+        asking.add(key);
+        void relation(layout.placed[a].outline, layout.placed[b].outline)
+          .catch((e): PartsRelation => ({ relation: "unknown", why: e instanceof Error ? e.message : String(e) }))
+          .then((answer) => {
+            asking.delete(key);
+            if (answers.size >= ANSWERS_KEPT) answers.delete(answers.keys().next().value!);
+            answers.set(key, answer);
+            if (live) draw(false);
+          });
+      }
+    }
     items.replaceChildren(
       ...offered.map((p) => {
         const li = doc.createElement("li");
@@ -211,7 +363,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
         box.addEventListener("change", () => {
           const now = data();
           store({ ...now, off: box.checked ? now.off.filter((x) => x !== p.id) : [...now.off, p.id] }, box.checked ? `Put ${p.label} on the laser bed` : `Take ${p.label} off the laser bed`);
-          void draw(false);
+          draw(false);
         });
         const b = outlineBox(p.outline);
         label.append(box, ` ${p.label}, ${mmWords(b.maxX - b.minX)} × ${mmWords(b.maxY - b.minY)} mm`);
@@ -219,34 +371,63 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
         return li;
       }),
     );
-    words.textContent = layoutWords(layout, offered.length);
+    words.textContent = layoutWords(layout, offered.length, d.bed, pairs);
     for (const b of buttons) b.disabled = layout.placed.length === 0;
-    const mine = ++drawing;
-    const { meshes, failed } = await partMeshes(ctx.kernel, layout, d.thickness);
-    if (!live || mine !== drawing) return;
-    if (failed.length > 0) words.textContent += ` ${failed.map((f) => `${f.label} could not be drawn: ${f.why}.`).join(" ")}`;
-    if (awake) {
-      ctx.viewport.showBody(bedMesh(d.bed, meshes));
-      if (frame) ctx.viewport.setView("top"); // frames the bed from above (fit() would frame it from the home view)
+    arrange.hidden = Object.keys(d.placed).length === 0;
+    partBox.hidden = part === null;
+    if (part) {
+      partBox.querySelector("legend")!.textContent = part.label;
+      input("x").value = String(part.x);
+      input("y").value = String(part.y);
+      input("angle").value = String(part.angle);
+      const at = layout.placed.indexOf(part);
+      const meets = pairs.flatMap((p) => (p.a === at || p.b === at ? (pairWords(layout.placed[p.a].label, layout.placed[p.b].label, p.relation)?.words ?? []) : []));
+      const said = [offBedWords(part, d.bed) ?? [], meets].flat();
+      partWords.textContent = said.length > 0 ? said.join(" ") : part.by === "rows" ? "In the rows. Move or turn it and every part stays where it is." : "";
+      partBox.querySelector<HTMLButtonElement>("button[data-rows]")!.hidden = part.by === "rows";
     }
+    flat.show(flatScene(layout, d.bed, offered.length, picked, pairs), frame);
   };
+
+  // The picked part's numbers, typed.
+  const onPart = (name: string) => {
+    const p = layout.placed.find((x) => x.id === picked);
+    if (!p) return;
+    const typed = input(name).value.trim() === "" ? NaN : Number(input(name).value);
+    if (name === "angle") return turn(p.id, 0, typed);
+    put(p, { x: name === "x" ? typed : p.x, y: name === "y" ? typed : p.y, angle: p.angle }, `Move ${p.label} on the laser bed`);
+  };
+  for (const name of ["x", "y", "angle"]) input(name).addEventListener("change", () => onPart(name));
+  for (const b of panel.querySelectorAll<HTMLButtonElement>("button[data-turn]")) b.addEventListener("click", () => picked !== null && turn(picked, Number(b.dataset.turn)));
+  panel.querySelector<HTMLButtonElement>("button[data-rows]")!.addEventListener("click", () => {
+    const p = layout.placed.find((x) => x.id === picked);
+    const now = data();
+    if (!p || !Object.hasOwn(now.placed, p.id)) return;
+    const { [p.id]: _gone, ...placed } = now.placed;
+    store({ ...now, placed }, `Put ${p.label} back in the rows`);
+    draw(false);
+  });
+  arrange.addEventListener("click", () => {
+    store({ ...data(), placed: {} }, "Arrange the laser parts in rows");
+    draw(false);
+  });
 
   const onBed = () => {
     const width = Number(input("width").value);
     const height = Number(input("height").value);
     const gap = Number(input("gap").value);
-    const thickness = Number(input("thickness").value);
-    const empty = ["width", "height", "gap", "thickness"].some((n) => input(n).value.trim() === "");
-    const why = empty ? "Type a number of mm in each box." : (bedRefusal({ width, height }, gap) ?? thicknessRefusal(thickness));
+    const empty = ["width", "height", "gap"].some((n) => input(n).value.trim() === "");
+    const why = empty ? "Type a number of mm in each box." : bedRefusal({ width, height }, gap);
     if (why) {
       words.textContent = why;
       for (const b of buttons) b.disabled = true;
       return;
     }
-    store({ ...data(), bed: { width, height }, gap, thickness }, "Change the laser bed");
-    void draw(true);
+    const before = data();
+    store({ ...before, bed: { width, height }, gap }, "Change the laser bed");
+    draw(width !== before.bed.width || height !== before.bed.height); // a new bed is shown whole; a new gap moves the parts, not the view
   };
-  for (const name of ["width", "height", "gap", "thickness"]) input(name).addEventListener("change", onBed);
+  for (const name of ["width", "height", "gap"]) input(name).addEventListener("change", onBed);
 
   const name = () => (ctx.project.name || "laser-sheet").replace(/[\\/:*?"<>|]+/g, "-");
   for (const b of buttons)
@@ -255,7 +436,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
       const svg = b.dataset.save === "svg";
       try {
         const saved = await saveText(svg ? sheetSvg(layout, d.bed, ctx.project.name || "Laser sheet") : sheetDxf(layout, d.bed), name(), svg ? SVG_KIND : DXF_KIND);
-        if (live) words.textContent = saved === false ? `Save ${svg ? "SVG" : "DXF"} cancelled: nothing was saved.` : `Saved ${saved}: ${layoutWords(layout, offered.length)}`;
+        if (live) words.textContent = saved === false ? `Save ${svg ? "SVG" : "DXF"} cancelled: nothing was saved.` : `Saved ${saved}: ${layoutWords(layout, offered.length, d.bed, pairs)}`;
       } catch (e) {
         if (live) words.textContent = `Could not save the file: ${e instanceof Error ? e.message : String(e)}`;
       }
@@ -267,20 +448,26 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText): MountedW
     if (!live || mine !== reading) return;
     offered = next;
     fill();
-    await draw(frame);
+    draw(frame);
   };
   const ready = show(true);
   return {
     ready,
     sleep() {
+      if (!awake) return;
       awake = false;
+      hideView();
     },
     wake() {
+      if (awake) return;
       awake = true;
+      showView();
       void show(false); // the design may have changed while another workspace was on screen
     },
     unmount() {
       live = false;
+      if (awake) hideView();
+      awake = false;
       list.remove();
       panel.remove();
     },

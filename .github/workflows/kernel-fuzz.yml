@@ -227,6 +227,9 @@ jobs:
           GH_REPO: SpindleLabs-app/kernel-results
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ needs.plan.outputs.sha }}
+          # The tested code's repository: a closed issue seen again on code older than its closing is not reopened (file_issues.py).
+          CODE_REPO: SpindleLabs-app/kernel
+          CODE_TOKEN: ${{ secrets.KERNEL_READ }}
           # Each job's result: a red one with no failure folder (a fuzzer or an
           # oracle run that crashed or ran out of time) files an issue too.
           JOBS: ${{ toJSON(needs) }}

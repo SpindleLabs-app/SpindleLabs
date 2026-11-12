@@ -302,8 +302,8 @@ export function settledText(text) {
   try {
     const file = JSON.parse(text);
     const design = file?.workspaces?.design;
-    // Design data as the app saves it (version 17 since a constraint can name a point that follows a body; 16 since an Extrude Join's own piece is named by the extrude; 15 since a pin or projection can hold a Combine result's edge; 14 since a circle can hold its fit; 13 since pieces remember their faces; 12 since Scale and Mirror body; 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
-    if (!design || ![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
+    // Design data as the app saves it (version 19 since a face sketch can record that it was drawn on a cut's pocket wall; 18 since an extrude can hold several profiles; 17 since a constraint can name a point that follows a body; 16 since an Extrude Join's own piece is named by the extrude; 15 since a pin or projection can hold a Combine result's edge; 14 since a circle can hold its fit; 13 since pieces remember their faces; 12 since Scale and Mirror body; 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
+    if (!design || ![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
     Object.assign(design, expectedView(design).numbered);
     return JSON.stringify(file);
   } catch {
