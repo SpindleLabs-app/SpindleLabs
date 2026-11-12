@@ -53,7 +53,7 @@ import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 import { cornerTurned, HELD_STILL, turnedOver } from "./point-drag.ts";
 import { findRegion, refusalReason, regionCurveIds, regionName, regionNow, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
-import { leavesNoFace, missedTools, missWords, type Miss } from "./misses.ts";
+import { joinsInside, leavesNoFace, mayJoinInside, missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -1729,13 +1729,27 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) {
         // Refused, it still holds the bodies it made for an equal pick, so the next rebuild needn't build them again
         // (a body cut by its own Duplicate, then joined with it: SL #360's seed 11).
-        return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}), ...(made.length > 0 ? { holds: made } : {}) };
+        // SL #677 item 1: a round body is refused whatever else is asked (the kernel's booleans take flat faces only for
+        // now), so with one among the inputs the item says so in the app's words, told by the bodies' own face types.
+        // Asked of the cache only here, on a refusal (a step that builds never meshes its inputs for this).
+        const round = e.kind !== "invalid-input" ? [] : await Promise.all(pending.map(async (x) => (await cache.view(x.handle)).face_types.some((type) => type !== "plane")));
+        const who = !round.some(Boolean) ? null : round[0] ? "target" : step.tools.some((b, i) => round[i + 1] && (bodyItem(b) ?? f.id) !== f.id) ? "tool" : "extrude";
+        return { status: "failed", cause: "error", message: `${label} can't be made: ${who === null ? e.message : roundWords(who)}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}), ...(made.length > 0 ? { holds: made } : {}) };
       }
       throw e;
     }
     const missed = missedTools(operation, t.handle, ts.map((x) => x.handle), result);
     // SL #583 item 3: a Join's tool none of whose faces is left lies wholly inside, so its words never say it doesn't reach.
     const inside = operation === "join" ? missed.filter((i) => leavesNoFace(ts[i].handle, result)).map((i) => step.tools[i]) : [];
+    // SL #677 item 3: an extrude joined wholly inside the body and flush with a face of it (the sketch on a face,
+    // extruded into the body) adds nothing, though its flush face is merged into the body's (misses.ts `joinsInside`).
+    // Only an operation extrude's Join asks or warns (a Combine's never does), so only it is looked at.
+    if (joins && !grouped)
+      for (const [i, tool] of ts.entries())
+        if (!missed.includes(i) && mayJoinInside(t.handle, tool.handle, result) && joinsInside(t.handle, (await cache.view(t.handle)).faces, tool.handle, result)) {
+          missed.push(i);
+          inside.push(step.tools[i]);
+        }
     if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]), ...(inside.length > 0 && { inside }) });
     // The same step's names for this very answer, else worked out from the meshes and kept (SL #677 item 2).
     const key = cache.namingKey(f.id, op, pending, firstPiece, own);
@@ -1889,6 +1903,15 @@ async function unitedRun(doc: DesignDocument, f: Feature, built: readonly Omit<B
 
 /** Why an extrude of several profiles whose curved prisms touch is refused, while the kernel's booleans take flat faces only. */
 export const CURVED_TOUCHING = "profiles with curved sides can only be extruded together when they don't touch or overlap, or are side by side regions of one sketch, for now: extrude them one at a time";
+
+/**
+ * SL #677 item 1: why a Combine or an operation extrude with a round body is refused, in the app's words. `who` is the
+ * round one: the body changed, a tool body of a Combine, or the extrude's own shape.
+ */
+export function roundWords(who: "target" | "tool" | "extrude"): string {
+  const round = who === "target" ? "the body it changes has a round face" : who === "tool" ? "a tool body has a round face" : "this extrude has a round side";
+  return `${round}. Cut, Join and Intersect work on flat-sided shapes for now; round shapes are coming.`;
+}
 
 /** Whether an extrude's spec has a curved side (a circle or an arc in its profile). */
 function curvedSpec(spec: BodySpec | null): boolean {
