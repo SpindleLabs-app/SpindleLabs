@@ -381,9 +381,11 @@ export class ViewportView {
     );
   }
 
-  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit nothing changes and it says false. */
+  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit (or a sketch's own Pan, sketchPans) nothing changes and it says false. */
   leaveNavTool(): boolean {
-    if (this.mode === this.home) return false;
+    // Pan lit for a sketch on a touch screen (sketchPans) is the sketch's resting mode, not a tool picked: Escape goes on to
+    // the sketch (ending a line's chain), as with Orbit lit.
+    if (this.mode === this.home || (this.sketchPanned && this.mode === "pan")) return false;
     this.setMode(this.home);
     return true;
   }
@@ -401,6 +403,24 @@ export class ViewportView {
       if (this.mode === "orbit" || this.mode === "select") this.setMode(this.home);
     }, { signal: this.listening.signal });
   }
+
+  /**
+   * A sketch being edited on a touch screen (SL #648, Ben 2026-11-12): one finger pans by default, since a drag meant to
+   * draw spun the sketch with no word; the view bar shows Pan lit, and its Orbit brings the spin back. While `on` and the
+   * view rests in its home mode, Pan is lit; once off, Pan lit by this goes back to the home mode (a mode the person chose
+   * on the bar meanwhile stays). With a mouse nothing changes.
+   */
+  sketchPans(on: boolean) {
+    if (on && !this.sketchPanned && this.mode === this.home && typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches) {
+      this.sketchPanned = true;
+      this.setMode("pan");
+    } else if (!on && this.sketchPanned) {
+      this.sketchPanned = false;
+      if (this.mode === "pan") this.setMode(this.home);
+    }
+  }
+  /** Pan was lit by sketchPans for the sketch being edited. */
+  private sketchPanned = false;
 
   /** What a left-button drag does from now on: orbit, pan, zoom or nothing (the navigation bar's first three buttons, or none lit). */
   setMode(mode: NavMode) {
@@ -1781,7 +1801,9 @@ export class Viewer implements SharedViewport {
 
   /** Says on the element whether a sketch is being edited with the pointer on it (read by the e2e test). */
   private labelSketches() {
-    this.element.dataset.sketching = String(this.sketchHandler !== null && this.editedPlane !== null);
+    const editing = this.sketchHandler !== null && this.editedPlane !== null;
+    this.element.dataset.sketching = String(editing);
+    this.main.sketchPans(editing);
   }
 
   /**
