@@ -691,6 +691,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = designDoc();
     drawBrowser(doc);
     showBar(doc);
+    if (mode.kind === "edit") drawSketches(); // the dimension labels' values (SL #519 item 1)
     return true;
   };
   followUnit(ctx.properties.ownerDocument, unitWatch);
@@ -1902,7 +1903,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Marks and dimension labels are sized in screen pixels at the camera as it is now, never at the pointer's last move: a camera
     // that moved since left them sized for the old view, and the next click jumped a label from under the pointer (47e, Firefox).
     const pixel = editing ? (pixelNow(editing.pointer) ?? editing.pixel) : undefined;
-    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
+    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap, unit: currentUnit(ctx.properties.ownerDocument) }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
     sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
