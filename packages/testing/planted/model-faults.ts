@@ -324,7 +324,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   "kept-not-forgotten": {
     what: "settleKept never forgets a kept shape and extrudeSpec builds from it even when the sketch is whole again",
     edits: [
-      { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch, regionOf(f)))) continue;" },
+      { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch, regionOf(f))) {", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch, regionOf(f)))) {" },
       {
         file: REBUILD,
         find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);",

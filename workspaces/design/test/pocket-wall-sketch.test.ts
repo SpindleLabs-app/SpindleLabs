@@ -1,7 +1,7 @@
 // SL #583 item 3 (Combine hunt 4, 2026-11-11): a sketch on a pocket's wall that a Combine Cut made, after the Combine is
 // switched to Join or Intersect, or suppressed. The wall's name is the cut tool's own face (rule 2: a hole's wall is
 // the cut tool's side), so the name still finds a face, the tool's own, facing the other way with the solid on its far
-// side: the sketch sat there silently, its pad buried in the solid. From Design data version 24 a face sketch records
+// side: the sketch sat there silently, its pad buried in the solid. From Design data version 19 a face sketch records
 // whether its face was a cut tool's face turned round (`SketchFace.reversed`), so a face found the other way about is
 // its face gone. And an Extrude Join whose bump lies wholly inside Body 1 said it "doesn't reach" it. Every number is
 // worked out by hand from the boxes' corners in the comment beside it, on the real rebuild and kernel.
@@ -187,7 +187,7 @@ test("the drawn side is recorded: reversed on the pocket wall, not on the tool's
   await back.cache.close();
 });
 
-test("control: a sketch from before version 24 (no record of its side) is placed as before, never judged", async () => {
+test("control: a sketch from before version 19 (no record of its side) is placed as before, never judged", async () => {
   const p = await pocketPad(false, false);
   const old = { ...p.doc, sketches: p.doc.sketches.map((k) => (k.id === p.sketch ? { ...k, face: { ...k.face!, reversed: undefined } } : k)) };
   delete (old.sketches.find((k) => k.id === p.sketch)!.face as { reversed?: boolean }).reversed;
@@ -199,28 +199,26 @@ test("control: a sketch from before version 24 (no record of its side) is placed
   await b.cache.close();
 });
 
-test("data version 24: the record reads back, version 17 data opens with none, and a wrong one is refused in words", async () => {
+test("data version 19: the record reads back, version 18 data opens with none, and a wrong one is refused in words", async () => {
   const p = await pocketPad(false, false);
-  assert.equal(p.doc.version, 24);
+  assert.equal(p.doc.version, 19);
   const json = JSON.parse(JSON.stringify(p.doc));
   assert.deepEqual(readDesignDocument(json), p.doc);
-  // Version 17 data never holds the record: opened as 24, its sketch with none, so never judged.
-  const v17 = JSON.parse(JSON.stringify(p.doc));
-  v17.version = 17;
-  delete v17.sketches.find((k: { id: string }) => k.id === p.sketch).face.reversed;
-  const opened = readDesignDocument(v17);
-  assert.equal(opened.version, 24);
+  // Version 18 data never holds the record: opened as 19, its sketch with none, so never judged.
+  const v18 = JSON.parse(JSON.stringify(p.doc));
+  v18.version = 18;
+  delete v18.sketches.find((k: { id: string }) => k.id === p.sketch).face.reversed;
+  const opened = readDesignDocument(v18);
+  assert.equal(opened.version, 19);
   assert.equal(opened.sketches.find((k) => k.id === p.sketch)!.face!.reversed, undefined);
-  // Version 17 data holding it is refused: only version 24 brought it.
-  const early = JSON.parse(JSON.stringify(p.doc));
-  early.version = 17;
-  assert.throws(() => readDesignDocument(early), /Design data says version 17 but has a sketch recording which way its face was drawn, which version 24 brought/);
+  // Version 18 or 17 data holding it is refused: only version 19 brought it.
+  for (const version of [18, 17]) {
+    const early = JSON.parse(JSON.stringify(p.doc));
+    early.version = version;
+    assert.throws(() => readDesignDocument(early), new RegExp(`Design data says version ${version} but has a sketch recording which way its face was drawn, which version 19 brought`));
+  }
   // Not true or false: refused.
   const bad = JSON.parse(JSON.stringify(p.doc));
   bad.sketches.find((k: { id: string }) => k.id === p.sketch).face.reversed = "yes";
   assert.throws(() => readDesignDocument(bad), new RegExp(`Design sketch ${p.sketch}'s reversed must be true or false, not yes`));
-  // The versions between 17 and 24 are other changes' and are not read.
-  const gap = JSON.parse(JSON.stringify(p.doc));
-  gap.version = 20;
-  assert.throws(() => readDesignDocument(gap), /Design data version 20 is not one this SpindleLabs reads/);
 });

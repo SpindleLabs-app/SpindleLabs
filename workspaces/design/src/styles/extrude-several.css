@@ -1,0 +1,10 @@
+/* Pick several in the Extrude panel (several profiles at once, extrude-panel.ts): its own row under the profile,
+   lit while on (as Move's Snap is), a phone's stand-in for Ctrl-click. `:not(#none)` outweighs the workspace's
+   own button rule, which has an id in it. */
+.extrude-several { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; }
+.extrude-several .extrude-several-pick:not(#none) { padding: 3px 10px; }
+.extrude-several .extrude-several-pick:not(#none)[aria-pressed="true"] { background: var(--fill-23384f); border-color: var(--look-accent, var(--accent)); color: var(--look-accent-text, var(--accent-text)); }
+.extrude-several .extrude-several-hint { color: var(--text-8b95a3); font-size: 0.85em; }
+@media (max-width: 700px) {
+  .extrude-several .extrude-several-pick:not(#none) { min-height: 44px; }
+}

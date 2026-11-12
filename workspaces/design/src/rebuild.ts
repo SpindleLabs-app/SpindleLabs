@@ -34,6 +34,7 @@
 // asks (Retry on its row) or changes it or anything before it: a call that
 // always runs too long would otherwise stop every fresh kernel in turn.
 
+import { extrudeSketches, hasMoreProfiles, profileParts } from "./extrude-profiles.ts";
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
@@ -49,7 +50,7 @@ import { readDesignReference, resolveReference, sharedBy } from "./references.ts
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
 import { HELD_STILL, turnedOver } from "./point-drag.ts";
-import { findRegion, refusalReason, regionCurveIds, regionName, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
+import { findRegion, refusalReason, regionCurveIds, regionName, regionNow, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
 import { leavesNoFace, missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
@@ -170,7 +171,7 @@ export class SlowItems {
 function builtFrom(doc: DesignDocument, id: string): string {
   const { features } = doc.timeline;
   const upTo = features.slice(0, features.findIndex((f) => f.id === id) + 1);
-  const ids = new Set(upTo.flatMap((f) => [f.id, ...(typeof f.intent.parameters.sketch === "string" ? [f.intent.parameters.sketch] : [])]));
+  const ids = new Set(upTo.flatMap((f) => [f.id, ...(typeof f.intent.parameters.sketch === "string" ? extrudeSketches(f) : [])]));
   return JSON.stringify({ items: upTo, sketches: doc.sketches.filter((s) => ids.has(s.id)) });
 }
 
@@ -571,6 +572,17 @@ async function outlineOf(kernel: KernelCalls, content: KeptShape & Pick<Sketch, 
   }
 }
 
+/**
+ * Region `region` of a sketch as its points and curves make it now
+ * (regions.ts `regionNow`): `region` itself when it already says so, or
+ * when it is not found. Asked of the kernel as `outlineOf` asks, so a
+ * settle that asked for the outline already has the answer.
+ */
+async function regionToday(kernel: KernelCalls, content: KeptShape & Pick<Sketch, "projected">, region: RegionRef): Promise<RegionRef> {
+  const c = sketchCurves(content);
+  return regionNow((await kernel.call("sketch_regions", c.lines, c.circles, c.arcs)).regions, idsOf(content), region) ?? region;
+}
+
 /** A sketch's content as it is now, or undefined when it is gone. */
 const contentOf = (doc: DesignDocument, id: string): Sketch | undefined => doc.sketches.find((s) => s.id === id);
 
@@ -614,8 +626,7 @@ function outlinesAtOnce(kernel: KernelCalls, docs: DesignDocument[]): KernelCall
   };
   for (const doc of docs) {
     const { sketches } = indexOf(doc);
-    for (const f of doc.timeline.features) {
-      if (!isSketchExtrude(f)) continue;
+    for (const f of doc.timeline.features.filter(isSketchExtrude).flatMap(profileParts)) {
       const op = regionOf(f) === undefined ? "sketch_outline" : "sketch_regions";
       const content = sketches.get(f.intent.parameters.sketch as string);
       if (content !== undefined) ask(curvesOf(content), op);
@@ -679,7 +690,9 @@ async function makesOutline(kernel: KernelCalls, doc: DesignDocument, sketchId: 
  * rule applied: an extrude whose sketch is lost in `after` keeps the
  * sketch's points and curves from `before` (if it made an outline there
  * and the extrude has no kept shape yet), and where it lay when not on XY;
- * one whose sketch makes an outline forgets its kept shape. From step 26c
+ * one whose sketch makes an outline forgets its kept shape, and saves its
+ * region (step 48) as the sketch makes it now, its curves and centroid
+ * (`regionNow`: the timeline hunt of 2026-11-11). From step 26c
  * a sketch on a face whose name finds no face or two in `after` holds the
  * placement it had in `before` (if it holds none yet), and forgets it once
  * its face is back; from 26f, each point pinned to its face's edge goes
@@ -728,15 +741,26 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
      */
     const keepLost = async (doc: DesignDocument): Promise<DesignDocument> => {
       const next: Record<string, KeptShape> = {};
+      // Each extrude whose sketch makes its region saves the region as it is now (regions.ts `regionNow`).
       const regions = new Map<string, RegionRef>();
-      for (const f of doc.timeline.features) {
-        if (!isSketchExtrude(f)) continue;
+      // Each profile of each extrude (version 18: several), its kept shape filed by the extrude and its sketch (`keptKey`):
+      // a sketch two profiles share keeps one shape, as soon as either is lost. Only the extrude's own first profile has
+      // its region brought up to date here (a `more` profile's region is found again by its curves on each rebuild).
+      const own = new Set<Feature>(doc.timeline.features);
+      for (const f of doc.timeline.features.filter(isSketchExtrude).flatMap(profileParts)) {
+        if (Object.hasOwn(next, f.id)) continue;
+        const first = own.has(f);
         const sketch = f.intent.parameters.sketch as string;
-        if (await makesOutline(kernel, doc, sketch, regionOf(f))) continue;
+        if (await makesOutline(kernel, doc, sketch, regionOf(f))) {
+          const region = regionOf(f);
+          const now = first && region && (await regionToday(kernel, contentOf(doc, sketch)!, region));
+          if (now && now !== region) regions.set(f.id, now);
+          continue;
+        }
         const had = keptOf(after, f);
         const was = contentOf(before, sketch);
         // Issue #541: an extrude of the one outline whose outline is still there whole, as a region's outside, takes that region.
-        const region = had === undefined && regionOf(f) === undefined ? await outlineRegion(kernel, before, doc, sketch) : undefined;
+        const region = first && had === undefined && regionOf(f) === undefined ? await outlineRegion(kernel, before, doc, sketch) : undefined;
         if (region !== undefined) regions.set(f.id, region);
         else if (had !== undefined) next[f.id] = had;
         else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f)))) {
@@ -815,6 +839,31 @@ const follows = (content: Sketch | undefined): boolean => content?.pins !== unde
 
 /** Whether sketch item `f` lies on or follows a body: on a face (26c), or with points pinned to edges (27c) or edges projected (27d). */
 export const placedOnBodies = (doc: DesignDocument, f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && follows(doc.sketches.find((s) => s.id === f.id)));
+
+/**
+ * Whether settling an edit from `before` (a settled design) to `after` can
+ * change what an extrude keeps (`settleKept`) in a design with no sketch
+ * placed on bodies: only when an extrude asks for another outline than
+ * before, because it names another region (Edit feature's region pick,
+ * timeline hunt 2026-11-11: the sketch makes the new region, so the shape
+ * kept for the old one is forgotten) or its sketch's points or curves
+ * changed. A new extrude of an unchanged sketch asks nothing new; one whose
+ * sketch is gone and that keeps a shape already is settled (a delete settles
+ * itself before it is recorded). Asks the kernel nothing.
+ */
+export function keptUnsettled(before: DesignDocument, after: DesignDocument): boolean {
+  const drawn = (doc: DesignDocument, id: string) => doc.sketches.find((s) => s.id === id);
+  const was = new Map(before.timeline.features.map((f) => [f.id, f]));
+  return after.timeline.features.some((f) => {
+    if (!isSketchExtrude(f)) return false;
+    const old = was.get(f.id);
+    if (old !== undefined && JSON.stringify(regionOf(old)) !== JSON.stringify(regionOf(f))) return true;
+    const now = drawn(after, f.intent.parameters.sketch as string);
+    const then = drawn(before, (old ?? f).intent.parameters.sketch as string);
+    if (now === then || (now !== undefined && then !== undefined && now.points === then.points && now.curves === then.curves && now.projected === then.projected)) return false;
+    return now !== undefined || keptOf(after, f) === undefined;
+  });
+}
 
 /**
  * Every item of `doc` up to its last sketch on a face or with pins,
@@ -960,7 +1009,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     // edges by name and are written back after: the middle never moves by settling) as the body's point under it, its sizes kept.
     // SL #583 item 3: drawn on a Cut's wall (its name's face turned round) and found now as that face itself (the Combine
     // made a Join or Intersect, or suppressed), or the other way about: not the face it was drawn on, which is gone. A
-    // sketch from before version 24 records neither, and is placed as before.
+    // sketch from before version 19 records neither, and is placed as before.
     if (p.reversed !== undefined && (on.reversed?.[face] ?? false) !== p.reversed) return held();
     const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
     const outward = view.face_normals[face]!;
@@ -1221,23 +1270,31 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
       const spec = specOf(doc, f);
       return made({ handle: await cache.body(spec), spec });
     }
-    const sketchId = f.intent.parameters.sketch as string;
-    const item = index.items.get(sketchId);
-    const input = done[sketchId];
-    // Q3, unified in 26e: built on a suppressed sketch, or on one greyed, it is greyed too, with no warning.
-    if (item !== undefined && input?.status === "suppressed") return { status: "greyed", by: sketchId };
-    if (item !== undefined && input?.status === "greyed") return { status: "greyed", by: input.by };
-    if (item !== undefined && input?.status !== "built") return { status: "failed", cause: "failed-input", input: sketchId, message: `${item.provenance.self.label} is not built` };
-    // A face sketch's placement is the rebuild's; an origin plane's, extrudeSpec's own.
-    const placed = item !== undefined && isFaceSketch(item) && input?.status === "built" ? input.placement : undefined;
-    const spec = await extrudeSpec(kernel, doc, f, index, placed);
-    if ("status" in spec) return spec;
-    // 35f1e: a sketch placed on a piece of its split face is not held, so its extrude's source is not lost.
-    const lost = input?.status === "built" && input.plane?.cause !== "plane-split" ? input.plane : undefined;
-    const source = lost && { ...lost, sketch: sketchId, message: `${f.provenance.self.label}'s source is lost: ${item!.provenance.self.label}'s plane is ${lost.cause === "plane-lost" ? "lost" : "ambiguous"}, so it stays where it was` };
-    const rest = { ...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) };
-    const self = { handle: await cache.body(spec.spec), spec: spec.spec, curves: spec.curves };
+    // Each profile as a one-profile extrude (version 18: several, `profileParts`; the first is the extrude itself).
+    const parts: { self: Omit<BuiltBody, "feature">; rest: Partial<Extract<FeatureResult, { status: "built" }>> }[] = [];
+    for (const part of profileParts(f)) {
+      const sketchId = part.intent.parameters.sketch as string;
+      const item = index.items.get(sketchId);
+      const input = done[sketchId];
+      // Q3, unified in 26e: built on a suppressed sketch, or on one greyed, it is greyed too, with no warning.
+      if (item !== undefined && input?.status === "suppressed") return { status: "greyed", by: sketchId };
+      if (item !== undefined && input?.status === "greyed") return { status: "greyed", by: input.by };
+      if (item !== undefined && input?.status !== "built") return { status: "failed", cause: "failed-input", input: sketchId, message: `${item.provenance.self.label} is not built` };
+      // A face sketch's placement is the rebuild's; an origin plane's, extrudeSpec's own.
+      const placed = item !== undefined && isFaceSketch(item) && input?.status === "built" ? input.placement : undefined;
+      const spec = await extrudeSpec(kernel, doc, part, index, placed);
+      if ("status" in spec) return spec;
+      // 35f1e: a sketch placed on a piece of its split face is not held, so its extrude's source is not lost.
+      const lost = input?.status === "built" && input.plane?.cause !== "plane-split" ? input.plane : undefined;
+      const source = lost && { ...lost, sketch: sketchId, message: `${f.provenance.self.label}'s source is lost: ${item!.provenance.self.label}'s plane is ${lost.cause === "plane-lost" ? "lost" : "ambiguous"}, so it stays where it was` };
+      const rest = { ...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) };
+      parts.push({ self: { handle: await cache.body(spec.spec), spec: spec.spec, curves: spec.curves }, rest });
+    }
+    // The first warning and lost source of any profile is the item's (one each per item).
+    const rest = Object.assign({}, ...parts.map((p) => p.rest).reverse()) as Partial<Extract<FeatureResult, { status: "built" }>>;
+    const self = parts[0].self;
     if (isOperationExtrude(f)) return await operationRun(doc, f, self, rest, done, bodies, cache);
+    if (parts.length > 1) return await unitedRun(doc, f, parts.map((p) => p.self), rest, done, bodies, cache);
     return made(self, rest);
   } catch (e) {
     if (timedOut(e)) return { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
@@ -1435,7 +1492,8 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // Each piece the data numbered with its faces (hunt 11-06): it stays on the piece with those faces. An operation
   // extrude's too (hunt 11-08: an earlier edit could hand a Move another bar's piece without a word); editing the
   // extrude confirms them, as editing a Combine does (combine.ts `forgetPieces`).
-  const remembers = isCombineItem(f) || isOperationExtrude(f);
+  // A new body of several profiles' too (version 18, `unitedRun`).
+  const remembers = isCombineItem(f) || isOperationExtrude(f) || hasMoreProfiles(f);
   // Rule 1 for an Extrude join (docs/document-model.md section 8): each piece holding a body it joins keeps the
   // earliest made one's id, by the item in the id, then the item's own body before its pieces, by number.
   const joins = isOperationExtrude(f) && operation === "join";
@@ -1451,7 +1509,8 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
     const built = new Map<BodyHandle, BuiltBody>();
     const joined = joins ? [step.target, ...step.tools].filter((b) => bodyItem(b) !== f.id).sort((a, b) => madeKey(a)[0] - madeKey(b)[0] || madeKey(a)[1] - madeKey(b)[1]) : [];
     for (const body of [step.target, ...step.tools]) {
-      const maker = bodyItem(body)!;
+      // A profile's prism of the item's own (`unitedRun`: no body id of the design) is the item's.
+      const maker = bodyItem(body) ?? f.id;
       // The item's own body (an operation extrude's, built just before) is no input of an earlier item.
       if (maker !== f.id) {
         const r = done[maker];
@@ -1580,6 +1639,29 @@ async function operationRun(doc: DesignDocument, f: Feature, self: Omit<BuiltBod
   // Refused: its own body is no body of the design (the bodies picked stay as they were).
   if (r.status !== "built") {
     delete bodies[own];
+    return r;
+  }
+  return { ...r, ...rest };
+}
+
+/**
+ * An extrude of several profiles as a new body (version 18), each
+ * profile's prism just built (`prisms`, the first profile's first): the
+ * kernel joins them in one boolean, so profiles that touch come out as one
+ * body and profiles apart as separate bodies, as Fusion's Extrude makes
+ * them. The body holding the first profile keeps the extrude's own id, as
+ * a Combine's target keeps its id; the others are its pieces, numbered
+ * when built and remembered by their faces (`booleanSteps`). The prisms
+ * after the first go by ids no body of the design has, and are gone after.
+ */
+async function unitedRun(doc: DesignDocument, f: Feature, prisms: readonly Omit<BuiltBody, "feature">[], rest: Partial<Extract<FeatureResult, { status: "built" }>>, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
+  const own = bodyIdOf(f.id);
+  const others = prisms.slice(1).map((_, k) => `${own}#profile:${k + 2}`);
+  bodies[own] = { feature: f.id, ...prisms[0] };
+  others.forEach((id, k) => (bodies[id] = { feature: f.id, ...prisms[k + 1] }));
+  const r = await booleanSteps(doc, f, [{ target: own, tools: others, keepTools: false }], "join", "join", done, bodies, cache);
+  if (r.status !== "built") {
+    for (const id of [own, ...others]) delete bodies[id];
     return r;
   }
   return { ...r, ...rest };

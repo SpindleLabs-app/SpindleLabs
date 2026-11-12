@@ -95,7 +95,7 @@ test("version 5 to 16 data written without bodies' numbers gets the ones it show
     delete d.nextBody;
     d.version = v;
     const r = readDesignDocument(d);
-    assert.deepEqual([r.version, r.bodies, r.nextBody], [24, [{ id: "body:feature-1", number: 1 }], 2], `version ${v}`);
+    assert.deepEqual([r.version, r.bodies, r.nextBody], [19, [{ id: "body:feature-1", number: 1 }], 2], `version ${v}`);
   }
 });
 
