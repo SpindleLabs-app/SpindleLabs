@@ -14,7 +14,7 @@ export type { Parameter, ParameterSweep, ProjectParameters } from "./model/param
 export { projectParameters } from "./model/parameters.ts";
 export type { DataReader, LengthUnit, Project, WorkspaceId } from "./model/project.ts";
 export { workspacesWithWork } from "./model/work.ts";
-export { emptyProject, FORMAT_VERSION, MAX_NESTING, MAX_PROJECT_BYTES, NewerFormatError, projectFromJson, projectToJson, readProject } from "./model/project.ts";
+export { emptyProject, FORMAT_VERSION, MAX_NESTING, MAX_PROJECT_BYTES, NewerFormatError, projectFromJson, projectToJson, readProject, withWorkspaceDocument } from "./model/project.ts";
 export type { FrozenCopy, LiveLink, Link, LinkSource, LinkStatus, SourceLookup } from "./model/links.ts";
 export { breakLink, fetchLinked, linkTo, resolveLink } from "./model/links.ts";
 export type { Answer, EditRoute, LinkedValue, OwnershipChange, ProposedEdit, Transfer } from "./model/ownership.ts";
@@ -23,7 +23,7 @@ export type { BodyReference, EdgeReference, FaceReference, GeometryReference, Ou
 export { resolveReference } from "./model/references.ts";
 export type { History, Selection } from "./model/session.ts";
 export { createSelection, historyNotBuilt } from "./model/session.ts";
-export { createHistory, MERGE_MS, UNDO_LIMIT, type HistoryOptions, type HistoryStepInfo, type SavedHistory } from "./model/history.ts";
+export { createHistory, MERGE_MS, UNDO_LIMIT, type HistoryOptions, type HistoryStep, type HistoryStepInfo, type SavedHistory } from "./model/history.ts";
 export type { BuildAreaShown, CornerView, ExtrudeArrow, ExtrudePointer, ExtrudeShow, Framing, MoveHandle, MoveHandlesShow, MoveKind, MovePointer, OfferedProfile, OriginPlane, OriginShown, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "./model/viewport.ts";
 export { NO_HIGHLIGHT, ORIGIN_AT_FIRST } from "./model/viewport.ts";
 export type { AnalysisOverlay, OverlayMark, OverlayPlace, OverlaySeverity, OverlayTarget } from "./model/overlay.ts";

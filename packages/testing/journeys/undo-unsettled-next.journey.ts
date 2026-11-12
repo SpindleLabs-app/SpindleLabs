@@ -102,11 +102,14 @@ function rename(a: App, id: string, name: string) {
 
 // ---- An action that brings its own design, made before the edit before it is settled (#624 item 1, #622 item 4) ----
 
-for (const [name, second, step] of [
-  ["the XY plane's eye clicked", clickXyEye, "Show XY plane"],
-  ["Insert > Box", (a: App) => insert(a, "box"), "Insert Box"],
-  ["Extrude 1 renamed", (a: App) => rename(a, extrudeOf(a).id, "Pad"), "Rename Extrude 1"],
+// Each second action and what it adds to the volume: an eye and a rename nothing, Insert > Box a box at a fresh
+// design's sizes, 40 · 30 · 20 = 24000 mm³.
+for (const [name, second, step, added] of [
+  ["the XY plane's eye clicked", clickXyEye, "Show XY plane", 0],
+  ["Insert > Box", (a: App) => insert(a, "box"), "Insert Box", 40 * 30 * 20],
+  ["Extrude 1 renamed", (a: App) => rename(a, extrudeOf(a).id, "Pad"), "Rename Extrude 1", 0],
 ] as const) {
+  const BOTH = { ...EDITED, volume: EDITED.volume + added };
   test(`control: Edit Box 1 OK, waited for, then ${name}, then Undo: the settled edit (58500 mm³, kept, warned)`, async () => {
     const a = await app(snapped(), designWorkspace);
     await okWidth80(a);
@@ -115,6 +118,7 @@ for (const [name, second, step] of [
     second(a);
     await a.settle();
     assert.equal(a.history.undoLabel(), step);
+    assert.deepEqual(state(a), BOTH);
     a.pressUndo();
     await a.presses();
     await a.settle();
@@ -136,7 +140,7 @@ for (const [name, second, step] of [
     assert.deepEqual(labels(a), ["Edit Box 1", step], "recorded at once, in the order made");
     await a.release();
     await a.settle();
-    assert.deepEqual(state(a), EDITED, "the second step is settled too");
+    assert.deepEqual(state(a), BOTH, "the second step is settled too");
     a.pressUndo();
     await a.presses();
     await a.settle();
@@ -148,7 +152,7 @@ for (const [name, second, step] of [
     await a.presses();
     await a.settle();
     assert.equal(a.history.undoLabel(), step);
-    assert.deepEqual(state(a), EDITED);
+    assert.deepEqual(state(a), BOTH);
     assert.ok(await a.close());
     const b = await app(saved, designWorkspace);
     assert.deepEqual(state(b), EDITED, "the undone-to step, opened afresh");
