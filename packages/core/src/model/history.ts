@@ -131,6 +131,7 @@ export interface History {
    * naming the step before, for the seconds an OK was still with the kernel, and a press then was lost).
    */
   onBusy(listener: () => void): () => void;
+  /**
    * Whether held work is running by itself: held work that is not waiting on the person's answer. The page changes
    * again without anyone touching it only while this is true (the monkey's settle, `fissionTest.historyBusy`; SL #397).
    */
