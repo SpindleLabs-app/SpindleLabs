@@ -68,8 +68,8 @@ HOLD = "hold"
 # been tested. (e2e is the gate over its e2e (k/3) shares.)
 REQUIRED_CHECKS = ("kernel", "app", "e2e", "mutants-in-diff", "baseline")
 # ci.yml's matrix jobs whose shares ("e2e (2/3)", "mutants-shard (0)") a
-# required job gathers (e2e, mutants-in-diff).
-SHARDS = ("e2e", "mutants-shard")
+# required job gathers (e2e, mutants-in-diff; app, over "app (design)" and "app (rest)").
+SHARDS = ("e2e", "mutants-shard", "app")
 # ci.yml's jobs that run only on some heads (pull requests that change the
 # app) and, when they ran, gate the merge like a required one: a head
 # without them is not untested.
