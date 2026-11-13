@@ -24,6 +24,7 @@ import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
+import { startPrintLog } from "./print-log.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
@@ -798,6 +799,8 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 // Save the shell's. Save also stays one click, as the icon beside it.
 /** A shell key as the user reads it here (Ctrl+S, or ⌘S on a Mac), for the File menu. */
 const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/.test(navigator.platform));
+// File ▾ > Print log… (account features 5): kept in this browser; the account code may keep it in the account too.
+const printLog = startPrintLog(document);
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
   ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
@@ -805,6 +808,7 @@ const file = fileMenu(document, {
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
+  printLog: { id: "file-print-log", label: "Print log…", title: "Print log: the print files you saved from Slice for printing, to note how each one printed", run: () => printLog.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, key: fileKey("Mod+S"), run: () => void save() },
   saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, key: fileKey("Mod+Shift+S"), run: () => void save(true) },
   where: () => {
