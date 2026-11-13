@@ -1,8 +1,10 @@
 // The Slice page (Slice as its own page, step 1; behind the app's SLICE_PAGE switch, off until released): the design's
 // bodies laid on the plate in the shared view, listed on the left, read through the representation registry (Design's
 // lister and mesh producer), never from Design's own code. The properties hold the print choices and a Slice button (print-panel.ts, step 4b1); the download and the preview
-// arrive in the next steps, and until then Design's File ▾ Slice for printing is the way to a file. Styles: src/styles/slice-page.css.
+// arrive in the next steps (the download is the panel's Slice and download), and until then Design's File ▾ Slice for printing is the way to a file. Styles: src/styles/slice-page.css.
 
+import { saveFile } from "@fission/ui";
+import { printLead } from "@fission/print";
 import { printPanel, type PrintPanel } from "./print-panel.ts";
 import type { DisplayMesh, ListedObject, MountedWorkspace, RepresentationRegistry, WorkspaceContext, WorkspacePlugin } from "@fission/core";
 
@@ -88,7 +90,11 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
   } catch {
     storage = null; // storage off: the choices start from their defaults
   }
-  const panel: PrintPanel = printPanel(doc, { kernel: ctx.kernel, registry: ctx.representations, objects: objectsNow, storage });
+  const panel: PrintPanel = printPanel(doc, { kernel: ctx.kernel, registry: ctx.representations, objects: objectsNow,
+    storage,
+    save: (request) => saveFile(doc, request),
+    projectName: () => printLead(ctx.project.name, ctx.fileName?.()),
+  });
   ctx.properties.append(panel.element);
 
   const show = async () => {
