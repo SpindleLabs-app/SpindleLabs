@@ -33,12 +33,12 @@ function journal() {
 
 const nextIdOf = (p: Project) => (p.workspaces.design as { nextId: number }).nextId;
 
-test("a version 18 Design project opens, read up to version 20", async () => {
+test("a version 18 Design project opens, read up to version 21", async () => {
   const kv = memoryKeyValue();
   const store = projectStore(kv, DESIGN);
   await store.save("p", part(18, 5), new Date(1000));
   const opened = await store.open("p");
-  assert.equal((opened.workspaces.design as { version: number }).version, 20);
+  assert.equal((opened.workspaces.design as { version: number }).version, 21);
   assert.equal(nextIdOf(opened), 5);
 });
 
@@ -54,12 +54,12 @@ test("an unsaved-changes entry at version 18 is put back, never deleted as unrea
   assert.equal(j.items.size, 0, "the entry goes only once the store holds it");
 });
 
-test("control: an entry from a version newer than 20 is kept aside as newer, not deleted", async () => {
+test("control: an entry from a version newer than 21 is kept aside as newer, not deleted", async () => {
   const kv = memoryKeyValue();
   const store = projectStore(kv, DESIGN);
   await store.save("p", part(18, 5), new Date(1000));
   const j = journal();
-  j.setItem(unsavedKey("p"), journalEntry(projectToJson(part(21, 7)), new Date(2000)));
+  j.setItem(unsavedKey("p"), journalEntry(projectToJson(part(22, 7)), new Date(2000)));
   const problems = await recoverUnsaved(store, j, DESIGN);
   assert.equal(problems.length, 1);
   assert.match(problems[0], /made by a newer SpindleLabs/);
