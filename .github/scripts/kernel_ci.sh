@@ -33,6 +33,10 @@
 #       copies to stdout only the lines the kernel's ci scripts may print in
 #       public: RESULT, count, shards and missed lines; drops everything else
 #
+#   kernel_ci.sh keygen DIR | seal DIR OUT PUBLIC.pem | unseal IN OUT PRIVATE.pem
+#       a keyless job seals the files it made so only the keyed job opens
+#       them (seal.py: openssl hybrid encryption, safe extraction)
+#
 # Anything this log shows is public, so the full output of every check only
 # ever goes to kernel-results. Tested in test_kernel_ci.py.
 set -euo pipefail
@@ -145,6 +149,9 @@ describe)
   ;;
 filter)
   grep -E '^(RESULT [a-z0-9-]+ (PASS|FAIL) [0-9]+|count ([0-9]+|error)|shards \[[0-9,]*\]|missed [0-9]+)$' || true
+  ;;
+keygen|seal|seal-tar|unseal)
+  exec python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" "$@"
   ;;
 *)
   echo "usage: kernel_ci.sh status|save|run|checkout|describe|filter"; exit 2 ;;
