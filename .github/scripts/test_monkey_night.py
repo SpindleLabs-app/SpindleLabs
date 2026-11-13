@@ -10,7 +10,9 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 import monkey_night
@@ -221,6 +223,57 @@ class Night(unittest.TestCase):
         _, files = self.night(LOG, saved=[20261026])
         kinds = kinds_of({"monkey-report.txt": files["seed-monkey-20261026/monkey-report.txt"]})
         self.assertEqual(list(kinds), ["monkey no sideways scrolling: the page is # px wider than the window"])
+
+
+class Daytime(unittest.TestCase):
+    """The daytime monkey's plan (issue #671): how many fresh seeds fit before 14:50 UTC, or none at all."""
+
+    @staticmethod
+    def at(hhmmss):
+        # 1 Jan 2026 is day 56 x 365 + 14 leap days (1972 to 2024) = 20,454 since 1970; 13 Nov is 316 days later,
+        # day 20,770, so its midnight is 20,770 x 86,400 = 1,794,528,000 s.
+        h, m, s = map(int, hhmmss.split(":"))
+        return 1794528000 + 3600 * h + 60 * m + s
+
+    def test_the_day_used_by_these_tests(self):
+        self.assertEqual(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.at("14:03:27"))), "2026-11-13 14:03:27")
+
+    def test_issue_671_a_late_start_runs_no_session_that_cannot_finish(self):
+        # 14:03:27 to 14:50 is 46 whole minutes, less the report's 15: 31 minutes, under one session's 40, so no
+        # session is started and the plan says so instead of running one that the time limit must cut off.
+        plan = monkey_night.day_plan(self.at("14:03:27"))
+        self.assertEqual(plan, (None, 0, 31))
+
+    def test_forty_minutes_is_one_session_and_thirty_nine_is_none(self):
+        # 13:55:00 leaves 55 - 15 = 40 minutes: exactly one session's 40 (fit 1). 13:56:00 leaves 39: none.
+        first, seeds, limit = monkey_night.day_plan(self.at("13:55:00"))
+        self.assertEqual((seeds, limit), (1, 40))
+        # First seed: 300,000,000 + twice the minutes since 1970 (1,794,528,000 / 60 = 29,908,800; + 835 for 13:55).
+        self.assertEqual(first, 300000000 + 2 * (29908800 + 835))
+        self.assertEqual(monkey_night.day_plan(self.at("13:56:00")), (None, 0, 39))
+
+    def test_the_seeds_that_fit_and_the_cap_of_four(self):
+        # 12:00 leaves 170 - 15 = 155 minutes: 155 // 40 = 3 sessions.
+        self.assertEqual(monkey_night.day_plan(self.at("12:00:00"))[1:], (3, 155))
+        # 10:00 leaves 275: 6 fit, but a daytime run has four seeds.
+        self.assertEqual(monkey_night.day_plan(self.at("10:00:00"))[1:], (4, 275))
+        # 15:00 counts to tomorrow's 14:50 (1,430 - 15 minutes), and no run is longer than 300.
+        self.assertEqual(monkey_night.day_plan(self.at("15:00:00"))[1:], (4, 300))
+
+    def test_a_skipped_run_writes_a_clean_report_and_no_failure_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            said = subprocess.run([sys.executable, os.path.join(HERE, "monkey_night.py"), "day", out, str(self.at("14:03:27"))],
+                                  capture_output=True, text=True, check=True).stdout
+            self.assertEqual(said.split(), ["skip"])
+            self.assertEqual(os.listdir(out), ["report.txt"])
+            report = open(os.path.join(out, "report.txt")).read()
+            self.assertIn("Monkey, daytime: not run, only 31 minutes were left before 14:50 UTC", report)
+            self.assertNotIn("FAIL", report)
+            # A run with time for sessions prints them for the workflow: first seed, seeds, minutes.
+            said = subprocess.run([sys.executable, os.path.join(HERE, "monkey_night.py"), "day", out, str(self.at("12:00:00"))],
+                                  capture_output=True, text=True, check=True).stdout
+            self.assertEqual(said.split()[1:], ["3", "155"])
 
 
 class Collect(unittest.TestCase):
