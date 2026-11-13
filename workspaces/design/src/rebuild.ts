@@ -38,21 +38,23 @@ import { extrudeSketches, hasMoreProfiles, moreProfiles, profileParts, sameProfi
 import { contactGroups, mergedOutline } from "./extrude-merge.ts";
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
-import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody, reversedOfResult } from "./built-body.ts";
+import { copiedNames, frameOfFace, framesOfResult, namedBody, namedFrame, namesOfBody, reversedOfResult } from "./built-body.ts";
+import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
-import { HELD_STILL, turnedOver } from "./point-drag.ts";
+import { cornerTurned, HELD_STILL, turnedOver } from "./point-drag.ts";
 import { findRegion, refusalReason, regionCurveIds, regionName, regionNow, regionOutline, regionRef, sameLoop, type RegionRef } from "./regions.ts";
-import { leavesNoFace, missedTools, missWords, type Miss } from "./misses.ts";
+import { joinsInside, leavesNoFace, mayJoinInside, missedTools, missWords, type Miss } from "./misses.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -109,8 +111,11 @@ export type FeatureResult =
       pieceFaces?: Record<string, string[]>;
       /** An item whose numbered pieces no longer have the faces they were numbered with, so a piece number may now be another piece (hunt 11-06): why, and those pieces' ids. */
       pieces?: { message: string; renumbered: string[] };
+      /** A Move some of whose bodies are no longer there (SL #506 item 4): it moves the rest, and says which it can't and why; their body ids. */
+      missing?: { message: string; bodies: string[] };
       /** A Cut or Join whose tools change nothing (misses.ts; Ben 11 Nov, SL #506 item 5, #521): which, and the row's words. */
-      misses?: { message: string; list: Miss[] };
+      /** `operation` is kept so the words can be said again once the build's new bodies have their numbers (`missesMessage`, SL #677 item 5). */
+      misses?: { message: string; list: Miss[]; operation: "cut" | "join" };
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -213,6 +218,8 @@ export interface BuiltBody {
   frames?: readonly (Plane | null)[];
   /** A piece (SL #583 item 2): the body whose boolean it split from (its item's target), so a Move holding that body finds it. */
   from?: string;
+  /** An extrude's profile after the first (version 18), counted from 1: its caps are named by it ("end:2"; SL #632 item 2). */
+  profile?: number;
   /**
    * SL #583 item 3: by kernel face index, whether each face of a boolean's result is the face its first name comes from
    * turned round (a Cut's wall: the tool's face facing into the hole), carried through later booleans, Moves and
@@ -250,6 +257,15 @@ type Bodies = Record<string, BuiltBody>;
  */
 const CLOSED = "Design was closed, so nothing more is built";
 
+/**
+ * One boolean step's result bodies as `combineNames` names them (SL #677 item 2), each with what Design keeps of it
+ * worked out from the meshes of the step's inputs and answer: its faces with their origins (`withOrigins`), their
+ * frames (`framesOfResult`) and which are turned round (`reversedOfResult`). Or the naming's refusal.
+ */
+export type NamedStep =
+  | { bodies: { id: string; handle: BodyHandle; faces: readonly FaceNames[]; made: NamedBody["made"]; frames?: (Plane | null)[]; reversed?: boolean[] }[] }
+  | { failed: string };
+
 export class BodyCache {
   /** `hidden`: the kernel holds no display mesh for it (35d4, `showOnly`); a body is built with one. */
   private bodies = new Map<string, { handle: BodyHandle; view?: Promise<BodyView>; hidden?: true }>();
@@ -259,6 +275,18 @@ export class BodyCache {
   private booleans = new Map<string, BooleanResult>();
   /** Each body_move's answer by its input and moves (`moved`, 35f1f2a): the body it moved and the one it made, kept in `bodies` like built ones. */
   private moves = new Map<string, { from: BodyHandle; to: BodyHandle }>();
+  /**
+   * Each boolean answer's names (`keepNaming`), by what they were worked out from (`namingKey`): an unchanged step
+   * named again finds them here instead of asking the kernel to mesh its inputs and answer again. The kernel keeps a
+   * mesh only for the bodies on screen (`showOnly`), so every rebuild meshed every earlier Cut's inputs and answer
+   * again, about 0.4 s more for each Extrude Cut of a part (SL #677 item 2). Held by the answer itself, so they go
+   * when `boolean` lets that answer go, and an answer asked again (a new one) is named again. Only the last names of
+   * each answer are kept, so editing a step's other inputs never piles them up.
+   */
+  private namings = new WeakMap<BooleanResult, { key: string; named: NamedStep }>();
+  /** A number for each object `namingKey` names by identity (a Combine's result's names, which `keepNaming` hands out again unchanged). */
+  private objects = new WeakMap<object, number>();
+  private nextObject = 0;
   /** Bodies asked of the kernel and not answered yet: the same spec asked again waits for the same answer, so asking ahead never builds twice. */
   private building = new Map<string, Promise<BodyHandle>>();
   /** Booleans and moves asked of the kernel and not answered yet (`once`), by their keys. */
@@ -389,6 +417,40 @@ export class BodyCache {
     });
   }
 
+  /**
+   * What a boolean step's names (`NamedStep`) are worked out from, but the meshes, as one string: the item, the
+   * operation, each input's body id, handle, place in made order, kept id, frames and turned faces, and what its
+   * names come from (a Combine's result's kept names, by identity; else its item and curves: the handle stands for
+   * its spec, `body`'s key), the first piece number and the extrude's own body (the pieces remembered are matched
+   * after every step, `pieceIds`, so they are no part of a step's names). A mesh is the
+   * kernel's of a kept body, the same for the same handle while the body is kept, so it needs no place here.
+   */
+  namingKey(feature: string, op: BooleanOp, inputs: readonly StepInput[], firstPiece: number, own: string | undefined): string {
+    const idOf = (o: object): number => {
+      let n = this.objects.get(o);
+      if (n === undefined) this.objects.set(o, (n = this.nextObject++));
+      return n;
+    };
+    return JSON.stringify([
+      feature,
+      op,
+      inputs.map(({ id, handle, b, place, keepsId }) => [id, handle, place, keepsId ?? null, b.frames ?? null, b.reversed ?? null, b.named === undefined ? [b.feature, b.curves ?? null] : [idOf(b.named.faces), idOf(b.named.made)]]),
+      firstPiece,
+      own ?? null,
+    ]);
+  }
+
+  /** The names `keepNaming` kept under `key` for this very answer of `boolean`, else undefined. */
+  naming(result: BooleanResult, key: string): NamedStep | undefined {
+    const kept = this.namings.get(result);
+    return kept?.key === key ? kept.named : undefined;
+  }
+
+  /** Keeps `named`, worked out from `key` for `result` (an answer of `boolean`), for `naming`. */
+  keepNaming(result: BooleanResult, key: string, named: NamedStep): void {
+    this.namings.set(result, { key, named });
+  }
+
   /** A kept body's view, asked of the kernel once it answers (a failed ask is forgotten, so the next look asks again: T6b). */
   view(handle: BodyHandle): Promise<BodyView> {
     const key = this.keys.get(handle);
@@ -506,6 +568,7 @@ export class BodyCache {
     this.building.clear();
     this.asking.clear();
     this.booleans.clear();
+    this.namings = new WeakMap();
     this.moves.clear();
     this.unfreed = [];
     this.wanted = new Set();
@@ -758,9 +821,10 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
       const next: Record<string, KeptShape> = {};
       // Each extrude whose sketch makes its region saves the region as it is now (regions.ts `regionNow`).
       const regions = new Map<string, RegionRef>();
-      // Each profile of each extrude (version 18: several), its kept shape filed by the extrude and its sketch (`keptKey`):
-      // a sketch two profiles share keeps one shape, as soon as either is lost. Every profile has its region brought up
-      // to date here (SL #611 C3: a `more` profile's too, saved at its place in `more`, `moreRegions`).
+      // Each profile of each extrude (version 18: several), its kept shape its own, filed by the extrude and its place
+      // among the profiles (`keptKey`, version 20, SL #632: two profiles of one sketch each keep the shape they were lost
+      // with). Every profile has its region brought up to date here (SL #611 C3: a `more` profile's too, saved at its
+      // place in `more`, `moreRegions`).
       const own = new Set<Feature>(doc.timeline.features);
       const moreRegions = new Map<string, Map<number, RegionRef>>();
       const parts = doc.timeline.features.filter(isSketchExtrude).flatMap((x) => profileParts(x).map((part, k) => ({ part, k: k - 1, item: x.id })));
@@ -782,13 +846,15 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         // Issue #541: an extrude of the one outline whose outline is still there whole, as a region's outside, takes that region.
         const region = first && had === undefined && regionOf(f) === undefined ? await outlineRegion(kernel, before, doc, sketch) : undefined;
         if (region !== undefined) regions.set(f.id, region);
-        else if (had !== undefined) next[f.id] = had;
+        // Lost by this edit (it made its outline in `before`): its shape in `before`, even when a shape is filed for it
+        // already (a version 18 file's shape shared with another profile of its sketch, copied to each when read, SL #632);
+        // lost before it: the shape it keeps.
         else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f)))) {
           const item = beforeItems.get(sketch)!;
           const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
           const shape = keptCurves(was);
           next[f.id] = placement ? { ...shape, placement } : shape;
-        }
+        } else if (had !== undefined) next[f.id] = had;
       }
       const moved = regions.size > 0 || moreRegions.size > 0;
       const { kept: old, ...rest } = !moved ? doc : { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => withMoreRegions(withRegion(f, regions.get(f.id)), moreRegions.get(f.id))) } };
@@ -992,10 +1058,30 @@ const originPlacement = (item: Feature): SketchPlacement | null => (item.intent.
 
 const XY_PLACEMENT: SketchPlacement = { plane: planeOf("XY"), side: 1 };
 
-/** A sketch's points that are its own (SL #539): neither pinned to an edge or corner nor made by a projection, so only an edit of the sketch moves them. */
+/**
+ * A sketch's points that are its own (SL #539), so only an edit of the sketch moves them: neither pinned to an edge or
+ * corner nor made by a projection, nor tied to one of those through any chain of constraints or arcs (SL #641 item 1),
+ * which the solve after a followed point moved (`solvedAgain`) moves too, so that a middle of them would move with every
+ * rebuild. The ties are the solver's own equations (constraints.ts `solverRequest`): an arc ties its centre and ends, a
+ * constraint the points it names (a diameter none).
+ */
 export function ownPoints(content: Sketch): Sketch["points"] {
   const followed = new Set([...(content.pins ?? []).map((p) => p.point), ...(content.projected ?? []).flatMap((p) => madePoints(content, p))]);
-  return followed.size === 0 ? content.points : content.points.filter((p) => !followed.has(p.id));
+  if (followed.size === 0) return content.points;
+  const parent = new Map<string, string>();
+  const root = (p: string): string => {
+    let r = p;
+    while (parent.has(r)) r = parent.get(r)!;
+    return r;
+  };
+  const tie = (ids: readonly string[]) => {
+    const [first, ...rest] = ids.map(root);
+    for (const r of rest) if (r !== first) parent.set(r, first);
+  };
+  for (const c of content.curves) if (c.kind === "arc") tie([c.centre, c.start, c.end]);
+  for (const c of content.constraints) tie(c.kind === "fix" ? [c.point] : c.kind === "diameter" ? [] : [c.a, c.b]);
+  const tied = new Set([...followed].map(root));
+  return content.points.filter((p) => !followed.has(p.id) && !tied.has(root(p.id)));
 }
 
 /**
@@ -1013,6 +1099,34 @@ export function ownPoints(content: Sketch): Sketch["points"] {
  * pinned points and projections followed (`follow`); held, they are not judged (the plane's warning says it
  * all, as the naming model's rule 10).
  */
+/**
+ * An extrude's later profile's cap (version 18) as a file saved before
+ * SL #632 named it: every profile's caps were "start" and "end", told
+ * apart by a tag of the faces round each (rule 3), so a profile's cap was
+ * `name` tagged with its sides' names. Since then a profile k after the
+ * first names its caps `start:k` and `end:k` (naming.ts `nameBody`); the
+ * cap of that kind whose bordering faces are exactly the tag's names, or
+ * null when none is (the name is read as it is).
+ */
+function profileCapNamed(list: readonly NamedBody[], name: string, tag: readonly string[]): string | null {
+  if (!/\/(start|end)$/.test(name)) return null;
+  const want = [...tag].sort().join(",");
+  for (const b of list) {
+    for (let i = 0; i < b.faces.length; i++) {
+      const cap = b.faces[i].names.find((n) => n.startsWith(`${name}:`) && /^\d+$/.test(n.slice(name.length + 1)));
+      if (cap === undefined) continue;
+      const round = new Set<string>();
+      for (const pair of b.view.edge_faces) {
+        if (pair === null || !pair.includes(i)) continue;
+        const other = b.faces[pair[0] === i ? pair[1] : pair[0]]?.names[0];
+        if (other !== undefined) round.add(other);
+      }
+      if ([...round].sort().join(",") === want) return cap;
+    }
+  }
+  return null;
+}
+
 async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, index: DocIndex, kernel: KernelCalls): Promise<FeatureResult> {
   const content = index.sketches.get(f.id)!;
   const featureId = isFaceSketch(f) ? faceFeature(f.intent.parameters.plane as string)! : null;
@@ -1030,15 +1144,20 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const p = content.face!;
   let cause: PlaneWarning["cause"] = "plane-lost";
   const held = (): FeatureResult => ({ status: "built", placement: { plane: squared(p.held ?? p.frame)!, side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } });
-  const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false): Promise<FeatureResult> => {
+  const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false, name?: string): Promise<FeatureResult> => {
     // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried);
     // SL #539: a change of size since by a Scale carries the middle of its own points (not those pinned or projected, which follow
-    // edges by name and are written back after: the middle never moves by settling) as the body's point under it, its sizes kept.
+    // edges by name and are written back after, nor those a constraint or arc ties to them, which settling moves: SL #641 item 1;
+    // so the middle never moves by settling, and a design saved after a rebuild rebuilds the same) as the body's point under it,
+    // its sizes kept. None left (every point follows or is tied to one that does): carried as a sketch drawn before the rule.
     // SL #583 item 3: drawn on a Cut's wall (its name's face turned round) and found now as that face itself (the Combine
     // made a Join or Intersect, or suppressed), or the other way about: not the face it was drawn on, which is gone. A
     // sketch from before version 19 records neither, and is placed as before.
     if (p.reversed !== undefined && (on.reversed?.[face] ?? false) !== p.reversed) return held();
-    const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
+    // SL #707: carried by the input face its name names (on a face merged from level faces, that input's own frame, as it
+    // was drawn with); one drawn before version 22 (`first`) recorded the merged face's first input's, and is carried by it.
+    const now = name === undefined || p.first === true ? frameOfFace(on, face) : namedFrame(on, face, name);
+    const carry = p.body === undefined ? null : carried(p.body, now ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
@@ -1054,8 +1173,20 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const ids = Object.keys(bodies);
     const list = await Promise.all(ids.map((id) => namedOf(id, bodies[id], cache, 0)));
     const r = readDesignReference(faceReference(plane))!;
-    const found = resolveFaceName(list, designNames(list), { name: `face:${r.featureId}/${r.part}`, ...(r.tag && { tag: r.tag }), origin: p.frame.origin });
-    if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split" || found.warning === "whole", found.warning === "whole");
+    // SL #632 item 2: a file from before names a later profile's cap "end" tagged by its sides; read as that profile's own name.
+    const capNow = r.tag === undefined ? null : profileCapNamed(list, `face:${r.featureId}/${r.part}`, r.tag);
+    // SL #707 item 2: a sketch drawn on a whole face now split goes with the piece under its own points (their middle),
+    // carried as each piece has moved since it was drawn; the frame's origin (the world's origin seen onto the face) could
+    // be under another piece. A sketch with no points of its own, or never carried (no `body`), uses the frame's origin.
+    const name = capNow ?? `face:${r.featureId}/${r.part}`;
+    const middle = sketchMiddle(squared(p.frame)!, ownPoints(content)) ?? p.frame.origin;
+    const originOn = (b: number, i: number): readonly number[] => {
+      const built = bodies[ids[b]];
+      const move = p.body === undefined ? null : carried(p.body, (p.first === true ? frameOfFace(built, i) : namedFrame(built, i, name)) ?? undefined);
+      return move === null ? middle : move(middle, false);
+    };
+    const found = resolveFaceName(list, designNames(list), capNow !== null ? { name: capNow, origin: p.frame.origin, originOn } : { name, ...(r.tag && { tag: r.tag }), origin: p.frame.origin, originOn });
+    if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split" || found.warning === "whole", found.warning === "whole", name);
     if ("ambiguous" in found) cause = "plane-ambiguous";
     // A name two faces of its own plain body would share carries on neither (naming.ts): ambiguous, as before a Combine.
     const own = bodies[bodyIdOf(featureId)];
@@ -1118,9 +1249,30 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
   // A Move that moved new pieces of a body it holds (SL #583 item 2) holds them from now on, numbered first as the
   // workspace numbers them (`numberPieces`; its own call after this one gives them their remembered faces), so they
   // stay moved after this rebuild.
+  // A Move that is off when a body it holds is first split (suppressed, rolled back by the marker, greyed or failed:
+  // SL #624 item 2) moved nothing, so named nothing in `takes`; it holds the whole body all the same, and this rebuild
+  // is about to number the new piece, after which no later one could tell it from a piece left unpicked. So it takes
+  // the piece now: one split (`from`) from a body it holds, not numbered yet, made by an item before the Move.
+  const numbered = followed.bodies === undefined ? null : new Set(followed.bodies.map((b) => b.id));
+  const place = new Map(followed.timeline.features.map((f, i) => [f.id, i] as const));
   const takers = followed.timeline.features.flatMap((f) => {
+    if (!isMoveItem(f)) return [];
     const r = build.results[f.id];
-    return isMoveItem(f) && r?.status === "built" && r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (r?.status === "built") return r.takes !== undefined ? [[f, r.takes] as const] : [];
+    if (numbered === null) return [];
+    const held = movedBodies(f);
+    const takes: string[] = [];
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const [id, b] of Object.entries(build.bodies)) {
+        const made = place.get(bodyItem(id) ?? "");
+        if (b.from === undefined || numbered.has(id) || held.includes(id) || takes.includes(id) || made === undefined || made > place.get(f.id)!) continue;
+        if (!held.includes(b.from) && !takes.includes(b.from)) continue;
+        takes.push(id);
+        grew = true;
+      }
+    }
+    return takes.length > 0 ? [[f, takes] as const] : [];
   });
   if (takers.length === 0) return followed;
   let next = numberPieces(followed, Object.keys(build.bodies));
@@ -1238,11 +1390,35 @@ export const constraintsWords = (label: string, why: string): string => `${label
  * Sketch `followed` (its followed points where the body put them) solved
  * with them fixed (constraints.ts `solverRequest`): the other points the
  * solve moved and where to, or why its constraints can't hold there (a
- * conflict, a refusal, a line or arc shrunk below MIN_FEATURE, or the
- * solver failing or taking too long).
+ * conflict, a refusal, a line or arc shrunk below MIN_FEATURE, the solver
+ * failing or taking too long, or a shape turned over).
+ *
+ * One solve from the stored points can land on the shape's mirror image,
+ * the nearer answer the lengths allow: an arc turned inside out
+ * (point-drag.ts `turnedOver`, #545 item 1) or a corner where two curves
+ * meet turned over (`cornerTurned`, SL #630: a sized rectangle drawn from
+ * a box's corner mirrored past it, a slot's ends turned inward). Nobody
+ * moved these points by hand, so every corner counts, and it is said
+ * rather than taken.
  */
 async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch, label: string): Promise<{ solved: { point: string; at: SketchXY }[] } | { message: string }> {
-  const request = solverRequest(followed);
+  const got = await solvedOnce(kernel, followed, label);
+  if ("message" in got) return got;
+  const { at } = got;
+  const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
+  // #545 item 1: an arc the solve would turn inside out (its end past its start, or its sweep jumping to its other branch;
+  // passing a half turn is fine, SL #612), refused as a drag refuses it.
+  if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
+  if (cornerTurned(followed, was, at, false) !== null) return { message: constraintsWords(label, "the shape would turn over") };
+  return { solved: followed.points.flatMap((p) => {
+    const [x, y] = at.get(p.id)!;
+    return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
+  }) };
+}
+
+/** Sketch `sketch` solved once with its followed points fixed: every point's place, or why not (solvedAgain). */
+async function solvedOnce(kernel: KernelCalls, sketch: Sketch, label: string): Promise<{ at: Map<string, readonly [number, number]> } | { message: string }> {
+  const request = solverRequest(sketch);
   let answer: ReturnType<typeof readAnswer>;
   try {
     answer = readAnswer(await kernel.call("solve_sketch", request.text));
@@ -1252,17 +1428,10 @@ async function solvedAgain(kernel: KernelCalls, followed: Sketch, before: Sketch
   }
   if (answer.result === "refused") return { message: constraintsWords(label, `the solver refused it: ${answer.message}`) };
   if (answer.result === "conflict") return { message: constraintsWords(label, "they fight there") };
-  const at = solvedPoints(followed, request, answer.points);
-  const tiny = shrunk(followed, at);
-  if (tiny !== null) return { message: constraintsWords(label, `${curveWord(followed, tiny, "a")} would shrink below the smallest size`) };
-  // #545 item 1: an arc the solve would turn inside out (its end past its start, or its sweep jumping to its other branch;
-  // passing a half turn is fine, SL #612), refused as a drag refuses it (point-drag.ts `turnedOver`).
-  const was = new Map(before.points.map((p) => [p.id, [p.x, p.y] as const]));
-  if (turnedOver(followed, was, at) !== null) return { message: constraintsWords(label, "an arc would turn inside out") };
-  return { solved: followed.points.flatMap((p) => {
-    const [x, y] = at.get(p.id)!;
-    return x === p.x && y === p.y ? [] : [{ point: p.id, at: [x, y] as SketchXY }];
-  }) };
+  const at = solvedPoints(sketch, request, answer.points);
+  const tiny = shrunk(sketch, at);
+  if (tiny !== null) return { message: constraintsWords(label, `${curveWord(sketch, tiny, "a")} would shrink below the smallest size`) };
+  return { at };
 }
 
 /**
@@ -1339,7 +1508,10 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
  * everything after the Move (a sketch on its face, the view, the STL)
  * finds it where the Move put it. All or none: a body the kernel refuses
  * to move (out past model space) leaves every body where it was and fails
- * the Move with the kernel's words. The Move holds the bodies as they
+ * the Move with the kernel's words. A body no longer there (deleted, not
+ * built, or used up by an earlier Combine) is left out with a warning
+ * (`missing`, SL #506 item 4), the rest moved; with none left it fails.
+ * The Move holds the bodies as they
  * were (`holds`), so the next rebuild finds them built. Its bodies are
  * stored by body id (`movedBodies`, Design data version 6, 35ec), each
  * made by an item it depends on (`bodyItem`).
@@ -1360,21 +1532,30 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
     if (r?.status === "greyed") return { status: "greyed", by: r.by };
   }
   const label = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const name = f.provenance.self.label;
   const motions = moveMotions(moveValues(f));
   const from: [string, BuiltBody][] = [];
+  // SL #506 item 4: a body that is no longer there is left out, and the Move moves the rest with a warning naming it,
+  // so a body it also moves never jumps back for it. With none left the Move fails, naming the first as before.
+  const gone: { body: string; said: string; failed: Extract<FeatureResult, { status: "failed" }> }[] = [];
   const held = movedBodies(f);
   for (const body of held) {
     const id = bodyItem(body)!;
     const r = done[id];
     const b = r?.status === "built" ? bodies[body] : undefined;
-    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
-    if (r?.status !== "built") return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
-    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again.
-    if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
+    const what = body === bodyIdOf(id) ? label(id) : `a piece of ${label(id)}`;
+    if (r === undefined) gone.push({ body, said: `${label(id)} was deleted`, failed: { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${name} has nothing to move` } });
+    else if (r.status !== "built") gone.push({ body, said: `${label(id)} is not built`, failed: { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${name} can't move it` } });
+    // A piece its item no longer makes, split from a body this Move holds that is here: that body holds it again (SL #583 item 2).
+    else if (b === undefined && isPiece(body) && !r.bodies?.includes(body) && splitBy(doc, id).some((t) => held.includes(t) && bodies[t] !== undefined)) continue;
     // Built, but gone from here on: an earlier Combine or extrude used it up, or left no such piece (as `booleanSteps` says it; hunts 11-06, 11-08).
-    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${f.provenance.self.label} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
-    from.push([body, b]);
+    else if (b === undefined) gone.push({ body, said: `an earlier Combine or extrude used up ${what} or left no such piece`, failed: { status: "failed", cause: "failed-input", input: id, message: `${name} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` } });
+    else from.push([body, b]);
   }
+  if (from.length === 0 && gone.length > 0) return gone[0].failed;
+  const list = (names: readonly string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+  const words = (body: string) => (isPiece(body) ? `a piece of ${label(bodyItem(body)!)}` : label(bodyItem(body)!));
+  const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
   // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
   const numbered = doc.bodies === undefined ? null : new Set(doc.bodies.map((b) => b.id));
   const takes: string[] = [];
@@ -1409,7 +1590,7 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
   }
   const holds = from.map(([, b]) => b.handle);
   for (const [id, b] of moved) bodies[id] = b;
-  return { status: "built", holds, ...(takes.length > 0 ? { takes } : {}) };
+  return { status: "built", holds, ...missing, ...(takes.length > 0 ? { takes } : {}) };
 }
 
 /** The bodies item `id`'s booleans split pieces from (SL #583 item 2): a Combine's target, an operation extrude's bodies. */
@@ -1467,6 +1648,46 @@ const KERNEL_OP: Record<string, BooleanOp> = { join: "union", cut: "subtract", i
 
 /** A body as boolean-names.ts names it (built-body.ts `namedBody`), its view asked of the cache. */
 const namedOf = async (id: string, b: BuiltBody, cache: BodyCache, place: number): Promise<NamedBody> => namedBody(id, b, await cache.view(b.handle), place);
+
+/** A boolean step's input (`booleanSteps`): its body id, kernel body, body, place in made order and the id it keeps (an Extrude join's). */
+export interface StepInput {
+  id: string;
+  handle: BodyHandle;
+  b: BuiltBody;
+  place: number;
+  keepsId?: number;
+}
+
+/** Each input of a step named, as boolean-names.ts names a body (each is meshed for it). */
+async function namedInputs(pending: readonly StepInput[], cache: BodyCache): Promise<NamedBody[]> {
+  const inputs: NamedBody[] = [];
+  for (const x of pending) {
+    const named = await namedOf(x.id, x.b, cache, x.place);
+    inputs.push(x.keepsId !== undefined ? { ...named, keepsId: x.keepsId } : named);
+  }
+  return inputs;
+}
+
+/**
+ * A boolean step's answer named (`combineNames`) from the meshes of its inputs and answer, with each result body's
+ * faces' origins, frames and turned faces (`NamedStep`): all that Design keeps of the step but the bodies' places.
+ */
+async function namedStep(feature: string, op: BooleanOp, inputs: readonly NamedBody[], result: BooleanResult, built: ReadonlyMap<BodyHandle, BuiltBody>, cache: BodyCache, firstPiece: number, own: string | undefined): Promise<NamedStep> {
+  const [t, ...ts] = inputs;
+  const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
+  // Numbered by rank alone, on from the last boolean's; the remembered pieces are found once all are made (booleanSteps).
+  const named = combineNames(feature, op, t, ts, result, views, firstPiece, undefined, own);
+  if ("failed" in named) return named;
+  const bodies: Extract<NamedStep, { bodies: unknown }>["bodies"] = [];
+  for (const nb of named.bodies) {
+    const h = result.history[result.bodies.indexOf(nb.handle)];
+    const frames = framesOfResult(h, built);
+    const faces = withOrigins(nb.faces, h, inputs, frames, built);
+    const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
+    bodies.push({ id: nb.id, handle: nb.handle, faces, made: nb.made, ...(frames && { frames }), ...(reversed && { reversed }) });
+  }
+  return { bodies };
+}
 
 /**
  * A Combine's result (step 35f1; rules: docs/document-model.md section 8,
@@ -1530,10 +1751,13 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   const madeKey = (id: string): [number, number] => [places.get(bodyItem(id)!) ?? Infinity, isPiece(id) ? Number(id.slice(id.lastIndexOf(":") + 1)) : 0];
   const remembered = new Map(remembers ? (doc.bodies ?? []).flatMap((b) => (b.faces !== undefined && (isPiece(b.id) || b.id === own) && bodyItem(b.id) === f.id ? [[b.id, b.faces] as const] : [])) : []);
   const pieceFaces: Record<string, string[]> = {};
-  const renumbered: string[] = [];
+  // Two of the item's bodies under one id would lose one of them without a word (SL #538 item 1): the numbering below
+  // never gives one, and were it ever to, the item fails here and no body changes.
+  const clash = (id: string): FeatureResult => ({ status: "failed", cause: "error", message: `${label} can't be made: two of its bodies would both be ${id}, so one would be lost (a fault in SpindleLabs, not in the design)`, ...(made.length > 0 ? { holds: made } : {}) });
   const misses: Miss[] = [];
   for (const step of steps) {
-    const inputs: NamedBody[] = [];
+    // Each input as it goes in: named (meshed) only when its step's names are not kept (`BodyCache.naming`).
+    const pending: StepInput[] = [];
     const built = new Map<BodyHandle, BuiltBody>();
     const joined = joins ? [step.target, ...step.tools].filter((b) => bodyItem(b) !== f.id).sort((a, b) => madeKey(a)[0] - madeKey(b)[0] || madeKey(a)[1] - madeKey(b)[1]) : [];
     for (const body of [step.target, ...step.tools]) {
@@ -1548,20 +1772,23 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       const b = work[body];
       if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't use ${body === bodyIdOf(maker) ? nameOf(maker) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` };
       // Equal bodies share one kernel body (`BodyCache.body`): a second pick of it gets a body of its own, so the
-      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey).
-      const copies = inputs.filter((x) => x.handle === b.handle).length;
-      const own = copies > 0 && b.spec !== null ? { ...b, handle: await cache.body(b.spec, copies) } : b;
+      // kernel sees the bodies the person picked, not one body as its own tool (35f1d, found by the monkey). A body
+      // with no spec (a Combine's result, which its Copy shares: SL #624 item 3) gets its own from the kernel's
+      // body_move by nothing, once more for each pick before it: the same faces in the same order, where they are.
+      const copies = pending.filter((x) => x.handle === b.handle).length;
+      const own = copies === 0 ? b : { ...b, handle: b.spec !== null ? await cache.body(b.spec, copies) : await cache.moved(b.handle, Array.from({ length: copies }, (): Motion => ({ move: [0, 0, 0] }))) };
       if (own !== b) made.push(own.handle);
       built.set(own.handle, own);
-      const named = await namedOf(body, own, cache, places.get(b.feature) ?? places.get(maker)!);
-      inputs.push(joined.includes(body) ? { ...named, keepsId: joined.indexOf(body) } : named);
+      pending.push({ id: body, handle: own.handle, b: own, place: places.get(b.feature) ?? places.get(maker)!, ...(joined.includes(body) ? { keepsId: joined.indexOf(body) } : {}) });
     }
-    const [t, ...ts] = inputs;
+    const [t, ...ts] = pending;
     const op = KERNEL_OP[operation];
+    // A grouped join needs each input's bounds, so its inputs are named first.
+    let inputs = grouped ? await namedInputs(pending, cache) : undefined;
     let result: BooleanResult;
     try {
       // An extrude of several profiles (`unitedRun`): only the groups that may share a face are joined (SL #611 C1).
-      if (grouped) result = await groupedJoin(cache, inputs, new Set(Object.values(work).filter((b) => !inputs.some((x) => x.handle === b.handle)).map((b) => b.handle)));
+      if (grouped) result = await groupedJoin(cache, inputs!, new Set(Object.values(work).filter((b) => !pending.some((x) => x.handle === b.handle)).map((b) => b.handle)));
       else {
       result = await cache.boolean(t.handle, ts.map((x) => x.handle), op);
       // Equal inputs give the cached answer: when an earlier Combine already holds it (two equal boxes each cut by
@@ -1574,27 +1801,46 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
       if (e instanceof KernelError && (e.kind === "invalid-input" || e.kind === "non-manifold-result" || e.kind === "thin-result")) {
         // Refused, it still holds the bodies it made for an equal pick, so the next rebuild needn't build them again
         // (a body cut by its own Duplicate, then joined with it: SL #360's seed 11).
-        return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}), ...(made.length > 0 ? { holds: made } : {}) };
+        // SL #677 item 1: a round body is refused whatever else is asked (the kernel's booleans take flat faces only for
+        // now), so with one among the inputs the item says so in the app's words, told by the bodies' own face types.
+        // Asked of the cache only here, on a refusal (a step that builds never meshes its inputs for this).
+        const round = e.kind !== "invalid-input" ? [] : await Promise.all(pending.map(async (x) => (await cache.view(x.handle)).face_types.some((type) => type !== "plane")));
+        const who = !round.some(Boolean) ? null : round[0] ? "target" : step.tools.some((b, i) => round[i + 1] && (bodyItem(b) ?? f.id) !== f.id) ? "tool" : "extrude";
+        return { status: "failed", cause: "error", message: `${label} can't be made: ${who === null ? e.message : roundWords(who)}`, ...(e.touches.length > 0 ? { touches: e.touches } : {}), ...(e.thin.length > 0 ? { thin: e.thin } : {}), ...(made.length > 0 ? { holds: made } : {}) };
       }
       throw e;
     }
     const missed = missedTools(operation, t.handle, ts.map((x) => x.handle), result);
     // SL #583 item 3: a Join's tool none of whose faces is left lies wholly inside, so its words never say it doesn't reach.
     const inside = operation === "join" ? missed.filter((i) => leavesNoFace(ts[i].handle, result)).map((i) => step.tools[i]) : [];
+    // SL #677 item 3: an extrude joined wholly inside the body and flush with a face of it (the sketch on a face,
+    // extruded into the body) adds nothing, though its flush face is merged into the body's (misses.ts `joinsInside`).
+    // Only an operation extrude's Join asks or warns (a Combine's never does), so only it is looked at.
+    if (joins && !grouped)
+      for (const [i, tool] of ts.entries())
+        if (!missed.includes(i) && mayJoinInside(t.handle, tool.handle, result) && joinsInside(t.handle, (await cache.view(t.handle)).faces, tool.handle, result)) {
+          missed.push(i);
+          inside.push(step.tools[i]);
+        }
     if (missed.length > 0) misses.push({ target: step.target, tools: missed.map((i) => step.tools[i]), ...(inside.length > 0 && { inside }) });
-    const views = await Promise.all(result.bodies.map((h) => cache.view(h)));
-    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);
+    // The same step's names for this very answer, else worked out from the meshes and kept (SL #677 item 2).
+    const key = cache.namingKey(f.id, op, pending, firstPiece, own);
+    let named = cache.naming(result, key);
+    if (named === undefined) {
+      inputs ??= await namedInputs(pending, cache);
+      named = await namedStep(f.id, op, inputs, result, built, cache, firstPiece, own);
+      cache.keepNaming(result, key, named);
+    }
     if ("failed" in named) return { status: "failed", cause: "error", message: `${label} can't be made: ${named.failed}`, ...(made.length > 0 ? { holds: made } : {}) };
     const targetFeature = work[step.target].feature;
     // Each input's item, for a piece keeping its id (an Extrude join's other bodies, hunt 11-08).
     const featureOf = new Map([step.target, ...step.tools].map((b) => [b, work[b].feature] as const));
     for (const tool of step.keepTools ? [] : step.tools) delete work[tool];
     delete work[step.target];
+    const twice = named.bodies.find((nb, i) => nb.id in work || named.bodies.findIndex((x) => x.id === nb.id) !== i);
+    if (twice !== undefined) return clash(twice.id);
     for (const nb of named.bodies) {
-      const h = result.history[result.bodies.indexOf(nb.handle)];
-      const frames = framesOfResult(h, built);
-      const faces = withOrigins(nb.faces, h, inputs, frames);
-      const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
+      const { faces, frames, reversed } = nb;
       const piece = !featureOf.has(nb.id) || nb.id === own;
       work[nb.id] = { feature: nb.id === step.target ? targetFeature : (featureOf.get(nb.id) ?? f.id), handle: nb.handle, spec: null, named: { faces, made: nb.made }, by: f.id, ...(frames && { frames }), ...(piece && { from: step.target }), ...(reversed && { reversed }) };
       if (!ids.includes(nb.id)) ids.push(nb.id);
@@ -1603,9 +1849,26 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
         if (remembers) pieceFaces[nb.id] = shownFaces(nb.faces);
       }
     }
-    for (const id of named.renumbered) if (!renumbered.includes(id)) renumbered.push(id);
-    holds.push(...inputs.map((x) => x.handle));
+    holds.push(...pending.map((x) => x.handle));
   }
+  // One numbering for the whole item (docs/document-model.md section 8, "one feature, one renaming"): each remembered
+  // piece stays on the piece with its faces, whichever boolean made it, and the others take the numbers no piece has.
+  // Numbered a boolean at a time, a new chunk of one body took the number a chunk of another body was remembered with,
+  // and one overwrote the other: a whole chunk gone from the design, by the order the bodies were picked in.
+  const numbered = Object.keys(pieceFaces);
+  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), remembered, own);
+  const pieces = numbered.map((id) => ({ body: work[id], faces: pieceFaces[id] }));
+  for (const id of numbered) {
+    delete work[id];
+    delete pieceFaces[id];
+  }
+  for (const [i, { body, faces }] of pieces.entries()) {
+    if (settled.ids[i] in work || settled.ids[i] in pieceFaces) return clash(settled.ids[i]);
+    if (body !== undefined) work[settled.ids[i]] = body;
+    pieceFaces[settled.ids[i]] = faces;
+  }
+  const renumbered = settled.renumbered;
+  for (const [i, id] of ids.entries()) if (numbered.includes(id)) ids[i] = settled.ids[numbered.indexOf(id)];
   for (const id of Object.keys(bodies)) if (!(id in work)) delete bodies[id];
   Object.assign(bodies, work);
   const kept = ids.filter((id) => id in work);
@@ -1613,13 +1876,26 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
   // By the numbers the browser shows them with ("Body 5"); a remembered piece always has one.
   const shown = renumbered.map((id) => `Body ${doc.bodies!.find((b) => b.id === id)!.number}`);
   const warn = shown.length === 0 ? {} : { pieces: { renumbered, message: `${label}'s pieces changed since they were numbered, so ${shown.join(" and ")} may now be ${shown.length === 1 ? "another piece" : "other pieces"}: check the items that use ${shown.length === 1 ? "it" : "them"}, then edit ${label} to keep its pieces as they are now` } };
-  // Named as the browser shows them ("Body 2"), else by the item (an operation extrude's own body).
-  const numbers = bodyNumbers(doc);
-  const bodyWords = (b: string) => (numbers.has(b) ? `Body ${numbers.get(b)}` : bodyItem(b) === f.id ? label : nameOf(bodyItem(b)!));
   // A Combine Join of bodies that don't meet keeps them as separate bodies with no warning (Ben's Fusion answer F2); an
   // Extrude Join that reaches nothing still warns (#521).
-  const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, message: missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined) } };
+  const missing = misses.length === 0 || operation === "intersect" || (operation === "join" && !isOperationExtrude(f)) ? {} : { misses: { list: misses, operation, message: missesMessage(doc, f, misses, operation) } };
   return { status: "built", bodies: kept, holds, ...(Object.keys(faces).length > 0 ? { pieceFaces: faces } : {}), ...warn, ...missing };
+}
+
+/**
+ * The row's words for item `f`'s Cut or Join whose tools change nothing,
+ * each body named as the browser shows it ("Body 2"), else by its item. A
+ * piece the build itself made (an Extrude Join's own block) has no number
+ * until the build is over, so the app says the words again with the
+ * numbered document (workspace.ts `warningsOf`): the same file then reads
+ * the same on its first build as when opened again (SL #677 item 5).
+ */
+export function missesMessage(doc: DesignDocument, f: Feature, misses: readonly Miss[], operation: "cut" | "join"): string {
+  const label = f.provenance.self.label;
+  const nameOf = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const numbers = bodyNumbers(doc);
+  const bodyWords = (b: string) => (numbers.has(b) ? `Body ${numbers.get(b)}` : bodyItem(b) === f.id ? label : nameOf(bodyItem(b)!));
+  return missWords(label, operation, misses, bodyWords, isOperationExtrude(f) ? bodyIdOf(f.id) : undefined);
 }
 
 /**
@@ -1627,7 +1903,7 @@ async function booleanSteps(doc: DesignDocument, f: Feature, steps: readonly Boo
  * input faces lying level (the history's `also`), the input faces it lies on
  * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then.
  */
-function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined): readonly FaceNames[] {
+function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined, built: ReadonlyMap<BodyHandle, BuiltBody>): readonly FaceNames[] {
   if (h?.also === undefined || !h.also.some((a) => a.length > 0)) return faces;
   const byHandle = new Map(inputs.map((x) => [x.handle, x] as const));
   return faces.map((face, i) => {
@@ -1635,7 +1911,10 @@ function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][nu
     if (more.length === 0) return face;
     const origins = [h.faces[i], ...more].flatMap((from) => {
       const input = from === undefined ? undefined : byHandle.get(from.body);
-      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face }];
+      // Its own frame then (SL #707), for a sketch named after it to be carried by its input's Moves.
+      const b = built.get(from.body);
+      const frame = b === undefined ? null : frameOfFace(b, from.face);
+      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face, ...(frame !== null && { frame }) }];
     });
     const frame = frames?.[i] ?? null;
     return { ...face, origins, ...(frame !== null && { frame }) };
@@ -1693,7 +1972,7 @@ async function operationRun(doc: DesignDocument, f: Feature, self: Omit<BuiltBod
  */
 async function unitedRun(doc: DesignDocument, f: Feature, built: readonly Omit<BuiltBody, "feature">[], rest: Partial<Extract<FeatureResult, { status: "built" }>>, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   const own = bodyIdOf(f.id);
-  const prisms = await joinedRegions(built, cache);
+  const prisms = await joinedRegions(built.map((p, k) => (k === 0 ? p : { ...p, profile: k + 1 })), cache);
   if (prisms.length === 1) {
     bodies[own] = { feature: f.id, ...prisms[0] };
     return { status: "built", bodies: [own], ...rest };
@@ -1710,8 +1989,53 @@ async function unitedRun(doc: DesignDocument, f: Feature, built: readonly Omit<B
   return { ...r, ...rest };
 }
 
+/**
+ * The bodies an extrude of several profiles makes from these prisms
+ * (each profile's spec and curves, the first profile's first), as
+ * `unitedRun` makes them, for Extrude's preview (SL #632 item 3: the
+ * preview drew the prisms apart and added their volumes, counting an
+ * overlap twice): the regions of one sketch merged (`joinedRegions`), each
+ * group that may share a face joined by the kernel, a prism alone in its
+ * group as it is. On a body store of its own, closed after; only the views
+ * are kept. A join the kernel refuses rejects, with its error.
+ */
+export async function unitedViews(kernel: KernelCalls, prisms: readonly { spec: BodySpec; curves?: CurveIds }[]): Promise<BodyView[]> {
+  const cache = new BodyCache(kernel);
+  try {
+    const built = await Promise.all(prisms.map(async (p, k) => ({ handle: await cache.body(p.spec, k), spec: p.spec, ...(p.curves ? { curves: p.curves } : {}) })));
+    const joined = await joinedRegions(built, cache);
+    const views = await Promise.all(joined.map((p) => cache.view(p.handle)));
+    const out: BodyView[] = [];
+    for (const group of contactGroups(views.map((v) => v.bounds))) {
+      if (group.length === 1) {
+        out.push(views[group[0]]);
+        continue;
+      }
+      const [t, ...ts] = group.map((i) => joined[i].handle);
+      const r = await cache.boolean(t, ts, "union").catch(async (err: unknown) => {
+        // In the same plain words as OK's refusal (`unitedRun`), never the kernel's.
+        if (await curvedMeeting(joined, cache)) throw new Error(`These profiles can't be extruded together: ${CURVED_TOUCHING}`);
+        throw err;
+      });
+      for (const h of r.bodies) out.push(await cache.view(h));
+    }
+    return out;
+  } finally {
+    await cache.close();
+  }
+}
+
 /** Why an extrude of several profiles whose curved prisms touch is refused, while the kernel's booleans take flat faces only. */
 export const CURVED_TOUCHING = "profiles with curved sides can only be extruded together when they don't touch or overlap, or are side by side regions of one sketch, for now: extrude them one at a time";
+
+/**
+ * SL #677 item 1: why a Combine or an operation extrude with a round body is refused, in the app's words. `who` is the
+ * round one: the body changed, a tool body of a Combine, or the extrude's own shape.
+ */
+export function roundWords(who: "target" | "tool" | "extrude"): string {
+  const round = who === "target" ? "the body it changes has a round face" : who === "tool" ? "a tool body has a round face" : "this extrude has a round side";
+  return `${round}. Cut, Join and Intersect work on flat-sided shapes for now; round shapes are coming.`;
+}
 
 /** Whether an extrude's spec has a curved side (a circle or an arc in its profile). */
 function curvedSpec(spec: BodySpec | null): boolean {
@@ -1752,7 +2076,8 @@ async function joinedRegions(prisms: readonly Omit<BuiltBody, "feature">[], cach
       const profile = mergedOutline(same.map((i) => (prisms[i].spec as Extract<BodySpec, { extrude: unknown }>).extrude.profile));
       if (profile === null) continue;
       const spec: BodySpec = { extrude: { ...first.extrude, profile } };
-      out[same[0]] = { handle: await cache.body(spec), spec, ...(prisms[same[0]].curves ? { curves: prisms[same[0]].curves } : {}) };
+      const { curves, profile: k } = prisms[same[0]];
+      out[same[0]] = { handle: await cache.body(spec), spec, ...(curves ? { curves } : {}), ...(k !== undefined ? { profile: k } : {}) };
       for (const i of same.slice(1)) out[i] = null;
     }
   }
@@ -1809,9 +2134,11 @@ export async function extrudeSpec(
   const sketchId = f.intent.parameters.sketch as string;
   const distance = f.intent.parameters.distance as number;
   const flip = f.intent.parameters.flip === true;
+  // Symmetric (53a1): the same extrude moved back half its distance, so it reaches d/2 either side of the plane.
+  const both = isSymmetricParams(f.intent.parameters);
   const item = index.items.get(sketchId);
   const region = regionOf(f);
-  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);
+  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region, both);
   // The extrude's provenance names the sketch it was made from, so a deleted one is still called by its label.
   if (item === undefined) return await lost("deleted-input", `${f.provenance.from.find((r) => r.id === sketchId)?.label ?? sketchId} was deleted`, []);
   const content = index.sketches.get(sketchId)!;
@@ -1824,15 +2151,17 @@ export async function extrudeSpec(
   if (!("outline" in out)) return await lost(out.lost, said(out), out.curves);
   // Where the sketch lies: given by the rebuild, an origin plane's, or (asked from outside a rebuild) its face's as the timeline builds it.
   const at = placed !== undefined ? placed : isFaceSketch(item) ? await placementOf(kernel, doc, sketchId) : originPlacement(item);
-  return { spec: placedSpec(out.outline, distance, at, flip), curves: idsOf(content) };
+  return { spec: placedSpec(out.outline, distance, at, flip, both), curves: idsOf(content) };
 }
 
 /**
  * An extrude's spec: on XY (`at` null) as before 26c, with no frame unless
  * flipped; else in the sketch's frame (squared up, face-sketch.ts), going
- * the way the sketch faces (rule 2), the other way when flipped.
+ * the way the sketch faces (rule 2), the other way when flipped; when
+ * symmetric (53a1), centred on the plane (`centredSpec`), never flipped.
  */
-function placedSpec(profile: Outline, distance: number, at: SketchPlacement | null, flip: boolean): BodySpec {
+function placedSpec(profile: Outline, distance: number, at: SketchPlacement | null, flip: boolean, symmetric = false): BodySpec {
+  if (symmetric) return centredSpec(placedSpec(profile, distance, at, false));
   if (at === null) return { extrude: flip ? { profile, distance, flip: true } : { profile, distance } };
   const back = (at.side === -1) !== flip;
   return { extrude: { profile, distance, frame: frameOf(squared(at.plane)!), ...(back ? { flip: true } : {}) } };
@@ -1856,10 +2185,10 @@ async function placementOf(kernel: KernelCalls, doc: DesignDocument, sketchId: s
 }
 
 /** An extrude whose sketch is lost: its kept shape with the warning, or failed with the cause when it has none. */
-async function keptSpec(kept: KeptShape | undefined, distance: number, flip: boolean, warning: KeptWarning, kernel: KernelCalls, region?: RegionRef): Promise<ExtrudeSpec | Extract<FeatureResult, { status: "failed" }>> {
+async function keptSpec(kept: KeptShape | undefined, distance: number, flip: boolean, warning: KeptWarning, kernel: KernelCalls, region?: RegionRef, symmetric = false): Promise<ExtrudeSpec | Extract<FeatureResult, { status: "failed" }>> {
   if (kept === undefined) return { status: "failed", cause: warning.cause, input: warning.sketch, message: warning.message, curves: warning.curves };
   const out = await outlineOf(kernel, kept, region);
   // A kept shape made an outline when it was kept; one that doesn't (a hand-edited file) fails the extrude with the kernel's words.
   if (!("outline" in out)) return { status: "failed", cause: "error", message: `the kept shape makes no outline: ${out.message}` };
-  return { spec: placedSpec(out.outline, distance, kept.placement ?? null, flip), curves: idsOf(kept), warning };
+  return { spec: placedSpec(out.outline, distance, kept.placement ?? null, flip, symmetric), curves: idsOf(kept), warning };
 }

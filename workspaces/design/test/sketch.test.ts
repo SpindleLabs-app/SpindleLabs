@@ -198,11 +198,11 @@ test("a real version 1 file (saved by the SpindleLabs before 21b) opens as versi
   const p = projectFromJson(REAL_V1, DESIGN);
   const doc = p.workspaces.design as DesignDocument;
   v1.timeline.features[0].provenance.self.label = "L-bracket 1";
-  assert.deepEqual(doc, { ...v1, version: 19, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
+  assert.deepEqual(doc, { ...v1, version: 22, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
   assert.deepEqual(partOf(doc), { shape: "l-bracket", sizes: { width: 40, depth: 30, height: 20 } });
   // Saved, it is version 6; opened and saved again, byte-identical.
   const saved = projectToJson(p);
-  assert.equal(JSON.parse(saved).workspaces.design.version, 19);
+  assert.equal(JSON.parse(saved).workspaces.design.version, 22);
   assert.equal(projectToJson(projectFromJson(saved, DESIGN)), saved);
 });
 
@@ -500,5 +500,8 @@ test("sketchOutline hands the kernel the arcs apart from the lines and circles (
   const asked: unknown[][] = [];
   const kernel = { call: (async (...args: unknown[]) => (asked.push(args), { open: "x" })) } as unknown as KernelCalls;
   await assert.rejects(sketchOutline(kernel, doc, sketch), /^Error: Sketch 1 has no closed outline: x$/);
-  assert.deepEqual(asked, [["sketch_outline", [{ a: [0, 0], b: [40, 0] }, { a: [0, 40], b: [0, 0] }], [], [{ start: [40, 0], end: [0, 40], centre: [0, 0] }]]]);
+  // Refused as an outline, the same curves are asked about as regions (one shape with holes is still an outline,
+  // SL #639 item 3); this stand-in answers neither, so the first refusal stands.
+  const curves = [[{ a: [0, 0], b: [40, 0] }, { a: [0, 40], b: [0, 0] }], [], [{ start: [40, 0], end: [0, 40], centre: [0, 0] }]];
+  assert.deepEqual(asked, [["sketch_outline", ...curves], ["sketch_regions", ...curves]]);
 });

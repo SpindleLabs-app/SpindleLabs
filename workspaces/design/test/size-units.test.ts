@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView } from "@fission/core";
-import { propertiesPanel } from "../src/properties.ts";
+import { commaWords } from "@fission/core";
+import { panelSizeRefused, propertiesPanel } from "../src/properties.ts";
 
 // U2c2: the Properties size boxes in the chosen unit. The document holds millimetres; a box shows mm or inches and
 // `inputs[i].value` is always millimetres as text, so the rest of the workspace never knows which unit is on screen.
@@ -97,4 +98,66 @@ test("a panel that was replaced stops listening", () => {
   choose("in");
   assert.equal(first.isConnected, false);
   assert.equal(slot.querySelector<HTMLInputElement>("#width")!.value, "1.575", "the new panel reshows its own boxes (the default 40 mm)");
+});
+
+// Issue #518 (bug hunt 2026-11-11): the boxes were number boxes, so the browser threw away a typed unit or a decimal comma
+// and the app read what was left: "1,5" built 15 mm, "2.5 cm" 2.5 mm, "25.4mm" in inches 25.4 in. Now they are text boxes
+// (a decimal keypad on a phone) and every unit or comma is either read or refused in words, never dropped.
+
+test("the size boxes are text boxes with a decimal keypad, so the browser keeps everything typed", () => {
+  const { $ } = setup();
+  for (const id of ["width", "depth", "height"]) {
+    assert.equal($(id).type, "text", id);
+    assert.equal($(id).inputMode, "decimal", id);
+  }
+});
+
+test("hand-worked: a unit typed after the number is read, whichever unit the box shows (#518)", () => {
+  const { p, $ } = setup();
+  const reads = (typed: string) => (($("width").value = typed), p.inputs[0].value);
+  assert.equal(reads("2.5 cm"), "25"); // 1 cm = 10 mm: 2.5 × 10 = 25
+  assert.equal(reads("2.5cm"), "25");
+  assert.equal(reads("1in"), "25.4"); // 1 in = 25.4 mm exactly
+  assert.equal(reads('2"'), "50.8"); // 2 × 25.4 = 50.8
+  assert.equal(reads("0.3 m"), "300"); // 1 m = 1000 mm: 0.3 × 1000 = 300 (299.99999999999994 in floating point, rounded)
+  assert.equal(reads("12 mm"), "12");
+  const inch = setup("in");
+  inch.$("width").value = "25.4mm"; // in an inch box, "mm" still means millimetres: 25.4 mm, not 25.4 in (645.16 mm)
+  assert.equal(inch.p.inputs[0].value, "25.4");
+  inch.$("width").value = "1"; // a bare number is in the box's unit: 1 in = 25.4 mm
+  assert.equal(inch.p.inputs[0].value, "25.4");
+  inch.$("width").value = "2,5"; // 2.5 in = 2.5 × 25.4 = 63.5 mm
+  assert.equal(inch.p.inputs[0].value, "63.5");
+});
+
+test("hand-worked: a decimal comma is a decimal point; a comma that could separate thousands is refused in words (#518)", () => {
+  const { p, $ } = setup();
+  const typed = () => Object.fromEntries(["width", "depth", "height"].map((k, i) => [k, p.inputs[i].value])) as Record<"width" | "depth" | "height", string>;
+  ["40", "30", "20"].forEach((mm, i) => (p.inputs[i].value = mm));
+  $("width").value = "1,5"; // one and a half: 1.5 mm, never 15
+  assert.equal(p.inputs[0].value, "1.5");
+  $("width").value = "0,250"; // a leading 0 is never a thousands group: 0.25 mm
+  assert.equal(p.inputs[0].value, "0.25");
+  $("width").value = "12,5 cm"; // 12.5 cm = 125 mm
+  assert.equal(p.inputs[0].value, "125");
+  for (const t of ["1,000", "12,345", "1,000,000", "1.000,5"]) {
+    $("width").value = t;
+    assert.equal(panelSizeRefused("box", typed()), `The width: ${commaWords(t)}`, t);
+  }
+  // Text that is no size is refused, never read as another number: the unit is not dropped, hex is not 16.
+  for (const t of ["2.5 cx", "2.5 mm mm", "0x10", "1e999", "abc"]) {
+    $("width").value = t;
+    assert.equal(panelSizeRefused("box", typed()), "Type the width in mm.", t);
+  }
+});
+
+test("0.9× and 1.1× of the largest size, typed in another unit (#518): 90,000 cm is taken, 110,000 cm refused", () => {
+  const { p, $ } = setup();
+  const typed = () => Object.fromEntries(["width", "depth", "height"].map((k, i) => [k, p.inputs[i].value])) as Record<"width" | "depth" | "height", string>;
+  ["40", "30", "20"].forEach((mm, i) => (p.inputs[i].value = mm));
+  $("width").value = "90000 cm"; // 900,000 mm: 0.9 × the 1,000,000 mm (1 km) the modeller works at
+  assert.equal(p.inputs[0].value, "900000");
+  assert.equal(panelSizeRefused("box", typed()), null);
+  $("width").value = "110000 cm"; // 1,100,000 mm: 1.1 × 1 km
+  assert.match(panelSizeRefused("box", typed())!, /^The width can be at most 1000000 mm/);
 });

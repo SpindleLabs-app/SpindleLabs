@@ -31,7 +31,7 @@ function design(distance: number, cuts: number[]): { doc: DesignDocument; id: st
 
 const listed = (a: App) => [...a.window.document.querySelectorAll("#edit-bodies input[type=checkbox]")].map((e) => `${e.parentElement!.textContent!.trim()}:${(e as unknown as HTMLInputElement).checked}`);
 async function typeDistance(a: App, text: string) {
-  const box = a.$("#feature-edit input[type=number]") as HTMLInputElement;
+  const box = a.$("#feature-edit input[inputmode=decimal]") as HTMLInputElement;
   box.value = text;
   box.dispatchEvent(new a.window.Event("input", { bubbles: true }) as unknown as Event);
   await a.settle();

@@ -23,6 +23,7 @@
 import type { Fit } from "@fission/print";
 import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
 import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
+import { SketchFull } from "./sketch-room.ts";
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, lonePoints, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
@@ -271,6 +272,16 @@ function whereIs(sketch: Sketch, end: LineEnd): SketchXY {
  * the new point. A click on the chain's last point draws nothing.
  */
 export function clickAt<T extends SketchTool>(doc: DesignDocument, tool: T, at: SketchXY): { doc: DesignDocument; tool: T; drew: boolean; note?: string } {
+  // A sketch at the reader's limits (#641 item 2) draws nothing, and the click says why; the tool stays where it was.
+  try {
+    return clickIn(doc, tool, at);
+  } catch (e) {
+    if (e instanceof SketchFull) return { doc, tool, drew: false, note: e.message };
+    throw e;
+  }
+}
+
+function clickIn<T extends SketchTool>(doc: DesignDocument, tool: T, at: SketchXY): { doc: DesignDocument; tool: T; drew: boolean; note?: string } {
   if (tool.kind === "rectangle") return rectangleClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "circle") return circleClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "arc") return arcClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
@@ -308,7 +319,9 @@ function lineClick(doc: DesignDocument, tool: LineTool, at: SketchXY): { doc: De
   if (there !== null && sketch.curves.some((c) => c.kind === "line" && c.construction !== true && ((c.start === from && c.end === there) || (c.start === there && c.end === from)))) return { doc, tool, drew: false, note: SAME_LINE };
   const drawn = drawLine(doc, tool.sketch, tool.from, end);
   const line = sketchOf(drawn.doc, tool.sketch).curves.find((c) => c.id === drawn.id) as SketchLineCurve;
-  return { doc: drawn.doc, tool: { ...tool, from: there ? null : line.end }, drew: true };
+  // A line drawn exactly level gets Horizontal, one exactly upright Vertical, as the Rectangle tool's sides do (SL #630):
+  // a rectangle drawn line by line, or a side drawn again, then stays square when a size is typed on it.
+  return { doc: squaredRectangle(drawn.doc, tool.sketch, [drawn.id]), tool: { ...tool, from: there ? null : line.end }, drew: true };
 }
 
 /** A rectangle's two clicks, the second at the opposite corner, sharing points; `note` says why a second click on the first corner's row or column, or one making it under MIN_SIZE wide or high (`SMALL_RECTANGLE`), draws nothing. */

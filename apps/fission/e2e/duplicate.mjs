@@ -134,7 +134,7 @@ try {
       await until(page, () => document.body.dataset.selection === "face:feature-1/top", null, "the box's top picked");
       await page.keyboard.press("Control+c");
       const copied = await page.evaluate(() => navigator.clipboard.readText());
-      assert.match(copied, /^SpindleLabs bodies [a-z0-9]+: body:feature-1$/);
+      assert.match(copied, /^SpindleLabs bodies [a-z0-9]+: body:feature-1=box%20Box%201$/);
       await page.keyboard.press("Control+v");
       await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "Move open on the pasted copy");
       await rebuilt(page);

@@ -74,7 +74,7 @@ test("the reader takes a Duplicate as written and refuses one broken in each way
   assert.throws(() => readDesignDocument(broken((f) => (f.dependsOn = ["feature-1", "feature-2"]))), { message: "Design duplicate feature-3 must depend on exactly the item that made the body it copies (feature-1)" });
   // Design data version 11 brought the Duplicate: a file saying version 10 with one is refused, naming both; version 10
   // without one reads as 11, unchanged.
-  assert.equal(readDesignDocument(good).version, 19);
+  assert.equal(readDesignDocument(good).version, 22);
   assert.throws(() => readDesignDocument({ ...good, version: 10 }), { message: "Design data says version 10 but has a Duplicate, which version 11 brought" });
   const plain = JSON.parse(JSON.stringify(twoBodies()));
   assert.deepEqual(readDesignDocument({ ...plain, version: 10 }), readDesignDocument(plain));
@@ -177,22 +177,33 @@ test("a copy is greyed with its suppressed source, fails when the source is dele
   }
 });
 
-test("Copy and Paste of bodies by hand: the text names the design and the bodies, and pastes back only into that design", () => {
-  // Written out by hand: the words, the token, a colon, then the body ids with one space between.
-  const text = copiedText("k3x9", ["body:feature-2", "body:feature-1/piece:1"]);
-  assert.equal(text, "SpindleLabs bodies k3x9: body:feature-2 body:feature-1/piece:1");
-  assert.deepEqual(pastedBodies(text, "k3x9"), ["body:feature-2", "body:feature-1/piece:1"]);
+test("Copy and Paste of bodies by hand: the text names the design and each body with its item's kind and name, and pastes back only those same bodies", () => {
+  const d = twoBodies(); // Box 1 (feature-1) and Cylinder 1 (feature-2)
+  // Written out by hand: the words, the token, a colon, then for each body its id, "=", and its item's kind and name
+  // with the space between them written %20, one space between bodies.
+  const text = copiedText("k3x9", ["body:feature-2", "body:feature-1"], d);
+  assert.equal(text, "SpindleLabs bodies k3x9: body:feature-2=cylinder%20Cylinder%201 body:feature-1=box%20Box%201");
+  assert.deepEqual(pastedBodies(text, "k3x9", d), ["body:feature-2", "body:feature-1"]);
   // Another design's bodies (opened since, or another tab): not pasted here, since its ids would name other bodies.
-  assert.equal(pastedBodies(text, "k3x8"), null);
-  assert.equal(pastedBodies(text, "k3x"), null, "a token that only starts the same");
-  // Anything else on the clipboard: not bodies, so the paste goes on as usual.
-  for (const other of ["", "hello", "SpindleLabs bodies k3x9:", "SpindleLabs bodies k3x9: ", "SpindleLabs bodies k3x9: feature-1", "SpindleLabs bodies k3x9: body:feature-1  body:feature-2", " SpindleLabs bodies k3x9: body:feature-1", "SpindleLabs bodies k3x9: body:feature-1\n"]) {
-    assert.equal(pastedBodies(other, "k3x9"), null, JSON.stringify(other));
+  assert.equal(pastedBodies(text, "k3x8", d), null);
+  assert.equal(pastedBodies(text, "k3x", d), null, "a token that only starts the same");
+  // The same design after an Undo and another Insert (Undo hunt 2026-11-12, #623): feature-2 is a sphere now, so the
+  // cylinder copied is gone and nothing is pasted, not even the box that is still there (the paste is all or none).
+  const sphere = insertPreset(partDocument("box", 40, 30, 20), "sphere", 10, 10, 10).doc;
+  assert.equal(sphere.timeline.features[1].id, "feature-2");
+  assert.equal(pastedBodies(text, "k3x9", sphere), null);
+  assert.deepEqual(pastedBodies(copiedText("k3x9", ["body:feature-1"], d), "k3x9", sphere), ["body:feature-1"], "the box is the same box in both");
+  // The item gone altogether: nothing.
+  assert.equal(pastedBodies(text, "k3x9", partDocument("box", 40, 30, 20)), null);
+  // The body's sizes changed since the copy: still the same item, pasted as it is now.
+  assert.deepEqual(pastedBodies(text, "k3x9", editFeature(d, "feature-2", { width: 25, height: 10 })), ["body:feature-2", "body:feature-1"]);
+  // Anything else on the clipboard: not bodies, so the paste goes on as usual. The id alone (what was written before) too.
+  for (const other of ["", "hello", "SpindleLabs bodies k3x9:", "SpindleLabs bodies k3x9: ", "SpindleLabs bodies k3x9: feature-1", "SpindleLabs bodies k3x9: body:feature-1", "SpindleLabs bodies k3x9: body:feature-1=box%20Box%201  body:feature-2=cylinder%20Cylinder%201", " SpindleLabs bodies k3x9: body:feature-1=box%20Box%201", "SpindleLabs bodies k3x9: body:feature-1=box%20Box%201\n"]) {
+    assert.equal(pastedBodies(other, "k3x9", d), null, JSON.stringify(other));
   }
-  assert.throws(() => copiedText("K 1", ["body:feature-1"]), { message: "K 1 is not a design token" });
-  assert.throws(() => copiedText("", ["body:feature-1"]), { message: " is not a design token" });
-  // What pastes is put in as Duplicate puts it in: one copy per body named, refused the same way when it isn't one.
-  const d = twoBodies();
-  assert.deepEqual(insertDuplicates(d, pastedBodies(copiedText("a1", ["body:feature-1"]), "a1")!).ids, ["feature-3"]);
-  assert.throws(() => insertDuplicates(d, pastedBodies(copiedText("a1", ["body:feature-7"]), "a1")!), { message: "body:feature-7 is not a body in the design" });
+  assert.throws(() => copiedText("K 1", ["body:feature-1"], d), { message: "K 1 is not a design token" });
+  assert.throws(() => copiedText("", ["body:feature-1"], d), { message: " is not a design token" });
+  // What pastes is put in as Duplicate puts it in: one copy per body named. A body the design never had is not pasted.
+  assert.deepEqual(insertDuplicates(d, pastedBodies(copiedText("a1", ["body:feature-1"], d), "a1", d)!).ids, ["feature-3"]);
+  assert.equal(pastedBodies(copiedText("a1", ["body:feature-7"], d), "a1", d), null);
 });

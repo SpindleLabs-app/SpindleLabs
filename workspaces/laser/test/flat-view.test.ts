@@ -539,3 +539,27 @@ test("hand-worked: each layer drawn in its own look, and a key above the bed's t
   assert.equal(view.element.querySelectorAll(".laser-flat-key, .laser-flat-swatch").length, 0);
   view.detach();
 });
+
+test("Flip (L1b4): beside Turn while a part is picked, by its button or F; with no one listening for flips there is no Flip button", () => {
+  const heard: unknown[][] = [];
+  const { view, host, svg, window } = setUp(SIZE, SIZE.width, { onPick: (id) => heard.push(["pick", id]), onTurn: (id, d) => heard.push(["turn", id, d]), onFlip: (id) => heard.push(["flip", id]) });
+  view.attach(host);
+  view.show({ ...SCENE, picked: "s1" }, true);
+  const flip = view.element.querySelector<HTMLButtonElement>('button[data-view="flip"]')!;
+  assert.equal(flip.getAttribute("aria-label"), "Flip");
+  assert.equal(flip.closest<HTMLElement>(".nav-group")!.hidden, false);
+  assert.equal(flip.closest(".nav-group") === view.element.querySelector('button[data-view="turn"]')!.closest(".nav-group"), true, "in Turn's group");
+  flip.click();
+  const key = (k: string) => svg.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }) as unknown as Event);
+  key("f");
+  key("F");
+  assert.deepEqual(heard, [["flip", "s1"], ["flip", "s1"], ["flip", "s1"]]);
+  // Nothing picked: F does nothing and the group is hidden.
+  view.show({ ...SCENE, picked: null }, false);
+  key("f");
+  assert.equal(heard.length, 3);
+  assert.equal(flip.closest<HTMLElement>(".nav-group")!.hidden, true);
+  view.detach();
+  const plain = setUp(SIZE, SIZE.width, { onTurn: () => {} });
+  assert.equal(plain.view.element.querySelector('button[data-view="flip"]') === null, true);
+});

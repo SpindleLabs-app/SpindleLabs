@@ -344,3 +344,77 @@ test("unknown routes, other methods and other sites' preflights get nothing usef
   const pre = await w.handle(new Request("https://db.test/functions/v1/billing/checkout", { method: "OPTIONS", headers: { origin: "https://evil.example" } }));
   assert.equal(pre.headers.get("access-control-allow-origin"), null);
 });
+
+// Security hunt 2026-11-13 (SpindleLabs-app/bug-reports#3), billing C1-C3.
+
+test("the first-year coupon is given once, never again to someone who cancels and takes yearly again (C1)", async () => {
+  const w = world();
+  assert.equal((await w.call("checkout", { plan: "yearly" })).status, 200);
+  assert.equal(w.s.sessions[0]!["discounts[0][coupon]"], "coupon_FY", "the first year has it");
+  const first = w.paid("cus_1");
+  await w.webhook({ type: "customer.subscription.created", data: { object: { id: first.id } } });
+  assert.equal(w.s.plans.get(ADA)?.plan, "pro");
+  // The year ends (cancelled at period end): Stripe says canceled.
+  first.status = "canceled";
+  await w.webhook({ type: "customer.subscription.deleted", data: { object: { id: first.id } } });
+  assert.equal(w.s.plans.get(ADA)?.plan, "free");
+  // Year two: the same person, the same Stripe customer, takes yearly again: US$90, not US$54.
+  assert.equal((await w.call("checkout", { plan: "yearly" })).status, 200);
+  assert.equal(w.s.sessions[1]!.customer, "cus_1");
+  assert.equal(w.s.sessions[1]!["discounts[0][coupon]"], undefined, "the second year of the same customer has no first-year coupon");
+});
+
+test("a first attempt that was never paid doesn't use up the first-year coupon (C1)", async () => {
+  const w = world();
+  await w.call("checkout", { plan: "yearly" });
+  // The card's confirmation was closed: Stripe keeps the subscription incomplete, then expires it.
+  const tried = w.paid("cus_1", "incomplete");
+  tried.status = "incomplete_expired";
+  assert.equal((await w.call("checkout", { plan: "yearly" })).status, 200);
+  assert.equal(w.s.sessions[1]!["discounts[0][coupon]"], "coupon_FY", "nothing was ever paid, so the first year is still to come");
+  // A monthly subscription paid once counts as having paid: yearly after it has no first-year coupon.
+  w.paid("cus_1", "canceled");
+  assert.equal((await w.call("checkout", { plan: "yearly" })).status, 200);
+  assert.equal(w.s.sessions[2]!["discounts[0][coupon]"], undefined);
+});
+
+test("an abandoned first attempt expiring a day later doesn't take Pro from the subscription that is paid (C2)", async () => {
+  const w = world();
+  await w.call("checkout", { plan: "monthly" });
+  // First try: the card needed a confirmation that was never given. Stripe keeps the subscription "incomplete".
+  const tried = w.paid("cus_1", "incomplete");
+  await w.webhook({ type: "customer.subscription.created", data: { object: { id: tried.id } } });
+  assert.equal(w.s.plans.get(ADA)?.plan, "free");
+  // Checkout again is allowed (incomplete is not Pro), and this one is paid.
+  assert.equal((await w.call("checkout", { plan: "monthly" })).status, 200);
+  const good = w.paid("cus_1", "active");
+  await w.webhook({ type: "customer.subscription.created", data: { object: { id: good.id } } });
+  assert.equal(w.s.plans.get(ADA)?.plan, "pro");
+  // 23 hours later Stripe expires the first try and says so.
+  tried.status = "incomplete_expired";
+  assert.equal((await w.webhook({ type: "customer.subscription.updated", data: { object: { id: tried.id } } })).status, 200);
+  assert.equal(w.s.plans.get(ADA)?.plan, "pro", "the paying customer stays Pro");
+  assert.equal(w.s.plans.get(ADA)?.renews_at, new Date(good.current_period_end * 1000).toISOString(), "and renews when the paid one does");
+});
+
+test("a late event for a dead subscription, after the paid one's, doesn't take Pro either (C2, the other order)", async () => {
+  const w = world();
+  await w.call("checkout", { plan: "monthly" });
+  const dead = w.paid("cus_1", "incomplete_expired");
+  const good = w.paid("cus_1", "active");
+  await w.webhook({ type: "customer.subscription.created", data: { object: { id: good.id } } });
+  await w.webhook({ type: "customer.subscription.created", data: { object: { id: dead.id } } });
+  assert.equal(w.s.plans.get(ADA)?.plan, "pro");
+  // When the paid one ends, every subscription is dead: free.
+  good.status = "canceled";
+  await w.webhook({ type: "customer.subscription.deleted", data: { object: { id: good.id } } });
+  assert.equal(w.s.plans.get(ADA)?.plan, "free");
+});
+
+test("checkout pressed several times at once leaves one Stripe customer (C3)", async () => {
+  const w = world();
+  const rs = await Promise.all([1, 2, 3, 4, 5].map(() => w.call("checkout", { plan: "monthly" })));
+  assert.deepEqual(rs.map((r) => r.status), [200, 200, 200, 200, 200]);
+  assert.equal(w.s.customers.size, 1, `${w.s.customers.size} Stripe customers for one account (one linked, the rest orphans)`);
+  assert.deepEqual([...new Set(w.s.sessions.map((x) => x.customer))], [[...w.s.customers.keys()][0]], "every checkout for the linked one");
+});

@@ -2,7 +2,7 @@
 // page in a DOM (happy-dom). The real app in Chromium: apps/fission/e2e/laser-page.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RepresentationRegistry, type Outline, type WorkspaceContext } from "@fission/core";
+import { createSelection, RepresentationRegistry, type Outline, type WorkspaceContext } from "@fission/core";
 import { emptyBedNote, flatScene, laserWorkspace, layOut, layoutWords, mountLaserPage, OUTLINES_LISTER, pairWords, readLaserData, readParts, setLaserShown, sheetSvg, type PartsRelation, type Relate, type SaveText } from "../src/index.ts";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 
@@ -30,9 +30,9 @@ test("readParts reads every shape as an outline, and one that can't be read says
 });
 
 test("the saved choices read back; anything missing or unusable falls back to the default and never throws", () => {
-  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 3, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {}, ops: {} });
+  assert.deepEqual(readLaserData({ version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"] }), { version: 4, bed: { width: 300, height: 200 }, gap: 2, thickness: 6, off: ["x"], placed: {}, ops: {} });
   for (const bad of [undefined, null, 7, "x", {}, { bed: { width: -1, height: 5 } }, { gap: 1e9 }, { thickness: 0 }, { thickness: 51 }])
-    assert.deepEqual(readLaserData(bad), { version: 3, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, ops: {} }, JSON.stringify(bad));
+    assert.deepEqual(readLaserData(bad), { version: 4, bed: { width: 400, height: 400 }, gap: 3, thickness: 3, off: [], placed: {}, ops: {} }, JSON.stringify(bad));
   assert.deepEqual(readLaserData({ off: ["a", 3, null, "b"] }).off, ["a", "b"]);
 });
 
@@ -81,7 +81,7 @@ test("the words: nothing offered, parts on the bed, and each left off with why",
   assert.equal(layoutWords(one, 2), "1 part on the bed. Sketch 2 is left off: it is 500 × 10 mm, bigger than the bed (100 × 100 mm, 5 mm in from each edge).");
 });
 
-function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown) {
+function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown, listedFirst: typeof objects = objects) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = () => doc.body.appendChild(doc.createElement("div"));
@@ -92,8 +92,21 @@ function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: u
   const keys: (string | undefined)[] = [];
   const registry = fakeRegistry(["c"]);
   /** What Design lists now; `design` changes it, as an edit in Design would. */
-  let listed = objects;
+  let listed = listedFirst;
   const design = (now: typeof objects) => (listed = now);
+  /** The one selection, shared with every workspace (Design's picks land here too); `listeners` counts who listens now. */
+  const selection = createSelection();
+  let listening = 0;
+  const heard = selection.onChange.bind(selection);
+  selection.onChange = (l) => {
+    listening++;
+    const stop = heard(l);
+    return () => {
+      listening--;
+      stop();
+    };
+  };
+  const listeners = () => listening;
   registry.registerLister(OUTLINES_LISTER, () => listed);
   const project = { name: "Box", workspaces: (laser === undefined ? {} : { laser }) as Record<string, unknown> };
   const element = slot();
@@ -113,10 +126,11 @@ function mount(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: u
     browser: slot(),
     properties: slot(),
     representations: registry,
+    selection,
     viewport: { element, showImage: (image: unknown) => viewport.push(`showImage(${image})`), clearImage: () => viewport.push("clearImage"), showBody: refuse("showBody"), setView: refuse("setView"), fit: refuse("fit") },
   } as unknown as WorkspaceContext;
   const drawn = () => [...element.querySelectorAll("path.laser-flat-part")].map((p) => p.getAttribute("d"));
-  return { ctx, element, viewport, drawn, design, changes, keys, project, mounted: mountLaserPage(ctx, save, relate), window };
+  return { ctx, element, viewport, drawn, design, changes, keys, project, selection, listeners, mounted: mountLaserPage(ctx, save, relate), window };
 }
 
 test("the page lists the parts with their sizes, lays them on the bed, draws them flat, and keeps a part turned off in the project", async () => {
@@ -207,7 +221,7 @@ test("the sheet thickness has no box while nothing uses it, and a thickness a pr
   assert.equal(width.value, "300");
   width.value = "310";
   width.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change"));
-  assert.deepEqual(project.workspaces.laser, { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {}, ops: {} });
+  assert.deepEqual(project.workspaces.laser, { version: 4, bed: { width: 310, height: 200 }, gap: 2, thickness: 6, off: [], placed: {}, ops: {} });
   mounted.unmount();
 });
 
@@ -217,10 +231,10 @@ test("a change in the page keeps what the project's Laser data holds beside the 
   const { ctx, project, type, mounted } = await withPicked(undefined, { version: 2, bed: { width: 300, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept" });
   const held = () => project.workspaces.laser as Record<string, unknown>;
   type("width", "310");
-  assert.deepEqual(held(), { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept", ops: {} });
+  assert.deepEqual(held(), { version: 4, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: {}, note: "kept", ops: {} });
   // Sketch b (picked) typed to X 100: the first hand move, which also fixes Sketch a where the rows put it, (2, 2).
   type("x", "100");
-  assert.deepEqual(held(), { version: 3, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept", ops: {} });
+  assert.deepEqual(held(), { version: 4, bed: { width: 310, height: 200 }, gap: 2, thickness: 3, off: [], placed: { a: { x: 2, y: 2, angle: 0 }, b: { x: 100, y: 2, angle: 0 } }, note: "kept", ops: {} });
   const box = ctx.browser.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
   box.checked = false;
   box.dispatchEvent(new ctx.properties.ownerDocument.defaultView!.Event("change", { bubbles: true }));
@@ -281,7 +295,7 @@ test("without ?laser the workspace is the placeholder; with it, the page", async
   const slot = () => doc.body.appendChild(doc.createElement("div"));
   const registry = fakeRegistry();
   registry.registerLister(OUTLINES_LISTER, () => []);
-  const ctx = { project: { workspaces: {} }, projectChanged: () => {}, kernel, toolbar: slot(), browser: slot(), properties: slot(), representations: registry, viewport: { element: slot(), showImage: () => {}, clearImage: () => {} } } as unknown as WorkspaceContext;
+  const ctx = { project: { workspaces: {} }, projectChanged: () => {}, kernel, toolbar: slot(), browser: slot(), properties: slot(), representations: registry, selection: createSelection(), viewport: { element: slot(), showImage: () => {}, clearImage: () => {} } } as unknown as WorkspaceContext;
   setLaserShown(false);
   const off = laserWorkspace.mount(ctx);
   assert.equal(ctx.browser.querySelector(".laser-page"), null);
@@ -340,8 +354,8 @@ test("a new gap leaves the view where the person put it; a new bed size shows th
 // Parts put by hand (L1b). The parts: Sketch a, 60 × 40, in the rows at (3, 3); Sketch b, 30 × 10, right of it at (66, 3).
 
 /** The page with Sketch b picked by a click on its outline, and what a test needs to type and press. */
-async function withPicked(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown) {
-  const all = mount(save, laser, relate, realKernel);
+async function withPicked(save?: SaveText, laser?: unknown, relate?: Relate, realKernel?: unknown, listed: typeof objects = objects) {
+  const all = mount(save, laser, relate, realKernel, listed);
   await all.mounted.ready;
   const { ctx, element, window } = all;
   const fireOn = (target: Element, type: string, init: Record<string, unknown> = {}) => {
@@ -690,5 +704,168 @@ test("an engraving or a score lying on a cut part is not asked about or warned o
   choose("a", "engrave"); // the kept answer is not shown for a pair that no longer matters
   assert.equal(words(), "2 parts on the bed.");
   assert.equal(path("a").getAttribute("class"), "laser-flat-part laser-flat-part-engrave");
+  mounted.unmount();
+});
+
+// Sketches seen from behind their plane (L1b4; export hunt 2026-11-12, SL #639 item 2): a sketch on a bottom, back or
+// left face is drawn looking at the face from outside, which is from behind its plane, so its own x and y look mirrored
+// there. Design says so with the outline (`side: -1`); the part lies on the bed as it was drawn, never as its mirror.
+
+/** An L in the sketch's own x and y: foot along x, 20 long and 10 high, stem 10 wide and 30 tall, counter-clockwise. */
+const ELL: Outline = { outer: { path: { corners: [0, 0, 20, 0, 20, 10, 10, 10, 10, 30, 0, 30], bulges: [] } }, holes: [] };
+
+function sidedRegistry(plane: { origin: [number, number, number]; xAxis: [number, number, number]; normal: [number, number, number] }, side?: -1) {
+  const r = new RepresentationRegistry();
+  r.registerProducer("fake.sketch", "outline", () => ({ kind: "outline", plane, ...(side === -1 && { side }), outline: ELL }));
+  return r;
+}
+
+test("hand-worked: an L sketched on a box's bottom face lies on the bed as it was drawn, not mirrored; on the top it is as before", async () => {
+  const bed = { width: 100, height: 50 };
+  const one = [{ type: "fake.sketch", id: "l", label: "L" }];
+  const xy = { origin: [0, 0, 0] as [number, number, number], xAxis: [1, 0, 0] as [number, number, number], normal: [0, 0, 1] as [number, number, number] };
+  // The top face (seen from the normal's side): the L as its numbers say, moved 3 mm in from the corner:
+  // (3,3) (23,3) (23,13) (13,13) (13,33) (3,33).
+  const top = await readParts(sidedRegistry(xy), one);
+  const topLaid = layOut([{ id: "l", label: "L", outline: (top[0] as { outline: Outline }).outline }], bed, 3).placed[0];
+  assert.deepEqual(topLaid.outline.outer, { path: { corners: [3, 3, 23, 3, 23, 13, 13, 13, 13, 33, 3, 33], bulges: [] } });
+  // The bottom face: the same plane seen from below (side −1). Look At from below turns the plane's y down the screen
+  // (viewport planeSeenAs: right 1, up −1), so what was drawn is (x, −y): the foot at the top, the stem hanging down.
+  // Its box is x 0..20, y −30..0, moved by (3, 33): (3,33) (23,33) (23,23) (13,23) (13,3) (3,3). A mirror turns the loop
+  // clockwise, so it is written the other way round to stay counter-clockwise as every outline is:
+  // (3,33) (3,3) (13,3) (13,23) (23,23) (23,33).
+  const bottom = await readParts(sidedRegistry(xy, -1), one);
+  const laid = layOut([{ id: "l", label: "L", outline: (bottom[0] as { outline: Outline }).outline }], bed, 3);
+  assert.deepEqual(laid.placed[0].outline.outer, { path: { corners: [3, 33, 3, 3, 13, 3, 13, 23, 23, 23, 23, 33], bulges: [0, 0, 0, 0, 0, 0] } });
+  assert.match(sheetSvg(laid, bed), /d="M3 -33L3 -3L13 -3L13 -23L23 -23L23 -33Z"/);
+});
+
+test("hand-worked: an L sketched on a back face lies on the bed mirrored left to right, as it was seen; arcs keep their way round", async () => {
+  // A back face: the plane y = 30 with its normal −y (into the box) and x along +x, seen from outside (side −1). Look
+  // At from behind keeps the plane's y up and runs its x to the left (planeSeenAs: right −1, up 1): what was drawn is
+  // (−x, y). The L's box is x −20..0, y 0..30, moved by (23, 3): (23,3) (3,3) (3,13) (13,13) (13,33) (23,33), written
+  // the other way round to stay counter-clockwise: (23,3) (23,33) (13,33) (13,13) (3,13) (3,3).
+  const back = { origin: [0, 30, 0] as [number, number, number], xAxis: [1, 0, 0] as [number, number, number], normal: [0, -1, 0] as [number, number, number] };
+  const parts = await readParts(sidedRegistry(back, -1), [{ type: "fake.sketch", id: "l", label: "L" }]);
+  const laid = layOut([{ id: "l", label: "L", outline: (parts[0] as { outline: Outline }).outline }], { width: 100, height: 50 }, 3).placed[0];
+  assert.deepEqual(laid.outline.outer, { path: { corners: [23, 3, 23, 33, 13, 33, 13, 13, 3, 13, 3, 3], bulges: [0, 0, 0, 0, 0, 0] } });
+});
+
+test("hand-worked: Flip mirrors the picked part where it sits, kept as a flip in its place, one undo step; a turned part flipped turns the other way; twice is no flip", async () => {
+  const { placed, press, type, changes, element, fireOn, mounted } = await withPicked();
+  // Sketch b, 30 × 10, in the rows at (66, 3) (right of a, 60 wide, gap 3). Flip keeps its box, so its place too.
+  press("button[data-flip]");
+  assert.deepEqual(placed(), { a: { x: 3, y: 3, angle: 0 }, b: { x: 66, y: 3, angle: 0, flip: true } });
+  assert.equal(changes.at(-1), "Flip Sketch b on the laser bed");
+  // Turned left (90) about its middle (81, 8): 10 × 30 from (76, −7). Flipped then: angle −90 = 270, same box.
+  press('button[data-turn="90"]');
+  assert.deepEqual(placed()!, { a: { x: 3, y: 3, angle: 0 }, b: { x: 76, y: -7, angle: 90, flip: true } });
+  press("button[data-flip]");
+  assert.deepEqual(placed()!, { a: { x: 3, y: 3, angle: 0 }, b: { x: 76, y: -7, angle: 270 } });
+  // A move keeps a flip, and so does turning a flipped part.
+  press("button[data-flip]");
+  type("x", "100");
+  assert.deepEqual(placed()!.b, { x: 100, y: -7, angle: 90, flip: true });
+  press('button[data-turn="-90"]');
+  assert.deepEqual(placed()!.b, { x: 90, y: 3, angle: 0, flip: true });
+  fireOn(element.querySelector(".laser-flat svg")!, "keydown", { key: "ArrowLeft" }); // an arrow (and so a drag) keeps it too
+  assert.deepEqual(placed()!.b, { x: 89, y: 3, angle: 0, flip: true });
+  mounted.unmount();
+});
+
+// L1b3: the picked part is the one selection. Design lists each flat shape with what the selection holds when it is
+// picked (`selectAs`, its outline's reference); a part without one is picked on the bed alone.
+const outlineRef = (id: string) => ({ kind: "outline" as const, id: `outline:${id}` });
+const shared = objects.map((o) => ({ ...o, selectAs: outlineRef(o.id) }));
+const ids = (items: readonly { kind: string; id: string }[]) => items.map((r) => `${r.kind} ${r.id}`);
+
+test("L1b3: a part picked on the bed is the one selection, so DesignLab has its sketch picked; Escape lets it go there too", async () => {
+  const { ctx, element, selection, fireOn, mounted } = await withPicked(undefined, undefined, undefined, undefined, shared); // clicks b
+  assert.deepEqual(ids(selection.items), ["outline outline:b"]);
+  assert.equal(element.querySelector<HTMLElement>(".laser-flat")!.dataset.picked, "b");
+  assert.equal(ctx.properties.querySelector("legend")!.textContent, "Sketch b");
+  fireOn(element.querySelector(".laser-flat svg")!, "keydown", { key: "Escape" });
+  assert.deepEqual(selection.items, []);
+  assert.equal(ctx.properties.querySelector<HTMLElement>(".laser-page-part")!.hidden, true);
+  mounted.unmount();
+});
+
+test("L1b3: a sketch picked elsewhere (as DesignLab picks it) is the part picked on the bed; a body is no part; the first part selected wins", async () => {
+  const { ctx, element, selection, mounted } = mount(undefined, undefined, undefined, undefined, shared);
+  await mounted.ready;
+  const legend = () => (ctx.properties.querySelector<HTMLElement>(".laser-page-part")!.hidden ? null : ctx.properties.querySelector("legend")!.textContent);
+  const onBed = () => element.querySelector<HTMLElement>(".laser-flat")!.dataset.picked;
+  selection.set([outlineRef("b")]);
+  assert.equal(legend(), "Sketch b");
+  assert.equal(onBed(), "b");
+  selection.set([{ kind: "body", id: "body:1" as never }]);
+  assert.equal(legend(), null);
+  assert.equal(onBed(), undefined);
+  // c is open (it can't be cut, so it is no part on the bed): the first selected part on the bed after it is picked.
+  selection.set([{ kind: "body", id: "body:1" as never }, outlineRef("c"), outlineRef("a"), outlineRef("b")]);
+  assert.equal(legend(), "Sketch a");
+  selection.clear();
+  assert.equal(legend(), null);
+  // Picking reads the selection only: nothing is stored in the project.
+  assert.equal(ctx.project.workspaces.laser, undefined);
+  mounted.unmount();
+});
+
+test("L1b3: moving a part by its numbers picks it in the selection; one taken off the bed is let go there too; one turned off in Laser but picked in DesignLab stays picked there", async () => {
+  const { ctx, selection, click, type, changes, window, mounted } = await withPicked(undefined, undefined, undefined, undefined, shared);
+  click("a");
+  type("x", "20");
+  assert.deepEqual(ids(selection.items), ["outline outline:a"]);
+  assert.equal(changes.at(-1), "Move Sketch a on the laser bed");
+  const tick = (id: string, on: boolean) => {
+    const b = ctx.browser.querySelector<HTMLInputElement>(`input[data-part="${id}"]`)!;
+    b.checked = on;
+    b.dispatchEvent(new window.Event("change") as unknown as Event);
+  };
+  tick("a", false);
+  assert.deepEqual(selection.items, []);
+  // Picked in Design while it is off the laser bed: the selection keeps it (Design's), the bed has nothing picked.
+  selection.set([outlineRef("a")]);
+  assert.equal(ctx.properties.querySelector<HTMLElement>(".laser-page-part")!.hidden, true);
+  assert.deepEqual(ids(selection.items), ["outline outline:a"]);
+  tick("a", true);
+  assert.equal(ctx.properties.querySelector("legend")!.textContent, "Sketch a"); // back on the bed, picked as the selection says
+  mounted.unmount();
+});
+
+test("L1b3: asleep, the page hears nothing of the selection; awake, it shows what was picked meanwhile; unmounted, it never listens again", async () => {
+  const { ctx, selection, listeners, mounted } = await withPicked(undefined, undefined, undefined, undefined, shared); // b
+  const shown = ctx.properties.querySelector("legend")!;
+  const legend = () => shown.textContent;
+  mounted.sleep!();
+  selection.set([outlineRef("a")]);
+  assert.equal(legend(), "Sketch b"); // not drawn while another workspace is on screen
+  mounted.wake!();
+  await new Promise((r) => setTimeout(r, 0)); // the fresh read of Design's shapes
+  assert.equal(legend(), "Sketch a");
+  selection.set([outlineRef("b")]);
+  assert.equal(legend(), "Sketch b");
+  assert.equal(listeners(), 1); // one listener, kept through sleep and wake, never a second
+  mounted.unmount();
+  assert.equal(listeners(), 0); // unmounted, it listens no more
+  selection.set([outlineRef("a")]);
+  assert.equal(legend(), "Sketch b");
+});
+
+test("L1b3: a part its owner gives no reference for is picked on the bed alone (the selection emptied); a pick elsewhere lets it go", async () => {
+  const mixed = [shared[0], objects[1], shared[2]]; // b has no reference
+  const { selection, click, element, mounted } = await withPicked(undefined, undefined, undefined, undefined, mixed); // clicks b
+  const onBed = () => element.querySelector<HTMLElement>(".laser-flat")!.dataset.picked;
+  assert.equal(onBed(), "b");
+  assert.deepEqual(selection.items, []);
+  click("a");
+  assert.deepEqual(ids(selection.items), ["outline outline:a"]);
+  click("b");
+  assert.deepEqual(selection.items, []);
+  assert.equal(onBed(), "b");
+  selection.set([{ kind: "body", id: "body:1" as never }]);
+  assert.equal(onBed(), undefined);
+  selection.clear();
+  assert.equal(onBed(), undefined); // let go for good, not picked again when the selection empties
   mounted.unmount();
 });

@@ -91,6 +91,13 @@ export interface History {
    * it keeps its camera and follows its selection.
    */
   restoring(): boolean;
+  /**
+   * Fences the history at the present (issue #520: a sketch opened again with Edit Sketch, as Fusion's): until the
+   * returned release is called, undo, redo and jumpTo never go back past the present as it is now, nor redo a step that
+   * could be redone now (only steps recorded after the fence), and canUndo, canRedo and the labels say so. The next record
+   * starts a step of its own (never merged into the step before the fence). A new fence replaces the last; reset ends it.
+   */
+  fence(): () => void;
   /** Called once after every change to what can be undone or redone; returns an unsubscribe. */
   onChange(listener: () => void): () => void;
   /**
@@ -99,6 +106,15 @@ export interface History {
    * back that step, not the one before (clumsy hunt 2026-11-04: the step was lost, and the one before it undone).
    */
   hold<T>(work: Promise<T>): Promise<T>;
+  /**
+   * Held work the person asked for ended with nothing recorded (an OK the kernel refused, a question answered Cancel
+   * or still open): an Undo or Redo that waited for it was pressed to take that back, and there is nothing of it to
+   * take, so the shell drops the press (`callsOff` changed while it waited) instead of taking back the step before
+   * (Undo hunt 2026-11-12, #622: the width typed before a refused Move was undone and the refusal never seen).
+   */
+  callOff(): void;
+  /** How many times `callOff` was called. */
+  callsOff(): number;
   /** The present step, for `amendStep` to name later: the same step until a record merges into it or an amend changes it. */
   present(): HistoryStep;
   /**
@@ -108,8 +124,25 @@ export interface History {
    * a step. A step left the same as the one before it has nothing to undo, so it is removed. Returns whether it changed.
    */
   amendStep(step: HistoryStep, rewrite: (snapshot: string) => string | null): boolean;
-  /** Whether held work is still running. */
+  /**
+   * `question`, put to the person by held work before it records (a Cut that removes nothing asks first, Design's
+   * cut-ask.ts), noted until it is answered; returns it. The held work still holds (`busy`, `whenIdle`: an Undo pressed
+   * meanwhile still waits for the answer), but nothing it does runs by itself meanwhile (`working`).
+   */
+  asking<T>(question: Promise<T>): Promise<T>;
+  /** Whether held work is still held, a question it waits on included. */
   busy(): boolean;
+  /**
+   * Called each time held work starts or ends (`busy` may have changed); returns an unsubscribe. Not `onChange`: nothing
+   * that can be undone changed, so nothing is saved for it. The shell's Undo button reads it (SL #708 item 3: grey, or
+   * naming the step before, for the seconds an OK was still with the kernel, and a press then was lost).
+   */
+  onBusy(listener: () => void): () => void;
+  /**
+   * Whether held work is running by itself: held work that is not waiting on the person's answer. The page changes
+   * again without anyone touching it only while this is true (the monkey's settle, `fissionTest.historyBusy`; SL #397).
+   */
+  working(): boolean;
   /** Settles once no held work runs, including work held while waiting; at once when none does. */
   whenIdle(): Promise<void>;
 }
@@ -151,6 +184,8 @@ export const UNDO_LIMIT = 100;
 export const MERGE_MS = 1000;
 
 interface Entry {
+  /** Who it is, kept through amend (`fence` finds its floor by it). */
+  id: number;
   snapshot: string;
   /** The step that led here ("" for the start). */
   label: string;
@@ -168,6 +203,23 @@ export function createHistory(options: HistoryOptions): History {
   // entries[0] is the oldest state kept; entries[index] is the present.
   let entries: Entry[] = [];
   let index = 0;
+  let nextId = 0;
+  /** The fence (`fence`): the entry undo stops at, and the entries a redo away when it was put up, out of reach. */
+  let fenced: { floor: number; outside: Set<number> } | null = null;
+  /** The lowest index undo and jumpTo may reach: the fence's floor, or 0. */
+  const floor = () => {
+    if (fenced === null) return 0;
+    const at = entries.findIndex((e) => e.id === fenced!.floor);
+    return at < 0 ? 0 : at; // dropped past the limit: everything kept came after it
+  };
+  /** Whether entries[at] is in reach of a redo or jump forward. */
+  const reachable = (at: number) => fenced === null || !fenced.outside.has(entries[at].id);
+  /** Takes out entries[at]; a fence's floor taken out moves to the entry before it (the same project). */
+  const dropEntry = (at: number) => {
+    if (fenced !== null && entries[at].id === fenced.floor) fenced.floor = at > 0 ? entries[at - 1].id : (entries[at + 1]?.id ?? -1);
+    entries.splice(at, 1);
+  };
+  const entry = (snapshot: string, label: string, mergeKey: string | undefined, at: number): Entry => ({ id: nextId++, snapshot, label, mergeKey, at });
   // Merging is allowed only straight after a record.
   let lastWasRecord = false;
   let restoring = false;
@@ -178,14 +230,22 @@ export function createHistory(options: HistoryOptions): History {
   };
   /** Held work still running (`hold`). */
   const held = new Set<Promise<unknown>>();
+  /** Questions held work puts to the person (`asking`), until answered. */
+  const asked = new Set<Promise<unknown>>();
+  let calledOff = 0;
   const listeners = new Set<() => void>();
   const changed = () => {
     for (const l of [...listeners]) l();
   };
+  const busyListeners = new Set<() => void>();
+  const busyChanged = () => {
+    for (const l of [...busyListeners]) l();
+  };
   const start = () => {
-    entries = [{ snapshot: options.capture(), label: "", mergeKey: undefined, at: now() }];
+    entries = [entry(options.capture(), "", undefined, now())];
     index = 0;
     lastWasRecord = false;
+    fenced = null;
   };
   start();
 
@@ -203,10 +263,10 @@ export function createHistory(options: HistoryOptions): History {
   };
 
   const api: History = {
-    canUndo: () => index > 0,
-    canRedo: () => index < entries.length - 1,
-    undoLabel: () => (index > 0 ? entries[index].label : null),
-    redoLabel: () => (index < entries.length - 1 ? entries[index + 1].label : null),
+    canUndo: () => index > floor(),
+    canRedo: () => index < entries.length - 1 && reachable(index + 1),
+    undoLabel: () => (api.canUndo() ? entries[index].label : null),
+    redoLabel: () => (api.canRedo() ? entries[index + 1].label : null),
     record(label, mergeKey) {
       if (restoring || grouping > 0) return false;
       const snapshot = options.capture();
@@ -217,17 +277,17 @@ export function createHistory(options: HistoryOptions): History {
       if (lastWasRecord && index > 0 && mergeKey !== undefined && top.mergeKey === mergeKey && t - top.at >= 0 && t - top.at < mergeMs) {
         if (snapshot === entries[index - 1].snapshot) {
           // Folded back to where the step started: the step is gone.
-          entries.pop();
+          dropEntry(index);
           index--;
           lastWasRecord = false;
         } else {
-          entries[index] = { snapshot, label, mergeKey, at: t };
+          entries[index] = { ...top, snapshot, label, mergeKey, at: t };
         }
       } else {
-        entries.push({ snapshot, label, mergeKey, at: t });
+        entries.push(entry(snapshot, label, mergeKey, t));
         index++;
         if (entries.length > limit + 1) {
-          entries.shift();
+          dropEntry(0);
           index--;
         }
         lastWasRecord = true;
@@ -238,30 +298,31 @@ export function createHistory(options: HistoryOptions): History {
     steps: () => entries.map((e, i) => ({ label: e.label, at: e.at, state: i < index ? "done" : i === index ? "current" : "undone" })),
     jumpTo(step) {
       refuseInStep("jump back");
-      if (!Number.isInteger(step) || step < 0 || step >= entries.length || step === index) return null;
+      if (!Number.isInteger(step) || step < floor() || step >= entries.length || step === index || !reachable(step)) return null;
       go(step);
       return entries[step].label;
     },
     undo() {
       refuseInStep("undo");
-      if (index === 0) return null;
+      if (!api.canUndo()) return null;
       const label = entries[index].label;
       go(index - 1);
       return label;
     },
     redo() {
       refuseInStep("redo");
-      if (index === entries.length - 1) return null;
+      if (!api.canRedo()) return null;
       go(index + 1);
       return entries[index].label;
     },
-    save: () => ({ kept: entries.map((e) => ({ ...e })), index }),
+    save: () => ({ kept: entries.map(({ snapshot, label, mergeKey, at }) => ({ snapshot, label, mergeKey, at })), index }),
     load(saved) {
       refuseInStep("load steps");
       const present = saved.kept[saved.index];
       if (!present || saved.kept.length === 0 || options.capture() !== present.snapshot) return false;
-      entries = saved.kept.map((e) => ({ ...e }));
+      entries = saved.kept.map((e) => entry(e.snapshot, e.label, e.mergeKey, e.at));
       index = saved.index;
+      fenced = null; // other steps: the fence was over the ones before
       // Never more than the limit, whatever was kept (a damaged store, or a build with a bigger limit: save/load hunt C9):
       // the oldest go first, then the steps furthest a redo away, as record and step drop them.
       while (entries.length > limit + 1 && index > 0) {
@@ -284,7 +345,7 @@ export function createHistory(options: HistoryOptions): History {
       if (snapshot === entries[index].snapshot) return false;
       entries[index] = { ...entries[index], snapshot };
       if (index > 0 && snapshot === entries[index - 1].snapshot) {
-        entries.splice(index, 1);
+        dropEntry(index);
         index--;
         lastWasRecord = false;
       } else if (!keepMerging) lastWasRecord = false;
@@ -323,15 +384,26 @@ export function createHistory(options: HistoryOptions): History {
       }
       if (snapshot === before) return result;
       entries.length = index + 1;
-      entries.push({ snapshot, label, mergeKey: undefined, at: now() });
+      entries.push(entry(snapshot, label, undefined, now()));
       index++;
       if (entries.length > limit + 1) {
-        entries.shift();
+        dropEntry(0);
         index--;
       }
       lastWasRecord = false;
       changed();
       return result;
+    },
+    fence() {
+      const mine = { floor: entries[index].id, outside: new Set(entries.slice(index + 1).map((e) => e.id)) };
+      fenced = mine;
+      lastWasRecord = false;
+      changed();
+      return () => {
+        if (fenced !== mine) return; // replaced, or ended by reset or load
+        fenced = null;
+        changed();
+      };
     },
     restoring: () => restoring,
     onChange(listener) {
@@ -339,13 +411,21 @@ export function createHistory(options: HistoryOptions): History {
       return () => listeners.delete(listener);
     },
     hold(work) {
-      const done = work.then(
-        () => void held.delete(done),
-        () => void held.delete(done),
-      );
+      const end = () => {
+        held.delete(done);
+        busyChanged();
+      };
+      const done = work.then(end, end);
       held.add(done);
+      busyChanged();
       return work;
     },
+    onBusy(listener) {
+      busyListeners.add(listener);
+      return () => busyListeners.delete(listener);
+    },
+    callOff: () => void calledOff++,
+    callsOff: () => calledOff,
     present: () => entries[index],
     amendStep(step, rewrite) {
       if (restoring || grouping > 0) return false;
@@ -361,7 +441,17 @@ export function createHistory(options: HistoryOptions): History {
       changed();
       return true;
     },
+    asking(question) {
+      const done = question.then(
+        () => void asked.delete(done),
+        () => void asked.delete(done),
+      );
+      asked.add(done);
+      return question;
+    },
     busy: () => held.size > 0,
+    // Each question is asked from inside one piece of held work, which waits on it: work runs while more is held than asks.
+    working: () => held.size > asked.size,
     async whenIdle() {
       while (held.size > 0) await Promise.all([...held]);
     },

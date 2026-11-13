@@ -1,0 +1,23 @@
+{
+  "seed": 202611061,
+  "what": "A size box left (Escape) after a half-typed size was built on the way (\"1\" of \"1e\"), then Undo and Redo: going back to the size from before the edit (issue #518) rebuilt it while Undo remounted Design, and the old panel was written to after it was gone (uncaught TypeError). Found by monkey-units-inches.json's replay; the box now builds nothing once Design is put away.",
+  "actions": [
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-YZ"
+    },
+    {
+      "do": "type",
+      "sel": "#height",
+      "text": "1e",
+      "finish": "Escape"
+    },
+    {
+      "do": "undo-redo"
+    }
+  ]
+}
