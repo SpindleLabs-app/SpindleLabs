@@ -11,8 +11,11 @@ import { displayNameRow } from "./display-name.ts";
 import { hideNotice, showNotice } from "./app-notice.ts";
 import { type Designs, type DesignsHost, SIGNED_OUT_WORDS, startDesigns } from "./my-designs.ts";
 import { pageShareSwitch } from "./share-switch.ts";
+import { pageFriendsSwitch } from "./friends-switch.ts";
+import { type FriendsDialog, friendsDialog } from "./friends.ts";
 import { type ShareHost, startShares } from "./share.ts";
 import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
+import { startPrintLogSync } from "./print-log-sync.ts";
 import "./styles/account.css";
 
 /** What signing in gives, shown beside the button. Each line must be true in the build that ships it. */
@@ -36,6 +39,18 @@ export const PRO_PRICES = {
   monthly: "US$9 a month",
   yearly: "US$54 for the first year, then US$90 a year",
 };
+
+/** The print log's sign-out and account-deletion step (startAccounts sets it; the account dialog calls it). */
+let printLogForget: ((user: string, deleted: boolean) => void) | null = null;
+
+/** This browser's localStorage, or null where it is blocked. */
+function localStorageOrNull(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
 
 function browserStore(): SmallStore {
   try {
@@ -86,6 +101,9 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const data = accountData(client, store);
   const designs = host ? startDesigns(client, host, store) : null;
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
+  // The print log kept in the account (account features 5): the log itself works without an account (src/print-log.ts).
+  const printLog = startPrintLogSync(client, store, localStorageOrNull());
+  printLogForget = printLog.forget;
   const links = { show: null as (() => void) | null }; // My links, once sharing is on (below)
   const ui = accountUi(client, data, store, designs, settings, links);
   say = () => {
@@ -128,6 +146,7 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   else void designs?.sendNow();
   // Settings that follow you: the account's are brought here and this browser's sent, signed in now or from before.
   void settings?.now();
+  void printLog.now();
   // A sharing link in the address opens as a frozen copy, signed in or not.
   if (shares && switched.id) void shares.openLink(switched.id);
   // Another tab signing in or out shows here too.
@@ -175,6 +194,8 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
 
   const dialog = el("dialog", "account");
   dialog.id = "account";
+  const friendsOn = pageFriendsSwitch();
+  let friends: FriendsDialog | null = null;
   dialog.setAttribute("aria-labelledby", "account-title");
   doc.body.append(dialog);
   dialog.addEventListener("click", (e) => {
@@ -248,6 +269,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         out.disabled = true;
         data.forgetEmailChoice();
         settings?.forget(state.user.id);
+        printLogForget?.(state.user.id, false);
         const result = await client.signOut();
         // Signed out on this device either way: nothing here can use the old session any more.
         const why = { offline: "couldn't be reached", unavailable: "is having trouble right now", rejected: "didn't accept the request" };
@@ -262,6 +284,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         copy.disabled = true;
         const r = await data.myData();
         copy.disabled = false;
+        if (r.kind === "wait") return say(`You downloaded your data a moment ago. You can download it again from ${r.retryAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`);
         if (r.kind !== "ok") return say(dataWords(r));
         const a = el("a");
         a.href = URL.createObjectURL(new Blob([r.value], { type: "application/json" }));
@@ -294,6 +317,17 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         mine.addEventListener("click", () => {
           dialog.close();
           show();
+        });
+        rows.unshift(mine);
+      }
+      // Friends (account features 6): only with the ?friends switch until the legal check of sharing.
+      if (friendsOn) {
+        const mine = el("button", "account-action account-friends", "Friends");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          friends ??= friendsDialog(client);
+          void friends.show();
         });
         rows.unshift(mine);
       }
@@ -481,6 +515,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         if (before.kind === "signed-in") {
           designs?.forget(before.user.id);
           settings?.forget(before.user.id);
+          printLogForget?.(before.user.id, true);
         }
         note = "Your account was deleted. Designs on this device are still here.";
         render();

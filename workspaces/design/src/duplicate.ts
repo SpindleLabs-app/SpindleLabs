@@ -90,15 +90,33 @@ export const copiesOf = (ids: readonly string[]): string[] => ids.map(bodyIdOf);
  * text on the clipboard, naming the bodies and the design they came from
  * (`design`, a token the open design draws once), and Paste reads it back
  * as a Duplicate of each. Text, so copying anything else after replaces it
- * and Paste then pastes that instead, as everywhere else.
+ * and Paste then pastes that instead, as everywhere else. Each body is
+ * written with its item's kind and name as copied (`bodyMark`): the token
+ * stays through Undo, and an item made after an Undo takes the id of the one
+ * undone, so the id alone pasted a copy of a different body (Undo hunt
+ * 2026-11-12, #623: a sphere copied, undone, a cylinder inserted, Ctrl+V).
  */
-export function copiedText(design: string, bodies: readonly string[]): string {
+export function copiedText(design: string, bodies: readonly string[], doc: DesignDocument): string {
   if (!/^[a-z0-9]+$/.test(design)) throw new Error(`${shown(design)} is not a design token`);
-  return `SpindleLabs bodies ${design}: ${bodies.join(" ")}`;
+  return `SpindleLabs bodies ${design}: ${bodies.map((b) => `${b}=${bodyMark(doc, b)}`).join(" ")}`;
 }
 
-/** The bodies `copiedText` names when it was copied from design `design`; null for any other text (another design's bodies, or none). */
-export function pastedBodies(text: string, design: string): string[] | null {
-  const m = /^SpindleLabs bodies ([a-z0-9]+): (body:\S+(?: body:\S+)*)$/.exec(text);
-  return m === null || m[1] !== design ? null : m[2].split(" ");
+/** What tells body `body`'s item from another that later takes its id: its kind and its name, with no space in it; "" when the design has no such item. */
+function bodyMark(doc: DesignDocument, body: string): string {
+  const item = bodyItem(body);
+  const f = doc.timeline.features.find((x) => x.id === item);
+  return f === undefined ? "" : encodeURIComponent(`${f.intent.type} ${f.provenance.self.label}`);
+}
+
+/**
+ * The bodies `copiedText` names when it was copied from design `design`, as
+ * `doc` still has them; null for any other text (another design's bodies, or
+ * none) and when any of them is no longer the item that was copied (gone, or
+ * another in its place).
+ */
+export function pastedBodies(text: string, design: string, doc: DesignDocument): string[] | null {
+  const m = /^SpindleLabs bodies ([a-z0-9]+): (body:[^\s=]+=\S+(?: body:[^\s=]+=\S+)*)$/.exec(text);
+  if (m === null || m[1] !== design) return null;
+  const bodies = m[2].split(" ").map((b) => b.split("="));
+  return bodies.every(([id, mark]) => bodyMark(doc, id) === mark) ? bodies.map(([id]) => id) : null;
 }

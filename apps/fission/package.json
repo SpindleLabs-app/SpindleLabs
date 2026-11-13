@@ -25,6 +25,7 @@
     "@fission/open-format": "*",
     "@fission/ai": "*",
     "@fission/design": "*",
+    "@fission/print": "*",
     "@fission/render": "*",
     "@fission/simulate": "*",
     "@fission/manufacture": "*",

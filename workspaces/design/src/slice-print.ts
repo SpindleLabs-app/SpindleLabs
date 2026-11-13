@@ -36,7 +36,8 @@ export const printFileOf = (kernel: KernelCalls, doc: DesignDocument, features: 
 
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
-  slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
+  slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string; logged?: boolean }>;
+  // `logged`: the file saved was added to the print log (print-logged.ts), which the result then says.
   /**
    * Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b,
    * H2c); nothing is saved. `changed()` turns true once a choice is changed while it slices: the preview then says it
@@ -44,8 +45,8 @@ export interface SlicePrintEvents {
    */
   preview(choices: PrintChoices, file: FileChoices, alive: () => boolean, changed: () => boolean): Promise<void>;
   /**
-   * What the print leaves out of the design, in plain words: the timeline items the last rebuild failed (actions.ts
-   * `failedItemsNote`), or "" when nothing failed. Said on its own line as the dialog opens, and again with each
+   * What the print leaves out of the design, in plain words: the timeline items the last rebuild failed and the bodies
+   * hidden by their eyes (actions.ts `printMissingNote`, SL #675 item 3), or "" when nothing is left out. Said on its own line as the dialog opens, and again with each
    * slice's result, as a warning (export hunt 2026-11-12 D: a failed hole was printed away without a word). Left out: nothing.
    */
   missing?(): string;
@@ -73,6 +74,9 @@ export interface SlicePrint {
  * starts fresh, and a slot with no id keeps nothing.
  */
 const keptChoices = new WeakMap<Document, Map<string, PresetSettings>>();
+
+/** Said after a saved file's result when it went into the print log. */
+export const PRINT_LOGGED = "Added to your print log: say how it printed from File, Print log….";
 
 export const SLICE_PRINT_TITLE = "Slice for printing: turn the bodies shown into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA).";
 
@@ -446,12 +450,12 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     showCost(null);
     const end = showProgress();
     try {
-      const { print, saved, name } = await events.slice(choices(), file(), mine);
+      const { print, saved, name, logged } = await events.slice(choices(), file(), mine);
       end();
       const earlier = changedWhileBusy ? SLICE_EARLIER : null;
       const missing = showMissing() || null;
       const warnings = [missing, unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
-      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
+      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings, ...(logged ? [PRINT_LOGGED] : [])].join(" "), warnings.length > 0);
       showHint(print.overhangMm2);
       showCost(print);
     } catch (e) {

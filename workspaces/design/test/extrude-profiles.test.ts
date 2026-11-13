@@ -198,7 +198,7 @@ test("the owner's rule: a profile whose sketch is deleted keeps its last shape, 
   assert.ok(r.status === "built" && r.warning !== undefined && r.warning.sketch === two.id, JSON.stringify(r));
   const w = await after.volumes(made.id);
   near(w.get(`body:${made.id}/piece:1`), 200);
-  // Its kept shape is filed under the extrude and that sketch.
-  assert.deepEqual(Object.keys(gone.kept ?? {}), [`${made.id}/${two.id}`]);
+  // Its kept shape is filed under the extrude and its place among the profiles (version 20, SL #632).
+  assert.deepEqual(Object.keys(gone.kept ?? {}), [`${made.id}/profile:1`]);
   assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(gone))), gone);
 });

@@ -9,7 +9,7 @@
 // from 23a) from the curves rebuilt from point ids, every time it is asked
 // for.
 
-import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, SketchLine, SketchXY } from "@fission/core";
+import type { Feature, KernelCalls, Outline, OutlinePiece, Plane, SketchArc, SketchCircle, SketchLine, SketchRegions, SketchXY } from "@fission/core";
 import { XY_PLANE } from "@fission/core";
 import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
@@ -596,7 +596,40 @@ export async function sketchOutline(kernel: KernelCalls, doc: DesignDocument, sk
   const sketch = sketchIn(doc, sketchId);
   const none = projectedOpen(sketch);
   if (none !== null) throw new Error(`${sketchItem(doc, sketchId).provenance.self.label} has no closed outline: ${none}`);
-  const result = await askOutline(kernel, sketchCurves(sketch));
-  if ("open" in result) throw new Error(`${sketchItem(doc, sketchId).provenance.self.label} has no closed outline: ${result.open}`);
-  return result.closed;
+  const curves = sketchCurves(sketch);
+  const result = await askOutline(kernel, curves);
+  if (!("open" in result)) return result.closed;
+  // Several loops: one shape with holes (a plate with holes, the commonest laser part) is still one outline, as
+  // Extrude takes it (export hunt 2026-11-12, #639 item 3: it was refused as "no closed outline").
+  const holed = await shapeWithHoles(kernel, curves);
+  if (holed !== null) return holed;
+  throw new Error(`${sketchItem(doc, sketchId).provenance.self.label} has no closed outline: ${result.open}`);
+}
+
+/**
+ * The sketch as one outline with holes, from the kernel's regions, or null when it is not that. It is that when one
+ * region holds every other: each of the others is exactly the inside of one of its holes (the same curves round it)
+ * with no hole of its own, and every region can be extruded. Two shapes side by side, shapes that cross, a ring inside
+ * a hole or loose curves are not one outline, and neither is a sketch the kernel can't split into regions.
+ */
+async function shapeWithHoles(kernel: KernelCalls, curves: ReturnType<typeof sketchCurves>): Promise<Outline | null> {
+  let answer: SketchRegions;
+  try {
+    answer = await kernel.call("sketch_regions", curves.lines, curves.circles, curves.arcs);
+  } catch {
+    return null;
+  }
+  const regions = answer?.regions;
+  if (!Array.isArray(regions) || regions.length < 2 || (answer.loose?.length ?? 0) > 0 || answer.why !== undefined) return null;
+  if (!regions.every((r) => r.extrudes)) return null;
+  /** A loop by the curves round it, whatever their order or direction. */
+  const loopKey = (pieces: readonly OutlinePiece[]) => pieces.map((p) => `${p.curve}:${p.index}`).sort().join(" ");
+  const plates = regions.filter((r) => r.holes.length > 0);
+  if (plates.length !== 1) return null;
+  const plate = plates[0]!;
+  const others = regions.filter((r) => r !== plate);
+  const holes = new Set(plate.holes.map(loopKey));
+  if (holes.size !== plate.holes.length || others.length !== holes.size) return null;
+  for (const r of others) if (!holes.delete(loopKey(r.outer))) return null;
+  return { outer: plate.profile.outer, holes: plate.profile.holes, pieces: plate.profile.pieces };
 }

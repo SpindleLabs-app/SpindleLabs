@@ -4,7 +4,7 @@
 // so the scene needs nothing of the rebuild but its types.
 
 import type { BodyHandle, BodyView, BooleanResult, Plane } from "@fission/core";
-import { bodyFrame } from "./face-sketch.ts";
+import { bodyFrame, carried, type BodyFrame } from "./face-sketch.ts";
 import { featureBody, type NamedBody } from "./boolean-names.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BuiltBody } from "./rebuild.ts";
@@ -52,6 +52,32 @@ export function reversedOfResult(h: BooleanResult["history"][number] | undefined
   return reversed.some((r) => r) ? reversed : undefined;
 }
 
+/**
+ * Where the Moves since a boolean put `origin`, one input face's frame then (FaceNames `origins`), on a face whose own
+ * frame was `then` (FaceNames `frame`; the first origin's) and is `now` (BuiltBody `frames`): carried as `then` was to
+ * `now`, so every input face of a merged face moves with the result body after the boolean, each from its own place
+ * (SL #707). Null: the world's, not moved.
+ */
+export function originFrameNow(now: BodyFrame | null | undefined, then: BodyFrame | undefined, origin: BodyFrame | null | undefined): BodyFrame | null {
+  const move = carried(then, now ?? undefined);
+  if (move === null) return origin ?? null;
+  const o = origin ?? { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
+  const size = (origin?.size ?? 1) * ((now?.size ?? 1) / (then?.size ?? 1));
+  return { origin: move(o.origin, false), xAxis: move(o.xAxis, true), normal: move(o.normal, true), ...(size !== 1 && { size }) };
+}
+
+/**
+ * The frame now of the input face named `name` on face `face` of body `b` (SL #707): on a face merged from several
+ * level input faces, that input's own (`originFrameNow`), which a sketch named after it is carried by; on any other
+ * face, or a name no origin holds, the face's own (`frameOfFace`: the first origin's on a merged face).
+ */
+export function namedFrame(b: BuiltBody, face: number, name: string): BodyFrame | null {
+  const f = b.named?.faces[face];
+  const k = f?.origins?.findIndex((o) => o.names.includes(name)) ?? -1;
+  if (f === undefined || k <= 0) return frameOfFace(b, face);
+  return originFrameNow(b.frames?.[face] ?? null, f.frame, f.origins![k].frame ?? null);
+}
+
 /** A shown body's frame for face `face` (scene.ts `ShownBody`): per face on a Combine's result, else the body's. */
 export const shownFrame = (b: { frame?: Plane; frames?: readonly (Plane | null)[] }, face: number): Plane | undefined => (b.frames ? (b.frames[face] ?? undefined) : b.frame);
 
@@ -63,7 +89,7 @@ export const shownFrame = (b: { frame?: Plane; frames?: readonly (Plane | null)[
  * from its tools.
  */
 export function namesOfBody(b: BuiltBody, view: BodyView): BodyNames {
-  if (b.spec !== null) return featureNames(b.feature, { spec: b.spec, curves: b.curves }, view);
+  if (b.spec !== null) return featureNames(b.feature, { spec: b.spec, curves: b.curves, profile: b.profile }, view);
   const own = `face:${encodeURIComponent(b.feature)}/`;
   const parts = (b.named?.faces ?? []).map((f) => f.names.find((n) => n.startsWith(own))?.slice(own.length) ?? null);
   const counts = new Map<string, number>();
@@ -79,7 +105,7 @@ export function namesOfBody(b: BuiltBody, view: BodyView): BodyNames {
  */
 export function namedBody(id: string, b: BuiltBody, view: BodyView, place: number): NamedBody {
   if (b.named !== undefined) return { id, handle: b.handle, view, faces: b.named.faces, made: b.named.made };
-  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves }, view), place);
+  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves, profile: b.profile }, view), place);
 }
 
 /**

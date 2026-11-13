@@ -16,7 +16,7 @@ import "./frame-guard.ts";
 import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
-import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
+import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../packages/print/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
@@ -24,6 +24,7 @@ import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
+import { startPrintLog } from "./print-log.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
@@ -284,7 +285,7 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       gpu: () => viewer.memoryCounts(),
       // Whether the undo history holds work still to be recorded (a delete the kernel still plans, an OK it still checks):
       // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
-      historyBusy: () => ctx.history.busy(),
+      historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
     },
   });
 
@@ -800,6 +801,8 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 // Save the shell's. Save also stays one click, as the icon beside it.
 /** A shell key as the user reads it here (Ctrl+S, or ⌘S on a Mac), for the File menu. */
 const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/.test(navigator.platform));
+// File ▾ > Print log… (account features 5): kept in this browser; the account code may keep it in the account too.
+const printLog = startPrintLog(document);
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
   ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
@@ -807,6 +810,7 @@ const file = fileMenu(document, {
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
+  printLog: { id: "file-print-log", label: "Print log…", title: "Print log: the print files you saved from Slice for printing, to note how each one printed", run: () => printLog.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, key: fileKey("Mod+S"), run: () => void save() },
   saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, key: fileKey("Mod+Shift+S"), run: () => void save(true) },
   where: () => {
@@ -1227,6 +1231,29 @@ const panesInUse = (): PaneId[] => (activePane === "split" ? ["split", "main"] :
 /** Typing in a field: a text box, text area, list or editable text. A tickbox, radio or button takes no letters, so keys still reach the shortcuts after one is clicked (found in SF1: ticking Snap to grid stopped L, R, C and A). */
 const TEXT_FIELDS = "input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=reset], [type=range], [type=color], [type=file]), textarea, select, [contenteditable]:not([contenteditable=false])";
 const inText = (t: EventTarget | null) => t instanceof Element && t.closest(TEXT_FIELDS) !== null;
+/**
+ * Undo and Redo keys in a text field are the browser's own, of the typing in it, except where the field holds no typing
+ * of its own to take back: a field whose typing is the project's steps as typed (`data-undo="app"`, Design's size
+ * boxes), a list, and a box emptied once its value was used (`data-undo="app-empty"`, the sketch's typed sizes after
+ * Enter). There the keys are the project's Undo and Redo. Left to the browser they did nothing for the emptied box, and
+ * in a size box untyped a digit as a NEW step, a 60 mm box becoming 6 mm (Undo hunt 2026-11-12, #623).
+ */
+const UNDO_KEYS = new Set(["undo", "redo", "redo-y"]);
+function undoIsOurs(t: EventTarget | null): boolean {
+  const field = t instanceof Element ? t.closest(TEXT_FIELDS) : null;
+  if (!(field instanceof HTMLElement)) return false;
+  return field instanceof HTMLSelectElement || field.dataset.undo === "app" || (field.dataset.undo === "app-empty" && (field as HTMLInputElement).value === "");
+}
+// The browser keeps one undo of typing for the whole page, not one per field: Ctrl+Z in the command search or a panel's
+// box, with nothing left of its own to untype, went on to untype the last size typed in a size box, wherever the keys
+// were. A size box's typing is never the browser's to take back or redo.
+document.addEventListener(
+  "beforeinput",
+  (e) => {
+    if ((e.inputType === "historyUndo" || e.inputType === "historyRedo") && e.target instanceof HTMLElement && e.target.dataset.undo === "app") e.preventDefault();
+  },
+  true,
+);
 const shellShortcuts: Record<string, (e: Event) => boolean> = {
   shortcuts: () => (showShortcuts(), true),
   undo: () => (undoRedo("undo"), true),
@@ -1250,7 +1277,7 @@ function runShortcut(chord: Chord, e: Event) {
   if (document.querySelector("dialog[open]")) return;
   const panes = panesInUse();
   const entry = shortcuts.lookup(chord, panes.map((p) => pool.showing(p)!));
-  if (!entry || (!entry.inText && inText(e.target))) return;
+  if (!entry || (!entry.inText && inText(e.target) && !(UNDO_KEYS.has(entry.id) && undoIsOurs(e.target)))) return;
   const done = entry.scope === "app" ? shellShortcuts[entry.id]?.(e) : pool.awake(panes.find((p) => pool.showing(p) === entry.scope)!)?.view.shortcut?.(entry.id, e);
   if (done !== false && done !== undefined) e.preventDefault();
 }
@@ -1434,12 +1461,15 @@ function undoRedo(which: "undo" | "redo") {
   pressesWaiting++;
   waitingOn[which]++;
   showUndoRedo();
+  // What it waits for may end with nothing recorded (an OK refused, a question cancelled or still open: the history's
+  // `callOff`). The press was for that, so it is dropped: carried out, it took back the step before (#622).
+  const calledOff = ctx.history.callsOff();
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
       waitingOn[which]--;
-      undoRedoNow(which);
+      if (ctx.history.callsOff() === calledOff) undoRedoNow(which);
       showUndoRedo();
     });
 }
@@ -1463,8 +1493,11 @@ function showUndoRedo() {
     const waiting = waitingOn[id] > 0;
     b.toggleAttribute("aria-busy", waiting);
     if (waiting) b.setAttribute("aria-busy", "true");
-    b.disabled = label === null && !waiting;
-    b.title = waiting ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    // From the moment an OK is pressed (held work, `history.hold`) Undo would take it back once it lands, so it says so and
+    // takes a press (SL #708 item 3: it stayed grey, or named the step before, until the kernel answered, and a press was lost).
+    const ahead = id === "undo" && ctx.history.busy();
+    b.disabled = label === null && !waiting && !ahead;
+    b.title = waiting || ahead ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
 // At phone width the pair leaves the bar for the main viewport's
@@ -1487,6 +1520,7 @@ for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id));
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
+ctx.history.onBusy(showUndoRedo);
 showUndoRedo();
 // History: every step kept, to go back (or forward) to any of them at once. Waits for an OK the kernel still checks
 // like Undo and Redo do, so it goes back from the finished step.
@@ -1577,13 +1611,17 @@ phone.addEventListener("change", () => {
   const phone = window.matchMedia("(max-width: 640px)");
   let wanted = false;
   let opened = false;
+  let shows = ""; // the Combine panel's count of times it was shown: one more means a Combine started again, even over an open one (#586)
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
     const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null ||
       // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null);
-    if (now === wanted && !(turned && now)) return;
+    const again = props.querySelector<HTMLElement>("#combine-panel:not([hidden])")?.dataset.shows ?? "";
+    const restarted = now && again !== "" && again !== shows;
+    shows = again;
+    if (now === wanted && !(turned && now) && !restarted) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
     if (now && phone.matches && !open) {
@@ -1602,7 +1640,7 @@ phone.addEventListener("change", () => {
     } else if (!now) opened = false;
   };
   phone.addEventListener("change", () => phone.matches && update(true));
-  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden", "data-shows"] });
 }
 // At phone width the bar over the view (phone-float.ts) ends the tool in use; a tool ending puts the Properties sheet away.
 startPhoneFloat($("workspace"), $("viewport"), () => {

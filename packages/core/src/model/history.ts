@@ -99,6 +99,15 @@ export interface History {
    * back that step, not the one before (clumsy hunt 2026-11-04: the step was lost, and the one before it undone).
    */
   hold<T>(work: Promise<T>): Promise<T>;
+  /**
+   * Held work the person asked for ended with nothing recorded (an OK the kernel refused, a question answered Cancel
+   * or still open): an Undo or Redo that waited for it was pressed to take that back, and there is nothing of it to
+   * take, so the shell drops the press (`callsOff` changed while it waited) instead of taking back the step before
+   * (Undo hunt 2026-11-12, #622: the width typed before a refused Move was undone and the refusal never seen).
+   */
+  callOff(): void;
+  /** How many times `callOff` was called. */
+  callsOff(): number;
   /** The present step, for `amendStep` to name later: the same step until a record merges into it or an amend changes it. */
   present(): HistoryStep;
   /**
@@ -108,8 +117,25 @@ export interface History {
    * a step. A step left the same as the one before it has nothing to undo, so it is removed. Returns whether it changed.
    */
   amendStep(step: HistoryStep, rewrite: (snapshot: string) => string | null): boolean;
-  /** Whether held work is still running. */
+  /**
+   * `question`, put to the person by held work before it records (a Cut that removes nothing asks first, Design's
+   * cut-ask.ts), noted until it is answered; returns it. The held work still holds (`busy`, `whenIdle`: an Undo pressed
+   * meanwhile still waits for the answer), but nothing it does runs by itself meanwhile (`working`).
+   */
+  asking<T>(question: Promise<T>): Promise<T>;
+  /** Whether held work is still held, a question it waits on included. */
   busy(): boolean;
+  /**
+   * Called each time held work starts or ends (`busy` may have changed); returns an unsubscribe. Not `onChange`: nothing
+   * that can be undone changed, so nothing is saved for it. The shell's Undo button reads it (SL #708 item 3: grey, or
+   * naming the step before, for the seconds an OK was still with the kernel, and a press then was lost).
+   */
+  onBusy(listener: () => void): () => void;
+  /**
+   * Whether held work is running by itself: held work that is not waiting on the person's answer. The page changes
+   * again without anyone touching it only while this is true (the monkey's settle, `fissionTest.historyBusy`; SL #397).
+   */
+  working(): boolean;
   /** Settles once no held work runs, including work held while waiting; at once when none does. */
   whenIdle(): Promise<void>;
 }
@@ -178,9 +204,16 @@ export function createHistory(options: HistoryOptions): History {
   };
   /** Held work still running (`hold`). */
   const held = new Set<Promise<unknown>>();
+  /** Questions held work puts to the person (`asking`), until answered. */
+  const asked = new Set<Promise<unknown>>();
+  let calledOff = 0;
   const listeners = new Set<() => void>();
   const changed = () => {
     for (const l of [...listeners]) l();
+  };
+  const busyListeners = new Set<() => void>();
+  const busyChanged = () => {
+    for (const l of [...busyListeners]) l();
   };
   const start = () => {
     entries = [{ snapshot: options.capture(), label: "", mergeKey: undefined, at: now() }];
@@ -339,13 +372,21 @@ export function createHistory(options: HistoryOptions): History {
       return () => listeners.delete(listener);
     },
     hold(work) {
-      const done = work.then(
-        () => void held.delete(done),
-        () => void held.delete(done),
-      );
+      const end = () => {
+        held.delete(done);
+        busyChanged();
+      };
+      const done = work.then(end, end);
       held.add(done);
+      busyChanged();
       return work;
     },
+    onBusy(listener) {
+      busyListeners.add(listener);
+      return () => busyListeners.delete(listener);
+    },
+    callOff: () => void calledOff++,
+    callsOff: () => calledOff,
     present: () => entries[index],
     amendStep(step, rewrite) {
       if (restoring || grouping > 0) return false;
@@ -361,7 +402,17 @@ export function createHistory(options: HistoryOptions): History {
       changed();
       return true;
     },
+    asking(question) {
+      const done = question.then(
+        () => void asked.delete(done),
+        () => void asked.delete(done),
+      );
+      asked.add(done);
+      return question;
+    },
     busy: () => held.size > 0,
+    // Each question is asked from inside one piece of held work, which waits on it: work runs while more is held than asks.
+    working: () => held.size > asked.size,
     async whenIdle() {
       while (held.size > 0) await Promise.all([...held]);
     },

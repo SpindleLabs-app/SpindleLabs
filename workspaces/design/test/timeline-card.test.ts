@@ -39,15 +39,15 @@ const close = (a: number, b: number, what: string, slack = 1e-9) => assert.ok(Ma
 
 /** Box 1 (feature-1), Sketch 1 (sketch-2), Extrude 1 of it by 10 (feature-3). */
 const threeItems = () => extrudeSketch(addSketch(partDocument("box", 40, 30, 20)).doc, "sketch-2", 10).doc;
-const facts = (doc: DesignDocument, id: string, slow?: ReadonlySet<string>, failed?: ReadonlySet<string>, warnings?: ReadonlyMap<string, string>) => {
-  const { items } = timelineBarItems(doc, failed, warnings);
+const facts = (doc: DesignDocument, id: string, slow?: ReadonlySet<string>, failed?: ReadonlySet<string>, warnings?: ReadonlyMap<string, string>, reasons?: ReadonlyMap<string, string>) => {
+  const { items } = timelineBarItems(doc, failed, warnings, (s) => s, reasons);
   const i = doc.timeline.features.findIndex((f) => f.id === id);
   return cardFacts(doc, doc.timeline.features[i], items[i], i, slow);
 };
 const withSketch = (doc: DesignDocument, sketch: Sketch): DesignDocument => ({ ...doc, sketches: doc.sketches.map((s) => (s.id === sketch.id ? sketch : s)) });
 const feature = (id: string, type: string, parameters: Record<string, unknown>, summary: string, label: string, dependsOn: string[] = []): Feature =>
   ({ id, intent: { type, parameters, summary }, dependsOn, suppressed: false, provenance: { self: { workspace: "design", id, label }, from: [] } }) as unknown as Feature;
-const plainItem = (id: string): TimelineBarItem => ({ id, label: "", description: "", icon: "feature", suppressed: false, rolledBack: false, greyed: null, failed: false, warning: null });
+const plainItem = (id: string): TimelineBarItem => ({ id, label: "", description: "", icon: "feature", suppressed: false, rolledBack: false, greyed: null, failed: false, warning: null, reason: null });
 
 // ---------------------------------------------------------------- words
 
@@ -96,6 +96,14 @@ test("why an item isn't built: suppressed, after the marker, greyed, failed, too
   assert.deepEqual(off(doc, "feature-3", new Set(), new Set(["feature-3"])), { words: "Failed to build", tone: "bad" });
   assert.deepEqual(off(doc, "feature-3", new Set(["feature-3"]), new Set(["feature-3"])), { words: "Failed: took the kernel too long", tone: "bad" });
   assert.deepEqual(off(doc, "feature-3", new Set(), new Set(), new Map([["feature-3", "it keeps its last shape"]])), { words: "Warning: it keeps its last shape", tone: "bad" });
+});
+
+test("#505: a failed item's card says why in the rebuild's words", () => {
+  const doc = threeItems();
+  const why = new Map([["feature-3", "Box 2 doesn't reach Body 1."]]);
+  assert.deepEqual(facts(doc, "feature-3", new Set(), new Set(["feature-3"]), undefined, why).status, { words: "Failed: Box 2 doesn't reach Body 1.", tone: "bad" });
+  // Took too long keeps its own words even when a reason is held.
+  assert.deepEqual(facts(doc, "feature-3", new Set(["feature-3"]), new Set(["feature-3"]), undefined, why).status, { words: "Failed: took the kernel too long", tone: "bad" });
 });
 
 test("a sketch's content counted in words", () => {

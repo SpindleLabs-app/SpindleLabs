@@ -1,7 +1,13 @@
-// Browser check of the build with offline mode OFF (offline.config.mjs), the
-// one that ships until offline mode is released:
+// Browser check of the build with offline mode OFF for everyone
+// (offline.config.mjs), the one that ships until offline mode is released:
 // - No service worker is registered and nothing is cached, and the page has
 //   no manifest link, so the browser offers no install.
+// - A browser that chooses offline with `?offline` (Ben, 2026-11-13: for a
+//   school web filter) gets the offline worker and the manifest link, says
+//   so once, opens with no network after (the address without the switch,
+//   as an installed app opens), says it is offline there, and `?offline=off`
+//   removes everything again. The full offline checks run on this build too
+//   with offline chosen (e2e/offline.mjs).
 // - A browser that already has the old worker (a copy of the build with the
 //   real offline worker, installed and caching, controlling the page) is
 //   cleaned: on the next load the worker is gone, its caches are gone, and
@@ -22,7 +28,7 @@ import { writeServiceWorker } from "../offline.mjs";
 // E2E_DIST names another normal build (a private one, as for e2e/offline.mjs).
 const DIST = fileURLToPath(new URL(process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : "../dist/", import.meta.url));
 if (!existsSync(join(DIST, "sw.js"))) throw new Error("build the app first (npm run build): dist/sw.js is missing");
-if (readFileSync(join(DIST, "sw.js"), "utf8").startsWith("self.__SPINDLELABS_BUILD__")) {
+if (/<link rel="manifest"/.test(readFileSync(join(DIST, "index.html"), "utf8"))) {
   console.log("offline-off: skipped, this build has offline mode on");
   process.exit(0);
 }
@@ -116,7 +122,7 @@ try {
   // The site as it was before: the same build with the real offline worker as sw.js.
   const old = join(work, "old") + "/";
   cpSync(DIST, old, { recursive: true });
-  writeServiceWorker(old);
+  writeServiceWorker(old, "sw.js");
 
   await check("a visitor with nothing installed: no service worker, no cache, no manifest link", async () => {
     const { context, page } = await newApp();
@@ -167,6 +173,91 @@ try {
     } finally {
       await context.close();
       site.root = DIST;
+    }
+  });
+
+  await check("?offline: this browser keeps the app, can install it, opens it with no network and says so; ?offline=off removes it", async () => {
+    const { context, page } = await newApp();
+    try {
+      await page.goto(`${app}?offline&test-hooks`);
+      await kernelUp(page);
+      // The worker that keeps the app is offline-sw.js (sw.js stays the clean-up worker), and the page links the manifest.
+      await page.waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.active?.scriptURL.endsWith("/offline-sw.js") === true, null, { timeout: 20000, polling: 250 });
+      await page.waitForSelector('link[rel="manifest"]', { state: "attached" });
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.offline")), "on");
+      // Said once, with the way to install it.
+      await page.waitForSelector('#app-update[data-kind="kept"]', { timeout: 20000 });
+      assert.match(await page.textContent("#app-update span"), /^SpindleLabs is now kept on this device, so it opens without internet\. To add it as an app, choose Install/);
+      await page.click("#app-update-reload");
+      assert.equal(await page.$("#app-update"), null, "OK hides it");
+      // No server and no network, opened at the plain address (as an installed app opens): the app and its kernel come from this device.
+      site.server.closeAllConnections();
+      await new Promise((done) => site.server.close(done));
+      await context.setOffline(true);
+      await page.goto(`${app}?test-hooks`);
+      await kernelUp(page);
+      assert.equal(await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL.endsWith("/offline-sw.js")), true);
+      // Offline is said by a small mark in the top bar (never a notice over the view or the bottom bar); pressed, it says what still works.
+      await page.waitForSelector("#topbar #offline-status", { timeout: 10000 });
+      assert.equal(await page.textContent("#offline-status"), "Offline");
+      assert.equal(await page.$("#app-update"), null, "no notice of its own: the kept notice is said only once, and offline is the mark");
+      await page.click("#offline-status");
+      await page.waitForSelector('#app-update[data-kind="offline"]');
+      assert.equal(await page.textContent("#app-update span"), "You're offline. SpindleLabs still works, and your designs save on this device. Signing in and your account's copies wait until you're back online.");
+      if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/offline-chosen-1280.png` });
+      await page.click("#app-update-reload");
+      // At phone width the mark stays inside the top bar's one row and the bar doesn't scroll sideways.
+      for (const width of [375, 320]) {
+        await page.setViewportSize({ width, height: 667 });
+        const [mark, bar] = await Promise.all([page.$eval("#offline-status", (e) => e.getBoundingClientRect().toJSON()), page.$eval("#topbar", (e) => e.getBoundingClientRect().toJSON())]);
+        assert.ok(mark.width > 0 && mark.top >= bar.top && mark.bottom <= bar.bottom && mark.right <= width, `the mark in the top bar at ${width} px: ${JSON.stringify({ mark, bar })}`);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `nothing wider than the page at ${width} px`);
+        // Clear of every other control in the bar but Menu, whose top corner it sits on as a badge.
+        const hit = await page.evaluate(() => {
+          const m = document.getElementById("offline-status").getBoundingClientRect();
+          return [...document.querySelectorAll("#topbar button, #topbar h1")].filter((e) => e.id !== "offline-status" && e.id !== "menu-toggle" && e.offsetParent !== null).map((e) => [e.id || e.textContent, e.getBoundingClientRect()]).filter(([, r]) => r.width > 0 && r.left < m.right && m.left < r.right && r.top < m.bottom && m.top < r.bottom).map(([n]) => n);
+        });
+        assert.deepEqual(hit, [], `the mark covers nothing at ${width} px`);
+        if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/offline-chosen-${width}.png` });
+      }
+      await page.setViewportSize({ width: 1280, height: 800 });
+      // Back online the mark goes by itself.
+      await context.setOffline(false);
+      await page.waitForSelector("#offline-status", { state: "detached", timeout: 10000 });
+      await startServer();
+      // Turned off: the worker, its caches and the remembered choice all go, and the plain address is the live site again.
+      // The page came from the kept copy, so it cleans up and loads once more from the live site: wait for that second load.
+      let loads = 0;
+      const loaded = () => loads++;
+      page.on("load", loaded);
+      await page.goto(`${app}?offline=off&test-hooks`);
+      await untilClean(page);
+      for (let i = 0; i < 80 && loads < 2; i++) await page.waitForTimeout(250);
+      page.off("load", loaded);
+      assert.equal(loads, 2, "loaded once more from the live site");
+      await page.goto(`${app}?test-hooks`);
+      await kernelUp(page);
+      assert.deepEqual(await state(page), { registrations: 0, caches: [], controlled: false });
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.offline")), null);
+      assert.equal(await page.$('link[rel="manifest"]'), null);
+    } finally {
+      await context.close();
+      if (!site.server.listening) await startServer();
+    }
+  });
+
+  await check("the control: without ?offline the same visit keeps nothing, so with no network it doesn't open", async () => {
+    const { context, page } = await newApp();
+    try {
+      await page.goto(`${app}?test-hooks`);
+      await kernelUp(page);
+      site.server.closeAllConnections();
+      await new Promise((done) => site.server.close(done));
+      await context.setOffline(true);
+      await assert.rejects(page.goto(`${app}?test-hooks`), /ERR_INTERNET_DISCONNECTED|offline|NS_ERROR|Could not connect/i);
+    } finally {
+      await context.close();
+      if (!site.server.listening) await startServer();
     }
   });
 

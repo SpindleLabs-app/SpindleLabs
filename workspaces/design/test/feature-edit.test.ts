@@ -381,9 +381,10 @@ test("the panel: a box per size its shape uses with its value, Enter or OK repor
   // A preset has no Flip to report.
   assert.deepEqual(log.flips, [undefined, undefined]);
   assert.equal($("edit-flip"), null);
-  // An extrude: one Distance box, and Flip (26c) ticked as it is now.
+  // An extrude: one Distance box, Flip (26c) ticked as it is now, and Symmetric (53a1) off as it is now.
   panel.show(edit.editableFeature(d, "feature-11"));
-  assert.deepEqual([...doc.querySelectorAll(".feature-edit-row")].map((r) => r.textContent!.trim()), ["Distance  mm", "Flip"]);
+  assert.deepEqual([...doc.querySelectorAll(".feature-edit-row")].map((r) => r.textContent!.trim()), ["Distance  mm", "Flip", "Symmetric"]);
+  assert.equal($("edit-symmetric").checked, false);
   assert.equal($("edit-height").value, "10");
   assert.equal($("edit-flip").checked, false);
   $("edit-flip").checked = true;

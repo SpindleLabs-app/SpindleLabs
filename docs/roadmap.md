@@ -183,10 +183,10 @@ Curved booleans in general position, cones and tori (after 40; all three before 
 - [ ] 42. Cone and torus surfaces in the kernel: the surfaces, their crossings with what booleans already handle, validation and tessellation (architecture review item 3: chamfers and fillets make cones and tori, so they need them first). In the app they arrive with taper (53) and revolve (56)
 - [ ] 43. The general crossing finder (B0r, 2026-10-23; after 41 and 42, before 44): a procedural curve for surface pairs with no closed form (cylinder–torus, plane–torus, cones), defined by its two surfaces and seed points, every point re-solved by Newton to within tolerance; needed because fillets trim their own pieces against each other and a cut through a filleted part meets a torus. Substeps: the kernel repo's `docs/progress/booleans.md`
 
-Chamfer and fillets (right after 43; the solver core 47 follows them and closes the hard block)
+Chamfer and fillets (right after 43; the solver core 47 follows them and closes the hard block; timing guess, 2026-11-13: 44 about mid-January, 45 about late January, 46 about early March)
 - [ ] 44. Chamfer
 - [ ] 45. Fillet between planar faces
-- [ ] 46. Fillet planar–curved, edge chains (needs 43, the general crossing finder, and 42, cones and tori: a fillet along a cylinder–plane edge is a torus piece that must be trimmed against its neighbours)
+- [ ] 46. Fillet planar–curved, edge chains (needs 43, the general crossing finder, and 42, cones and tori: a fillet along a cylinder–plane edge is a torus piece that must be trimmed against its neighbours; and fillets along any curved edge (46e, Ben's decision 2026-11-13: part of 46 instead of a later step, so the Fillet tool stays behind its switch until fillets work on every edge; corners where several of those fillets meet come in a later step)
 
 Constraint solver core (the end of the front-loaded hard block, right after 46; owner's ask, 2026-10-24: fillets as soon as logically possible after booleans)
 - [ ] 47. Constraint solver core (Newton–Raphson): coincident, horizontal, vertical (in the kernel, on K1's curves, with its tolerances). Extra-heavy testing (owner's ask, 2026-10-21): the harness comes before any solver code (hand-worked cases), then thousands of seeded random sketches checked against the SolveSpace oracle, deliberately planted solver bugs that the tests must catch, and browser drag tests checking that shapes never flip or jump; split into small substeps, each tested hard before the next starts
@@ -258,7 +258,7 @@ Assemblies and drawings
 Extras
 - [ ] 84. Realistic rendering
 - [ ] 85. Tetrahedral meshing + FEM stress
-- [ ] 86. CAM: 2.5D toolpaths, G-code
+- [ ] 86. CAM: 2.5D toolpaths, G-code (CNCLab M0–M4, `docs/progress/cnc.md`)
 - [ ] 87. Sheet metal
 - [ ] 88. Cloud saving, versions, sharing (recipes, origin and remix lineage: X12)
 
@@ -403,11 +403,20 @@ TestLab, the Simulate workspace (owner's decision, 2026-11-12: start now with a 
 - [ ] S4. Thermal and modal studies
 - The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; TestLab's stress study (T5, S3) becomes its outside oracle (H4c).
 
-Manufacture workspace (starts after CAD step 40, booleans and full topological naming)
-- [ ] M1. Setups, stock, work coordinates; a tool library shared across projects
-- [ ] M2. 2D/2.5D strategies on referenced faces and edges (shares step 86)
-- [ ] M3. Toolpath simulation in the viewport
-- [ ] M4. G-code through post-processors for different machines; 3D strategies
+Manufacture workspace, CNCLab (CAM: CNC toolpaths; plan added 2026-11-13 on the owner's ask). Starts after the launch work (fillets 44–46, chamfers and the slicer), in the "everything else" slot, never ahead of a primary kernel step; its exact cuts need curved booleans (37–43), K1's offsets (52), full naming (40) and the hole feature (54). Our own engine on the exact kernel, private like the slicer's; toolpaths from the exact solid and every one checked against it for gouges. Decisions, substeps and the test plan: `docs/progress/cnc.md`.
+- [ ] M0. Test harness first: a milling G-code replayer, an independent stock simulator, gouge and leftover checks against the exact solid, hand-worked parts
+- [ ] M1. Setups, stock, work coordinates; a tool library shared across projects; feeds and speeds from the materials library; machine profiles
+- [ ] M2. 2.5D strategies on referenced faces and edges (shares step 86): facing, contours, tabs, drilling, pockets, adaptive clearing, chamfer and engrave, rest machining
+- [ ] M3. Toolpath simulation in the viewport, with collision checks and the cycle time (an estimate)
+- [ ] M4. G-code through post-processors: GRBL first, then LinuxCNC and a Fanuc-style dialect
+- [ ] M5. 3D roughing (z-level, adaptive, rest)
+- [ ] M6. 3D finishing (parallel and waterline by wall angle, scallop height chosen)
+- [ ] M7. Toolpaths that follow design edits by stable id
+- [ ] M8. Machinability overlay in Design (corners tighter than the smallest tool, pockets too deep)
+- [ ] M9. Workholding (clamps, vice, two-sided setups)
+- [ ] M10. Circuit board milling from Circuit (after E2)
+- [ ] M11. Sending GRBL jobs from the browser, behind the confirmation screen
+- [ ] M12. Later: 3+2, fourth axis, five-axis, lathe, feature recognition
 
 Slice workspace (3D printing; starts right after CAD step 52, ahead of Render or taking turns with it, since both use the "everything else" pull request slot; owner's decision, 2026-10-22). It slices a triangle mesh made from each design body at the printer's resolution, so it needs no kernel step past 52. Early start (owner's decision, 2026-10-28): the test harness (P0) and the engine's own halves of P2, P3, P4 and P6, which touch nothing else, start now; everything touching Design or the app still waits for step 52. The engine is private like the kernel and ships as a compiled build; the Slice screen and its adapter are public. Decisions, substeps and test plans: `docs/progress/slice.md`. The first printer is the owner's Bambu Lab P1S with an AMS (four spools).
 - [ ] P0. Test harness before any slicing code: a G-code reader that replays our output and checks it (plastic laid down matches the part's volume, nothing leaves the bed, no travel crosses a wall, no move outside the printer's limits), PrusaSlicer's command line as the oracle (an oracle script), hand-worked parts (a 20 mm cube, a cylinder, a bridge, an overhang ramp)

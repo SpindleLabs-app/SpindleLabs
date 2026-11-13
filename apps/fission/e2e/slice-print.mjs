@@ -180,7 +180,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(layersIn(gcode), 100, "20 mm / 0.2 mm");
       assert.match(gcode, /^G28/m, "it homes the printer first");
       await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved spindlelabs-0.2mm-2w-15pc.gcode"));
-      assert.match(await page.textContent("#slice-print-status"), /^Saved spindlelabs-0\.2mm-2w-15pc\.gcode: 100 layers, \d+(\.\d)? g of PLA \(\d+\.\d\d m of filament\), about (\d+ min|\d+ h( \d+ min)?|under a minute) of printing \(plus heating and levelling\)\.$/);
+      assert.match(await page.textContent("#slice-print-status"), /^Saved spindlelabs-0\.2mm-2w-15pc\.gcode: 100 layers, \d+(\.\d)? g of PLA \(\d+\.\d\d m of filament\), about (\d+ min|\d+ h( \d+ min)?|under a minute) of printing \(plus heating and levelling\)\. Added to your print log: say how it printed from File, Print log….$/);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-sliced.png` });
 
       await page.selectOption("#slice-print-quality", "0.16");

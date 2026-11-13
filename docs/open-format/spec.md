@@ -608,7 +608,7 @@ Ids inside names are escaped with JavaScript's `encodeURIComponent`, so the sepa
 | box | `bottom` (z = 0), `top`, `front` (y = 0), `back`, `left` (x = 0), `right` |
 | cylinder | `bottom`, `top`, `side` |
 | sphere | `lower`, `upper` (the two halves) |
-| extrude of a sketch | `start` (the cap on the sketch plane), `end` (the cap `distance` away), `side:<curve id>` (the side swept from that curve; `side:circle-3#2` for the second run of a curve that a region passes more than once, counted from 1 in `outer` order) |
+| extrude of a sketch | `start` (the cap on the sketch plane), `end` (the cap `distance` away; for an extrude of several profiles, the first profile's, and `start:<k>`, `end:<k>` for profile k after it, counted from 1), `side:<curve id>` (the side swept from that curve; `side:circle-3#2` for the second run of a curve that a region passes more than once, counted from 1 in `outer` order) |
 | extrude of a ready-made profile | `start`, `end`, `side:<kind>-piece-<n>` (side n of the outline, from 0), `side:<kind>-hole-<i>-piece-<n>` (the side of hole i) |
 | duplicate of a combined body | `<role>:<source item>`, and `side:<source item>~<curve id>` for a side |
 

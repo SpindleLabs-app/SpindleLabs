@@ -205,8 +205,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
-        replace: "        for (const tool of step.keepTools ? [] : step.tools) delete bodies[tool];\n        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${e.message}`",
+        find: "        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${who === null ? e.message : roundWords(who)}`",
+        replace: "        for (const tool of step.keepTools ? [] : step.tools) delete bodies[tool];\n        return { status: \"failed\", cause: \"error\", message: `${label} can't be made: ${who === null ? e.message : roundWords(who)}`",
       },
     ],
     run: ["timeline"],
@@ -231,8 +231,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "      const frames = framesOfResult(h, built);",
-        replace: "      const frames = framesOfResult(h, new Map([...built.keys()].map((k) => [k, built.get(t.handle)!] as const)));",
+        find: "    const frames = framesOfResult(h, built);",
+        replace: "    const frames = framesOfResult(h, new Map([...built.keys()].map((k) => [k, built.get(t.handle)!] as const)));",
       },
     ],
     run: ["timeline"],
@@ -327,9 +327,9 @@ export const PLANTS: Record<ModelFault, Plant> = {
       { file: REBUILD, find: "        if (await makesOutline(kernel, doc, sketch, regionOf(f))) {", replace: "        if (keptOf(doc, f) === undefined && (await makesOutline(kernel, doc, sketch, regionOf(f)))) {" },
       {
         file: REBUILD,
-        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);",
+        find: "  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region, both);",
         replace:
-          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
+          '  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region, both);\n  if (keptOf(doc, f) !== undefined) return await lost("open-outline", "kept", []);',
       },
     ],
     run: ["timeline"],
@@ -416,6 +416,12 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "move-all-or-none": {
+    what: "a Move with one body no longer there fails whole, so the other bodies it moves drop back (SL #506 item 4)",
+    edits: [{ file: REBUILD, find: "  if (from.length === 0 && gone.length > 0) return gone[0].failed;", replace: "  if (gone.length > 0) return gone[0].failed;" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
   "sketch-not-carried": {
     what: "a sketch on a moved face follows its height but not a Move's slide along it or turn about it (35e2h's compromise back)",
     edits: [{ file: REBUILD, find: "const carry = p.body === undefined ? null : carried(", replace: "const carry = Number(\"1\") ? null : carried(" }],
@@ -433,6 +439,13 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [{ file: EDITS, find: "  for (const s of shapings(doc.timeline.features)) {", replace: "  for (const s of shapings([])) {" }],
     run: ["timeline"],
     caught: "outcome differs from the model",
+  },
+  "reorder-past-reader": {
+    what: "a reorder lets a Copy or a Combine keeping its tools pass a later item that changes a body it works on (SL #676 item 1)",
+    edits: [{ file: EDITS, find: "  for (const r of readings(doc.timeline.features)) {", replace: "  for (const r of readings([])) {" }],
+    run: ["timeline"],
+    caught: "outcome differs from the model",
+    why: "Design's seeds 1 to 30 don't reach it (a Copy or kept tool's Combine dragged past a later change of its body is rare); its 7 steps shrunk from seed 49 are saved in test/regressions/timeline-design/plant-reorder-past-reader-49.json, which planted/session.ts replays after the seeds (2026-11-12); workspaces/design/test/combine-shaping.test.ts catches it by hand",
   },
   "duplicate-no-body": {
     what: "a Duplicate builds but makes no copy (35e2)",
@@ -833,7 +846,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   // Hunt 11-06: a Combine's numbered pieces kept by their faces.
   "pieces-by-rank": {
     what: "a Combine's pieces are numbered by rank order on every rebuild, the faces the data remembers ignored, so an earlier edit that changes their sizes moves a number to another piece silently",
-    edits: [{ file: REBUILD, find: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, remembered, own);", replace: "    const named = combineNames(f.id, op, t, ts, result, views, firstPiece, new Map(), own);" }],
+    edits: [{ file: REBUILD, find: "  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), remembered, own);", replace: "  const settled = pieceIds(f.id, numbered.map((id) => pieceFaces[id]), new Map(), own);" }],
     run: ["naming"],
     caught: "combine-piece-identity: hand-worked: Combine 2 stays on the far piece when a slot moves",
   },

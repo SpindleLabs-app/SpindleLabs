@@ -5,6 +5,7 @@
 
 import { areaIn, boxShown, describeProvenance, summaryInUnit, toMm, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
 import { currentUnit, downstreamChip, formatQuantity as fmt, UNIT_EVENT, type ChipInfo } from "@fission/ui";
+import { densityWords, massMaterials, massShown, readMassMaterial, SOLID_NOTE, writeMassMaterial } from "./body-mass.ts";
 import { SHAPES } from "./commands.ts";
 import type { PartKind } from "./document.ts";
 import { SHAPE_LABELS } from "./toolbar.ts";
@@ -127,16 +128,19 @@ const HTML = `
   <h2>Parameters</h2>
   <p id="no-part" hidden>${NO_PART}</p>
   <label id="shape-row" title="${SHAPE_TITLE}">Shape <select id="shape" class="dark-select"><option value="" disabled hidden>—</option><option value="sketch-extrude" disabled hidden>${EXTRUDED_SKETCH}</option>${SHAPES.map((k) => `<option value="${k}">${SHAPE_LABELS[k]}</option>`).join("")}</select></label>
-  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="number" value="${DEFAULT_SIZES[k]}" step="any" /> <span class="unit-name">mm</span></label>`).join("\n  ")}
+  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="number" value="${DEFAULT_SIZES[k]}" step="any" data-undo="app" /> <span class="unit-name">mm</span></label>`).join("\n  ")}
   <h2>Feature</h2>
   <dl id="feature-info">
     <dt>Feature</dt><dd id="intent">…</dd>
     <dt>Made from</dt><dd id="provenance">…</dd>
   </dl>
+  <p id="feature-failure" class="bad" role="status" hidden></p>
   <h2 id="body-heading">Body</h2>
   <dl id="stats">
     <dt>Volume</dt><dd id="volume">…</dd>
     <dt>Area</dt><dd id="area">…</dd>
+    <dt><label for="mass-material">Material</label></dt><dd><select id="mass-material" class="dark-select body-mass"></select></dd>
+    <dt title="${SOLID_NOTE}">Mass</dt><dd id="mass" title="${SOLID_NOTE}">…</dd>
     <dt>Topology</dt><dd id="topology">…</dd>
     <dt>Validation</dt><dd id="status">…</dd>
   </dl>
@@ -247,6 +251,8 @@ export interface PropertiesPanel {
   setShape(shape: PartKind, pressed: PartKind | null): void;
   /** The part's feature, or null for a design with no body (24f4). */
   showFeature(feature: Feature | null): void;
+  /** Why the feature shown failed, in the rebuild's words (#505; "" hides it). Visible text, as a phone has no tooltips. */
+  showFeatureFailure(why: string): void;
   /** What is selected: one row per item, or the empty note. */
   showSelection(rows: readonly SelectionRow[]): void;
   /** Says what the last rebuild took out of the selection ("" hides the note). */
@@ -298,7 +304,36 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     const unit = currentUnit(doc);
     $("volume").textContent = `${fmt(volumeIn(shownBody.volume, unit))} ${unit}³`;
     $("area").textContent = `${fmt(areaIn(shownBody.area, unit))} ${unit}²`;
+    $("mass").textContent = massShown(shownBody.volume, material, unit);
   };
+  // The mass's material (step 66a): a view setting kept in this browser, never the design's, so no undo step.
+  /** The page's own storage (a test's DOM has its own); none when even reaching it throws. */
+  const storage = (() => {
+    try {
+      return doc.defaultView?.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  let material = readMassMaterial(storage);
+  const materialChoice = $<HTMLSelectElement>("mass-material");
+  for (const m of massMaterials()) {
+    const o = doc.createElement("option");
+    o.value = m.id;
+    o.textContent = m.name;
+    materialChoice.append(o);
+  }
+  const showMaterial = () => {
+    materialChoice.value = material.id;
+    materialChoice.title = `What the mass is worked out for. ${densityWords(material)}`;
+  };
+  showMaterial();
+  materialChoice.addEventListener("change", () => {
+    material = massMaterials().find((m) => m.id === materialChoice.value) ?? material;
+    writeMassMaterial(material.id, storage);
+    showMaterial();
+    drawBody();
+  });
   /** Shows the unit now chosen; false once this panel was filled again (Design mounted anew), and it is no longer wanted. */
   const onUnit = (): boolean => {
     if (slot.querySelector("#width") !== boxes[0].el) return false;
@@ -329,6 +364,10 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
       drawIntent();
       $("provenance").textContent = feature === null ? NONE : describeProvenance(feature.provenance);
       $("no-part").hidden = feature !== null;
+    },
+    showFeatureFailure(why) {
+      $("feature-failure").textContent = why === "" ? "" : `Couldn't be made: ${why}`;
+      $("feature-failure").hidden = why === "";
     },
     showSelection(rows) {
       const document = slot.ownerDocument;
@@ -364,7 +403,7 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     showNoBody() {
       shownBody = null;
       $("body-heading").textContent = "Body";
-      for (const id of ["volume", "area", "topology", "status"]) $(id).textContent = NONE;
+      for (const id of ["volume", "area", "mass", "topology", "status"]) $(id).textContent = NONE;
       $("status").className = "";
       $("body-problems").textContent = "";
       $("body-problems").hidden = true;
