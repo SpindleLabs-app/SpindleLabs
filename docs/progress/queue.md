@@ -31,4 +31,6 @@ Rules for this workstream:
 - [ ] Q8c. The page for teachers at spindlelabs.app/schools: what it does, the privacy promise in plain words, and a way to ask for a pilot (no payment).
 - [ ] Q9. A pilot at Ben's school (planned Term 1 2027), after Q4 is checked and Ben's teacher agrees.
 
+Security hunt 2026-11-13 (D1, D2): hostile SVG and DXF files that made the laser check run for minutes or hours are now answered quickly (a work budget for DXF, linear scans for SVG; `test/hostile.test.ts`). Q3 must still run both checks off the page's thread with a time limit (as the kernel's calls are, `packages/core/src/kernel/time-limit.ts`), so no file can freeze a teacher's tab.
+
 Next: Q3, from a fresh `main`. The demo page behind `?queue` in this browser only: a new workspace-free page (ask the app thread where a switch page mounts; `?queue` is not wired yet), student view (`studentView`, sending a file runs `checkPrintFile` with the app's kernel client or `checkLaserFile`, then `checkAction`), teacher view (`apply` for approve, return, move, start, finish; `totals`; the job's `notes` under it). The queue's state saved in this browser's storage, versioned like the print log. Browser check with screenshots at 1280 and 375.
