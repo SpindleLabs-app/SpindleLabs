@@ -116,9 +116,9 @@ try {
     await until(page, () => document.getElementById("row-menu").open, null, "the item's menu");
     await page.click("#row-menu-edit");
     await until(page, () => document.getElementById("feature-edit")?.hidden === false, null, "the Edit feature panel");
-    assert.equal(await page.inputValue("#feature-edit input[type=number]"), "1");
+    assert.equal(await page.inputValue("#feature-edit input[inputmode=decimal]"), "1");
     assert.equal(await page.locator("#feature-edit .unit-name").first().textContent(), "in");
-    await page.fill("#feature-edit input[type=number]", "2");
+    await page.fill("#feature-edit input[inputmode=decimal]", "2");
     await page.click("#feature-edit-ok");
     await until(page, (v) => Math.abs(Number(document.querySelector("#volume").textContent.replace(/[^0-9.]/g, "")) - v) < 1e-6, inCubed * 2, "volume doubled");
     await page.context().close();

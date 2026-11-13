@@ -3,7 +3,7 @@
 // with their validation, staleness and STL notes. The workspace drives it;
 // the panel only shows what it is given.
 
-import { areaIn, boxShown, describeProvenance, summaryInUnit, toMm, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
+import { areaIn, boxShown, commaWords, describeProvenance, readSizeText, summaryInUnit, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
 import { currentUnit, downstreamChip, formatQuantity as fmt, UNIT_EVENT, type ChipInfo } from "@fission/ui";
 import { densityWords, massMaterials, massShown, readMassMaterial, SOLID_NOTE, writeMassMaterial } from "./body-mass.ts";
 import { SHAPES } from "./commands.ts";
@@ -55,8 +55,10 @@ export function panelSizeRefused(kind: PartKind, typed: Record<SizeKey, string>)
     if (!r.shown) continue;
     const text = typed[r.key];
     const label = kind === "sketch-extrude" ? "distance" : r.label.toLowerCase();
-    const v = Number(text);
-    if (text.trim() === "" || !Number.isFinite(v)) return `Type the ${label} in mm.`;
+    // The boxes give millimetres as text, or the text typed when it is no size (`sizeBox`): read strictly, never by Number ("0x10").
+    const read = readSizeText(text, "mm");
+    if ("why" in read) return read.why === "comma" ? `The ${label}: ${commaWords(text)}` : `Type the ${label} in mm.`;
+    const v = read.mm;
     if (v <= 0) return `The ${label} must be more than 0 mm.`;
     const refused = lengthRefused(v);
     if (refused !== null) return `The ${label}${refused.slice("A length".length)}`;
@@ -128,7 +130,7 @@ const HTML = `
   <h2>Parameters</h2>
   <p id="no-part" hidden>${NO_PART}</p>
   <label id="shape-row" title="${SHAPE_TITLE}">Shape <select id="shape" class="dark-select"><option value="" disabled hidden>—</option><option value="sketch-extrude" disabled hidden>${EXTRUDED_SKETCH}</option>${SHAPES.map((k) => `<option value="${k}">${SHAPE_LABELS[k]}</option>`).join("")}</select></label>
-  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="number" value="${DEFAULT_SIZES[k]}" step="any" data-undo="app" /> <span class="unit-name">mm</span></label>`).join("\n  ")}
+  ${SIZE_KEYS.map((k) => `<label id="${k}-row"><span id="${k}-label"></span> <input id="${k}" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-undo="app" value="${DEFAULT_SIZES[k]}" /> <span class="unit-name">mm</span></label>`).join("\n  ")}
   <h2>Feature</h2>
   <dl id="feature-info">
     <dt>Feature</dt><dd id="intent">…</dd>
@@ -169,9 +171,9 @@ export interface Verb {
  * the box may show inches. In millimetres it is the input's own text, untouched.
  */
 export interface SizeBox {
-  /** The number box itself, in the unit it shows (the e2e tests and the page see this). */
+  /** The text box itself (a decimal keypad), in the unit it shows (the e2e tests and the page see this). */
   readonly el: HTMLInputElement;
-  /** Millimetres as text; text that is no number (empty, "e") is returned as the input has it, for the refusal to name. */
+  /** Millimetres as text; text that is no size (empty, "e", "2.5 cx") is returned as the input has it, for the refusal to name ("?" when Number would read it). */
   value: string;
   addEventListener(type: "input" | "change" | "blur", listener: () => void): void;
   /** The unit changed (Settings): show the same length in the new unit. */
@@ -202,17 +204,27 @@ export function followUnit(doc: Document, onUnit: () => boolean): void {
   all.add(new WeakRef(onUnit));
 }
 
-/** A size box over `el`, showing the unit `unitNow()` gives, now and after each `reshow`. */
+/**
+ * A size box over `el`, showing the unit `unitNow()` gives, now and after each `reshow`. It is a text box with a decimal
+ * keypad (issue #518): a number box let the browser throw away a typed unit or comma ("1,5" built 15 mm), so the box reads
+ * the text itself (`readSizeText`): a unit after the number ("2.5 cm", "1in", "25.4mm" in an inch box), a decimal comma.
+ * Text that is no size comes back as typed for the refusal to name, or as "?" when JavaScript's Number would still read it
+ * as one ("0x10", "Infinity"), so no caller can take it.
+ */
 export function sizeBox(el: HTMLInputElement, unitNow: () => Unit): SizeBox {
+  if (el.type !== "text") el.type = "text";
+  el.inputMode = "decimal";
+  el.removeAttribute("step");
   let unit: Unit = unitNow(); // the unit the text in the box is in
   /** The millimetres last put in, while the box still has the text that was put there: read back exactly, not through a division. */
   let put: { text: string; mm: string } | null = null;
   const read = (): string => {
     if (put !== null && el.value === put.text) return put.mm;
     const text = el.value;
-    const n = Number(text);
-    if (unit === "mm" || text.trim() === "" || !Number.isFinite(n)) return text;
-    return String(Number(toMm(n, unit).toPrecision(12)));
+    if (text.trim() === "") return text;
+    const r = readSizeText(text, unit);
+    if ("mm" in r) return String(r.mm);
+    return Number.isNaN(Number(text)) ? text : "?";
   };
   const write = (mm: string) => {
     unit = unitNow();
@@ -235,6 +247,8 @@ export function sizeBox(el: HTMLInputElement, unitNow: () => Unit): SizeBox {
     },
     addEventListener: (type, listener) => el.addEventListener(type, listener),
     reshow() {
+      // Text that is no size stays as typed, for the person to mend.
+      if ("why" in readSizeText(el.value, unit) && !(put !== null && el.value === put.text)) return void (unit = unitNow());
       write(read());
     },
   };

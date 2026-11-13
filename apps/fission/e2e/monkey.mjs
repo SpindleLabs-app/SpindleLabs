@@ -461,6 +461,13 @@ async function act(s, a) {
       const label = (await settle(page)).undo;
       await page.evaluate(() => document.getElementById("undo").click());
       await settle(page);
+      // A tool open: Undo cancels just it (issue #520), which recorded nothing, so the file is as it was.
+      if (/^Undo: cancel /.test(label ?? "")) {
+        same("Undo with a tool open cancels it and changes nothing", before, await save(s));
+        const after = await settle(page);
+        if (/^Undo: cancel /.test(after.undo ?? "") && after.undo === label) fail("undo cancels the open tool", `after ${label}, the tool is still open`);
+        return true;
+      }
       const redoable = await page.evaluate(() => !document.getElementById("redo").disabled);
       if (!redoable) fail("undo then redo", `after ${label}, Redo is off`);
       await page.evaluate(() => document.getElementById("redo").click());
