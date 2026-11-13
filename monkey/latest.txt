@@ -1,6 +1,6 @@
-tested commit 7b63189 on main, 2026-11-13 10:42 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43363143180)
-Monkey, seeds 359818622-359818625: 4 session(s) of 2000 actions in Chromium; 8 Combines made of 60 tried; every check passed after every action
-seed 359818622: pass (2000 actions)
-seed 359818623: pass (2000 actions)
-seed 359818624: pass (2000 actions)
-seed 359818625: pass (2000 actions)
+tested commit 90406ae on main, 2026-11-13 14:23 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43405482436)
+Monkey, seeds 359818998-359819001: 4 session(s) of 2000 actions in Chromium; 2 Combines made of 41 tried; 1 FAILED
+seed 359818998: pass (2000 actions)
+seed 359818999: FAIL: an edit changes only its item: Undo Edit Sphere 2 (Ctrl+Z): its sketches changed
+seed 359819000: pass (2000 actions)
+seed 359819001: pass (2000 actions)
