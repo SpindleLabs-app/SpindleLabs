@@ -23,6 +23,7 @@
 import type { Fit } from "@fission/print";
 import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
 import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
+import { SketchFull } from "./sketch-room.ts";
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, lonePoints, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
@@ -271,6 +272,16 @@ function whereIs(sketch: Sketch, end: LineEnd): SketchXY {
  * the new point. A click on the chain's last point draws nothing.
  */
 export function clickAt<T extends SketchTool>(doc: DesignDocument, tool: T, at: SketchXY): { doc: DesignDocument; tool: T; drew: boolean; note?: string } {
+  // A sketch at the reader's limits (#641 item 2) draws nothing, and the click says why; the tool stays where it was.
+  try {
+    return clickIn(doc, tool, at);
+  } catch (e) {
+    if (e instanceof SketchFull) return { doc, tool, drew: false, note: e.message };
+    throw e;
+  }
+}
+
+function clickIn<T extends SketchTool>(doc: DesignDocument, tool: T, at: SketchXY): { doc: DesignDocument; tool: T; drew: boolean; note?: string } {
   if (tool.kind === "rectangle") return rectangleClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "circle") return circleClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "arc") return arcClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
