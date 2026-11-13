@@ -387,8 +387,9 @@ export function startAutosave(
     if (keptFromLastVisit()) return refuse("unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload the page to see them.");
     if (text === written) {
       // Back at the state this tab last read or wrote, but the store holds another tab's since: not "saved" (#642
-      // item 3, Undo in a refused tab said so). Nothing of this tab's own is left to keep apart.
-      if (conflicted && refusal !== null) {
+      // item 3, Undo in a refused tab said so). Nothing of this tab's own is left to keep apart. The same when held back
+      // by the last visit's kept changes: they are gone from the journal only once stored over this state.
+      if (refusal !== null) {
         if (v === version) {
           storedVersion = v;
           dropOwnEntries();
@@ -417,11 +418,15 @@ export function startAutosave(
       writtenAt = at;
       base = at;
       owner = false; // the store holds this tab's state now: the entry, if still here, is an ordinary one
+      refusal = null; // and no longer anyone else's work
       failures = 0;
       stored(v, at);
       rebase(at);
     } catch (e) {
-      if (e instanceof ProjectChangedError) conflicted = true;
+      if (e instanceof ProjectChangedError) {
+        conflicted = true;
+        refusal = message(e); // said by the next save too, when one was asked for meanwhile and finds nothing new to write
+      }
       // A failed save says the way out, whatever failed: the storage-full words do already, the others did not
       // (export hunt 2026-11-12, #643 item 6). A refusal's own words say what to do instead.
       failure = conflicted || storageFull(e) ? message(e) : `${message(e)}. ${USE_SAVE}`;
@@ -569,7 +574,10 @@ export function startAutosave(
           // next visit's recovery would mark it. The app then opens it in place of the older stored state (keptEntry)
           // and no tab saves over it (#643 item 3: the project opened again showed the older state, marked "Saved").
           try {
-            if (journalVersion === v && ownEntryThere() && journal?.getItem(key) != null) journal.setItem(key, journalEntry(last, at, true));
+            // Only over this tab's own entry under the key: never over another tab's journalled there since (its own
+            // put aside), nor over nothing (the project deleted meanwhile, #642 item 5). Written whether or not finish's
+            // own entry got there, so the newest state is the one kept.
+            if (journal?.getItem(key) != null && ownEntry()) journal.setItem(key, journalEntry(last, at, true));
           } catch {
             // left as it was: the next visit puts it back, or marks it then
           }

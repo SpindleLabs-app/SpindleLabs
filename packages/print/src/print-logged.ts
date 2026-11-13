@@ -1,7 +1,7 @@
-// A saved print file goes into the print log (account features 5, `@fission/print` print-log.ts): Slice for printing
-// calls `logPrint` once the file is saved. Kept apart so the dialog's tests can count what it adds.
+// A saved print file goes into the print log (account features 5, `@fission/print` print-log.ts): Slice for printing and the Slice page
+// call `logPrint` once the file is saved. Kept apart so the dialog's tests can count what it adds.
 
-import { addPrint, PRINT_LOGGED_EVENT, type PrintMade } from "@fission/print";
+import { addPrint, PRINT_LOGGED_EVENT, type PrintMade } from "./print-log.ts";
 
 /** Adds `made` to this browser's print log; true when it is kept. Never throws: storage blocked keeps nothing. */
 export function logPrint(doc: Document, made: PrintMade, now = new Date()): boolean {
