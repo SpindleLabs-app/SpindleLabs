@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RepresentationRegistry, type WorkspaceContext } from "@fission/core";
-import { mountSlicePage, plateMesh, plateWords, readPlate, slicePageWorkspace } from "../src/index.ts";
+import { mountSlicePage, plateFiles, plateMesh, plateWords, printPanel, readPlate, sliceWords, slicePageWorkspace } from "../src/index.ts";
+import { PRINT_DEFAULTS } from "@fission/print";
 
 const { Window } = await import("happy-dom");
 
@@ -62,7 +63,7 @@ test("readPlate reads every body as a mesh, and counts one that can't be read in
 
 test("the page is a working workspace that takes meshes, and lists the plate in the browser and draws it in the view", async () => {
   assert.equal(slicePageWorkspace.status, "working");
-  assert.deepEqual(slicePageWorkspace.representations.accepts, ["mesh"]);
+  assert.deepEqual(slicePageWorkspace.representations.accepts, ["mesh", "data"]);
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = () => doc.body.appendChild(doc.createElement("div"));
@@ -75,6 +76,7 @@ test("the page is a working workspace that takes meshes, and lists the plate in 
     browser: slot(),
     properties: slot(),
     representations: registry,
+    kernel: { call: async () => ({}) },
     viewport: { showBody: (m: { indices: number[] }) => shown.push(m.indices.length / 3), fit: () => null },
   } as unknown as WorkspaceContext;
   const mounted = mountSlicePage(ctx);
@@ -89,4 +91,124 @@ test("the page is a working workspace that takes meshes, and lists the plate in 
   assert.equal(shown.length, 2);
   mounted.unmount();
   assert.equal(ctx.browser.children.length, 0);
+});
+
+// ---- The print panel (print-panel.ts) ----
+
+/** A binary STL of one triangle (80-byte header, count 1, 50 bytes), its corners at height z, so each body's file is told apart. */
+function triangle(z: number): Uint8Array {
+  const bytes = new Uint8Array(134);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(80, 1, true);
+  [[0, 0, z], [10, 0, z], [0, 10, z]].forEach((c, i) => c.forEach((v, k) => view.setFloat32(96 + i * 12 + k * 4, v, true)));
+  return bytes;
+}
+const stlRegistry = (fail: string[] = []) => {
+  const r = new RepresentationRegistry();
+  r.registerProducer("fake.body", "data", (o) => {
+    if (fail.includes(o.id)) return { kind: "data", values: { format: "obj" } };
+    return { kind: "data", values: { format: "stl", bytes: triangle(o.id.charCodeAt(0)) } };
+  });
+  return r;
+};
+
+test("plateFiles reads each body's STL in order, and a body that gives no STL stops the slice in words naming it", async () => {
+  const files = await plateFiles(stlRegistry(), objects);
+  assert.equal(files.length, 3);
+  assert.equal(new DataView(files[0].buffer).getFloat32(96 + 8, true), 97); // "a" is char code 97: its file's first corner is at z 97
+  await assert.rejects(plateFiles(stlRegistry(["b"]), objects), /Body b could not be turned into a print file/);
+});
+
+test("the words of a slice: layers, grams and time as the dialog says them, with the warnings after", () => {
+  const done = { layers: 100, filamentMm: 2000, filamentG: 5.97, printTimeS: 4800, unprintedVolume: 0, levelNote: "Body 2 floats." };
+  const words = sliceWords(done);
+  assert.match(words, /^100 layers, /);
+  assert.match(words, /Body 2 floats\.$/);
+});
+
+function panelIn(kernelCall: (name: string, ...a: unknown[]) => Promise<unknown>, list = objects, extra: Partial<Parameters<typeof printPanel>[1]> = {}) {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const panel = printPanel(doc, { kernel: { call: kernelCall, stopSlicing: () => undefined } as never, registry: stlRegistry(), objects: () => list, storage: null, ...extra });
+  doc.body.append(panel.element);
+  return { doc, panel };
+}
+
+test("the panel starts on the beginner's defaults, and picking a choice changes only that choice", () => {
+  const { doc, panel } = panelIn(async () => ({}));
+  assert.deepEqual(panel.choices(), PRINT_DEFAULTS);
+  const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
+  assert.equal(selects.length, 6, "quality, walls, infill, supports, build plate, nozzle");
+  selects[1].value = "3"; // Walls: the options are 1..6, index 3 is 4 walls
+  selects[1].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, walls: 4 });
+});
+
+test("Slice asks the engine for the stacked files with the choices and says what it came to; an empty plate says why and never asks", async () => {
+  const calls: unknown[][] = [];
+  const { doc, panel } = panelIn(async (...a) => (calls.push(a), { layers: 12, filamentMm: 1000, filamentG: 3, printTimeS: 600, unprintedVolume: 0 }));
+  await panel.slice();
+  assert.equal(calls[0][0], "slice_stl");
+  assert.equal(calls[0][2], PRINT_DEFAULTS.layerHeight);
+  assert.equal((calls[0][1] as Uint8Array).length, 3 * 134, "three bodies' files back to back");
+  assert.match(doc.querySelector(".slice-page-slice-words")!.textContent!, /^12 layers, /);
+  const empty = panelIn(async (...a) => (calls.push(a), {}), []);
+  await empty.panel.slice();
+  assert.equal(calls.length, 1, "no body, no engine call");
+  assert.match(empty.doc.querySelector(".slice-page-slice-words")!.textContent!, /Nothing to slice/);
+});
+
+test("a refusal from the engine is said in words, and the button works again afterwards", async () => {
+  const { doc, panel } = panelIn(async () => {
+    throw new Error("the part is too tall");
+  });
+  await panel.slice();
+  const words = doc.querySelector(".slice-page-slice-words")!.textContent!;
+  assert.ok(words.length > 0 && !/^Slicing/.test(words), words);
+  assert.equal((doc.querySelector("#slice-page-slice") as unknown as HTMLButtonElement).disabled, false);
+});
+
+test("Slice and download makes the P1S's file for the plate and nozzle chosen, saves it under the file's name and says what it came to; a cancelled save still says the slice", async () => {
+  const calls: unknown[][] = [];
+  const saved: { suggestedName: string; kind: { extension: string }; bytes: Uint8Array }[] = [];
+  const pkg = new Uint8Array([1, 2, 3]);
+  const { doc, panel } = panelIn(
+    async (...a) => (calls.push(a), { layers: 12, filamentMm: 1000, filamentG: 3, printTimeS: 600, unprintedVolume: 0, package: pkg }),
+    objects,
+    { save: async (r) => (saved.push(r), { status: "saved", name: "chosen.gcode.3mf" }), projectName: () => "Bracket" },
+  );
+  const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
+  selects[4].value = "2"; // Cool Plate
+  selects[4].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  assert.deepEqual(panel.file(), { plate: "cool_plate", nozzle: "standard" });
+  await panel.download();
+  assert.equal(calls[0][0], "print_file_stl");
+  assert.equal(calls[0][6], "cool_plate");
+  assert.equal(calls[0][7], "standard");
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].kind.extension, ".gcode.3mf");
+  assert.deepEqual([...saved[0].bytes], [1, 2, 3]);
+  assert.match(saved[0].suggestedName, /^bracket/i);
+  assert.match(doc.querySelector(".slice-page-slice-words")!.textContent!, /^Saved chosen\.gcode\.3mf: 12 layers, /);
+  const cancelled = panelIn(async () => ({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: pkg }), objects, { save: async () => ({ status: "cancelled" }) });
+  await cancelled.panel.download();
+  assert.match(cancelled.doc.querySelector(".slice-page-slice-words")!.textContent!, /^Sliced, but not saved: 5 layers/);
+});
+
+test("Slice and download: an empty plate never asks the engine or saves, a failed save is said, and a refusal leaves the buttons working", async () => {
+  let asked = 0;
+  let saves = 0;
+  const empty = panelIn(async () => (asked++, {}), [], { save: async () => (saves++, { status: "saved", name: "x" }) });
+  await empty.panel.download();
+  assert.equal(asked + saves, 0);
+  assert.match(empty.doc.querySelector(".slice-page-slice-words")!.textContent!, /Nothing to slice/);
+  const failing = panelIn(async () => ({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: new Uint8Array(1) }), objects, { save: async () => ({ status: "failed", message: "disk full" }) });
+  await failing.panel.download();
+  assert.match(failing.doc.querySelector(".slice-page-slice-words")!.textContent!, /not saved \(disk full\)/);
+  const refused = panelIn(async () => {
+    throw new Error("the part is too tall");
+  }, objects, { save: async () => ({ status: "saved", name: "x" }) });
+  await refused.panel.download();
+  assert.equal((refused.doc.querySelector("#slice-page-download") as unknown as HTMLButtonElement).disabled, false);
+  assert.equal((refused.doc.querySelector("#slice-page-slice") as unknown as HTMLButtonElement).disabled, false);
 });

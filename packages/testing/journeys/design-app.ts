@@ -383,3 +383,25 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   previous = a;
   return a;
 }
+
+/**
+ * The rule every seeded session checks at its end (SL #641, save hunt 2026-11-12: a sketch on a scaled body opened as
+ * a slightly different design every time): a rebuild of a design the rebuild just wrote changes nothing. `doc`, the
+ * design a session left (settled, as the app saved it), is saved, opened in a fresh app, and saved again once that app
+ * has rebuilt it; null when the two files are the same byte for byte, else where they first differ. Puts away the app
+ * last made (`app`), so call it once the session's own app is closed.
+ */
+export async function rebuildChanges(doc: DesignDocument, plugin: WorkspacePlugin = designWorkspace): Promise<string | null> {
+  const file = (d: DesignDocument) => projectToJson({ ...emptyProject("Rebuilt again"), workspaces: { design: d } });
+  const text = file(doc);
+  const opened = projectFromJson(text, [plugin]).workspaces.design as DesignDocument;
+  const b = await app(opened, plugin);
+  const after = file(b.doc());
+  const freed = await b.close();
+  if (after !== text) {
+    let i = 0;
+    while (i < text.length && i < after.length && text[i] === after[i]) i++;
+    return `the rebuild changed the design it wrote, at ${i}: «${text.slice(Math.max(0, i - 80), i + 120)}» became «${after.slice(Math.max(0, i - 80), i + 120)}»`;
+  }
+  return freed ? null : "a body was not freed when the reopened design was put away";
+}
