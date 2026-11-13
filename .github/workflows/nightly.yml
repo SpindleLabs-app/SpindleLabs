@@ -215,23 +215,11 @@ jobs:
           mkdir -p "$OUT"
           first="$(date -u +%Y%m%d)0" seeds=2 limit=300
           if [ "${{ inputs.day }}" = true ]; then
-            # Daytime (round the clock): fresh seeds every run, never a night's
-            # (those are 2026MMDD0 and 1, about 202,6xx,xxx): 300,000,000 plus
-            # twice the minutes since 1970 (about 359,8xx,xxx in November 2026), so each
-            # minute's four seeds are new, and well under the monkey's 32-bit
-            # seeds (2,147,483,647) for centuries. Four sessions, cut off 15
-            # minutes before 14:50 UTC so the report is written in time.
-            now=$(date -u +%s)
-            first=$(( 300000000 + 2 * (now / 60) )) seeds=4
-            end=$(date -u -d "$(date -u +%F) 14:50" +%s)
-            [ "$now" -ge "$end" ] && end=$(( end + 86400 ))
-            left=$(( (end - now) / 60 - 15 ))
-            [ "$left" -lt "$limit" ] && limit=$left
-            [ "$limit" -ge 10 ] || { echo "too little time left before 14:50 UTC"; exit 1; }
-            # Only the sessions that fit (issue #476: a late start left 79 minutes for four): one per 40 minutes,
-            # a 2,000-action session's 25 or so with room for a failure's replays.
-            fit=$(( limit / 40 ))
-            [ "$fit" -lt "$seeds" ] && seeds=$(( fit > 1 ? fit : 1 ))
+            # Daytime (round the clock): fresh seeds every run, only the sessions that fit before 14:50 UTC, and
+            # none when not one can finish (issue #671; monkey_night.py day writes that run's report instead).
+            plan=$(python3 ../../.github/scripts/monkey_night.py day "$OUT" "$(date -u +%s)")
+            [ "$plan" = skip ] && { cat "$OUT/report.txt"; exit 0; }
+            read -r first seeds limit <<<"$plan"
           fi
           # The monkey stops itself 5 minutes before the cut-off (MONKEY_MINUTES: the session it is in says
           # "cut off", later seeds "not started", and the summary with its Combines line is printed; issues
