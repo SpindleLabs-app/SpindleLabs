@@ -20,8 +20,8 @@ def pr(number, **kw):
     return p
 
 
-def check(name, status="completed", conclusion="success", app="github-actions", started=None, id=None):
-    c = dict(name=name, status=status, conclusion=conclusion, app=dict(slug=app))
+def check(name, status="completed", conclusion="success", app="github-actions", started=None, id=None, suite=1):
+    c = dict(name=name, status=status, conclusion=conclusion, app=dict(slug=app), check_suite=dict(id=suite))
     if started:
         c["started_at"] = started
     if id:
@@ -68,6 +68,21 @@ class CiState(unittest.TestCase):
         self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)")]), "none")
         self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)", conclusion="failure")]), "failure")
         self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)"), check("app")]), "success")
+
+    def test_a_strangers_run_on_the_same_commit_does_not_count(self):
+        # Check runs belong to a commit, not a pull request: a fork pull request
+        # whose head is the same commit adds its own run's checks to it (security
+        # hunt H4). Only the checks of this pull request's own run (its suite)
+        # are judged; another app's checks still count, against only.
+        own = [check(n, suite=1) for n in ["kernel", "app", "e2e", "mutants-in-diff", "baseline"]] + [check("draft run", conclusion="skipped", suite=1)]
+        stranger_draft = [check("draft run", suite=2), check("app", "in_progress", None, suite=2)]
+        self.assertEqual(ci_state(automerge.own_checks(own + stranger_draft, {1})), "success")
+        # Without the filter the stranger's runs are judged too: a draft, then pending.
+        self.assertEqual(ci_state(own + stranger_draft), "draft")
+        # Another app's check on the commit is kept whatever its suite; a run in no known suite is dropped (fails safe).
+        other = check("lint", app="someapp", conclusion="failure", suite=9)
+        self.assertEqual(ci_state(automerge.own_checks(own + [other], {1})), "failure")
+        self.assertEqual(ci_state(automerge.own_checks(own, set())), "none")
 
     def test_a_drafts_run_never_counts_as_green(self):
         # ci.yml's run of a draft skips phone and browsers and marks itself
@@ -243,6 +258,11 @@ OLD_RULES = [dict(type="deletion"), dict(type="pull_request"), dict(type="requir
 QUEUE_RULES = OLD_RULES + [dict(type="merge_queue")]
 
 
+def own_runs(repo, branch, suite=1):
+    """The /actions/runs answer for a head: one pull_request run of this repo's branch, in check suite `suite`."""
+    return dict(workflow_runs=[dict(check_suite_id=suite, head_branch=branch, head_repository=dict(full_name=repo))])
+
+
 class Fake:
     """A fake GitHub API: answers from a table, records every write."""
 
@@ -268,6 +288,7 @@ def fake_repo(behind=False, ci="success"):
         "/pulls/1": dict(raw, mergeable=True, head=dict(raw["head"])),
         "/compare/main...h1": dict(status="diverged" if behind else "ahead"),
         "/commits/h1/check-runs?filter=latest&per_page=100": dict(check_runs=runs),
+        "/actions/runs?head_sha=h1&event=pull_request&per_page=100": own_runs("o/r", "claude/a"),
         "/commits/main": dict(sha="m1"),
         "/issues/1/comments?per_page=100": [],
     })
@@ -290,6 +311,25 @@ class Calls(unittest.TestCase):
             ("PUT", "/pulls/1/merge", {"merge_method": "merge", "sha": "h1"}),
             ("POST", "/actions/workflows/pages.yml/dispatches", {"ref": "main"}),
         ])
+
+    def test_a_fork_pull_requests_run_on_the_same_commit_does_not_stop_the_merge(self):
+        # H4 end to end: a stranger's draft fork pull request with this head
+        # commit adds a `draft run` check from its own suite (2), and its workflow
+        # run is listed from the fork's repository; the merge still goes ahead.
+        gh = fake_repo()
+        gh.table["/commits/h1/check-runs?filter=latest&per_page=100"]["check_runs"].append(check("draft run", suite=2))
+        gh.table["/actions/runs?head_sha=h1&event=pull_request&per_page=100"]["workflow_runs"].append(
+            dict(check_suite_id=2, head_branch="claude/a", head_repository=dict(full_name="stranger/r")))
+        orig = gh.call
+
+        def call(method, path, body=None):
+            r = orig(method, path, body)
+            if method == "PUT":
+                gh.table["/pulls?state=open&per_page=100"] = []
+            return r
+        gh.call = call
+        self.assertEqual(automerge.run(gh, log=lambda s: None), 1)
+        self.assertEqual(gh.writes[0], ("PUT", "/pulls/1/merge", {"merge_method": "merge", "sha": "h1"}))
 
     def test_a_strangers_behind_marker_doesnt_stop_the_ask(self):
         gh = fake_repo(behind=True)
@@ -334,6 +374,7 @@ class Calls(unittest.TestCase):
         gh.table["/pulls/2"] = dict(raw2, mergeable=True)
         gh.table["/compare/main...h2"] = dict(status="ahead")
         gh.table["/commits/h2/check-runs?filter=latest&per_page=100"] = gh.table["/commits/h1/check-runs?filter=latest&per_page=100"]
+        gh.table["/actions/runs?head_sha=h2&event=pull_request&per_page=100"] = own_runs("o/r", "claude/b")
         orig = gh.call
 
         def call(method, path, body=None):
@@ -578,6 +619,7 @@ def conflict_repo(comments=()):
         "/pulls/7": dict(raw, mergeable=False),
         "/compare/main...c7": dict(status="diverged"),
         "/commits/c7/check-runs?filter=latest&per_page=100": dict(check_runs=[check("kernel"), check("app")]),
+        "/actions/runs?head_sha=c7&event=pull_request&per_page=100": own_runs("o/r", "claude/c"),
         "/commits/c7": stamp("1970-01-01T00:10:00Z"),     # 600 s
         "/commits/main": dict(stamp("1970-01-01T00:20:00Z"), sha="m1"),   # 1200 s
         "/issues/7/comments?per_page=100": [c if isinstance(c, dict) else bot(c) for c in comments],
