@@ -239,3 +239,60 @@ test("Preview slices as the download would and hands the preview its G-code and 
   assert.equal((refused.doc.querySelector("#slice-page-preview") as unknown as HTMLButtonElement).disabled, false);
   assert.ok(refused.doc.querySelector(".slice-page-slice-words")!.textContent!.length > 0);
 });
+
+test("the warm-up loop and Better grip ticks change the choices and are remembered; the defaults are warm-up on, grip off", () => {
+  const stored = new Map<string, string>();
+  const storage = { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) };
+  const { doc, panel } = panelIn(async () => ({}), objects, { storage });
+  assert.equal(panel.choices().warmUp, true);
+  assert.equal(panel.choices().betterGrip, false);
+  const warm = doc.querySelector("#slice-page-warm-up") as unknown as HTMLInputElement;
+  const grip = doc.querySelector("#slice-page-grip") as unknown as HTMLInputElement;
+  const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
+  warm.checked = false;
+  warm.dispatchEvent(new Ev("change"));
+  grip.checked = true;
+  grip.dispatchEvent(new Ev("change"));
+  assert.equal(panel.choices().warmUp, false);
+  assert.equal(panel.choices().betterGrip, true);
+  assert.equal(stored.get("spindlelabs.slice.warm-up"), "off");
+  assert.equal(stored.get("spindlelabs.slice.better-grip"), "on");
+  // A page opened again starts from what was remembered.
+  const again = panelIn(async () => ({}), objects, { storage });
+  assert.equal(again.panel.choices().warmUp, false);
+  assert.equal(again.panel.choices().betterGrip, true);
+});
+
+test("after a slice the cost line says plastic, money and time, follows the price typed, and keeps the last price that reads; a saved file goes into the print log", async () => {
+  const logged: { name: string; settings: string; grams: number; seconds: number }[] = [];
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0, package: new Uint8Array(1) };
+  const { doc, panel } = panelIn(async () => result, objects, {
+    save: async () => ({ status: "saved", name: "x.gcode.3mf" }),
+    log: (m) => (logged.push(m), true),
+    projectName: () => "Bracket",
+  });
+  const cost = doc.querySelector(".slice-page-cost") as unknown as HTMLElement;
+  assert.equal(cost.hidden, true, "no line before a slice");
+  await panel.download();
+  assert.equal(cost.hidden, false);
+  // 40 g at the default A$25 per kg is 40 / 1000 × 25 = A$1.00; 4800 s is 1 h 20 min.
+  assert.match(cost.textContent!, /About 40 g of PLA, A\$1\.00, 1 h 20 min of printing/);
+  const price = doc.querySelector("#slice-page-price") as unknown as HTMLInputElement;
+  const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
+  price.value = "50"; // 40 g at A$50 per kg: A$2.00
+  price.dispatchEvent(new Ev("input"));
+  assert.match(cost.textContent!, /A\$2\.00/);
+  price.value = "abc"; // unreadable: the line keeps the last price
+  price.dispatchEvent(new Ev("input"));
+  assert.match(cost.textContent!, /A\$2\.00/);
+  assert.equal(price.getAttribute("aria-invalid"), "true");
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0].name, "Bracket");
+  assert.equal(logged[0].grams, 40);
+  assert.equal(logged[0].seconds, 4800);
+  assert.match(doc.querySelector(".slice-page-slice-words")!.textContent!, /Added to your print log\.$/);
+  // A cancelled save is not logged.
+  const cancelled = panelIn(async () => result, objects, { save: async () => ({ status: "cancelled" }), log: (m) => (logged.push(m), true) });
+  await cancelled.panel.download();
+  assert.equal(logged.length, 1);
+});
