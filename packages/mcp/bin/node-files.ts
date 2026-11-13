@@ -3,7 +3,8 @@
 // must be the one with that name. A new file is made only where nothing is (a link that points
 // nowhere counts as something), in one step, so nothing can be put there between check and write.
 
-import { closeSync, constants, lstatSync, openSync, readFileSync, statSync, writeSync } from "node:fs";
+import { closeSync, constants, lstatSync, openSync, readFileSync, realpathSync, statSync, writeSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import type { Files } from "../src/session.ts";
 
 function linkOrNothing(path: string): "link" | "other" | "nothing" {
@@ -42,3 +43,49 @@ export const nodeFiles: Files = {
     }
   },
 };
+
+/**
+ * Where `path` really is: links followed in every part that exists (the
+ * file itself too, so a link leading out of a folder is outside it), the
+ * parts not made yet kept as written.
+ */
+function realPlace(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const up = dirname(path);
+    return up === path ? path : join(realPlace(up), basename(path));
+  }
+}
+
+/** The real file system, fenced: `allowed` is true only for a path really inside one of `folders`. */
+export function nodeFilesIn(folders: string[]): Files {
+  const roots = folders.map((f) => realPlace(f));
+  return {
+    ...nodeFiles,
+    allowed: (p) => {
+      const real = realPlace(p);
+      return roots.some((root) => real.startsWith(root.endsWith(sep) ? root : root + sep));
+    },
+  };
+}
+
+/** The folders named on the command line (`--folder <folder>`, any number), or what is wrong with it. */
+export function foldersFrom(args: string[]): { folders: string[]; problem?: undefined } | { problem: string } {
+  const folders: string[] = [];
+  for (let i = 0; i < args.length; i += 2) {
+    if (args[i] !== "--folder") return { problem: `unknown argument ${args[i]}: the only one is --folder <folder>` };
+    const folder = args[i + 1];
+    if (folder === undefined) return { problem: "--folder needs a folder after it" };
+    if (!isAbsolute(folder)) return { problem: `give --folder an absolute path, not ${folder}` };
+    let isFolder = false;
+    try {
+      isFolder = statSync(folder).isDirectory();
+    } catch {
+      // not there
+    }
+    if (!isFolder) return { problem: `${folder} is not a folder` };
+    folders.push(folder);
+  }
+  return { folders };
+}

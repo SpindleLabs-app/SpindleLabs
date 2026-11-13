@@ -30,6 +30,8 @@ export interface Files {
   read(path: string): Uint8Array;
   /** Writes the whole file; with `overwrite` false it must fail when anything is at `path`. */
   write(path: string, bytes: Uint8Array, overwrite: boolean): void;
+  /** Whether the tools may read and write `path` (an absolute path); left out, they may anywhere (tests). */
+  allowed?(path: string): boolean;
 }
 
 /** The densest material a mass is worked out for, in g/cm³ (osmium is 22.6). */
@@ -326,13 +328,25 @@ class Refusal extends Error {}
 
 function readablePath(path: string, files: Files): void {
   if (!isAbsolute(path)) throw new Refusal(`give an absolute path, not ${JSON.stringify(path)}`);
+  insideFolders(path, files);
   if (!files.exists(path)) throw new Refusal(`there is no file ${path}`);
 }
 
 function writablePath(path: string, ending: string, overwrite: boolean, files: Files): void {
   if (!isAbsolute(path)) throw new Refusal(`give an absolute path, not ${JSON.stringify(path)}`);
   if (!path.toLowerCase().endsWith(ending)) throw new Refusal(`the file's name must end in ${ending}`);
+  insideFolders(path, files);
   if (files.exists(path) && !overwrite) throw new Refusal(`${path} is already there: pass overwrite true to replace it`);
+}
+
+/**
+ * Refuses a path outside the folders the server was started with, in the
+ * same words whether anything is there or not: a design from someone else
+ * can ask the AI client for anything, and the tools must neither touch nor
+ * tell about the rest of the disk.
+ */
+function insideFolders(path: string, files: Files): void {
+  if (files.allowed && !files.allowed(path)) throw new Refusal(`${path} is outside the folders this server may use (it is started with --folder <folder> for each one)`);
 }
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));

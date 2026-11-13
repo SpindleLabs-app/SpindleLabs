@@ -49,3 +49,47 @@ test("a file that can't be opened is refused in a short line, whatever words the
     await s.close();
   }
 });
+
+// The folders the server may use (security hunt 2026-11-13, F1 and F3): a design from someone else can
+// ask the AI client for anything, so the tools read and write only where the person said they may.
+
+class FencedFiles extends MemoryFiles {
+  allowed = (p: string) => p.startsWith("/work/");
+}
+
+test("outside the folders: one answer for reading, whether the path is there or not, a file or a folder", async () => {
+  const files = new FencedFiles();
+  files.map.set("/etc/passwd", new TextEncoder().encode("root"));
+  files.map.set("/home/me/huge.spindle", new Uint8Array(10));
+  const { s } = session(files);
+  try {
+    const answers = new Set<string>();
+    for (const path of ["/etc/passwd", "/home/me/.ssh/id_ed25519", "/etc", "/home/me/huge.spindle"]) {
+      answers.add((await refused(s, "open_project", { path })).replaceAll(path, "<path>"));
+    }
+    assert.deepEqual([...answers], ["<path> is outside the folders this server may use (it is started with --folder <folder> for each one)"]);
+  } finally {
+    await s.close();
+  }
+});
+
+test("outside the folders: nothing is written, with or without overwrite; inside, all as before", async () => {
+  const files = new FencedFiles();
+  files.map.set("/home/me/thesis.spindle", new TextEncoder().encode("MONTHS OF WORK"));
+  const { s } = session(files);
+  try {
+    await ok(s, "new_project", { name: "P" });
+    await ok(s, "set_part", { shape: "box", width: 10, depth: 20, height: 30 });
+    for (const overwrite of [false, true]) {
+      assert.match(await refused(s, "save_project", { path: "/home/me/thesis.spindle", overwrite }), /outside the folders/);
+      assert.match(await refused(s, "export_stl", { path: "/home/me/part.stl", overwrite }), /outside the folders/);
+    }
+    assert.equal(new TextDecoder().decode(files.map.get("/home/me/thesis.spindle")), "MONTHS OF WORK");
+    assert.equal(files.map.has("/home/me/part.stl"), false);
+    await ok(s, "save_project", { path: "/work/p.spindle" });
+    await ok(s, "export_stl", { path: "/work/p.stl" });
+    await ok(s, "open_project", { path: "/work/p.spindle" });
+  } finally {
+    await s.close();
+  }
+});
