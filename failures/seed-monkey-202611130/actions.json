@@ -1,0 +1,112 @@
+{
+  "seed": 202611130,
+  "failure": {
+    "check": "Bodies group matches the file",
+    "message": "rows [\"body-4 Body 4\"], the file builds [\"body-4 Body 4\",\"body-5 Body 5\"]"
+  },
+  "shrunk": true,
+  "replayed": true,
+  "actions": [
+    {
+      "do": "canvas",
+      "x": 0.923,
+      "y": 0.204,
+      "double": false
+    },
+    {
+      "do": "key",
+      "key": "h"
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "40",
+      "finish": "none"
+    },
+    {
+      "do": "click",
+      "sel": "#modify-menu"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 144
+    },
+    {
+      "do": "undo-redo"
+    },
+    {
+      "do": "click",
+      "sel": "#extrude"
+    },
+    {
+      "do": "canvas",
+      "x": 0.392,
+      "y": 0.474,
+      "double": false
+    },
+    {
+      "do": "wheel",
+      "x": 0.282,
+      "y": 0.832,
+      "dy": 100
+    },
+    {
+      "do": "hover",
+      "x": 0.121,
+      "y": 0.111
+    },
+    {
+      "do": "type",
+      "sel": "#extrude-distance",
+      "text": " 7 ",
+      "finish": "Enter"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "open",
+      "edit": "marker-start",
+      "at": 262
+    },
+    {
+      "do": "open",
+      "edit": "suppress",
+      "at": 576
+    },
+    {
+      "do": "key",
+      "key": "p"
+    },
+    {
+      "do": "key",
+      "key": "Control+z"
+    },
+    {
+      "do": "wheel",
+      "x": 0.511,
+      "y": 0.054,
+      "dy": -100
+    },
+    {
+      "do": "key",
+      "key": "Control+y"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Close\")"
+    },
+    {
+      "do": "open",
+      "edit": "marker",
+      "at": 59
+    }
+  ]
+}

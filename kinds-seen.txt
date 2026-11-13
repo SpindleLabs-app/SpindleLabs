@@ -5,6 +5,8 @@ check TypeScript mutants: explained.json lists mutants that no longer survive in
 check TypeScript mutants: explained.json lists mutants that no longer survive in packages/testing/src/boolean-naming-model.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in workspaces/design/src/boolean-names.ts
 check TypeScript mutants: explained.json lists mutants that no longer survive in workspaces/design/src/document.ts
+check TypeScript mutants: survivors no test kills in packages/account/src/auth.ts
+check TypeScript mutants: survivors no test kills in packages/account/src/data.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/commands.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/hosted.ts
 check TypeScript mutants: survivors no test kills in packages/ai/src/http.ts
