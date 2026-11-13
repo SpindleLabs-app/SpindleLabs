@@ -387,6 +387,36 @@ test("words: every refusal and every licence has a sentence", () => {
   assert.match(PUBLISH_WORDS.full, /50 designs or 50 MB/);
 });
 
+test("security hunt B6: search text over 200 characters finds nothing and asks nothing; 180 still finds", async () => {
+  // "hook" then spaces inside: 180 characters (0.9 x 200) is a search; 220 (1.1 x 200) finds nothing without a request.
+  const lib = fakeLibrary();
+  await publish(lib, "ada", { title: "Wall hook", tags: ["hook"] });
+  const at = (n: number) => "hook" + " ".repeat(n - 8) + "wall";
+  assert.deepEqual(value(await as(lib, null).browse(at(180), null)).cards.map((c) => c.title), ["Wall hook"]);
+  const before = lib.calls.length;
+  assert.deepEqual(value(await as(lib, null).browse(at(220), null)), { cards: [], next: null });
+  assert.equal(lib.calls.length, before, "nothing asked");
+});
+
+test("security hunt B4: files never finished count, so one account's files stop at 50 MiB and one file", async () => {
+  // Ten 5 MiB uploads a day with no finish, for three days, straight at the fake service as the database does it. Each
+  // waiting entry counts 5 MiB at begin_publish, and an upload is refused once the files pass 50 MiB: at most 55 MiB.
+  const lib = fakeLibrary();
+  const ada = lib.as("ada");
+  for (let day = 0; day < 3; day++) {
+    for (let i = 0; i < 10; i++) {
+      const b = await ada.asPerson("POST", "rpc/begin_publish", { p_title: "x", p_description: "", p_licence: "CC0-1.0", p_tags: [], p_picture: null });
+      const body = (b as { body?: { status: string; file?: string } }).body;
+      if (body?.status !== "ready") break;
+      const r = await ada.asPersonStorage("POST", `object/library/${body.file}`, { file: "x".repeat(5 * MiB), type: "application/json" });
+      assert.equal(day === 0 ? r.kind : "ok", "ok", "the first day's uploads go in");
+    }
+    lib.clock += 86_400_000_000 + 1;
+  }
+  const total = [...lib.objects.values()].reduce((t, o) => t + o.text.length, 0);
+  assert.ok(total <= 55 * MiB, `${total / MiB} MiB`);
+});
+
 test("the limits, licences and answers match the migration", async () => {
   const { readFileSync } = await import("node:fs");
   const { repoFile } = await import("./repo-file.ts");
@@ -407,6 +437,12 @@ test("the limits, licences and answers match the migration", async () => {
     upload_minutes: LIBRARY_LIMITS.uploadMinutes,
     page: LIBRARY_LIMITS.page,
   });
+  // 20261113200000_library_limits.sql replaces library_limits() with max_search added, every other number the same.
+  const newer = readFileSync(repoFile("supabase/migrations/20261113200000_library_limits.sql"), "utf8");
+  const lim2 = /jsonb_build_object\(([\s\S]*?)'licences', jsonb_build_array\(([^)]*)\)/.exec(newer);
+  assert.ok(lim2, "the newer library_limits() found");
+  assert.deepEqual(Object.fromEntries([...lim2[1]!.matchAll(/'([a-z_]+)', (\d+)/g)].map((m) => [m[1], Number(m[2])])), { ...nums, max_search: LIBRARY_LIMITS.maxSearch });
+  assert.equal(lim2[2], lim[2]);
   assert.deepEqual([...lim[2]!.matchAll(/'([^']+)'/g)].map((m) => m[1]), [...LICENCES]);
   assert.ok(sql.includes(`file_size_limit, allowed_mime_types)\nvalues ('library', 'library', false, ${LIBRARY_LIMITS.maxFileBytes}, array['application/json'])`));
   assert.ok(sql.includes("p_id::text || '.spindle'"), "the file name");

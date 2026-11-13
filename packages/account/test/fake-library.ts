@@ -87,6 +87,7 @@ export function fakeLibrary(seed = 1): FakeLibrary {
         const o = s.objects.get(fileOf(e.id));
         return o && o.sized ? bytes(o.text) : null;
       };
+      const bytesOf = (me: string) => s.entries.filter((e) => e.user === me).reduce((t, e) => t + (sizeOf(e) ?? 0), 0);
       const closeStale = (me: string) => {
         const t = now();
         for (const e of s.entries) if (e.user === me && e.state === "uploading" && e.createdAt <= t - hour) Object.assign(e, { state: "off", offAt: t });
@@ -127,6 +128,9 @@ export function fakeLibrary(seed = 1): FakeLibrary {
               return reply({ status: "bad" });
             closeStale(user as string);
             if (mine.filter((e) => e.state !== "off").length >= LIBRARY_LIMITS.maxEntries) return reply({ status: "full" });
+            // 20261113200000_library_limits.sql: files in the bucket plus the largest file for each entry still waiting.
+            const waiting = mine.filter((e) => e.state === "uploading" && sizeOf(e) === null).length;
+            if (bytesOf(user as string) + LIBRARY_LIMITS.maxFileBytes * waiting > LIBRARY_LIMITS.maxBytes) return reply({ status: "full" });
             const t = now();
             if (mine.filter((e) => e.createdAt > t - day).length >= LIBRARY_LIMITS.entriesPerDay) return reply({ status: "daily" });
             if (s.held.has(user as string)) return reply({ status: "held" });
@@ -155,6 +159,7 @@ export function fakeLibrary(seed = 1): FakeLibrary {
           }
           case "rpc/browse_library": {
             if (!s.sharingOn) return reply(null);
+            if (chars(typeof a.p_search === "string" ? a.p_search : "") > LIBRARY_LIMITS.maxSearch || chars(typeof a.p_tag === "string" ? a.p_tag : "") > LIBRARY_LIMITS.maxTag) return reply([]);
             const words = typeof a.p_search === "string" ? a.p_search.trim().toLowerCase().split(/\s+/).filter(Boolean) : [];
             const before = a.p_before === null ? null : parseTime(a.p_before as string);
             const beforeId = (a.p_before_id as string | null) ?? "ffffffff-ffff-ffff-ffff-ffffffffffff";
@@ -201,7 +206,7 @@ export function fakeLibrary(seed = 1): FakeLibrary {
           if (body.type !== "application/json") return refused(415);
           if (bytes(body.file) > LIBRARY_LIMITS.maxFileBytes) return refused(413);
           const e = entryOf(name);
-          const may = e && e.user === user && e.state === "uploading" && e.createdAt > now() - hour && s.sharingOn && !s.held.has(user);
+          const may = e && e.user === user && e.state === "uploading" && e.createdAt > now() - hour && s.sharingOn && !s.held.has(user) && bytesOf(user) <= LIBRARY_LIMITS.maxBytes;
           if (!may) return refused(403); // "new row violates row-level security policy"
           if (s.objects.has(name)) return refused(409);
           s.objects.set(name, { text: body.file, sized: s.writesSize });
