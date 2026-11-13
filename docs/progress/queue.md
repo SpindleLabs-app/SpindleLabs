@@ -2,6 +2,8 @@
 
 A side feature (Ben, 2026-11-13: "add the print and laser queue as a side feature of SpindleLabs and then continue with what we are doing"): a queue for a school makerspace. A student sends a 3D print or laser job, the file is checked automatically, the teacher approves it or sends it back with a reason, and approved jobs wait in a queue per machine, with material and machine time kept. It never slows the kernel roadmap or curved booleans: app files only, no kernel files, inside the 3-pull-requests-per-area rule. Later it may be sold as a school licence (about A$500 a school a year, `docs/plans/business.md` in the kernel repo); nothing here takes money.
 
+How it is sold (Ben, 2026-11-13): one app and one codebase, never a separate product. "SpindleLabs for Schools" is a plan, priced per school per year (about A$500), with classes, the teacher's dashboard and Pro features for the school's students; the queue shows as a workspace only for school accounts, and a page for teachers comes later at spindlelabs.app/schools. The queue stays its own package (`packages/jobqueue`) and switch so it could be split out if it ever grows big.
+
 First machines: Ben's school laser (VEVOR KH1490, 130 W CO2, 1400 × 900 mm bed, Ruida controller) and a Bambu P1S printer.
 
 Rules for this workstream:
@@ -22,6 +24,8 @@ Rules for this workstream:
 - [ ] Q6. The page on the server: a teacher makes a class and gets a code; a student joins with it and sends jobs; the teacher's view updates. Same tests as Q3 against a fake service.
 - [ ] Q7. From queue to machine: an approved print job becomes the print file and Send of Slice (H3); an approved laser job opens in Laser with its layers set, ready for Laser's own sending (L5). Nothing new reaches a machine from here.
 - [ ] Q8. Reports for the teacher: material and machine hours per class and per term, saved as a CSV file.
+- [ ] Q8b. School accounts: the Schools plan on an account (a school, its teachers and its classes), the queue workspace shown only to those accounts (and behind `?queue` until then), and the students' Pro features through the school. Prices and what the plan includes go in the public roadmap only; costs stay in the kernel repo's `docs/plans/business.md`.
+- [ ] Q8c. The page for teachers at spindlelabs.app/schools: what it does, the privacy promise in plain words, and a way to ask for a pilot (no payment).
 - [ ] Q9. A pilot at Ben's school (planned Term 1 2027), after Q4 is checked and Ben's teacher agrees.
 
 Next: Q1, from a fresh `main`. Files: `packages/jobqueue/` (new package, `package.json` like `packages/print`), a line in `packages/CLAUDE.md`'s package list, this file's tick.
