@@ -138,7 +138,7 @@ test("the panel starts on the beginner's defaults, and picking a choice changes 
   const { doc, panel } = panelIn(async () => ({}));
   assert.deepEqual(panel.choices(), PRINT_DEFAULTS);
   const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
-  assert.equal(selects.length, 6, "quality, walls, infill, supports, build plate, nozzle");
+  assert.equal(selects.length, 7, "quality, walls, infill, supports, file, build plate, nozzle");
   selects[1].value = "3"; // Walls: the options are 1..6, index 3 is 4 walls
   selects[1].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
   assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, walls: 4 });
@@ -178,9 +178,9 @@ test("Slice and download makes the P1S's file for the plate and nozzle chosen, s
     { save: async (r) => (saved.push(r), { status: "saved", name: "chosen.gcode.3mf" }), projectName: () => "Bracket" },
   );
   const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
-  selects[4].value = "2"; // Cool Plate
-  selects[4].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
-  assert.deepEqual(panel.file(), { plate: "cool_plate", nozzle: "standard" });
+  selects[5].value = "2"; // Cool Plate
+  selects[5].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  assert.deepEqual(panel.file(), { format: "p1s", plate: "cool_plate", nozzle: "standard" });
   await panel.download();
   assert.equal(calls[0][0], "print_file_stl");
   assert.equal(calls[0][6], "cool_plate");
@@ -295,4 +295,68 @@ test("after a slice the cost line says plastic, money and time, follows the pric
   const cancelled = panelIn(async () => result, objects, { save: async () => ({ status: "cancelled" }), log: (m) => (logged.push(m), true) });
   await cancelled.panel.download();
   assert.equal(logged.length, 1);
+});
+
+test("File: plain G-code slices without the P1S's file, saves the G-code as text under the .gcode name, and turns the plate and nozzle off; the P1S file turns them on again", async () => {
+  const calls: string[] = [];
+  const saved: { suggestedName: string; kind: { extension: string }; bytes: Uint8Array }[] = [];
+  const { doc, panel } = panelIn(
+    async (name) => (calls.push(String(name)), { layers: 12, filamentMm: 1000, filamentG: 3, printTimeS: 600, unprintedVolume: 0, gcode: "G1 X1\n" }),
+    objects,
+    { save: async (r) => (saved.push(r), { status: "saved", name: "plain.gcode" }), projectName: () => "Bracket" },
+  );
+  const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
+  const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
+  const [file, plate, nozzle] = [selects[4], selects[5], selects[6]];
+  assert.equal(plate.disabled, false);
+  file.value = "1"; // Plain G-code
+  file.dispatchEvent(new Ev("change"));
+  assert.equal(panel.file().format, "gcode");
+  assert.equal(plate.disabled && nozzle.disabled, true, "they matter to the P1S's file only");
+  await panel.download();
+  assert.deepEqual(calls, ["slice_stl"], "the plain slice, never the P1S file");
+  assert.equal(saved[0].kind.extension, ".gcode");
+  assert.match(saved[0].suggestedName, /^bracket.*\.gcode$/i);
+  assert.equal(new TextDecoder().decode(saved[0].bytes), "G1 X1\n");
+  assert.equal(plate.disabled, true, "still off after the slice");
+  file.value = "0";
+  file.dispatchEvent(new Ev("change"));
+  assert.equal(plate.disabled || nozzle.disabled, false);
+});
+
+test("the bar shows while it slices, follows the engine's reports forward only, and goes when it is done, even when it fails", async () => {
+  let report: ((p: { fraction: number; stage: string; done: number; total: number }) => void) | null = null;
+  let stopped = 0;
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const { doc, panel } = panelIn(
+    async () => {
+      await held;
+      return { layers: 3, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0 };
+    },
+    objects,
+    { onProgress: (l) => ((report = l as typeof report), () => void stopped++) },
+  );
+  const bar = doc.querySelector(".slice-page-progress") as unknown as HTMLElement;
+  const meter = doc.querySelector(".slice-page-meter") as unknown as HTMLProgressElement;
+  const stage = doc.querySelector(".slice-page-stage") as unknown as HTMLElement;
+  assert.equal(bar.hidden, true);
+  const running = panel.slice();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(bar.hidden, false);
+  report!({ fraction: 0.5, stage: "walls", done: 5, total: 10 });
+  assert.equal(meter.value, 0.5);
+  assert.equal(stage.textContent, "Walls: layer 5 of 10");
+  report!({ fraction: 0.2, stage: "walls", done: 2, total: 10 }); // a report that goes back is ignored
+  assert.equal(meter.value, 0.5);
+  release();
+  await running;
+  assert.equal(bar.hidden, true);
+  assert.equal(stopped, 1, "stopped listening");
+  const failing = panelIn(async () => {
+    throw new Error("the part is too tall");
+  }, objects, { onProgress: () => () => void stopped++ });
+  await failing.panel.slice();
+  assert.equal((failing.doc.querySelector(".slice-page-progress") as unknown as HTMLElement).hidden, true);
+  assert.equal(stopped, 2);
 });
