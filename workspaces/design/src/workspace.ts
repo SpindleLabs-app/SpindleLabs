@@ -41,7 +41,8 @@ import { partFailure } from "./part-failure.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "@fission/print";
 import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
-import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printMovesOf, printWords, SliceDropped, testPieceFile } from "@fission/print";
+import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, printFileName, printLead, printMovesOf, printWords, settingsWords, SliceDropped, testPieceFile } from "@fission/print";
+import { logPrint } from "./print-logged.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { openTool, openToolRefusal, stillRebuilding, type OpenTool } from "./open-tool.ts";
 import { DOWNLOAD_3MF, DOWNLOAD_OBJ } from "./mesh-export.ts";
@@ -631,7 +632,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         if (!alive()) throw new SliceDropped();
         const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind, bytes });
         if (r.status === "failed") throw new Error(r.message);
-        return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
+        // The print log (account features 5): each print file saved is a line to say later how it printed.
+        const logged = r.status === "saved" && logPrint(ctx.toolbar.ownerDocument, { name: printLead(ctx.project.name, ctx.fileName?.()) ?? "", settings: settingsWords(choices, file.nozzle), grams: print.filamentG, seconds: print.printTimeS });
+        return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName, logged };
       };
       if (file.format === "p1s") {
         const print = await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle);
