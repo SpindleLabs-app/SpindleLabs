@@ -1539,9 +1539,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
   /**
    * `run` once no OK is still being checked by the kernel, at once when none is. Insert and the item menus go
-   * through it (SL #677 item 4), and so does every way into a tool (start and open functions) and each panel's Cancel
-   * (flat stress hunt 2026-11-13, A2-1): each shuts the open tool's panel, and an OK that found its panel shut dropped
-   * its Combine, extrude or edit without a word. Waiting, as Undo does, both are recorded in the order pressed. The OK
+   * through it (SL #677 item 4), and so does every way into a tool (start and open functions; flat stress hunt
+   * 2026-11-13, SL #706): each shuts the open tool's panel, and an OK that found its panel shut dropped its Combine,
+   * extrude or edit without a word. Cancel and Escape don't wait: they call the OK off, by the rule the edit-reopen,
+   * extrude-stale and move-hunt journeys hold, and forget its check (`okChecks.clear()`), so a tool opened next opens
+   * at once. Waiting, as Undo does, both are recorded in the order pressed. The OK
    * goes on first when its check answers (its wait was there before this one), recording or asking its next thing.
    */
   function afterOk(run: () => void) {
@@ -2857,7 +2859,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     flip: (typed) => extrudeDistance(signedDistance(typed)),
     clear: () => chooseProfile(null),
     ok: (typed) => void holdAsked(finishExtrude(typed)),
-    cancel: () => afterOk(() => leaveExtrude()),
+    cancel: () => (okChecks.clear(), leaveExtrude()),
     operation: (op) => {
       if (!extruding) return;
       extruding.operation = op;
@@ -3381,7 +3383,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // Edit feature (step 25a2): an earlier feature's sizes from its timeline item or browser row.
   const editBox = featureEditPanel(ctx.properties, {
     ok: (typed, flip) => void holdAsked(finishEdit(typed, flip)),
-    cancel: () => afterOk(() => leaveEdit()),
+    cancel: () => (okChecks.clear(), leaveEdit()),
     operation: (op) => {
       if (editOps === null) return;
       editOps.operation = op;
@@ -3477,7 +3479,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const moveBox = movePanel(ctx.properties, {
     typed: () => previewMove(),
     ok: (typed) => void holdAsked(finishMove(typed)),
-    cancel: () => afterOk(() => leaveMove()),
+    cancel: () => (okChecks.clear(), leaveMove()),
     snap: () => (snapping ? stopSnap() : startSnap()),
     centre: () => void centreOfBodies(),
   });
@@ -3592,7 +3594,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     changed: () => combineBox.showError(""),
     ok: () => void holdAsked(finishCombine()), // held like Move's and Extrude's OK: an Undo pressed while the kernel checks waits, then takes this back (#503)
-    cancel: () => afterOk(() => leaveCombine()),
+    cancel: () => (okChecks.clear(), leaveCombine()),
   });
   // Measure (35e2l2, measure-view.ts): Inspect ▾ Measure's panel; while open the view's clicks pick what to measure, and select nothing.
   const measureBox = measureView({
@@ -4816,9 +4818,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Escape clears the selection; Copy with one profile selected runs Copy as SVG (shortcuts.ts).
     shortcut(id, e) {
       if (!shown) return false; // the shell only asks while shown; never act asleep
-      // Flat stress hunt A2-1: Escape while an OK is still checked by the kernel (no question of its open) would shut the
-      // panel and drop the OK without a word; the OK was pressed, so it goes on and the Escape does nothing.
-      if (id === "clear-selection" && okChecks.size > 0 && viewport.element.ownerDocument.querySelector("dialog[open]") === null) return true;
+      // Escape calls off an OK still being checked (no question of its open), as Cancel does, so nothing waits for it (SL #706).
+      if (id === "clear-selection" && viewport.element.ownerDocument.querySelector("dialog[open]") === null) okChecks.clear();
       // Ctrl+D duplicates the picked bodies; Ctrl+C copies them (with no profile picked) and Ctrl+V pastes a Duplicate
       // of each, outside a sketch (missing basics: Fusion's keys); the pasted copies open in Move as Duplicate's do.
       if (id === "duplicate-bodies") return mode.kind === "none" && duplicateOff() === null ? (void duplicateBodies(), true) : false;

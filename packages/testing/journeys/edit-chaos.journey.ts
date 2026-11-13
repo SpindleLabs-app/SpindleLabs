@@ -416,7 +416,7 @@ const WORKSPACE = new URL("../../../workspaces/design/src/workspace.ts", import.
 const PLANTS = [
   { name: "refused-recorded", find: "    if (refused !== null) return editBox.showError(refused);", replace: "", caught: "which the rules refuse" },
   { name: "panel-stays", find: "    record(step, next) {\n      leaveExtrude();\n      leaveEdit();", replace: "    record(step, next) {\n      leaveExtrude();", caught: "the panel is still open" },
-  { name: "cancel-records", find: "    cancel: () => leaveEdit(),", replace: "    cancel: () => editBox.editing !== null && void finishEdit(Object.fromEntries([...ctx.properties.querySelectorAll<HTMLInputElement>('#feature-edit input')].map((i) => [i.id.slice(5), i.value]))),", caught: "nothing should be recorded" },
+  { name: "cancel-records", find: "    cancel: () => (okChecks.clear(), leaveEdit()),", replace: "    cancel: () => editBox.editing !== null && void finishEdit(Object.fromEntries([...ctx.properties.querySelectorAll<HTMLInputElement>('#feature-edit input')].map((i) => [i.id.slice(5), i.value]))),", caught: "nothing should be recorded" },
 ];
 
 /** Design with `plant` made: a copy of workspace.ts beside it (so its imports resolve), loaded, then deleted. */

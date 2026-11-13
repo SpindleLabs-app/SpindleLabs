@@ -1,8 +1,9 @@
 // Flat stress hunt 2026-11-13 (A2-1): an OK the kernel still checks, followed at once by a way into another tool (the
 // M or E key, the Move, Extrude or Create sketch button, Combine again, Edit feature from the timeline) or by the open
-// tool's own Cancel or Escape, dropped the OK without a word: the other action shut the panel, and the OK, finding its
-// panel shut, left. SL #677 item 4 made only Insert and the item menus wait. Every way out of a tool now waits for the
-// OK, so the OK is recorded and the next tool opens after it (Cancel and Escape then have nothing left to cancel).
+// dropped the OK without a word (SL #706): the other tool shut the panel, and the OK, finding its panel shut, left.
+// SL #677 item 4 made only Insert and the item menus wait. Every way into a tool now waits for the OK, so the OK is
+// recorded and the next tool opens after it. Cancel and Escape still call the OK off (the rule edit-reopen,
+// extrude-stale and move-hunt hold), checked here too so the two rules stay apart.
 // On the real kernel, in the app around Design (design-app.ts). Same design and hand working as ok-then-edit.journey.ts.
 
 import { test } from "node:test";
@@ -54,7 +55,7 @@ function dblclick(a: App, id: string) {
   for (let i = 0; i < 2; i++) item.dispatchEvent(new a.window.MouseEvent("click", { bubbles: true, cancelable: true, clientX: 300, clientY: 780 }) as never);
 }
 
-const NEXT: [string, (a: App) => Promise<void> | void, string | null][] = [
+const NEXT: [string, (a: App) => Promise<void> | void, string][] = [
   ["the M key", (a) => a.key("move-tool"), "move-panel"],
   ["the E key", (a) => a.key("extrude-tool"), "extrude-panel"],
   ["the Move button", (a) => void a.$("#move")!.click(), "move-panel"],
@@ -63,8 +64,6 @@ const NEXT: [string, (a: App) => Promise<void> | void, string | null][] = [
   ["Combine again", (a) => (a.$("#modify-menu")!.click(), void a.$("#modify-menu-combine")!.click()), "combine-panel"],
   ["Edit feature on Box 3's Move", (a) => a.menu("feature-5", "edit"), "move-panel"],
   ["a double-click on Box 3's Move in the timeline", (a) => dblclick(a, "feature-5"), "move-panel"],
-  ["Combine's Cancel", (a) => void a.$("#combine-cancel")!.click(), null],
-  ["Escape", (a) => a.key("clear-selection"), null],
 ];
 
 for (const [what, next, opens] of NEXT) {
@@ -77,8 +76,22 @@ for (const [what, next, opens] of NEXT) {
     assert.equal(combines(a), 1, "the Combine is in the timeline");
     assert.ok(close(a.volume(), 72), `volume: ${a.volume()}`);
     assert.equal(a.history.undoLabel(), "Combine bodies");
-    if (opens !== null) assert.ok(shown(a, opens), `${opens} opens after the Combine`);
-    else assert.ok(!shown(a, "combine-panel"), "the Combine panel is shut");
+    assert.ok(shown(a, opens), `${opens} opens after the Combine`);
+    await a.close();
+  });
+}
+
+for (const [what, press] of [["Combine's Cancel", (a: App) => void a.$("#combine-cancel")!.click()], ["Escape", (a: App) => a.key("clear-selection")]] as const) {
+  test(`Combine's OK then ${what} at once: the Combine is called off, as before`, async () => {
+    const a = await app(start(), designWorkspace);
+    await cutReady(a);
+    (a.$("#combine-ok") as HTMLButtonElement).click();
+    await press(a);
+    await a.settle();
+    assert.equal(combines(a), 0, "nothing recorded");
+    // 80 + 48 + 8 = 136, uncut.
+    assert.ok(close(a.volume(), 136), `volume: ${a.volume()}`);
+    assert.ok(!shown(a, "combine-panel"), "the Combine panel is shut");
     await a.close();
   });
 }
