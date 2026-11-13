@@ -36,6 +36,8 @@ function valid(p: unknown): p is Row {
   for (const [k, max] of [["grams", 100000], ["minutes", 100000]] as const) {
     const v = r[k] ?? null;
     if (v !== null && (typeof v !== "number" || v < 0 || v > max || (k === "minutes" && !Number.isInteger(v)))) return false;
+    // At most three decimals (20261113200000_account_security.sql).
+    if (k === "grams" && typeof v === "number" && Math.round(v * 1000) / 1000 !== v) return false;
   }
   if (r.result !== "waiting" && r.result !== "well" && r.result !== "failed") return false;
   const problem = r.problem ?? null;

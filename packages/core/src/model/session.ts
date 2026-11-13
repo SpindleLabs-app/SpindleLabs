@@ -80,6 +80,7 @@ export const historyNotBuilt: History = {
   amendStep: notBuilt,
   asking: notBuilt,
   busy: notBuilt,
+  onBusy: notBuilt,
   working: notBuilt,
   callOff: notBuilt,
   callsOff: notBuilt,

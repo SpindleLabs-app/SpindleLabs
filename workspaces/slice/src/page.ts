@@ -4,7 +4,7 @@
 // arrive in the next steps (the download is the panel's Slice and download), and until then Design's File ▾ Slice for printing is the way to a file. Styles: src/styles/slice-page.css.
 
 import { saveFile } from "@fission/ui";
-import { logPrint, openPrintPreview, printLead } from "@fission/print";
+import { logPrint, openPrintPreview, P1S_KIND, printFileName, printLead, SliceDropped, testPieceFile } from "@fission/print";
 import { printView } from "@fission/viewport";
 import { printPanel, type PrintPanel } from "./print-panel.ts";
 import { playback, type DisplayMesh, type ListedObject, type MountedWorkspace, type RepresentationRegistry, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
@@ -95,6 +95,16 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
     storage,
     save: (request) => saveFile(doc, request),
     openPreview: (gcode, words) => void openPrintPreview(ctx.toolbar, playback(gcode), words, (host, p) => printView(host, p)),
+    // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
+    testPiece: async (choices, file, alive) => {
+      const print = await testPieceFile(ctx.kernel, choices, file.plate, file.nozzle);
+      if (!alive()) throw new SliceDropped();
+      const suggestedName = printFileName({ ...choices, supports: "off" }, file.plate, file.nozzle, "fit-test-piece");
+      const r = await saveFile(doc, { suggestedName, kind: P1S_KIND, bytes: print.package });
+      if (r.status === "failed") throw new Error(r.message);
+      return { saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
+    },
+    onProgress: (listener) => ctx.kernel.onProgress?.(listener) ?? (() => {}),
     log: (made) => logPrint(doc, made),
     projectName: () => printLead(ctx.project.name, ctx.fileName?.()),
   });
