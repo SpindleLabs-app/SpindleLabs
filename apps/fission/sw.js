@@ -1,5 +1,5 @@
 // The service worker that makes the app work offline (offline mode).
-// offline.mjs copies this file into the built app as sw.js with BUILD set:
+// offline.mjs copies this file into the built app as offline-sw.js with BUILD set:
 // the build's version (a hash of every file it ships), the files to keep
 // (`precache`: every file of the build but CNAME and the chunks loaded only
 // on demand), the on-demand chunks (`onDemand`, kept the first time they
@@ -245,7 +245,7 @@ else {
     const url = new URL(request.url);
     if (request.method !== "GET" || url.origin !== scope.origin) return;
     const path = relative(url);
-    if (path === null || path === "sw.js" || path === STATE_PATH) return;
+    if (path === null || path === "sw.js" || path === "offline-sw.js" || path === STATE_PATH) return;
     const kept = keptFile(path, request.mode === "navigate", BUILD.precache);
     event.respondWith(
       kept === null ? fromAnywhere(request, path, { fetch: (r) => fetch(r), caches, current: CURRENT, build: BUILD, keep: (p) => keepAlive(event, p) }) : fromCurrent(kept, request),

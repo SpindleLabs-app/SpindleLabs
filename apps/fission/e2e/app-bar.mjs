@@ -172,6 +172,7 @@ try {
           ["open", "open", false],
           ["file-projects", "folder", false],
           ["file-versions", "undo", false],
+          ["file-print-log", "print-check", false],
           ["file-my-designs", "account", false],
           ["file-save", "save", false],
           ["file-save-as", "save", false],
@@ -184,7 +185,7 @@ try {
         ];
         // On a phone the exports come first, above the sheet's fold (SL #648, phone-file-exports.mjs).
         assert.deepEqual(await menuRows(page), tap ? [...exports, ...project] : [...project, ...exports]);
-        const projectWords = ["New", "Open…Ctrl+O", "Projects in this browser…", "Earlier versions…", "My designs…", "SaveCtrl+S", "Save As…Ctrl+Shift+S"];
+        const projectWords = ["New", "Open…Ctrl+O", "Projects in this browser…", "Earlier versions…", "Print log…", "My designs…", "SaveCtrl+S", "Save As…Ctrl+Shift+S"];
         const exportWords = ["Export STL", "Export 3MF or OBJ…", "Save picture (PNG)", "Slice for printing"];
         assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), tap ? [...exportWords, ...projectWords] : [...projectWords, ...exportWords]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
@@ -361,6 +362,8 @@ try {
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-projects", "Projects in this browser… next (U6a)");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-versions", "then Earlier versions… (3b)");
+      await page.keyboard.press("ArrowDown");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-print-log", "then Print log… (account features 5)");
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-my-designs", "then My designs… (account features 1)");
       await page.keyboard.press("ArrowDown");
