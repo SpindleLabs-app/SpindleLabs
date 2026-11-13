@@ -328,12 +328,16 @@ function shape(spec: BodySpec): ShapeSpec {
 
 /**
  * The "this is solid" check of a file's triangles (check_solid):
- * UNITS_PER_CHECKED_TRIANGLE each, a generous allowance (one unit per
- * 1,000 triangles), read from the count in the header; a file too short to
- * say has none, and every export of a few hundred thousand triangles or
- * fewer stays under the floor.
+ * UNITS_PER_CHECKED_TRIANGLE each, read from the count in the header; a
+ * file too short to say has none. Priced from the costliest legal parts
+ * measured (time-limit.journey.ts): a 249.5 mm comb of 499 thin teeth,
+ * 7,988 triangles, took 0.20 to 0.23 units a triangle on the next kernel
+ * (2026-11-12), the most of any part tried; a 500 mm sphere, half a million
+ * triangles, takes about a thousandth. At a thousandth of a unit a
+ * triangle, as before, every limit was the 10 s floor whatever the
+ * device, and a slow one stopped the comb's check (14.5 s in a browser).
  */
-export const UNITS_PER_CHECKED_TRIANGLE = 1e-3;
+export const UNITS_PER_CHECKED_TRIANGLE = 0.3;
 
 export function checkUnits(stl: Uint8Array): number {
   if (stl.byteLength < 84) return 0;
