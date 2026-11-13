@@ -5,7 +5,9 @@
 // read from the timeline here, never stored, so the file format is
 // unchanged and the answer always matches the order on screen:
 // - reordering refuses to put such an item before one that shaped its
-//   bodies, or one that shaped them after it (timeline-edits.ts);
+//   bodies, or one that shaped them after it, and (SL #676 item 1) an item
+//   that works on a body after a later one that changes it, or that later
+//   one before it (`readings`, timeline-edits.ts);
 // - deleting one that shaped a later item's bodies asks first, naming it
 //   (delete-ask.ts);
 // - editing a Combine so it uses up a tool a later item works on is
@@ -61,6 +63,36 @@ export function shapings(features: readonly Feature[]): Shaping[] {
       const changed = new Set(bodiesChanged(by));
       const body = used.find((b) => changed.has(b));
       if (body !== undefined) out.push({ by, of, body });
+    }
+  });
+  return out;
+}
+
+/** One item working on a body that a later item changes (SL #676 item 1): the other way round from a Shaping. */
+export interface Reading {
+  /** The earlier item, which works on the body as it is before `then`. */
+  first: Feature;
+  /** The later item, which changes it. */
+  then: Feature;
+  /** The body. */
+  body: string;
+}
+
+/**
+ * Every pair in `features` (in order) where an earlier item works on a body
+ * a later one changes, the earlier's first such body: a Copy, a Mirror or a
+ * Combine keeping its tools reads a body that a later Move or Combine
+ * changes, so swapping the two would silently read the changed body.
+ */
+export function readings(features: readonly Feature[]): Reading[] {
+  const out: Reading[] = [];
+  features.forEach((first, i) => {
+    const used = bodiesUsed(first);
+    if (used.length === 0) return;
+    for (const then of features.slice(i + 1)) {
+      const changed = new Set(bodiesChanged(then));
+      const body = used.find((b) => changed.has(b));
+      if (body !== undefined) out.push({ first, then, body });
     }
   });
   return out;

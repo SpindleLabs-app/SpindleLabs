@@ -1601,13 +1601,17 @@ phone.addEventListener("change", () => {
   const phone = window.matchMedia("(max-width: 640px)");
   let wanted = false;
   let opened = false;
+  let shows = ""; // the Combine panel's count of times it was shown: one more means a Combine started again, even over an open one (#586)
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
     const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null ||
       // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null);
-    if (now === wanted && !(turned && now)) return;
+    const again = props.querySelector<HTMLElement>("#combine-panel:not([hidden])")?.dataset.shows ?? "";
+    const restarted = now && again !== "" && again !== shows;
+    shows = again;
+    if (now === wanted && !(turned && now) && !restarted) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
     if (now && phone.matches && !open) {
@@ -1626,7 +1630,7 @@ phone.addEventListener("change", () => {
     } else if (!now) opened = false;
   };
   phone.addEventListener("change", () => phone.matches && update(true));
-  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden", "data-shows"] });
 }
 // At phone width the bar over the view (phone-float.ts) ends the tool in use; a tool ending puts the Properties sheet away.
 startPhoneFloat($("workspace"), $("viewport"), () => {

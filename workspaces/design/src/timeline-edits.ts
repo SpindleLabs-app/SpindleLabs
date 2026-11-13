@@ -12,9 +12,9 @@
 // one before, or the start; a reorder is refused when the item would come
 // before an item it is built from, or after one built from it.
 
-import { bodyWords, shapings } from "./body-uses.ts";
+import { bodyWords, readings, shapings } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
-import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -32,8 +32,11 @@ export const TIMELINE_STEPS = {
   showAll: "Show all bodies",
 } as const;
 
-/** Why a reorder is refused: the item would come before an item it is built from, or after one built from it. */
-export type ReorderCause = "before-dependency" | "after-dependent";
+/**
+ * Why a reorder is refused: the item would come before an item it is built from, or after one built from it, or
+ * (SL #538 item 3) past the maker of another body an Extrude Join joins with one of its own.
+ */
+export type ReorderCause = "before-dependency" | "after-dependent" | "join-order";
 
 export type Reordered = { doc: DesignDocument } | { refused: ReorderCause; message: string };
 
@@ -189,6 +192,11 @@ function link(doc: DesignDocument, f: Feature, on: Feature): string {
  * the item would come before an item it is built from, or after one built
  * from it; a sketch's words name the face it is drawn on (answer 7), the
  * body it has a point snapped to (27c), or the one it projects (27d).
+ * Refused too (SL #538 item 3) when it would pass another item whose body
+ * an Extrude Join joins with one of its own: the joined body keeps the id
+ * of the one made first (docs/document-model.md section 8, rule 1), so the
+ * swap would quietly make it the other body, and a later Move or Combine
+ * of it would find its body gone.
  */
 export function reorderItem(doc: DesignDocument, id: string, to: number): Reordered {
   const item = itemIn(doc, id);
@@ -200,11 +208,27 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   if (from) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(from)}: it is ${link(doc, item, from)} ${itemName(from)}` };
   const user = features.find((f, j) => j < to && f.dependsOn.includes(id));
   if (user) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(user)}: ${itemName(user)} is ${link(doc, user, item)} it` };
+  const was = (x: string) => doc.timeline.features.findIndex((f) => f.id === x);
+  for (const join of features.filter(isExtrudeJoin)) {
+    const makers = operationMakers(join).filter((m) => m !== join.id);
+    if (!makers.includes(id)) continue;
+    const passed = makers.find((m) => m !== id && was(m) >= 0 && was(m) < was(id) !== place(m) < to);
+    if (passed !== undefined) {
+      const other = itemIn(doc, passed);
+      return { refused: "join-order", message: `${itemName(item)} can't go ${place(passed) > to ? "before" : "after"} ${itemName(other)}: ${itemName(join)} joins their bodies, and the joined body is the one made first` };
+    }
+  }
   // SL #506 item 1: nor past an item that placed or changed a body it works on, or one that works on a body it placed or
   // changed (body-uses.ts): the Combine would silently use the body as it was before (or after) that item.
   for (const s of shapings(doc.timeline.features)) {
     if (s.of === item && place(s.by.id) > to) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(s.by)}: it uses ${bodyWords(doc, s.body)} as ${itemName(s.by)} leaves it` };
     if (s.by === item && place(s.of.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(s.of)}: ${itemName(s.of)} uses ${bodyWords(doc, s.body)} as ${itemName(item)} leaves it` };
+  }
+  // SL #676 item 1: nor the other way round. An item that works on a body (a Copy, a Mirror, a Combine keeping its tools)
+  // stays before a later item that changes that body, or it would silently work on the changed body.
+  for (const r of readings(doc.timeline.features)) {
+    if (r.then === item && place(r.first.id) > to) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(r.first)}: ${itemName(r.first)} uses ${bodyWords(doc, r.body)} as it is before ${itemName(item)}` };
+    if (r.first === item && place(r.then.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(r.then)}: it uses ${bodyWords(doc, r.body)} as it is before ${itemName(r.then)}` };
   }
   const k = doc.timeline.features.indexOf(item);
   if (k === to) return { doc };

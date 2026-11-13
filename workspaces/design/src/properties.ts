@@ -133,6 +133,7 @@ const HTML = `
     <dt>Feature</dt><dd id="intent">…</dd>
     <dt>Made from</dt><dd id="provenance">…</dd>
   </dl>
+  <p id="feature-failure" class="bad" role="status" hidden></p>
   <h2 id="body-heading">Body</h2>
   <dl id="stats">
     <dt>Volume</dt><dd id="volume">…</dd>
@@ -247,6 +248,8 @@ export interface PropertiesPanel {
   setShape(shape: PartKind, pressed: PartKind | null): void;
   /** The part's feature, or null for a design with no body (24f4). */
   showFeature(feature: Feature | null): void;
+  /** Why the feature shown failed, in the rebuild's words (#505; "" hides it). Visible text, as a phone has no tooltips. */
+  showFeatureFailure(why: string): void;
   /** What is selected: one row per item, or the empty note. */
   showSelection(rows: readonly SelectionRow[]): void;
   /** Says what the last rebuild took out of the selection ("" hides the note). */
@@ -329,6 +332,10 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
       drawIntent();
       $("provenance").textContent = feature === null ? NONE : describeProvenance(feature.provenance);
       $("no-part").hidden = feature !== null;
+    },
+    showFeatureFailure(why) {
+      $("feature-failure").textContent = why === "" ? "" : `Couldn't be made: ${why}`;
+      $("feature-failure").hidden = why === "";
     },
     showSelection(rows) {
       const document = slot.ownerDocument;

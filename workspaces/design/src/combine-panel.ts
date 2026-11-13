@@ -36,6 +36,8 @@ export interface CombineShow {
   tools: readonly string[];
   operation: CombineOperation;
   keepTools: boolean;
+  /** Why this Combine failed in the last rebuild, in the rebuild's words (#505): shown at the top of its edit panel. */
+  failed?: string;
 }
 
 export interface CombinePanel {
@@ -64,6 +66,16 @@ export const TOOLS_EMPTY = "Click the bodies to use as tools";
 /** The same on a touch screen, which says Tap as the app's other touch words do. */
 export const TARGET_EMPTY_TOUCH = "Tap the body to change";
 export const TOOLS_EMPTY_TOUCH = "Tap the bodies to use as tools";
+/**
+ * The hint over the view while a new Combine lacks its target or a tool,
+ * `bodies` the rows in the Bodies list: with fewer than two there is
+ * nothing to pick, so it says how to get another (SL #677 item 5).
+ */
+export function combineHintWords(field: "target" | "tools", bodies: number): string {
+  if (bodies === 0) return "Combine needs two bodies: make them first with Insert or Extrude";
+  if (bodies === 1) return "Combine needs two bodies: add another with Insert or Extrude";
+  return field === "target" ? "Combine: click or tap the body to change" : "Now click or tap the bodies to use as tools";
+}
 /** The note under an edited Combine's fields. */
 export const EDIT_NOTE = "The bodies stay as this Combine was made. To use other bodies, delete it and make a new one.";
 
@@ -111,6 +123,9 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
   keepLabel.append(keep, document.createTextNode(" Keep tools"));
   const note = el("p", "combine-note", "combine-panel-note", EDIT_NOTE);
   note.hidden = true;
+  const why = el("p", "combine-why", "bad");
+  why.hidden = true;
+  why.setAttribute("role", "status");
   const error = el("p", "combine-error", "bad");
   error.hidden = true;
   error.setAttribute("role", "alert");
@@ -122,7 +137,7 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
   cancel.addEventListener("click", () => on.cancel());
   const buttons = el("div", "", "combine-panel-buttons");
   buttons.append(ok, cancel);
-  box.append(title, target.button, tools.button, note, opLabel, keepLabel, error, buttons);
+  box.append(title, why, target.button, tools.button, note, opLabel, keepLabel, error, buttons);
   box.addEventListener("keydown", (e) => {
     // A button's own Enter clicks it; anywhere else in the panel (the operation, Keep tools) Enter is OK.
     if (e.key === "Enter" && !ok.disabled && (e.target as Element | null)?.tagName !== "BUTTON") on.ok();
@@ -146,11 +161,14 @@ export function combinePanel(slot: HTMLElement, on: CombineEvents): CombinePanel
       operation.value = c.operation;
       keep.checked = c.keepTools;
       error.hidden = true;
+      why.textContent = c.id !== null && c.failed ? `Couldn't be made: ${c.failed}` : "";
+      why.hidden = why.textContent === "";
       note.hidden = c.id === null;
       target.button.disabled = tools.button.disabled = c.id !== null;
       delete ok.dataset.busy;
       this.setBodies(c.target, c.tools);
       setField(c.target === null ? "target" : "tools");
+      box.dataset.shows = String(Number(box.dataset.shows ?? 0) + 1); // the phone's sheet opens again for a Combine started over an open one (#586)
       box.hidden = false;
     },
     setBodies(t, ts) {

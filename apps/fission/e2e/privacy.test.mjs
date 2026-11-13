@@ -99,6 +99,7 @@ test("with earlier versions in the account, the privacy page says how often, how
   const n = (name) => Number(new RegExp(`${name}: (\\d+)`).exec(designs)[1]);
   const words = page.replace(/\s+/g, " ");
   assert.ok(words.includes(`at most one every ${n("versionGapMinutes")} minutes and the newest ${n("versionsKept")} of each design`), "how often and how many, as the code says");
+  assert.ok(words.includes(`always keeps a version that was left unchanged for ${n("versionGapMinutes")} minutes or more`), "the state a session ended in is kept (issue #628, item 3)");
   for (const must of ["Earlier versions:", "Nothing extra is sent for this", "with earlier versions counted in the 20 MB", "the oldest earlier versions are deleted first", "deletes a design and its earlier versions", "its earlier versions"]) assert.ok(words.includes(must), `the page says "${must}"`);
 });
 
