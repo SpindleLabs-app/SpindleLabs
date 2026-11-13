@@ -1829,7 +1829,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (taken || !sameIds(rowsFailed, failedNow)) drawBrowser(taken ? value.followed : doc);
       warningsNow = value.warnings;
       showKept();
-      showFailed(doc);
+      // The bar from the design taken in too: a Move that took in a new piece (SL #583 item 2) counts it in its words, as
+      // the file and the reopened design do (SL #641 item 3: "Move Box 1" stayed until something drew the bar again).
+      showFailed(taken ? value.followed : doc);
       // Built from the current inputs: the feature and the numbers are fresh. A failed part is not (its numbers stay, marked).
       if (failure === undefined) {
         for (const f of doc.timeline.features) ctx.graph.markFresh(f.id);
