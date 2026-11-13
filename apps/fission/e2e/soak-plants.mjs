@@ -36,7 +36,7 @@ export const SOAK_PLANTS = {
   "extrude-ignores-typed": {
     what: "Extrude's OK builds 10 mm whatever distance was typed (the timeline still says the typed one)",
     expect: "built",
-    edits: [{ file: "workspaces/design/src/workspace.ts", find: "      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0, region ?? undefined, choice, more);", replace: "      made = extrudeSketch(source.doc, source.sketch, 10, distance < 0, region ?? undefined, choice, more);" }],
+    edits: [{ file: "workspaces/design/src/workspace.ts", find: "      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), !both && distance < 0, region ?? undefined, choice, more);", replace: "      made = extrudeSketch(source.doc, source.sketch, 10, !both && distance < 0, region ?? undefined, choice, more);" }],
   },
   "redo-does-nothing": {
     what: "Redo says it redid the step but puts nothing back",

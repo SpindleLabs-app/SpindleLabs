@@ -29,6 +29,8 @@ export interface FileMenuParts {
   home?: FileMenuEntry;
   /** Earlier versions…, listed after it when given (missing basics 3b): the open project's versions kept here, to restore. */
   versions?: FileMenuEntry;
+  /** Print log…, listed after Earlier versions when given (account features 5): the prints saved from Slice for printing and how each went. */
+  printLog?: FileMenuEntry;
   /** My designs…, listed after them when given (account features 1): the designs kept in the person's account. */
   myDesigns?: FileMenuEntry;
   /** Share…, after My designs (community C2c; only with the ?share switch on): a link to a frozen copy of the open design. */
@@ -80,7 +82,7 @@ export function fileSections(parts: FileMenuParts, phone = false): MenuSection[]
   });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  const project: MenuSection = { items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), ...(parts.share ? [item(parts.share, "export", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] };
+  const project: MenuSection = { items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.printLog ? [item(parts.printLog, "print-check", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), ...(parts.share ? [item(parts.share, "export", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] };
   const out: MenuSection = { items: exports.map((e) => item(e, "export")) };
   return phone ? [out, project] : [project, out];
 }
