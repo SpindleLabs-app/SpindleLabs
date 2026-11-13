@@ -323,11 +323,13 @@ Chamfer and fillets (44, 45, 46)
 45. 46a. Fillets round circular edges (a boss's base, a cylinder's rim): 20 h
 46. 46b1. Fillet chains (a slot's outline all round): 16 h
 47. 46b2. Corners where three fillets meet: 22 h
-48. 46c. Fillet, then cut through it: 20 h
-49. 46d. The fillet hunt (major step): 20 h
-- 46e (the free-form fillet surface) only if Ben wants fillets complete before 47: 46e1 and 46e2, 22 h each.
+48. 46c. Fillet, then cut through it (with a free-form case): 20 h
+49. 46e. Fillets along any curved edge (Ben, 2026-11-13: part of 46, not a later step; the Fillet tool stays behind its switch until this lands; corners where several of these fillets meet come in a later step): 46e1 and 46e2, 22 h each
+50. 46d. The fillet hunt (major step, covering 46e): 20 h
 
-Added on 2026-11-04 (owner's asks): 4a and 4b, 30 hours, which moves fillets about a day and a half later. Fillets done: 49 chunks, about 870 hours, plus 15% for blow-ups, about 42 days of round-the-clock work from the start of chunk 1 (the primary roadmap thread runs day and night; waiting on Ben or a usage slow-down adds to it).
+Added on 2026-11-04 (owner's asks): 4a and 4b, 30 hours, which moves fillets about a day and a half later. Fillets done: 50 chunks, about 914 hours (46e added 2026-11-13), plus 15% for blow-ups, about 44 days of round-the-clock work from the start of chunk 1 (the primary roadmap thread runs day and night; waiting on Ben or a usage slow-down adds to it).
+
+Timing guess (2026-11-13): 44 about mid-January, 45 about late January, 46 about early March.
 
 After fillets (rougher; resized when 46 is done)
 - 47a. Solver test harness and hand-worked sketches, before any solver code: 16 h
