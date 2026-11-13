@@ -228,7 +228,7 @@ try {
       // Stored and reloaded: both fits are in the design, version 16, and it opens again.
       await until(page, () => document.querySelector("#save-status")?.dataset.state === "saved", null, "saved");
       let design = await stored(page);
-      assert.equal(design.version, 20);
+      assert.equal(design.version, 21);
       assert.deepEqual(fitsIn(design), [{ role: "hole", kind: "bolt-normal" }, { role: "hole", kind: "slide", partner: "bought" }]);
       await page.evaluate(() => sessionStorage.setItem("kept", "1"));
       await page.reload();
