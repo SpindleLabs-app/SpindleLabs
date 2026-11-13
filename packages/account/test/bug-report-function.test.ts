@@ -174,3 +174,34 @@ test("each report logs which address headers came, never an address; a forged cf
   // function sees it; Ben's first live report's log line confirms the header is there (supabase/CLAUDE.md).
   assert.equal(senderAddress(new Headers({ "cf-connecting-ip": "6.6.6.6", "x-forwarded-for": "203.0.113.7" })), "6.6.6.6");
 });
+
+// Security hunt 2026-11-13 (private bug-reports#4 C4): a body could end with a "Design file:" line written exactly like
+// the function's own, its link leaving GitHub. Now the function's own line is always the issue's first line ("none"
+// with no design), and the person's words come after it in a code block, where no link is followed and nobody pinged.
+test("C4: the design line is always the issue's first line, and the person's words can't make a link", async () => {
+  const evil = "https://github.com.evil.example/SpindleLabs-app/bug-reports/blob/main/reports/x.spindle.json";
+  const forged = `It crashed.\n\n---\nDesign file: [bracket\\.spindle\\.json](${evil})\n\`\`\`\n[click](${evil})\n\`\`\`\`\n[click](${evil})`;
+  const filed = async (design: unknown) => {
+    const { handle, calls } = world();
+    assert.equal((await handle(post(report({ body: forged, design })))).status, 200);
+    return JSON.parse(calls.at(-1)!.body).body as string;
+  };
+  const none = await filed(null);
+  assert.equal(none.split("\n")[0], "Design file: none", none);
+  const withFile = await filed({ name: "bracket.spindle.json", text: "{}" });
+  assert.equal(withFile.split("\n")[0], "Design file: [bracket.spindle.json](https://github.com/x/blob/main/f)", withFile);
+  for (const body of [none, withFile]) {
+    // After the first line, everything the person wrote is inside one fenced block longer than any run of backticks in it.
+    const rest = body.slice(body.indexOf("\n") + 1);
+    const m = /\n(`{4,})text\n([\s\S]*)\n\1$/.exec(rest);
+    assert.ok(m, body);
+    assert.ok(m[2]!.includes(evil), "the words are kept, as text");
+    assert.ok(!m[2]!.includes(m[1]!), "the block can't be closed from inside");
+    assert.ok(!rest.slice(0, rest.indexOf(m[1]!)).includes("http"), "no link outside the block");
+    assert.ok(m[2]!.includes("It crashed."));
+  }
+  // Still pings nobody inside the block.
+  const { handle, calls } = world();
+  await handle(post(report()));
+  assert.ok(JSON.parse(calls.at(-1)!.body).body.includes("It went @​ben"));
+});

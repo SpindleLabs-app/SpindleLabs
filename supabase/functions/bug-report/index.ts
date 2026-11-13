@@ -68,6 +68,18 @@ function base64(text: string): string {
  */
 export const quiet = (text: string) => text.replace(/&/g, "&amp;").replace(/@(?=[A-Za-z0-9_-])/g, "@​");
 
+/**
+ * The issue's text: the function's own design line always FIRST (security hunt 2026-11-13, C4: a body could end with a
+ * line written exactly like it, its link leaving GitHub), then the person's words in a code block, so nothing in them
+ * renders as a link or pings anyone. The fence is longer than any run of backticks in the words, so they can't close it.
+ * The words still go through `quiet`, as the 2026-11-11 review's tests ask (an "&" then shows as "&amp;").
+ */
+export function issueBody(designLine: string, words: string): string {
+  const longest = Math.max(0, ...[...words.matchAll(/`+/g)].map((m) => m[0].length));
+  const fence = "`".repeat(Math.max(4, longest + 1));
+  return `${designLine}\n\n---\nThe report as the person wrote it (shown as text):\n\n${fence}text\n${quiet(words)}\n${fence}`;
+}
+
 /** `text` with every character Markdown gives a meaning to escaped, so a design's name is only ever its name. */
 const plain = (text: string) => text.replace(/[\\`*_{}[\]()<>#+!|~&-]/g, (c) => `\\${c}`);
 
@@ -203,16 +215,16 @@ export function bugReport(deps: Deps) {
     const ok = await allowed(sender, r.design ? enc.encode(r.design.text).length : 0);
     if (ok === undefined) return reply(req, 502, { error: "unavailable" });
     if (!ok) return reply(req, 429, { error: "slow-down" });
-    let designLine = "";
+    let designLine = "Design file: none";
     if (r.design) {
       const day = new Date(deps.now()).toISOString().slice(0, 10);
       const path = `reports/${day}/${newId()}-${r.design.name}`;
       const stored = await github("PUT", `contents/${path.split("/").map(encodeURIComponent).join("/")}`, { message: `Design for a bug report (${day})`, content: base64(r.design.text) });
       const link = (stored?.content as { html_url?: unknown } | undefined)?.html_url;
       if (typeof link !== "string") return reply(req, 502, { error: "unavailable" });
-      designLine = `\n\n---\nDesign file: [${plain(r.design.name)}](${link})`;
+      designLine = `Design file: [${plain(r.design.name)}](${link})`;
     }
-    const issue = await github("POST", "issues", { title: r.title.trim(), body: quiet(r.body) + designLine });
+    const issue = await github("POST", "issues", { title: r.title.trim(), body: issueBody(designLine, r.body) });
     if (!issue || typeof issue.number !== "number") return reply(req, 502, { error: "unavailable" });
     return reply(req, 200, { issue: issue.number });
   };
