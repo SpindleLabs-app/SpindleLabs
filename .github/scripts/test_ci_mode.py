@@ -295,12 +295,20 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("docs", ci["kernel"])
         self.assertRegex(ci["kernel"], r"- run: python3 -m unittest discover -s \.github/scripts\n      - ")
         self.assertIn("run: python3 .github/scripts/check_kernel_build.py", ci["kernel"])
-        for job in ("app", "baseline", "e2e-shard", "e2e-quick", "browsers", "phone"):
+        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "e2e-quick", "browsers", "phone"):
             self.assertIn("needs.mode.outputs.docs != 'true'", ci[job], job)
             self.assertIn("mode", re.search(r"needs: (.*)", ci[job]).group(1), job)
-        for job in ("app", "baseline", "e2e-shard", "browsers", "phone"):
+        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "browsers", "phone"):
             self.assertIn("!cancelled()", ci[job], job)
         self.assertIn('if [ "$DOCS" = true ]; then', ci["e2e"])
+        # The gate named app (required) reports whatever its shares did, and
+        # passes on docs only exactly as the single app job was skipped.
+        self.assertIn("if: always()", ci["app"])
+        self.assertIn("needs: [mode, app-design, app-rest, app-journeys]", ci["app"])
+        self.assertIn('if [ "$DOCS" = true ]; then', ci["app"])
+        self.assertIn('test "$DESIGN" = success', ci["app"])
+        self.assertIn('test "$REST" = success', ci["app"])
+        self.assertIn('test "$JOURNEYS" = success', ci["app"])
         self.assertIn("if: always()", ci["mutants-in-diff"])
         self.assertEqual(re.search(r"needs: (.*)", ci["mutants-in-diff"]).group(1), "mode")
 
@@ -325,11 +333,12 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("pull_request.draft", text)
         for job in ("browsers", "phone"):
             self.assertIn("&& needs.mode.outputs.draft != 'true' }}", ci[job], job)
-        for job in ("app", "baseline", "e2e-shard", "e2e-quick"):
+        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "e2e-quick"):
             self.assertIn("github.event.action != 'converted_to_draft'", ci[job], job)
             self.assertNotIn("pull_request.draft", ci[job], job)
         self.assertNotIn("draft", ci["kernel"] + ci["mutants-in-diff"])
         self.assertIn("DRAFTED: ${{ github.event.action == 'converted_to_draft' }}", ci["e2e"])
+        self.assertIn("DRAFTED: ${{ github.event.action == 'converted_to_draft' }}", ci["app"])
         self.assertNotIn("push:", text.split("\njobs:\n")[0])
 
     def test_random_testing_and_fuzzing_wait_for_idle_ci(self):
