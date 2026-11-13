@@ -105,6 +105,26 @@ if (!WITH_PAGE) {
     assert.ok(bytes.length > 2000, `a real package: ${bytes.length} bytes`);
     await context.close();
   });
+  await check("File: plain G-code downloads the box as text, 100 layers, and the plate and nozzle choices go off", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    // File is the fifth choice (after Quality, Walls, Infill, Supports): pick its plain G-code option.
+    await page.evaluate(() => {
+      const select = document.querySelectorAll(".slice-page-print select")[4];
+      select.value = String([...select.options].findIndex((o) => /Plain G-code/.test(o.textContent)));
+      select.dispatchEvent(new Event("change"));
+    });
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll(".slice-page-print select")].slice(5).every((s) => s.disabled)), true, "plate and nozzle off");
+    const [file] = await Promise.all([page.waitForEvent("download", { timeout: 90000 }), page.click("#slice-page-download")]);
+    assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc.gcode");
+    const text = readFileSync(await file.path(), "utf8");
+    assert.match(text, /^[;GM]/m, "G-code text");
+    assert.equal((text.match(/^;LAYER_CHANGE$/gm) ?? []).length, 100, "20 mm / 0.2 mm layers");
+    await context.close();
+  });
   await check("Preview on the page opens the print preview of the box (100 layers) and plays it, then closes back to the page", async () => {
     const { context, page } = await newPage();
     await startWithBox(page);

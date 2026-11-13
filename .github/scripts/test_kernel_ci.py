@@ -65,6 +65,21 @@ class Run(unittest.TestCase):
         self.assertRegex(out.stdout, r"^RESULT rounds FAIL [0-9]+\n$")
         self.assertEqual((out.stderr, out.returncode, log), ("", 3, "leak\n"))
 
+    def test_the_command_never_sees_a_key(self):
+        # Kernel code runs here, and anything in its environment is readable by
+        # it (and by a compromised dependency it builds): none of the keys, nor
+        # the run's own tokens, reach the command, while other variables do.
+        keys = ["KERNEL_READ", "RESULTS_WRITE", "GH_TOKEN", "GITHUB_TOKEN", "CODE_TOKEN", "APP_PR", "APP_DISPATCH", "MERGE_QUEUE_TOKEN"]
+        env = dict(os.environ, KEEP="kept", **{k: "SECRET-" + k for k in keys})
+        d = tempfile.mkdtemp()
+        command = "echo KEEP=${KEEP:-none}; " + "; ".join(f"echo {k}=${{{k}:-none}}" for k in keys)
+        out = subprocess.run(["bash", SCRIPT, "run", "rounds", d, "bash", "-c", command], capture_output=True, text=True, env=env)
+        with open(os.path.join(d, "rounds.log")) as f:
+            log = f.read()
+        self.assertEqual(log.split("\n")[0], "KEEP=kept")
+        self.assertEqual(log.count("=none"), len(keys), log)
+        self.assertNotIn("SECRET-", log + out.stdout + out.stderr)
+
     def test_the_line_passes_the_filter(self):
         out, _ = self.run_it("true")
         self.assertEqual(filtered(out.stdout), out.stdout)
@@ -655,6 +670,57 @@ class Seal(unittest.TestCase):
         a = subprocess.run(["openssl", "pkey", "-in", self.priv, "-pubout"], capture_output=True, text=True).stdout
         with open(self.pub) as f:
             self.assertEqual(a, f.read())
+
+
+class NoKeyBesideKernelCode(unittest.TestCase):
+    """A step that runs the kernel's code (kernel_ci.sh run, or a script of the
+    kernel's checkout) has no key in its environment: not a secret, and not
+    the run's own token. Environment variables reach every child process, so
+    a build script or dependency of the kernel would see them (security
+    hunt H, 2026-11-13, H2). The keys belong to the steps that only check
+    out, save or report. (A later step of the same job still shares the
+    machine with whatever the kernel's code left running: that is H3's
+    larger fix, not this check's.)"""
+
+    WORKFLOWS = NoNoisyKernelCheckout.WORKFLOWS
+    KERNEL_CODE = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel")
+    KEY = re.compile(r"secrets\s*(?:\.|\[)|github\.token")
+
+    @classmethod
+    def steps(cls, lines):
+        return re.split(r"(?m)^      - ", lines)[1:]
+
+    def problems(self, name, text):
+        out = []
+        for job, lines in jobs(text).items():
+            code = "\n".join(line for line in lines.split("\n") if not line.lstrip().startswith("#"))
+            for step in self.steps(code):
+                if self.KERNEL_CODE.search(step) and self.KEY.search(step):
+                    first = step.split("\n")[0].strip()[:50]
+                    out.append(f"{name} {job}: a step with a key runs kernel code ({first})")
+        return out
+
+    def test_every_workflow(self):
+        found = []
+        for name in sorted(os.listdir(self.WORKFLOWS)):
+            with open(os.path.join(self.WORKFLOWS, name)) as f:
+                found += self.problems(name, f.read())
+        self.assertEqual(found, [])
+
+    def test_the_check_catches_each_break(self):
+        def wf(step):
+            return "on: push\njobs:\n  a:\n    runs-on: x\n    steps:\n" + step
+        good = "      - run: .github/scripts/kernel_ci.sh run rounds out k/kernel/x.sh\n"
+        self.assertEqual(self.problems("w", wf(good)), [])
+        keyed = "      - name: n\n        env:\n          K: ${{ secrets.KERNEL_READ }}\n        run: .github/scripts/kernel_ci.sh run rounds out k/kernel/x.sh\n"
+        self.assertEqual(len(self.problems("w", wf(keyed))), 1)
+        token = keyed.replace("secrets.KERNEL_READ", "github.token")
+        self.assertEqual(len(self.problems("w", wf(token))), 1)
+        direct = keyed.replace("kernel_ci.sh run rounds out k/kernel/x.sh", "k/ci/checks.sh full out")
+        self.assertEqual(len(self.problems("w", wf(direct))), 1)
+        # The same key beside a step that only saves is fine; and the later keyless step too.
+        save = "      - env:\n          R: ${{ secrets.RESULTS_WRITE }}\n        run: .github/scripts/kernel_ci.sh save a out\n"
+        self.assertEqual(self.problems("w", wf(save + good)), [])
 
 
 class LabelCheck(unittest.TestCase):
