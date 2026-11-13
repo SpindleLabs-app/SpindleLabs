@@ -124,6 +124,30 @@ export function projectToJson(project: Project): string {
 }
 
 /**
+ * `snapshot`, a project as `projectToJson` writes it, with workspace `id`'s document `was` put right as `now`: the text
+ * `projectToJson` writes for that project, so an undo step recorded with `was` can hold `now` instead (Design's settle
+ * answered after the next action was recorded, `History.amendStep`). Null when the snapshot doesn't hold exactly `was`
+ * there, or doesn't read.
+ */
+export function withWorkspaceDocument(snapshot: string, id: WorkspaceId, was: unknown, now: unknown): string | null {
+  const text = (x: unknown) => projectToJson(x as Project);
+  let data: unknown;
+  try {
+    data = JSON.parse(snapshot);
+  } catch {
+    return null;
+  }
+  if (!isObject(data) || !isObject(data.workspaces) || !Object.hasOwn(data.workspaces, id)) return null;
+  if (text(data.workspaces[id]) !== text(was)) return null;
+  data.workspaces[id] = now;
+  try {
+    return text(data);
+  } catch {
+    return null; // `now` holds a number no file can (as `projectToJson` refuses it)
+  }
+}
+
+/**
  * Refuses what JSON.parse lets through but a file can't hold again: a
  * number too big for a double (1e400 reads as Infinity) and nesting past
  * MAX_NESTING (which saving could not write back). Walks with its own stack,

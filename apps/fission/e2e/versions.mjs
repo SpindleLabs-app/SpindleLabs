@@ -66,13 +66,15 @@ async function widthAt(page, minutes, value, want, tap = false) {
  * The working that every check starts from (each state's volume is width · 30 · 20):
  *   09:00 the box, 40 wide (24,000 mm³), the project's first save: nothing before it, no version;
  *   09:00 50 wide (30,000): replaces the 40-wide state, and there is no version yet, so 40 is kept;
- *   09:11 60 wide (36,000): replaces 50 (saved 09:00), 0 minutes after the newest version: not kept;
- *   09:22 70 wide (42,000): replaces 60 (saved 09:11), 11 minutes after it: kept.
- * So two versions, newest first: 60 wide (09:11), then 40 wide (09:00).
+ *   09:09 60 wide (36,000): replaces 50 (saved 09:00), 0 minutes after the newest version and left alone for 9
+ *     minutes, both under 10: not kept;
+ *   09:20 70 wide (42,000): replaces 60 (saved 09:09), only 9 minutes after the newest version but left alone for
+ *     11 minutes, 10 or more: kept (the state a session ended in, issue #628 item 3).
+ * So two versions, newest first: 60 wide (09:09), then 40 wide (09:00).
  */
 async function worked(page, tap = false) {
   await widthAt(page, 0, 50, "30,000 mm³", tap);
-  await widthAt(page, 11, 60, "36,000 mm³", tap);
+  await widthAt(page, 9, 60, "36,000 mm³", tap);
   await widthAt(page, 11, 70, "42,000 mm³", tap);
 }
 const showList = async (page, tap = false) => {
@@ -87,8 +89,8 @@ try {
     const { context, page } = await fresh();
     await worked(page);
     await showList(page);
-    // Seen at 09:22: the 60-wide state saved 09:11 is 11 minutes old, the 40-wide one 22.
-    assert.deepEqual(await listed(page), ["Saved 11 minutes ago", "Saved 22 minutes ago"]);
+    // Seen at 09:20: the 60-wide state saved 09:09 is 11 minutes old, the 40-wide one 20.
+    assert.deepEqual(await listed(page), ["Saved 11 minutes ago", "Saved 20 minutes ago"]);
     assert.match(await page.textContent("#versions-title"), /^Earlier versions of “/);
     await shot(page, "versions-list-1280");
     await restore(page, 1).click(); // the 40-wide box
@@ -103,7 +105,7 @@ try {
     await saved(page);
     await page.reload();
     await volume(page, "24,000 mm³");
-    // The state the restore replaced (70 wide, 09:22) is a version now too: 22 − 11 = 11 minutes after the newest.
+    // The state the restore replaced (70 wide, 09:20) is a version now too: 20 − 9 = 11 minutes after the newest.
     await showList(page);
     assert.equal((await listed(page)).length, 3);
     await context.close();

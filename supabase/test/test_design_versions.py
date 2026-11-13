@@ -92,11 +92,13 @@ class DesignVersionsDatabase(unittest.TestCase):
         self.assertEqual(self.as_user(ADA, f"select get_design_version('{did}', '{at(5)}') is null;"), (True, "t"), "B was never kept")
 
     def test_the_ten_minute_gap_at_0_9x_and_1_1x(self):
-        # Versions at 09:00 then a replaced copy that reached the server 540 s later (0.9 x 600 s): not kept.
-        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(9)), ("'C'", at(30))])
+        # Versions at 09:00 then a replaced copy that reached the server 540 s later (0.9 x 600 s): not kept. (Each
+        # replaced copy here stood 8 minutes, under 10, so only the gap after the newest version decides; how long a
+        # copy stood is test_design_versions_session.py's.)
+        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(9)), ("'C'", at(17))])
         self.assertEqual(self.kept(ADA, did), ["09:00:00"])
         # 660 s later (1.1 x 600 s): kept.
-        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(11)), ("'C'", at(30))])
+        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(11)), ("'C'", at(19))])
         self.assertEqual(self.kept(ADA, did), ["09:11:00", "09:00:00"])
 
     def test_a_save_of_the_same_text_keeps_no_version(self):

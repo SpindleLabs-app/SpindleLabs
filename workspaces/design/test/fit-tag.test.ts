@@ -113,7 +113,7 @@ test("saved and read back exactly, version 16; every broken fit in a file is ref
   const t = withCircle();
   const tagged = ok(setCircleFit(t.doc, t.sketch, t.circle, PIN_SLIDE)).doc;
   const json = JSON.parse(JSON.stringify(tagged));
-  assert.equal(json.version, 18);
+  assert.equal(json.version, 21);
   assert.deepEqual(readDesignDocument(json), readDesignDocument(tagged));
   // Through the project file too.
   const project = projectFromJson(projectToJson({ ...emptyProject(), workspaces: { design: tagged } }), [designWorkspace]);

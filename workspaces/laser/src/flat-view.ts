@@ -17,10 +17,21 @@
 // screen), the wheel or a pinch zooms about the pointer, and with the
 // keyboard: + and − zoom, 0 fits, the arrows slide.
 //
+// Parts can be picked and moved (L1b): a click or tap on a part picks it, on
+// the bare bed lets it go. With a mouse a press on a part drags it; with a
+// finger a drag moves the part only once it is picked, so sliding the view
+// across a bed full of parts still works. A dragged part's box lands on
+// whole mm. With a part picked the arrows move it 1 mm (10 with Shift), R
+// turns it a quarter turn (Shift+R the other way) and Escape lets it go; the
+// row of buttons gains Turn. The view only reports these (`onPick`,
+// `onMove`, `onTurn`): the page keeps the places and draws the scene again.
+//
 // Styles: src/styles/laser-flat.css.
 
+import { OP_LOOK, OPS, type LaserOp } from "./ops.ts";
 import { mmWords, type Bed, type OutlineBox } from "./sheet.ts";
-import { fitView, marginsClearOf, marginsFor, marksBetween, markStep, nameFits, panBy, toBed, toScreen, wheelZoom, ZOOM_STEP, zoomAt, type Card, type ScreenPoint, type Size, type View } from "./view-box.ts";
+import { snapMm } from "./place.ts";
+import { fitView, marginsClearOf, marginsFor, marksBetween, markStep, nameFits, panBy, toBed, toScreen, wheelZoom, wordsWidth, ZOOM_STEP, zoomAt, type Card, type ScreenPoint, type Size, type View } from "./view-box.ts";
 
 /** A part as the view draws it: its path data in bed mm with y flipped (as the SVG file's), and its box on the bed (y up). */
 export interface FlatPart {
@@ -28,6 +39,10 @@ export interface FlatPart {
   label: string;
   d: string;
   box: OutlineBox;
+  /** What the beam does to it (L1c), drawn in that layer's look; left out, cut. */
+  op?: LaserOp;
+  /** What is wrong with where the part sits ("off the bed: 5 mm past the right side"), drawn as a warning on it. */
+  warn?: string;
 }
 
 /** What the view shows: the bed, the parts on it, and words for the middle of an empty bed (one line each). */
@@ -35,6 +50,8 @@ export interface FlatScene {
   bed: Bed;
   parts: readonly FlatPart[];
   note?: readonly string[];
+  /** The part picked, by id (the page keeps it). */
+  picked?: string | null;
 }
 
 export interface FlatView {
@@ -59,6 +76,8 @@ const ICONS: Record<string, string> = {
   "zoom-out": '<circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L21 21M7 10h6"/>',
   "zoom-in": '<circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L21 21M7 10h6M10 7v6"/>',
   fit: '<path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/><rect x="8" y="8" width="8" height="8"/>',
+  turn: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3v5h-5"/>',
+  flip: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 6L3 18h6zM15 6l6 12h-6z"/>',
 };
 
 const BUTTONS: readonly [string, string, string][] = [
@@ -71,6 +90,8 @@ const BUTTONS: readonly [string, string, string][] = [
 const UNSIZED: Size = { width: 0, height: 0 };
 /** How far an arrow key slides the view, px. */
 const KEY_SLIDE = 48;
+/** How far a pressed pointer may stray and still be a click or tap, px (a mouse, a finger). */
+const CLICK_SLOP = { mouse: 3, touch: 8 };
 /** The room the row of buttons takes at the bottom, px: the ruler's numbers stay above it. */
 const BAR_ROOM = 64;
 
@@ -80,7 +101,18 @@ export interface FlatViewOptions {
   size?: () => Size;
   /** The app's cards that may lie over the view (the parts list): the fitted bed keeps clear of them. */
   cards?: () => readonly Element[];
+  /** A part was picked (clicked, tapped, Enter on it), or let go (`null`: the bare bed, Escape). */
+  onPick?: (id: string | null) => void;
+  /** The person moved part `id` by (dx, dy) mm on the bed (y up): a drag let go, or an arrow key (`key`: one of a run of presses). Left out, parts can't be dragged. */
+  onMove?: (id: string, dx: number, dy: number, key: boolean) => void;
+  /** The person asked for part `id` turned by `degrees` (90 or −90, counter-clockwise positive). Left out, there is no Turn button. */
+  onTurn?: (id: string, degrees: number) => void;
+  /** The person asked for part `id` mirrored left to right (L1b4). Left out, there is no Flip button. */
+  onFlip?: (id: string) => void;
 }
+
+/** The side of a layer's swatch in the key, px. */
+const KEY_SWATCH = 10;
 
 /** Makes the view. */
 export function createFlatView(doc: Document, options: FlatViewOptions = {}): FlatView {
@@ -125,6 +157,35 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     });
     group.append(b);
   }
+  const turnGroup = bar.appendChild(doc.createElement("span"));
+  turnGroup.className = "nav-group laser-flat-turn";
+  turnGroup.hidden = true;
+  {
+    const b = doc.createElement("button");
+    b.type = "button";
+    b.className = "nav-button";
+    b.title = "Turn the picked part a quarter turn (R)";
+    b.setAttribute("aria-label", "Turn");
+    b.dataset.view = "turn";
+    b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS.turn}</svg>`;
+    b.addEventListener("click", () => {
+      if (scene.picked) options.onTurn?.(scene.picked, 90);
+    });
+    turnGroup.append(b);
+  }
+  if (options.onFlip) {
+    const b = doc.createElement("button");
+    b.type = "button";
+    b.className = "nav-button";
+    b.title = "Flip the picked part left to right (F)";
+    b.setAttribute("aria-label", "Flip");
+    b.dataset.view = "flip";
+    b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS.flip}</svg>`;
+    b.addEventListener("click", () => {
+      if (scene.picked) options.onFlip?.(scene.picked);
+    });
+    turnGroup.append(b);
+  }
   element.append(bar);
 
   let scene: FlatScene = { bed: { width: 1, height: 1 }, parts: [] };
@@ -137,6 +198,8 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
   let hostLabel: string | null = null;
   let watch: ResizeObserver | null = null;
   let switched: MutationObserver | null = null;
+  /** The press under way: where it began, the part under it, whether it has strayed past a click, and (a part being dragged) how far the part has gone, mm. */
+  let press: { id: number; at: ScreenPoint; part: string | null; drags: boolean; moved: boolean; by: [number, number] } | null = null;
 
   const measure = (): Size => {
     const size = sizeOf ? sizeOf() : { width: element.clientWidth, height: element.clientHeight };
@@ -185,11 +248,31 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     for (const x of xs) out.push(text("laser-flat-mark", mmWords(x), { x: toScreen(view, size, x, 0).x, y: below }, "middle"));
     for (const y of ys) if (y !== 0) out.push(text("laser-flat-mark", mmWords(y), { x: left, y: toScreen(view, size, 0, y).y + 4 }, "end"));
     out.push(text("laser-flat-bed-name", `Bed ${mmWords(bed.width)} × ${mmWords(bed.height)} mm`, { x: Math.max(8, corner.x), y: Math.max(16, corner.y - 8) }));
+    // The key to the layers on the bed (L1c), above the bed's top-right corner, right to left: only the layers in use.
+    const inUse = OPS.filter((op) => scene.parts.some((p) => (p.op ?? "cut") === op));
+    if (inUse.length > 0) {
+      const topRight = toScreen(view, size, bed.width, bed.height);
+      let x = Math.min(size.width - 8, topRight.x);
+      const y = Math.max(16, corner.y - 8);
+      for (const op of [...inUse].reverse()) {
+        const name = text(`laser-flat-key laser-flat-key-${op}`, OP_LOOK[op].name, { x, y }, "end");
+        x -= wordsWidth(OP_LOOK[op].name) + 4 + KEY_SWATCH;
+        const swatch = doc.createElementNS(SVG, "rect");
+        swatch.setAttribute("class", `laser-flat-swatch laser-flat-part-${op}`);
+        swatch.setAttribute("x", x.toFixed(1));
+        swatch.setAttribute("y", (y - KEY_SWATCH + 1).toFixed(1));
+        swatch.setAttribute("width", String(KEY_SWATCH));
+        swatch.setAttribute("height", String(KEY_SWATCH));
+        out.push(swatch, name);
+        x -= 12;
+      }
+    }
     for (const p of scene.parts) {
       const w = (p.box.maxX - p.box.minX) * s;
       const h = (p.box.maxY - p.box.minY) * s;
       if (!nameFits(p.label, w, h)) continue; // too small to carry its name at this zoom: the list names it, and its tooltip
-      const mid = toScreen(view, size, (p.box.minX + p.box.maxX) / 2, (p.box.minY + p.box.maxY) / 2);
+      const [gx, gy] = press?.moved && press.drags && press.part === p.id ? press.by : [0, 0]; // a part being dragged takes its name along
+      const mid = toScreen(view, size, (p.box.minX + p.box.maxX) / 2 + gx, (p.box.minY + p.box.maxY) / 2 + gy);
       if (mid.x + w / 2 < 0 || mid.x - w / 2 > size.width || mid.y + h / 2 < 0 || mid.y - h / 2 > size.height) continue; // out of sight
       out.push(text("laser-flat-part-name", p.label, { x: mid.x, y: mid.y + 4 }, "middle"));
     }
@@ -210,17 +293,30 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     partsGroup.replaceChildren(
       ...parts.map((p) => {
         const path = doc.createElementNS(SVG, "path");
-        path.setAttribute("class", "laser-flat-part");
+        const picked = p.id === scene.picked;
+        path.setAttribute("class", `laser-flat-part laser-flat-part-${p.op ?? "cut"}${p.warn ? " laser-flat-part-warn" : ""}${picked ? " laser-flat-part-picked" : ""}`);
         path.setAttribute("d", p.d);
         path.dataset.part = p.id;
+        const words = `${p.label}, ${OP_LOOK[p.op ?? "cut"].name.toLowerCase()}, ${mmWords(p.box.maxX - p.box.minX)} × ${mmWords(p.box.maxY - p.box.minY)} mm${p.warn ? `, ${p.warn}` : ""}`;
+        if (options.onPick) {
+          // Reachable by the keyboard: Tab to a part, Enter picks it.
+          path.setAttribute("tabindex", "0");
+          path.setAttribute("role", "button");
+          path.setAttribute("aria-pressed", String(picked));
+          path.setAttribute("aria-label", words);
+        }
         const title = path.appendChild(doc.createElementNS(SVG, "title"));
-        title.textContent = `${p.label}, ${mmWords(p.box.maxX - p.box.minX)} × ${mmWords(p.box.maxY - p.box.minY)} mm`;
+        title.textContent = words;
         return path;
       }),
     );
     const n = parts.length;
     svg.setAttribute("aria-label", `The laser bed from above, ${mmWords(bed.width)} × ${mmWords(bed.height)} mm, with ${n === 0 ? "no parts" : n === 1 ? `1 part: ${parts[0].label}` : `${n} parts: ${parts.map((p) => p.label).join(", ")}`}.`);
     element.dataset.parts = String(n);
+    const picked = parts.find((p) => p.id === scene.picked);
+    if (picked) element.dataset.picked = picked.id;
+    else delete element.dataset.picked;
+    turnGroup.hidden = !picked || (!options.onTurn && !options.onFlip);
   };
 
   /** The cards' boxes in the view's own px. */
@@ -251,18 +347,35 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     const r = svg.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
+  const partPath = (id: string) => [...partsGroup.children].find((c) => (c as SVGElement).dataset.part === id) as SVGElement | undefined;
+  /** Ends the press: a part being dragged goes back to where the scene has it (the page draws the scene again when it has taken the move). */
+  const endPress = () => {
+    if (press?.part) partPath(press.part)?.removeAttribute("transform");
+    press = null;
+    delete element.dataset.moving;
+  };
   const release = (e: PointerEvent) => {
     pointers.delete(e.pointerId);
+    if (press?.id === e.pointerId) endPress();
     if (pointers.size === 0) delete element.dataset.dragging;
   };
   svg.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
-    if (e.isPrimary) pointers.clear(); // the first pointer down: any other still held here is one whose release was never heard
+    if (e.isPrimary) {
+      pointers.clear(); // the first pointer down: any other still held here is one whose release was never heard
+      endPress();
+    }
     if (pointers.size >= 2) return;
-    pointers.set(e.pointerId, local(e));
+    const at = local(e);
+    pointers.set(e.pointerId, at);
     element.dataset.dragging = "";
     svg.setPointerCapture?.(e.pointerId);
     if (e.button === 1) e.preventDefault(); // no auto-scroll marker under a middle-drag
+    if (pointers.size > 1) return endPress(); // a second finger: a pinch, and no part is moved by it
+    const part = e.button === 1 ? null : ((e.target as Element | null)?.closest?.("[data-part]") as SVGElement | null)?.dataset.part ?? null;
+    // A mouse drags the part it presses; a finger or pen only the part already picked, so a drag across parts still slides the view.
+    const drags = part !== null && options.onMove !== undefined && (e.pointerType === "mouse" || part === scene.picked);
+    press = { id: e.pointerId, at, part, drags, moved: false, by: [0, 0] };
   });
   svg.addEventListener("pointermove", (e) => {
     const before = pointers.get(e.pointerId);
@@ -271,6 +384,22 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     if (e.pointerType !== "touch" && (e.buttons & 5) === 0) return release(e);
     const now = local(e);
     const size = measure();
+    if (press?.id === e.pointerId && !press.moved) {
+      // Still a click or tap until it strays; then the whole way from where it began counts, so nothing is lost.
+      if (Math.hypot(now.x - press.at.x, now.y - press.at.y) <= (e.pointerType === "mouse" ? CLICK_SLOP.mouse : CLICK_SLOP.touch)) return;
+      press.moved = true;
+    }
+    if (press?.id === e.pointerId && press.drags && press.part) {
+      const part = scene.parts.find((p) => p.id === press!.part);
+      if (!part) return;
+      // The part follows the pointer, its box's lower-left corner landing on whole mm (y up on the bed, down on screen).
+      const dx = snapMm(part.box.minX + (now.x - press.at.x) / view.scale) - part.box.minX;
+      const dy = snapMm(part.box.minY - (now.y - press.at.y) / view.scale) - part.box.minY;
+      press.by = [dx, dy];
+      element.dataset.moving = part.id;
+      partPath(part.id)?.setAttribute("transform", `translate(${dx} ${-dy})`);
+      return draw();
+    }
     const other = [...pointers].find(([id]) => id !== e.pointerId)?.[1];
     pointers.set(e.pointerId, now);
     if (!other) return move(panBy(view, scene.bed, size, now.x - before.x, now.y - before.y));
@@ -280,7 +409,15 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     const slid = panBy(view, scene.bed, size, m1.x - m0.x, m1.y - m0.y);
     move(d0 > 0 && d1 > 0 ? zoomAt(slid, scene.bed, size, m1, d1 / d0) : slid);
   });
-  svg.addEventListener("pointerup", release);
+  svg.addEventListener("pointerup", (e) => {
+    const done = press?.id === e.pointerId ? press : null;
+    release(e);
+    if (!done) return;
+    if (!done.moved) {
+      // A click or tap: on a part picks it, on the bare bed lets the picked one go.
+      if (done.part !== (scene.picked ?? null)) options.onPick?.(done.part);
+    } else if (done.drags && done.part && (done.by[0] !== 0 || done.by[1] !== 0)) options.onMove?.(done.part, done.by[0], done.by[1], false);
+  });
   svg.addEventListener("pointercancel", release);
   svg.addEventListener("lostpointercapture", release);
   svg.addEventListener(
@@ -296,7 +433,16 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     const size = measure();
     const middle = { x: size.width / 2, y: size.height / 2 };
     const slide: Record<string, [number, number]> = { ArrowLeft: [KEY_SLIDE, 0], ArrowRight: [-KEY_SLIDE, 0], ArrowUp: [0, KEY_SLIDE], ArrowDown: [0, -KEY_SLIDE] };
-    if (e.key === "+" || e.key === "=") move(zoomAt(view, scene.bed, size, middle, ZOOM_STEP));
+    const on = ((e.target as Element | null)?.closest?.("[data-part]") as SVGElement | null)?.dataset.part;
+    const picked = scene.parts.some((p) => p.id === scene.picked) ? scene.picked! : null;
+    const step = e.shiftKey ? 10 : 1;
+    const nudge: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    if ((e.key === "Enter" || e.key === " ") && on !== undefined && options.onPick) options.onPick(on);
+    else if (picked !== null && e.key in nudge && options.onMove) options.onMove(picked, ...nudge[e.key], true);
+    else if (picked !== null && (e.key === "r" || e.key === "R") && options.onTurn) options.onTurn(picked, e.shiftKey ? -90 : 90);
+    else if (picked !== null && (e.key === "f" || e.key === "F") && options.onFlip) options.onFlip(picked);
+    else if (picked !== null && e.key === "Escape" && options.onPick) options.onPick(null);
+    else if (e.key === "+" || e.key === "=") move(zoomAt(view, scene.bed, size, middle, ZOOM_STEP));
     else if (e.key === "-" || e.key === "_") move(zoomAt(view, scene.bed, size, middle, 1 / ZOOM_STEP));
     else if (e.key === "0" || e.key === "Home") fit();
     else if (e.key in slide) move(panBy(view, scene.bed, size, ...slide[e.key]));
@@ -312,6 +458,7 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     switched?.disconnect();
     switched = null;
     pointers.clear();
+    endPress();
     delete element.dataset.dragging;
     element.remove();
     if (hostLabel === null) host.removeAttribute("aria-label");
@@ -354,9 +501,15 @@ export function createFlatView(doc: Document, options: FlatViewOptions = {}): Fl
     detach,
     show(next, frame) {
       const resized = next.bed.width !== scene.bed.width || next.bed.height !== scene.bed.height;
+      // A part being dragged goes on being dragged through a redraw that left it as it was (a late answer about other
+      // parts); if the scene moved or dropped it, the drag is over.
+      const held = press?.moved && press.drags ? press.part : null;
+      const same = held !== null && scene.parts.find((p) => p.id === held)?.d === next.parts.find((p) => p.id === held)?.d;
       scene = next;
       shown = true;
+      if (held !== null && !same) endPress();
       drawScene();
+      if (held !== null && same && press) partPath(held)?.setAttribute("transform", `translate(${press.by[0]} ${-press.by[1]})`);
       if (frame || fitted) return fit(); // a view the person has not moved keeps the whole bed in sight, clear of the parts list as it grows
       if (resized) view = zoomAt(view, scene.bed, measure(), { x: 0, y: 0 }, 1); // the same view, kept within the new bed's limits
       draw();

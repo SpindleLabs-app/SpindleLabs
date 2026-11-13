@@ -30,7 +30,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { emptyProject, projectFromJson, projectToJson, type Feature } from "@fission/core";
 import { addSketch, designWorkspace, drawRectangle, extrudeSketch, insertPreset, partDocument, type DesignDocument } from "@fission/design";
-import { app, close, kernel } from "./design-app.ts";
+import { app, close, kernel, rebuildChanges } from "./design-app.ts";
 
 const SEEDS = Number(process.env.FISSION_SESSIONS ?? 8);
 const STEPS = Number(process.env.FISSION_SESSION_STEPS ?? 60);
@@ -333,7 +333,11 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
     }
     if (a.sketching()) await a.finish();
     if (errors.length) return fail(`thrown: ${errors.join(" | ")}`);
-    return (await a.close()) ? null : fail("a body was not freed at the end");
+    const ended = a.doc();
+    if (!(await a.close())) return fail("a body was not freed at the end");
+    // The rule for every seeded session (SL #641): the design it ended with, opened again, rebuilds to itself.
+    const changed = await rebuildChanges(ended, plugin);
+    return changed === null ? null : fail(changed);
   } catch (e) {
     await a.close();
     return fail((e as Error).stack ?? String(e));
@@ -416,7 +420,7 @@ const WORKSPACE = new URL("../../../workspaces/design/src/workspace.ts", import.
 const PLANTS = [
   { name: "refused-recorded", find: "    if (refused !== null) return editBox.showError(refused);", replace: "", caught: "which the rules refuse" },
   { name: "panel-stays", find: "    record(step, next) {\n      leaveExtrude();\n      leaveEdit();", replace: "    record(step, next) {\n      leaveExtrude();", caught: "the panel is still open" },
-  { name: "cancel-records", find: "    cancel: () => leaveEdit(),", replace: "    cancel: () => editBox.editing !== null && void finishEdit(Object.fromEntries([...ctx.properties.querySelectorAll<HTMLInputElement>('#feature-edit input')].map((i) => [i.id.slice(5), i.value]))),", caught: "nothing should be recorded" },
+  { name: "cancel-records", find: "    cancel: () => (okChecks.clear(), leaveEdit()),", replace: "    cancel: () => editBox.editing !== null && void finishEdit(Object.fromEntries([...ctx.properties.querySelectorAll<HTMLInputElement>('#feature-edit input')].map((i) => [i.id.slice(5), i.value]))),", caught: "nothing should be recorded" },
 ];
 
 /** Design with `plant` made: a copy of workspace.ts beside it (so its imports resolve), loaded, then deleted. */

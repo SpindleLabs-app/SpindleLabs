@@ -77,6 +77,13 @@
     "why": "As above: an undefined value is dropped by JSON.stringify either way."
   },
   {
+    "file": "packages/core/src/model/project.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return null; }",
+    "replacement": "{}",
+    "why": "withWorkspaceDocument with a snapshot that does not parse: with the catch emptied, data stays undefined, and the next line refuses it with the same null (!isObject(undefined))."
+  },
+  {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
@@ -162,10 +169,122 @@
   },
   {
     "file": "packages/storage/src/autosave.ts",
-    "mutator": "ConditionalExpression",
-    "original": "timer !== null",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "ownEntryThere() with no journal: the call throws inside its try, whose catch gives false, as the undefined entry does. It is reached only after journalVersion matched, which needs a journal anyway."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "dropOwnEntries() with no journal: the call throws inside its try, leaving journalVersion as it was, which is null already without a journal."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "finish() marking its entry kept with no journal: the call throws inside its try, whose catch writes nothing, as the undefined entry does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "ownEntryThere()'s catch: undefined instead of false, and both callers use it only in an && condition, where the two read the same."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
     "replacement": "true",
-    "why": "stop(): clearTimeout(null) does nothing."
+    "why": "owner = false after finish()'s own save: finish() has stopped the autosave, and nothing that runs after it reads owner (rebase() keeps the entry's own kept mark)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null",
+    "replacement": "true",
+    "why": "dropOwnEntries(): readJournalEntry of a missing entry reads no writer, so the writer test that follows is false all the same and nothing is removed under the key."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries(): the writer test that follows decides alone. A missing entry reads no writer, and an empty ownName matches no entry's writer (a writer has 1 to 64 characters), so the key is removed exactly when it was."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "entry != null || ownName !== \"\"",
+    "why": "dropOwnEntries(): the writer test that follows decides whenever the mutant lets it run. A missing entry reads no writer, and an empty ownName matches no entry's writer, so the key is removed exactly when it was."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries(): with an empty ownName the writer test that follows is false all the same, since an entry's writer has 1 to 64 characters."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!journal",
+    "replacement": "false",
+    "why": "journalNow() with no journal: the try then throws (putAsideOthers or setItem on null) and its catch returns false, as this line does; nothing else is changed first (projectToJson and keptFromLastVisit read only)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v === version",
+    "replacement": "true",
+    "why": "save(), back at the text last written: v is read from version a few lines up with no await in between, so they are always equal here."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!stopped && timer === null",
+    "replacement": "true",
+    "why": "Starting the retry timer anyway: a stopped autosave's save() returns at once, and a waiting quiet-moment save always runs before the retry would (changed(), leaving(), stop() and save() itself clear the retry with noRetry() first)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "!stopped && timer === null",
+    "replacement": "!stopped || timer === null",
+    "why": "Starting the retry timer when stopped, or with a save waiting: a stopped autosave's save() returns at once, and the waiting save clears the retry (noRetry()) before it would fire."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "timer === null",
+    "replacement": "true",
+    "why": "The retry timer started with a quiet-moment save waiting: that save, or whatever clears it (changed(), leaving(), stop()), calls noRetry() first, so the retry never fires."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "summary === undefined",
+    "replacement": "false",
+    "why": "check(), project not listed: reading .problem of undefined throws inside the same try, whose catch returns, as holds = null does a few lines on."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return; // can't be read: the next save says what is wrong }",
+    "replacement": "{}",
+    "why": "check() when the store can't be listed: holds stays undefined, and the guard after it returns on holds == null, the same as returning here."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "OptionalChaining",
+    "original": "written?.getTime",
+    "replacement": "written.getTime",
+    "why": "copyId is only called for an entry refused over newer work, which needs a base, and an entry's base is read only from a head that also gave its written time, so written is never null there."
   },
   {
     "file": "packages/storage/src/autosave.ts",
@@ -446,6 +565,13 @@
     "original": "typeof x === \"string\"",
     "replacement": "true",
     "why": "WORKSPACES holds only strings and includes() never converts, so a non-string is refused all the same."
+  },
+  {
+    "file": "packages/core/src/model/material.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x !== null",
+    "replacement": "true",
+    "why": "deepFreeze is not exported and runs only on STARTER_MATERIALS, which hold no null anywhere (a part a material lacks is left out, not null), so typeof x === \"object\" never meets a null."
   },
   {
     "file": "packages/core/src/model/shortcuts.ts",
@@ -763,6 +889,13 @@
     "why": "sign returns only -1 or 1, never 0, so < 0 and <= 0 agree."
   },
   {
+    "file": "packages/viewport/src/views.ts",
+    "mutator": "EqualityOperator",
+    "original": "up[0] * y[0] + up[1] * y[1] + up[2] * y[2] < 0",
+    "replacement": "up[0] * y[0] + up[1] * y[1] + up[2] * y[2] <= 0",
+    "why": "planeSeenAs: the up Look At gives is this y or its opposite, made from the unit normal and x axis, so the dot is never 0 unless y is the zero vector, which needs a normal along the plane's own x axis: that is no plane, it has no picture to keep the right way round, and nothing in the app makes one."
+  },
+  {
     "file": "packages/viewport/src/framing.ts",
     "mutator": "EqualityOperator",
     "original": "i + 2 < positions.length",
@@ -922,6 +1055,13 @@
     "original": "b > 0",
     "replacement": "b >= 0",
     "why": "A bulge of 0 is drawn straight and never reaches the arc, so b is never 0 here."
+  },
+  {
+    "file": "packages/core/src/model/svg.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "seen.right * seen.up",
+    "replacement": "seen.right / seen.up",
+    "why": "seenLoop is only reached through outlineToSvg, which first refuses any seen whose right or up is not 1 or -1, and for those a / b equals a × b (1/1 = 1, 1/-1 = -1, -1/1 = -1, -1/-1 = 1)."
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -3386,5 +3526,89 @@
     "original": "same.length > 1",
     "replacement": "same.length >= 1",
     "why": "resolveEdgeName: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof locks?.request !== \"function\"",
+    "replacement": "false",
+    "why": "browserLock with no locks.request: the returned lock then throws when called, renew() catches a failing lock and renews without it, which is what no lock does."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "t.kind === \"ok\"",
+    "replacement": "true",
+    "why": "asAnyone's bearer: when the token result is not ok, t.token is undefined, and request() adds no authorization header for an undefined bearer, so the same anonymous request goes out."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "code === \"\"",
+    "replacement": "true",
+    "why": "finishSignIn's cancel test: this line is reached only when error is not null or the code is falsy, and a null code with a null error returned 'none' above, so with error === null the code is always \"\" here."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "StringLiteral",
+    "original": "\"rejected\"",
+    "replacement": "\"\"",
+    "why": "finishSignIn's first failure value: the loop runs at least once (no secrets returned 'expired' above) and every pass either returns or sets failed, so the initial value is never read."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "stored === sessionToText(r.session)",
+    "replacement": "false",
+    "why": "token() after a renewal stored over its session: with the check gone, the stored text still differs from the renewed one, so samePerson() then token(false) reads that same fresh session and answers the same token."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!lock",
+    "replacement": "false",
+    "why": "renew with no lock: calling the undefined lock throws inside the try, and the catch renews without it, which is what the early return does."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v !== null && typeof v === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "LogicalOperator",
+    "original": "v !== null && typeof v === \"object\"",
+    "replacement": "v !== null || typeof v === \"object\"",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v !== null",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof v === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof r === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' typeof r === \"object\": a primitive left in passes r !== null but has no verifier property, so isVerifier(undefined) refuses it as before."
   }
 ]

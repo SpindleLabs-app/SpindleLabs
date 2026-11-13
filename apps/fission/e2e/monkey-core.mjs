@@ -212,8 +212,10 @@ export function expectedView(design, failed = new Set()) {
   const kept = design.kept ?? {};
   const byId = new Map(features.map((f, i) => [f.id, { f, i }]));
   const active = (i) => i < stop && !features[i].suppressed;
-  // A Move or a Combine (35f1c) acts on bodies and makes none of its own.
-  const acts = (f) => f.intent.type === "move" || f.intent.type === "combine";
+  // A Move or a Combine (35f1c) acts on bodies and makes none of its own; so does an extrude with an operation (Join,
+  // Cut or Intersect: data version 10), whose own body goes into the bodies it picks (SL #507).
+  const operation = (f) => f.intent.type === "extrude" && Object.hasOwn(f.intent.parameters, "operation");
+  const acts = (f) => f.intent.type === "move" || f.intent.type === "combine" || operation(f);
   const builds = (f, i) => {
     if (!active(i)) return false;
     // A Duplicate (Duplicate or Mirror body, 35e2m) is built on the item whose body it copies: suppressed or not
@@ -222,17 +224,23 @@ export function expectedView(design, failed = new Set()) {
     // built on (a piece's copy) builds when it is on and before the marker.
     if (f.intent.type === "duplicate") return (f.dependsOn ?? []).every((d) => byId.has(d) && (acts(byId.get(d).f) ? active(byId.get(d).i) : builds(byId.get(d).f, byId.get(d).i)));
     if (f.intent.type !== "extrude" || !Object.hasOwn(f.intent.parameters, "sketch")) return true;
+    return sketchBuilds(f);
+  };
+  // An extrude of a sketch builds while its sketch does, or from its kept shape when the sketch is gone.
+  const sketchBuilds = (f) => {
     const s = byId.get(f.intent.parameters.sketch);
     if (s === undefined || s.f.intent.type !== "sketch") return Object.hasOwn(kept, f.id);
     return active(s.i);
   };
   const solids = features.filter((f, i) => f.intent.type !== "sketch" && !acts(f) && builds(f, i));
   const made = features.filter((f) => f.intent.type !== "sketch" && !acts(f));
-  // A Combine's pieces ("body:<combine>/piece:k") are numbered by the app when they first appear, which only the kernel
-  // knows, so the file's numbers for them are taken as given while their Combine is in the timeline.
+  // A Combine's or an operation extrude's pieces ("body:<item>/piece:k") are numbered by the app when they first appear,
+  // which only the kernel knows, so the file's numbers for them are taken as given while their item is in the timeline;
+  // so is an Extrude Join's own body ("body:<extrude>", version 16: its piece apart from the bodies it joins).
   const pieceOf = (id) => /^body:(.+)\/piece:\d+$/.exec(id)?.[1];
-  const combines = new Set(features.filter((f) => f.intent.type === "combine").map((f) => f.id));
-  const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id) || combines.has(pieceOf(b.id))).map((b) => [b.id.slice(5), b.number]));
+  const combines = new Set(features.filter((f) => f.intent.type === "combine" || operation(f)).map((f) => f.id));
+  const joinOwn = new Set(features.filter((f) => operation(f) && f.intent.parameters.operation === "join").map((f) => `body:${f.id}`));
+  const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id) || combines.has(pieceOf(b.id)) || joinOwn.has(b.id)).map((b) => [b.id.slice(5), b.number]));
   let next = Math.max(design.nextBody ?? 1, ...[...given.values()].map((n) => n + 1));
   for (const f of [...solids, ...made.filter((f) => !solids.includes(f))]) if (!given.has(f.id)) given.set(f.id, next++);
   // The numbers as the app keeps them: the file's (gone items' dropped) in its order, then each new one as given.
@@ -251,6 +259,19 @@ export function expectedView(design, failed = new Set()) {
     }
     // A built Move keeps each body as it was before it (rebuild.ts moveBodies' `holds`), so an edit rebuilds at once.
     if (f.intent.type === "move" && active(i) && !failed.has(f.id) && f.intent.parameters.bodies.every((b) => live.has(b))) held += f.intent.parameters.bodies.length;
+    if (operation(f)) {
+      // Built on its sketch (or kept shape) and every body it picks: a Join puts its own body and the rest into the first
+      // picked, a Cut or an Intersect changes each picked in place (rebuild.ts operationRun); the rebuild keeps the bodies
+      // picked and its own, to build it again at once. Its pieces, and a Join's own body, are added as it builds.
+      const picked = f.intent.parameters.bodies;
+      if (!active(i) || failed.has(f.id) || !sketchBuilds(f) || !picked.every((b) => live.has(b))) continue;
+      held += picked.length + 1;
+      if (f.intent.parameters.operation === "join") for (const b of picked.slice(1)) live.delete(b);
+      for (const b of f.intent.parameters.operation === "join" ? picked.slice(0, 1) : picked) live.set(b, { ...live.get(b), combined: true });
+      if (given.has(f.id)) live.set(`body:${f.id}`, row(`body:${f.id}`, f.id, { piece: true, combined: true }));
+      for (const [id] of [...given].filter(([id]) => pieceOf(`body:${id}`) === f.id).sort((a, b) => a[1] - b[1])) live.set(`body:${id}`, row(`body:${id}`, f.id, { piece: true, combined: true }));
+      continue;
+    }
     if (f.intent.type !== "combine" || !active(i) || failed.has(f.id)) continue;
     const { target, tools, keepTools } = f.intent.parameters;
     if (![target, ...tools].every((b) => live.has(b))) continue;
@@ -281,8 +302,8 @@ export function settledText(text) {
   try {
     const file = JSON.parse(text);
     const design = file?.workspaces?.design;
-    // Design data as the app saves it (version 18 since an extrude can hold several profiles; 17 since a constraint can name a point that follows a body; 16 since an Extrude Join's own piece is named by the extrude; 15 since a pin or projection can hold a Combine result's edge; 14 since a circle can hold its fit; 13 since pieces remember their faces; 12 since Scale and Mirror body; 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
-    if (!design || ![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
+    // Design data as the app saves it (version 21 since an extrude can be symmetric; 20 since each profile keeps its own shape; 19 since a face sketch can record that it was drawn on a cut's pocket wall; 18 since an extrude can hold several profiles; 17 since a constraint can name a point that follows a body; 16 since an Extrude Join's own piece is named by the extrude; 15 since a pin or projection can hold a Combine result's edge; 14 since a circle can hold its fit; 13 since pieces remember their faces; 12 since Scale and Mirror body; 11 since Duplicate; 10 since Extrude's operations; 9 since step 48; this read 7 until 48d3, so files of 8 and 9 went unsettled), and the versions before it the app still reads the same way.
+    if (!design || ![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].includes(design.version) || !Array.isArray(design.timeline?.features)) return text;
     Object.assign(design, expectedView(design).numbered);
     return JSON.stringify(file);
   } catch {

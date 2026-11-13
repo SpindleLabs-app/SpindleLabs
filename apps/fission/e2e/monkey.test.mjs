@@ -73,7 +73,7 @@ test("what a file should show, worked by hand", () => {
   const added = { workspaces: { design: { ...numbered, version: 16, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.nextBody, 5);
-  const fresh = { workspaces: { design: { ...design(), version: 18, bodies: [], nextBody: 1 } } };
+  const fresh = { workspaces: { design: { ...design(), version: 21, bodies: [], nextBody: 1 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(fresh))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(settledText("not json"), "not json");
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
@@ -397,6 +397,70 @@ test("hand-worked: what a file with Combines should show (35f1d)", () => {
   const gone = structuredClone(design);
   gone.timeline.features.splice(2, 1);
   assert.deepEqual(expectedView(gone).numbered.bodies.map((b) => b.id), ["body:feature-1", "body:feature-2", "body:feature-4"]);
+});
+
+test("hand-worked: what a file with Extrude Join, Cut and Intersect should show (SL #507)", () => {
+  const item = (id, type, parameters, dependsOn = []) => ({ id, intent: { type, parameters, summary: id }, provenance: { self: { workspace: "design", id, label: id }, from: [] }, dependsOn, suppressed: false });
+  const box = (id) => item(id, "box", { width: 10, depth: 10, height: 10 });
+  const sketch = (id) => item(id, "sketch", { plane: "XY" });
+  const extrude = (id, s, operation, bodies) => item(id, "extrude", { sketch: s, distance: 5, operation, bodies }, [s, ...bodies.map((b) => b.slice(5))]);
+  // Box 1 and Box 2 (feature-1, -2); Extrude 1 (feature-4) cuts from Box 1; Extrude 2 (feature-6) joins Box 2 and has a
+  // piece apart from it, its own body (version 16), numbered 3 by the app when it was built; then Box 3 (feature-7), 4.
+  const design = {
+    version: 17,
+    nextId: 8,
+    profiles: [],
+    sketches: [],
+    timeline: { features: [box("feature-1"), box("feature-2"), sketch("sketch-3"), extrude("feature-4", "sketch-3", "cut", ["body:feature-1"]), sketch("sketch-5"), extrude("feature-6", "sketch-5", "join", ["body:feature-2"]), box("feature-7")] },
+    bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { id: "body:feature-6", number: 3 }, { id: "body:feature-7", number: 4 }],
+    nextBody: 5,
+  };
+  const v = expectedView(design);
+  // An extrude with an operation changes the bodies it picks in place and has no row of its own for a Cut or an
+  // Intersect; a Join's piece apart from the bodies it joins is its own body, which only the kernel can say is there,
+  // so it is a piece row, added as the extrude builds: before Box 3.
+  assert.deepEqual(v.rows, [
+    { row: "body-1", place: 1, id: "feature-1", body: "body:feature-1", combined: true },
+    { row: "body-2", place: 2, id: "feature-2", body: "body:feature-2", combined: true },
+    { row: "body-3", place: 3, id: "feature-6", body: "body:feature-6", piece: true, combined: true },
+    { row: "body-4", place: 4, id: "feature-7", body: "body:feature-7" },
+  ]);
+  // Neither extrude is a solid that makes a body of its own up front.
+  assert.deepEqual(v.solids, ["feature-1", "feature-2", "feature-7"]);
+  // The rebuild keeps each one's inputs, to build it again at once (rebuild.ts booleanSteps' holds): the body picked and
+  // the extrude's own body, 2 each, 4 in all.
+  assert.equal(v.held, 4);
+  // No number is given out to either extrude: the file's numbers stand, the counter stays at 5.
+  assert.deepEqual(v.numbered, { bodies: design.bodies, nextBody: 5 });
+  // The Join's own body not numbered yet (the kernel left nothing apart, or it was never built): no row, no number.
+  const joined = { ...structuredClone(design), bodies: design.bodies.filter((b) => b.id !== "body:feature-6") };
+  assert.deepEqual(expectedView(joined).rows.map((r) => r.row), ["body-1", "body-2", "body-4"]);
+  assert.deepEqual(expectedView(joined).numbered.bodies.map((b) => b.id), ["body:feature-1", "body:feature-2", "body:feature-7"]);
+  // A Cut on two bodies keeps three: both bodies and its own.
+  const two = structuredClone(design);
+  two.timeline.features[3] = extrude("feature-4", "sketch-3", "cut", ["body:feature-1", "body:feature-2"]);
+  assert.equal(expectedView(two).held, 3 + 2);
+  // Intersect: like a Cut, no row of its own.
+  const meet = structuredClone(design);
+  meet.timeline.features[3] = extrude("feature-4", "sketch-3", "intersect", ["body:feature-1"]);
+  assert.deepEqual(expectedView(meet).rows.map((r) => r.row), ["body-1", "body-2", "body-3", "body-4"]);
+  // The Cut failed (the bar marks it): Box 1 as it was, nothing held for it.
+  const failed = expectedView(design, new Set(["feature-4"]));
+  assert.deepEqual(failed.rows[0], { row: "body-1", place: 1, id: "feature-1", body: "body:feature-1" });
+  assert.equal(failed.held, 2);
+  // Box 2 suppressed: the Join has a body missing, so it is greyed: no piece, nothing held for it.
+  const off = structuredClone(design);
+  off.timeline.features[1].suppressed = true;
+  assert.deepEqual(expectedView(off).rows.map((r) => r.row), ["body-1", "body-4"]);
+  assert.equal(expectedView(off).held, 2);
+  // Its sketch suppressed: the Cut is greyed too, Box 1 as it was.
+  const noSketch = structuredClone(design);
+  noSketch.timeline.features[2].suppressed = true;
+  assert.equal(expectedView(noSketch).rows[0].combined, undefined);
+  // The Join deleted: its own body's number goes, the counter stays.
+  const gone = structuredClone(design);
+  gone.timeline.features.splice(5, 1);
+  assert.deepEqual(expectedView(gone).numbered, { bodies: design.bodies.filter((b) => b.id !== "body:feature-6"), nextBody: 5 });
 });
 
 test("35f1d: Combine is drawn only when the page offers it, about 6 picks in the weights' total, each well formed", () => {

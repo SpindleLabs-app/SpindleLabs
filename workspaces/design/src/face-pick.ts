@@ -23,7 +23,7 @@ export const UNNAMED_FACE = "This face has no name of its own (another face shar
 /** Where a click puts the new sketch: an origin plane, a flat face (its name, its feature and the frame it is drawn with), or nowhere with the words why. */
 export type SketchSpot =
   | { kind: "plane"; plane: SketchPlane }
-  | { kind: "face"; face: { plane: string; feature: string }; drawn: SketchPlacement }
+  | { kind: "face"; face: { plane: string; feature: string; reversed: boolean }; drawn: SketchPlacement }
   | { kind: "refused"; message: string };
 
 /**
@@ -50,7 +50,8 @@ export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot 
   if (ref === null || feature === null) return { kind: "refused", message: UNNAMED_FACE };
   const again = scene.design === undefined ? null : findInScene(ref, scene);
   if (again === null ? feature !== body.feature : again.status !== "found" || again.index !== pick.face) return { kind: "refused", message: UNNAMED_FACE };
-  return { kind: "face", face: { plane: ref.id, feature }, drawn: { ...drawn, body: shownFrame(body, hit.index) ?? worldFrame() } };
+  // SL #583 item 3: whether the face is its name's face turned round (a Cut's wall), recorded with the sketch.
+  return { kind: "face", face: { plane: ref.id, feature, reversed: body.reversed?.[hit.index] ?? false }, drawn: { ...drawn, body: shownFrame(body, hit.index) ?? worldFrame() } };
 }
 
 /** The faces of the bodies on screen a sketch can go on (joined numbering, for the viewport to light): the flat ones with a name of their own. */

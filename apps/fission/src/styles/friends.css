@@ -1,0 +1,25 @@
+/* The Friends dialog (account features 6, src/friends.ts). It wears the account dialog's look (.account); every
+   selector here starts with .friends. */
+.friends.account { width: min(480px, calc(100vw - 32px)); }
+.friends .friends-body { grid-template-columns: minmax(0, 1fr); }
+.friends .friends-heading { margin: var(--look-space-2) 0 0; font-size: 14px; font-weight: 600; }
+.friends .friends-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--look-space-2); }
+.friends .friends-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-2) var(--look-space-3); background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.friends .friends-who { display: grid; min-width: 0; }
+.friends .friends-who strong { overflow-wrap: anywhere; }
+.friends .friends-acts, .friends .friends-code-row, .friends .friends-question { display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-2); }
+.friends .friends-question { flex-basis: 100%; }
+.friends .friends-question p { flex-basis: 100%; margin: 0; }
+.friends .friends-mine, .friends .friends-add, .friends .friends-off { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--look-space-2); margin: 0; }
+.friends .friends-mine p, .friends .friends-add p, .friends .friends-off p { margin: 0; }
+.friends .friends-mine-label, .friends .friends-add-label { font-weight: 600; }
+.friends .friends-code { font: 600 18px/1.2 ui-monospace, monospace; letter-spacing: 0.08em; padding: var(--look-space-2) var(--look-space-3); background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); user-select: all; }
+.friends .friends-fields { display: flex; gap: var(--look-space-2); }
+.friends .friends-input { flex: 1; width: 0; min-width: 0; font: inherit; text-transform: uppercase; min-height: var(--look-target); padding: 0 var(--look-space-3); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
+.friends .friends-input:focus-visible { outline: 2px solid var(--look-accent); outline-offset: 1px; }
+.friends .friends-empty { padding: 0 var(--look-space-1); }
+.friends .friends-turn-on { justify-self: start; min-height: 44px; }
+.friends .friends-turn-off { justify-self: start; }
+@media (pointer: coarse), (max-width: 640px) {
+  .friends.account .account-action, .friends.account .account-close, .friends.account .friends-input { min-height: 44px; }
+}
