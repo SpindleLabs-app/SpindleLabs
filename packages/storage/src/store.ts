@@ -4,7 +4,12 @@
 //   summary/<id>  {"name", "modified", "order", "writer", "touched", "works"} for the list, so listing never reads whole
 //                 projects ("touched": when the save was made by the clock, "works": the workspaces holding work, U6a)
 //                 ("writer": the autosave that made the save, when it named itself, own-save.test.ts)
-// and one entry for them all:
+// A deleted project leaves its deletion mark (hunt C2, C3): the delete writes, in one transaction,
+//   summary/<id>  {"deleted": "<ISO time>"}, never listed or opened: a save made from the deleted state (one expecting a
+//                 save time) is refused as ProjectDeletedError, where a missing summary (site data cleared) is stored
+//                 again (B4); a save expecting nothing (a new project, recovery) replaces the mark
+// and deletes project/<id> in that same transaction.
+// And one entry for them all:
 //   order         the number of the last save, counted up by each one: the summary's "order" puts the list in the
 //                 order the saves happened, whatever the device's clock said (real-use hunt B5)
 // Opening goes through projectFromJson, so an old project migrates exactly
@@ -40,6 +45,8 @@ export interface ProjectStore {
   list(): Promise<ProjectSummary[]>;
   /** Reads and upgrades a stored project; refuses a missing or corrupt one with a message. */
   open(id: string): Promise<Project>;
+  /** A stored project's text exactly as stored, not read or upgraded; null when there is none (account sync compares it with what it last sent, issue #628 item 1). */
+  text(id: string): Promise<string | null>;
   /**
    * Stores the project under `id`, replacing what was there. `read` is when
    * the project was in that state (autosave reads it, a journal entry was
@@ -56,7 +63,10 @@ export interface ProjectStore {
    * `writerId` is left out).
    */
   save(id: string, project: Project, read?: Date, unchangedSince?: Date, behind?: boolean, writer?: string): Promise<void>;
-  /** Forgets a stored project; refuses an id that is not stored. */
+  /**
+   * Forgets a stored project, in one step, leaving its deletion mark (a later save made from it is refused as
+   * ProjectDeletedError); refuses an id that is not stored.
+   */
   remove(id: string): Promise<void>;
 }
 
@@ -67,6 +77,22 @@ export class ProjectChangedError extends Error {
     this.name = "ProjectChangedError";
   }
 }
+
+/**
+ * A save refused because the project was deleted (by this site: home screen or File > Projects, in another tab) since
+ * this tab last read or wrote it (hunt C2). A ProjectChangedError, so everything that keeps a stale tab's change apart
+ * as "(kept copy)" (autosave's `leaving` and `finish`, recovery) keeps this one too, rather than storing it again.
+ */
+export class ProjectDeletedError extends ProjectChangedError {
+  constructor() {
+    super();
+    this.message = "This project was deleted in another tab, so changes here aren't stored in it. They're kept as a separate project, \"(kept copy)\", when you reload or open another project.";
+    this.name = "ProjectDeletedError";
+  }
+}
+
+/** A refusal for want of room: indexeddb.ts's words for QuotaExceededError, or the error itself (as versions.ts's `storageFull`, which imports this file). */
+const storageFull = (e: unknown) => e instanceof Error && (/^browser storage is full\b|QuotaExceeded/.test(e.message) || e.name === "QuotaExceededError");
 
 const PROJECT = "project/";
 const SUMMARY = "summary/";
@@ -83,6 +109,17 @@ export const writerId = (w: unknown): string | null => (typeof w === "string" &&
 function checkId(id: unknown): string {
   if (typeof id !== "string" || id.length === 0) throw new Error("a stored project needs a non-empty id");
   return id;
+}
+
+/** A summary entry that is a deletion mark (`remove`), not a project's summary. */
+function deletionMark(text: string | undefined): boolean {
+  if (text === undefined) return false;
+  try {
+    const s: unknown = JSON.parse(text);
+    return typeof s === "object" && s !== null && !Array.isArray(s) && typeof (s as Record<string, unknown>).deleted === "string" && !("name" in s);
+  } catch {
+    return false;
+  }
 }
 
 /** Reads a summary entry; anything odd becomes a problem on the entry, never a thrown error. */
@@ -116,9 +153,14 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
   return {
     async list() {
       const ids = (await kv.keys(SUMMARY)).map((k) => k.slice(SUMMARY.length));
-      const all = await Promise.all(ids.map(async (id) => readSummary(id, await kv.get(SUMMARY + id))));
+      const texts = await Promise.all(ids.map(async (id) => [id, await kv.get(SUMMARY + id)] as const));
+      const all = texts.filter(([, text]) => !deletionMark(text)).map(([id, text]) => readSummary(id, text)); // a deleted project is never listed (C2)
       // By order first: a project saved while the clock ran ahead must not stay newest once it is put right (B5).
       return all.sort((a, b) => b.order - a.order || b.modified.getTime() - a.modified.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    },
+    async text(id) {
+      checkId(id);
+      return (await kv.get(PROJECT + id)) ?? null;
     },
     async open(id) {
       checkId(id);
@@ -147,6 +189,8 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       await kv.update([SUMMARY + id, ORDER], ([summary, last]) => {
         // No summary at all: the browser emptied the store under this tab (site data cleared), so this tab's state is
         // the only copy left and is stored again, rather than taken for another tab's change (real-use hunt B4).
+        // A deletion mark: deleted by this site since this tab read it, never stored again under it (hunt C2).
+        if (unchangedSince !== undefined && deletionMark(summary)) throw new ProjectDeletedError();
         if (unchangedSince !== undefined && summary !== undefined) {
           const holds = readSummary(id, summary);
           if (holds.problem !== undefined || holds.modified.getTime() !== unchangedSince.getTime()) throw new ProjectChangedError();
@@ -158,10 +202,45 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
     },
     async remove(id) {
       checkId(id);
-      const [p, s] = await Promise.all([kv.get(PROJECT + id), kv.get(SUMMARY + id)]);
-      if (p === undefined && s === undefined) throw new Error(`there is no stored project "${id}" to remove`);
-      await kv.delete(PROJECT + id);
-      await kv.delete(SUMMARY + id);
+      // The check, the project's text deleted and its summary replaced by the deletion mark, as one step: a delete cut
+      // short leaves the project whole or deleted, never a listed one that can't be opened (hunt C3), and the mark is
+      // there the moment the project is gone, so another tab's save made from it is refused (C2).
+      const there = (p: string | undefined, s: string | undefined) => {
+        const project = p !== undefined;
+        const summary = s !== undefined && !deletionMark(s);
+        if (!project && !summary) throw new Error(`there is no stored project "${id}" to remove`);
+      };
+      const mark = () => {
+        const at = now();
+        return JSON.stringify({ deleted: Number.isNaN(at.getTime()) ? "" : at.toISOString() });
+      };
+      try {
+        await kv.update([PROJECT + id, SUMMARY + id], ([p, s]) => {
+          there(p, s);
+          return { [PROJECT + id]: null, [SUMMARY + id]: mark() };
+        });
+      } catch (e) {
+        if (!storageFull(e)) throw e;
+        // A full store refuses any step that writes, even this one that makes it smaller, and only a step of deletes
+        // alone goes through (Chromium, measured in the export hunt 2026-11-12, SL #643 item 2): so deleting an old
+        // project, the one way to make room from inside the app, was refused. The text and the listing are deleted
+        // together first (still whole or deleted, never half), which frees the room; then the mark is written. If
+        // even the mark is refused it is left out: no summary reads as "not there" everywhere, and only a tab that
+        // still shows the project could store it again.
+        try {
+          await kv.update([PROJECT + id, SUMMARY + id], ([p, s]) => {
+            there(p, s);
+            return { [PROJECT + id]: null, [SUMMARY + id]: null };
+          });
+        } catch (again) {
+          throw storageFull(again) ? new Error("browser storage is full: can't delete this project") : again;
+        }
+        try {
+          await kv.update([SUMMARY + id], ([s]) => (s === undefined ? { [SUMMARY + id]: mark() } : {}));
+        } catch {
+          // no room even for the mark: the project is deleted all the same
+        }
+      }
     },
   };
 }

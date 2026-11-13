@@ -12,3 +12,5 @@ export * from "./fits.ts";
 export * from "./fit-piece.ts";
 export * from "./fit-calibration.ts";
 export * from "./slice-run.ts";
+export * from "./print-log.ts";
+export * from "./print-preview.ts";

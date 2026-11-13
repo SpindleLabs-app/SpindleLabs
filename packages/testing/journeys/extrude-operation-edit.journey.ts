@@ -67,6 +67,10 @@ test("hand-worked: an extrude cutting both boxes keeps Box 2 on Edit's list thou
   assert.deepEqual(listed(a), ["Body 1:true", "Body 2:true"]);
   (a.$("#feature-edit-ok") as HTMLButtonElement).click();
   await a.settle();
+  // #521: at 20 mm the cut removes nothing from Box 2, so OK asks first; Cut anyway records it as listed.
+  assert.match(a.$("#cut-ask-words")?.textContent ?? "", /doesn't reach Body 2/);
+  (a.$("#cut-ask-go") as HTMLButtonElement).click();
+  await a.settle();
   const f = a.doc().timeline.features.find((x) => x.id === id)!;
   assert.equal(f.intent.parameters.distance, 20);
   assert.equal((f.intent.parameters.bodies as string[]).length, 2, "both bodies kept");

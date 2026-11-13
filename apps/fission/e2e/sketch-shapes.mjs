@@ -2,7 +2,8 @@
 // rows and groups; a centre-to-centre slot drawn by three clicks and
 // extruded to 4000 + 1000π mm³ worked by hand; a circumscribed octagon typed
 // 8 sides and 10 across the flats, extruded to 2000·tan 22.5° mm³; a centre
-// rectangle typed 12 × 8 round its centre; a 3-point circle; a refusal said
+// rectangle typed 12 × 8 round its centre; a 3-point circle; a refused
+// polygon keeping its typed boxes and its sides through Escape; a refusal said
 // by the pointer; and at 375 px with taps a sketch point placed, picked with
 // Select and deleted, with the whole Create menu on a 375 × 667 screen.
 // Screenshots go to E2E_SHOTS when set. Run with `npm run e2e` (after `npm run build`).
@@ -149,6 +150,52 @@ await check("a circumscribed octagon typed 8 sides and 10 across the flats: 2000
     await status(page, /^8 lines, a closed outline/, "eight sides, closed");
     // Its area with apothem a = 5: 8·a²·tan(180°/8) = 200·tan 22.5°; 10 high.
     await extrudeVolume(page, 10, 2000 * Math.tan(Math.PI / 8), "2000·tan 22.5° mm³");
+  } finally {
+    await page.context().close();
+  }
+});
+
+await check("a polygon refused as drawn already keeps its typed boxes, and Escape keeps its sides (hunt 2026-11-12)", async () => {
+  const page = await fresh();
+  const typed = (f) => page.evaluate((id) => document.querySelector(`#typed-${id}`)?.value ?? null, f);
+  const typeSizes = async () => {
+    await page.keyboard.type("8");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("20");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("0");
+  };
+  try {
+    await startSketch(page);
+    await choose(page, "polygon", "polygon");
+    await clickPlane(page, [20, 10]);
+    await until(page, () => !!document.querySelector("#typed-sides"), null, "the sides, diameter and angle boxes");
+    await hover(page, [30, 10]);
+    await typeSizes();
+    await page.keyboard.press("Enter");
+    await status(page, /^8 lines, a closed outline/, "the octagon drawn");
+    // The same centre and sizes again: the same octagon, refused, nothing placed; the boxes keep 8 and 20.
+    await clickPlane(page, [20, 10]);
+    await until(page, () => !!document.querySelector("#typed-sides"), null, "the boxes again");
+    await hover(page, [30, 10]);
+    await typeSizes();
+    await page.keyboard.press("Enter");
+    await until(page, () => /^This shape is there already/.test(document.querySelector("#sketch-grid-error").textContent), null, "the drawn-already note");
+    assert.equal(await typed("sides"), "8", "Sides kept after the refusal");
+    assert.equal(await typed("diameter"), "20", "Diameter kept after the refusal");
+    if (shots) await page.screenshot({ path: `${shots}/polygon-refused-kept-1280.png` });
+    await status(page, /^8 lines, a closed outline/, "still one octagon");
+    // The refused click kept its centre. Escape empties and leaves the boxes, a second drops the centre; the next polygon
+    // still has 8 sides (the panel: kept from one polygon to the next).
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await until(page, () => !document.querySelector("#typed-sides") || document.querySelector("#typed-sides").closest("[hidden]") !== null || document.querySelector("#typed-sides").offsetParent === null, null, "the centre dropped, the boxes gone");
+    await clickPlane(page, [-20, 10]);
+    await until(page, () => !!document.querySelector("#typed-sides"), null, "the boxes for the next polygon");
+    await hover(page, [-10, 10]);
+    await until(page, () => document.querySelector("#typed-sides").placeholder === "8", null, "8 sides shown for the next polygon");
+    await clickPlane(page, [-10, 10]);
+    await status(page, /^16 lines/, "a second octagon");
   } finally {
     await page.context().close();
   }

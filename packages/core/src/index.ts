@@ -2,8 +2,8 @@
 export { isTrap, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
 export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, MeasureFacts, MeasureGap, Measured, MeasurePick, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegion, SketchRegions, SliceProgress, SliceStage, SolidPlace, SolidProblem, SolidProblemKind, SolidReport, SolidVerdict, StlFile } from "./kernel/kernel-types.ts";
 // DRAFT model interfaces (see each file).
-export type { Material, MaterialLibrary } from "./model/material.ts";
-export { materialLibrary } from "./model/material.ts";
+export type { Material, MaterialLibrary, Mechanical, Source } from "./model/material.ts";
+export { materialLibrary, mechanicalProblems, weakerWay, printedStiffness, STARTER_MATERIALS, PSI } from "./model/material.ts";
 export type { HumanConfirmation, Job, Machine, MachineKind, MachineLibrary } from "./model/machines.ts";
 export { machineLibrary } from "./model/machines.ts";
 export type { SearchHit } from "./model/search.ts";
@@ -14,7 +14,7 @@ export type { Parameter, ParameterSweep, ProjectParameters } from "./model/param
 export { projectParameters } from "./model/parameters.ts";
 export type { DataReader, LengthUnit, Project, WorkspaceId } from "./model/project.ts";
 export { workspacesWithWork } from "./model/work.ts";
-export { emptyProject, FORMAT_VERSION, MAX_NESTING, MAX_PROJECT_BYTES, NewerFormatError, projectFromJson, projectToJson, readProject } from "./model/project.ts";
+export { emptyProject, FORMAT_VERSION, MAX_NESTING, MAX_PROJECT_BYTES, NewerFormatError, projectFromJson, projectToJson, readProject, withWorkspaceDocument } from "./model/project.ts";
 export type { FrozenCopy, LiveLink, Link, LinkSource, LinkStatus, SourceLookup } from "./model/links.ts";
 export { breakLink, fetchLinked, linkTo, resolveLink } from "./model/links.ts";
 export type { Answer, EditRoute, LinkedValue, OwnershipChange, ProposedEdit, Transfer } from "./model/ownership.ts";
@@ -23,12 +23,12 @@ export type { BodyReference, EdgeReference, FaceReference, GeometryReference, Ou
 export { resolveReference } from "./model/references.ts";
 export type { History, Selection } from "./model/session.ts";
 export { createSelection, historyNotBuilt } from "./model/session.ts";
-export { createHistory, MERGE_MS, UNDO_LIMIT, type HistoryOptions, type HistoryStepInfo, type SavedHistory } from "./model/history.ts";
+export { createHistory, MERGE_MS, UNDO_LIMIT, type HistoryOptions, type HistoryStep, type HistoryStepInfo, type SavedHistory } from "./model/history.ts";
 export type { BuildAreaShown, CornerView, ExtrudeArrow, ExtrudePointer, ExtrudeShow, Framing, MoveHandle, MoveHandlesShow, MoveKind, MovePointer, OfferedProfile, OriginPlane, OriginShown, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "./model/viewport.ts";
 export { NO_HIGHLIGHT, ORIGIN_AT_FIRST } from "./model/viewport.ts";
 export type { AnalysisOverlay, OverlayMark, OverlayPlace, OverlaySeverity, OverlayTarget } from "./model/overlay.ts";
 export { overlayPlaces, SEVERITY_COLOURS, triangleColours, worstSeverity } from "./model/overlay.ts";
-export type { Converter, DataRep, Delivery, ImageRep, ListedObject, Lister, MeshRep, OutlineRep, Plane, Producer, Producible, Representation, RepresentationKind, RepresentationOf, SolidRep } from "./model/representation.ts";
+export type { BodyFaces, Converter, DataRep, Delivery, FaceFinder, FaceFound, ImageRep, ListedObject, Lister, MeshRep, OutlineRep, Plane, Producer, Producible, Representation, RepresentationKind, RepresentationOf, SolidRep } from "./model/representation.ts";
 export type { Cost, GraphNode, Staleness } from "./model/graph.ts";
 export { DependencyGraph } from "./model/graph.ts";
 export type { DownstreamSource, DownstreamState, DownstreamSummary } from "./model/downstream.ts";
@@ -37,12 +37,12 @@ export type { ChangeCause, ChangeNote, ChangeNoteState } from "./model/change-no
 export { ChangeNotes, noteText } from "./model/change-notes.ts";
 export type { Command, CommandSpec, ParamSpec, Parsed } from "./model/commands.ts";
 export { commandListSchema, commandSchema, MAX_EXPLANATION, parseCommand, parseCommandList } from "./model/commands.ts";
-export type { Feature, Intent, Origin, ParameterValue, Provenance, RegionParameter, Timeline } from "./model/feature.ts";
-export { describeProvenance, workspaceName } from "./model/feature.ts";
+export type { Feature, Intent, Origin, ParameterValue, ProfilesParameter, Provenance, RegionParameter, Timeline } from "./model/feature.ts";
+export { describeProvenance, WORKSPACE_NAMES, workspaceName } from "./model/feature.ts";
 export type { FileFormat, FileFormatInfo, FileHead, FileImporter, FileRoute, Identified } from "./model/files.ts";
 export { claimedFormat, FILE_FORMATS, formatInfo, HEAD_BYTES, identifyFile, routeFiles } from "./model/files.ts";
 export { headBytesFor, MAX_IMAGE_BYTES, unreadableMessage } from "./model/files.ts";
-export type { SvgFile } from "./model/svg.ts";
+export type { SeenAs, SvgFile } from "./model/svg.ts";
 export { outlineToSvg, svgNumber } from "./model/svg.ts";
 export { EXACTNESS, isExact, RepresentationRegistry, XY_PLANE } from "./model/representation.ts";
 export type { Action, ActionOutcome, ActionTarget, Selected, SelectionKind } from "./model/actions.ts";

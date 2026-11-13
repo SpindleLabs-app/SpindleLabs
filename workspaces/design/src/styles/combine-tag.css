@@ -1,0 +1,4 @@
+/* Combine's Target and Tool tags beside the Bodies rows while Combine is open (SL #677 item 5, workspace.ts
+   `showCombineTags`): words, so which body is which never rests on colour alone; the target's in the accent, a tool's plain. */
+.combine-tag { flex: none; align-self: center; margin: 0 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--look-radius-s, 6px); font-size: 0.8em; line-height: 1.6; color: var(--text-b9c3d1); white-space: nowrap; }
+.combine-tag.combine-tag-target { border-color: var(--look-accent, var(--accent)); color: var(--look-accent-text, var(--accent-text)); }

@@ -95,7 +95,7 @@ for (const fault of ["open fails", "read fails", "open never answers"]) {
     const why = await p.textContent("#file-status");
     const expected = {
       "open fails": /^Projects can't be kept in this browser \(browser storage failed: can't open the project database \(UnknownError: planted open failure\)\)\. Use Save to keep your work as a file\.$/,
-      "read fails": /^Projects can't be kept in this browser \(browser storage failed: can't read ".+" \(UnknownError: planted read failure\)\)\. Use Save to keep your work as a file\.$/,
+      "read fails": /^Projects can't be kept in this browser \(browser storage failed: can't read this project \(UnknownError: planted read failure\)\)\. Use Save to keep your work as a file\.$/,
       "open never answers": /^Projects can't be kept in this browser \(browser storage didn't answer\)\. Use Save to keep your work as a file\.$/,
     }[fault];
     assert.match(why, expected);
@@ -103,7 +103,7 @@ for (const fault of ["open fails", "read fails", "open never answers"]) {
     await startWithBox(p);
     assert.match(await saved(p), /"width": ?40\b/);
     // Nothing pretends to autosave.
-    assert.equal(await p.textContent("#save-status"), "");
+    assert.equal(await p.textContent("#save-status"), "Not saved: nothing is kept in this browser. Use Save to keep your work as a file."); // said for as long as it is so (issue #627 item 4); it was empty
     // The kept project was never lost: storage well again, it opens.
     await healthyVisit(p);
     await p.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³", null, { timeout: 15_000 });
@@ -123,7 +123,7 @@ for (const fault of ["write fails", "write never answers"]) {
     await p.waitForFunction(() => document.querySelector("#volume")?.textContent === "37,500 mm³");
     if (fault === "write fails") {
       await p.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "error");
-      assert.match(await p.textContent("#save-status"), /^Not saved: browser storage failed: can't save "project\/.+" \(UnknownError: planted write failure\)$/);
+      assert.match(await p.textContent("#save-status"), /^Not saved: browser storage failed: can't save this project \(UnknownError: planted write failure\)\. Use Save to keep your work as a file\.$/); // the way out, said for every failed save (SL #643 item 6)
     } else {
       // Still waiting at 0.9 × the deadline (after the 1 s quiet moment); the words by 1.1 ×.
       await p.waitForTimeout(1000 + ANSWER_MS * 0.9);

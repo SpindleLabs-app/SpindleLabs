@@ -10,7 +10,8 @@
 // (`barEdit`). Behaviour copied from the reference app's timeline.
 
 import type { Feature } from "@fission/core";
-import { buildingItems, greyedBy, greyedItems, isDuplicateItem, isMoveItem, isSketchItem, type DesignDocument } from "./document.ts";
+import { buildingItems, duplicatedBody, greyedBy, greyedItems, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isSketchItem, type DesignDocument } from "./document.ts";
+import { canEditFeature } from "./feature-edit.ts";
 import { moveKindOf } from "./move.ts";
 import { mirrorOf } from "./duplicate.ts";
 import { deleteItem, itemName, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS } from "./timeline-edits.ts";
@@ -38,6 +39,8 @@ export interface TimelineBarItem {
   greyed: string | null;
   /** Built from something that is gone, or failed in the rebuild (`failed`): drawn red. Never when rolled back, suppressed or greyed. */
   failed: boolean;
+  /** Why it failed, in the rebuild's own words (#505); null when it didn't fail or the rebuild gave none (the data's own failures). */
+  reason: string | null;
   /** Built with a warning (26e: a kept shape, a lost plane or a lost source; the rebuild's words): drawn red with the words. */
   warning: string | null;
 }
@@ -61,7 +64,7 @@ function iconOf(f: Feature): TimelineIcon {
  * greyed instead (26e, Q3), from the data alone. `warnings` are the
  * rebuild's words for the items built with a warning.
  */
-export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map(), describe: (summary: string) => string = (s) => s): { items: TimelineBarItem[]; marker: number } {
+export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map(), describe: (summary: string) => string = (s) => s, reasons: ReadonlyMap<string, string> = new Map()): { items: TimelineBarItem[]; marker: number } {
   const { features, marker } = document.timeline;
   let at = features.length;
   if (marker === "start") at = 0;
@@ -77,6 +80,7 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
     const on = i < at && !f.suppressed;
     const by = on ? greyed.get(f) : undefined;
     const ok = on && by === undefined;
+    const isFailed = ok && (!building.has(f) || failed.has(f.id));
     return {
       id: f.id,
       label: `${i + 1}. ${itemName(f)}`,
@@ -85,7 +89,8 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
       suppressed: f.suppressed,
       rolledBack: i >= at,
       greyed: by === undefined ? null : (label.get(by) ?? by),
-      failed: ok && (!building.has(f) || failed.has(f.id)),
+      failed: isFailed,
+      reason: (isFailed && reasons.get(f.id)) || null,
       warning: (ok && warnings.get(f.id)) || null,
     };
   });
@@ -237,8 +242,27 @@ function sketchOff(doc: DesignDocument, at: number, editing: string | null): str
 }
 
 /**
+ * Why Edit feature is off for `item`, in words true of what it is; null
+ * when it opens an editor (workspace.ts `openEdit`: a solid's sizes, a
+ * Move's, Rotate's or Scale's panel, a Combine's). A Copy or a Mirror has
+ * none (hunt 11-11, E2: its entry was on, and said "Copy 1 is a sketch"):
+ * it follows the body it was made from, named as the item names it now. A
+ * sketch is opened with Edit Sketch instead.
+ */
+export function editOff(item: Feature): string | null {
+  if (isMoveItem(item) || isCombineItem(item) || canEditFeature(item)) return null;
+  const name = itemName(item);
+  if (isSketchItem(item)) return `${name} is a sketch: open it with Edit Sketch`;
+  if (!isDuplicateItem(item)) return `${name} has nothing to edit`;
+  const from = item.provenance.from[0]?.label;
+  const body = from === undefined ? "a body" : isPiece(duplicatedBody(item)) ? `a piece of ${from}` : from;
+  return `${name} is a ${mirrorOf(item) === undefined ? "copy" : "mirror image"} of ${body}: it follows that body and has nothing of its own to edit`;
+}
+
+/**
  * Item `id`'s menu (a right-click on it, or its ⋯ on a phone): Edit
- * feature (a solid feature's sizes, step 25a2) or Edit Sketch (a sketch
+ * feature (a solid feature's sizes, step 25a2; off with why for an item
+ * with nothing to edit, `editOff`) or Edit Sketch (a sketch
  * opened again, step 25a3), Move the marker here, Suppress or Unsuppress,
  * Rename (U0e2) and Delete. Edit Sketch is off for the sketch already open, a suppressed
  * one and one after the marker (`sketchOff`). Moving the marker is off
@@ -252,7 +276,7 @@ export function itemMenu(doc: DesignDocument, id: string, editing: string | null
   if (at < 0) throw new Error(`there is no item ${id} in the timeline`);
   const item = doc.timeline.features[at];
   const busy = editing === id ? editedWords(itemName(item)) : null;
-  const edit: MenuEntry = isSketchItem(item) ? { action: "edit-sketch", label: "Edit Sketch", off: sketchOff(doc, at, editing) } : { action: "edit", label: "Edit feature", off: null };
+  const edit: MenuEntry = isSketchItem(item) ? { action: "edit-sketch", label: "Edit Sketch", off: sketchOff(doc, at, editing) } : { action: "edit", label: "Edit feature", off: editOff(item) };
   return [
     edit,
     { action: "marker", label: "Move the marker here", off: marker === at + 1 ? "The marker is already here" : rollsBack(doc, editing, at + 1) },
@@ -550,6 +574,8 @@ export interface BarWiring {
   onRetry?(id: string): void;
   /** 26e: the rebuild's warnings by item (a kept shape, a lost plane, a lost source): the item red, the words in its title. */
   warnings?: ReadonlyMap<string, string>;
+  /** #505: why each failed item failed, in the rebuild's words, by item: in its title and card. */
+  reasons?: ReadonlyMap<string, string>;
   picked?: string | null;
   /** The sketch being edited (24f5): a playback button that would put it after the marker is off and says why. */
   editing?: string | null;
@@ -574,8 +600,16 @@ export interface BarWiring {
 /** How the last press on each bar's items came (a finger shows the picked item's card, having no hover). */
 const pickedBy = new WeakMap<HTMLElement, string>();
 
-/** Whether the item cards are off: the browser checks switch them off with the app's tooltips (main.ts), so a hover covers nothing they probe. */
-const cardsOff = (page: Document) => (page.defaultView as unknown as { __noTooltips?: boolean } | null)?.__noTooltips === true;
+/** The app's build flag (apps/fission vite.config.ts): false in the live build, true in the test build; unset when these files run unbundled (the unit tests). */
+declare const __TEST_HOOKS__: boolean | undefined;
+const TEST_BUILD = typeof __TEST_HOOKS__ === "undefined" || __TEST_HOOKS__;
+
+/**
+ * Whether the item cards are off: the browser checks switch them off with the app's
+ * tooltips (main.ts), so a hover covers nothing they probe. Only the test build reads
+ * the switch; the live build drops it with the rest of the test hooks (audit S12).
+ */
+const cardsOff = (page: Document) => TEST_BUILD && (page.defaultView as unknown as { __noTooltips?: boolean } | null)?.__noTooltips === true;
 
 /**
  * Fills the timeline slot: an ordered list of the items, with the marker
@@ -585,7 +619,7 @@ const cardsOff = (page: Document) => (page.defaultView as unknown as { __noToolt
  */
 export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: BarWiring = {}) {
   const document = slot.ownerDocument;
-  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings, wiring.describe);
+  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings, wiring.describe, wiring.reasons);
   // The card of an item on the old bar goes with it; one picked by a finger shows again below.
   hideCard(document);
   const card = (li: HTMLElement, i: number) => {
@@ -629,7 +663,7 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       (item.suppressed ? " (suppressed)" : "") +
       (item.greyed !== null ? ` (greyed: ${item.greyed} is suppressed)` : "") +
       (item.rolledBack ? " (after the marker)" : "") +
-      (item.failed ? (wiring.slow?.has(item.id) ? " (failed: took too long)" : " (failed)") : "") +
+      (item.failed ? (wiring.slow?.has(item.id) ? " (failed: took too long)" : item.reason !== null ? ` (failed: ${item.reason})` : " (failed)") : "") +
       (item.warning !== null ? ` (warning: ${item.warning})` : "");
     li.title = words;
     // Its card (timeline-card.ts) says all this and shows its shape, so the app's own hover box holds the title back and shows nothing.

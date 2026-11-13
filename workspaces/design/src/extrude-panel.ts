@@ -4,7 +4,9 @@
 // selected ×"); the distance, typeable and kept in step with the arrow
 // dragged in the view, negative going the other way from the sketch's
 // plane; Flip, which turns the distance's sign (26c: the start still on
-// the plane); whether the profile makes a closed outline or the kernel's
+// the plane); Symmetric (step 53a1), half the distance each way from the
+// plane, the distance the whole thickness, Flip off meanwhile; whether the
+// profile makes a closed outline or the kernel's
 // reason it doesn't; and OK or Cancel. OK stays off until the kernel says
 // the outline is closed. The workspace drives it; the panel only shows what
 // it is given and reports what was typed and clicked.
@@ -24,6 +26,8 @@ export interface ExtrudePanelEvents {
   distance(typed: string): void;
   /** Flip: the distance's sign turned (the box already shows it). */
   flip(typed: string): void;
+  /** Symmetric pressed (step 53a1): `on` whether it now is, with the distance as typed (made positive when it turned on). */
+  symmetric?(on: boolean, typed: string): void;
   /** ✕: no profile chosen. */
   clear(): void;
   /** OK (or Enter in the distance box), with the distance as typed. */
@@ -33,6 +37,8 @@ export interface ExtrudePanelEvents {
   operation?(operation: ExtrudeOperation): void;
   /** A body in the list ticked or unticked. */
   tick?(body: string, on: boolean): void;
+  /** Pick several turned on or off (a phone's Ctrl: each tap adds or takes away a profile). */
+  several?(on: boolean): void;
 }
 
 export interface ExtrudePanel {
@@ -58,13 +64,35 @@ export interface ExtrudePanel {
   readonly ready: boolean;
   /** The distance as typed now. */
   readonly typed: string;
+  /** Whether Symmetric is pressed (53a1): half the distance each way from the sketch's plane. */
+  readonly symmetric: boolean;
 }
+
+/** Symmetric's tooltip (53a1): what it makes, and that the distance is the whole thickness. */
+export const SYMMETRIC_TITLE = "Extrude half the distance each way from the sketch's plane: the distance is the whole thickness, with the sketch in its middle";
 
 /** What the panel says an extrude makes with New body chosen (or no Operation row). */
 export const NEW_BODY_NOTE = "The extrude is a new body, put in the timeline at the marker.";
 
+/** Pick several's tooltip: what it does, and the keys that do the same with a mouse. */
+export const SEVERAL_TITLE = "Pick several profiles: each click or tap adds a profile, or takes one away. With a mouse, hold Ctrl (⌘ on a Mac) or Shift while clicking to do the same.";
+
+/** The words beside Pick several: the mouse's way of doing the same (Fusion's "Hold Ctrl to modify selection"). */
+export const SEVERAL_HINT = "or hold Ctrl (⌘) or Shift as you click";
+
+/** The same on a touch screen, which has no Ctrl or Shift: tap each profile. */
+export const SEVERAL_HINT_TOUCH = "then tap each profile";
+
+/** Flip's tooltip. */
+const FLIP_TITLE = "Extrude the other way from the sketch's plane (the distance turns negative); the body still starts on it";
+
 /** What the profile row says while none is chosen. */
 export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
+
+/** Whether a typed distance can go straight into the box as Extrude opens: a mouse or trackpad (it hovers, it points finely), not a finger. */
+export function typesStraightAway(document: Document): boolean {
+  return document.defaultView?.matchMedia?.("(hover: hover) and (pointer: fine)").matches ?? false;
+}
 
 export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): ExtrudePanel {
   const document = slot.ownerDocument;
@@ -82,7 +110,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     return e;
   };
   /** The distance is millimetres everywhere outside the box (`field.value`); the box shows the unit chosen in Settings (U2c3). */
-  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; field: SizeBox; profile: HTMLElement; clear: HTMLButtonElement; onUnit: () => boolean; note: HTMLElement; select: HTMLSelectElement | null; bodies: HTMLElement } | null = null;
+  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; field: SizeBox; profile: HTMLElement; clear: HTMLButtonElement; onUnit: () => boolean; note: HTMLElement; select: HTMLSelectElement | null; bodies: HTMLElement; both: HTMLButtonElement } | null = null;
   // OK needs both: the kernel's closed outline, and (Join, Cut, Intersect) a body ticked.
   let closed = false;
   let bodiesReady = true;
@@ -98,8 +126,23 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       clear.title = "Clear the profile: click another closed sketch in the view";
       clear.setAttribute("aria-label", "Clear the profile");
       clear.addEventListener("click", () => on.clear());
+      // Pick several (version 18): Ctrl, Cmd or Shift with a click does the same; a phone has only this.
+      const several = el("button", "extrude-several", "extrude-several-pick", "Pick several");
+      several.type = "button";
+      several.title = SEVERAL_TITLE;
+      several.setAttribute("aria-pressed", "false");
+      several.addEventListener("click", () => {
+        const pressed = several.getAttribute("aria-pressed") !== "true";
+        several.setAttribute("aria-pressed", String(pressed));
+        on.several?.(pressed);
+      });
       const profileRow = el("div", "", "extrude-row extrude-profile-row");
       profileRow.append(el("span", "", "extrude-label", "Profile"), profile, clear);
+      const severalRow = el("div", "", "extrude-several");
+      // A mouse reads the keys; a touch screen, with neither, reads to tap (extrude-several.css shows one of them).
+      const hint = el("span", "", "extrude-several-hint");
+      hint.append(el("span", "", "extrude-several-keys", SEVERAL_HINT), el("span", "", "extrude-several-tap", SEVERAL_HINT_TOUCH));
+      severalRow.append(several, hint);
       const input = el("input", "extrude-distance");
       Object.assign(input, { type: "text", inputMode: "decimal", autocomplete: "off", spellcheck: false }); // sizeBox reads units and commas (issue #518)
       const field = sizeBox(input, () => currentUnit(document));
@@ -112,16 +155,30 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       });
       const flip = el("button", "extrude-flip", "extrude-flip", "Flip");
       flip.type = "button";
-      flip.title = "Extrude the other way from the sketch's plane (the distance turns negative); the body still starts on it";
+      flip.title = FLIP_TITLE;
       flip.addEventListener("click", () => {
         const n = Number(field.value);
         if (field.value.trim() === "" || !Number.isFinite(n) || n === 0) return;
         field.value = String(-n);
         on.flip(field.value);
       });
+      // Symmetric (53a1): a toggle, as Fusion's Direction is a choice; Flip has nothing to turn while it is on.
+      const both = el("button", "extrude-symmetric", "extrude-symmetric", "Symmetric");
+      both.type = "button";
+      both.title = SYMMETRIC_TITLE;
+      both.setAttribute("aria-pressed", "false");
+      both.addEventListener("click", () => {
+        const pressed = both.getAttribute("aria-pressed") !== "true";
+        both.setAttribute("aria-pressed", String(pressed));
+        flip.disabled = pressed;
+        flip.title = pressed ? "A symmetric extrude goes both ways from the sketch's plane: there is nothing to flip" : FLIP_TITLE;
+        const n = Number(field.value);
+        if (pressed && field.value.trim() !== "" && Number.isFinite(n) && n < 0) field.value = String(-n);
+        on.symmetric?.(pressed, field.value);
+      });
       const distanceRow = el("label", "", "extrude-row");
       const unitName = el("span", "", "unit-name", currentUnit(document));
-      distanceRow.append(el("span", "", "extrude-label", "Distance"), input, " ", unitName, " ", flip);
+      distanceRow.append(el("span", "", "extrude-label", "Distance"), input, " ", unitName, " ", flip, " ", both);
       const status = el("p", "extrude-status", "extrude-status");
       const error = el("p", "extrude-error", "bad");
       error.hidden = true;
@@ -165,7 +222,8 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
         el("h2", "", "", "Extrude"),
         profileRow,
         distanceRow,
-        el("p", "", "extrude-note", "Drag the arrow in the view or type the distance; a negative one goes the other way."),
+        severalRow,
+        el("p", "", "extrude-note", "Drag the arrow in the view or type the distance; a negative one goes the other way. Symmetric goes half each way."),
         ...rows,
         status,
         error,
@@ -182,10 +240,17 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
         input.setAttribute("aria-label", `Distance in ${currentUnit(document)}`);
         return true;
       };
-      parts = { status, error, ok, input, field, profile, clear, onUnit, note, select, bodies }; // `onUnit` is held here: the page's listener holds it only weakly
+      parts = { status, error, ok, input, field, profile, clear, onUnit, note, select, bodies, both }; // `onUnit` is held here: the page's listener holds it only weakly
       followUnit(document, onUnit);
       this.showProfile(chosen);
       box.hidden = false;
+      // With a mouse the cursor waits in the Distance box, its number selected, so typing a distance and Enter make the
+      // extrude with no click on the box first (UI audit 2026-11-12, Fusion's feel). Never on a touch screen: its keyboard
+      // would cover the view the moment Extrude opens (Ben's phone rule, 10-28).
+      if (typesStraightAway(document)) {
+        input.focus({ preventScroll: true });
+        input.select();
+      }
     },
     showProfile(chosen) {
       if (!parts) return;
@@ -247,6 +312,9 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     },
     get typed() {
       return parts?.field.value ?? "";
+    },
+    get symmetric() {
+      return parts?.both.getAttribute("aria-pressed") === "true";
     },
   };
 }

@@ -66,8 +66,8 @@ function fakeService() {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    // My designs' and settings' own requests (e2e/my-designs.mjs and e2e/settings-follow.mjs check them) are kept apart, so these checks see only the account's.
-    const designsCall = /^\/rest\/v1\/rpc\/(my_designs|save_design|get_design|delete_design|my_design_space|my_settings|save_settings|set_keep_settings)$/.test(url.pathname) || url.searchParams.get("select") === "keep_designs";
+    // My designs', settings' and the print log's own requests (e2e/my-designs.mjs, e2e/settings-follow.mjs and e2e/print-log-sync.mjs check them) are kept apart, so these checks see only the account's.
+    const designsCall = /^\/rest\/v1\/rpc\/(my_designs|save_design|get_design|delete_design|my_design_space|my_settings|save_settings|set_keep_settings|my_print_log|save_prints|delete_prints|set_keep_print_log)$/.test(url.pathname) || url.searchParams.get("select") === "keep_designs";
     (designsCall ? svc.designCalls : svc.calls).push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") || url.pathname.startsWith("/rest/") ? url.search : ""}`);
     if (url.pathname === "/auth/v1/authorize") {
       const back = new URL(url.searchParams.get("redirect_to"));
@@ -349,7 +349,8 @@ try {
   });
 
   // Regression: at 761 to 899 px Sign in pushed "Saving…" under DESIGN ▾ (CI's phone-short.mjs at 844 × 390).
-  for (const width of [761, 844, 900, 999, 1000, 1100]) {
+  // 1059 and 1060: either side of the words coming back (account.css), with the wider Lab names (DESIGNLAB ▾ ran into "Saving…" at 1000 in CI's fonts).
+  for (const width of [761, 844, 900, 999, 1000, 1059, 1060, 1100]) {
     await check(`switch on, ${width} px: signed out and signed in with a long name, the top bar is one row with nothing overlapping`, async () => {
       const { page, svc, context } = await fresh(ON_URL, width, width < 900);
       svc.fullName = "Maximilianus Wolfeschlegel";

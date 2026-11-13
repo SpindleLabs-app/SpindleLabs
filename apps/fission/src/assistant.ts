@@ -28,6 +28,7 @@ import {
   vendorFromKey,
   DEFAULT_MODELS,
   IN_BROWSER_MODEL,
+  inBrowserDownloadMB,
   inBrowserDownloadSize,
   apiOrigin,
   askBeforeSending,
@@ -402,7 +403,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
             ? "Give the provider's https address first."
             : keys.get(origin)
               ? `A key is saved for ${origin}, in this browser only.`
-              : `No key saved for ${origin}. Saving one asks ${origin} which models it can use; only the key is sent, nothing from your project.`;
+              : `No key saved for ${origin}. Pasting or saving one asks ${origin} which models it can use; only the key is sent, nothing from your project.`;
     const info = s && PROVIDERS.find((p) => p.kind === s.kind)!;
     // Where requests go is the settings' answer, not the kind's: Ollama at another computer's address sends them there (audit S3).
     const away = s !== null && sendsAway(s);
@@ -423,7 +424,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here || cut;
     $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here || cut;
     $("ai-ask-note").textContent = !here
-      ? "The assistant can change Design's part; other workspaces get their AI features when they are built."
+      ? "The assistant can change DesignLab's part; other workspaces get their AI features when they are built."
       : !s
         ? "Choose a provider in Settings below to ask."
         : cut
@@ -435,7 +436,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     const title = workspaceTitle;
     $("ai-features").innerHTML = `${features.length ? `<h3>Planned in ${escape(title)}</h3>${list(features)}` : ""}<h3>Planned across the project</h3>${list(AI_FEATURES.suite)}`;
   }
-  let workspaceTitle = "Design";
+  let workspaceTitle = "DesignLab";
   addEventListener("online", () => render());
   addEventListener("offline", () => render());
 
@@ -605,17 +606,23 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
   }
 
   /**
-   * The in-browser model's download, confirmed once with its size. The size
-   * comes from the site that keeps the model's files, so even that request
-   * waits until the user has said yes to it (audit S13/L7): nothing leaves
-   * the browser before a choice.
+   * The in-browser model's download, confirmed once with its size, and
+   * nothing leaves the browser before a choice (audit S13/L7). The default
+   * model's size is known ahead (`inBrowserDownloadMB`), so its site hears
+   * nothing until the yes; another model's size comes from the site that
+   * keeps its files, and even that request waits for a yes of its own.
    */
   async function confirmDownload(s: ProviderSettings): Promise<boolean> {
     const id = s.model ?? IN_BROWSER_MODEL;
     if (store.get(`fission.ai.downloaded:${id}`) === "1") return true;
-    if (!window.confirm(`${id} runs in your browser after a one-time download from huggingface.co. To show you its size first, SpindleLabs asks huggingface.co for the model's file list (only that address is requested, nothing of yours is sent). Ask now?`)) return false;
-    const bytes = await inBrowserDownloadSize(id);
-    const ok = window.confirm(`${id} is downloaded once to run in your browser: ${(bytes / 1e6).toFixed(0)} MB. Download it now?`);
+    const known = inBrowserDownloadMB(id);
+    let ok: boolean;
+    if (known !== undefined) ok = window.confirm(`${id} is downloaded once from huggingface.co to run in your browser: about ${known} MB. Download it now?`);
+    else {
+      if (!window.confirm(`${id} runs in your browser after a one-time download from huggingface.co. To show you its size first, SpindleLabs asks huggingface.co for the model's file list (only that address is requested, nothing of yours is sent). Ask now?`)) return false;
+      const bytes = await inBrowserDownloadSize(id);
+      ok = window.confirm(`${id} is downloaded once to run in your browser: ${(bytes / 1e6).toFixed(0)} MB. Download it now?`);
+    }
     if (ok) store.set(`fission.ai.downloaded:${id}`, "1");
     return ok;
   }
@@ -668,7 +675,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);
       const design = host.design();
-      if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
+      if (!design?.run) return say("DesignLab isn't open, so nothing was changed.", true);
       // What only the kernel can judge (an extrude's outline) is asked before the preview, so a change that can't be made is never offered (AI7c).
       const problem = await design.check?.(answer.commands);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);

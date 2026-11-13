@@ -195,9 +195,10 @@ async function clickModel(page, [x, y], tap) {
 
 /**
  * Sketches the layout's 10 × 10 square as four lines and extrudes it: Sketch 1 (sketch-2) and Extrude 1
- * (feature-11) on the starting box's design. `live`: click through the app's camera (clickModel), not clickPlane's.
- * (Four lines, not the Rectangle tool, whose Horizontal and Vertical take four ids more since the solver bug hunt,
- * 2026-11-06: the timeline's ids below stay as they were; sketch-tool.mjs checks the Rectangle tool.)
+ * (feature-15) on the starting box's design. `live`: click through the app's camera (clickModel), not clickPlane's.
+ * The ids: points 3 and 4, line-5 and its Horizontal constraint-6 (the Line tool keeps a level line level, SL #630,
+ * as the Rectangle tool does), point-7, line-8, Vertical constraint-9, point-10, line-11, constraint-12, line-13 back
+ * to the first corner and its Vertical constraint-14; Extrude 1 is feature-15.
  */
 async function addSquare(page, tap, layout, live = false) {
   await press(page, "#create-sketch", tap);
@@ -298,11 +299,11 @@ try {
       const redo = async () => press(page, "#redo", tap);
 
       // Everything built: the marker after Extrude 1; both bodies drawn.
-      const all = { bar: ["feature-1", "sketch-2", "feature-11", "|"], drawn: { box: true, square: true }, volume: V, red: [] };
+      const all = { bar: ["feature-1", "sketch-2", "feature-15", "|"], drawn: { box: true, square: true }, volume: V, red: [] };
       assert.deepEqual(await state(), all);
 
       // 1. Suppress Extrude 1 from the bar: the square goes, the box stays and is the part (24,000 mm³).
-      await barMenu("feature-11");
+      await barMenu("feature-15");
       assert.deepEqual(
         await page.$$eval("#row-menu button", (bs) => bs.map((b) => [b.id, b.disabled, b.getAttribute("aria-label")])),
         [
@@ -320,7 +321,7 @@ try {
       await choose("suppress");
       await undoIs(page, "Suppress Extrude 1");
       await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box is the part");
-      const suppressed = { bar: ["feature-1", "sketch-2", "feature-11 suppressed", "|"], drawn: { box: true, square: false }, volume: "24,000 mm³", red: [] };
+      const suppressed = { bar: ["feature-1", "sketch-2", "feature-15 suppressed", "|"], drawn: { box: true, square: false }, volume: "24,000 mm³", red: [] };
       assert.deepEqual(await state(), suppressed);
       // One undo step: Undo brings it back, Redo takes it again.
       await undo();
@@ -331,7 +332,7 @@ try {
       await undoIs(page, "Suppress Extrude 1");
       assert.deepEqual(await state(), suppressed);
       // Unsuppress from the browser's Timeline row.
-      await rowMenu("feature-11");
+      await rowMenu("feature-15");
       assert.equal(await page.textContent("#row-menu-unsuppress"), "Unsuppress");
       await choose("unsuppress");
       await undoIs(page, "Unsuppress Extrude 1");
@@ -343,7 +344,7 @@ try {
       await choose("marker");
       await undoIs(page, "Move the rollback marker");
       await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "rolled back");
-      const rolled = { bar: ["feature-1", "sketch-2", "|", "feature-11 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³", red: [] };
+      const rolled = { bar: ["feature-1", "sketch-2", "|", "feature-15 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³", red: [] };
       assert.deepEqual(await state(), rolled);
       await undo();
       await undoIs(page, "Unsuppress Extrude 1");
@@ -353,7 +354,7 @@ try {
       await undoIs(page, "Move the rollback marker");
       assert.deepEqual(await state(), rolled);
       // And back to the end from Extrude 1's row in the browser.
-      await rowMenu("feature-11");
+      await rowMenu("feature-15");
       await choose("marker");
       await until(page, (v) => document.querySelector("#volume")?.textContent === v, V, "everything built");
       assert.deepEqual(await state(), all);
@@ -365,10 +366,10 @@ try {
       await undoIs(page, "Suppress Sketch 1");
       await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box is the part");
       await browserOpen();
-      const greying = { bar: ["feature-1", "sketch-2 suppressed", "feature-11 greyed", "|"], drawn: { box: true, square: false }, volume: "24,000 mm³", red: [] };
+      const greying = { bar: ["feature-1", "sketch-2 suppressed", "feature-15 greyed", "|"], drawn: { box: true, square: false }, volume: "24,000 mm³", red: [] };
       assert.deepEqual(await state(), greying);
-      assert.equal(await page.getAttribute('#timeline [data-item="feature-11"]', "title"), `3. Extrude 1\nExtrude Sketch 1 by ${layout.distance} mm (greyed: Sketch 1 is suppressed)`);
-      assert.equal(await page.getAttribute('#browser [data-node="timeline"] .tree-row[data-node="feature-11"]', "title"), "Greyed: Sketch 1 is suppressed");
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-15"]', "title"), `3. Extrude 1\nExtrude Sketch 1 by ${layout.distance} mm (greyed: Sketch 1 is suppressed)`);
+      assert.equal(await page.getAttribute('#browser [data-node="timeline"] .tree-row[data-node="feature-15"]', "title"), "Greyed: Sketch 1 is suppressed");
       assert.equal(await page.isVisible("#kept-warning"), false, "no warning");
       if (shots) await page.screenshot({ path: `${shots}/greyed-${width}.png` });
       await browserClosed();
@@ -381,15 +382,15 @@ try {
       await choose("suppress");
       await undoIs(page, "Suppress Box 1");
       await until(page, (v) => document.querySelector("#volume")?.textContent === v, V, "the square is the part");
-      const squareOnly = { bar: ["feature-1 suppressed", "sketch-2", "feature-11", "|"], drawn: { box: false, square: true }, volume: V, red: [] };
+      const squareOnly = { bar: ["feature-1 suppressed", "sketch-2", "feature-15", "|"], drawn: { box: false, square: true }, volume: V, red: [] };
       assert.deepEqual(await state(), squareOnly);
-      await barMenu("feature-11");
+      await barMenu("feature-15");
       assert.equal(await page.isDisabled("#row-menu-suppress"), false);
       assert.equal(await page.locator("#row-menu-suppress .delete-ask-off").count(), 0, "no reason it is off");
       await choose("suppress");
       await undoIs(page, "Suppress Extrude 1");
       await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, "nothing on screen");
-      const noBody = { bar: ["feature-1 suppressed", "sketch-2", "feature-11 suppressed", "|"], drawn: { box: false, square: false }, volume: "—", red: [] };
+      const noBody = { bar: ["feature-1 suppressed", "sketch-2", "feature-15 suppressed", "|"], drawn: { box: false, square: false }, volume: "—", red: [] };
       assert.deepEqual(await state(), noBody);
       // The panel says there is no body, how to add one, and shows no error; no shape is chosen.
       assert.equal(await page.textContent("#intent"), "No body: nothing in the timeline builds");
@@ -413,12 +414,12 @@ try {
       await undoIs(page, "Suppress Extrude 1");
       await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, "nothing on screen again");
       assert.deepEqual(await state(), noBody);
-      // A width typed adds a new box at the marker (the end): feature-12, 45 × 30 × 20 = 27,000 mm³, drawn where the box was.
+      // A width typed adds a new box at the marker (the end): feature-16, 45 × 30 × 20 = 27,000 mm³, drawn where the box was.
       await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
       await page.fill("#width", "45");
       await until(page, () => document.querySelector("#volume")?.textContent === "27,000 mm³", null, "the new box");
       await undoIs(page, "Change width");
-      assert.deepEqual(await state(), { bar: ["feature-1 suppressed", "sketch-2", "feature-11 suppressed", "feature-12", "|"], drawn: { box: true, square: false }, volume: "27,000 mm³", red: [] });
+      assert.deepEqual(await state(), { bar: ["feature-1 suppressed", "sketch-2", "feature-15 suppressed", "feature-16", "|"], drawn: { box: true, square: false }, volume: "27,000 mm³", red: [] });
       // The new box is framed (a new shape), so the camera stays there once it is undone: the box's top may now
       // sit over a grid line, not the plain background, so its pixel is checked to have left the box's colour.
       const [, boxColour] = await colours(page, [BOX_TOP]);
@@ -437,7 +438,7 @@ try {
       assert.deepEqual(await state(), all);
 
       // 5. Delete Extrude 1 from the bar: nothing is built from it, so it goes at once, one undo step.
-      await barMenu("feature-11");
+      await barMenu("feature-15");
       await choose("delete");
       await undoIs(page, "Delete Extrude 1");
       await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "deleted");
@@ -460,7 +461,7 @@ try {
       assert.equal(await menuOpen(), false);
 
       // 7. Every item deleted, last first (24f4): an empty timeline and an empty view; three Undos give everything back.
-      for (const [id, step] of [["feature-11", "Delete Extrude 1"], ["sketch-2", "Delete Sketch 1"], ["feature-1", "Delete Box 1"]]) {
+      for (const [id, step] of [["feature-15", "Delete Extrude 1"], ["sketch-2", "Delete Sketch 1"], ["feature-1", "Delete Box 1"]]) {
         await barMenu(id);
         await choose("delete");
         await undoIs(page, step);
@@ -490,10 +491,11 @@ try {
       // Since step 89 the undo steps are kept across a reload: the delete is still the step Undo takes back.
       assert.match(await undoTitle(page), /^Undo Delete Box 1 \(/, "a reload keeps the history (step 89)");
       const fits = Number(await page.evaluate(() => document.querySelector("#viewport").dataset.fits ?? 0));
-      // Ids go on from the saved counter (12): Sketch 1 is sketch-12, its four corners and four lines 13 to 20, Extrude 1 feature-21.
+      // Ids go on from the saved counter (16): Sketch 1 is sketch-16; its four corners, four lines and four constraints
+      // (each line drawn level or upright, SL #630) are 17 to 28; Extrude 1 is feature-29.
       await addSquare(page, tap, layout, true);
       await undoIs(page, "Extrude Sketch 1");
-      assert.deepEqual(await bar(page), ["sketch-12", "feature-21", "|"]);
+      assert.deepEqual(await bar(page), ["sketch-16", "feature-29", "|"]);
       assert.equal(await page.textContent("#volume"), V);
       assert.deepEqual(await redRows(page), []);
       // Framed alone, so the box's old spot may be off the canvas: only the square's top is probed.
@@ -503,7 +505,7 @@ try {
       assert.ok(Number(await page.evaluate(() => document.querySelector("#viewport").dataset.fits)) > fits, "the new body is framed");
       await undo();
       await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, "the extrude undone");
-      assert.deepEqual(await bar(page), ["sketch-12", "|"]);
+      assert.deepEqual(await bar(page), ["sketch-16", "|"]);
       assert.equal(await page.textContent("#volume"), "—");
 
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
@@ -533,10 +535,10 @@ try {
       // The states the marker gives, worked out from the timeline Box, Sketch 1, Extrude 1: after Extrude 1 (place 3)
       // everything is built; after Sketch 1 (2) the square is not; after the box (1) neither is the sketch; at the start
       // (0) nothing is built, the view empty. Rolled-back items are greyed in the bar and their browser rows.
-      const all = { bar: ["feature-1", "sketch-2", "feature-11", "|"], drawn: { box: true, square: true }, volume: V, grey: [] };
-      const atSketch = { bar: ["feature-1", "sketch-2", "|", "feature-11 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³", grey: ["feature-11"] };
-      const atBox = { bar: ["feature-1", "|", "sketch-2 rolled back", "feature-11 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³", grey: ["sketch-2", "feature-11"] };
-      const atStart = { bar: ["|", "feature-1 rolled back", "sketch-2 rolled back", "feature-11 rolled back"], drawn: { box: false, square: false }, volume: "—", grey: ["feature-1", "sketch-2", "feature-11"] };
+      const all = { bar: ["feature-1", "sketch-2", "feature-15", "|"], drawn: { box: true, square: true }, volume: V, grey: [] };
+      const atSketch = { bar: ["feature-1", "sketch-2", "|", "feature-15 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³", grey: ["feature-15"] };
+      const atBox = { bar: ["feature-1", "|", "sketch-2 rolled back", "feature-15 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³", grey: ["sketch-2", "feature-15"] };
+      const atStart = { bar: ["|", "feature-1 rolled back", "sketch-2 rolled back", "feature-15 rolled back"], drawn: { box: false, square: false }, volume: "—", grey: ["feature-1", "sketch-2", "feature-15"] };
       assert.deepEqual(await state(), all);
       assert.deepEqual(await buttons(), [["start", null], ["back", null], ["forward", "true"], ["end", "true"]]);
       assert.equal(await page.getAttribute('#timeline [data-button="end"]', "title"), "Go to the end: The marker is already at the end");
@@ -548,7 +550,7 @@ try {
       assert.deepEqual(await state(), atSketch);
       assert.deepEqual(await buttons(), [["start", null], ["back", null], ["forward", null], ["end", null]]);
       // The browser's row greyed (24f5), as its item on the bar is.
-      assert.equal(await page.$eval('#browser [data-node="timeline"] .tree-row[data-node="feature-11"]', (r) => getComputedStyle(r).opacity), "0.45");
+      assert.equal(await page.$eval('#browser [data-node="timeline"] .tree-row[data-node="feature-15"]', (r) => getComputedStyle(r).opacity), "0.45");
       assert.equal(await page.$eval('#browser [data-node="timeline"] .tree-row[data-node="sketch-2"]', (r) => getComputedStyle(r).opacity), "1");
       await undo();
       await undoIs(page, "Extrude Sketch 1");
@@ -622,7 +624,7 @@ try {
       await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, "dragged to the start");
       assert.deepEqual(await state(), atStart);
       // Dragged past the last item's middle: the end.
-      const b3 = await boxOf("feature-11");
+      const b3 = await boxOf("feature-15");
       await drag(b3.x + b3.width * 0.75);
       await settled(V);
       assert.deepEqual(await state(), all);
@@ -669,7 +671,7 @@ try {
           assert.equal(await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.className, [x, y]), "timeline-bar", "a gap is the row, not an item");
           await page.touchscreen.tap(x, y);
         };
-        await tapGap(await gapX("sketch-2", "feature-11"));
+        await tapGap(await gapX("sketch-2", "feature-15"));
         await undoIs(page, MOVE);
         await settled("24,000 mm³");
         assert.deepEqual(await state(), atSketch);
@@ -687,8 +689,8 @@ try {
         // Past the last item's 40 px tap area (8 px past its edge, PHONE_TAP_PAD), 16 px past its edge in the row's
         // 24 px end: the end. The bar scrolled to its end first, so the last item is on the screen.
         await page.$eval("#timeline .timeline-bar", (l) => (l.scrollLeft = l.scrollWidth));
-        const b = await boxOf("feature-11");
-        assert.equal(await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest("[data-item]")?.dataset.item, [b.x + b.width + 4, b.y + b.height / 2]), "feature-11", "4 px past the last item is still its tap area");
+        const b = await boxOf("feature-15");
+        assert.equal(await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest("[data-item]")?.dataset.item, [b.x + b.width + 4, b.y + b.height / 2]), "feature-15", "4 px past the last item is still its tap area");
         await tapGap(b.x + b.width + 16);
         await settled(V);
         assert.deepEqual((await state()).bar, all.bar);
@@ -727,7 +729,7 @@ try {
       await until(page, (w) => document.querySelector("#error")?.textContent === w, words, "the refusal shown");
       assert.equal(await undoTitle(page), step, "nothing recorded");
       assert.equal(await page.evaluate(() => document.querySelector("#viewport").dataset.sketching), "true", "still sketching");
-      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-11", "sketch-12", "|"], "the marker drawn back where it is");
+      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-15", "sketch-16", "|"], "the marker drawn back where it is");
 
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
       await page.context().close();
@@ -780,12 +782,12 @@ try {
       const before = (id) => async () => ((b) => b.x + b.width * 0.25)(await boxOf(id));
 
       // Box, Sketch 1, Extrude 1 (built from Sketch 1), everything built; the panel shows the last body, the square.
-      const all = { bar: ["feature-1", "sketch-2", "feature-11", "|"], drawn: { box: true, square: true }, volume: V };
+      const all = { bar: ["feature-1", "sketch-2", "feature-15", "|"], drawn: { box: true, square: true }, volume: V };
       assert.deepEqual(await state(), all);
 
       // 1. The box dragged past Extrude 1's middle: place 3, the end. While held, a blue line past Extrude 1 and no words.
       // Let go: Sketch 1, Extrude 1, box, one undo step; both bodies still drawn, the box now the last body in the panel.
-      await drag("feature-1", past("feature-11"), {
+      await drag("feature-1", past("feature-15"), {
         hold: async () => {
           assert.deepEqual(await line(), ["3", "moves"]);
           assert.equal(await note(), "");
@@ -796,7 +798,7 @@ try {
       const MOVE_BOX = "Move Box 1 in the timeline";
       await undoIs(page, MOVE_BOX);
       await settled("24,000 mm³");
-      const moved = { bar: ["sketch-2", "feature-11", "feature-1", "|"], drawn: { box: true, square: true }, volume: "24,000 mm³" };
+      const moved = { bar: ["sketch-2", "feature-15", "feature-1", "|"], drawn: { box: true, square: true }, volume: "24,000 mm³" };
       assert.deepEqual(await state(), moved);
       assert.equal(await line(), null, "the line gone");
       // The browser's Timeline rows in the new order, by their short names (U0e), the descriptions under them in the tooltips.
@@ -816,7 +818,7 @@ try {
       // 2. Extrude 1 dragged before Sketch 1 (place 0): while held, the line red and the reorder's words above the bar,
       // inside the screen. Let go: refused, the same words in the error line, nothing recorded, nothing moved.
       const BEFORE = "Extrude 1 can't go before Sketch 1: it is built from Sketch 1";
-      await drag("feature-11", before("sketch-2"), {
+      await drag("feature-15", before("sketch-2"), {
         hold: async () => {
           assert.deepEqual(await line(), ["0", "refused"]);
           assert.equal(await note(), BEFORE);
@@ -834,7 +836,7 @@ try {
 
       // 3. Sketch 1 dragged past Extrude 1 (place 2): refused, Extrude 1 is built from it.
       const AFTER = "Sketch 1 can't go after Extrude 1: Extrude 1 is built from it";
-      await drag("sketch-2", past("feature-11"), { hold: async () => assert.deepEqual([await line(), await note()], [["2", "refused"], AFTER]) });
+      await drag("sketch-2", past("feature-15"), { hold: async () => assert.deepEqual([await line(), await note()], [["2", "refused"], AFTER]) });
       await until(page, (w) => document.querySelector("#error")?.textContent === w, AFTER, "the refusal shown");
       assert.equal(await undoTitle(page), `Undo ${MOVE_BOX} (Ctrl+Z)`, "nothing recorded");
       assert.deepEqual(await state(), moved);
@@ -846,14 +848,14 @@ try {
       await settled(V);
       await press(page, '#timeline [data-button="back"]', dragTap);
       await settled("24,000 mm³");
-      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "|", "feature-11 rolled back"]);
-      await drag("feature-1", past("feature-11"));
+      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "|", "feature-15 rolled back"]);
+      await drag("feature-1", past("feature-15"));
       await undoIs(page, MOVE_BOX);
       await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, "nothing on screen");
-      assert.deepEqual(await state(), { bar: ["sketch-2", "|", "feature-11 rolled back", "feature-1 rolled back"], drawn: { box: false, square: false }, volume: "—" });
+      assert.deepEqual(await state(), { bar: ["sketch-2", "|", "feature-15 rolled back", "feature-1 rolled back"], drawn: { box: false, square: false }, volume: "—" });
       await undo();
       await settled("24,000 mm³");
-      assert.deepEqual(await state(), { bar: ["feature-1", "sketch-2", "|", "feature-11 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³" });
+      assert.deepEqual(await state(), { bar: ["feature-1", "sketch-2", "|", "feature-15 rolled back"], drawn: { box: true, square: false }, volume: "24,000 mm³" });
       await press(page, '#timeline [data-button="end"]', dragTap);
       await settled(V);
       assert.deepEqual(await state(), all);
@@ -885,7 +887,7 @@ try {
         await finger.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
         await page.waitForTimeout(150);
         assert.equal(await undoTitle(page), step);
-        assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-11", "|"]);
+        assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-15", "|"]);
       }
 
       // 7. The browser's Timeline rows select their body (24f6): the box's row selects Body 1 (its row lit too) and only
@@ -898,7 +900,7 @@ try {
       await press(page, boxRow, dragTap);
       await until(page, () => document.querySelector('#browser .tree-row[data-node="body-1"]')?.getAttribute("aria-current") === "true", null, "Body 1 lit");
       assert.equal(await page.getAttribute(boxRow, "aria-current"), "true");
-      assert.equal(await page.getAttribute('#browser [data-node="timeline"] .tree-row[data-node="feature-11"]', "aria-current"), null);
+      assert.equal(await page.getAttribute('#browser [data-node="timeline"] .tree-row[data-node="feature-15"]', "aria-current"), null);
       assert.equal(await page.getAttribute('#browser .tree-row[data-node="body-2"]', "aria-current"), null);
       assert.equal(await page.textContent("#volume"), "24,000 mm³", "the panel shows the selected body");
       if (shots) await page.screenshot({ path: `${shots}/row-selects-${width}.png` });
@@ -935,13 +937,13 @@ try {
       // 2. Then Sketch 1's square, extruded: Extrude 1 builds. The hunt's repro: before the fix the rows were Body 1 and Body 2.
       // Nothing is drawn, so Look at centres on the origin: clicks through the app's camera.
       await addSquare(page, failTap, layout, true);
-      assert.deepEqual(await bar(page), ["feature-1 failed", "sketch-2", "feature-11", "|"]);
+      assert.deepEqual(await bar(page), ["feature-1 failed", "sketch-2", "feature-15", "|"]);
       await browserOpen();
       assert.deepEqual(await rows(), ["body-2 Body 2"], "the failed box has no row; the square keeps its number");
       // The box's Timeline row selects nothing (a plain row); the square's selects its body.
       assert.equal(await page.$eval('#browser [data-node="timeline"] .tree-row[data-node="feature-1"]', (r) => r.tagName), "SPAN");
       await press(page, '#browser [data-node="body-2"]', failTap);
-      await until(page, () => document.body.dataset.selection === "body:feature-11", null, "Body 2 selected");
+      await until(page, () => document.body.dataset.selection === "body:feature-15", null, "Body 2 selected");
       assert.deepEqual(await panel(), square);
       await browserClosed();
       // Only the square is drawn: framed on it alone, worked by hand (half its box's diagonal: 1280 px √(10² + 10² + 10²)/2 = √300/2; 375 px √(10² + 10² + 30²)/2 = √1100/2).
@@ -968,8 +970,8 @@ try {
       await page.keyboard.press("Escape");
       await until(page, () => !document.body.dataset.selection, null, "nothing selected");
       await page.fill("#height", "777");
-      await until(page, () => document.querySelector('#timeline [data-item="feature-11"]')?.dataset.failed !== undefined, null, "Extrude 1 marked failed");
-      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-11 failed", "|"]);
+      await until(page, () => document.querySelector('#timeline [data-item="feature-15"]')?.dataset.failed !== undefined, null, "Extrude 1 marked failed");
+      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-15 failed", "|"]);
       await browserOpen();
       assert.deepEqual(await rows(), ["body-1 Body 1"], "the failed square has no row");
       await press(page, '#browser [data-node="body-1"]', failTap);
@@ -1089,7 +1091,7 @@ try {
       await page.press("#edit-height", "Enter");
       await panelClosed();
       await undoIs(page, "Edit Box 1");
-      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-11", "|"]);
+      assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-15", "|"]);
       assert.deepEqual(await bodyPanel(1), { volume: "42,000 mm³", intent: "Box: 40 × 30 × 35 mm" });
       assert.deepEqual(await bodyPanel(2), square);
       assert.deepEqual(await drawn(page, layout), { box: true, square: true });
@@ -1104,7 +1106,7 @@ try {
       assert.deepEqual(await bodyPanel(1), { volume: "42,000 mm³", intent: "Box: 40 × 30 × 35 mm" });
 
       // 4. Extrude 1 from its browser row: its distance doubled; the part's numbers follow; the box stays 42,000.
-      await rowMenu("feature-11");
+      await rowMenu("feature-15");
       await openEdit("Extrude 1");
       assert.deepEqual(await boxes(), [["edit-height", String(layout.distance)]]);
       assert.equal(await page.isChecked("#edit-flip"), false, "an extrude's Flip (26c), unticked");
@@ -1120,7 +1122,7 @@ try {
       if (shots) await page.screenshot({ path: `${shots}/edit-extrude-${width}.png` });
 
       // 5. Escape and Cancel close the panel with nothing recorded, whatever was typed.
-      await barMenu("feature-11");
+      await barMenu("feature-15");
       await openEdit("Extrude 1");
       await page.fill("#edit-height", "99");
       await page.keyboard.press("Escape");
@@ -1145,9 +1147,9 @@ try {
       await until(page, () => !document.getElementById("row-menu").open, null, "the menu closed");
 
       // 6. Deleting the item while its panel is open closes the panel.
-      await barMenu("feature-11");
+      await barMenu("feature-15");
       await openEdit("Extrude 1");
-      await barMenu("feature-11");
+      await barMenu("feature-15");
       await press(page, "#row-menu-delete", tap);
       await until(page, () => !document.getElementById("row-menu").open, null, "the menu closed");
       await panelClosed();
@@ -1224,7 +1226,7 @@ try {
       assert.match(await warning(), /^Extrude 1 keeps its last shape\. Sketch 1 no longer has the region this extrude uses/);
       assert.equal(await page.textContent("#volume"), layout.volume);
       await browserOpen();
-      assert.deepEqual(await red(), ["feature-11", "sketch-2"]);
+      assert.deepEqual(await red(), ["feature-15", "sketch-2"]);
       // Drawn red at every width: at 1280 px the floating rows' own colour once won over it.
       assert.deepEqual(await page.$$eval(".tree-row.kept", (rows) => rows.map((r) => getComputedStyle(r).color)), ["rgb(255, 107, 107)", "rgb(255, 107, 107)"]);
       await browserClosed();

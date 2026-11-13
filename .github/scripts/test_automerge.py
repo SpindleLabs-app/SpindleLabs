@@ -42,6 +42,33 @@ class CiState(unittest.TestCase):
         # The kernel job's script tests failing (CHANGELOG.md and changelog.d/ among them) still blocks it.
         self.assertEqual(ci_state([check("kernel", conclusion="failure")] + docs[1:]), "failure")
 
+    def test_cancelled_shares_of_an_older_run_do_not_block_a_later_green_run(self):
+        # An earlier run was cancelled while sharding: its e2e (1/5)..(5/5) stay
+        # cancelled. The later run skipped its shares (named with the unexpanded
+        # matrix text) and its e2e gate passed after them, so the old shares are
+        # superseded and the head may merge.
+        old = [check(f"e2e ({k}/5)", conclusion="cancelled", started="2026-11-12T01:00:00Z", id=k) for k in range(1, 6)]
+        new = [check(n, started="2026-11-12T02:00:00Z", id=10 + i)
+               for i, n in enumerate(["kernel", "app", "baseline", "mutants-in-diff", "e2e"])]
+        new.append(check("e2e (${{ matrix.shard }}/5)", conclusion="skipped", started="2026-11-12T02:00:00Z", id=20))
+        self.assertEqual(ci_state(old + new), "success")
+        # A share newer than the gate (a rerun that is failing) still decides.
+        bad = check("e2e (3/5)", conclusion="failure", started="2026-11-12T03:00:00Z", id=30)
+        self.assertEqual(ci_state(old + new + [bad]), "failure")
+        # Without a later gate the cancelled shares still block (nothing replaced them).
+        self.assertEqual(ci_state(old + [c for c in new if c["name"] != "e2e"]), "failure")
+
+    def test_app_shares_in_progress_are_pending_not_none(self):
+        # The app job runs as "app (design)" and "app (rest)" and the gate "app"
+        # appears only once both finish: until then the head is being tested.
+        rest = [check("kernel"), check("baseline"), check("mutants-in-diff"), check("e2e")]
+        running = rest + [check("app (design)", "in_progress", None), check("app (rest)")]
+        self.assertEqual(ci_state(running), "pending")
+        # Both shares done but the gate not yet reported: not a pass.
+        self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)")]), "none")
+        self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)", conclusion="failure")]), "failure")
+        self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)"), check("app")]), "success")
+
     def test_a_drafts_run_never_counts_as_green(self):
         # ci.yml's run of a draft skips phone and browsers and marks itself
         # with the `draft run` check: every required check passed, yet the
@@ -1011,6 +1038,59 @@ class QueueSimulation(unittest.TestCase):
                     self.assertFalse(q["in_queue"], q)
                 elif can_queue and q["green"] and q["mergeable"] is not False:
                     self.assertTrue(q["in_queue"], q)
+
+
+class RateLimit(unittest.TestCase):
+    """A used-up hourly allowance ends a run quietly; a 403 for any other
+    reason is still an error with its body readable."""
+
+    def refuse(self, code, headers, body):
+        err = urllib.error.HTTPError("https://api.github.com/x", code, "Forbidden", headers, io.BytesIO(body))
+        original = automerge.urllib.request.urlopen
+
+        def raising(req):
+            raise err
+        automerge.urllib.request.urlopen = raising
+        self.addCleanup(setattr, automerge.urllib.request, "urlopen", original)
+        return automerge.GitHub("o/r", "t")
+
+    def test_an_empty_allowance_is_rate_limited(self):
+        gh = self.refuse(403, {"x-ratelimit-remaining": "0", "x-ratelimit-reset": "1762838400"}, b"{}")
+        with self.assertRaises(automerge.RateLimited) as e:
+            gh.call("GET", "/pulls")
+        self.assertIn("1762838400", str(e.exception))
+
+    def test_the_message_alone_is_enough(self):
+        gh = self.refuse(403, {}, b'{"message":"API rate limit exceeded for installation"}')
+        with self.assertRaises(automerge.RateLimited):
+            gh.call("GET", "/pulls")
+
+    def test_too_many_requests_and_secondary_limits(self):
+        with self.assertRaises(automerge.RateLimited):
+            self.refuse(429, {}, b"{}").call("GET", "/pulls")
+        with self.assertRaises(automerge.RateLimited):
+            self.refuse(403, {"retry-after": "60"}, b"{}").call("GET", "/pulls")
+        with self.assertRaises(automerge.RateLimited):
+            self.refuse(403, {"x-ratelimit-remaining": "0"}, b"{}").graphql("query { x }", {})
+
+    def test_another_403_is_still_an_error_with_its_body(self):
+        gh = self.refuse(403, {"x-ratelimit-remaining": "4000"}, b'{"message":"Resource not accessible by integration"}')
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            gh.call("GET", "/pulls")
+        self.assertIn(b"Resource not accessible", e.exception.read())
+
+    def test_other_codes_pass_through(self):
+        with self.assertRaises(urllib.error.HTTPError):
+            self.refuse(502, {"x-ratelimit-remaining": "0"}, b"").call("GET", "/pulls")
+
+    def test_rate_limited_is_not_mistaken_for_a_missing_rule(self):
+        class Limited(Fake):
+            def call(self, method, path, body=None):
+                raise automerge.RateLimited("used up")
+        with self.assertRaises(automerge.RateLimited):
+            automerge.queue_required(Limited({}))
+        # and no handler of a refused action swallows it as that pull request's refusal
+        self.assertFalse(issubclass(automerge.RateLimited, (urllib.error.HTTPError, RuntimeError)))
 
 
 if __name__ == "__main__":

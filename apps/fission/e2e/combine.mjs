@@ -172,6 +172,26 @@ try {
     }
   });
 
+  // #583 item 4: at 375 px the Bodies list rows were 27 px tall, under the app's 44 px touch size (--look-target-touch in theme.css).
+  await check("375 px, taps: the Bodies list rows are at least 44 px tall and the Combine tools field says Tap", async () => {
+    const page = await fresh(375, 667, true, "&combine");
+    try {
+      await openPanel(page, "browser", true);
+      const rows = await page.$$eval("#browser .tree-row", (rs) => rs.filter((r) => /^Body/.test(r.textContent.trim()) && r.getBoundingClientRect().height > 0).map((r) => ({ text: r.textContent.trim(), h: r.getBoundingClientRect().height })));
+      assert.ok(rows.length >= 3, JSON.stringify(rows));
+      for (const r of rows) assert.ok(r.h >= 44, `row ${r.text} is ${r.h} px tall, want at least 44`);
+      await page.waitForTimeout(800);
+      if (shots) await page.screenshot({ path: `${shots}/combine-375-bodies.png` });
+      await closePanels(page, true);
+      await press(page, "#modify-menu", true);
+      await press(page, "#modify-menu-combine", true);
+      await opened(page);
+      await fields(page, "Tap the body to change | Tap the bodies to use as tools", "touch words");
+    } finally {
+      await page.context().close();
+    }
+  });
+
   for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
     await check(`${width} px${tap ? ", taps" : ""}: Combine cuts Box 2 from Box 1, picked target then tool, as one undo step`, async () => {
       const page = await fresh(width, height, tap, "&combine");
@@ -186,13 +206,17 @@ try {
         await press(page, "#modify-menu-combine", tap);
         await opened(page);
         // Nothing picked: the target field picks, the hint over the view says what to do, OK is off.
-        await fields(page, "Click the body to change | Click the bodies to use as tools", "both fields empty");
+        // On a touch screen the words say Tap, as the app's other touch words do (#583 item 4).
+        const verb = tap ? "Tap" : "Click";
+        await fields(page, `${verb} the body to change | ${verb} the bodies to use as tools`, "both fields empty");
         assert.equal(await page.$eval("#combine-target", (b) => b.getAttribute("aria-pressed")), "true");
         assert.equal(await page.$eval("#combine-ok", (b) => b.disabled), true);
         assert.equal(await page.$eval("#combine-hint", (h) => [h.hidden, h.textContent].join()), "false,Combine: click or tap the body to change");
+        // #504 (a11y): a screen reader hears the hint change, as it is a live region.
+        assert.equal(await page.$eval("#combine-hint", (h) => h.getAttribute("role")), "status", "the hint is a live region");
         if (shots) await page.screenshot({ path: `${shots}/combine-${width}-empty.png` });
         await at(page, TOP1, tap);
-        await fields(page, "Body 1 | Click the bodies to use as tools", "Box 1 the target");
+        await fields(page, `Body 1 | ${verb} the bodies to use as tools`, "Box 1 the target");
         const sheetOpen = () => page.evaluate(() => [document.getElementById("properties-toggle")?.getAttribute("aria-expanded") === "true", (document.getElementById("combine-operation")?.getBoundingClientRect().height ?? 0) > 0]);
         // At phone width the view stays clear while the bodies are picked: the sheet is still shut with only the target.
         if (tap) assert.deepEqual(await sheetOpen(), [false, false], "the sheet waits for a tool");
@@ -247,6 +271,179 @@ try {
     });
   }
 
+  // #504: on a phone the sheet shuts by a tap on the view, a drag or a finger orbiting, and then nothing said Combine was open.
+  // The bar over the view (phone-float.ts) now holds Finish Combine and Cancel, whatever the sheet does.
+  for (const finish of [true, false]) {
+    await check(`375 px, taps: with the Combine sheet shut the bar over the view has Finish Combine and Cancel, and ${finish ? "Finish records the Combine" : "Cancel records nothing"}`, async () => {
+      const page = await fresh(375, 667, true, "&combine");
+      try {
+        await press(page, '[data-view="top"]', true);
+        await settle(page);
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+        const bar = () => page.evaluate(() => {
+          const b = document.getElementById("phone-float");
+          return b && !b.hidden ? { kind: b.dataset.kind, finish: document.getElementById("float-finish")?.textContent, off: document.getElementById("float-finish")?.disabled, cancel: !!document.getElementById("float-cancel") } : null;
+        });
+        await at(page, TOP1, true);
+        await at(page, TOP2, true);
+        await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+        await page.waitForTimeout(300);
+        // The sheet opened by itself on the operation and OK; a tap on the view puts it away (a tap on empty space).
+        await closePanels(page, true);
+        assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet is shut");
+        assert.deepEqual(await bar(), { kind: "combine", finish: "Finish Combine", off: false, cancel: true }, "the bar says Combine is open and what ends it");
+        // It never covers most of the view: one row along the top.
+        const [barBox, view] = await Promise.all([page.locator("#phone-float").boundingBox(), page.locator("#viewport").boundingBox()]);
+        assert.ok(barBox.height / view.height < 0.2, `the bar covers ${((barBox.height / view.height) * 100).toFixed(0)}% of the view`);
+        if (shots) await page.screenshot({ path: `${shots}/combine-375-bar.png` });
+        await page.tap(finish ? "#float-finish" : "#float-cancel");
+        await closed(page);
+        await rebuilt(page);
+        assert.equal(await bar(), null, "the bar goes with the tool");
+        await until(page, (n) => document.querySelectorAll("#timeline li[data-item]").length === n, finish ? 6 : 5, finish ? "Combine 1 in the timeline" : "no Combine recorded");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  // #586: Combine started again while one is open with its bodies picked (no hint to wait for) and its sheet shut by a tap on the view:
+  // the sheet with the operation and OK only opened when the picked state changed, and never did here, so Combine looked closed.
+  await check("375 px, taps: Combine pressed again with its bodies already picked and the sheet shut opens the sheet with the operation and OK", async () => {
+    const page = await fresh(375, 667, true, "&combine");
+    try {
+      await press(page, '[data-view="top"]', true);
+      await settle(page);
+      const start = async () => {
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+      };
+      await start();
+      await at(page, TOP1, true);
+      await at(page, TOP2, true);
+      await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+      await page.waitForTimeout(300);
+      await closePanels(page, true); // the sheet shut by a tap on the view
+      assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet is shut");
+      await start();
+      await page.waitForTimeout(600);
+      assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "true", "the sheet with the operation and OK is open");
+      assert.equal(await page.locator("#combine-ok").isVisible(), true, "OK can be reached");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  // SL #677 item 5 (the coordinator's calls, 2026-11-12): the Bodies rows say Target and Tool while Combine is open, and
+  // after OK one line over the view says what the Combine did and that Undo puts it back, then goes after 8 s.
+  for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
+    await check(`${width} px${tap ? ", taps" : ""}: the Bodies rows say Target and Tool, and after OK one line says what the Combine did`, async () => {
+      const page = await fresh(width, height, tap, "&combine");
+      try {
+        await press(page, '[data-view="top"]', tap);
+        await settle(page);
+        await press(page, "#modify-menu", tap);
+        await press(page, "#modify-menu-combine", tap);
+        await opened(page);
+        await at(page, TOP1, tap);
+        await at(page, TOP2, tap);
+        await fields(page, "Body 1 | Body 2", "Box 1 the target, Box 2 a tool");
+        const tags = () => page.$$eval(".combine-tag", (ts) => ts.map((t) => `${t.previousElementSibling?.dataset.node}:${t.textContent}`));
+        assert.deepEqual(await tags(), ["body-1:Target", "body-2:Tool"]);
+        if (!tap) {
+          // On a wide screen the browser is up: the tag is on screen, on the row's line, past its words.
+          const [row, tag] = await Promise.all(['.tree-row[data-node="body-1"]', ".combine-tag-target"].map((sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, mid: (r.top + r.bottom) / 2, h: r.height }; })));
+          assert.ok(tag.h > 0 && Math.abs(tag.mid - row.mid) < 4 && tag.left >= row.left, `tag beside its row: ${JSON.stringify({ row, tag })}`);
+          if (shots) await page.screenshot({ path: `${shots}/combine-${width}-tags.png` });
+        }
+        await openPanel(page, "properties", tap);
+        await press(page, "#combine-ok", tap);
+        await closed(page);
+        await until(page, () => document.getElementById("combine-done")?.hidden === false, null, "the line after OK");
+        assert.equal(await page.textContent("#combine-done"), "Combine 1: Body 2 joined to Body 1 and used up. Undo puts it back as it was.");
+        assert.deepEqual(await tags(), [], "the tags go with the panel");
+        const done = await page.$eval("#combine-done", (e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, right: r.right }; });
+        assert.ok(done.h > 0 && done.right <= width, `the line is on screen: ${JSON.stringify(done)}`);
+        if (shots) await page.screenshot({ path: `${shots}/combine-${width}-done.png` });
+        await until(page, () => document.getElementById("combine-done")?.hidden === true, null, "the line gone after 8 s", 12000);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  // SL #677 item 5: at 320 px Keep tools wrapped down beside Target body, and Tool bodies beside OK. The sheet keeps its
+  // rows at 320, 375 and 393 px: the title, operation and Keep tools first; the two fields side by side; then OK and Cancel.
+  for (const width of [320, 375, 393]) {
+    await check(`${width} px, taps: the Combine sheet's rows stay in order (title and choices, the two fields, OK and Cancel)`, async () => {
+      const page = await fresh(width, 667, true, "&combine");
+      try {
+        await press(page, '[data-view="top"]', true);
+        await settle(page);
+        await press(page, "#modify-menu", true);
+        await press(page, "#modify-menu-combine", true);
+        await opened(page);
+        await at(page, TOP1, true);
+        await at(page, TOP2, true);
+        await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+        await page.waitForTimeout(400);
+        const box = (sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) }; });
+        const [keep, target, tools, ok, cancel] = [await box(".combine-panel-keep"), await box("#combine-target"), await box("#combine-tools"), await box("#combine-ok"), await box("#combine-cancel")];
+        if (shots) await page.screenshot({ path: `${shots}/combine-${width}-sheet-rows.png` });
+        const all = JSON.stringify({ keep, target, tools, ok, cancel });
+        assert.ok(keep.bottom <= target.top, `Keep tools above the fields: ${all}`);
+        assert.equal(target.top, tools.top, `the two fields side by side: ${all}`);
+        assert.ok(target.left < tools.left, `Target body left of Tool bodies: ${all}`);
+        assert.ok(Math.max(target.bottom, tools.bottom) <= ok.top && ok.top === cancel.top, `OK and Cancel on their own row under the fields: ${all}`);
+        assert.ok(cancel.right <= width, `nothing past the right edge: ${all}`);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  // #504: the shell's `#workspace button:hover` outranked the panel's OK, so on hover (and on a phone after a tap, where hover sticks) OK turned dark grey and looked switched off.
+  await check("1280 px: OK keeps its colour under the pointer", async () => {
+    const page = await fresh(1280, 800, false, "&combine");
+    try {
+      await page.click('[data-view="top"]');
+      await settle(page);
+      await at(page, TOP1);
+      await page.click("#modify-menu");
+      await page.click("#modify-menu-combine");
+      await opened(page);
+      await at(page, TOP2);
+      await fields(page, "Body 1 | Body 2", "Box 2 a tool");
+      await page.mouse.move(5, 5);
+      const colour = () => page.$eval("#combine-ok", (b) => getComputedStyle(b).backgroundColor);
+      const rest = await colour();
+      await page.hover("#combine-ok");
+      await page.waitForTimeout(250);
+      assert.equal(await colour(), rest, "OK's fill under the pointer is its fill at rest");
+      await page.keyboard.press("Escape");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  // #504: any touch screen (a 768 × 1024 tablet too) gets finger-sized controls, not only widths up to 700 px.
+  await check("768 px touch tablet: the Combine panel's controls are finger-sized", async () => {
+    const page = await fresh(768, 1024, true, "&combine");
+    try {
+      await press(page, "#modify-menu", true);
+      await press(page, "#modify-menu-combine", true);
+      await opened(page);
+      const sizes = await page.evaluate(() => Object.fromEntries(["combine-ok", "combine-cancel", "combine-operation", "combine-keep"].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, [Math.round(r.width), Math.round(r.height)]]; })));
+      for (const id of ["combine-ok", "combine-cancel", "combine-operation"]) assert.ok(sizes[id][1] >= 44, `${id} is ${sizes[id][1]} px tall: ${JSON.stringify(sizes)}`);
+      assert.ok(sizes["combine-keep"][0] >= 22 && sizes["combine-keep"][1] >= 22, `Keep tools box ${sizes["combine-keep"]}`);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   await check("1280 px: Combine 1 edited to Intersect, Escape leaves without a change, an Intersect of bodies apart is refused, and the flag stays for the tab", async () => {
     const page = await fresh(1280, 800, false, "&combine");
     try {
@@ -270,7 +467,8 @@ try {
       await page.click("#row-menu-edit");
       await opened(page);
       assert.equal(await page.textContent("#combine-title"), "Edit Combine 1");
-      await fields(page, "Body 1 | Body 2", "the edit shows its bodies");
+      // The Cut used Box 2 up, so the Bodies list has no Body 2: the tool is named by its item (SL #677 item 5).
+      await fields(page, "Body 1 | Box 2", "the edit shows its bodies");
       assert.equal(await page.$eval("#combine-tools", (b) => b.disabled), true);
       assert.equal(await page.$eval("#combine-operation", (s) => s.value), "cut");
       // Escape: nothing changes.

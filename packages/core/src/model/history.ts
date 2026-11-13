@@ -106,11 +106,43 @@ export interface History {
    * back that step, not the one before (clumsy hunt 2026-11-04: the step was lost, and the one before it undone).
    */
   hold<T>(work: Promise<T>): Promise<T>;
-  /** Whether held work is still running. */
+  /**
+   * Held work the person asked for ended with nothing recorded (an OK the kernel refused, a question answered Cancel
+   * or still open): an Undo or Redo that waited for it was pressed to take that back, and there is nothing of it to
+   * take, so the shell drops the press (`callsOff` changed while it waited) instead of taking back the step before
+   * (Undo hunt 2026-11-12, #622: the width typed before a refused Move was undone and the refusal never seen).
+   */
+  callOff(): void;
+  /** How many times `callOff` was called. */
+  callsOff(): number;
+  /** The present step, for `amendStep` to name later: the same step until a record merges into it or an amend changes it. */
+  present(): HistoryStep;
+  /**
+   * Puts right a step recorded earlier, the present or one since built on (Design's settle answered after the next
+   * action was recorded: #624, #622): `rewrite` gets `step`'s snapshot and returns what it should have held all along,
+   * or null to leave it. Nothing happens once `step` is gone or was changed since (`present`), nor during a restore or
+   * a step. A step left the same as the one before it has nothing to undo, so it is removed. Returns whether it changed.
+   */
+  amendStep(step: HistoryStep, rewrite: (snapshot: string) => string | null): boolean;
+  /**
+   * `question`, put to the person by held work before it records (a Cut that removes nothing asks first, Design's
+   * cut-ask.ts), noted until it is answered; returns it. The held work still holds (`busy`, `whenIdle`: an Undo pressed
+   * meanwhile still waits for the answer), but nothing it does runs by itself meanwhile (`working`).
+   */
+  asking<T>(question: Promise<T>): Promise<T>;
+  /** Whether held work is still held, a question it waits on included. */
   busy(): boolean;
+  /**
+   * Whether held work is running by itself: held work that is not waiting on the person's answer. The page changes
+   * again without anyone touching it only while this is true (the monkey's settle, `fissionTest.historyBusy`; SL #397).
+   */
+  working(): boolean;
   /** Settles once no held work runs, including work held while waiting; at once when none does. */
   whenIdle(): Promise<void>;
 }
+
+/** One step of a history, as `History.present` names it (opaque). */
+export type HistoryStep = object;
 
 /** The steps of a history, kept by `History.save` (opaque). */
 export interface SavedHistory {
@@ -192,6 +224,9 @@ export function createHistory(options: HistoryOptions): History {
   };
   /** Held work still running (`hold`). */
   const held = new Set<Promise<unknown>>();
+  /** Questions held work puts to the person (`asking`), until answered. */
+  const asked = new Set<Promise<unknown>>();
+  let calledOff = 0;
   const listeners = new Set<() => void>();
   const changed = () => {
     for (const l of [...listeners]) l();
@@ -373,7 +408,34 @@ export function createHistory(options: HistoryOptions): History {
       held.add(done);
       return work;
     },
+    callOff: () => void calledOff++,
+    callsOff: () => calledOff,
+    present: () => entries[index],
+    amendStep(step, rewrite) {
+      if (restoring || grouping > 0) return false;
+      const at = entries.indexOf(step as Entry);
+      if (at < 0) return false;
+      const snapshot = rewrite(entries[at].snapshot);
+      if (snapshot === null || snapshot === entries[at].snapshot) return false;
+      if (at > 0 && snapshot === entries[at - 1].snapshot) {
+        entries.splice(at, 1);
+        if (at === index) lastWasRecord = false;
+        if (at <= index) index--;
+      } else entries[at] = { ...entries[at], snapshot };
+      changed();
+      return true;
+    },
+    asking(question) {
+      const done = question.then(
+        () => void asked.delete(done),
+        () => void asked.delete(done),
+      );
+      asked.add(done);
+      return question;
+    },
     busy: () => held.size > 0,
+    // Each question is asked from inside one piece of held work, which waits on it: work runs while more is held than asks.
+    working: () => held.size > asked.size,
     async whenIdle() {
       while (held.size > 0) await Promise.all([...held]);
     },

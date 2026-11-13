@@ -201,7 +201,7 @@ test("upgrade: a version 15 file whose Join's piece a Move, a Copy, a Combine, a
   const raw = JSON.parse(V15);
   assert.equal(raw.version, 15);
   const doc = readDesignDocument(raw);
-  assert.equal(doc.version, 16);
+  assert.equal(doc.version, 21);
   // Every name of the piece is the extrude's own id now, its number and faces kept; nothing else changed.
   const own = "body:feature-11";
   const was = "body:feature-11/piece:1";

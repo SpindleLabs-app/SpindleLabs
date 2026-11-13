@@ -253,7 +253,7 @@ test("saved and read back exactly; version 9 data with an operation, and every b
   const { doc } = extruded(cube, ...SQUARE, 20, { operation: "cut", bodies });
   const json = JSON.parse(JSON.stringify(doc));
   assert.deepEqual(readDesignDocument(json), doc);
-  assert.equal(json.version, 16);
+  assert.equal(json.version, 21);
   const broken = (change: (f: Record<string, any>, d: Record<string, any>) => void, message: string | RegExp) => {
     const d = JSON.parse(JSON.stringify(doc));
     change(d.timeline.features.at(-1), d);

@@ -225,9 +225,11 @@ console.log("checked - 320, 340 and 375 px: Slice for printing's Close inside th
   check(t.count >= 7, `393: the timeline's buttons, item, marker and ⋯ found (${t.count})`);
   check(t.small.length === 0, `393: timeline tap areas under 40 × 40 px: ${t.small.join(", ")}`);
   check(t.height <= 40, `393: the timeline row is ${t.height} px (at most 40, layout.mjs)`);
+  // SL #708 item 2 (stress hunt 11-13): the top bar, the float bar (Finish Combine and Cancel) and the sheets too: a pinch
+  // there zoomed the page about 3x and took OK and STL off the screen.
   // A touch's allowed gestures are those of the element and every ancestor (touch-action is not inherited, it is intersected):
   // a pinch zooms the page only when every one of them allows it.
-  const pinchable = await page.evaluate(() => [["the toolbar", "#toolbar button"], ["the timeline", "#timeline .timeline-bar-item"], ["the view controls", "#viewport .view-controls button"]]
+  const pinchable = await page.evaluate(() => [["the toolbar", "#toolbar button"], ["the timeline", "#timeline .timeline-bar-item"], ["the view controls", "#viewport .view-controls button"], ["the top bar", "#topbar #save"], ["the float bar over the view", "#phone-float"], ["the Properties sheet", "#properties"], ["the Browser sheet", "#browser"]]
     .filter(([, sel]) => {
       for (let e = document.querySelector(sel); e; e = e.parentElement) if (!/auto|manipulation|pinch-zoom/.test(getComputedStyle(e).touchAction)) return false;
       return true;

@@ -306,7 +306,7 @@ try {
     assert.equal(new URL(tab.url()).pathname, "/privacy.html");
     const headings = await tab.$$eval("h1, h2, h3", (hs) => hs.map((h) => h.textContent));
     await tab.close();
-    assert.deepEqual(headings, ["Privacy and terms", "Privacy", "Who we are", "What is kept on your device", "Your account, if you make one", "My designs", "Settings that follow you", "Emails", "Payments", "What leaves your device", "Children and students", "Seeing, changing and deleting your data", "Terms of use", "Questions"]);
+    assert.deepEqual(headings, ["Privacy and terms", "Privacy", "Who we are", "What is kept on your device", "Your account, if you make one", "My designs", "Settings that follow you", "Print log", "Sharing links", "Emails", "Payments", "What leaves your device", "Children and students", "Seeing, changing and deleting your data", "Terms of use", "Questions"]);
     // The words must match the app: the assistant's Remove key button, the providers it offers, and the licences file it links.
     const words = await (await page.request.get(`${url}privacy.html`)).text();
     const assistant = await import("node:fs").then((fs) => fs.readFileSync(new URL("../src/assistant.ts", import.meta.url), "utf8"));

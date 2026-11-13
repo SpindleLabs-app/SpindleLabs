@@ -166,7 +166,7 @@ function edgeMatches(name: string, edge: EdgeName): boolean {
 /** Design on `kernel` as a subject without cuts (the circle extruded as a new body), with bugs planted. */
 export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<NamingDesignFault> = []): NamingDesignSubject {
   const fs = new Set(faults);
-  let state: State = { doc: { version: 16, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }, meta: {} };
+  let state: State = { doc: { version: 21, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }, meta: {} };
   let undo: string[] = [];
   let redo: string[] = [];
   let cache = new BodyCache(kernel);
@@ -292,7 +292,11 @@ export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<Naming
         return { state: { doc: deleteItem(doc, op.item), meta }, made: [] };
       case "reorder": {
         const r = reorderItem(doc, op.item, op.to);
-        if ("refused" in r) return { kind: "refused", cause: r.refused };
+        if ("refused" in r) {
+          // The naming model has no Extrude Join, so its sessions never meet a drag refused for one (SL #538 item 3).
+          if (r.refused === "join-order") throw new Error(`a drag refused for an Extrude Join the naming model has none of: ${r.message}`);
+          return { kind: "refused", cause: r.refused };
+        }
         return { state: { doc: r.doc, meta }, made: [] };
       }
     }

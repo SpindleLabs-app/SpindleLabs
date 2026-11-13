@@ -23,7 +23,17 @@
 //   to slide the face along itself, or turn it about its normal, takes the
 //   sketch with it, as it takes the face. A sketch with no `body` (drawn
 //   before 35e2h) is not carried: where its body was when drawn is not
-//   known, and a guess would move it on opening.
+//   known, and a guess would move it on opening. Version 4 and older data,
+//   from before Moves, is read with the world's frame (`withDrawnBodies`).
+// - A Scale before it (the owner's rule for SL #539, 2026-11-11) keeps the
+//   sketch's sizes (a 6 mm circle stays 6 mm, typed dimensions never
+//   change) but scales its position: the middle of the box round its
+//   points goes where the point of the body under it goes, the rest of the
+//   sketch rigidly with it. So a body frame also records the body's size
+//   (`BodyFrame.size`, the product of its scale factors, left out at 1);
+//   a sketch's `body` always holds it from then on, and one with none
+//   (drawn before) keeps the old rule, its origin's offset kept in mm, so
+//   opening an old file moves nothing.
 //
 // Every frame is worked out in doubles and squared up (unit axes, x square
 // to the normal) before the kernel sees it: the kernel refuses a frame off
@@ -39,8 +49,16 @@ export interface SketchPlacement {
   plane: Plane;
   side: 1 | -1;
   /** Where the Moves before it had put the face's body's own frame when picked (`bodyFrame`, the world's when not moved). */
-  body?: Plane;
+  body?: BodyFrame;
 }
+
+/**
+ * A body's own frame where its moves put it (`bodyFrame`), and its size:
+ * the product of the factors of the scales among them (SL #539), left out
+ * when 1. A face sketch's `body` always holds a size from #539 on (1 too),
+ * so one without it was drawn before and is carried as it was then.
+ */
+export type BodyFrame = Plane & { size?: number };
 
 /**
  * Why a face sketch says something about its plane: held at its last
@@ -66,8 +84,15 @@ export interface SketchFace {
   frame: Plane;
   side: 1 | -1;
   held?: Plane;
-  /** Where the Moves before it had put the face's body's own frame (the world's) when drawn (35e2h); none when drawn before 35e2h, which is never carried. */
-  body?: Plane;
+  /** Where the Moves before it had put the face's body's own frame (the world's) when drawn (35e2h), with its size (SL #539: none when drawn before); none when drawn before 35e2h, which is never carried. */
+  body?: BodyFrame;
+  /**
+   * Whether its face, when drawn, was the face its name comes from turned round (Design data version 19, SL #583 item 3):
+   * a Cut's wall carries the cut tool's face's name (rule 2) facing into the hole, the tool's own face the other way.
+   * The rebuild holds the sketch with its plane lost when the face its name finds now is the other one (the Combine made
+   * a Join or Intersect, or suppressed). None in data from before, which is never judged so.
+   */
+  reversed?: boolean;
 }
 
 /** The origin planes in the order a tie is broken (sketch.ts PLANES; the model's ORIGIN_FRAMES). */
@@ -198,7 +223,8 @@ function spun(v: readonly number[], k: readonly number[], angle: number): Vec3 {
  * Where a body's moves (its spec's, in order: kernel-types.ts `Motion`) put
  * the body's own frame, the world's: its origin shifted and turned about
  * each pivot line, its axes turned. A scale (step 35e2) takes the origin
- * nearer to or further from its centre and leaves the axes; a mirror
+ * nearer to or further from its centre, leaves the axes unit and
+ * multiplies the frame's `size` by its factor (SL #539); a mirror
  * reflects the origin and both axes in its plane, so the frame stays the
  * body's own though its handedness turned over: a point's parts along x,
  * y = normal × x and normal are those of its mirror image with y's sign
@@ -207,7 +233,7 @@ function spun(v: readonly number[], k: readonly number[], angle: number): Vec3 {
  * or a spec that is not moved), so a sketch on a body never moved keeps no
  * `body` and is placed exactly as before 35e2h.
  */
-export function bodyFrame(spec: BodySpec): Plane | null {
+export function bodyFrame(spec: BodySpec): BodyFrame | null {
   return movedFrame(null, "moved" in spec ? spec.moved.moves : []);
 }
 
@@ -217,8 +243,9 @@ export function bodyFrame(spec: BodySpec): Plane | null {
  * body_move, each face's frame carried on from where its input body's was).
  * `from` itself when there are no moves (null stays null).
  */
-export function movedFrame(from: Plane | null, moves: readonly Motion[]): Plane | null {
+export function movedFrame(from: BodyFrame | null, moves: readonly Motion[]): BodyFrame | null {
   if (moves.length === 0) return from;
+  let size = from?.size ?? 1;
   let o: Vec3 = from === null ? [0, 0, 0] : [from.origin[0], from.origin[1], from.origin[2]];
   let x: Vec3 = from === null ? [1, 0, 0] : [from.xAxis[0], from.xAxis[1], from.xAxis[2]];
   let n: Vec3 = from === null ? [0, 0, 1] : [from.normal[0], from.normal[1], from.normal[2]];
@@ -230,6 +257,7 @@ export function movedFrame(from: Plane | null, moves: readonly Motion[]): Plane 
     if ("scale" in m) {
       const c = m.scale.about;
       o = add(scale([o[0] - c[0], o[1] - c[1], o[2] - c[2]], m.scale.factor), c);
+      size *= m.scale.factor;
       continue;
     }
     if ("mirror" in m) {
@@ -247,30 +275,61 @@ export function movedFrame(from: Plane | null, moves: readonly Motion[]): Plane 
     x = spun(x, k, m.turn.angle);
     n = spun(n, k, m.turn.angle);
   }
-  return squared({ origin: o, xAxis: x, normal: n });
+  const frame = squared({ origin: o, xAxis: x, normal: n });
+  return frame === null || size === 1 ? frame : { ...frame, size };
 }
 
 /** Whether two frames are the same, part by part. */
 const sameFrame = (a: Plane, b: Plane): boolean => [0, 1, 2].every((k) => a.origin[k] === b.origin[k] && a.xAxis[k] === b.xAxis[k] && a.normal[k] === b.normal[k]);
 
 /**
- * The rigid motion taking frame `from` onto frame `to` (each the world's
- * when not given), as a map of points (or, with `vector`, directions): a
+ * The rigid motion taking a sketch on a body from where body frame `from`
+ * was to where body frame `to` is (each the world's when not given), as a
+ * map of points (or, with `vector`, directions).
+ *
+ * The body itself was moved by M(p) = s R p + t from its own frame (s its
+ * size, R the turn or mirror taking the world's axes onto the frame's, t
+ * the frame's origin), so a point q of the body drawn on goes to
+ * F(q) = to(from⁻¹(q)) = k Q (q − a) + b, with Q = R_to R_fromᵀ (a
  * point's parts along `from`'s x, y = normal × x and normal, laid along
- * `to`'s. Null when the two are the same frame, so nothing is worked out
- * (not even a rounding) for a body that has not moved since.
+ * `to`'s), a and b the two origins and k = s_to / s_from. A sketch keeps
+ * its sizes (SL #539), so it is moved rigidly, by Q, and placed so that
+ * its `anchor` (the middle of its points, as drawn) lands where F puts
+ * it: C(q) = Q (q − a) + b + (k − 1) Q (anchor − a), C(anchor) = F(anchor).
+ * With k = 1 (no scale since, a `from` drawn before SL #539 that holds no
+ * size, or no anchor) that is Q (q − a) + b, as before. Null when it moves
+ * nothing, so nothing is worked out (not even a rounding) for a body that
+ * has not moved since.
  */
-export function carried(from: Plane | undefined, to: Plane | undefined): ((p: readonly number[], vector: boolean) => Vec3) | null {
+export function carried(from: BodyFrame | undefined, to: BodyFrame | undefined, anchor?: readonly number[]): ((p: readonly number[], vector: boolean) => Vec3) | null {
   const a = from ?? WORLD;
   const b = to ?? WORLD;
-  if (sameFrame(a, b)) return null;
+  const k = from?.size === undefined || anchor === undefined ? 1 : (to?.size ?? 1) / from.size;
+  if (sameFrame(a, b) && k === 1) return null;
   const ay = cross(a.normal, a.xAxis);
   const by = cross(b.normal, b.xAxis);
+  const turn = (d: readonly number[]) => add(add(scale(b.xAxis, dot(d, a.xAxis)), scale(by, dot(d, ay))), scale(b.normal, dot(d, a.normal)));
+  const shift = k === 1 ? null : scale(turn([anchor![0] - a.origin[0], anchor![1] - a.origin[1], anchor![2] - a.origin[2]]), k - 1);
   return (p, vector) => {
-    const d = vector ? [p[0], p[1], p[2]] : [p[0] - a.origin[0], p[1] - a.origin[1], p[2] - a.origin[2]];
-    const v = add(add(scale(b.xAxis, dot(d, a.xAxis)), scale(by, dot(d, ay))), scale(b.normal, dot(d, a.normal)));
-    return vector ? v : add(v, b.origin);
+    if (vector) return turn(p);
+    const v = add(turn([p[0] - a.origin[0], p[1] - a.origin[1], p[2] - a.origin[2]]), b.origin);
+    return shift === null ? v : add(v, shift);
   };
+}
+
+/**
+ * The middle of the box round a sketch's own points (each the sketch's x, y; rebuild.ts passes those not pinned or projected),
+ * in the world on frame `frame` (its origin, x and y = normal × x): the
+ * point a Scale's change of size carries the sketch by (`carried`'s
+ * anchor). Undefined for a sketch with no points.
+ */
+export function sketchMiddle(frame: Plane, points: readonly { x: number; y: number }[]): Vec3 | undefined {
+  if (points.length === 0) return undefined;
+  let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
+  for (const p of points) [x0, x1, y0, y1] = [Math.min(x0, p.x), Math.max(x1, p.x), Math.min(y0, p.y), Math.max(y1, p.y)];
+  const u = (x0 + x1) / 2;
+  const v = (y0 + y1) / 2;
+  return add(add(frame.origin, scale(frame.xAxis, u)), scale(cross(frame.normal, frame.xAxis), v));
 }
 
 /**

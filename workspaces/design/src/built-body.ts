@@ -34,6 +34,24 @@ export function framesOfResult(h: BooleanResult["history"][number] | undefined, 
   return frames.some((f) => f !== null) ? frames : undefined;
 }
 
+/**
+ * SL #583 item 3: a boolean's result body's faces (BuiltBody `reversed`) from its history: each face is its first
+ * origin's face turned round when their outward normals point apart (a Cut's wall from a tool: the kernel's result
+ * face lies on the tool's face, the other way about), or not when they agree, after whether that origin face itself
+ * was (`inputs`' own `reversed`). Two flat faces lying on one another are parallel, so the sign of their normals'
+ * dot product is exact; a curved face (no normal) keeps its origin's. Undefined when none is turned round.
+ */
+export function reversedOfResult(h: BooleanResult["history"][number] | undefined, view: BodyView, inputs: ReadonlyMap<BodyHandle, { built: BuiltBody; view: BodyView }>): boolean[] | undefined {
+  const reversed = (h?.faces ?? []).map((from, j) => {
+    const input = inputs.get(from.body);
+    const was = input?.built.reversed?.[from.face] ?? false;
+    const [a, b] = [view.face_normals[j], input?.view.face_normals[from.face]];
+    const apart = a != null && b != null && a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < 0;
+    return was !== apart;
+  });
+  return reversed.some((r) => r) ? reversed : undefined;
+}
+
 /** A shown body's frame for face `face` (scene.ts `ShownBody`): per face on a Combine's result, else the body's. */
 export const shownFrame = (b: { frame?: Plane; frames?: readonly (Plane | null)[] }, face: number): Plane | undefined => (b.frames ? (b.frames[face] ?? undefined) : b.frame);
 
@@ -45,7 +63,7 @@ export const shownFrame = (b: { frame?: Plane; frames?: readonly (Plane | null)[
  * from its tools.
  */
 export function namesOfBody(b: BuiltBody, view: BodyView): BodyNames {
-  if (b.spec !== null) return featureNames(b.feature, { spec: b.spec, curves: b.curves }, view);
+  if (b.spec !== null) return featureNames(b.feature, { spec: b.spec, curves: b.curves, profile: b.profile }, view);
   const own = `face:${encodeURIComponent(b.feature)}/`;
   const parts = (b.named?.faces ?? []).map((f) => f.names.find((n) => n.startsWith(own))?.slice(own.length) ?? null);
   const counts = new Map<string, number>();
@@ -61,7 +79,7 @@ export function namesOfBody(b: BuiltBody, view: BodyView): BodyNames {
  */
 export function namedBody(id: string, b: BuiltBody, view: BodyView, place: number): NamedBody {
   if (b.named !== undefined) return { id, handle: b.handle, view, faces: b.named.faces, made: b.named.made };
-  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves }, view), place);
+  return featureBody(id, b.handle, view, featureNames(b.feature, { spec: b.spec!, curves: b.curves, profile: b.profile }, view), place);
 }
 
 /**
@@ -72,18 +90,36 @@ export function namedBody(id: string, b: BuiltBody, view: BodyView, place: numbe
  * "face:feature-1/top" as "face:<dup>/top:feature-1",
  * "face:feature-2/side:line-4" as "face:<dup>/side:feature-2~line-4". "~"
  * is in no feature id, so no two names read the same.
+ *
+ * A face of the copied body's own item (`source`, its BuiltBody `feature`)
+ * that holds no other item's id (`isItem`: a copy's face from another
+ * body holds that body's item after its role) is named as a plain copy
+ * names it (SL #538 item 5): "face:feature-1/top" as "face:<dup>/top",
+ * "face:feature-1/side:line-4" as "face:<dup>/side:line-4", so the copy's
+ * face keeps its name whether or not a Cut or Join changed its source. No
+ * other name reads so: the others hold an item's id where these hold a
+ * curve's or nothing, and ids are never shared between items and curves.
  */
-export function copiedFaceName(name: string, dup: string): string {
+export function copiedFaceName(name: string, dup: string, source?: string, isItem: (id: string) => boolean = () => false): string {
   const m = /^face:([^/]+)\/([a-z]+)(?::(.+))?$/.exec(name);
   if (m === null) throw new Error(`not a face name Design makes: ${JSON.stringify(name)}`);
   const [, feature, role, curve] = m;
+  if (feature === source && (curve === undefined || !isItem(curve.split("~")[0]))) return `face:${dup}/${role}${curve === undefined ? "" : `:${curve}`}`;
   return `face:${dup}/${role}:${curve === undefined ? feature : `${feature}~${curve}`}`;
 }
 
-/** A Combine's result's names (BuiltBody `named`) as Duplicate `dup`'s copy of it holds them (`copiedFaceName`). */
-export function copiedNames(named: NonNullable<BuiltBody["named"]>, dup: string): NonNullable<BuiltBody["named"]> {
+/**
+ * A Combine's result's names (BuiltBody `named`) as Duplicate `dup`'s copy
+ * of it holds them (`copiedFaceName`, the result's own item `source`). A
+ * face of the source's own renamed as a plain copy's also keeps, second,
+ * the name copies gave it before SL #538 item 5 ("face:<dup>/top:feature-1"),
+ * so a file saved then still finds it.
+ */
+export function copiedNames(named: NonNullable<BuiltBody["named"]>, dup: string, source?: string, isItem?: (id: string) => boolean): NonNullable<BuiltBody["named"]> {
+  const names = (n: string) => [...new Set([copiedFaceName(n, dup, source, isItem), copiedFaceName(n, dup)])];
   return {
-    faces: named.faces.map((f) => ({ ...f, names: f.names.map((n) => copiedFaceName(n, dup)) })),
-    made: new Map([...named.made].map(([n, order]) => [copiedFaceName(n, dup), order])),
+    // A merged face's origins (SL #502) are the original's, in its place: a copy names the face by its first name.
+    faces: named.faces.map((f) => ({ names: [...new Set(f.names.flatMap(names))] })),
+    made: new Map([...named.made].flatMap(([n, order]) => names(n).map((x) => [x, order] as const))),
   };
 }
