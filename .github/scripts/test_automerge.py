@@ -58,6 +58,17 @@ class CiState(unittest.TestCase):
         # Without a later gate the cancelled shares still block (nothing replaced them).
         self.assertEqual(ci_state(old + [c for c in new if c["name"] != "e2e"]), "failure")
 
+    def test_app_shares_in_progress_are_pending_not_none(self):
+        # The app job runs as "app (design)" and "app (rest)" and the gate "app"
+        # appears only once both finish: until then the head is being tested.
+        rest = [check("kernel"), check("baseline"), check("mutants-in-diff"), check("e2e")]
+        running = rest + [check("app (design)", "in_progress", None), check("app (rest)")]
+        self.assertEqual(ci_state(running), "pending")
+        # Both shares done but the gate not yet reported: not a pass.
+        self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)")]), "none")
+        self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)", conclusion="failure")]), "failure")
+        self.assertEqual(ci_state(rest + [check("app (design)"), check("app (rest)"), check("app")]), "success")
+
     def test_a_drafts_run_never_counts_as_green(self):
         # ci.yml's run of a draft skips phone and browsers and marks itself
         # with the `draft run` check: every required check passed, yet the
