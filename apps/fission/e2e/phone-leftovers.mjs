@@ -127,7 +127,12 @@ for (const [[width, height], keyboardTop] of [[[393, 852], 480], [[852, 393], 20
   const { page, context } = await open(width, height);
   await openPanel(page, "properties", true);
   // Sideways the new box's card stays folded (issue #522): one tap on its "Properties ‹" button opens it, as a person would.
-  if (await page.evaluate(() => document.getElementById("properties")?.hasAttribute("data-folded"))) await page.tap("#properties-handle");
+  // The card may still be settling from Insert (folded a moment later), so it is read until it holds still before tapping.
+  await page.waitForTimeout(500);
+  if (await page.evaluate(() => document.getElementById("properties")?.hasAttribute("data-folded"))) {
+    await page.tap("#properties-handle");
+    await page.waitForFunction(() => !document.getElementById("properties")?.hasAttribute("data-folded"));
+  }
   // The last size box of the box's parameters, the one lowest down.
   const id = await page.$$eval("#properties input[type=number], #properties input[type=text]", (es) => es.filter((e) => e.getClientRects().length && !e.disabled).map((e) => e.id).pop());
   check(!!id, `${width} × ${height}: a size box to type in`);
