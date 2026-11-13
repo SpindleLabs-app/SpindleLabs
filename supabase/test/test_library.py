@@ -306,7 +306,7 @@ class LibraryDatabase(unittest.TestCase):
 
     def test_download_my_data_has_every_entry_and_deleting_the_account_removes_them(self):
         self.publish(ADA)
-        data = json.loads(self.value(ADA, "select my_data();"))
+        data = json.loads(self.value(ADA, "select my_data();", role="postgres"))
         self.assertEqual([e["title"] for e in data["library"]], ["Bracket"])
         self.owner(f"delete from auth.users where id = '{ADA}';")
         self.assertEqual(self.owner("select count(*) from library_entries;"), "0")

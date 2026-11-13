@@ -54,6 +54,27 @@ class Cluster:
         p = subprocess.run([*self.user, pg_bin("psql"), "-h", self.dir, "-U", "postgres", "-d", db, "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"], input=sql, capture_output=True, text=True)
         return p.returncode == 0, (p.stdout if p.returncode == 0 else p.stderr).strip()
 
+    def start_as(self, role, sql, uid=None, db="accounts"):
+        """Starts `sql` in one transaction as `role` (signed in as `uid`) and returns at once: a Popen whose
+        communicate() gives (stdout, stderr). For two requests at the same moment, as the service runs them."""
+        claim = f"select set_config('request.jwt.claim.sub', '{uid}', true);" if uid else ""
+        p = subprocess.Popen([*self.user, pg_bin("psql"), "-h", self.dir, "-U", "postgres", "-d", db, "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        p.stdin.write(f"begin;\nset local role {role};\n\\o /dev/null\nselect 1; {claim}\n\\o\n{sql}\ncommit;\n")
+        p.stdin.close()
+        return p
+
+    def wait_for_sleep(self, timeout=20):
+        """Waits until some session is inside pg_sleep: everything it ran before that in its transaction is done."""
+        import time
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            ok, out = self.psql("select count(*) from pg_stat_activity where state = 'active' and query like '%pg_sleep(%' and pid <> pg_backend_pid();")
+            if ok and out != "0":
+                return
+            time.sleep(0.05)
+        raise AssertionError("the first session never reached pg_sleep")
+
     def stop(self):
         subprocess.run([*self.user, pg_bin("pg_ctl"), "-D", self.data, "-m", "immediate", "stop"], capture_output=True)
         shutil.rmtree(self.dir, ignore_errors=True)
@@ -181,14 +202,14 @@ class AccountsDatabase(unittest.TestCase):
     # Seeing and deleting one's data
 
     def test_my_data_holds_everything_kept_about_the_person_and_nothing_about_others(self):
-        ok, out = self.as_user(ADA, "select my_data()->'account'->>'email', my_data()->'plan'->>'plan', my_data()->'profile'->>'email_opt_in', my_data()::text like '%bo@example.com%';")
+        ok, out = self.as_role("postgres", "select my_data()->'account'->>'email', my_data()->'plan'->>'plan', my_data()->'profile'->>'email_opt_in', my_data()::text like '%bo@example.com%';", ADA)
         self.assertEqual((ok, out), (True, "ada@example.com|free|false|f"))
         self.denied(self.as_role("anon", "select my_data();"))
 
     def test_my_data_includes_what_google_sent_at_sign_in(self):
         # The privacy page says sign-in keeps what Google sends (name, email, Google's ID, a picture link): Download my data must show it.
         self.owner(f"""update auth.users set last_sign_in_at = '2026-11-04 10:00+00', raw_user_meta_data = '{{"full_name": "Ada Maker", "avatar_url": "https://lh3.example/a.png", "sub": "1234"}}' where id = '{ADA}';""")
-        ok, out = self.as_user(ADA, "select my_data()->'account'->'from_google'->>'avatar_url', my_data()->'account'->>'last_sign_in_at' is not null;")
+        ok, out = self.as_role("postgres", "select my_data()->'account'->'from_google'->>'avatar_url', my_data()->'account'->>'last_sign_in_at' is not null;", ADA)
         self.assertEqual((ok, out), (True, "https://lh3.example/a.png|t"))
 
     def test_delete_my_account_removes_every_row_of_that_person_and_no_one_elses(self):
@@ -289,9 +310,20 @@ class AccountsDatabase(unittest.TestCase):
     def test_my_data_shows_the_stripe_link(self):
         self.server(f"select link_stripe_customer('{ADA}', 'cus_Ada1');")
         self.server("select set_plan_from_stripe('cus_Ada1', 'sub_A1', 'active', now(), false);")
-        ok, out = self.as_user(ADA, "select my_data()->'payments'->>'stripe_customer_id', my_data()->'payments'->>'status', my_data()->'plan'->>'plan';")
+        ok, out = self.as_role("postgres", "select my_data()->'payments'->>'stripe_customer_id', my_data()->'payments'->>'status', my_data()->'plan'->>'plan';", ADA)
         self.assertEqual((ok, out), (True, "cus_Ada1|active|pro"))
-        self.assertEqual(self.as_user(BO, "select my_data()->>'payments' is null;"), (True, "t"))
+        self.assertEqual(self.as_role("postgres", "select my_data()->>'payments' is null;", BO), (True, "t"))
+
+    def test_no_sequence_is_usable_from_the_browser(self):
+        # Security hunt 2026-11-13 A3: bug_report_log's id sequence was still open, so one setval to its end would
+        # stop every later bug report. No sequence in public may be read or moved by the browser's roles.
+        seqs = self.owner("select string_agg(c.relname, ',' order by c.relname) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'S';").split(",")
+        self.assertIn("bug_report_log_id_seq", seqs)
+        for seq in seqs:
+            for role in ("anon", "authenticated"):
+                got = self.owner(f"select has_sequence_privilege('{role}', 'public.{seq}', 'usage') or has_sequence_privilege('{role}', 'public.{seq}', 'update') or has_sequence_privilege('{role}', 'public.{seq}', 'select');")
+                self.assertEqual(got, "f", f"{role} can use {seq}")
+        self.denied(self.as_role("anon", "select setval('public.bug_report_log_id_seq', 9223372036854775807);"))
 
     # Every table is covered
 
