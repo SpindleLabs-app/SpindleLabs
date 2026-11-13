@@ -11,6 +11,10 @@
 
 -- Off switch, per person, followed on every device. On by default, like keeping designs and settings.
 alter table public.profiles add column keep_print_log boolean not null default true;
+-- When the account's copy of the log was last started afresh (keeping turned back on, or the copy deleted): a device
+-- that remembers which prints it last saw in the account forgets that when this changes, so it never takes prints
+-- missing from a fresh copy for prints deleted on another device.
+alter table public.profiles add column print_log_since timestamptz not null default now();
 
 create table public.print_log (
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -52,18 +56,19 @@ language sql immutable set search_path = '' as $$
     'minutes', p.minutes, 'result', p.result, 'problem', p.problem, 'note', p.note, 'updated_at', p.updated_at)
 $$;
 
--- The person's log: {"keep": bool, "prints": [...]}, newest made first.
+-- The person's log: {"keep": bool, "since": time, "prints": [...]}, newest made first.
 create function public.my_print_log() returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare
   me uuid := auth.uid();
   keep boolean;
+  since timestamptz;
 begin
   if me is null then
     raise exception 'not signed in';
   end if;
-  select keep_print_log into keep from public.profiles where id = me;
-  return jsonb_build_object('keep', coalesce(keep, false), 'prints', coalesce(
+  select keep_print_log, print_log_since into keep, since from public.profiles where id = me;
+  return jsonb_build_object('keep', coalesce(keep, false), 'since', since, 'prints', coalesce(
     (select jsonb_agg(public.print_log_json(p) order by p.made_at desc, p.id) from public.print_log p where p.user_id = me), '[]'::jsonb));
 end $$;
 
@@ -201,7 +206,7 @@ begin
 end $$;
 
 -- Turns keeping the print log on or off on every device. Off deletes the prints kept in the account straight away
--- (each browser keeps its own log). Gives the choice now.
+-- (each browser keeps its own log); a change starts the account's copy afresh (print_log_since). Gives the choice now.
 create function public.set_keep_print_log(p_on boolean) returns boolean
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -210,14 +215,17 @@ begin
   if me is null then
     raise exception 'not signed in';
   end if;
-  update public.profiles set keep_print_log = (p_on is true) where id = me;
+  update public.profiles set keep_print_log = (p_on is true),
+    print_log_since = case when keep_print_log is distinct from (p_on is true) then clock_timestamp() else print_log_since end
+    where id = me;
   if p_on is not true then
     delete from public.print_log where user_id = me;
   end if;
   return p_on is true;
 end $$;
 
--- Deletes every print kept in the person's account (the browsers' own logs stay); true when there were some.
+-- Deletes every print kept in the person's account (the browsers' own logs stay), starting its copy afresh; true when
+-- there were some.
 create function public.delete_my_print_log() returns boolean
 language plpgsql security definer set search_path = '' as $$
 begin
@@ -225,7 +233,11 @@ begin
     raise exception 'not signed in';
   end if;
   delete from public.print_log where user_id = auth.uid();
-  return found;
+  if found then
+    update public.profiles set print_log_since = clock_timestamp() where id = auth.uid();
+    return true;
+  end if;
+  return false;
 end $$;
 
 -- Download my data's part (see my_data in 20261105120000_my_designs.sql): every print kept, newest made first.

@@ -57,10 +57,14 @@ class PrintLogDatabase(unittest.TestCase):
         self.assertTrue(ok, out)
         return json.loads(out)
 
-    def mine(self, uid):
+    def mine(self, uid, since=False):
+        """my_print_log as `uid`, without its `since` unless asked."""
         ok, out = self.as_user(uid, "select my_print_log();")
         self.assertTrue(ok, out)
-        return json.loads(out)
+        answer = json.loads(out)
+        if not since:
+            answer.pop("since")
+        return answer
 
     def stored(self, uid, n=0):
         """The print as my_print_log gives it, by its made-up number, or None."""
@@ -263,6 +267,27 @@ class PrintLogDatabase(unittest.TestCase):
         self.assertEqual(self.mine(ADA), {"keep": True, "prints": []}, "nothing comes back")
         self.assertEqual(self.as_user(ADA, "select set_keep_print_log(null);"), (True, "f"), "anything but true is off")
 
+    def test_the_copy_starts_afresh_when_keeping_is_turned_back_on_or_deleted(self):
+        # A device remembering the prints it last saw must not take an empty fresh copy for deletions elsewhere.
+        first = self.mine(ADA, since=True)["since"]
+        self.assertEqual(self.as_user(ADA, "select set_keep_print_log(true);"), (True, "t"))
+        self.assertEqual(self.mine(ADA, since=True)["since"], first, "on and on again: the same copy")
+        self.save(ADA, [print_(0)])
+        self.assertEqual(self.mine(ADA, since=True)["since"], first, "a save: the same copy")
+        self.as_user(ADA, "select set_keep_print_log(false);")
+        off = self.mine(ADA, since=True)["since"]
+        self.assertNotEqual(off, first)
+        self.as_user(ADA, "select set_keep_print_log(true);")
+        on = self.mine(ADA, since=True)["since"]
+        self.assertNotEqual(on, off)
+        self.save(ADA, [print_(0)])
+        self.assertEqual(self.as_user(ADA, "select delete_my_print_log();"), (True, "t"))
+        deleted = self.mine(ADA, since=True)["since"]
+        self.assertNotEqual(deleted, on)
+        self.assertEqual(self.as_user(ADA, "select delete_my_print_log();"), (True, "f"))
+        self.assertEqual(self.mine(ADA, since=True)["since"], deleted, "nothing deleted: the same copy")
+        self.assertEqual(self.mine(BO, since=True)["since"] < deleted, True, "Bo's copy is his own")
+
     def test_delete_my_print_log_empties_only_the_persons_own(self):
         self.save(ADA, [print_(0), print_(1)])
         self.save(BO, [print_(0)])
@@ -277,6 +302,7 @@ class PrintLogDatabase(unittest.TestCase):
         data = json.loads(self.as_user(ADA, "select my_data();")[1])
         self.assertEqual([p["note"] for p in data["print_log"]], ["Ada's note"])
         self.assertTrue(data["profile"]["keep_print_log"])
+        self.assertIn("print_log_since", data["profile"])
         self.assertNotIn("Bo's", json.dumps(data))
 
     def test_deleting_the_account_deletes_its_prints_and_no_one_elses(self):

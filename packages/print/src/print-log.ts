@@ -51,7 +51,7 @@ export interface PrintEntry {
 /** Where the log is kept, and the account the prints made now belong to (set by the account's code while signed in
  * with the log kept in the account; nothing else writes it). */
 export const PRINT_LOG_KEY = "spindlelabs.print-log";
-export const PRINT_LOG_OWNER_KEY = "spindle.account.print-log-owner";
+export const PRINT_LOG_OWNER_KEY = "spindlelabs.print-log-owner";
 /** The event the page hears when a print goes into the log (`detail`: the print), so an open log and the account's sync see it at once. */
 export const PRINT_LOGGED_EVENT = "spindlelabs-print-logged";
 /** The stored shape's version: a store with a higher one was written by a newer app, which this one never overwrites. */

@@ -23,6 +23,10 @@ function storageOf(win: Window): Storage | null {
   }
 }
 
+let started: PrintLogView | null = null;
+/** The print log started on this page (the account's code reaches it here), or null before main.ts starts it. */
+export const currentPrintLog = (): PrintLogView | null => started;
+
 export function startPrintLog(doc: Document): PrintLogView {
   const win = doc.defaultView!;
   const store = storageOf(win);
@@ -43,10 +47,11 @@ export function startPrintLog(doc: Document): PrintLogView {
   win.addEventListener("storage", (e) => {
     if (e.key === PRINT_LOG_KEY || e.key === null) dialog.refresh();
   });
-  return {
+  started = {
     show: () => dialog.show(),
     refresh: () => dialog.refresh(),
     dialog,
     onChange: (l) => void listeners.push(l),
   };
+  return started;
 }
