@@ -8,7 +8,7 @@
 //   none unread; one with a bar cut in three by two slabs lists three bodies (the two pieces of one Combine each its own).
 // - At 393 px nothing runs off the side; screenshots (SHOTS=<dir>) at 1280 and 393 px in both themes.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
@@ -84,6 +84,20 @@ if (!WITH_PAGE) {
     await page.click("#slice-page-slice");
     await until(page, () => /^125 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 125 layers", 60000);
     if (shots) await page.screenshot({ path: `${shots}/slice-page-sliced.png` });
+    await context.close();
+  });
+  await check("Slice and download on the page saves the box's P1S print file named as the dialog names it", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    const [file] = await Promise.all([page.waitForEvent("download", { timeout: 90000 }), page.click("#slice-page-download")]);
+    assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc-textured.gcode.3mf"); // the dialog's name on the same defaults (e2e/slice-print.mjs)
+    await until(page, () => /^Saved .*\.gcode\.3mf: 100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the words saying saved and 100 layers", 60000);
+    const bytes = readFileSync(await file.path());
+    assert.equal(bytes.subarray(0, 2).toString("latin1"), "PK", "a zip (3MF) package");
+    assert.ok(bytes.length > 2000, `a real package: ${bytes.length} bytes`);
     await context.close();
   });
   await check("an empty design says there is nothing to print", async () => {
