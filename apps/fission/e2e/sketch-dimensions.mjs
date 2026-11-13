@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
+import { swipeIntoSight } from "./toolbar-swipe.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { closePanels, openPanel, pickPlane, sheetsClearFor } from "./start.mjs";
@@ -261,7 +262,8 @@ try {
     const page = await fresh(375, true);
     await sketchOnXY(page, true);
     await line(page, [0, 0], [20, 6], true);
-    const box = await page.locator("#sketch-tool-dimension").boundingBox();
+    // The toolbar is one row a finger swipes (UI audit 2026-11-12): swiped to, the button is wholly on screen.
+    const box = await swipeIntoSight(page, "#sketch-tool-dimension");
     assert.ok(box && box.height >= 44, `Dimension is ${box?.height} px tall, under 44`);
     assert.ok(box.x >= 0 && box.x + box.width <= 375, `Dimension is off screen at x ${box.x}..${box.x + box.width}`);
     await page.tap("#sketch-tool-dimension");
