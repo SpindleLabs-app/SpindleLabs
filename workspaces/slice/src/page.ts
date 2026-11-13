@@ -95,6 +95,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
     storage,
     save: (request) => saveFile(doc, request),
     openPreview: (gcode, words) => void openPrintPreview(ctx.toolbar, playback(gcode), words, (host, p) => printView(host, p)),
+    onProgress: (listener) => ctx.kernel.onProgress?.(listener) ?? (() => {}),
     log: (made) => logPrint(doc, made),
     projectName: () => printLead(ctx.project.name, ctx.fileName?.()),
   });

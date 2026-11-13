@@ -14,8 +14,15 @@
 import { addArc, addLine, Box, bulgeArc, compose, IDENTITY, map, type Affine, type Pt } from "./box2d.ts";
 import type { DrawingRead, LaserLayer, Read } from "./svg.ts";
 
-/** Most entities a DXF may hold (counting each block's every time it is inserted), and how deep blocks may nest. */
-export const DXF_LIMITS = { entities: 200_000, depth: 16, splinePoints: 10_000 };
+/**
+ * Most entities a DXF may hold (counting each block's every time it is inserted), how deep blocks may nest, the most
+ * control points a spline may have, and the most work the whole reading may take (security hunt 2026-11-13, D1: a
+ * few kilobytes of blocks placing blocks made the count of entities harmless and the work endless). Work is counted
+ * in rough steps: each group read (twice: once read, once placed), each spline sample placed, and each spline's sampling (samples × (degree + 1)², done once
+ * per spline however often its block is placed). 20 million steps is well under a second; a real part's drawing
+ * takes a few hundred thousand.
+ */
+export const DXF_LIMITS = { entities: 200_000, depth: 16, splinePoints: 10_000, work: 20_000_000 };
 
 /** Laser's DXF colour numbers (ops.ts OP_LOOK's dxfColour) and the true colours that mean the same. */
 export const LASER_DXF_COLOURS: Readonly<Record<LaserLayer, number>> = { cut: 1, score: 5, engrave: 7 };
@@ -208,6 +215,17 @@ interface Walk {
   points: number;
   hidden: number;
   splines: number;
+  /** Work done so far (DXF_LIMITS.work): a shared box so a block's walk counts into its insert's. */
+  work: { done: number };
+  /** Each spline's samples and control points in its own coordinates, worked out once (an entity is read the same every placement). */
+  splineCache: Map<Entity, { samples: Pt[]; hull: Pt[] }>;
+  polyCache: Map<Entity, { p: Pt; bulge: number }[]>;
+}
+
+/** Counts `steps` of work, refusing the drawing in words once the whole reading would take too long. */
+function charge(w: Walk, steps: number): void {
+  w.work.done += steps;
+  if (w.work.done > DXF_LIMITS.work) throw new DxfError("is too detailed to check: its blocks place too many copies or its curves have too many points. Explode the blocks, or simplify the curves, and save it again");
 }
 
 /** The colour an entity is drawn in: its own (62 or true colour 420), else its layer's; BYBLOCK and layer 0 inside a block take the insert's. */
@@ -266,10 +284,8 @@ function polyVertices(e: Entity): { p: Pt; bulge: number }[] {
 }
 
 /** A point of the B-spline at t by de Boor's steps in weighted (homogeneous) coordinates. */
-function deBoor(t: number, p: number, U: readonly number[], P: readonly Pt[], w: readonly number[]): Pt {
-  const n = P.length;
-  let k = p;
-  while (k < n - 1 && (U[k + 1] as number) <= t) k += 1;
+function deBoor(t: number, k: number, p: number, U: readonly number[], P: readonly Pt[], w: readonly number[]): Pt {
+  // k is the knot span t lies in (U[k] ≤ t ≤ U[k + 1]), given by the caller, which walks the spans in order.
   const d: [number, number, number][] = [];
   for (let j = 0; j <= p; j++) {
     const q = P[j + k - p] as Pt;
@@ -294,6 +310,20 @@ function deBoor(t: number, p: number, U: readonly number[], P: readonly Pt[], w:
 export const SPLINE_SAMPLES = 64;
 
 function addSpline(w: Walk, e: Entity, m: Affine): void {
+  let cached = w.splineCache.get(e);
+  if (!cached) {
+    cached = splineSamples(w, e);
+    w.splineCache.set(e, cached);
+  }
+  charge(w, cached.samples.length + cached.hull.length);
+  // Every point of the curve lies inside the hull of its control points (weights positive), so their box is the most it reaches.
+  for (const q of cached.hull) w.outer.add(map(m, q));
+  for (const q of cached.samples) w.box.add(map(m, q));
+  w.splines += 1;
+}
+
+/** A spline's samples (SPLINE_SAMPLES a knot span) and control points, in its own coordinates; the sampling's work charged first. */
+function splineSamples(w: Walk, e: Entity): { samples: Pt[]; hull: Pt[] } {
   const p = int(e, 71, 3);
   const knots = e.pairs.filter((x) => x[0] === 40).map((x) => Number(x[1]));
   const xs = e.pairs.filter((x) => x[0] === 10).map((x) => Number(x[1]));
@@ -310,20 +340,23 @@ function addSpline(w: Walk, e: Entity, m: Affine): void {
   const lo = knots[p] as number;
   const hi = knots[P.length] as number;
   if (!(hi > lo)) throw new DxfError("a SPLINE with no length to its knots");
-  // Every point of the curve lies inside the hull of its control points (weights positive), so their box is the most it reaches.
-  for (const q of P) w.outer.add(map(m, q));
+  let spans = 0;
+  for (let s = p; s < P.length; s++) if ((knots[s + 1] as number) > (knots[s] as number)) spans += 1;
+  charge(w, spans * (SPLINE_SAMPLES + 1) * (p + 1) * (p + 1));
+  const samples: Pt[] = [];
   for (let s = p; s < P.length; s++) {
     const a = knots[s] as number;
     const b = knots[s + 1] as number;
     if (!(b > a)) continue;
-    for (let k = 0; k <= SPLINE_SAMPLES; k++) w.box.add(map(m, deBoor(a + ((b - a) * k) / SPLINE_SAMPLES, p, knots, P, weights)));
+    for (let k = 0; k <= SPLINE_SAMPLES; k++) samples.push(deBoor(a + ((b - a) * k) / SPLINE_SAMPLES, s, p, knots, P, weights));
   }
-  w.splines += 1;
+  return { samples, hull: P };
 }
 
 function drawEntity(w: Walk, e: Entity, m: Affine, inherited: Colour, depth: number): void {
   if (int(e, 67, 0) === 1) return; // paper space: the sheet's layout, not the drawing
   w.count += 1;
+  charge(w, 2 * e.pairs.length + e.vertices.reduce((n, v) => n + 2 * v.pairs.length, 0) + 1);
   if (w.count > DXF_LIMITS.entities) throw new DxfError(`has more than ${DXF_LIMITS.entities} entities`);
   const refused = REFUSED[e.type];
   if (refused !== undefined) {
@@ -399,7 +432,11 @@ function drawEntity(w: Walk, e: Entity, m: Affine, inherited: Colour, depth: num
       const flags = int(e, 70, 0);
       if (e.type === "POLYLINE" && (flags & (16 | 64)) !== 0) throw new DxfError("has a polygon mesh or polyface: export a flat 2D drawing instead");
       const own = e.type === "POLYLINE" && (flags & 8) !== 0 ? m : compose(m, ocs(e)); // a 3D polyline is in world coordinates
-      const vs = polyVertices(e);
+      let vs = w.polyCache.get(e);
+      if (!vs) {
+        vs = polyVertices(e);
+        w.polyCache.set(e, vs);
+      }
       const closed = (flags & 1) === 1;
       for (let k = 0; k < vs.length; k++) {
         const a = vs[k] as { p: Pt; bulge: number };
@@ -453,7 +490,7 @@ export function readDxf(text: string): Read {
     else if (!unit) throw new DxfError(`gives its units as code ${doc.unit}, which the check doesn't take: save it in millimetres`);
     else if (doc.unit !== 4) notes.push(`The DXF is in ${unit.name}; turned into millimetres.`);
     const mm = unit?.mm ?? 1;
-    const w: Walk = { doc, box: new Box(), outer: new Box(), layers: { cut: 0, score: 0, engrave: 0 }, count: 0, points: 0, hidden: 0, splines: 0 };
+    const w: Walk = { doc, box: new Box(), outer: new Box(), layers: { cut: 0, score: 0, engrave: 0 }, count: 0, points: 0, hidden: 0, splines: 0, work: { done: 0 }, splineCache: new Map(), polyCache: new Map() };
     for (const e of doc.entities) drawEntity(w, e, [mm, 0, 0, mm, 0, 0], { aci: 7 }, 0);
     if (w.points > 0) notes.push(`${w.points} point${w.points === 1 ? "" : "s"} left out: a point is nothing to cut.`);
     if (w.hidden > 0) notes.push(`${w.hidden} entit${w.hidden === 1 ? "y is" : "ies are"} hidden or on a layer turned off, so left out.`);

@@ -39,7 +39,7 @@ interface El {
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
 
 function decode(s: string): string {
-  return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, e: string) => {
+  return s.replace(/&(#x[0-9a-fA-F]{1,8}|#\d{1,8}|[a-zA-Z]{1,32});/g, (whole, e: string) => {
     if (e[0] === "#") {
       const n = e[1] === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
       return Number.isFinite(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : whole;
@@ -49,6 +49,8 @@ function decode(s: string): string {
 }
 
 class XmlError extends Error {}
+
+const ATTR = /([A-Za-z_:][-\w.:]{0,200})[ \t\r\n]*=[ \t\r\n]*("([^"]*)"|'([^']*)')/y;
 
 /** The document's elements as a tree, comments and declarations skipped; the generator comment if there is one. */
 function parseXml(text: string): { root: El; comments: string[] } {
@@ -117,7 +119,10 @@ function parseXml(text: string): { root: El; comments: string[] } {
           j += 2;
           break;
         }
-        const attr = /^([A-Za-z_:][-\w.:]*)\s*=\s*("([^"]*)"|'([^']*)')/.exec(text.slice(j, j + 1_000_000));
+        // Sticky at j on the whole text: no copy of what follows (security hunt 2026-11-13, lead U1: a slice of a
+        // megabyte for every attribute).
+        ATTR.lastIndex = j;
+        const attr = ATTR.exec(text);
         if (!attr) throw new XmlError(`a broken attribute in <${el.name}>`);
         el.attrs[attr[1] as string] = decode(attr[3] ?? attr[4] ?? "");
         j += attr[0].length;
@@ -152,7 +157,10 @@ const PX_PER: Record<string, number> = { px: 1, "": 1, mm: 96 / 25.4, cm: 96 / 2
 
 function length(s: string | undefined): { value: number; unit: string } | null {
   if (s === undefined) return null;
-  const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Z%]*)\s*$/.exec(s);
+  // Trimmed once, and short (security hunt 2026-11-13, D2: a space run between two \s* runs was quadratic).
+  const t = s.trim();
+  if (t.length > 64) return null;
+  const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Z%]*)$/.exec(t);
   if (!m) return null;
   const value = Number(m[1]);
   return Number.isFinite(value) ? { value, unit: (m[2] as string).toLowerCase() } : null;
@@ -181,7 +189,8 @@ class ShapeError extends Error {}
 /** The transform attribute as one map (functions applied right to left, as written left to right). */
 export function parseTransform(s: string): Affine {
   let m: Affine = IDENTITY;
-  const re = /\s*,?\s*(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/y;
+  // One whitespace run, then an optional comma with its own (two runs side by side were quadratic: hunt D2).
+  const re = /\s*(?:,\s*)?(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/y;
   let i = 0;
   const t = s.trim();
   while (i < t.length) {
@@ -485,35 +494,74 @@ function declarations(s: string): Record<string, string> {
 /** A <style> sheet's plain rules (tag, .class, #id, comma lists); anything fancier is refused, never guessed. */
 function sheetRules(css: string, from: number): Rule[] {
   const rules: Rule[] = [];
-  const body = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const re = /([^{}]+)\{([^{}]*)\}/g;
+  // Read in one pass forward with indexOf, never by a regex over the whole sheet (security hunt 2026-11-13, D2: a
+  // sheet with no brace, or comment openings never closed, made the regexes quadratic).
+  let body = "";
+  for (let i = 0; i < css.length; ) {
+    const open = css.indexOf("/*", i);
+    if (open < 0) {
+      body += css.slice(i);
+      break;
+    }
+    body += css.slice(i, open);
+    const close = css.indexOf("*/", open + 2);
+    if (close < 0) throw new ShapeError("a <style> sheet the check can't read (a comment never closed)");
+    i = close + 2;
+  }
   let order = from;
-  let used = 0;
-  for (const m of body.matchAll(re)) {
-    used += m[0].length;
-    const decls = declarations(m[2] as string);
-    for (const sel of (m[1] as string).split(",").map((x) => x.trim())) {
+  for (let i = 0; i < body.length; ) {
+    const open = body.indexOf("{", i);
+    if (open < 0) {
+      if (body.slice(i).trim() !== "") throw new ShapeError("a <style> sheet the check can't read");
+      break;
+    }
+    const close = body.indexOf("}", open + 1);
+    const inner = body.indexOf("{", open + 1);
+    if (close < 0 || (inner >= 0 && inner < close)) throw new ShapeError("a <style> sheet the check can't read");
+    const selectors = body.slice(i, open);
+    const decls = declarations(body.slice(open + 1, close));
+    i = close + 1;
+    if (selectors.includes("}")) throw new ShapeError("a <style> sheet the check can't read");
+    for (const sel of selectors.split(",").map((x) => x.trim())) {
       if (sel.startsWith("@")) throw new ShapeError(`a style rule "${sel.slice(0, 30)}"`);
       const s = /^(\.|#)?([A-Za-z_][-\w]*)$/.exec(sel);
       if (!s) throw new ShapeError(`a style rule "${sel.slice(0, 30)}" the check can't read (only tag, .class and #id rules)`);
       rules.push({ kind: s[1] === "." ? "class" : s[1] === "#" ? "id" : "tag", name: s[2] as string, decls, order: order++ });
     }
   }
-  if (body.replace(/\s+/g, "").length > 0 && used === 0) throw new ShapeError("a <style> sheet the check can't read");
   return rules;
+}
+
+/** The sheet's rules by what they match, so each element looks up only its own tag, classes and id (every rule against
+ * every element was quadratic: hunt D2). */
+interface RuleIndex {
+  tag: Map<string, Rule[]>;
+  class: Map<string, Rule[]>;
+  id: Map<string, Rule[]>;
+  count: number;
+}
+
+function indexRules(rules: readonly Rule[]): RuleIndex {
+  const index: RuleIndex = { tag: new Map(), class: new Map(), id: new Map(), count: rules.length };
+  for (const r of rules) {
+    const list = index[r.kind].get(r.name);
+    if (list) list.push(r);
+    else index[r.kind].set(r.name, [r]);
+  }
+  return index;
 }
 
 const SPECIFICITY = { tag: 1, class: 10, id: 100 } as const;
 
-function ownStyle(el: El, rules: readonly Rule[], parent: Style): Style {
+function ownStyle(el: El, rules: RuleIndex, parent: Style): Style {
   const s: Style = { ...parent, display: "inline", opacity: "1" };
   // Presentation attributes, then the sheet by specificity and order, then style="…".
   for (const p of PROPS) if (el.attrs[p] !== undefined) (s as unknown as Record<string, string>)[p] = el.attrs[p] as string;
   const classes = (el.attrs.class ?? "").split(/\s+/).filter((c) => c !== "");
   const tag = local(el.name).name;
-  const hits = rules
-    .filter((r) => (r.kind === "tag" ? r.name === tag : r.kind === "class" ? classes.includes(r.name) : r.name === el.attrs.id))
-    .sort((a, b) => SPECIFICITY[a.kind] - SPECIFICITY[b.kind] || a.order - b.order);
+  const hits: Rule[] = [...(rules.tag.get(tag) ?? []), ...new Set(classes.flatMap((c) => rules.class.get(c) ?? []))];
+  if (el.attrs.id !== undefined) for (const r of rules.id.get(el.attrs.id) ?? []) hits.push(r);
+  hits.sort((a, b) => SPECIFICITY[a.kind] - SPECIFICITY[b.kind] || a.order - b.order);
   for (const r of hits) Object.assign(s, r.decls);
   if (el.attrs.style !== undefined) Object.assign(s, declarations(el.attrs.style));
   for (const p of INHERITED) if (s[p] === "inherit") s[p] = parent[p];
@@ -543,7 +591,7 @@ const REFUSED: Record<string, string> = {
 };
 
 interface Walk {
-  rules: Rule[];
+  rules: RuleIndex;
   box: Box;
   layers: Record<LaserLayer, number>;
   invisible: number;
@@ -639,7 +687,7 @@ function walk(el: El, m: Affine, style: Style, w: Walk, depth: number): void {
 
 function collectRules(el: El, out: Rule[]): void {
   for (const c of el.children) {
-    if (local(c.name).name === "style") out.push(...sheetRules(c.text, out.length));
+    if (local(c.name).name === "style") for (const r of sheetRules(c.text, out.length)) out.push(r);
     else collectRules(c, out);
   }
 }
@@ -684,8 +732,9 @@ export function readSvg(text: string): Read {
     if (inPixels) notes.push(illustrator ? "The SVG gives its size in pixels; read at 72 to the inch, as Illustrator writes them." : "The SVG gives its size in pixels; read at 96 to the inch (the web's, and Inkscape's). If it looks the wrong size, save it with millimetres.");
     const rules: Rule[] = [];
     collectRules(root, rules);
-    const w: Walk = { rules, box: new Box(), layers: { cut: 0, score: 0, engrave: 0 }, invisible: 0, clipped: 0 };
-    const rootStyle = ownStyle(root, rules, ROOT_STYLE);
+    const index = indexRules(rules);
+    const w: Walk = { rules: index, box: new Box(), layers: { cut: 0, score: 0, engrave: 0 }, invisible: 0, clipped: 0 };
+    const rootStyle = ownStyle(root, index, ROOT_STYLE);
     walk(root, [sx, 0, 0, sy, 0, 0], rootStyle, w, 0);
     if (w.invisible > 0) notes.push(`${w.invisible} shape${w.invisible === 1 ? " has" : "s have"} no outline and no fill, so the laser skips ${w.invisible === 1 ? "it" : "them"}.`);
     if (w.clipped > 0) notes.push("Part of the drawing is clipped or masked; the check measured the whole shapes, so the size may be a little more than what shows.");
