@@ -73,14 +73,16 @@ export interface ShellTabsParts {
   unsaved(): boolean;
   /** Says why something failed (the top bar's message line). */
   report(message: string): void;
-  /** Ids of the projects kept in this browser. */
-  kept(): Promise<string[]>;
+  /** The projects kept in this browser, with their names as kept (null: unreadable); a tab takes its name from here after a reload (tabs hunt C5). */
+  kept(): Promise<{ id: string; name: string | null }[]>;
   /** True when project `id` is kept only in the journal (storage was full): it opens, so its tab stays. */
   held(id: string): boolean;
   /** What a tab keeps while it is not on screen besides its project (undo steps, selection, camera): taken when it is left. */
   capture(): TabView;
   /** Puts back what `capture` took, once the tab's project is on screen again. */
   apply(view: TabView): void;
+  /** The 3D view: the phone's list of tabs never covers more than half of it (tabs hunt E3). */
+  view?(): HTMLElement | null;
   /** Where every window keeps the tabs for a new window (the last list written). */
   storage: Pick<Storage, "getItem" | "setItem"> | null;
   /** Where this window keeps its own tabs for a reload (tabs hunt C4: two windows took each other's). */
@@ -103,6 +105,8 @@ export interface ShellTabs {
   sync(): void;
   /** Kept project `key` was deleted: its tab and view go. The project on screen can't be deleted, so its tab stays. */
   forget(key: string): void;
+  /** Kept project `key` was renamed somewhere else (the home screen): its tab takes the name (tabs hunt C5). */
+  rename(key: string, name: string): void;
   /** Reads the tabs of the last visit once the project on screen is known. */
   restore(): Promise<void>;
 }
@@ -130,6 +134,7 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
     },
     close: (key) => void close(key),
     add: () => void go(null),
+    view: parts.view,
   });
   parts.after.after(strip.element);
 
@@ -261,6 +266,11 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
       if (key === state.active) return;
       drop(key);
     },
+    rename(key, name) {
+      if (key === state.active) return sync(); // the project on screen has its own name box: the tab follows it
+      const next = updateTab(state, key, { name });
+      if (next !== state) set(next);
+    },
     async restore() {
       // This window's own list after a reload; a new window starts from the last list any window wrote (tabs hunt C4).
       const read = (place: Pick<Storage, "getItem"> | null) => {
@@ -271,15 +281,16 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
         }
       };
       const saved = restoredTabs(read(parts.session) ?? read(parts.storage));
-      let kept: Set<string>;
+      let kept: Map<string, string | null>;
       try {
-        kept = new Set(await parts.kept());
+        kept = new Map((await parts.kept()).map((p) => [p.id, p.name]));
       } catch {
-        kept = new Set();
+        kept = new Map();
       }
       const here = parts.keptId();
-      // A project kept only in the journal (storage full) still opens, so its tab stays (tabs hunt B2).
-      const tabs = saved.tabs.filter((t) => t.key === here || kept.has(t.key) || parts.held(t.key));
+      // A project kept only in the journal (storage full) still opens, so its tab stays (tabs hunt B2). Each tab takes
+      // its name as kept: one renamed on the home screen, or in another window, kept its old name (tabs hunt C5).
+      const tabs = saved.tabs.filter((t) => t.key === here || kept.has(t.key) || parts.held(t.key)).map((t) => ({ ...t, name: kept.get(t.key) ?? t.name }));
       let next: TabsState = { tabs, active: here !== null && tabs.some((t) => t.key === here) ? here : null };
       next = addTab(next, { key: here ?? temporary(), name: parts.projectName(), workspace: tabs.find((t) => t.key === here)?.workspace ?? parts.workspace() });
       set(next);

@@ -23,17 +23,21 @@
 .design-tabs .design-tabs-ask button { min-height: var(--look-target); padding: 0 var(--look-space-3); font: inherit; color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 /* The phone's one-button switcher and its list: hidden on wide screens. */
 .design-tabs .design-tabs-switch, .design-tabs .design-tabs-menu { display: none; }
+/* Half the 3D view's height, set on the list as it opens (design-tabs.ts); no cap until then. */
+.design-tabs .design-tabs-menu { --design-tabs-view-half: 100dvh; }
 .design-tabs .design-tabs-count { flex-shrink: 0; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-dim); }
-/* Phones: the strip is one button naming the design on screen, with + beside it; the others are in a list under it, at most
-   half the screen, scrolling, every row 44 px tall. */
-@media (max-width: 640px) {
+/* Phones: the strip is one button naming the design on screen, with + beside it; the others are in a list under it, scrolling,
+   every row 44 px tall. Also for touch screens and short windows, so a phone held sideways gets it too (tabs hunt E2; the
+   query is TABS_PHONE_QUERY in design-tabs.ts, kept the same by a unit test). The list is at most 40% of the window, 5.5
+   rows, and half the 3D view (--design-tabs-view-half, set as it opens; tabs hunt E3). */
+@media (max-width: 640px), (pointer: coarse), (max-height: 500px) {
   .design-tabs { position: relative; min-height: 47px; }
   .design-tabs .design-tabs-list { display: none; }
   .design-tabs .design-tabs-switch:not(#none) { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 0 12px; background: none; border: none; color: var(--text-body); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
   .design-tabs .design-tabs-switch .design-tabs-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .design-tabs .design-tabs-switch .design-tabs-kind { flex-shrink: 0; font-size: 10px; letter-spacing: 0.05em; padding: 1px 6px; color: var(--text-body); border: 1px solid var(--accent); border-radius: var(--look-radius-s); }
   .design-tabs .design-tabs-add:not(#none) { min-width: 44px; }
-  .design-tabs .design-tabs-menu:not([hidden]) { display: block; position: absolute; top: 100%; left: 0; right: 0; z-index: 30; max-height: 50dvh; overflow-y: auto; background: var(--surface-raised); border-bottom: 1px solid var(--look-edge); box-shadow: var(--look-top-light); }
+  .design-tabs .design-tabs-menu:not([hidden]) { display: block; position: absolute; top: 100%; left: 0; right: 0; z-index: 30; max-height: min(40dvh, calc(5.5 * 44px), var(--design-tabs-view-half)); overflow-y: auto; background: var(--surface-raised); border-bottom: 1px solid var(--look-edge); box-shadow: var(--look-top-light); }
   .design-tabs .design-tabs-menu .design-tabs-tab { max-width: none; border-right: none; border-bottom: 1px solid var(--look-edge); min-height: 44px; }
   .design-tabs .design-tabs-menu .design-tabs-main:not(#none) { flex: 1 1 auto; min-height: 44px; text-align: left; }
   .design-tabs .design-tabs-menu .design-tabs-tab .design-tabs-close:not(#none) { min-width: 44px; }
