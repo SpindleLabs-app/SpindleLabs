@@ -903,6 +903,13 @@
     "why": "`events` is only compared with 0 and only ever moves one way from 0 (up by one per data line, or down by one with the change), so after the first data line it is non-zero either way and the comparison gives the same answer."
   },
   {
+    "file": "packages/ai/src/hosted.ts",
+    "mutator": "UpdateOperator",
+    "original": "events++",
+    "replacement": "events--",
+    "why": "`events` is only compared with 0 and only ever moves one way from 0 (up by one per data line, or down by one with the change), so after the first data line it is non-zero either way and the comparison gives the same answer."
+  },
+  {
     "file": "packages/ai/src/ollama.ts",
     "mutator": "MethodExpression",
     "original": "endpoint.trim()",
