@@ -5,6 +5,7 @@
 
 import { areaIn, boxShown, describeProvenance, summaryInUnit, toMm, volumeIn, type BodyView, type Feature, type Unit } from "@fission/core";
 import { currentUnit, downstreamChip, formatQuantity as fmt, UNIT_EVENT, type ChipInfo } from "@fission/ui";
+import { densityWords, massMaterials, massShown, readMassMaterial, SOLID_NOTE, writeMassMaterial } from "./body-mass.ts";
 import { SHAPES } from "./commands.ts";
 import type { PartKind } from "./document.ts";
 import { SHAPE_LABELS } from "./toolbar.ts";
@@ -138,6 +139,8 @@ const HTML = `
   <dl id="stats">
     <dt>Volume</dt><dd id="volume">…</dd>
     <dt>Area</dt><dd id="area">…</dd>
+    <dt><label for="mass-material">Material</label></dt><dd><select id="mass-material" class="dark-select body-mass"></select></dd>
+    <dt title="${SOLID_NOTE}">Mass</dt><dd id="mass" title="${SOLID_NOTE}">…</dd>
     <dt>Topology</dt><dd id="topology">…</dd>
     <dt>Validation</dt><dd id="status">…</dd>
   </dl>
@@ -301,7 +304,36 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     const unit = currentUnit(doc);
     $("volume").textContent = `${fmt(volumeIn(shownBody.volume, unit))} ${unit}³`;
     $("area").textContent = `${fmt(areaIn(shownBody.area, unit))} ${unit}²`;
+    $("mass").textContent = massShown(shownBody.volume, material, unit);
   };
+  // The mass's material (step 66a): a view setting kept in this browser, never the design's, so no undo step.
+  /** The page's own storage (a test's DOM has its own); none when even reaching it throws. */
+  const storage = (() => {
+    try {
+      return doc.defaultView?.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  let material = readMassMaterial(storage);
+  const materialChoice = $<HTMLSelectElement>("mass-material");
+  for (const m of massMaterials()) {
+    const o = doc.createElement("option");
+    o.value = m.id;
+    o.textContent = m.name;
+    materialChoice.append(o);
+  }
+  const showMaterial = () => {
+    materialChoice.value = material.id;
+    materialChoice.title = `What the mass is worked out for. ${densityWords(material)}`;
+  };
+  showMaterial();
+  materialChoice.addEventListener("change", () => {
+    material = massMaterials().find((m) => m.id === materialChoice.value) ?? material;
+    writeMassMaterial(material.id, storage);
+    showMaterial();
+    drawBody();
+  });
   /** Shows the unit now chosen; false once this panel was filled again (Design mounted anew), and it is no longer wanted. */
   const onUnit = (): boolean => {
     if (slot.querySelector("#width") !== boxes[0].el) return false;
@@ -371,7 +403,7 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
     showNoBody() {
       shownBody = null;
       $("body-heading").textContent = "Body";
-      for (const id of ["volume", "area", "topology", "status"]) $(id).textContent = NONE;
+      for (const id of ["volume", "area", "mass", "topology", "status"]) $(id).textContent = NONE;
       $("status").className = "";
       $("body-problems").textContent = "";
       $("body-problems").hidden = true;
