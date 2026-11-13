@@ -2,8 +2,8 @@
 // built app by offline.mjs), which keeps the app and its kernel so it opens
 // with no connection: for everyone once offline mode is released
 // (offline.config.mjs), and before then in a browser that chose it with
-// `?offline` (offline-switch.ts), which also gets the manifest link here, so
-// it can be installed as an app. A new version installs in the background and waits; this
+// `?offline` and then Keep (offline-switch.ts: the address only asks), which
+// also gets the manifest link here, so it can be installed as an app. A new version installs in the background and waits; this
 // shows "A new version of SpindleLabs is ready" with Reload, which tells the
 // waiting worker to take over and reloads once it has, so the page and
 // the kernel always come from one build. A tab still on the old version
@@ -11,7 +11,7 @@
 // server has no worker), and never in a frame: main.ts imports this after
 // frame-guard.ts, which stops a framed page first.
 import { hideNotice, showNotice as show } from "./app-notice.ts";
-import { pageOfflineChosen } from "./offline-switch.ts";
+import { type OfflineAsk, forgetOffline, keepOffline, OFFLINE_SWITCH, pageOfflineSwitch, pageStore } from "./offline-switch.ts";
 import "./styles/offline-status.css";
 
 /** Offline mode's switch, from offline.config.mjs (set in vite.config.ts). Off: nothing is kept for offline use unless this browser chose it with `?offline`, and an earlier install is removed. */
@@ -25,6 +25,12 @@ export const OFFLINE_WORDS = {
   kept: "SpindleLabs is now kept on this device, so it opens without internet. To add it as an app, choose Install in the browser's address bar or menu.",
   offline: "You're offline. SpindleLabs still works, and your designs save on this device. Signing in and your account's copies wait until you're back online.",
   blocked: "This browser won't keep SpindleLabs for offline use (its settings block it), so it still needs the internet to open.",
+} as const;
+
+/** What `?offline` and `?offline=off` ask; nothing changes until the person presses (security hunt 2026-11-13 G2). */
+export const ASK_WORDS = {
+  keep: "Keep SpindleLabs on this device so it opens without internet? It uses a few MB of storage.",
+  remove: "Stop keeping SpindleLabs on this device? It will need the internet to open again.",
 } as const;
 
 const PREFIX = "spindlelabs-"; // the caches sw.js makes
@@ -145,13 +151,49 @@ async function removeOffline() {
   }
 }
 
+/** Takes the switch out of the address, so a reload or a bookmark doesn't ask again. */
+function dropSwitch() {
+  // By hand rather than URLSearchParams, which would rewrite the other switches (`?test-hooks` as `?test-hooks=`).
+  const kept = location.search.slice(1).split("&").filter((part) => part !== "" && new URLSearchParams(part).has(OFFLINE_SWITCH) === false);
+  history.replaceState(history.state, "", `${location.pathname}${kept.length ? `?${kept.join("&")}` : ""}${location.hash}`);
+}
+
+/** Asks whether to keep the app (or stop keeping it); only a press here changes anything. */
+function askFirst(ask: Exclude<OfflineAsk, null>) {
+  const kind = `ask-${ask}`;
+  const notNow = { label: "Not now", title: "Change nothing", press: () => (hideNotice(kind), dropSwitch()) };
+  if (ask === "keep")
+    show(kind, ASK_WORDS.keep, {
+      label: "Keep",
+      title: "Keep SpindleLabs on this device for offline use",
+      press: () => {
+        hideNotice(kind);
+        dropSwitch();
+        if (keepOffline(pageStore())) startOffline();
+        else sayOnce("blocked");
+      },
+    }, notNow);
+  else
+    show(kind, ASK_WORDS.remove, {
+      label: "Remove",
+      title: "Remove the copy kept on this device",
+      press: () => {
+        hideNotice(kind);
+        dropSwitch();
+        forgetOffline(pageStore());
+        startOffline();
+      },
+    }, notNow);
+}
+
 export function startOffline() {
   if (!import.meta.env.PROD) return;
-  const chosen = !__OFFLINE_MODE__ && pageOfflineChosen();
+  const { chosen, ask } = __OFFLINE_MODE__ ? { chosen: false, ask: null } : pageOfflineSwitch();
   if (!("serviceWorker" in navigator)) {
-    if (chosen) sayOnce("blocked");
+    if (chosen || ask === "keep") sayOnce("blocked");
     return;
   }
+  if (ask) askFirst(ask);
   if (!__OFFLINE_MODE__ && !chosen) {
     void removeOffline();
     return;
