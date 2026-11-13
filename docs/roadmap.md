@@ -183,10 +183,10 @@ Curved booleans in general position, cones and tori (after 40; all three before 
 - [ ] 42. Cone and torus surfaces in the kernel: the surfaces, their crossings with what booleans already handle, validation and tessellation (architecture review item 3: chamfers and fillets make cones and tori, so they need them first). In the app they arrive with taper (53) and revolve (56)
 - [ ] 43. The general crossing finder (B0r, 2026-10-23; after 41 and 42, before 44): a procedural curve for surface pairs with no closed form (cylinder–torus, plane–torus, cones), defined by its two surfaces and seed points, every point re-solved by Newton to within tolerance; needed because fillets trim their own pieces against each other and a cut through a filleted part meets a torus. Substeps: the kernel repo's `docs/progress/booleans.md`
 
-Chamfer and fillets (right after 43; the solver core 47 follows them and closes the hard block)
+Chamfer and fillets (right after 43; the solver core 47 follows them and closes the hard block; timing guess, 2026-11-13: 44 about mid-January, 45 about late January, 46 about early March)
 - [ ] 44. Chamfer
 - [ ] 45. Fillet between planar faces
-- [ ] 46. Fillet planar–curved, edge chains (needs 43, the general crossing finder, and 42, cones and tori: a fillet along a cylinder–plane edge is a torus piece that must be trimmed against its neighbours)
+- [ ] 46. Fillet planar–curved, edge chains (needs 43, the general crossing finder, and 42, cones and tori: a fillet along a cylinder–plane edge is a torus piece that must be trimmed against its neighbours; and fillets along any curved edge (46e, Ben's decision 2026-11-13: part of 46 instead of a later step, so the Fillet tool stays behind its switch until fillets work on every edge; corners where several of those fillets meet come in a later step)
 
 Constraint solver core (the end of the front-loaded hard block, right after 46; owner's ask, 2026-10-24: fillets as soon as logically possible after booleans)
 - [ ] 47. Constraint solver core (Newton–Raphson): coincident, horizontal, vertical (in the kernel, on K1's curves, with its tolerances). Extra-heavy testing (owner's ask, 2026-10-21): the harness comes before any solver code (hand-worked cases), then thousands of seeded random sketches checked against the SolveSpace oracle, deliberately planted solver bugs that the tests must catch, and browser drag tests checking that shapes never flip or jump; split into small substeps, each tested hard before the next starts
