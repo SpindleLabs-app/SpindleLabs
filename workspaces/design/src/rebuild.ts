@@ -217,6 +217,8 @@ export interface BuiltBody {
   frames?: readonly (Plane | null)[];
   /** A piece (SL #583 item 2): the body whose boolean it split from (its item's target), so a Move holding that body finds it. */
   from?: string;
+  /** An extrude's profile after the first (version 18), counted from 1: its caps are named by it ("end:2"; SL #632 item 2). */
+  profile?: number;
   /**
    * SL #583 item 3: by kernel face index, whether each face of a boolean's result is the face its first name comes from
    * turned round (a Cut's wall: the tool's face facing into the hole), carried through later booleans, Moves and
@@ -1096,6 +1098,34 @@ export function ownPoints(content: Sketch): Sketch["points"] {
  * pinned points and projections followed (`follow`); held, they are not judged (the plane's warning says it
  * all, as the naming model's rule 10).
  */
+/**
+ * An extrude's later profile's cap (version 18) as a file saved before
+ * SL #632 named it: every profile's caps were "start" and "end", told
+ * apart by a tag of the faces round each (rule 3), so a profile's cap was
+ * `name` tagged with its sides' names. Since then a profile k after the
+ * first names its caps `start:k` and `end:k` (naming.ts `nameBody`); the
+ * cap of that kind whose bordering faces are exactly the tag's names, or
+ * null when none is (the name is read as it is).
+ */
+function profileCapNamed(list: readonly NamedBody[], name: string, tag: readonly string[]): string | null {
+  if (!/\/(start|end)$/.test(name)) return null;
+  const want = [...tag].sort().join(",");
+  for (const b of list) {
+    for (let i = 0; i < b.faces.length; i++) {
+      const cap = b.faces[i].names.find((n) => n.startsWith(`${name}:`) && /^\d+$/.test(n.slice(name.length + 1)));
+      if (cap === undefined) continue;
+      const round = new Set<string>();
+      for (const pair of b.view.edge_faces) {
+        if (pair === null || !pair.includes(i)) continue;
+        const other = b.faces[pair[0] === i ? pair[1] : pair[0]]?.names[0];
+        if (other !== undefined) round.add(other);
+      }
+      if ([...round].sort().join(",") === want) return cap;
+    }
+  }
+  return null;
+}
+
 async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, index: DocIndex, kernel: KernelCalls): Promise<FeatureResult> {
   const content = index.sketches.get(f.id)!;
   const featureId = isFaceSketch(f) ? faceFeature(f.intent.parameters.plane as string)! : null;
@@ -1139,7 +1169,9 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const ids = Object.keys(bodies);
     const list = await Promise.all(ids.map((id) => namedOf(id, bodies[id], cache, 0)));
     const r = readDesignReference(faceReference(plane))!;
-    const found = resolveFaceName(list, designNames(list), { name: `face:${r.featureId}/${r.part}`, ...(r.tag && { tag: r.tag }), origin: p.frame.origin });
+    // SL #632 item 2: a file from before names a later profile's cap "end" tagged by its sides; read as that profile's own name.
+    const capNow = r.tag === undefined ? null : profileCapNamed(list, `face:${r.featureId}/${r.part}`, r.tag);
+    const found = resolveFaceName(list, designNames(list), capNow !== null ? { name: capNow, origin: p.frame.origin } : { name: `face:${r.featureId}/${r.part}`, ...(r.tag && { tag: r.tag }), origin: p.frame.origin });
     if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split" || found.warning === "whole", found.warning === "whole");
     if ("ambiguous" in found) cause = "plane-ambiguous";
     // A name two faces of its own plain body would share carries on neither (naming.ts): ambiguous, as before a Combine.
@@ -1923,7 +1955,7 @@ async function operationRun(doc: DesignDocument, f: Feature, self: Omit<BuiltBod
  */
 async function unitedRun(doc: DesignDocument, f: Feature, built: readonly Omit<BuiltBody, "feature">[], rest: Partial<Extract<FeatureResult, { status: "built" }>>, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   const own = bodyIdOf(f.id);
-  const prisms = await joinedRegions(built, cache);
+  const prisms = await joinedRegions(built.map((p, k) => (k === 0 ? p : { ...p, profile: k + 1 })), cache);
   if (prisms.length === 1) {
     bodies[own] = { feature: f.id, ...prisms[0] };
     return { status: "built", bodies: [own], ...rest };
@@ -1938,6 +1970,42 @@ async function unitedRun(doc: DesignDocument, f: Feature, built: readonly Omit<B
     return r;
   }
   return { ...r, ...rest };
+}
+
+/**
+ * The bodies an extrude of several profiles makes from these prisms
+ * (each profile's spec and curves, the first profile's first), as
+ * `unitedRun` makes them, for Extrude's preview (SL #632 item 3: the
+ * preview drew the prisms apart and added their volumes, counting an
+ * overlap twice): the regions of one sketch merged (`joinedRegions`), each
+ * group that may share a face joined by the kernel, a prism alone in its
+ * group as it is. On a body store of its own, closed after; only the views
+ * are kept. A join the kernel refuses rejects, with its error.
+ */
+export async function unitedViews(kernel: KernelCalls, prisms: readonly { spec: BodySpec; curves?: CurveIds }[]): Promise<BodyView[]> {
+  const cache = new BodyCache(kernel);
+  try {
+    const built = await Promise.all(prisms.map(async (p, k) => ({ handle: await cache.body(p.spec, k), spec: p.spec, ...(p.curves ? { curves: p.curves } : {}) })));
+    const joined = await joinedRegions(built, cache);
+    const views = await Promise.all(joined.map((p) => cache.view(p.handle)));
+    const out: BodyView[] = [];
+    for (const group of contactGroups(views.map((v) => v.bounds))) {
+      if (group.length === 1) {
+        out.push(views[group[0]]);
+        continue;
+      }
+      const [t, ...ts] = group.map((i) => joined[i].handle);
+      const r = await cache.boolean(t, ts, "union").catch(async (err: unknown) => {
+        // In the same plain words as OK's refusal (`unitedRun`), never the kernel's.
+        if (await curvedMeeting(joined, cache)) throw new Error(`These profiles can't be extruded together: ${CURVED_TOUCHING}`);
+        throw err;
+      });
+      for (const h of r.bodies) out.push(await cache.view(h));
+    }
+    return out;
+  } finally {
+    await cache.close();
+  }
 }
 
 /** Why an extrude of several profiles whose curved prisms touch is refused, while the kernel's booleans take flat faces only. */
@@ -1991,7 +2059,8 @@ async function joinedRegions(prisms: readonly Omit<BuiltBody, "feature">[], cach
       const profile = mergedOutline(same.map((i) => (prisms[i].spec as Extract<BodySpec, { extrude: unknown }>).extrude.profile));
       if (profile === null) continue;
       const spec: BodySpec = { extrude: { ...first.extrude, profile } };
-      out[same[0]] = { handle: await cache.body(spec), spec, ...(prisms[same[0]].curves ? { curves: prisms[same[0]].curves } : {}) };
+      const { curves, profile: k } = prisms[same[0]];
+      out[same[0]] = { handle: await cache.body(spec), spec, ...(curves ? { curves } : {}), ...(k !== undefined ? { profile: k } : {}) };
       for (const i of same.slice(1)) out[i] = null;
     }
   }
