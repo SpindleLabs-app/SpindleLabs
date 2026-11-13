@@ -212,3 +212,30 @@ test("Slice and download: an empty plate never asks the engine or saves, a faile
   assert.equal((refused.doc.querySelector("#slice-page-download") as unknown as HTMLButtonElement).disabled, false);
   assert.equal((refused.doc.querySelector("#slice-page-slice") as unknown as HTMLButtonElement).disabled, false);
 });
+
+test("Preview slices as the download would and hands the preview its G-code and the slice's words; an empty plate never asks, a refusal is said and the buttons work again", async () => {
+  const calls: unknown[][] = [];
+  const shown: { gcode: string; words: string }[] = [];
+  const result = { layers: 12, filamentMm: 1000, filamentG: 3, printTimeS: 600, unprintedVolume: 0, package: new Uint8Array(0), gcode: "G1 X1 ; plain slice" };
+  const { doc, panel } = panelIn(async (...a) => (calls.push(a), result), objects, { openPreview: (gcode, words) => shown.push({ gcode, words }) });
+  await panel.preview();
+  // The P1S file is asked first (its own G-code is what plays); this stand-in package holds none, so the plain slice's G-code is used.
+  assert.deepEqual(calls.map((c) => c[0]), ["print_file_stl", "slice_stl"]);
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0].gcode, "G1 X1 ; plain slice");
+  assert.match(shown[0].words, /^12 layers, /);
+  assert.equal((doc.querySelector("#slice-page-preview") as unknown as HTMLButtonElement).disabled, false);
+  const empty = panelIn(async () => (calls.push(["never"]), {}), [], { openPreview: () => shown.push({ gcode: "never", words: "" }) });
+  const before = calls.length;
+  await empty.panel.preview();
+  assert.equal(calls.length, before);
+  assert.equal(shown.length, 1, "no body, no preview");
+  assert.match(empty.doc.querySelector(".slice-page-slice-words")!.textContent!, /Nothing to slice/);
+  const refused = panelIn(async () => {
+    throw new Error("the part is too tall");
+  }, objects, { openPreview: () => shown.push({ gcode: "never", words: "" }) });
+  await refused.panel.preview();
+  assert.equal(shown.length, 1);
+  assert.equal((refused.doc.querySelector("#slice-page-preview") as unknown as HTMLButtonElement).disabled, false);
+  assert.ok(refused.doc.querySelector(".slice-page-slice-words")!.textContent!.length > 0);
+});

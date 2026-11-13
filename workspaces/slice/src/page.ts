@@ -4,9 +4,10 @@
 // arrive in the next steps (the download is the panel's Slice and download), and until then Design's File ▾ Slice for printing is the way to a file. Styles: src/styles/slice-page.css.
 
 import { saveFile } from "@fission/ui";
-import { printLead } from "@fission/print";
+import { openPrintPreview, printLead } from "@fission/print";
+import { printView } from "@fission/viewport";
 import { printPanel, type PrintPanel } from "./print-panel.ts";
-import type { DisplayMesh, ListedObject, MountedWorkspace, RepresentationRegistry, WorkspaceContext, WorkspacePlugin } from "@fission/core";
+import { playback, type DisplayMesh, type ListedObject, type MountedWorkspace, type RepresentationRegistry, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 
 /** One body as the page shows it: its name and its triangles (mm). */
 export interface PlateBody {
@@ -93,6 +94,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
   const panel: PrintPanel = printPanel(doc, { kernel: ctx.kernel, registry: ctx.representations, objects: objectsNow,
     storage,
     save: (request) => saveFile(doc, request),
+    openPreview: (gcode, words) => void openPrintPreview(ctx.toolbar, playback(gcode), words, (host, p) => printView(host, p)),
     projectName: () => printLead(ctx.project.name, ctx.fileName?.()),
   });
   ctx.properties.append(panel.element);
