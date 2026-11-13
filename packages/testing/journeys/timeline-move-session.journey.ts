@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { bodyReference, insertPreset, partDocument } from "@fission/design";
-import { app } from "./design-app.ts";
+import { app, rebuildChanges } from "./design-app.ts";
 import { seeded } from "../src/index.ts";
 
 type Item = { id: string; kind: "box"; size: [number, number, number]; suppressed: boolean } | { id: string; kind: "move"; bodies: string[]; shift: [number, number, number]; suppressed: boolean };
@@ -167,6 +167,9 @@ for (let seed = 1; seed <= SEEDS; seed++) {
       const got = meshBounds(a);
       assert.deepEqual(got && got.map((p) => p.map((x) => Math.round(x * 1e6) / 1e6)), want.bounds, `bounds, ${what}`);
     }
+    const ended = a.doc();
     assert.ok(await a.close(), "freed");
+    // The rule for every seeded session (SL #641): the design it ended with, opened again, rebuilds to itself.
+    assert.equal(await rebuildChanges(ended), null, `seed ${seed}`);
   });
 }

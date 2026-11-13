@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView } from "@fission/core";
 import { bodyReference, builtBody, BodyCache, insertPreset, partDocument, rebuildTimeline, type DesignDocument, type MoveValues } from "@fission/design";
-import { app, kernel } from "./design-app.ts";
+import { app, kernel, rebuildChanges } from "./design-app.ts";
 import { seeded } from "../src/index.ts";
 
 type P = [number, number, number];
@@ -183,6 +183,9 @@ for (let seed = 1; seed <= SEEDS; seed++) {
       }
       await check(`step ${step}`);
     }
+    const ended = a.doc();
     await a.close();
+    // The rule for every seeded session (SL #641): the design it ended with, opened again, rebuilds to itself.
+    assert.equal(await rebuildChanges(ended), null, `seed ${seed}`);
   });
 }
