@@ -34,7 +34,7 @@ test("the version changes with any byte, name or file, and only then", () => {
   const base = { "index.html": "<p>", "assets/k.wasm": "\0asm", "assets/a.js": "1" };
   const v = buildInfo(base).version;
   assert.equal(buildInfo({ "assets/a.js": "1", "assets/k.wasm": "\0asm", "index.html": "<p>" }).version, v, "order doesn't matter");
-  assert.equal(buildInfo({ ...base, "sw.js": "anything", [ON_DEMAND]: "[]" }).version, v, "sw.js and the on-demand list are not part of it");
+  assert.equal(buildInfo({ ...base, "sw.js": "anything", "offline-sw.js": "the worker", [ON_DEMAND]: "[]" }).version, v, "the two workers and the on-demand list are not part of it");
   assert.notEqual(buildInfo({ ...base, "assets/k.wasm": "\0asn" }).version, v, "one byte of the kernel");
   assert.notEqual(buildInfo({ "index.html": "<p>", "assets/k2.wasm": "\0asm", "assets/a.js": "1" }).version, v, "a renamed file");
   assert.notEqual(buildInfo({ ...base, "b.txt": "" }).version, v, "an added empty file");
@@ -127,7 +127,7 @@ test("requests answered from this version's cache", () => {
   assert.equal(keptFile("", false, kept), null, "the folder fetched, not loaded as a page");
 });
 
-test("writeServiceWorker on a built folder: sw.js runs as a script and lists the build", () => {
+test("writeServiceWorker on a built folder: offline-sw.js runs as a script and lists the build", () => {
   const dir = mkdtempSync(join(tmpdir(), "offline-"));
   try {
     mkdirSync(join(dir, "assets"));
@@ -137,12 +137,12 @@ test("writeServiceWorker on a built folder: sw.js runs as a script and lists the
     writeFileSync(join(dir, ON_DEMAND), JSON.stringify(["assets/lib.js"]));
     const info = writeServiceWorker(dir);
     assert.deepEqual(info.precache, ["assets/k.wasm", "index.html"]);
-    assert.deepEqual(filesIn(dir), ["assets/k.wasm", "assets/lib.js", "index.html", ON_DEMAND, "sw.js"]);
+    assert.deepEqual(filesIn(dir), ["assets/k.wasm", "assets/lib.js", "index.html", "offline-sw.js", ON_DEMAND]);
     // Run in a sandbox as a service worker would load it, up to its first use of `self.registration`.
     const self = { addEventListener() {}, registration: { scope: "https://example.test/app/" } };
-    vm.runInNewContext(readFileSync(join(dir, "sw.js"), "utf8"), { self, URL });
+    vm.runInNewContext(readFileSync(join(dir, "offline-sw.js"), "utf8"), { self, URL });
     assert.deepEqual(JSON.parse(JSON.stringify(self.__SPINDLELABS_BUILD__)), info); // (made in the sandbox: compared as JSON)
-    assert.equal(writeServiceWorker(dir).version, info.version, "writing it again (sw.js now in the folder) gives the same version");
+    assert.equal(writeServiceWorker(dir).version, info.version, "writing it again (offline-sw.js now in the folder) gives the same version");
     writeFileSync(join(dir, "index.html"), "<p>B");
     assert.notEqual(writeServiceWorker(dir).version, info.version);
   } finally {
@@ -150,7 +150,7 @@ test("writeServiceWorker on a built folder: sw.js runs as a script and lists the
   }
 });
 
-test("offline mode off: the plugin ships the clean-up worker and no manifest link", async () => {
+test("offline mode off for everyone: no manifest link in the page (offline.ts adds it for a browser that chose ?offline); the clean-up worker removes an old install", async () => {
   const { offlinePlugin } = await import("../offline.mjs");
   assert.deepEqual(offlinePlugin(false).transformIndexHtml(), []);
   assert.equal(offlinePlugin(true).transformIndexHtml()[0].attrs.rel, "manifest");
@@ -163,13 +163,16 @@ test("offline mode off: the plugin ships the clean-up worker and no manifest lin
   assert.doesNotMatch(off.replace("registration.unregister()", ""), /registration\.unregister\(\)/);
 });
 
-test("a build into a folder given by its full path writes sw.js there (the plant builds, soak-plants.mjs and monkey-plants.mjs, build into the temp folder)", () => {
+test("a build into a folder given by its full path writes both workers there (the plant builds, soak-plants.mjs and monkey-plants.mjs, build into the temp folder)", () => {
   const out = mkdtempSync(join(tmpdir(), "offline-out-"));
   try {
     const plugin = offlinePlugin(false);
     plugin.configResolved({ root: "/somewhere/apps/fission", build: { outDir: out } });
     plugin.closeBundle();
     assert.ok(existsSync(join(out, "sw.js")), "sw.js in the folder named");
+    // The clean-up worker as sw.js and the offline worker as offline-sw.js, whichever way the switch is (a browser can choose offline).
+    assert.ok(!readFileSync(join(out, "sw.js"), "utf8").includes("__SPINDLELABS_BUILD__"), "sw.js is the clean-up worker");
+    assert.ok(readFileSync(join(out, "offline-sw.js"), "utf8").startsWith("self.__SPINDLELABS_BUILD__"), "offline-sw.js is the offline worker");
     // A relative folder still means one inside the app's root.
     const plugin2 = offlinePlugin(false);
     plugin2.configResolved({ root: out, build: { outDir: "dist-here" } });

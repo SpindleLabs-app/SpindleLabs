@@ -1,7 +1,9 @@
 // Offline mode: writes the service worker (sw.js beside this file) into the
-// built app with the build's version and the files it keeps. vite.config.ts
-// runs `offlinePlugin()`; `writeServiceWorker(dir)` does the same to any
-// built folder (the update test makes a second version with it).
+// built app as offline-sw.js, with the build's version and the files it
+// keeps, and the clean-up worker (sw-off.js) as sw.js, the name an earlier
+// build registered the offline worker under. vite.config.ts runs
+// `offlinePlugin()`; `writeServiceWorker(dir)` does the same to any built
+// folder (the update test makes a second version with it).
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
@@ -12,6 +14,10 @@ const TEMPLATE = fileURLToPath(new URL("./sw.js", import.meta.url));
 const KILL_SWITCH = fileURLToPath(new URL("./sw-off.js", import.meta.url));
 /** The name of the list of on-demand chunks the build leaves beside the app (read here, never served as a page). */
 export const ON_DEMAND = "on-demand.json";
+/** The offline worker's name in the built app. Every build has it: offline.ts registers it for everyone once offline mode is released, and before that for a browser that asked with `?offline` (src/offline-switch.ts). */
+export const WORKER = "offline-sw.js";
+/** The clean-up worker's name: what the build of 2026-10-28 registered as its offline worker, so a browser that still has that one finds this and is cleaned. */
+export const KILL_NAME = "sw.js";
 
 /** Every file under `dir`, as forward-slash paths relative to it, sorted. */
 export function filesIn(dir) {
@@ -36,7 +42,7 @@ const NEVER_KEPT = new Set(["CNAME"]);
 
 /**
  * The build's version and the files to keep. `files` maps each path to
- * its bytes; sw.js itself and the on-demand list are never part of it.
+ * its bytes; the two workers and the on-demand list are never part of it.
  * Also each kept or on-demand file's SHA-256 (the worker checks every
  * answer against it) and the bytes kept (to see there is room first).
  * The version is the first 16 hex digits of SHA-256 over one line per
@@ -45,7 +51,7 @@ const NEVER_KEPT = new Set(["CNAME"]);
  */
 export function buildInfo(files, onDemand = []) {
   const paths = Object.keys(files)
-    .filter((p) => p !== "sw.js" && p !== ON_DEMAND)
+    .filter((p) => p !== WORKER && p !== KILL_NAME && p !== ON_DEMAND)
     .sort();
   const hashOf = Object.fromEntries(paths.map((p) => [p, createHash("sha256").update(files[p]).digest("hex")]));
   const lines = paths.map((p) => `${p}\0${hashOf[p]}\n`).join("");
@@ -63,18 +69,18 @@ export function serviceWorkerSource(info) {
   return `self.__SPINDLELABS_BUILD__ = ${JSON.stringify(info)};\n${readFileSync(TEMPLATE, "utf8")}`;
 }
 
-/** Writes the clean-up worker (sw-off.js) as sw.js, for when offline mode is off. */
+/** Writes the clean-up worker (sw-off.js) as sw.js, for a browser that still has the 2026-10-28 build's worker. */
 export function writeKillSwitch(dir) {
-  writeFileSync(join(dir, "sw.js"), readFileSync(KILL_SWITCH, "utf8"));
+  writeFileSync(join(dir, KILL_NAME), readFileSync(KILL_SWITCH, "utf8"));
 }
 
-/** Writes sw.js into the built folder `dir`; returns its build info. */
-export function writeServiceWorker(dir) {
+/** Writes the offline worker into the built folder `dir` as `name` (offline-sw.js; the checks of an old install write it as sw.js); returns its build info. */
+export function writeServiceWorker(dir, name = WORKER) {
   const files = {};
   for (const p of filesIn(dir)) files[p] = readFileSync(join(dir, p));
   const onDemand = files[ON_DEMAND] ? JSON.parse(files[ON_DEMAND].toString("utf8")) : [];
   const info = buildInfo(files, onDemand);
-  writeFileSync(join(dir, "sw.js"), serviceWorkerSource(info));
+  writeFileSync(join(dir, name), serviceWorkerSource(info));
   return info;
 }
 
@@ -98,10 +104,12 @@ export function onDemandChunks(bundle) {
 }
 
 /**
- * The Vite plugin. With offline mode on: the manifest link in index.html,
- * the on-demand chunks listed, and sw.js written once the whole build
- * (workers too) is on disk. Off: the app is not installable, and sw.js is
- * the clean-up worker that removes an earlier install.
+ * The Vite plugin. Always: the on-demand chunks listed, and once the whole
+ * build (workers too) is on disk the offline worker (offline-sw.js) and the
+ * clean-up worker (sw.js) written. With offline mode on for everyone, also
+ * the manifest link in index.html; off, offline.ts adds it only in a
+ * browser that chose offline (`?offline`), so no one else is offered an
+ * install.
  */
 export function offlinePlugin(enabled = OFFLINE_MODE) {
   let outDir = "";
@@ -116,12 +124,11 @@ export function offlinePlugin(enabled = OFFLINE_MODE) {
       return enabled ? [{ tag: "link", attrs: { rel: "manifest", href: "./manifest.webmanifest" }, injectTo: "head" }] : [];
     },
     generateBundle(_options, bundle) {
-      if (!enabled) return;
       this.emitFile({ type: "asset", fileName: ON_DEMAND, source: JSON.stringify(onDemandChunks(bundle)) });
     },
     closeBundle() {
-      if (enabled) writeServiceWorker(outDir);
-      else writeKillSwitch(outDir);
+      writeKillSwitch(outDir);
+      writeServiceWorker(outDir);
     },
   };
 }

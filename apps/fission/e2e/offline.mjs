@@ -1,4 +1,4 @@
-// Browser check of offline mode (sw.js, src/offline.ts, offline.mjs). The
+// Browser check of offline mode (sw.js as offline-sw.js, src/offline.ts, offline.mjs). The
 // built app is served by a server of this test's own, so it can be stopped
 // and its folder swapped for a newer build:
 // - Offline: the app loaded once, the server stopped and the browser offline,
@@ -32,16 +32,16 @@ import { launch } from "./browser.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 import { serviceWorkerSource, writeServiceWorker } from "../offline.mjs";
 
-// Offline mode is off in the normal build (offline.config.mjs), so this runs
-// on a build with it on: `npm run e2e:offline` builds one into dist-offline/
-// (E2E_DIST names another). On the normal build it has nothing to check
-// (e2e/offline-off.mjs checks that one).
+// Every build has the offline worker (offline-sw.js). With offline mode on
+// for everyone (`npm run e2e:offline` builds one into dist-offline/;
+// E2E_DIST names another) every visitor gets it; on the normal build only a
+// browser that chose it with `?offline` does (src/offline-switch.ts), so
+// there each context opened here chooses it before the page's own scripts
+// run (`choose`), and the same checks run on the build that ships.
 const DIST = fileURLToPath(new URL(process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : "../dist/", import.meta.url));
-if (!existsSync(join(DIST, "sw.js"))) throw new Error("build the app first (npm run build): dist/sw.js is missing");
-if (!readFileSync(join(DIST, "sw.js"), "utf8").startsWith("self.__SPINDLELABS_BUILD__")) {
-  console.log("offline: skipped, this build has offline mode off (npm run e2e:offline builds one with it on)");
-  process.exit(0);
-}
+if (!existsSync(join(DIST, "offline-sw.js"))) throw new Error("build the app first (npm run build): dist/offline-sw.js is missing");
+const FOR_EVERYONE = /<link rel="manifest"/.test(readFileSync(join(DIST, "index.html"), "utf8"));
+console.log(FOR_EVERYONE ? "offline: a build with offline mode on for everyone" : "offline: the normal build, offline chosen in each browser (?offline)");
 const shots = process.env.E2E_SHOTS;
 const work = mkdtempSync(join(tmpdir(), "offline-e2e-"));
 
@@ -79,7 +79,7 @@ function stopServer() {
 }
 const app = `http://127.0.0.1:${site.port}/`;
 
-/** A copy of `from` as build `mark`: index.html marked, sw.js written again. `change` edits it first. */
+/** A copy of `from` as build `mark`: index.html marked, offline-sw.js written again. `change` edits it first. */
 function makeBuild(from, mark, change = () => {}) {
   const dir = join(work, mark) + "/";
   cpSync(from, dir, { recursive: true });
@@ -117,6 +117,8 @@ async function check(name, fn) {
 const viewports = { 1280: { width: 1280, height: 800 }, 375: { width: 375, height: 667 } };
 async function newApp(width, serviceWorkers = "allow") {
   const context = await browser.newContext({ viewport: viewports[width], hasTouch: width === 375, serviceWorkers, acceptDownloads: true });
+  // What `?offline` remembers, set before any page script runs (a frame's and the privacy page's too).
+  if (!FOR_EVERYONE) await context.addInitScript(() => localStorage.setItem("spindlelabs.offline", "on"));
   const page = await context.newPage();
   page.on("pageerror", (e) => console.log(`  page error: ${e.message}`));
   return { context, page };
@@ -129,7 +131,7 @@ const controlled = (page) => page.waitForFunction(() => navigator.serviceWorker.
 const buildMark = (page) => page.evaluate(() => document.querySelector('meta[name="spindlelabs-build"]')?.content ?? null);
 // The worker's small record (spindlelabs-state: the version in use, an install that failed) is not a version's cache.
 const ourCaches = (page) => page.evaluate(async () => (await caches.keys()).filter((k) => k.startsWith("spindlelabs-") && k !== "spindlelabs-state"));
-/** Asks for a new sw.js and waits until the version found has installed or failed; whether one now waits. */
+/** Asks for a new offline worker and waits until the version found has installed or failed; whether one now waits. */
 const updateAndSettle = (page) =>
   page.evaluate(async () => {
     const reg = await navigator.serviceWorker.getRegistration();
@@ -170,7 +172,7 @@ const AI_REMOTE = JSON.stringify({ kind: "api-key", vendor: "anthropic" });
 
 try {
   await startServer();
-  const built = JSON.parse(readFileSync(join(DIST, "sw.js"), "utf8").split("\n")[0].replace(/^self\.__SPINDLELABS_BUILD__ = /, "").replace(/;$/, ""));
+  const built = JSON.parse(readFileSync(join(DIST, "offline-sw.js"), "utf8").split("\n")[0].replace(/^self\.__SPINDLELABS_BUILD__ = /, "").replace(/;$/, ""));
 
   for (const width of [1280, 375]) {
     const tap = width === 375;
@@ -243,6 +245,8 @@ try {
     const { context, page } = await newApp(1280);
     try {
       await page.goto(app);
+      // Linked by the build for everyone, or by offline.ts in a browser that chose offline.
+      await page.waitForSelector('link[rel="manifest"]', { state: "attached", timeout: 20000 });
       const href = await page.$eval('link[rel="manifest"]', (l) => l.href);
       const manifest = await (await page.request.get(href)).json();
       assert.equal(manifest.name, "SpindleLabs");
@@ -293,6 +297,7 @@ try {
 
     site.root = A.dir;
     const context = await browser.newContext({ viewport: viewports[1280], hasTouch: true, serviceWorkers: "allow" });
+    if (!FOR_EVERYONE) await context.addInitScript(() => localStorage.setItem("spindlelabs.offline", "on"));
     // Which .wasm each tab's kernel loaded (the worker's requests, answered by the service worker or not).
     const wasmSeen = [];
     context.on("request", (r) => r.url().endsWith(".wasm") && !r.serviceWorker() && wasmSeen.push(r.url().split("/").pop())); // not the service worker's own (installing a version)
@@ -361,7 +366,7 @@ try {
 
       // D: its list names a file the server doesn't have, so it never installs: no notice, C runs on.
       const D = makeBuild(C.dir, "D");
-      writeFileSync(join(D.dir, "sw.js"), serviceWorkerSource({ ...D.info, precache: [...D.info.precache, "assets/missing.js"] }));
+      writeFileSync(join(D.dir, "offline-sw.js"), serviceWorkerSource({ ...D.info, precache: [...D.info.precache, "assets/missing.js"] }));
       site.root = D.dir;
       await one.evaluate(async () => {
         const reg = await navigator.serviceWorker.getRegistration();
@@ -391,7 +396,7 @@ try {
       await controlled(two);
       await kernelUp(two);
       const D = makeBuild(C.dir, "fail-D");
-      writeFileSync(join(D.dir, "sw.js"), serviceWorkerSource({ ...D.info, precache: [...D.info.precache, "assets/missing.js"] }));
+      writeFileSync(join(D.dir, "offline-sw.js"), serviceWorkerSource({ ...D.info, precache: [...D.info.precache, "assets/missing.js"] }));
       site.root = D.dir;
       assert.equal(await updateAndSettle(one), false, "D never installs");
       assert.deepEqual(await ourCaches(one), [`spindlelabs-${C.info.version}`], "D's half-filled cache is gone");
