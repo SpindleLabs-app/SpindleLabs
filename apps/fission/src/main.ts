@@ -105,6 +105,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
 /** The home screen (home.config.mjs): the app opens on it over the last project; off in the shipped build until released. */
 declare const __HOME_SCREEN__: boolean;
+/** The design tabs (tabs.config.mjs; also on with the home screen, which is built with them): off until released. */
+declare const __DESIGN_TABS__: boolean;
 /** The account code's hooks once it has started (only with accounts on): My designs. */
 let accountHooks: import("./account.ts").AccountHooks | null = null;
 /**
@@ -1022,8 +1024,8 @@ async function startNewProject(keepNow = false) {
   }
   fileStatus("");
 }
-/** The design tabs (only when the build has the home screen, which they are part of): one tab for each project open at once. */
-const tabs: ShellTabs | null = !__HOME_SCREEN__
+/** The design tabs (only when the build has them, tabs.config.mjs): one tab for each project open at once. */
+const tabs: ShellTabs | null = !__DESIGN_TABS__
   ? null
   : shellTabs(document, {
       after: $("topbar"),

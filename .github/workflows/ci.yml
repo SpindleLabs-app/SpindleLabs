@@ -266,6 +266,36 @@ jobs:
           path: apps/fission/e2e/screenshots/*.*.png
           if-no-files-found: ignore
 
+  # The browser checks of what is built but switched off until released
+  # (tabs.config.mjs, home.config.mjs): each builds the app with its switch
+  # on. Without this they ran only by hand and went stale unseen (the design
+  # tabs' check failed for days after the Lab names, 2026-11-12). Full runs
+  # only, like the shares; the e2e check below waits for it.
+  e2e-switches:
+    name: e2e (switched off)
+    needs: mode
+    if: ${{ !cancelled() && needs.mode.outputs.full != 'false' && needs.mode.outputs.docs != 'true' && github.event.action != 'converted_to_draft' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # Retries and time limits for apt's stalls: see the script.
+      - name: Install the browser (chromium)
+        working-directory: apps/fission
+        timeout-minutes: 27
+        run: ../../.github/scripts/install-browser.sh chromium
+      - run: npm run e2e:tabs
+        working-directory: apps/fission
+      - run: npm run e2e:home
+        working-directory: apps/fission
+        if: ${{ !cancelled() }}
+
   # A quick pull request run's browser check: the whole-app smoke test in
   # Chromium (about a minute). The merge queue runs every share above before
   # merging. automerge.py never merges a head that only had this one.
@@ -301,12 +331,12 @@ jobs:
 
   # The one e2e check auto-merge and main's ruleset wait for (REQUIRED_CHECKS
   # in .github/scripts/automerge.py). Full: green only when every share
-  # passed. Quick: green when the smoke test passed. A failed, cancelled or
+  # and the switched-off checks passed. Quick: green when the smoke test passed. A failed, cancelled or
   # skipped job it needs, or a failed mode job, fails it. Docs only, or a
   # pull request just moved back to draft (nothing tested; `draft run` keeps
   # auto-merge from queueing it): green.
   e2e:
-    needs: [mode, e2e-shard, e2e-quick]
+    needs: [mode, e2e-shard, e2e-switches, e2e-quick]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -314,6 +344,7 @@ jobs:
       - env:
           FULL: ${{ needs.mode.outputs.full }}
           SHARDS: ${{ needs.e2e-shard.result }}
+          SWITCHES: ${{ needs.e2e-switches.result }}
           QUICK: ${{ needs.e2e-quick.result }}
           DOCS: ${{ needs.mode.outputs.docs }}
           DRAFTED: ${{ github.event.action == 'converted_to_draft' }}
@@ -326,6 +357,7 @@ jobs:
             test "$QUICK" = success || { echo "the quick e2e check did not pass ($QUICK)"; exit 1; }
           else
             test "$SHARDS" = success || { echo "an e2e share did not pass ($SHARDS)"; exit 1; }
+            test "$SWITCHES" = success || { echo "a switched-off feature's check did not pass ($SWITCHES)"; exit 1; }
           fi
 
   # Marks a draft's run, which skips the phone and browsers checks:
