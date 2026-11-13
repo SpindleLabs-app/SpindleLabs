@@ -22,6 +22,22 @@ import { timelineBarItems } from "./timeline-bar.ts";
 /** The most timeline items the prompt lists: a small local model's prompt stays short. The last ones are kept. */
 export const AI_TIMELINE_ITEMS = 40;
 
+/** The most characters of an item's description the prompt carries: the app's own are far shorter. */
+export const AI_SUMMARY_CHARS = 200;
+
+/**
+ * An item's description as the prompt carries it: one line (every run of
+ * new lines, tabs and spaces one space) of at most AI_SUMMARY_CHARS
+ * characters. The description comes from the file, and a file from someone
+ * else may hold anything there; what the assistant is told about the
+ * design must stay a short list of facts, never a page of someone's words.
+ */
+export function aiPlain(summary: string): string {
+  const line = summary.replace(/[\s\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+  const chars = [...line];
+  return chars.length > AI_SUMMARY_CHARS ? chars.slice(0, AI_SUMMARY_CHARS).join("") + "…" : line;
+}
+
 /** The sizes the panel holds, which a set_part keeps for each size it leaves out (workspace.ts `run`). */
 export type PanelSizes = { width: number; depth: number; height: number };
 
@@ -44,7 +60,7 @@ export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySe
   const setup: Command[] = preset ? [{ op: "set_part", shape: shape.shape, ...shape.sizes }] : [];
   const { features } = doc.timeline;
   const at = insertAt(doc);
-  const adds = preset ? null : `a new body as item ${at + 1}, ${at === 0 ? "at the start of the timeline" : `after ${at}. ${features[at - 1].intent.summary}`}`;
+  const adds = preset ? null : `a new body as item ${at + 1}, ${at === 0 ? "at the start of the timeline" : `after ${at}. ${aiPlain(features[at - 1].intent.summary)}`}`;
   return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces), ...drawNotes(doc, open), ...extrudeNotes(doc, open), ...renameNotes()], adds, commands, choiceWords };
 }
 
@@ -120,7 +136,7 @@ function drawNotes(doc: DesignDocument | undefined, open: string | null): string
   const item = open === null || !doc ? undefined : doc.timeline.features.find((f) => f.id === open);
   if (!doc || !item) return ["No sketch is open: to draw, start one with create_sketch first in the same answer; the draw commands then draw in it.", SKETCH_AXES];
   const used = builtFrom(doc, item.id);
-  const what = `${item.provenance.self.label} is open (${item.intent.summary})`;
+  const what = `${item.provenance.self.label} is open (${aiPlain(item.intent.summary)})`;
   return [used === null ? `${what}: the draw commands draw in it, unless create_sketch starts another first.` : `${what}, but ${used} is built from it, so the draw commands can't draw in it: start a new sketch with create_sketch first.`, SKETCH_AXES];
 }
 
@@ -152,7 +168,7 @@ function sketchNotes(doc: DesignDocument | undefined, faces: readonly AIFace[], 
   const made = doc ? addSketch(doc, "XY") : null;
   const at = doc ? insertAt(doc) : 0;
   const name = made ? made.doc.timeline.features.find((f) => f.id === made.id)!.provenance.self.label : "Sketch 1";
-  const where = at === 0 ? "at the start of the timeline" : `after ${at}. ${doc!.timeline.features[at - 1].intent.summary}`;
+  const where = at === 0 ? "at the start of the timeline" : `after ${at}. ${aiPlain(doc!.timeline.features[at - 1].intent.summary)}`;
   const adds = `create_sketch adds an empty ${name} as item ${at + 1}, ${where}, and opens it; nothing already in the timeline changes.`;
   if (faces.length === 0) return [adds, "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane."];
   const left = faces.length - shown.length;
@@ -176,7 +192,7 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
   const part = partFeature(doc);
   const lines = features.map((f, i) => {
     const item = items[i];
-    const label = `${i + 1}. ${f.intent.summary}.`;
+    const label = `${i + 1}. ${aiPlain(f.intent.summary)}.`;
     if (item.suppressed) return `${label} Suppressed: builds nothing.`;
     if (item.rolledBack) return `${label} After the timeline marker: not built.`;
     // 26e (Q3): built on a suppressed item, it is greyed with it.
@@ -194,7 +210,7 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
   const where =
     marker === undefined ? "The timeline marker is at the end: every item is built." : marker === "start" ? "The timeline marker is at the start: nothing is built." : `The timeline marker is after item ${features.findIndex((f) => f.id === marker) + 1}: items after it are not built.`;
   // The part an extruded sketch: named, so the model knows what the user calls "it" and that set_part leaves it as it is.
-  const what = part === null ? "Nothing builds a body, so" : `The part (the last body) is ${features.indexOf(part) + 1}. ${part.intent.summary}, an extruded sketch, which no command you can use changes, so`;
+  const what = part === null ? "Nothing builds a body, so" : `The part (the last body) is ${features.indexOf(part) + 1}. ${aiPlain(part.intent.summary)}, an extruded sketch, which no command you can use changes, so`;
   // An extrude earlier in the same answer makes its body the part, so a set_part after it adds one (sweep 2026-10-28: the note said "in place").
   const does = adds === null ? IN_PLACE : `${what} set_part adds ${adds}; nothing already in the timeline changes.`;
   return [

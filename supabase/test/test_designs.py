@@ -92,7 +92,7 @@ class DesignsDatabase(unittest.TestCase):
         self.assertEqual(self.as_user(BO, f"select delete_design('{r['id']}');"), (True, "f"))
         self.assertEqual(self.as_user(BO, "select delete_my_designs();"), (True, "0"))
         self.assertEqual(self.owner(f"select body, revision from designs where id = '{r['id']}';"), "ADA-ONLY|1")
-        ok, out = self.as_user(BO, "select my_data()::text;")
+        ok, out = self.as_role("postgres", "select my_data()::text;", BO)
         self.assertTrue(ok)
         self.assertNotIn("ADA-ONLY", out)
 
@@ -204,24 +204,83 @@ class DesignsDatabase(unittest.TestCase):
 
     def test_my_data_holds_every_design_whole(self):
         self.save(ADA, body="'{\"the\":\"file\"}'", name="Bracket", source="slice")
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual([(d["name"], d["source"], d["file"]) for d in data["designs"]], [("Bracket", "slice", '{"the":"file"}')])
         self.assertTrue(data["profile"]["keep_designs"])
-        empty = json.loads(self.as_user(BO, "select my_data();")[1])
+        empty = json.loads(self.as_role("postgres", "select my_data();", BO)[1])
         self.assertEqual(empty["designs"], [])
 
     def test_my_data_takes_every_part_so_a_new_feature_never_drops_another(self):
         # A later feature adds its own my_data_part_<name>(); my_data() is never replaced again.
         self.owner("create function public.my_data_part_zz_test() returns jsonb language sql stable as $$ select jsonb_build_object('zz', auth.uid()) $$;")
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual((data["zz"], data["designs"], data["account"]["email"]), (ADA, [], "ada@example.com"))
         # A part made by anyone but the migrations' owner is never run.
         self.owner("create role intruder; grant create on schema public to intruder;")
         self.owner("set role intruder; create function public.my_data_part_evil() returns jsonb language sql as $$ select '{\"evil\": true}'::jsonb $$; reset role;")
-        self.assertNotIn("evil", self.as_user(ADA, "select my_data();")[1])
+        self.assertNotIn("evil", self.as_role("postgres", "select my_data();", ADA)[1])
         self.owner("drop function public.my_data_part_evil(); revoke create on schema public from intruder; drop role intruder;")
         self.denied(self.as_role("anon", "select my_data();"))
-        self.assertEqual(self.as_role("authenticated", "select my_data() is null;"), (True, "t"), "nobody in the token: nothing")
+        self.denied(self.as_role("anon", "select download_my_data();"))
+        self.assertEqual(self.as_role("authenticated", "select download_my_data() is null;"), (True, "t"), "nobody in the token: nothing")
+
+    # Download my data, at most once a minute and 5 times a day (security hunt 2026-11-13 A1: one call on a full
+    # account holds 130-195 MB of the database's memory, so calls side by side or one after another could run it out)
+
+    def download(self, uid):
+        ok, out = self.as_user(uid, "select download_my_data();")
+        self.assertTrue(ok, out)
+        return json.loads(out)
+
+    def test_the_browser_downloads_through_the_limit_only(self):
+        self.denied(self.as_user(ADA, "select my_data();"))
+        self.save(ADA, body="'{\"the\":\"file\"}'", name="Bracket")
+        got = self.download(ADA)
+        want = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
+        got["data_downloads"] = want["data_downloads"] = None  # this download itself is in one and not the other
+        self.assertEqual(got, want, "everything my_data() gives the person")
+
+    def test_a_second_download_within_a_minute_waits(self):
+        self.assertIn("account", self.download(ADA))
+        second = self.download(ADA)
+        self.assertEqual(second["status"], "wait")
+        self.assertEqual(sorted(second), ["retry_at", "status"], "nothing else, so it holds no memory")
+        self.assertIn("account", self.download(BO), "one person's limit is theirs alone")
+        # The gap at 0.9x and 1.1x of 60 s: 54 s ago still waits, 66 s ago may download, retry_at a minute after the last.
+        self.owner(f"update data_downloads set at = now() - interval '54 seconds' where user_id = '{ADA}';")
+        wait = self.download(ADA)
+        self.assertEqual(wait["status"], "wait")
+        self.assertEqual(self.owner(f"select '{wait['retry_at']}'::timestamptz - (select at from data_downloads where user_id = '{ADA}') = interval '60 seconds';"), "t")
+        self.owner(f"update data_downloads set at = now() - interval '66 seconds' where user_id = '{ADA}';")
+        self.assertIn("account", self.download(ADA))
+
+    def test_five_downloads_a_day_at_0_9x_and_1_1x(self):
+        # Four made 21.6 h ago (0.9 x 24 h) still count with one now: the sixth of the day waits even a minute later.
+        self.owner(f"insert into data_downloads (user_id, at) select '{ADA}', now() - interval '21.6 hours' from generate_series(1, 4);")
+        self.assertIn("account", self.download(ADA))
+        self.owner(f"update data_downloads set at = at - interval '61 seconds' where user_id = '{ADA}';")
+        self.assertEqual(self.download(ADA)["status"], "wait", "five today already")
+        # Made 26.4 h ago (1.1 x 24 h) they no longer count, and are deleted.
+        self.owner(f"update data_downloads set at = now() - interval '26.4 hours' where user_id = '{ADA}' and at < now() - interval '1 hour';")
+        self.assertIn("account", self.download(ADA))
+        self.assertEqual(self.owner(f"select count(*) from data_downloads where user_id = '{ADA}';"), "2")
+
+    def test_two_downloads_at_the_same_moment_build_only_one(self):
+        first = self.pg.start_as("authenticated", "select download_my_data() ? 'account'; select pg_sleep(1.5);", ADA)
+        self.pg.wait_for_sleep()
+        second = self.pg.start_as("authenticated", "select coalesce(download_my_data()->>'status', 'data');", ADA)
+        out1, err1 = first.communicate(timeout=30)
+        out2, err2 = second.communicate(timeout=30)
+        self.assertEqual((out1.split()[0], out2.split()[0]), ("t", "wait"), err1 + err2)
+
+    def test_the_download_times_are_the_persons_own(self):
+        self.download(ADA)
+        self.denied(self.as_user(ADA, "select * from data_downloads;"))
+        self.denied(self.as_role("anon", "select * from data_downloads;"))
+        self.assertEqual(len(json.loads(self.as_role("postgres", "select my_data();", ADA)[1])["data_downloads"]), 1)
+        self.assertEqual(json.loads(self.as_role("postgres", "select my_data();", BO)[1])["data_downloads"], [])
+        self.assertTrue(self.as_user(ADA, "select delete_my_account();")[0])
+        self.assertEqual(self.owner("select count(*) from data_downloads;"), "0")
 
     def test_the_designs_part_is_not_callable_from_the_browser(self):
         self.denied(self.as_user(ADA, "select my_data_part_designs();"))
@@ -231,11 +290,11 @@ class DesignsDatabase(unittest.TestCase):
         # Before this migration (20261105000000_payments.sql) my_data gave account, profile, plan, payments and the
         # AI allowance; rebuilt from parts it must give each of them still, plus designs (and, from 20261105180000, their
         # versions), and nothing about Bo.
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
-        self.assertEqual(sorted(data), ["account", "account_hold", "ai_allowance_used_percent", "design_versions", "designs", "display_name", "library", "likes", "moderation", "payments", "plan", "print_log", "profile", "settings", "share_reports", "shares"])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
+        self.assertEqual(sorted(data), ["account", "account_hold", "ai_allowance_used_percent", "data_downloads", "design_versions", "designs", "display_name", "friends", "library", "likes", "moderation", "payments", "plan", "print_log", "profile", "settings", "share_reports", "shares"])
         self.assertIsNone(data["payments"], "no Stripe link yet: null, as before")
         self.owner(f"insert into billing (user_id, stripe_customer_id, status) values ('{ADA}', 'cus_Ada1', 'active'), ('{BO}', 'cus_Bo22', 'active');")
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual((data["payments"]["stripe_customer_id"], data["payments"]["status"]), ("cus_Ada1", "active"))
         self.assertNotIn("cus_Bo22", json.dumps(data))
 

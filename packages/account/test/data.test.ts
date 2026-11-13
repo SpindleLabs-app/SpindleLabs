@@ -52,10 +52,26 @@ test("my data comes back as readable JSON with the person's email", async () => 
   const r = await data.myData();
   assert.equal(r.kind, "ok");
   if (r.kind === "ok") assert.equal(JSON.parse(r.value).account.email, "maker@example.com");
-  for (const bad of [null, "text", 5]) {
+  for (const bad of [null, "text", 5, [1], { status: "wait" }, { status: "wait", retry_at: "soon" }, { status: "wait", retry_at: "2026-11-13T10:00:00Z", data: 1 }]) {
     svc.nextData = bad;
-    assert.deepEqual(await data.myData(), { kind: "failed", reason: "malformed" }, String(bad));
+    assert.deepEqual(await data.myData(), { kind: "failed", reason: "malformed" }, JSON.stringify(bad));
   }
+});
+
+test("Download my data asked again too soon says when it may be asked again (security hunt 2026-11-13 A1)", async () => {
+  const { svc, data } = await signedIn();
+  svc.dataWait = "2026-11-13T10:01:00+00:00";
+  assert.deepEqual(await data.myData(), { kind: "wait", retryAt: new Date(Date.UTC(2026, 10, 13, 10, 1)) });
+  assert.equal((await data.myData()).kind, "ok", "once the time has come");
+  assert.deepEqual(svc.calls.slice(-1).map((c) => c.url), [`${SERVICE}/rest/v1/rpc/download_my_data`], "only the limited way when the service has it");
+});
+
+test("a service from before the limit is asked the old way", async () => {
+  const { svc, data } = await signedIn();
+  svc.oldData = true;
+  const r = await data.myData();
+  assert.equal(r.kind === "ok" && JSON.parse(r.value).account.email, "maker@example.com");
+  assert.deepEqual(svc.calls.slice(-2).map((c) => c.url), [`${SERVICE}/rest/v1/rpc/download_my_data`, `${SERVICE}/rest/v1/rpc/my_data`]);
 });
 
 test("deleting the account removes it at the service and signs this device out", async () => {

@@ -76,7 +76,7 @@ if (!WITH_PAGE) {
     await until(page, () => /^100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 100 layers", 60000);
     // Quality is the first choice: pick the Detailed 0.16 mm layers (its option label names the height).
     await page.evaluate(() => {
-      const select = document.querySelector(".slice-page-print select");
+      const select = document.querySelector(".slice-page-print select:not(#slice-presets-list)");
       const fine = [...select.options].find((o) => o.textContent.includes("0.16"));
       select.value = fine.value;
       select.dispatchEvent(new Event("change"));
@@ -97,7 +97,87 @@ if (!WITH_PAGE) {
     await until(page, () => /^Saved .*\.gcode\.3mf: 100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the words saying saved and 100 layers", 60000);
     const bytes = readFileSync(await file.path());
     assert.equal(bytes.subarray(0, 2).toString("latin1"), "PK", "a zip (3MF) package");
+    // The weight and cost line shows (a 40 × 30 × 20 mm box in PLA), and the file went into the print log.
+    assert.match(await page.textContent(".slice-page-cost-words"), /^About \d+(\.\d)? g of PLA, A\$\d+\.\d\d, /);
+    assert.match(await page.textContent(".slice-page-slice-words"), /Added to your print log\.$/);
+    const logged = await page.evaluate(() => Object.keys(localStorage).filter((k) => /print/i.test(k)));
+    assert.ok(logged.length > 0, `the print log is in this browser's storage: ${logged}`);
     assert.ok(bytes.length > 2000, `a real package: ${bytes.length} bytes`);
+    await context.close();
+  });
+  await check("File: plain G-code downloads the box as text, 100 layers, and the plate and nozzle choices go off", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    // File is the fifth choice (after Quality, Walls, Infill, Supports): pick its plain G-code option.
+    await page.evaluate(() => {
+      const select = document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[4];
+      select.value = String([...select.options].findIndex((o) => /Plain G-code/.test(o.textContent)));
+      select.dispatchEvent(new Event("change"));
+    });
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")].slice(5).every((s) => s.disabled)), true, "plate and nozzle off");
+    const [file] = await Promise.all([page.waitForEvent("download", { timeout: 90000 }), page.click("#slice-page-download")]);
+    assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc.gcode");
+    const text = readFileSync(await file.path(), "utf8");
+    assert.match(text, /^[;GM]/m, "G-code text");
+    assert.equal((text.match(/^;LAYER_CHANGE$/gm) ?? []).length, 100, "20 mm / 0.2 mm layers");
+    await context.close();
+  });
+  await check("Presets and Printer fits on the page: a preset saved from the choices puts them back, and Printer fits opens its dialog", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    const pick = (index, label) =>
+      page.evaluate(([i, text]) => {
+        const select = document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[i];
+        select.value = String([...select.options].findIndex((o) => o.textContent.includes(text)));
+        select.dispatchEvent(new Event("change"));
+      }, [index, label]);
+    await pick(0, "0.16"); // Quality
+    await pick(1, "4"); // Walls
+    await page.click("#slice-presets-save-as");
+    await page.fill("#slice-presets-name", "Strong");
+    await page.click("#slice-presets-name-ok");
+    await pick(1, "2"); // Walls back to 2
+    const options = await page.$$eval("#slice-presets-list option", (os) => os.map((o) => o.textContent));
+    assert.ok(options.some((o) => o.includes("Strong")), `the saved preset is listed: ${JSON.stringify(options)}; ${await page.textContent(".slice-page-slice-words")}`);
+    await page.selectOption("#slice-presets-list", { index: options.findIndex((o) => o.includes("Strong")) });
+    assert.equal(await page.evaluate(() => document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[1].selectedOptions[0].textContent), "4", "the preset put its walls back");
+    assert.match(await page.textContent(".slice-page-fits-words"), /typical sizes/);
+    await page.click("#slice-page-fits-open");
+    await page.waitForSelector("dialog[open]", { timeout: 5000 });
+    await context.close();
+  });
+  await check("Preview on the page opens the print preview of the box (100 layers) and plays it, then closes back to the page", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    await page.click("#slice-page-preview");
+    await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 90000 });
+    assert.equal(await page.getAttribute("#print-preview-layers", "max"), "100", "20 mm / 0.2 mm");
+    assert.equal(await page.textContent("#print-preview-layer-words"), "Layer 100 of 100 · 20.00 mm");
+    assert.match(await page.textContent("#print-preview-words"), /^100 layers, /, "the slice's own words over the view");
+    // Play moves the clock on: the scrubber passes where it was set (layer 50).
+    await page.$eval("#print-preview-layers", (r) => {
+      r.value = "50";
+      r.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const before = Number(await page.inputValue("#print-preview-scrub"));
+    await page.selectOption("#print-preview-speed", "10");
+    await page.click("#print-preview-play");
+    assert.equal(await page.textContent("#print-preview-play"), "Pause");
+    await until(page, (b) => Number(document.getElementById("print-preview-scrub").value) > b, before, "the time-lapse moving the clock on", 20000);
+    await page.click("#print-preview-play");
+    if (shots) await page.screenshot({ path: `${shots}/slice-page-preview.png` });
+    await page.click("#print-preview-close");
+    await page.waitForFunction(() => !document.querySelector("#print-preview[open]"), null, { timeout: 5000 });
+    assert.equal(await page.locator("#slice-page-preview").isEnabled(), true);
     await context.close();
   });
   await check("an empty design says there is nothing to print", async () => {

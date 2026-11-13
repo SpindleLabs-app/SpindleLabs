@@ -134,3 +134,50 @@ test("every setting that follows you is a key the app really keeps (a renamed ke
   });
   assert.deepEqual(missing.map((s) => s.key), []);
 });
+
+// Friends (account features 6): the page says what is kept and who sees it, with the limits the code (and so the
+// migration, checked by packages/account test/friends.test.ts) has.
+const friendsLimits = () => {
+  const code = readFileSync(join(root, "packages/account/src/friends.ts"), "utf8");
+  const n = (name) => Number(new RegExp(`${name}: (\\d+)`).exec(code)[1]);
+  return { maxFriends: n("maxFriends"), maxWaiting: n("maxWaiting"), triesADay: n("triesADay"), requestDays: n("requestDays"), codeLength: n("codeLength") };
+};
+/** What the page (as text) is missing about Friends. */
+function friendsGaps(text) {
+  const words = text.replace(/\s+/g, " ");
+  const l = friendsLimits();
+  const must = [
+    "Friends",
+    "Nobody can search for you",
+    "the only way anyone can ask you is by typing your exact profile ID",
+    `your profile ID (${l.codeLength} random letters and digits)`,
+    "you see only the ID you typed, never their name",
+    "Friends see each other's display name and the day they became friends",
+    "never told to the other person",
+    `up to ${l.maxFriends} friends, ${l.maxWaiting} requests waiting at once, and ${l.triesADay} profile IDs typed a day`,
+    `Requests are deleted after ${l.requestDays} days`,
+    "the people you blocked stay blocked",
+    "Download my data includes your profile ID, friends, requests and blocks",
+    "the settings kept in it, and your friends",
+    // Security hunt 2026-11-13 (B1, B2): a block looks like a decline, and a no holds for its 30 days.
+    "blocking someone looks to them exactly like a decline",
+    `A request someone said no to (declined it, or blocked its sender) is kept until it goes after ${l.requestDays} days, even if its sender takes it back or turns Friends off`,
+  ];
+  return must.filter((m) => !words.includes(m));
+}
+
+test("with Friends, the privacy page says what is kept, who sees what, saying no, the limits and turning it off", () => {
+  assert.deepEqual(friendsGaps(page), []);
+});
+
+test("the Friends check can fail: a page with another limit, or missing who sees what, is caught", () => {
+  assert.ok(friendsGaps(page.replace("up to 200 friends", "up to 500 friends")).length > 0);
+  assert.ok(friendsGaps(page.replace("you see only the ID you typed, never their name", "you see their name")).length > 0);
+  assert.ok(friendsGaps(page.replace("blocking someone looks to them exactly like a decline", "blocking someone deletes their request")).length > 0);
+});
+
+test("the privacy page says Download my data's limit and the times kept for it (security hunt 2026-11-13 A1)", () => {
+  const words = page.replace(/\s+/g, " ");
+  assert.ok(words.includes("It can be used once a minute and 5 times a day"));
+  assert.ok(words.includes("we note when you used it, for one day, and that is in the file too"));
+});

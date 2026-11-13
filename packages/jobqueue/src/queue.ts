@@ -66,6 +66,8 @@ export interface Job {
   state: JobState;
   /** The check's or the teacher's reason, for check-failed, returned and failed. */
   reason: string | null;
+  /** What the file check said beyond passed or refused (Q2): its facts and the things to look at, for the teacher. */
+  notes: string[];
   /** Every finished run (a failed run put back in the queue keeps its run here), oldest first. */
   runs: Run[];
   sentAt: number;
@@ -94,7 +96,7 @@ export interface JobDraft {
 
 export type Action =
   | { kind: "send"; by: Actor; at: number; job: JobDraft }
-  | { kind: "check"; by: Actor; at: number; id: string; passed: boolean; reason?: string; estimate?: Use }
+  | { kind: "check"; by: Actor; at: number; id: string; passed: boolean; reason?: string; estimate?: Use; notes?: string[] }
   | { kind: "approve"; by: Actor; at: number; id: string }
   | { kind: "return"; by: Actor; at: number; id: string; reason: string }
   | { kind: "withdraw"; by: Actor; at: number; id: string }
@@ -120,6 +122,8 @@ export const QUEUE_LIMITS = {
   displayNameChars: 40,
   materialChars: 60,
   reasonChars: 300,
+  /** Most notes the file check may leave on a job, each up to `reasonChars`. */
+  notes: 20,
   /** Longest estimate or record a job may carry: one week of machine time. */
   minutes: 7 * 24 * 60,
   /** Most material one job may carry: 5 kg of filament, or a whole 1400 × 900 mm sheet five times over. */
@@ -201,6 +205,11 @@ export function apply(queue: Queue, action: Action): Answer {
     case "check": {
       if (by.role !== "check") return refuse("not-allowed", "check");
       if (job.state !== "checking") return refuse("wrong-state", job.state);
+      const notes = action.notes ?? [];
+      if (!Array.isArray(notes) || notes.length > QUEUE_LIMITS.notes) return refuse("bad-input", "notes");
+      const clean = notes.map((n) => cleanText(n, QUEUE_LIMITS.reasonChars));
+      if (clean.some((n) => n === null)) return refuse("bad-input", "notes");
+      job.notes = clean as string[];
       if (action.passed) {
         if (action.estimate !== undefined) {
           const problem = useProblem(action.estimate, UNIT_OF_KIND[job.kind]);
@@ -317,6 +326,7 @@ function send(queue: Queue, action: Extract<Action, { kind: "send" }>): Answer {
     estimate: { minutes: draft.estimate.minutes, amount: draft.estimate.amount },
     state: "checking",
     reason: null,
+    notes: [],
     runs: [],
     sentAt: action.at,
     history: [{ at: action.at, to: "checking", by: "student" }],
@@ -451,6 +461,7 @@ const FIELD_WORDS: Record<string, string> = {
   minutes: "time (up to a week)",
   amount: "amount of material",
   reason: "reason (1 to 300 characters)",
+  notes: "check's notes (up to 20, each 1 to 300 characters)",
   to: "place in the queue",
   outcome: "outcome",
   kind: "action",

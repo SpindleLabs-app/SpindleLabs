@@ -345,7 +345,7 @@ class SharesDatabase(unittest.TestCase):
         theirs = self.share(BO, body="'THEIR-FILE'")["id"]
         self.report("authenticated", theirs, kind="other", reason="'MY-REPORT'", uid=ADA)
         self.report("authenticated", mine, kind="other", reason="'THEIR-REPORT'", uid=BO)
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual([(s["id"], s["file"]) for s in data["shares"]], [(mine, "MY-FILE"), (off, "")])
         self.assertEqual([r["reason"] for r in data["share_reports"]], ["MY-REPORT"])
         self.assertNotIn("THEIR", json.dumps(data))
