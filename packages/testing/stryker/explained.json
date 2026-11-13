@@ -169,10 +169,122 @@
   },
   {
     "file": "packages/storage/src/autosave.ts",
-    "mutator": "ConditionalExpression",
-    "original": "timer !== null",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "ownEntryThere() with no journal: the call throws inside its try, whose catch gives false, as the undefined entry does. It is reached only after journalVersion matched, which needs a journal anyway."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "dropOwnEntries() with no journal: the call throws inside its try, leaving journalVersion as it was, which is null already without a journal."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "finish() marking its entry kept with no journal: the call throws inside its try, whose catch writes nothing, as the undefined entry does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "ownEntryThere()'s catch: undefined instead of false, and both callers use it only in an && condition, where the two read the same."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
     "replacement": "true",
-    "why": "stop(): clearTimeout(null) does nothing."
+    "why": "owner = false after finish()'s own save: finish() has stopped the autosave, and nothing that runs after it reads owner (rebase() keeps the entry's own kept mark)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null",
+    "replacement": "true",
+    "why": "dropOwnEntries(): readJournalEntry of a missing entry reads no writer, so the writer test that follows is false all the same and nothing is removed under the key."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries(): the writer test that follows decides alone. A missing entry reads no writer, and an empty ownName matches no entry's writer (a writer has 1 to 64 characters), so the key is removed exactly when it was."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "entry != null || ownName !== \"\"",
+    "why": "dropOwnEntries(): the writer test that follows decides whenever the mutant lets it run. A missing entry reads no writer, and an empty ownName matches no entry's writer, so the key is removed exactly when it was."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries(): with an empty ownName the writer test that follows is false all the same, since an entry's writer has 1 to 64 characters."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!journal",
+    "replacement": "false",
+    "why": "journalNow() with no journal: the try then throws (putAsideOthers or setItem on null) and its catch returns false, as this line does; nothing else is changed first (projectToJson and keptFromLastVisit read only)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v === version",
+    "replacement": "true",
+    "why": "save(), back at the text last written: v is read from version a few lines up with no await in between, so they are always equal here."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!stopped && timer === null",
+    "replacement": "true",
+    "why": "Starting the retry timer anyway: a stopped autosave's save() returns at once, and a waiting quiet-moment save always runs before the retry would (changed(), leaving(), stop() and save() itself clear the retry with noRetry() first)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "!stopped && timer === null",
+    "replacement": "!stopped || timer === null",
+    "why": "Starting the retry timer when stopped, or with a save waiting: a stopped autosave's save() returns at once, and the waiting save clears the retry (noRetry()) before it would fire."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "timer === null",
+    "replacement": "true",
+    "why": "The retry timer started with a quiet-moment save waiting: that save, or whatever clears it (changed(), leaving(), stop()), calls noRetry() first, so the retry never fires."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "summary === undefined",
+    "replacement": "false",
+    "why": "check(), project not listed: reading .problem of undefined throws inside the same try, whose catch returns, as holds = null does a few lines on."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return; // can't be read: the next save says what is wrong }",
+    "replacement": "{}",
+    "why": "check() when the store can't be listed: holds stays undefined, and the guard after it returns on holds == null, the same as returning here."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "OptionalChaining",
+    "original": "written?.getTime",
+    "replacement": "written.getTime",
+    "why": "copyId is only called for an entry refused over newer work, which needs a base, and an entry's base is read only from a head that also gave its written time, so written is never null there."
   },
   {
     "file": "packages/storage/src/autosave.ts",
