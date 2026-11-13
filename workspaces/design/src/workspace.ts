@@ -1698,7 +1698,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const told = () => {
       if (!putAway && ctx.history.present() === before) ctx.history.callOff();
     };
-    return ctx.history.hold(work.finally(told));
+    return ctx.history.hold(work.finally(told), true); // nothing recorded yet: leaving now asks first (SL #708 item 1)
   }
   async function show(doc: DesignDocument, kind: PartKind) {
     shownDoc = doc;

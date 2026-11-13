@@ -98,7 +98,14 @@ export interface History {
    * until it settles either way; returns it. Undo or Redo pressed meanwhile waits (`whenIdle`, main.ts), so it takes
    * back that step, not the one before (clumsy hunt 2026-11-04: the step was lost, and the one before it undone).
    */
-  hold<T>(work: Promise<T>): Promise<T>;
+  hold<T>(work: Promise<T>, unrecorded?: boolean): Promise<T>;
+  /**
+   * Whether held work given `unrecorded` (an OK the kernel still checks, a question it asks: nothing recorded yet) is
+   * still held. Not a settle held after its step was recorded: the step is kept as first recorded and settled again
+   * when the project opens. While this is true leaving would lose what was asked for, so the shell asks first (flat
+   * stress hunt 2026-11-13, SL #708 item 1).
+   */
+  waitingToRecord(): boolean;
   /**
    * Held work the person asked for ended with nothing recorded (an OK the kernel refused, a question answered Cancel
    * or still open): an Undo or Redo that waited for it was pressed to take that back, and there is nothing of it to
@@ -204,6 +211,8 @@ export function createHistory(options: HistoryOptions): History {
   };
   /** Held work still running (`hold`). */
   const held = new Set<Promise<unknown>>();
+  /** Held work that has recorded nothing yet (`hold`'s `unrecorded`). */
+  const unrecordedHeld = new Set<Promise<unknown>>();
   /** Questions held work puts to the person (`asking`), until answered. */
   const asked = new Set<Promise<unknown>>();
   let calledOff = 0;
@@ -371,16 +380,19 @@ export function createHistory(options: HistoryOptions): History {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    hold(work) {
+    hold(work, unrecorded = false) {
       const end = () => {
         held.delete(done);
+        unrecordedHeld.delete(done);
         busyChanged();
       };
       const done = work.then(end, end);
       held.add(done);
+      if (unrecorded) unrecordedHeld.add(done);
       busyChanged();
       return work;
     },
+    waitingToRecord: () => unrecordedHeld.size > 0,
     onBusy(listener) {
       busyListeners.add(listener);
       return () => busyListeners.delete(listener);

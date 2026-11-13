@@ -658,13 +658,13 @@ let autosave: Autosave | null = null;
 // 4; it answered "all kept" and went without a word): while an opened file is not kept yet, and after a change when
 // this browser's storage failed at the start. A new project not changed yet has nothing to lose.
 // (#627 item 1, a size still waiting its turn in Design, is flushed here by the Undo and edit thread's fix.)
-// An OK still with the kernel (held work, `history.busy`) has recorded nothing yet, so neither the journal nor the store
-// can keep it: the page asks before going while one is held (flat stress hunt 2026-11-13, SL #708 item 1: a reload
+// An OK still with the kernel (held work, `history.waitingToRecord`) has recorded nothing yet, so neither the journal nor
+// the store can keep it: the page asks before going while one is held (flat stress hunt 2026-11-13, SL #708 item 1: a reload
 // straight after a Combine's OK went without a word and opened without the Combine; the lost-work family of #627).
 const leaving = () => {
   steps.flush();
   const kept = autosave ? autosave.leaving() : statusBeforeOpening === null && (canKeep || !ctx.history.canUndo());
-  return kept && !ctx.history.busy();
+  return kept && !ctx.history.waitingToRecord();
 };
 // Shown again, or its window chosen again: a tab left open while another tab changed the project is told at once, before
 // anything is edited, saved to a file or exported from the older state (export hunt 2026-11-12, #642 item 3: it went
@@ -694,7 +694,7 @@ const saveStatus = (s: AutosaveStatus) => {
 };
 /** Listens for beforeunload only while something could be lost (a saved page with nothing held stays fit for the back/forward cache). */
 function askWhileUnsaved() {
-  if (shownStatus.state === "saved" && !ctx.history.busy()) window.removeEventListener("beforeunload", askBeforeLeaving);
+  if (shownStatus.state === "saved" && !ctx.history.waitingToRecord()) window.removeEventListener("beforeunload", askBeforeLeaving);
   else window.addEventListener("beforeunload", askBeforeLeaving);
 }
 ctx.history.onBusy(askWhileUnsaved);
