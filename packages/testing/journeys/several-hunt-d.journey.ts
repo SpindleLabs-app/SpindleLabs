@@ -87,14 +87,14 @@ test("D2: Edit feature makes a two-profile extrude a Join: refused in words (as 
   await a.close();
 });
 
-// D3 (a sketch on a second profile's top after a side redrawn) and D4 (two profiles of one sketch sharing a kept shape)
-// are left for later (SL #611 C4: they need a naming or data change); their repros stay in the hunt's folder.
+// D3 (a sketch on a second profile's top after a side redrawn) is fixed by SL #632 item 2, tested in Design's
+// test/several-cap-names.test.ts; D4 (two profiles of one sketch sharing a kept shape) is #632 item 1.
 test("D5a: Extrude on the top face of square B's body (press-pull): the design must still open, and Redo must put it back", async () => {
   const { doc } = await twoSquares();
   const a = await app(doc);
   a.$("#extrude")!.click();
   await a.settle();
-  const top = a.extrudeShown()!.profiles.find((p) => p.face && Math.abs(p.plane.normal[2]) === 1 && Math.abs(p.plane.origin[2] - 5) < 1e-9 && p.id.includes("line-12"))!;
+  const top = a.extrudeShown()!.profiles.find((p) => p.face && Math.abs(p.plane.normal[2]) === 1 && Math.abs(p.plane.origin[2] - 5) < 1e-9 && p.id.endsWith("/end:2"))!; // B is the second profile: its top is end:2 (SL #632 item 2)
   await a.extrudePointer({ kind: "pick", profile: top.id });
   typeIn(a, "#extrude-distance", 3);
   await a.settle();
