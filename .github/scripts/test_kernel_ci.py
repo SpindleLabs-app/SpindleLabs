@@ -542,6 +542,136 @@ class SecretsOnlyOnMain(unittest.TestCase):
         self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "GITHUB_TOKEN"))), [])
 
 
+class Seal(unittest.TestCase):
+    """seal / unseal: the keyless job that ran kernel code hands its files over in a sealed bundle, which only the
+    keyed job (holding the private key) opens. Nothing readable is left in the bundle, a changed bundle is refused, and
+    opening one never writes outside its folder."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.keys = os.path.join(self.tmp, "keys")
+        self.ci("keygen", self.keys)
+        self.pub = os.path.join(self.keys, "public.pem")
+        self.priv = os.path.join(self.keys, "private.pem")
+        self.logs = os.path.join(self.tmp, "logs")
+        os.makedirs(os.path.join(self.logs, "sub"))
+        with open(os.path.join(self.logs, "a.log"), "w") as f:
+            f.write("panicked at src/widget/gear.rs:812:9 TOPSECRETWORD\n")
+        with open(os.path.join(self.logs, "sub", "b.bin"), "wb") as f:
+            f.write(bytes(range(256)) * 40)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def ci(self, *args, check=True):
+        out = subprocess.run(["bash", SCRIPT, *args], capture_output=True, text=True)
+        if check:
+            self.assertEqual(out.returncode, 0, out.stderr)
+        return out
+
+    def seal(self):
+        sealed = os.path.join(self.tmp, "sealed")
+        out = self.ci("seal", self.logs, sealed, self.pub)
+        self.assertEqual((out.stdout, out.stderr), ("", ""))
+        return sealed
+
+    def test_round_trip_keeps_every_file(self):
+        out = os.path.join(self.tmp, "out")
+        self.ci("unseal", self.seal(), out, self.priv)
+        for rel in ("a.log", os.path.join("sub", "b.bin")):
+            with open(os.path.join(self.logs, rel), "rb") as a, open(os.path.join(out, rel), "rb") as b:
+                self.assertEqual(a.read(), b.read())
+
+    def test_the_bundle_shows_no_plaintext(self):
+        sealed = self.seal()
+        self.assertEqual(sorted(os.listdir(sealed)), ["data.enc", "key.enc"])
+        for name in os.listdir(sealed):
+            with open(os.path.join(sealed, name), "rb") as f:
+                blob = f.read()
+            self.assertNotIn(b"TOPSECRETWORD", blob)
+            self.assertNotIn(b"gear.rs", blob)
+
+    def test_another_private_key_cannot_open_it(self):
+        sealed = self.seal()
+        other = os.path.join(self.tmp, "other")
+        self.ci("keygen", other)
+        out = self.ci("unseal", sealed, os.path.join(self.tmp, "out"), os.path.join(other, "private.pem"), check=False)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "a.log")))
+
+    def test_a_changed_file_is_refused(self):
+        for name in ("data.enc", "key.enc"):
+            sealed = self.seal()
+            path = os.path.join(sealed, name)
+            with open(path, "rb") as f:
+                blob = bytearray(f.read())
+            blob[len(blob) // 2] ^= 1
+            with open(path, "wb") as f:
+                f.write(blob)
+            out_dir = os.path.join(self.tmp, "out-" + name)
+            out = self.ci("unseal", sealed, out_dir, self.priv, check=False)
+            self.assertNotEqual(out.returncode, 0, name)
+            self.assertFalse(os.path.exists(os.path.join(out_dir, "a.log")), name)
+            shutil.rmtree(sealed)
+
+    def hostile(self, build):
+        import tarfile
+        raw = os.path.join(self.tmp, "raw.tar")
+        with tarfile.open(raw, "w") as t:
+            build(t)
+        sealed = os.path.join(self.tmp, "sealed-h")
+        self.ci("seal-tar", raw, sealed, self.pub)
+        return sealed
+
+    def test_a_hostile_archive_writes_nothing_outside(self):
+        import io
+        import tarfile
+        cases = {}
+
+        def dotdot(t):
+            i = tarfile.TarInfo("../escaped.txt")
+            i.size = 3
+            t.addfile(i, io.BytesIO(b"bad"))
+
+        def absolute(t):
+            i = tarfile.TarInfo(os.path.join(self.tmp, "abs.txt"))
+            i.size = 3
+            t.addfile(i, io.BytesIO(b"bad"))
+
+        def link(t):
+            i = tarfile.TarInfo("ln")
+            i.type = tarfile.SYMTYPE
+            i.linkname = "/etc/passwd"
+            t.addfile(i)
+
+        def hard(t):
+            i = tarfile.TarInfo("hl")
+            i.type = tarfile.LNKTYPE
+            i.linkname = "a.log"
+            t.addfile(i)
+
+        def device(t):
+            i = tarfile.TarInfo("dev")
+            i.type = tarfile.CHRTYPE
+            t.addfile(i)
+
+        for name, build in dict(dotdot=dotdot, absolute=absolute, link=link, hard=hard, device=device).items():
+            with self.subTest(name):
+                sealed = self.hostile(build)
+                out_dir = os.path.join(self.tmp, "out-" + name)
+                out = self.ci("unseal", sealed, out_dir, self.priv, check=False)
+                self.assertNotEqual(out.returncode, 0)
+                self.assertFalse(os.path.exists(os.path.join(self.tmp, "escaped.txt")))
+                self.assertFalse(os.path.exists(os.path.join(self.tmp, "abs.txt")))
+                self.assertEqual(os.listdir(out_dir) if os.path.isdir(out_dir) else [], [])
+                shutil.rmtree(sealed)
+
+    def test_keygen_makes_a_matching_pair(self):
+        a = subprocess.run(["openssl", "pkey", "-in", self.priv, "-pubout"], capture_output=True, text=True).stdout
+        with open(self.pub) as f:
+            self.assertEqual(a, f.read())
+
+
 class NoKeyBesideKernelCode(unittest.TestCase):
     """A step that runs the kernel's code (kernel_ci.sh run, or a script of the
     kernel's checkout) has no key in its environment: not a secret, and not
