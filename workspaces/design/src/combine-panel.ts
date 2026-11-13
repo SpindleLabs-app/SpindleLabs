@@ -76,6 +76,20 @@ export function combineHintWords(field: "target" | "tools", bodies: number): str
   if (bodies === 1) return "Combine needs two bodies: add another with Insert or Extrude";
   return field === "target" ? "Combine: click or tap the body to change" : "Now click or tap the bodies to use as tools";
 }
+/**
+ * The line over the view after a Combine's OK (SL #677 item 5): what it
+ * did to which bodies, whether the tools were used up or kept, and that
+ * Undo puts it back. `target` and `tools` as the panel named them.
+ */
+export function combineDoneWords(label: string, operation: "join" | "cut" | "intersect", target: string, tools: readonly string[], keepTools: boolean): string {
+  const list = tools.length === 1 ? tools[0] : `${tools.slice(0, -1).join(", ")} and ${tools.at(-1)}`;
+  const fate = keepTools ? "kept" : "used up";
+  const did =
+    operation === "intersect"
+      ? `${target} now keeps only what it shared with ${list}, which ${tools.length === 1 ? "was" : "were"} ${fate}`
+      : `${list} ${operation === "join" ? "joined to" : "cut from"} ${target}${keepTools ? ", and kept" : " and used up"}`;
+  return `${label}: ${did}. Undo puts it back as it was.`;
+}
 /** The note under an edited Combine's fields. */
 export const EDIT_NOTE = "The bodies stay as this Combine was made. To use other bodies, delete it and make a new one.";
 

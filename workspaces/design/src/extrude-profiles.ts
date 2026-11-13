@@ -43,26 +43,41 @@ export function extrudeSketches(f: Feature): string[] {
 }
 
 /**
- * The key an extrude's kept shape of `sketch` is filed under in the
- * document's `kept`: the extrude's id for its first profile's sketch (as
- * before version 18), else the extrude's id and the sketch's, "/" between
- * (in no id Design makes).
+ * The key the kept shape of an extrude's profile `k` is filed under in the
+ * document's `kept` (Design data version 20, SL #632): the extrude's id for
+ * its first profile (k = 0, as before version 18), else the extrude's id
+ * and "profile:k", k its place in `more` counted from 1 (a "/" and a ":",
+ * in no id Design makes). Each profile keeps its own shape, so two of one
+ * sketch never share one (version 18 filed every profile of a sketch under
+ * one key, and the one lost second came back at the shape the first was
+ * lost with). By place, because a profile's place is all that stays: its
+ * region is rewritten as its sketch is edited (`settleKept`), two profiles
+ * may share a sketch, and nothing in Design adds, takes out or reorders an
+ * extrude's profiles once made (an edit that ever does must move these
+ * keys with them).
  */
-export const keptKey = (f: Feature, sketch: string): string => (sketch === f.intent.parameters.sketch ? f.id : `${f.id}/${sketch}`);
+export const keptKey = (f: Feature, k: number): string => (k === 0 ? f.id : `${f.id}/profile:${k}`);
+
+/** Whether `id` is the kept-shape key of one of `f`'s profiles after its first (`keptKey`, k from 1 to the number in `more`). */
+export function isMoreKeptKey(f: Feature, id: string): boolean {
+  const n = moreProfiles(f).length;
+  for (let k = 1; k <= n; k++) if (keptKey(f, k) === id) return true;
+  return false;
+}
 
 /**
  * An extrude's profiles, each as a one-profile extrude of it (its sketch,
  * region, distance and Flip; the first is the extrude itself), its id the
- * key its kept shape goes by (`keptKey`), so the rebuild and the kept-shape
+ * key its own kept shape goes by (`keptKey`), so the rebuild and the kept-shape
  * rule treat each as they always treated an extrude.
  */
 export function profileParts(f: Feature): Feature[] {
   const { more: _more, sketch: _s, region: _r, operation: _o, bodies: _b, ...rest } = f.intent.parameters;
   return [
     f,
-    ...moreProfiles(f).map((p): Feature => ({
+    ...moreProfiles(f).map((p, j): Feature => ({
       ...f,
-      id: keptKey(f, p.sketch),
+      id: keptKey(f, j + 1),
       intent: { ...f.intent, parameters: { ...rest, sketch: p.sketch, ...(p.region ? { region: p.region } : {}) } },
       dependsOn: [p.sketch],
     })),

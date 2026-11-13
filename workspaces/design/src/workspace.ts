@@ -18,7 +18,7 @@ import { EXPLODE_DEFAULT, explodedMesh, readSpread } from "./explode.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { changedCombine, COMBINE_STEP, forgetPieces, insertCombine } from "./combine.ts";
-import { combineHintWords, combinePanel } from "./combine-panel.ts";
+import { combineDoneWords, combineHintWords, combinePanel } from "./combine-panel.ts";
 import { askWords, bodyNamer, checkedItem, cutAsk, type Checked } from "./cut-ask.ts";
 import type { Miss } from "./misses.ts";
 import { combineShown } from "./combine-flag.ts";
@@ -33,7 +33,7 @@ import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { SOLID_OVERLAY, solidBadge } from "./solid-badge.ts";
-import { bodyLabel, bodyRows, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { bodyLabel, bodyRows, combineRowTags, browserTree, eyeId, failedIds, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, editOff, showTimelineBar, timelineBarItems, type MenuEntry } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, followUnit, panelSizeRefused, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, panelShown, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
@@ -343,6 +343,8 @@ const isOpen = (n: { id: string; startsFolded?: boolean }) => folding.get(n.id) 
 
 /** Why a Combine in the file can't be edited while Combine is switched off (#507). */
 const COMBINE_OFF = "Combine is switched off, so this can't be edited.";
+/** How long the line over the view after a Combine's OK stays (ms): long enough to read two short sentences. */
+const COMBINE_DONE_MS = 8000;
 
 /** Lights the browser rows whose geometry is selected (aria-current), and only those; `failed`, the last rebuild's failed ids, select nothing. */
 /**
@@ -715,7 +717,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     rowsFailed = failedNow;
     browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden, buildAreaOn);
     showBuildAreaWords();
+    afterBrowser();
   }
+  /** Run after each drawing of the browser: Combine's Target and Tool tags, set once Combine is wired (below). */
+  let afterBrowser = () => {};
 
   /**
    * The unit changed (Settings): the browser's and the timeline's words say it (U2c3). Held by `unmount`, since the page's
@@ -3617,6 +3622,39 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function showCombineHint() {
     combineHint.textContent = combineHintWords(combineBox.field, bodyRows(designDoc(), failedNow).length);
     combineHint.hidden = !(shown && combineBox.shown && combineBox.editing === null && (combineTarget === null || combineTools.length === 0));
+    showCombineTags();
+  }
+  /**
+   * While Combine is open, "Target" and "Tool" beside the picked bodies' rows in the browser (SL #677 item 5, the
+   * coordinator's call: words, not a second colour, so they don't rest on colour alone); gone when it shuts.
+   */
+  function showCombineTags() {
+    for (const t of ctx.browser.querySelectorAll(".combine-tag")) t.remove();
+    if (!combineBox.shown) return;
+    for (const [node, tag] of combineRowTags(designDoc(), failedNow, combineTarget, combineTools)) {
+      const row = ctx.browser.querySelector<HTMLElement>(`.tree-row[data-node="${node}"]`);
+      if (row === null) continue;
+      const span = row.ownerDocument.createElement("span");
+      span.className = `combine-tag combine-tag-${tag.toLowerCase()}`; // styles/combine-tag.css
+      span.textContent = tag;
+      row.after(span);
+    }
+  }
+  afterBrowser = showCombineTags;
+  /** Over the view after a Combine's OK: one line saying what it did and that Undo puts it back (SL #677 item 5); gone after `COMBINE_DONE_MS`, or as Combine opens again. */
+  const combineDone = viewport.element.ownerDocument.createElement("p");
+  combineDone.id = "combine-done"; // read by the e2e test
+  combineDone.className = "move-panel-hint";
+  combineDone.setAttribute("role", "status");
+  combineDone.hidden = true;
+  viewport.element.append(combineDone);
+  let combineDoneTimer: ReturnType<typeof setTimeout> | null = null;
+  function sayCombineDone(words: string | null) {
+    if (combineDoneTimer !== null) clearTimeout(combineDoneTimer);
+    combineDoneTimer = null;
+    combineDone.textContent = words ?? "";
+    combineDone.hidden = words === null;
+    if (words !== null) combineDoneTimer = setTimeout(() => sayCombineDone(null), COMBINE_DONE_MS);
   }
   /** What the panel calls body `id`: its Bodies row ("Body 2"), else its item's name; a deleted one as the edited Combine remembers it (browser.ts `bodyLabel`, SL #677 item 5). */
   const combineLabel = (id: string) => {
@@ -3639,6 +3677,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveMove();
     if (mode.kind !== "none") leaveSketch();
     leaveCombine();
+    sayCombineDone(null);
     combineOpenings++;
     const doc = designDoc();
     if (id !== null) {
@@ -3758,8 +3797,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
       if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
     }
+    // Named as the panel named them, before the Combine uses them up and the selection lets them go.
+    const words = combineDoneWords(next.timeline.features.find((f) => f.id === made)?.provenance.self.label ?? "Combine", op, combineLabel(combineTarget), combineTools.map(combineLabel), combineBox.keepTools);
     if (id === null) ctx.selection.clear();
     menuHost.record(id === null ? COMBINE_STEP : editStep(before, id), next);
+    sayCombineDone(words);
   }
 
   // The panel folds away until something is selected or a tool's box is in it (U0b); the user's pin is kept across mounts.
@@ -4895,6 +4937,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       moveHint.remove();
       explodeBar.remove();
       combineHint.remove();
+      sayCombineDone(null);
+      combineDone.remove();
       measureBox.dispose();
       startCard.element.remove();
       solidCard.element.remove();
