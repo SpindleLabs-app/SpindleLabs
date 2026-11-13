@@ -2,24 +2,14 @@
 //   node --experimental-strip-types --no-warnings packages/mcp/bin/main.ts
 // stdout carries only protocol messages; anything else goes to stderr.
 
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { nodeKernel } from "../../testing/src/node-kernel.ts";
 import { serverInfo } from "../src/info.ts";
 import { handleLine } from "../src/protocol.ts";
-import { Session, type Files } from "../src/session.ts";
+import { nodeFiles } from "./node-files.ts";
+import { Session } from "../src/session.ts";
 
-const files: Files = {
-  exists: (p) => existsSync(p),
-  size: (p) => statSync(p).size,
-  read: (p) => {
-    if (!statSync(p).isFile()) throw new Error("it is not a file");
-    return new Uint8Array(readFileSync(p));
-  },
-  write: (p, bytes) => writeFileSync(p, bytes),
-};
-
-const session = new Session(nodeKernel(), files);
+const session = new Session(nodeKernel(), nodeFiles);
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 // One message at a time, in order: the kernel and the open design are one per server.
 let queue = Promise.resolve();
