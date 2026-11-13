@@ -19,7 +19,7 @@ import "@fission/ui/theme.css";
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../packages/print/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -140,6 +140,8 @@ function pictureOfView(): string | null {
 // pane of its own: its own camera, the viewer's body, selection and picks.
 const viewer = new Viewer($("viewport"));
 const pane = paneViewports(viewer);
+/** Redraws the Undo and Redo buttons (set once they exist, below): a tool's panel opened or closed (issue #520). */
+let refreshUndoRedo = () => {};
 const ctx: WorkspaceContext = {
   project: emptyProject(),
   projectChanged: (label, mergeKey) => projectChanged(label, mergeKey),
@@ -161,11 +163,15 @@ const ctx: WorkspaceContext = {
   workspaceTitle,
   openFile: () => $("open-file").click(),
   // A new design in place of the saved or opened one: its file and name go, so Save asks where (app hunt 2026-11-04).
+  // Undo puts the file back with the design (issue #520): the design as it was is kept with its file, the cleared one with none.
   startedFresh: () => {
+    fileOf(projectToJson(ctx.project), { handle: savedTo, name: projectFile });
     savedTo = null;
     projectFile = null;
+    freshPending = true; // the cleared design, once recorded (projectChanged), has no file
     fileOwner++;
   },
+  toolChanged: () => refreshUndoRedo(),
   fileName: () => (projectFile === null ? null : baseNameOf(projectFile, PROJECT_KIND.extension)),
 };
 
@@ -180,10 +186,16 @@ let mounting = 0;
  * defaults its workspaces fill in, so until then a reload opens the last one.
  */
 let keepOnChange: string | null = null;
+/** New let the file go (startedFresh): the next change recorded is the cleared design, kept with no file (`fileOf`). */
+let freshPending = false;
 function projectChanged(label = "Edit", mergeKey?: string) {
   if (keepOnChange !== null && mounting === 0) keep(keepOnChange);
   autosave?.changed();
   if (mounting === 0) ctx.history.record(label, mergeKey);
+  if (freshPending && mounting === 0) {
+    freshPending = false;
+    fileOf(projectToJson(ctx.project), { handle: null, name: null });
+  }
   tabs?.sync();
 }
 /** Runs a show or mount; once the last one ends, takes whatever defaults the workspaces filled in into the present undo step. */
@@ -199,6 +211,11 @@ function mountingDone<T>(run: () => T): T {
 function restoreSnapshot(text: string) {
   const project = projectFromJson(text, workspaces);
   ctx.project = project;
+  const file = filesOf.get(text);
+  if (file) {
+    savedTo = file.handle;
+    projectFile = file.name;
+  }
   pool.forgetAll(); // every warm workspace showed the project as it was
   show(current);
   if (split) mountSplit(split.id);
@@ -450,6 +467,7 @@ function paneCtx(pane: PaneId, slots: Slots): WorkspaceContext {
     workspaceTitle,
     openFile: ctx.openFile,
     startedFresh: ctx.startedFresh,
+    toolChanged: ctx.toolChanged,
     fileName: ctx.fileName,
   };
 }
@@ -750,6 +768,17 @@ let savedTo: FileHandle | null = null;
  * a new or other project lets it go.
  */
 let projectFile: string | null = null;
+/**
+ * The file each design an undo step can put back belonged to, where New let one go (issue #520: File > New, then Undo,
+ * brought the design back but Save offered "Untitled"): keyed by the step's snapshot, the project's text, so an Undo
+ * back to the design opened puts its file back and a Redo of New lets it go again. A few kept, the newest last.
+ */
+const filesOf = new Map<string, { handle: FileHandle | null; name: string | null }>();
+function fileOf(text: string, file: { handle: FileHandle | null; name: string | null }) {
+  filesOf.delete(text);
+  filesOf.set(text, file);
+  while (filesOf.size > 8) filesOf.delete(filesOf.keys().next().value!);
+}
 /** Goes up each time another project takes the open one's place (new, opened, restored): a save that was still asking then knows its file is not this project's. */
 let fileOwner = 0;
 /** A Save is asking where or under what name: Save and Save As pressed again meanwhile (Ctrl+S held or mashed, the menu, the key behind the name box) do nothing, so there is one question and one file (export hunt 2026-11-12, SL #644 item 4; the Save icon's repeat guard only covered the icon). */
@@ -767,6 +796,7 @@ async function save(asNew = false) {
     if (result.status === "saved" && owner === fileOwner) {
       savedTo = result.handle;
       projectFile = result.name;
+      fileOf(projectToJson(ctx.project), { handle: savedTo, name: projectFile }); // an Undo back to here finds this file
     }
     fileStatus("");
   } catch (e) {
@@ -803,7 +833,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => listedImporter(f.format)).
 const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/.test(navigator.platform));
 // File ▾ > Print log… (account features 5): kept in this browser; the account code may keep it in the account too.
 const printLog = startPrintLog(document);
-const file = fileMenu(document, {
+const fileParts: FileMenuParts = {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
   ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
@@ -824,14 +854,25 @@ const file = fileMenu(document, {
     }
     return null;
   },
-});
+};
+const file = fileMenu(document, fileParts);
 $("file-bar").prepend(file.element);
+// The command search box (S) lists the shell's own commands after the workspace's (issue #523): Undo and Redo, File ▾'s
+// entries as File ▾ has them now (Export STL off with File ▾'s reason on an empty design) and Settings.
+shellCommands(document, () => [
+  { id: "shell-undo", label: "Undo", key: fileKey("Mod+Z"), off: ctx.history.undoLabel() === null ? "Nothing to undo" : undefined, run: () => undoRedo("undo") },
+  { id: "shell-redo", label: "Redo", key: fileKey("Mod+Shift+Z"), off: ctx.history.redoLabel() === null ? "Nothing to redo" : undefined, run: () => undoRedo("redo") },
+  ...fileSections(fileParts).flatMap((sec) => sec.items).map((i) => ({ id: `shell-${i.id}`, label: i.label, key: i.key, off: i.off, run: i.run })),
+  { id: "shell-settings", label: "Settings", run: () => $("settings-open").click() },
+]);
 /** What Open says when the last project's changes, refused because another tab saved, were kept as project `name`. */
 const keptApartWords = (name: string) => `Your changes in this tab couldn't be saved, because the project was changed in another tab meanwhile. Nothing is lost: they're kept in this browser as a separate project, “${name}” (File > Projects in this browser opens it).`;
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
   projectFile = null; // and so did its name
+  filesOf.clear(); // and nothing of the old project can be undone back to
+  freshPending = false;
   fileOwner++;
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
@@ -1498,7 +1539,23 @@ function undoRedo(which: "undo" | "redo") {
       showUndoRedo();
     });
 }
+/**
+ * The tool whose panel is open in a pane on screen (issue #520, as Fusion's): Undo cancels just it, taking back no older
+ * step (it recorded nothing before its OK); Redo and History's jumps wait until it closes, so nothing typed is lost.
+ */
+function openTool(): { name: string; cancel(): void } | null {
+  for (const p of panesInUse()) {
+    const tool = pool.awake(p)?.view.openTool?.() ?? null;
+    if (tool) return tool;
+  }
+  return null;
+}
 function undoRedoNow(which: "undo" | "redo") {
+  const tool = openTool();
+  if (tool) {
+    if (which === "undo") tool.cancel();
+    return showUndoRedo();
+  }
   try {
     ctx.history[which]();
   } catch (e) {
@@ -1507,6 +1564,8 @@ function undoRedoNow(which: "undo" | "redo") {
   ctx.history.amend(); // defaults the remounted workspaces filled in
 }
 function showUndoRedo() {
+  // An OK still with the kernel (held) is the tool finishing: Undo and Redo wait for it and then act on the project.
+  const tool = ctx.history.busy() ? null : openTool();
   const buttons = [
     ["undo", "Undo", ctx.history.undoLabel(), "Mod+Z"],
     ["redo", "Redo", ctx.history.redoLabel(), "Mod+Shift+Z"],
@@ -1518,6 +1577,14 @@ function showUndoRedo() {
     const waiting = waitingOn[id] > 0;
     b.toggleAttribute("aria-busy", waiting);
     if (waiting) b.setAttribute("aria-busy", "true");
+    // What it says of the project's own steps, tool or none: the browser checks read it to see that nothing was recorded.
+    b.dataset.projectStep = label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    if (tool && !waiting) {
+      // A tool open: Undo cancels it alone, Redo waits until it closes (issue #520).
+      b.disabled = id === "redo";
+      b.title = id === "undo" ? `Undo: cancel ${tool.name} (${chordLabel(chord, mac)})` : `Redo waits until ${tool.name} is closed (OK or Cancel)`;
+      continue;
+    }
     // From the moment an OK is pressed (held work, `history.hold`) Undo would take it back once it lands, so it says so and
     // takes a press (SL #708 item 3: it stayed grey, or named the step before, until the kernel answered, and a press was lost).
     const ahead = id === "undo" && ctx.history.busy();
@@ -1545,14 +1612,20 @@ for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id));
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
+refreshUndoRedo = showUndoRedo;
 ctx.history.onBusy(showUndoRedo);
 showUndoRedo();
 // History: every step kept, to go back (or forward) to any of them at once. Waits for an OK the kernel still checks
 // like Undo and Redo do, so it goes back from the finished step.
 function jumpHistory(step: number) {
   const now = () => {
+    const tool = openTool();
+    // Going back would close the tool and lose what is typed in it (issue #520): it waits until the tool closes.
+    if (tool) return fileStatus(`Finish or cancel ${tool.name} first (OK or Cancel), then go back in History.`);
+    const target = ctx.history.steps()[step];
     try {
-      ctx.history.jumpTo(step);
+      // Refused while a sketch is open, for a step from before it (its own steps only, issue #520).
+      if (ctx.history.jumpTo(step) === null && target !== undefined && target.state !== "current") return fileStatus("While a sketch is open, History goes back only through the sketch's own steps: Finish Sketch first.");
     } catch (e) {
       return fileStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
     }

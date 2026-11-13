@@ -144,7 +144,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       hint.append(el("span", "", "extrude-several-keys", SEVERAL_HINT), el("span", "", "extrude-several-tap", SEVERAL_HINT_TOUCH));
       severalRow.append(several, hint);
       const input = el("input", "extrude-distance");
-      Object.assign(input, { type: "number", step: "any" });
+      Object.assign(input, { type: "text", inputMode: "decimal", autocomplete: "off", spellcheck: false }); // sizeBox reads units and commas (issue #518)
       const field = sizeBox(input, () => currentUnit(document));
       field.value = distance;
       input.setAttribute("aria-label", `Distance in ${currentUnit(document)}`);

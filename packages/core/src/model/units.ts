@@ -44,6 +44,49 @@ export function parseLength(text: string, unit: Unit): number | null {
   return Number.isFinite(mm) ? mm : null;
 }
 
+/** Millimetres in one of each unit a size box reads after a number (issue #518): 1 cm = 10 mm, 1 m = 1000 mm, 1 in = 25.4 mm. */
+const MM_IN: Record<string, number> = { mm: 1, cm: 10, m: 1000, in: MM_PER_INCH, inch: MM_PER_INCH, inches: MM_PER_INCH, '"': MM_PER_INCH, "″": MM_PER_INCH };
+
+/**
+ * A plain number typed in a box, a decimal comma read as a point (issue #518: "1,5" is 1.5, as a de-DE keyboard types it; "1," is 1,
+ * as "1." is, while it is being typed), or why
+ * not: "comma" when a comma could as well separate thousands (one comma before exactly three digits after 1 to 3 others, "1,000",
+ * or more than one separator, "1,000,000", "1.000,5"), so the box refuses the text rather than guess 1000 or 1; "unreadable"
+ * for anything else that isn't a finite decimal (empty, "abc", "0x10", "Infinity", "1e999"). An exponent is a number ("1e3").
+ */
+export function readDecimalText(text: string): { value: number } | { why: "comma" | "unreadable" } {
+  let t = text.trim();
+  if (t.includes(",")) {
+    if (!/^[+-]?(\d*,\d+|\d+,)$/.test(t)) return { why: /^[+-]?[\d.,]+$/.test(t) ? "comma" : "unreadable" };
+    if (/^[+-]?[1-9]\d{0,2},\d{3}$/.test(t)) return { why: "comma" };
+    t = t.replace(",", ".");
+  }
+  if (!NUMBER.test(t)) return { why: "unreadable" };
+  const value = Number(t);
+  return Number.isFinite(value) ? { value } : { why: "unreadable" };
+}
+
+/**
+ * A size typed in a box as millimetres (issue #518), or why not (`readDecimalText`'s reasons). A bare number is in `unit`, the unit
+ * the box shows; one followed by mm, cm, m, in, inch, inches or " (with or without a space) is in that unit whatever the box
+ * shows ("2.5 cm" is 25 mm, "1in" is 25.4 mm, "25.4mm" in an inch box is 25.4 mm). Any other word after it is unreadable, never
+ * dropped. Converted sizes are rounded to 12 significant digits, as `boxValue` (0.3 cm is 3 mm, not 3.0000000000000004).
+ */
+export function readSizeText(text: string, unit: Unit): { mm: number } | { why: "comma" | "unreadable" } {
+  const m = /^\s*(.*?)\s*(mm|cm|m|inches|inch|in|"|″)?\s*$/i.exec(text);
+  if (!m) return { why: "unreadable" };
+  const n = readDecimalText(m[1]);
+  if ("why" in n) return n;
+  const per = m[2] === undefined ? toMm(1, unit) : MM_IN[m[2].toLowerCase()];
+  if (per === 1) return { mm: n.value };
+  const mm = n.value * per;
+  return Number.isFinite(mm) ? { mm: Number(mm.toPrecision(12)) } : { why: "unreadable" };
+}
+
+/** What a size box says for text with a comma that could separate thousands (`readDecimalText`): type it again, unambiguously. */
+export const commaWords = (text: string): string =>
+  `"${text.trim()}" could mean thousands or a decimal: type it without the comma (1000), or with a point or one comma for a decimal (1.5 or 1,5).`;
+
 /** A saved unit choice read back: anything but "mm" or "in" is millimetres. */
 export const readUnit = (raw: unknown): Unit => (raw === "in" ? "in" : "mm");
 
