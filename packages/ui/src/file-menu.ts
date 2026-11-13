@@ -33,6 +33,8 @@ export interface FileMenuParts {
   myDesigns?: FileMenuEntry;
   /** Share…, after My designs (community C2c; only with the ?share switch on): a link to a frozen copy of the open design. */
   share?: FileMenuEntry;
+  /** Publish to the library…, after Share (community C3c; only with the ?share switch on): a copy in the public library. */
+  publish?: FileMenuEntry;
   save: FileMenuEntry;
   /** Save As…, listed after Save when given: it asks for a name and place again. */
   saveAs?: FileMenuEntry;
@@ -80,7 +82,7 @@ export function fileSections(parts: FileMenuParts, phone = false): MenuSection[]
   });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  const project: MenuSection = { items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), ...(parts.share ? [item(parts.share, "export", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] };
+  const project: MenuSection = { items: [item(newEntry, "new"), ...(parts.home ? [item(parts.home, "folder", true)] : []), item(parts.open, "open", true), ...(parts.projects ? [item(parts.projects, "folder", true)] : []), ...(parts.versions ? [item(parts.versions, "undo", true)] : []), ...(parts.myDesigns ? [item(parts.myDesigns, "account", true)] : []), ...(parts.share ? [item(parts.share, "export", true)] : []), ...(parts.publish ? [item(parts.publish, "export", true)] : []), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] };
   const out: MenuSection = { items: exports.map((e) => item(e, "export")) };
   return phone ? [out, project] : [project, out];
 }
