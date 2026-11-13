@@ -160,7 +160,10 @@ async function takeUpdate(page) {
 /** A change for makeBuild: the kernel's .wasm renamed (`tag`), and the scripts that name it changed to match, so the server no longer has the old name. */
 const renameWasm = (tag) => (dir) => {
   const old = wasmOf(dir);
-  const name = old.replace(/-[^-.]+\.wasm$/, `-${tag}.wasm`);
+  // The tag is added after the whole name: Vite's hash is base64url, so it may hold or end in "-" (kernel 0.33.63's
+  // "fission_kernel_bg-BlvQhYA-.wasm"), and replacing what follows the last "-" then changed nothing.
+  const name = `${old.slice(0, -".wasm".length)}-${tag}.wasm`;
+  assert.notEqual(name, old, "the kernel's .wasm really renamed");
   renameSync(join(dir, "assets", old), join(dir, "assets", name));
   for (const f of readdirSync(join(dir, "assets")).filter((n) => n.endsWith(".js"))) {
     const p = join(dir, "assets", f);
@@ -283,7 +286,7 @@ try {
     const A = makeBuild(DIST, "A");
     // B: the kernel's .wasm renamed and the kernel worker changed (same name) to load the new name.
     const wasmA = wasmOf(A.dir);
-    const wasmB = wasmA.replace(/-[^-.]+\.wasm$/, "-BUILDBBB.wasm");
+    const wasmB = `${wasmA.slice(0, -".wasm".length)}-BUILDBBB.wasm`; // after the whole name: the hash may end in "-" (see renameWasm)
     const B = makeBuild(A.dir, "B", (dir) => {
       renameSync(join(dir, "assets", wasmA), join(dir, "assets", wasmB));
       for (const f of readdirSync(join(dir, "assets")).filter((n) => n.endsWith(".js"))) {
@@ -446,7 +449,8 @@ try {
     // C: a new entry script name, as almost every real deploy has.
     const C = makeBuild(B.dir, "mid-C", (dir) => {
       const js = readdirSync(join(dir, "assets")).find((f) => /^index-.*\.js$/.test(f));
-      const renamed = js.replace(/-[^-.]+\.js$/, "-CCCCCCCC.js");
+      const renamed = `${js.slice(0, -".js".length)}-CCCCCCCC.js`; // after the whole name: the hash may end in "-" (see renameWasm)
+      assert.notEqual(renamed, js);
       renameSync(join(dir, "assets", js), join(dir, "assets", renamed));
       const index = join(dir, "index.html");
       writeFileSync(index, readFileSync(index, "utf8").split(js).join(renamed));
