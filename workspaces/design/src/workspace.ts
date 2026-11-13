@@ -3340,7 +3340,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const item = doc.timeline.features.find((x) => x.id === bodyItem(b));
       return item === undefined ? b : isPiece(b) ? `a piece of ${itemName(item)}` : itemName(item);
     });
-    return missAsk.ask(askWords(op, misses, name, { kind: "extrude", label, own }));
+    // A wait for the person, not work (SL #397): the OK asking stays held, but nothing runs until the answer.
+    return ctx.history.asking(missAsk.ask(askWords(op, misses, name, { kind: "extrude", label, own })));
   }
 
   /** What the bodies list says before the preview shows where the extrude reaches. */
@@ -3779,7 +3780,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A Cut or Join whose tools change nothing (Ben, 11 Nov): asked first; Cancel leaves the panel open, nothing recorded.
     const op = combineBox.operation;
     if (checked.misses.length > 0 && op !== "intersect") {
-      const yes = await okCheck(missAsk.ask(askWords(op, checked.misses, combineLabel, { kind: "combine", keepTools: combineBox.keepTools })));
+      // Held while asked, so an Undo waits for the answer; but a wait for the person, not work (`asking`, SL #397).
+      const yes = await okCheck(ctx.history.asking(missAsk.ask(askWords(op, checked.misses, combineLabel, { kind: "combine", keepTools: combineBox.keepTools }))));
       if (!yes || combineOpenings !== opened) return;
       if (designDoc() !== before) return combineBox.showError(COMBINE_CHANGED);
       if (combineAsked() !== asked) return combineBox.showError(COMBINE_PICKS_CHANGED);
