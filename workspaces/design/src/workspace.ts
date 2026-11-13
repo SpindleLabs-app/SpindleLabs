@@ -42,7 +42,6 @@ import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "@fission/print";
 import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
 import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, openPrintPreview, printFileName, printLead, printMovesOf, printWords, settingsWords, SliceDropped, testPieceFile } from "@fission/print";
-import { logPrint } from "./print-logged.ts";
 
 import { openTool, openToolRefusal, stillRebuilding, type OpenTool } from "./open-tool.ts";
 import { DOWNLOAD_3MF, DOWNLOAD_OBJ } from "./mesh-export.ts";
@@ -84,7 +83,7 @@ import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep,
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import { toggleConstruction } from "./construction.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
-import { rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } from "@fission/print";
+import { logPrint, rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } from "@fission/print";
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
