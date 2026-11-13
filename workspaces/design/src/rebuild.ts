@@ -38,6 +38,7 @@ import { extrudeSketches, hasMoreProfiles, moreProfiles, profileParts, sameProfi
 import { contactGroups, mergedOutline } from "./extrude-merge.ts";
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -2133,9 +2134,11 @@ export async function extrudeSpec(
   const sketchId = f.intent.parameters.sketch as string;
   const distance = f.intent.parameters.distance as number;
   const flip = f.intent.parameters.flip === true;
+  // Symmetric (53a1): the same extrude moved back half its distance, so it reaches d/2 either side of the plane.
+  const both = isSymmetricParams(f.intent.parameters);
   const item = index.items.get(sketchId);
   const region = regionOf(f);
-  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region);
+  const lost = (cause: LostCause, message: string, curves: string[]) => keptSpec(keptOf(doc, f), distance, flip, { cause, sketch: sketchId, message, curves }, kernel, region, both);
   // The extrude's provenance names the sketch it was made from, so a deleted one is still called by its label.
   if (item === undefined) return await lost("deleted-input", `${f.provenance.from.find((r) => r.id === sketchId)?.label ?? sketchId} was deleted`, []);
   const content = index.sketches.get(sketchId)!;
@@ -2148,15 +2151,17 @@ export async function extrudeSpec(
   if (!("outline" in out)) return await lost(out.lost, said(out), out.curves);
   // Where the sketch lies: given by the rebuild, an origin plane's, or (asked from outside a rebuild) its face's as the timeline builds it.
   const at = placed !== undefined ? placed : isFaceSketch(item) ? await placementOf(kernel, doc, sketchId) : originPlacement(item);
-  return { spec: placedSpec(out.outline, distance, at, flip), curves: idsOf(content) };
+  return { spec: placedSpec(out.outline, distance, at, flip, both), curves: idsOf(content) };
 }
 
 /**
  * An extrude's spec: on XY (`at` null) as before 26c, with no frame unless
  * flipped; else in the sketch's frame (squared up, face-sketch.ts), going
- * the way the sketch faces (rule 2), the other way when flipped.
+ * the way the sketch faces (rule 2), the other way when flipped; when
+ * symmetric (53a1), centred on the plane (`centredSpec`), never flipped.
  */
-function placedSpec(profile: Outline, distance: number, at: SketchPlacement | null, flip: boolean): BodySpec {
+function placedSpec(profile: Outline, distance: number, at: SketchPlacement | null, flip: boolean, symmetric = false): BodySpec {
+  if (symmetric) return centredSpec(placedSpec(profile, distance, at, false));
   if (at === null) return { extrude: flip ? { profile, distance, flip: true } : { profile, distance } };
   const back = (at.side === -1) !== flip;
   return { extrude: { profile, distance, frame: frameOf(squared(at.plane)!), ...(back ? { flip: true } : {}) } };
@@ -2180,10 +2185,10 @@ async function placementOf(kernel: KernelCalls, doc: DesignDocument, sketchId: s
 }
 
 /** An extrude whose sketch is lost: its kept shape with the warning, or failed with the cause when it has none. */
-async function keptSpec(kept: KeptShape | undefined, distance: number, flip: boolean, warning: KeptWarning, kernel: KernelCalls, region?: RegionRef): Promise<ExtrudeSpec | Extract<FeatureResult, { status: "failed" }>> {
+async function keptSpec(kept: KeptShape | undefined, distance: number, flip: boolean, warning: KeptWarning, kernel: KernelCalls, region?: RegionRef, symmetric = false): Promise<ExtrudeSpec | Extract<FeatureResult, { status: "failed" }>> {
   if (kept === undefined) return { status: "failed", cause: warning.cause, input: warning.sketch, message: warning.message, curves: warning.curves };
   const out = await outlineOf(kernel, kept, region);
   // A kept shape made an outline when it was kept; one that doesn't (a hand-edited file) fails the extrude with the kernel's words.
   if (!("outline" in out)) return { status: "failed", cause: "error", message: `the kept shape makes no outline: ${out.message}` };
-  return { spec: placedSpec(out.outline, distance, kept.placement ?? null, flip), curves: idsOf(kept), warning };
+  return { spec: placedSpec(out.outline, distance, kept.placement ?? null, flip, symmetric), curves: idsOf(kept), warning };
 }

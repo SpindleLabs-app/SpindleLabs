@@ -22,6 +22,7 @@ export const HELPERS = [
   "soak-judge.mjs",
   "soak-model.mjs",
   "start.mjs",
+  "toolbar-swipe.mjs",
 ];
 
 /** Files run somewhere else, or by hand. */

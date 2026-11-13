@@ -1,10 +1,10 @@
 """The app job's tests, in two shares: python3 .github/scripts/app_tests.py design|rest
 
-`npm test` runs every workspace's tests in one go, which with Design's
-(about 13 minutes of it) was running into the job's time limit. ci.yml runs
-the two shares as parallel jobs, `app (design)` and `app (rest)`, and the job
-named `app` that auto-merge and main's ruleset wait for passes only when both
-did. Every workspace in the root package.json's list is in exactly one share
+`npm test` runs every workspace's tests in one go; with the build and the
+journeys it was running into the job's time limit. ci.yml runs the shares as
+parallel jobs, `app (design)`, `app (rest)` and `app (journeys)`, and the job
+named `app` that auto-merge and main's ruleset wait for passes only when all
+three did. Every workspace in the root package.json's list is in exactly one share
 (test_app_tests.py), so a new workspace's tests run without touching CI. Each
 share runs all of its workspaces even after a failure, and fails if any did,
 like `npm test --workspaces --if-present`."""
