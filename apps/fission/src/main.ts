@@ -923,6 +923,9 @@ function openProject(file: string | Uint8Array, fileName = "") {
   const ticket: number = whileOpening(OPENING_FILE, keepIt);
 }
 
+/** `asked`, or a refusal once it has taken STORAGE_ANSWER_MS: a store that never answers fails in words (tabs hunt B4). */
+const inTime = <T>(asked: Promise<T>) =>
+  Promise.race([asked, new Promise<never>((_, refuse) => setTimeout(() => refuse(new Error("browser storage didn't answer")), STORAGE_ANSWER_MS))]);
 /**
  * Opens the project kept here as `id` (File > Projects in this browser, U6a; round 2 hunt A2/A3) in place of the open
  * one, which is kept as it is (finish, as Open does). Throws, leaving the open project as it was, when it can't be
@@ -930,9 +933,6 @@ function openProject(file: string | Uint8Array, fileName = "") {
  * (bringForward), so a reload opens it; one that freezes the tab building it is never brought forward, so a reload
  * opens the last project as before (security audit S2).
  */
-/** `asked`, or a refusal once it has taken STORAGE_ANSWER_MS: a store that never answers fails in words (tabs hunt B4). */
-const inTime = <T>(asked: Promise<T>) =>
-  Promise.race([asked, new Promise<never>((_, refuse) => setTimeout(() => refuse(new Error("browser storage didn't answer")), STORAGE_ANSWER_MS))]);
 async function openStored(id: string, modified: Date | null) {
   await started;
   // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
