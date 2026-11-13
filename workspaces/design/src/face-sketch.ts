@@ -94,9 +94,9 @@ export interface SketchFace {
    */
   reversed?: boolean;
   /**
-   * Drawn before Design data version 21 (set on every face sketch with a `body` as it is read, SL #707): its `body` is
+   * Drawn before Design data version 22 (set on every face sketch with a `body` as it is read, SL #707): its `body` is
    * the frame of the first input face of the face it was drawn on (the target's, on a face a Join merged from level
-   * faces), and it is carried by that. None from version 21: `body` is the frame of the input face its name names.
+   * faces), and it is carried by that. None from version 22: `body` is the frame of the input face its name names.
    */
   first?: true;
 }

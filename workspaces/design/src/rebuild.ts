@@ -1155,7 +1155,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     // sketch from before version 19 records neither, and is placed as before.
     if (p.reversed !== undefined && (on.reversed?.[face] ?? false) !== p.reversed) return held();
     // SL #707: carried by the input face its name names (on a face merged from level faces, that input's own frame, as it
-    // was drawn with); one drawn before version 21 (`first`) recorded the merged face's first input's, and is carried by it.
+    // was drawn with); one drawn before version 22 (`first`) recorded the merged face's first input's, and is carried by it.
     const now = name === undefined || p.first === true ? frameOfFace(on, face) : namedFrame(on, face, name);
     const carry = p.body === undefined ? null : carried(p.body, now ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
     const outward = view.face_normals[face]!;
