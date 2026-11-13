@@ -129,7 +129,24 @@ test("Intersect never asks: one that leaves nothing is refused as before", async
   const { doc, bodies } = boxes(BOX, [[10, 10, 10], [5, 5, 5]]);
   const made = insertCombine(doc, bodies[0], [bodies[1]], "intersect", false);
   const checked = await checkedItem(kernel, made.doc, made.id);
-  assert.deepEqual(checked, { refused: null, misses: [] });
+  // The check also hands back the design with its pieces numbered (SL #622 item 7, tested below); what it found is the same.
+  assert.deepEqual({ refused: checked.refused, misses: checked.misses }, { refused: null, misses: [] });
+});
+
+test("OK's check numbers the pieces its build made, so OK records them in its own undo step (SL #622 item 7)", async () => {
+  // Box 1 (Body 1) and Box 2 x 100..110 (Body 2), joined: they don't meet, so Box 2's lump stays a separate body, the
+  // Combine's piece 1. The next number is 3, so the checked design calls it Body 3 before any rebuild has numbered it.
+  const { doc, bodies } = boxes(BOX, [[10, 10, 10], [100, 0, 0]]);
+  const made = insertCombine(doc, bodies[0], [bodies[1]], "join", false);
+  assert.equal(made.doc.bodies?.some((b) => b.id.includes("/piece:")), false, "not numbered before the check");
+  const checked = await checkedItem(kernel, made.doc, made.id);
+  assert.equal(checked.numbered?.bodies?.find((b) => b.id === `body:${made.id}/piece:1`)?.number, 3);
+  // A refused item hands back nothing to record.
+  const swallowed = boxes([[10, 10, 10], [0, 0, 0]], [[40, 30, 20], [-5, -5, -5]]);
+  const cut = insertCombine(swallowed.doc, swallowed.bodies[0], [swallowed.bodies[1]], "cut", false);
+  const refused = await checkedItem(kernel, cut.doc, cut.id);
+  assert.notEqual(refused.refused, null);
+  assert.equal(refused.numbered, undefined);
 });
 
 test("an upstream edit that makes a recorded Cut miss shows the warning on the next rebuild", async () => {

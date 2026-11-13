@@ -8,6 +8,8 @@ import type { BuildPlate, KernelCalls, SliceProgress, ListedObject, Representati
 import {
   costWords,
   fileCrawl,
+  fitCalibration,
+  fitsLine,
   FILE_DEFAULTS,
   FORMAT_OPTIONS,
   gcodeName,
@@ -21,6 +23,8 @@ import {
   type PrintFormat,
   progressWords,
   type PrintMade,
+  presetBar,
+  presetSettingsOf,
   PRICE_KEY,
   readPrice,
   rememberedPrice,
@@ -71,6 +75,8 @@ interface Choice<T> {
   label: string;
   options: readonly { label: string; value: T }[];
   current: T;
+  /** What the state says now (read again when a preset is put in). */
+  read(): T;
   pick(v: T): void;
 }
 
@@ -87,6 +93,8 @@ export interface PrintPanelParts {
   openPreview?(gcode: string, words: string): void;
   /** Adds a saved print file to the print log; true when it is kept (the page passes `logPrint`). */
   log?(made: PrintMade): boolean;
+  /** Makes and saves the printer-fit test piece's print file for the choices (the page passes `testPieceFile` and `saveFile`); saved false when the save box was closed. `alive()` turns false once the panel is closed. */
+  testPiece?(choices: PrintChoices, file: { format: PrintFormat; plate: BuildPlate; nozzle: NozzleType }, alive: () => boolean): Promise<{ saved: boolean; name: string }>;
   /** The slicing engine's reports while it works (the page passes the kernel's); returns the way to stop listening. */
   onProgress?(listener: (p: SliceProgress) => void): () => void;
   /** The design's name for the file's name (null: the default). */
@@ -123,6 +131,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   element.append(heading);
 
   const controls: HTMLSelectElement[] = [];
+  /** Puts every control back to what the state says (a preset was picked); each choice and tick adds its own. */
+  const syncs: (() => void)[] = [];
+  /** Marks the preset picked as changed (set once the presets bar exists). */
+  let presetsChanged = () => {};
   const addChoice = <T>(c: Choice<T>): HTMLSelectElement => {
     const label = doc.createElement("label");
     label.className = "slice-page-choice";
@@ -136,17 +148,21 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       select.append(opt);
     });
     select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.current)));
-    select.addEventListener("change", () => c.pick(c.options[Number(select.value)].value));
+    select.addEventListener("change", () => {
+      c.pick(c.options[Number(select.value)].value);
+      presetsChanged();
+    });
+    syncs.push(() => (select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.read())))));
     label.append(select);
     controls.push(select);
     element.append(label);
     return select;
   };
   const numbers = (list: readonly number[], unit: string) => list.map((v) => ({ label: `${v}${unit}`, value: v }));
-  addChoice({ label: "Quality", options: QUALITY_OPTIONS, current: choices.layerHeight, pick: (v: number) => (choices = { ...choices, layerHeight: v }) });
-  addChoice({ label: "Walls", options: numbers(WALL_OPTIONS, ""), current: choices.walls, pick: (v: number) => (choices = { ...choices, walls: v }) });
-  addChoice({ label: "Infill", options: numbers(INFILL_OPTIONS, " %"), current: choices.infill, pick: (v: number) => (choices = { ...choices, infill: v }) });
-  addChoice({ label: "Supports", options: SUPPORT_OPTIONS, current: choices.supports, pick: (v: PrintChoices["supports"]) => (choices = { ...choices, supports: v }) });
+  addChoice({ label: "Quality", options: QUALITY_OPTIONS, current: choices.layerHeight, read: () => choices.layerHeight, pick: (v: number) => (choices = { ...choices, layerHeight: v }) });
+  addChoice({ label: "Walls", options: numbers(WALL_OPTIONS, ""), current: choices.walls, read: () => choices.walls, pick: (v: number) => (choices = { ...choices, walls: v }) });
+  addChoice({ label: "Infill", options: numbers(INFILL_OPTIONS, " %"), current: choices.infill, read: () => choices.infill, pick: (v: number) => (choices = { ...choices, infill: v }) });
+  addChoice({ label: "Supports", options: SUPPORT_OPTIONS, current: choices.supports, read: () => choices.supports, pick: (v: PrintChoices["supports"]) => (choices = { ...choices, supports: v }) });
 
   // The file: the P1S's own print file (plate and nozzle matter to it only) or plain G-code for another printer.
   const plateSelect: { el: HTMLSelectElement | null } = { el: null };
@@ -159,16 +175,18 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     label: "File",
     options: FORMAT_OPTIONS,
     current: format,
+    read: () => format,
     pick: (v: PrintFormat) => {
       format = v;
       plateAndNozzleMatter();
     },
   });
-  plateSelect.el = addChoice({ label: "Build plate", options: PLATE_OPTIONS, current: plate, pick: (v: BuildPlate) => (plate = v) });
+  plateSelect.el = addChoice({ label: "Build plate", options: PLATE_OPTIONS, current: plate, read: () => plate, pick: (v: BuildPlate) => (plate = v) });
   nozzleSelect.el = addChoice({
     label: "Nozzle",
     options: NOZZLE_OPTIONS,
     current: nozzle,
+    read: () => nozzle,
     pick: (v: NozzleType) => {
       nozzle = v;
       try {
@@ -197,7 +215,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   previewButton.textContent = "Preview";
   previewButton.title = "Watch it print: the slice in 3D, layer by layer, with a time-lapse of the nozzle laying it down.";
   // The warm-up loop and Better grip, ticked as remembered; they change the file, so they are part of the choices.
-  const addCheck = (id: string, label: string, title: string, key: string, on: boolean, pick: (v: boolean) => void) => {
+  const addCheck = (id: string, label: string, title: string, key: string, on: boolean, read: () => boolean, pick: (v: boolean) => void) => {
     const wrap = doc.createElement("label");
     wrap.className = "slice-page-choice slice-page-check";
     wrap.title = title;
@@ -205,8 +223,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     box.type = "checkbox";
     box.id = id;
     box.checked = on;
+    syncs.push(() => (box.checked = read()));
     box.addEventListener("change", () => {
       pick(box.checked);
+      presetsChanged();
       try {
         (parts.storage as Storage | null)?.setItem?.(key, box.checked ? "on" : "off"); // remembered like the dialog's
       } catch {
@@ -217,8 +237,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     controls.push(box as unknown as HTMLSelectElement);
     element.append(wrap);
   };
-  addCheck("slice-page-warm-up", "Warm-up loop", "Prints two loops round the part's first layer before the part, so the nozzle's first, uneven plastic goes on a line you peel off afterwards instead of on the part. Helps when the start of the first layer doesn't stick. Your choice is remembered.", WARM_UP_KEY, choices.warmUp, (v) => (choices = { ...choices, warmUp: v }));
-  addCheck("slice-page-grip", "Better grip", "Prints a 5 mm brim round the part's first layer, and prints that layer slower and 5 °C hotter, so parts whose first layer lifts or comes loose hold on to the plate. Peel the brim off afterwards. Your choice is remembered.", GRIP_KEY, choices.betterGrip, (v) => (choices = { ...choices, betterGrip: v }));
+  addCheck("slice-page-warm-up", "Warm-up loop", "Prints two loops round the part's first layer before the part, so the nozzle's first, uneven plastic goes on a line you peel off afterwards instead of on the part. Helps when the start of the first layer doesn't stick. Your choice is remembered.", WARM_UP_KEY, choices.warmUp, () => choices.warmUp, (v) => (choices = { ...choices, warmUp: v }));
+  addCheck("slice-page-grip", "Better grip", "Prints a 5 mm brim round the part's first layer, and prints that layer slower and 5 °C hotter, so parts whose first layer lifts or comes loose hold on to the plate. Peel the brim off afterwards. Your choice is remembered.", GRIP_KEY, choices.betterGrip, () => choices.betterGrip, (v) => (choices = { ...choices, betterGrip: v }));
   const status = doc.createElement("p");
   status.className = "slice-page-slice-words";
   status.setAttribute("role", "status");
@@ -272,6 +292,66 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   stage.setAttribute("role", "status");
   bar.append(meter, stage);
   element.append(button, previewButton, download, bar, status, cost);
+  // Printer presets: the settings saved under a name in this browser (slice-presets.ts, shared with the dialog), picked
+  // in the heading's line; picking one puts its settings in, and any change marks it changed.
+  const applyPreset = (v: Parameters<typeof presetSettingsOf>[0] & object) => {
+    const x = presetSettingsOf(v);
+    if (!x) return;
+    choices = { ...choices, layerHeight: x.layerHeight, walls: x.walls, infill: x.infill, supports: x.supports, warmUp: x.warmUp, betterGrip: x.betterGrip };
+    format = x.format;
+    plate = x.plate;
+    nozzle = x.nozzle;
+    for (const [key, value] of [[WARM_UP_KEY, x.warmUp], [GRIP_KEY, x.betterGrip]] as const) {
+      try {
+        (parts.storage as Storage | null)?.setItem?.(key, value ? "on" : "off"); // remembered as if ticked here
+      } catch {
+        // storage blocked: the choice still holds for this page
+      }
+    }
+    try {
+      (parts.storage as Storage | null)?.setItem?.(NOZZLE_KEY, x.nozzle);
+    } catch {
+      // storage blocked
+    }
+    for (const sync of syncs) sync();
+    plateAndNozzleMatter();
+    showFits();
+    showCost(null);
+  };
+  const presets = presetBar(doc, parts.storage as Storage | null, {
+    current: () => ({ ...choices, format, plate, nozzle }),
+    apply: (settings) => applyPreset(settings),
+    say: (text) => (status.textContent = text),
+    settingsOf: presetSettingsOf,
+  });
+  presetsChanged = () => presets.changed();
+  heading.after(presets.element);
+  // Printer fits (P13): what the fits are for this nozzle, and the button that measures them (fit-calibration.ts).
+  const fitsRow = doc.createElement("p");
+  fitsRow.className = "slice-page-fits";
+  const fitsWords = doc.createElement("span");
+  fitsWords.className = "slice-page-fits-words";
+  const fitsOpen = doc.createElement("button");
+  fitsOpen.type = "button";
+  fitsOpen.id = "slice-page-fits-open";
+  fitsOpen.textContent = "Printer fits…";
+  fitsOpen.title = "Print a small test piece, measure it, and holes and pegs come out the size you meant on your printer.";
+  fitsRow.append(fitsWords, fitsOpen);
+  function showFits() {
+    fitsWords.textContent = fitsLine(parts.storage, nozzle);
+  }
+  showFits();
+  nozzleSelect.el?.addEventListener("change", showFits);
+  const fits = parts.testPiece
+    ? fitCalibration(element, parts.storage as Storage | null, {
+        nozzle: () => nozzle,
+        testPiece: (alive) => parts.testPiece!(choices, { format, plate, nozzle }, alive),
+        changed: showFits,
+      })
+    : null;
+  fitsRow.hidden = fits === null;
+  fitsOpen.addEventListener("click", () => fits?.ask());
+  element.insertBefore(fitsRow, button);
   const showProgress = (): (() => void) => {
     meter.removeAttribute("value");
     stage.textContent = progressWords(null);
