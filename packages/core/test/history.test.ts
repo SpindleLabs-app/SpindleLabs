@@ -796,3 +796,30 @@ test("a second held work beside one waiting on the person keeps the history work
   await new Promise((r) => setImmediate(r));
   assert.deepEqual([h.busy(), h.working()], [false, false]);
 });
+
+test("callsOff counts the held work that ended with nothing recorded, and nothing else moves it (#622)", async () => {
+  // By hand: a new history has called nothing off (0). Holding work, recording a step, Undo and Redo are not
+  // callOff, so the count stays 0. Two callOffs make it 2: the shell compares the count at an Undo press with
+  // the count when the held work is over, and 0 !== 1 is how it knows to drop the press.
+  let doc = { w: 40 };
+  const h = createHistory({ capture: () => structuredClone(doc), restore: (s) => (doc = structuredClone(s as { w: number })) });
+  assert.equal(h.callsOff(), 0);
+  let done!: () => void;
+  const work = h.hold(new Promise<void>((r) => (done = r)));
+  doc.w = 60;
+  h.record("Width");
+  done();
+  await work;
+  await h.whenIdle();
+  assert.equal(h.callsOff(), 0, "held work that recorded a step calls nothing off");
+  h.undo();
+  h.redo();
+  assert.equal(h.callsOff(), 0, "Undo and Redo call nothing off");
+  const pressedAt = h.callsOff();
+  h.callOff();
+  assert.equal(h.callsOff(), pressedAt + 1, "one callOff: a press that waited sees the count moved");
+  h.callOff();
+  assert.equal(h.callsOff(), 2);
+  assert.deepEqual(doc, { w: 60 }, "calling off changes no data");
+  assert.equal(h.canUndo(), true, "and no step");
+});

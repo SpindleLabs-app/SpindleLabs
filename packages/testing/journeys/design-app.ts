@@ -168,11 +168,12 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   const shellPress = (which: "undo" | "redo") => {
     if (pressesWaiting === 0 && !history.busy()) return pressNow(which);
     pressesWaiting++;
+    const calledOff = history.callsOff(); // as main.ts: a press that waited for work that recorded nothing is dropped
     pressed = pressed
       .then(() => history.whenIdle())
       .then(() => {
         pressesWaiting--;
-        pressNow(which);
+        if (history.callsOff() === calledOff) pressNow(which);
       });
   };
   const startBodies = (await kernel.call("body_count")) as number;
