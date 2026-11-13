@@ -179,3 +179,9 @@ test("a material that isn't printed is refused when only its stiffness differs b
   assert.deepEqual(mechanicalProblems({ ...steel, stiffness: { alongLayers: 200e9, acrossLayers: 190e9 } }), ["A material that isn't printed is the same both ways."]);
   assert.deepEqual(mechanicalProblems({ ...steel, stiffness: { alongLayers: 200e9, acrossLayers: 200e9 } }), []);
 });
+
+test("a metal's strength is its yield strength, where it starts to bend for good", () => {
+  // Both metal sources give a yield figure ("Tensile yield strength 276 MPa", "Minimum yield strength 36 ksi"),
+  // so both are "yield", unlike the plastics' tensile (breaking) strength.
+  assert.deepEqual([mech("aluminium-6061").strengthKind, mech("steel-a36").strengthKind], ["yield", "yield"]);
+});
