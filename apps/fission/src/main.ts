@@ -18,7 +18,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../packages/print/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { shellTabs, type ShellTabs } from "./design-tabs.ts";
+import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
@@ -964,6 +964,9 @@ function openProject(file: string | Uint8Array, fileName = "") {
   const ticket: number = whileOpening(OPENING_FILE, keepIt);
 }
 
+/** `asked`, or a refusal once it has taken STORAGE_ANSWER_MS: a store that never answers fails in words (tabs hunt B4). */
+const inTime = <T>(asked: Promise<T>) =>
+  Promise.race([asked, new Promise<never>((_, refuse) => setTimeout(() => refuse(new Error("browser storage didn't answer")), STORAGE_ANSWER_MS))]);
 /**
  * Opens the project kept here as `id` (File > Projects in this browser, U6a; round 2 hunt A2/A3) in place of the open
  * one, which is kept as it is (finish, as Open does). Throws, leaving the open project as it was, when it can't be
@@ -975,7 +978,8 @@ async function openStored(id: string, modified: Date | null) {
   await started;
   // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
   const kept = keptEntry(local, id);
-  const project = kept === null ? await store.open(id) : projectFromJson(kept, workspaces);
+  // Read before anything is replaced, so a store that never answers leaves the open project as it was (tabs hunt B4).
+  const project = kept === null ? await inTime(store.open(id)) : projectFromJson(kept, workspaces);
   // Changes this tab couldn't store (another tab saved since) are kept as a separate project, and said, as Open does (round 2 hunt A5).
   tabs?.expect(id);
   const apart = finishAutosave();
@@ -1047,6 +1051,7 @@ const projects = listedProjects(document, {
   journal: local,
   openId: keptId,
   open: openStored,
+  removed: (id) => tabs?.forget(id), // its tab goes too (tabs hunt B3)
 });
 
 /** A new, empty project in place of the open one (the home screen's New, and "+" on the design tabs). */
@@ -1074,8 +1079,14 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
       projectName: () => ctx.project.name,
       workspace: () => current,
       titles: () => Object.fromEntries(workspaces.map((w) => [w.id, w.title])),
-      open: async (id) => openStored(id, (await store.list()).find((s) => s.id === id && !s.problem)?.modified ?? null),
+      open: async (id) => {
+        const listed = (await inTime(store.list())).find((s) => s.id === id);
+        // Deleted here or in another window (tabs hunt B3, C2): said as such, and its tab closed, not a raw store error.
+        if (listed === undefined && keptEntry(local, id) === null) throw new ProjectGone(id);
+        return openStored(id, listed !== undefined && !listed.problem ? listed.modified : null);
+      },
       start: () => startNewProject(true),
+      idle: () => ctx.history.whenIdle(),
       preselect: (id) => {
         if (split?.id !== id && pages.includes(id)) current = id as Page; // the next project shows in the workspace its tab was in
       },
@@ -1090,8 +1101,16 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
       },
       unsaved: () => shownStatus.state !== "saved",
       report: fileStatus,
-      kept: async () => (await store.list()).map((s) => s.id),
+      kept: async () => (await inTime(store.list())).map((s) => s.id),
+      held: (id) => keptEntry(local, id) !== null,
       storage: local,
+      session: (() => {
+        try {
+          return sessionStorage;
+        } catch {
+          return null; // storage off: each window starts from the last list
+        }
+      })(),
     });
 /** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
 const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
@@ -1101,6 +1120,7 @@ const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
   remove: async (id) => {
     if (id === keptId()) throw new Error("the open project can't be deleted here");
     await forget(store, local, id);
+    tabs?.forget(id); // its tab goes too (tabs hunt B3)
   },
   // Not the open project (its name is the open one's to change; the screen offers no Rename for it).
   rename: async (id, name) => {
@@ -1498,19 +1518,24 @@ let pressed: Promise<void> = Promise.resolve();
 /** The presses of each button still waiting (clumsy-user hunt 2026-11-04: a waiting Undo looked as if nothing had happened). */
 const waitingOn = { undo: 0, redo: 0 };
 function undoRedo(which: "undo" | "redo") {
+  // Pressed while a design tab opens, it was meant for the design being left: carried out, it took a step out of that
+  // design or the one coming (tabs hunt A1, A2), so it is ignored.
+  if (tabs?.switching()) return;
   if (pressesWaiting === 0 && !ctx.history.busy()) return undoRedoNow(which);
   pressesWaiting++;
   waitingOn[which]++;
   showUndoRedo();
   // What it waits for may end with nothing recorded (an OK refused, a question cancelled or still open: the history's
-  // `callOff`). The press was for that, so it is dropped: carried out, it took back the step before (#622).
+  // `callOff`). The press was for that, so it is dropped: carried out, it took back the step before (#622). So is a
+  // press whose project was replaced meanwhile (another tab, Open, New): it was for that project (tabs hunt A2).
   const calledOff = ctx.history.callsOff();
+  const owner = fileOwner;
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
       waitingOn[which]--;
-      if (ctx.history.callsOff() === calledOff) undoRedoNow(which);
+      if (ctx.history.callsOff() === calledOff && fileOwner === owner) undoRedoNow(which);
       showUndoRedo();
     });
 }
@@ -1606,14 +1631,16 @@ function jumpHistory(step: number) {
     }
     ctx.history.amend(); // defaults the remounted workspaces filled in
   };
+  if (tabs?.switching()) return; // meant for the design being left, as Undo (tabs hunt A1)
   if (pressesWaiting === 0 && !ctx.history.busy()) return now();
   pressesWaiting++;
   showUndoRedo();
+  const owner = fileOwner;
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
-      now();
+      if (fileOwner === owner) now(); // not in a project that replaced it meanwhile (tabs hunt A2)
       showUndoRedo();
     });
 }

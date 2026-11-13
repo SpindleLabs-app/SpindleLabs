@@ -11,11 +11,11 @@
 // - At 393 px (taps) nothing runs off the side and every strip button is at least 44 px tall; screenshots (SHOTS=<dir>) at
 //   1280 and 393 px in both themes.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
-import { insertPreset, startWithBox } from "./start.mjs";
+import { chooseFile, insertPreset, startWithBox } from "./start.mjs";
 
 const DIST = process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : fileURLToPath(new URL("../dist/", import.meta.url));
 if (!existsSync(DIST + "index.html")) throw new Error("build the app first (npm run build, or npm run e2e:tabs)");
@@ -55,8 +55,9 @@ async function tapTab(page, n) {
 }
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 
-async function newPage(width = 1280, touch = false, scheme = "dark") {
+async function newPage(width = 1280, touch = false, scheme = "dark", init = null) {
   const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch, isMobile: touch, colorScheme: scheme });
+  if (init) await context.addInitScript(init);
   const page = await context.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(url + "?test-hooks#design");
@@ -248,6 +249,386 @@ if (!WITH_TABS) {
     assert.ok(big.h <= 0.5 && big.scrolls, `ten tabs: the list stays within half the screen and scrolls (${JSON.stringify(big)})`);
     await context.close();
   });
+  // The tabs bug hunt of 2026-11-14 (findings A1-E6, docs/progress/tabs.md T2): each check below failed before its fix.
+  /** Read-only IndexedDB answers held back window.__idbDelay ms (a phone's storage under load), so a switch lasts long enough to act in. */
+  const slowStorage = () => {
+    window.__idbDelay = 0;
+    const d = Object.getOwnPropertyDescriptor(IDBRequest.prototype, "onsuccess");
+    Object.defineProperty(IDBRequest.prototype, "onsuccess", {
+      configurable: true,
+      get() {
+        return d.get.call(this);
+      },
+      set(fn) {
+        const ms = window.__idbDelay;
+        const slow = typeof fn === "function" && ms > 0 && this.transaction?.mode === "readonly";
+        d.set.call(this, slow ? (e) => setTimeout(() => fn.call(this, e), ms) : fn);
+      },
+    });
+  };
+  /** Every kernel answer held back window.__kernelDelay ms (a slow phone or a big part). */
+  const slowKernel = () => {
+    window.__kernelDelay = 0;
+    const Real = window.Worker;
+    window.Worker = class extends Real {
+      addEventListener(type, fn, o) {
+        if (type !== "message") return super.addEventListener(type, fn, o);
+        let last = Promise.resolve();
+        return super.addEventListener(type, (e) => void (last = last.then(() => new Promise((r) => setTimeout(r, window.__kernelDelay))).then(() => fn.call(this, e))), o);
+      }
+      set onmessage(fn) {
+        this.addEventListener("message", fn);
+      }
+    };
+  };
+  const keyOf = (page) => page.evaluate(() => document.body.dataset.projectId ?? null);
+  const vol = (page) => page.evaluate(() => document.querySelector("#volume")?.textContent ?? null);
+  const items = (page) => page.evaluate(() => document.querySelectorAll("#timeline li.timeline-bar-item").length);
+  /** The strip as keys, the one on screen marked with *. */
+  const strip = (page) => page.$$eval(".design-tabs-tab", (t) => t.map((x) => x.dataset.key + (x.dataset.active === "true" ? "*" : "")));
+  /** No rebuild running, no held work, and a volume shown unless the design is empty. */
+  const settled = (page) =>
+    until(page, () => document.querySelector("#viewport").dataset.rebuilding !== "true" && !window.fissionTest.historyBusy() && (document.querySelector("#volume")?.textContent !== "—" || !document.querySelector("#start-hint")?.hidden), null, "settled", 30000);
+  /** After a reload: the strip back and the design built. */
+  async function reloaded(page) {
+    await pastHome(page);
+    await until(page, () => document.querySelectorAll(".design-tabs-tab").length > 0, null, "the strip after the reload");
+    await settled(page);
+    await page.waitForTimeout(1000);
+  }
+  const tabByKey = (key) => `.design-tabs-tab[data-key="${key}"]`;
+  /** Chooses the tab holding `key` and waits until its project is on screen and built. */
+  async function goTo(page, key) {
+    await page.click(`${tabByKey(key)} .design-tabs-main`);
+    await until(page, (k) => document.body.dataset.projectId === k && document.querySelector(".design-tabs-tab[data-active=true]")?.dataset.key === k, key, "the tab's project on screen", 30000);
+    await settled(page);
+  }
+  /** Deletes kept project `id` in File > Projects in this browser. */
+  async function projectsDelete(page, id) {
+    await chooseFile(page, "file-projects");
+    await page.locator(`.project-row[data-id="${id}"] .project-delete`).click();
+    await page.locator(`.project-row[data-id="${id}"] .project-delete-sure`).click();
+    await until(page, (i) => !document.querySelector(`.project-row[data-id="${i}"]`), id, "the row gone");
+    await page.keyboard.press("Escape");
+  }
+  /** Another window of the same browser (one store, one localStorage), past the home screen. */
+  async function window2(context) {
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(url + "?test-hooks#design");
+    await pastHome(page);
+    await until(page, () => document.querySelectorAll(".design-tabs-tab").length > 0, null, "window 2's strip");
+    await settled(page);
+    return page;
+  }
+  /** Tab a: the box; tab b: a new design with a cylinder, on screen. */
+  async function boxAndCylinder(init = null) {
+    const { context, page } = await newPage(1280, false, "dark", init);
+    await pastHome(page);
+    await startWithBox(page);
+    await saved(page);
+    const a = await keyOf(page);
+    await page.click("#design-tabs-add");
+    await until(page, () => document.querySelectorAll(".design-tabs-tab").length === 2, null, "two tabs");
+    await page.locator("#start-hint").waitFor();
+    await insertPreset(page, "cylinder");
+    await until(page, () => !["—", "24,000 mm³", ""].includes(document.querySelector("#volume")?.textContent ?? ""), null, "the cylinder built");
+    await settled(page);
+    await saved(page);
+    return { context, page, a, b: await keyOf(page), cyl: await vol(page) };
+  }
+
+  await check("tabs hunt A1: Ctrl+Z pressed just after another tab is chosen never undoes the tab being left", async () => {
+    const { context, page, a, b, cyl } = await boxAndCylinder(slowStorage);
+    await page.evaluate(() => (window.__idbDelay = 600));
+    await page.click(`${tabByKey(a)} .design-tabs-main`);
+    await page.waitForTimeout(80);
+    await page.keyboard.press("Control+z"); // for the cylinder's tab, being left: ignored
+    await page.evaluate(() => (window.__idbDelay = 0));
+    await until(page, (k) => document.body.dataset.projectId === k, a, "the box tab on screen", 30000);
+    await settled(page);
+    assert.equal(await vol(page), "24,000 mm³", "the box tab is as it was");
+    await saved(page);
+    await goTo(page, b);
+    assert.equal(await vol(page), cyl, "the tab left keeps its cylinder");
+    await context.close();
+  });
+
+  /** The box tab on screen with a sphere inserted and its Move open at X 10, the kernel then made slow; resolves to the timeline's length. */
+  async function moveWaiting(page, a) {
+    await goTo(page, a);
+    await insertPreset(page, "sphere", false, true); // Move opens on it
+    await page.locator("#move-x").waitFor({ state: "visible" });
+    await settled(page);
+    await saved(page);
+    const n = await items(page);
+    await page.fill("#move-x", "10");
+    await page.evaluate(() => (window.__kernelDelay = 800));
+    return n;
+  }
+
+  await check("tabs hunt A4: a Move's OK still with the kernel when another tab is chosen lands in its own design", async () => {
+    const { context, page, a, b, cyl } = await boxAndCylinder(slowKernel);
+    const n = await moveWaiting(page, a);
+    await page.click("#move-ok");
+    await page.waitForTimeout(50);
+    await page.click(`${tabByKey(b)} .design-tabs-main`);
+    await until(page, (k) => document.body.dataset.projectId === k, b, "the cylinder tab on screen", 30000);
+    await page.evaluate(() => (window.__kernelDelay = 0));
+    await settled(page);
+    assert.equal(await vol(page), cyl, "the cylinder tab shows its cylinder");
+    assert.equal(await items(page), 1, "nothing of the Move in the cylinder tab");
+    await saved(page);
+    await goTo(page, a);
+    assert.equal(await items(page), n + 1, "the Move pressed OK is in the box tab");
+    await context.close();
+  });
+
+  await check("tabs hunt A2: an Undo waiting for an OK when another tab is chosen never takes a step out of that tab", async () => {
+    const { context, page, a, b, cyl } = await boxAndCylinder(slowKernel);
+    await moveWaiting(page, a);
+    await page.click("#move-ok");
+    await page.waitForTimeout(30);
+    await page.click("#undo"); // waits for the OK, in the box tab
+    await page.click(`${tabByKey(b)} .design-tabs-main`);
+    await until(page, (k) => document.body.dataset.projectId === k, b, "the cylinder tab on screen", 30000);
+    await page.evaluate(() => (window.__kernelDelay = 0));
+    await page.waitForTimeout(5000); // anything still waiting has run by now
+    await settled(page);
+    assert.equal(await vol(page), cyl, "the cylinder tab still shows its cylinder");
+    assert.equal(await items(page), 1);
+    await context.close();
+  });
+
+  await check("tabs hunt C3: × on the tab on screen never hands its undo steps or camera to the tab that comes up", async () => {
+    // The camera: the box tab turned to Top, a new tab with a cylinder closed, the box tab comes up still at Top.
+    let { context, page } = await newPage();
+    await pastHome(page);
+    await startWithBox(page);
+    await saved(page);
+    await page.click('.view-controls [aria-label="Top"]');
+    await page.waitForTimeout(800);
+    const top = await camera(page);
+    await page.click("#design-tabs-add");
+    await page.locator("#start-hint").waitFor();
+    await insertPreset(page, "cylinder");
+    await settled(page);
+    await saved(page);
+    await page.click(".design-tabs-tab:last-child .design-tabs-close");
+    await volume(page, "24,000 mm³");
+    await page.waitForTimeout(1500);
+    const back = await camera(page);
+    const near = (p, q) => p.every((x, i) => Math.abs(x - q[i]) < 1e-6 * Math.max(1, Math.abs(x)));
+    assert.ok(near(back.position, top.position) && near(back.target, top.target), `camera ${JSON.stringify(back.position)} is still the Top view ${JSON.stringify(top.position)}`);
+    await context.close();
+    // The steps: two new designs (the same text); a box put in the second and undone; × on it: the first has nothing to redo.
+    ({ context, page } = await newPage());
+    await pastHome(page);
+    await page.locator("#start-hint").waitFor();
+    await page.click("#design-tabs-add");
+    await page.locator("#start-hint").waitFor();
+    await saved(page);
+    const first = await keyOf(page);
+    await page.click("#design-tabs-add");
+    await until(page, (k) => document.body.dataset.projectId !== k, first, "the second new design");
+    await page.locator("#start-hint").waitFor();
+    await saved(page);
+    await insertPreset(page, "box");
+    await volume(page, "24,000 mm³");
+    await saved(page);
+    await page.click("#undo");
+    await page.locator("#start-hint").waitFor();
+    await saved(page);
+    await page.click(".design-tabs-tab[data-active=true] .design-tabs-close");
+    await until(page, (k) => document.body.dataset.projectId === k, first, "the first new design on screen");
+    await page.waitForTimeout(1500);
+    assert.equal(await page.$eval("#redo", (x) => x.disabled), true, `the first design did nothing, so it has nothing to redo (Redo says ${await page.getAttribute("#redo", "title")})`);
+    await context.close();
+  });
+
+  await check("tabs hunt A3: an edit while the tab after a closed one opens never brings the closed tab back; the strip names the design on screen", async () => {
+    const { context, page, a } = await boxAndCylinder(slowStorage);
+    await page.evaluate(() => (window.__idbDelay = 600));
+    await page.click(".design-tabs-tab[data-active=true] .design-tabs-close"); // the cylinder, saved: no question
+    await insertPreset(page, "sphere"); // a person goes on working meanwhile
+    await page.evaluate(() => (window.__idbDelay = 0));
+    await until(page, (k) => document.body.dataset.projectId === k, a, "the box tab's project on screen", 30000);
+    await settled(page);
+    await page.waitForTimeout(1500);
+    assert.deepEqual(await strip(page), [`${a}*`], "one tab, the box, on screen");
+    await context.close();
+  });
+
+  await check("tabs hunt B3/C2/B5: a deleted project's tab closes (with words when it was deleted in another window), and × goes past it", async () => {
+    const { context, page, a, b } = await boxAndCylinder();
+    await page.click("#design-tabs-add");
+    await page.locator("#start-hint").waitFor();
+    await saved(page);
+    const c = await keyOf(page);
+    // B deleted in another window: choosing its tab here says so and closes it, C stays on screen.
+    let w2 = await window2(context);
+    await projectsDelete(w2, b);
+    await w2.close();
+    await page.click(`${tabByKey(b)} .design-tabs-main`);
+    await until(page, () => /is no longer in this browser/.test(document.querySelector("#file-status")?.textContent ?? ""), null, "the words for a deleted project");
+    assert.match(await page.textContent("#file-status"), /^Untitled is no longer in this browser \(deleted here or in another window\), so its tab is closed\.$/);
+    assert.deepEqual(await strip(page), [a, `${c}*`], "B's tab closed, C on screen");
+    assert.equal(await keyOf(page), c);
+    // A deleted in another window too: × on C goes past A (gone) to a new design.
+    w2 = await window2(context);
+    await projectsDelete(w2, a);
+    await w2.close();
+    await page.click(`${tabByKey(c)} .design-tabs-close`);
+    await until(page, (k) => document.body.dataset.projectId !== k && document.querySelectorAll(".design-tabs-tab").length === 1, c, "one new tab on screen");
+    await page.locator("#start-hint").waitFor();
+    // Deleted here in File > Projects: its tab leaves the strip at once.
+    await saved(page);
+    const d = await keyOf(page);
+    await page.click("#design-tabs-add");
+    await until(page, (k) => document.body.dataset.projectId !== k, d, "another new design");
+    await saved(page);
+    const e = await keyOf(page);
+    await projectsDelete(page, d);
+    assert.deepEqual(await strip(page), [`${e}*`], "the deleted project's tab is gone");
+    await context.close();
+  });
+
+  await check("tabs hunt B1: a tab that fails to open leaves the workspace on screen as it was (Undo stays in Design)", async () => {
+    const { context, page, a, b } = await boxAndCylinder();
+    await goTo(page, a);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await until(page, () => document.body.dataset.activeWorkspace === "slice", null, "Slice shown");
+    await saved(page);
+    await goTo(page, b);
+    assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design");
+    const w2 = await window2(context);
+    await projectsDelete(w2, a);
+    await w2.close();
+    await page.click(`${tabByKey(a)} .design-tabs-main`); // fails: deleted
+    await page.waitForTimeout(1500);
+    await insertPreset(page, "sphere");
+    await saved(page);
+    await page.click("#undo");
+    await page.waitForTimeout(1500);
+    assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design", "Undo keeps Design on screen");
+    assert.match(await page.textContent("#file-status"), /is no longer in this browser/);
+    assert.deepEqual(await page.$$eval(".design-tabs-list .design-tabs-kind", (k) => k.map((x) => x.textContent)), ["DESIGNLAB"], "the tab on screen still reads DESIGNLAB");
+    await context.close();
+  });
+
+  await check("tabs hunt B2: with storage full, a new tab's work kept only in the journal is still a tab after a reload", async () => {
+    const { context, page } = await two();
+    const origin = new URL(url).origin;
+    const cdp = await context.newCDPSession(page);
+    const { usage } = await cdp.send("Storage.getUsageAndQuota", { origin });
+    await cdp.send("Storage.overrideQuotaForOrigin", { origin, quotaSize: usage + 300_000 });
+    await page.evaluate(async () => {
+      const db = await new Promise((ok) => {
+        const r = indexedDB.open("filler", 1);
+        r.onupgradeneeded = () => r.result.createObjectStore("f");
+        r.onsuccess = () => ok(r.result);
+      });
+      let n = 0;
+      for (const size of [50_000, 5_000, 500, 50])
+        for (;;) {
+          const s = Array.from({ length: size }, () => String.fromCharCode(33 + Math.floor(Math.random() * 90))).join("");
+          const ok = await new Promise((done) => {
+            const tx = db.transaction("f", "readwrite");
+            tx.objectStore("f").put(s, "k" + n++);
+            tx.oncomplete = () => done(true);
+            tx.onabort = () => done(false);
+          });
+          if (!ok) break;
+        }
+      db.close();
+    });
+    await page.click("#design-tabs-add");
+    await until(page, () => document.querySelectorAll(".design-tabs-tab").length === 3, null, "a third tab");
+    await page.locator("#start-hint").waitFor();
+    const c = await keyOf(page);
+    await startWithBox(page);
+    await page.waitForTimeout(1500);
+    page.on("dialog", (d) => void d.accept());
+    await page.reload();
+    await reloaded(page);
+    const keys = (await strip(page)).map((k) => k.replace("*", ""));
+    assert.equal(keys.length, 3, `three tabs after the reload (${JSON.stringify(keys)})`);
+    assert.ok(keys.includes(c), "the new tab, kept only in the journal, is one of them");
+    await context.close();
+  });
+
+  await check("tabs hunt C4: each browser window keeps its own tabs through a reload", async () => {
+    const { context, page: w1, a, b } = await boxAndCylinder();
+    const w2 = await window2(context);
+    await w2.click("#design-tabs-add");
+    await w2.locator("#start-hint").waitFor();
+    await saved(w2);
+    const c = await keyOf(w2);
+    await goTo(w1, a); // window 1 changes its own list after window 2
+    await saved(w1);
+    await w1.waitForTimeout(500);
+    await w2.reload();
+    await reloaded(w2);
+    const two2 = (await strip(w2)).map((k) => k.replace("*", ""));
+    assert.ok(two2.includes(c), `window 2's own tab is still on its strip after its reload (${JSON.stringify(two2)})`);
+    await w2.click(`${tabByKey(c)} .design-tabs-close`); // closed in window 2 only
+    await w2.waitForTimeout(500);
+    await w1.reload();
+    await reloaded(w1);
+    const one = (await strip(w1)).map((k) => k.replace("*", ""));
+    assert.deepEqual(one, [a, b], "window 1 keeps its own two tabs");
+    await context.close();
+  });
+
+  await check("tabs hunt C6/D1: a tab pushed off the strip keeps nothing in memory (its camera is not put back)", async () => {
+    const { context, page } = await newPage();
+    await pastHome(page);
+    await startWithBox(page);
+    await saved(page);
+    const a = await keyOf(page);
+    await page.click('.view-controls [aria-label="Top"]');
+    await page.waitForTimeout(800);
+    const top = await camera(page);
+    for (let i = 0; i < 11; i++) {
+      await page.click("#design-tabs-add");
+      await until(page, (n) => document.querySelectorAll(".design-tabs-tab").length === n, i + 2, "another tab");
+      await page.locator("#start-hint").waitFor();
+      await saved(page);
+    }
+    // A thirteenth design (+ is off at twelve, a file still opens): the tab left longest ago, the box's, leaves the strip.
+    await page.setInputFiles("#open-file", { name: "Column.spindle", mimeType: "application/json", buffer: readFileSync(new URL("./plate-on-column.spindle", import.meta.url)) });
+    await volume(page, "1,800 mm³");
+    await saved(page);
+    assert.equal((await strip(page)).includes(a), false, "the box's tab was pushed off");
+    await chooseFile(page, "file-projects");
+    await page.locator(`.project-row[data-id="${a}"] .project-open`).click();
+    await volume(page, "24,000 mm³");
+    await page.waitForTimeout(1500);
+    const back = await camera(page);
+    const near = (p, q) => p.every((x, i) => Math.abs(x - q[i]) < 1e-6 * Math.max(1, Math.abs(x)));
+    assert.equal(near(back.position, top.position), false, "the box opens framed afresh, not at the Top view its dropped tab held");
+    await context.close();
+  });
+
+  await check("tabs hunt B4: a store that never answers fails the switch in words, and the strip works again", async () => {
+    const { context, page } = await two();
+    const before = await strip(page);
+    await page.evaluate(() => {
+      // Every read of the store from now on never answers (writes still do).
+      const silent = () => ({ onerror: null, onsuccess: null, onupgradeneeded: null, onblocked: null, readyState: "pending" });
+      for (const m of ["get", "getAll", "getAllKeys", "openCursor", "openKeyCursor", "count"]) {
+        IDBObjectStore.prototype[m] = silent;
+        IDBIndex.prototype[m] = silent;
+      }
+    });
+    await page.click(".design-tabs-tab:first-child .design-tabs-main");
+    await until(page, () => /browser storage didn't answer/.test(document.querySelector("#file-status")?.textContent ?? ""), null, "the words for a store that never answers", 25000);
+    assert.deepEqual(await strip(page), before, "the strip as it was");
+    await page.click("#design-tabs-add");
+    await until(page, () => document.querySelectorAll(".design-tabs-tab").length === 3, null, "+ works again");
+    await context.close();
+  });
+
 }
 
 await browser.close();
