@@ -51,7 +51,9 @@ export function propertyNames(source: string, name: string): string[] {
 // Design data version 20 (SL #632): each profile of an extrude after its first keeps its own shape, under the key
 // "<extrude>/profile:k" of `kept` (a map, its keys not listed here), where version 19 filed every profile of a sketch
 // under one; a version 19 reader would refuse the key.
-const LEDGER_VERSION = 20;
+// Design data version 21 (step 53a1): an extrude of a sketch may say `symmetric: true` in its parameters (going half its
+// distance each way from the sketch's plane), which a version 20 reader would build all on one side.
+const LEDGER_VERSION = 21;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

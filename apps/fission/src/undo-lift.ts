@@ -35,6 +35,10 @@ export function liftOverSheets(document: Document, pair: HTMLElement, phone: Med
   const watched = new Set<Element>();
   const place = () => {
     const sheets = SHEETS.map((id) => document.getElementById(id)).filter((s): s is HTMLElement => s !== null);
+    // Only the sheets in the page now: a slot swapped out (a workspace asleep or gone) is let go, or every slot ever shown
+    // stays held by the set and the observer for the whole session (the soak's growing nodes, SL #198); a woken
+    // workspace's slot is watched again when it comes back.
+    for (const s of watched) if (!sheets.includes(s as HTMLElement)) (watched.delete(s), sizes?.unobserve(s));
     for (const s of sheets) if (!watched.has(s)) (watched.add(s), sizes?.observe(s));
     pair.style.removeProperty("bottom");
     pair.classList.remove("undo-lift");
