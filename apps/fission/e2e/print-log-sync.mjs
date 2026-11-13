@@ -136,6 +136,13 @@ async function device(svc, { width = 1280, phone = false, loose = false } = {}) 
   const page = await context.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => m.type() === "error" && !/Failed to load resource/.test(m.text()) && errors.push(m.text()));
+  // What the dialogs did, for a failure's message: each open and close, by id, with the time since the page loaded.
+  const loads = [];
+  page.on("load", () => loads.push(page.url()));
+  await page.addInitScript(() => {
+    const seen = (globalThis.__dialogs = []);
+    document.addEventListener("toggle", (e) => e.target instanceof HTMLDialogElement && seen.push(`${Math.round(performance.now())} ${e.target.id} ${e.newState}`), true);
+  });
   if (loose)
     // A print made here before anyone signed in, as the app keeps it (owner null).
     await page.addInitScript((id) => {
@@ -145,7 +152,7 @@ async function device(svc, { width = 1280, phone = false, loose = false } = {}) 
     }, LOOSE);
   await page.goto(URL_);
   await page.waitForSelector("#account-open", { state: "attached" });
-  return { page, context, press: (sel) => (phone ? page.tap(sel) : page.click(sel)), phone };
+  return { page, context, press: (sel) => (phone ? page.tap(sel) : page.click(sel)), phone, loads };
 }
 const until = (page, fn, arg, what, timeout = 25000) => page.waitForFunction(fn, arg, { timeout }).catch(() => assert.fail(`${what}: timed out`));
 async function untilNode(fn, what, timeout = 25000) {
@@ -290,7 +297,15 @@ try {
     await openLog(p);
     await until(p.page, () => document.getElementById("print-log-keep")?.disabled === false, undefined, "box ready");
     const row = await p.page.$eval("#print-log-account label", (e) => e.getBoundingClientRect().toJSON());
-    assert.ok(row.height >= 44, `the box's row is ${row.height} px tall`);
+    // For a failure's message: whether the log is open, what the dialogs did, and the first box up from the row that isn't drawn.
+    const state = () =>
+      p.page.evaluate(() => {
+        let hidden = null;
+        for (let e = document.querySelector("#print-log-account label"); e && !hidden; e = e.parentElement) if (getComputedStyle(e).display === "none") hidden = e.id || e.className || e.tagName;
+        const shown = [...document.querySelectorAll("dialog[open], :popover-open")].map((e) => e.id || e.className);
+        return { open: document.getElementById("print-log")?.open, hidden, shown, dialogs: globalThis.__dialogs };
+      });
+    assert.ok(row.height >= 44, `the box's row is ${row.height} px tall (${JSON.stringify({ ...(await state()), loads: p.loads })})`);
     assert.ok(row.right <= 375, `the row ends at ${row.right} px`);
     const claim = await p.page.$eval("#print-log-claim", (e) => e.getBoundingClientRect().toJSON());
     assert.ok(claim.height >= 44 && claim.right <= 375, `Keep these: ${JSON.stringify(claim)}`);
