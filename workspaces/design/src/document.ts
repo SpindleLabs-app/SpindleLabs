@@ -20,7 +20,7 @@ import { isHeldDesignName } from "./design-edges.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
-import { extrudeSketches, hasMoreProfiles, keptKey, MORE_PROFILES_LIMIT, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
+import { extrudeSketches, hasMoreProfiles, isMoreKeptKey, keptKey, MORE_PROFILES_LIMIT, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /** A ready-made outline on a plane (until the sketcher, step 21, adds sketches next to these). */
 export interface ReadyProfile {
@@ -271,7 +271,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 20;
+  version: 21;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -463,7 +463,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 20, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: DESIGN_VERSION, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -1486,6 +1486,7 @@ function checkCombine(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<
   if (!(COMBINE_OPERATIONS as readonly unknown[]).includes(p.operation)) throw new Error(`${at}'s operation ${shown(p.operation)} is not join, cut or intersect`);
   if (typeof p.keepTools !== "boolean") throw new Error(`${at}'s keepTools ${shown(p.keepTools)} is not true or false`);
   if (!Array.isArray(p.tools) || p.tools.length === 0) throw new Error(`${at} has no tool bodies`);
+  notTooMany(p.tools.length, DESIGN_LIMITS.items, `${at} names`, "tools");
   const bodies = [p.target, ...(p.tools as unknown[])];
   const once = new Set<unknown>();
   for (const [i, id] of bodies.entries()) {
@@ -1666,8 +1667,8 @@ function hasVersion19Fields(d: Record<string, unknown>): boolean {
   return (Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "reversed"));
 }
 
-/** Whether version 19 data has a symmetric extrude (step 53a1), which only version 20 holds. */
-function hasVersion20Fields(d: Record<string, unknown>): boolean {
+/** Whether version 20 data has a symmetric extrude (step 53a1), which only version 21 holds. */
+function hasVersion21Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
   return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "symmetric"));
 }
@@ -1746,6 +1747,40 @@ export function migrateDesignV15(d: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * Version 19 data as version 20 (SL #632): version 19 (and 18) filed the kept shape
+ * of every profile of a sketch under one key, the extrude's id for its
+ * first profile's sketch and "<extrude>/<sketch>" for another sketch, so
+ * the first of them lost froze the shape for them all; version 20 gives
+ * each profile after the first its own, "<extrude>/profile:k" (`keptKey`,
+ * k its place in `more` from 1). Each takes a copy of the shape it read,
+ * so the design builds as it did; the "<extrude>/<sketch>" keys go. A key
+ * no profile read is left for the checks to refuse, and one already in
+ * version 20's form is refused here: no earlier version wrote one.
+ */
+export function migrateDesignV19(d: Record<string, unknown>): Record<string, unknown> {
+  if (!isRecord(d.kept)) return { ...d, version: 20 };
+  const old = d.kept;
+  for (const id of Object.keys(old)) if (id.includes("/profile:")) throw new Error(`Design data from before version 20 keeps a shape for ${shown(id)}, a profile's own, which version 20 brought`);
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  const read = new Set<string>();
+  const added: [string, unknown][] = [];
+  for (const f of features) {
+    if (!isRecord(f) || typeof f.id !== "string" || !isRecord(f.intent) || f.intent.type !== "extrude" || !isRecord(f.intent.parameters)) continue;
+    const { sketch: first, more } = f.intent.parameters;
+    if (typeof first !== "string" || !Array.isArray(more)) continue;
+    for (const [j, p] of more.entries()) {
+      if (!isRecord(p) || typeof p.sketch !== "string") continue;
+      const was: string = p.sketch === first ? f.id : `${f.id}/${p.sketch}`;
+      if (!Object.hasOwn(old, was)) continue;
+      if (was !== f.id) read.add(was);
+      added.push([keptKey(f as unknown as Feature, j + 1), old[was]]);
+    }
+  }
+  const kept = Object.fromEntries([...Object.entries(old).filter(([id]) => !read.has(id)), ...added]);
+  return { ...d, version: 20, kept };
+}
+
+/**
  * Checks an extrude's `region` (step 48): `{ outer, centroid }`, `outer`
  * the curves round the region's outside as `{ curve, reversed }` (a curve
  * id and true or false), one at least and at most a sketch's limit, and
@@ -1816,7 +1851,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 20;
+export const DESIGN_VERSION = 21;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1884,13 +1919,16 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // wall); version 18 data never held it, and opens with none, never judged so.
   if (v18.version === 18 && hasVersion19Fields(v18)) throw new Error(`Design data says version ${shown(given)} but has a sketch recording which way its face was drawn, which version 19 brought`);
   const v19 = v18.version === 18 ? { ...v18, version: 19 } : v18;
-  // Version 20 (step 53a1) lets an extrude go half its distance each way from its sketch (`symmetric`), which version 19
-  // never held (a version 19 reader would build it all on one side); other version 19 data is read as it is.
-  if (v19.version === 19 && hasVersion20Fields(v19)) throw new Error(`Design data says version ${shown(given)} but has a symmetric extrude, which version 20 brought`);
-  const d = (v19.version === 19 ? { ...v19, version: 20 } : v19) as Partial<DesignDocument>;
+  // Version 20 (SL #632) files each profile's kept shape under its own key, where version 19 filed every profile of a
+  // sketch under one: copied to each profile that read it (`migrateDesignV19`).
+  const v20 = v19.version === 19 ? migrateDesignV19(v19) : v19;
+  // Version 21 (step 53a1) lets an extrude go half its distance each way from its sketch (`symmetric`), which version 20
+  // never held (a version 20 reader would build it all on one side); other version 20 data is read as it is.
+  if (v20.version === 20 && hasVersion21Fields(v20)) throw new Error(`Design data says version ${shown(given)} but has a symmetric extrude, which version 21 brought`);
+  const d = (v20.version === 20 ? { ...v20, version: 21 } : v20) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  // A whole number above 20 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 or 20)`);
+  // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1973,7 +2011,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
       throw new Error(extruded.length === 1 ? `Design feature ${f.id} extrudes ${p.sketch} but does not depend on it` : `Design feature ${f.id} extrudes ${extruded.join(" and ")} but does not depend on exactly them, in that order`);
     if (!isFiniteNumber(p.distance)) throw new Error(`Design feature ${f.id}: distance ${shown(p.distance)} is not a number of mm`);
     if (Object.hasOwn(p, "flip") && p.flip !== true) throw new Error(`Design feature ${f.id}: flip must be true or left out, not ${shown(p.flip)}`);
-    // Symmetric (version 20): true or left out, and never with Flip, which a body going both ways can't have.
+    // Symmetric (version 21): true or left out, and never with Flip, which a body going both ways can't have.
     if (Object.hasOwn(p, "symmetric") && p.symmetric !== true) throw new Error(`Design feature ${f.id}: symmetric must be true or left out, not ${shown(p.symmetric)}`);
     if (p.symmetric === true && Object.hasOwn(p, "flip")) throw new Error(`Design feature ${f.id} is symmetric and flipped: a symmetric extrude goes both ways, so it has no Flip`);
     if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
@@ -1981,10 +2019,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
   if (Object.hasOwn(d, "kept")) {
     if (!isRecord(d.kept)) throw new Error("Design data's kept shapes are not an object of extrude ids");
     for (const [id, kept] of Object.entries(d.kept)) {
-      // An extrude's id, or (version 18) its id and another sketch of its profiles' (`keptKey`).
+      // An extrude's id (its first profile's), or (version 20) its id and the place of another of its profiles (`keptKey`).
       const slash = id.indexOf("/");
       const f = byId.get(slash < 0 ? id : id.slice(0, slash))?.item;
-      if (!f || !isSketchExtrude(f) || (slash >= 0 && !extrudeSketches(f).slice(1).some((s) => keptKey(f, s) === id))) throw new Error(slash < 0 ? `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline` : `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline and another sketch of its profiles`);
+      if (!f || !isSketchExtrude(f) || (slash >= 0 && !isMoreKeptKey(f, id))) throw new Error(slash < 0 ? `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline` : `Design data keeps a shape for ${shown(id)}, which is not an extrude of a sketch in the timeline and the place of another of its profiles`);
       checkKept(kept, id);
       content += (kept as KeptShape).points.length + (kept as KeptShape).curves.length;
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
@@ -2161,10 +2199,11 @@ function buildsNow(a: Asked, f: Feature): boolean {
   if (isSketchItem(f) || !isSketchExtrude(f)) return true;
   // An extrude with an operation also needs every body it works on (version 10).
   if (!makersOf(a.byId, f).every((x) => buildsIn(a, x))) return false;
-  // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2); so for each sketch of its profiles (version 18).
-  return extrudeSketches(f).every((id) => {
-    const sketch = a.sketches.get(id);
-    return sketch === undefined ? keptOf(document, { ...f, id: keptKey(f, id) }) !== undefined : buildsIn(a, sketch);
+  // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2); so for each of its profiles (version 18),
+  // each under its own key (`profileParts`' ids, version 20).
+  return profileParts(f).every((part) => {
+    const sketch = a.sketches.get(part.intent.parameters.sketch as string);
+    return sketch === undefined ? keptOf(document, part) !== undefined : buildsIn(a, sketch);
   });
 }
 
@@ -2214,9 +2253,10 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
     const extruded = isSketchExtrude(f) ? extrudeSketches(f) : [];
     const own = extruded.flatMap((id) => sketches.get(id) ?? []);
     const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : onBodies(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : [...own, ...makersOf(byId, f)];
-    const sketchBuilds = (id: string) => {
-      const input = sketches.get(id);
-      return input === undefined ? keptOf(document, { ...f, id: keptKey(f, id) }) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input));
+    // Each profile's sketch, or its own kept shape when the sketch is gone (version 20: one per profile, `profileParts`).
+    const partBuilds = (part: Feature) => {
+      const input = sketches.get(part.intent.parameters.sketch);
+      return input === undefined ? keptOf(document, part) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input));
     };
     // An extrude with an operation builds only when every body it works on does (version 10).
     const bodiesBuild = makersOf(byId, f).every((x) => building.has(x));
@@ -2226,7 +2266,7 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
     // A sketch builds, on a face followed or held (26c); an extrude when its sketch does (a sketch on an origin plane
     // whenever it is in range and on, wherever it is), or from its kept shape when it is gone.
     // A Move when every body it moves builds (step 35e2), a Combine when its target and tools do (35f1), a Duplicate when its body does.
-    else if (onBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (bodiesBuild && extruded.every(sketchBuilds))) building.add(f);
+    else if (onBodies(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (bodiesBuild && profileParts(f).every(partBuilds))) building.add(f);
   }
   return { building, greyed };
 }

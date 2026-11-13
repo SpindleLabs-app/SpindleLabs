@@ -45,6 +45,53 @@ export function leavesNoFace(tool: BodyHandle, result: Pick<BooleanResult, "hist
   return !facesFrom(result).some((s) => s.has(tool));
 }
 
+/**
+ * Whether a Join's `tool` lies wholly inside the `target` while flush with
+ * a face of it, so it adds nothing (SL #677 item 3): its flush face is
+ * merged into the target's, which `missedTools` reads as reaching. Told
+ * from the history alone: some result body is the target unchanged, that
+ * is, every one of the target's `faces` (how many it has) is still there,
+ * each whole unless a face of the tool is merged into it, and no face of
+ * that body lies on the tool alone.
+ * Why: a tool that adds volume buries some of the target's surface (the
+ * two share one body, so they meet over an area). The face that area is
+ * on is then gone (a pocket filled level loses the pocket's walls), or
+ * only a piece of it is left (`whole` false: a pad's footprint), and what
+ * sticks out has faces of the tool's alone. A face the tool's flush face
+ * is merged into is always given as a piece, so it can't be read; for the
+ * rule to be wrong there the tool would have to bury part of that very
+ * face from outside, lie flush in the rest of it, and have every other
+ * face of the part outside hidden in the same way, which no extrude of one
+ * sketch does. In doubt it answers false: no question, as before.
+ */
+export function joinsInside(target: BodyHandle, faces: number, tool: BodyHandle, result: Pick<BooleanResult, "history">): boolean {
+  return targetFacesKept(target, tool, result).includes(faces);
+}
+
+/**
+ * Whether `joinsInside` could hold whatever the target's number of faces: told from the history alone, so the caller
+ * asks for the target's faces (which meshes it) only for a Join that may add nothing, never for one that adds.
+ */
+export function mayJoinInside(target: BodyHandle, tool: BodyHandle, result: Pick<BooleanResult, "history">): boolean {
+  return targetFacesKept(target, tool, result).length > 0;
+}
+
+/** For each result body that could be the target unchanged with the tool inside it: how many of the target's faces it keeps. */
+function targetFacesKept(target: BodyHandle, tool: BodyHandle, result: Pick<BooleanResult, "history">): number[] {
+  return result.history.flatMap((h) => {
+    const from = h.faces.map((f, i) => [f, ...(h.also?.[i] ?? [])]);
+    if (!from.some((l) => l.some((x) => x.body === tool)) || from.some((l) => l.every((x) => x.body === tool))) return [];
+    const there = new Set<number>();
+    for (const l of from)
+      for (const x of l) {
+        if (x.body !== target) continue;
+        if (!x.whole && !l.some((y) => y.body === tool)) return [];
+        there.add(x.face);
+      }
+    return [there.size];
+  });
+}
+
 /** "Body 2", "Body 2 and Body 3", "Body 2, Body 3 and Body 4". */
 export function listWords(names: readonly string[]): string {
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;

@@ -108,7 +108,9 @@ export function fakeAccount(seed = 1): FakeAccount {
                 if (r.body !== text) {
                   const kept = acc.versions.get(r.id) ?? [];
                   const newest = kept.at(-1);
-                  if (!newest || Date.parse(r.savedAt) - Date.parse(newest.savedAt) >= LIMITS.versionGapMinutes * 60_000) kept.push({ savedAt: r.savedAt, body: r.body });
+                  const gap = LIMITS.versionGapMinutes * 60_000;
+                  // Kept when the newest version is the gap older, or the copy stood for the gap (20261112140000_design_versions_session_end.sql; by the devices' times here).
+                  if (!newest || Date.parse(r.savedAt) - Date.parse(newest.savedAt) >= gap || Date.parse(String(a.p_saved_at)) - Date.parse(r.savedAt) >= gap) kept.push({ savedAt: r.savedAt, body: r.body });
                   acc.versions.set(r.id, kept.slice(-LIMITS.versionsKept));
                 }
                 Object.assign(r, { name: a.p_name, source: a.p_source, body: text, picture: picture ?? r.picture, savedAt: a.p_saved_at, updatedAt: now, revision: r.revision + 1 });

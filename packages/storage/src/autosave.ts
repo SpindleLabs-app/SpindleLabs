@@ -35,6 +35,7 @@
 
 import { projectToJson, type Project } from "@fission/core";
 import { ProjectChangedError, writerId, type ProjectStore } from "./store.ts";
+import { storageFull } from "./versions.ts";
 import { asideKey, keptCopyName, journalEntry, putAsideOthers, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
 
 export type AutosaveStatus =
@@ -129,6 +130,20 @@ export interface Autosave {
   settled(): Promise<void>;
   /** True once a save was refused because another tab stored the project since: this tab's state is no longer the project's (step 89 keeps no undo steps for it). */
   refused(): boolean;
+  /**
+   * Call when the tab is shown again: reads the stored project's save time, and when another tab stored (or deleted)
+   * the project since this one last read or wrote it, says so at once (an error status) and counts as refused, before
+   * anything is edited, saved to a file or exported from the older state (export hunt 2026-11-12, #642 item 3: the
+   * tab went on saying "Saved"). Nothing while a save of this tab's own waits or runs (that save finds out), for a
+   * project never stored, or when the store can't be read.
+   */
+  check(): Promise<void>;
+  /**
+   * Call when the browser may have emptied the store under this tab (the database closed by the browser: site data
+   * cleared): the open project is stored again at once, though nothing changed (#643 item 4: the mark said "Saved"
+   * over an empty store, and a reload opened an empty design).
+   */
+  lost(): void;
 }
 
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
@@ -146,6 +161,14 @@ export const LONGEST_MS = 5000;
  * Blind spots B2b: IndexedDB that never answered left "Saving…" for good.
  */
 export const STORAGE_ANSWER_MS = 15_000;
+/**
+ * How long after a failed save the next try starts by itself, with no further change: 10 s, 30 s, then every minute
+ * (export hunt 2026-11-12, #643 item 5: nothing tried again until the next edit, however long the person waited after
+ * freeing room). Never for a save refused as another tab's: trying again can't change that.
+ */
+export const RETRY_MS: readonly number[] = [10_000, 30_000, 60_000];
+/** The way out added to a failed save's words. */
+export const USE_SAVE = "Use Save to keep your work as a file.";
 /** The words for a save storage hasn't answered (the status line puts "Not saved: " before them). */
 export const STORAGE_NOT_ANSWERING = "browser storage isn't answering, so your latest changes aren't stored yet (use Save to keep your work as a file)";
 
@@ -178,6 +201,11 @@ export function startAutosave(
   let base: Date | undefined = storedAt ?? undefined;
   /** Another tab stored (or deleted) the project since: this one's changes can't be stored under it, only kept apart. */
   let conflicted = false;
+  /** The words of the refusal, said again for as long as it holds (a later "saved" would be untrue). */
+  let refusal: string | null = null;
+  /** The timer of the next try after a failed save (null: none waits), and how many tries have failed in a row. */
+  let retry: unknown = null;
+  let failures = 0;
   /** When the text last written was read (null: not written by this autosave), for the journal's times. */
   let writtenAt: Date | null = null;
   /** When the state of the last save started was read: an entry is never stamped before it, so a save of an older state that lands unheard is older than the entry (own-save.test.ts). */
@@ -285,8 +313,60 @@ export function startAutosave(
     }
   };
 
+  /** This autosave's own entry is still in the journal (its key, or aside): another tab deleting the project removes it (projects.ts `forget`). */
+  const ownEntryThere = () => {
+    try {
+      const entry = journal?.getItem(key);
+      if (entry != null && ownName !== "" && readJournalEntry(entry).writer === ownName) return true;
+      if (entry != null && ownName === "") return true;
+      return journal?.getItem(asideKey(id, ownName)) != null;
+    } catch {
+      return false;
+    }
+  };
+  /**
+   * Writes the project as it is now to the journal, as `leaving()` keeps it: true when the journal holds every
+   * change. Refused as another tab's change, or held back by the last visit's kept changes: journalled all the same
+   * (hunt C1: a reload, which the refusal's words ask for, lost it), naming the stale state it was made from, so the
+   * next visit keeps it apart as "(kept copy)" and never puts it over the other tab's work. Never marked kept (that is
+   * put back whatever the store holds), and never over the last visit's kept entry: aside, under this writer.
+   */
+  const journalNow = (): boolean => {
+    const refused = conflicted || keptFromLastVisit();
+    // An entry written earlier counts only while it is still there (#642 item 5: deleted with the project by another tab).
+    if (journalVersion === version && ownEntryThere()) return true;
+    if (!journal) return false;
+    try {
+      // Refused with no stored state known to name, an entry would be put back over anything: the page asks instead.
+      if (refused && base === undefined) throw new Error("no stale state to name");
+      const text = projectToJson(project());
+      if (keptFromLastVisit()) journal.setItem(asideKey(id, ownName), journalEntry(text, stamp(), false, base, writer));
+      else {
+        // Another tab's entry there, not stored yet, is moved aside first, never written over (clumsy hunt 2026-11-04).
+        putAsideOthers(journal, id, writer);
+        journal.setItem(key, journalEntry(text, stamp(), owner && !refused, base, writer));
+      }
+      journalVersion = version;
+      return true;
+    } catch {
+      // storage off or full, or a project that can't be written: the page should ask before going
+      return false;
+    }
+  };
+  /** A refused tab's changes have nowhere but the journal: written there at the end of each quiet moment, not only on leaving (#642 item 2: a crash lost everything since the refusal). */
+  const refuse = (words: string) => {
+    refusal = words;
+    if (storedVersion !== version) journalNow();
+    report({ state: "error", message: words });
+  };
+  const noRetry = () => {
+    if (retry !== null) timers.clearTimeout(retry);
+    retry = null;
+  };
+
   async function save() {
     timer = null;
+    noRetry();
     if (stopped) return;
     if (inFlight) {
       again = true;
@@ -304,11 +384,17 @@ export function startAutosave(
       report({ state: "error", message: message(e) });
       return;
     }
-    if (keptFromLastVisit()) {
-      report({ state: "error", message: "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload the page to see them." });
-      return;
-    }
+    if (keptFromLastVisit()) return refuse("unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload the page to see them.");
     if (text === written) {
+      // Back at the state this tab last read or wrote, but the store holds another tab's since: not "saved" (#642
+      // item 3, Undo in a refused tab said so). Nothing of this tab's own is left to keep apart.
+      if (conflicted && refusal !== null) {
+        if (v === version) {
+          storedVersion = v;
+          dropOwnEntries();
+        }
+        return report({ state: "error", message: refusal });
+      }
       stored(v, writtenAt);
       report({ state: "saved" });
       return;
@@ -331,11 +417,14 @@ export function startAutosave(
       writtenAt = at;
       base = at;
       owner = false; // the store holds this tab's state now: the entry, if still here, is an ordinary one
+      failures = 0;
       stored(v, at);
       rebase(at);
     } catch (e) {
       if (e instanceof ProjectChangedError) conflicted = true;
-      failure = message(e);
+      // A failed save says the way out, whatever failed: the storage-full words do already, the others did not
+      // (export hunt 2026-11-12, #643 item 6). A refusal's own words say what to do instead.
+      failure = conflicted || storageFull(e) ? message(e) : `${message(e)}. ${USE_SAVE}`;
     }
     timers.clearTimeout(watch);
     overdue = false;
@@ -344,12 +433,17 @@ export function startAutosave(
       again = false;
       return save();
     }
-    if (failure !== null) report({ state: "error", message: failure });
-    else if (timer === null) report({ state: "saved" });
+    if (failure === null) return timer === null ? report({ state: "saved" }) : undefined;
+    if (conflicted) return refuse(failure);
+    // Any other failure (storage full, not answering, a connection closed mid-save) is tried again by itself.
+    if (!stopped && timer === null) retry = timers.setTimeout(() => void save(), RETRY_MS[Math.min(failures, RETRY_MS.length - 1)]!);
+    failures++;
+    report({ state: "error", message: failure });
   }
 
   function changed() {
     if (stopped) return;
+    noRetry(); // the change's own save is the next try
     version++;
     const t = now().getTime();
     if (timer !== null) timers.clearTimeout(timer);
@@ -373,6 +467,7 @@ export function startAutosave(
   function stop() {
     if (timer !== null) timers.clearTimeout(timer);
     timer = null;
+    noRetry();
     stopped = true;
     unfollow();
   }
@@ -403,29 +498,7 @@ export function startAutosave(
     changed,
     leaving() {
       if (stopped || storedVersion === version) return true;
-      // Refused as another tab's change, or held back by the last visit's kept changes: journalled all the same (hunt
-      // C1: a reload, which the refusal's words ask for, lost it), naming the stale state it was made from, so the next
-      // visit keeps it apart as "(kept copy)" and never puts it over the other tab's work. Never marked kept (that is
-      // put back whatever the store holds), and never over the last visit's kept entry: aside, under this writer.
-      const refused = conflicted || keptFromLastVisit();
-      let kept = journalVersion === version;
-      if (!kept && journal) {
-        try {
-          // Refused with no stored state known to name, an entry would be put back over anything: the page asks instead.
-          if (refused && base === undefined) throw new Error("no stale state to name");
-          const text = projectToJson(project());
-          if (keptFromLastVisit()) journal.setItem(asideKey(id, ownName), journalEntry(text, stamp(), false, base, writer));
-          else {
-            // Another tab's entry there, not stored yet, is moved aside first, never written over (clumsy hunt 2026-11-04).
-            putAsideOthers(journal, id, writer);
-            journal.setItem(key, journalEntry(text, stamp(), owner && !refused, base, writer));
-          }
-          journalVersion = version;
-          kept = true;
-        } catch {
-          // storage off or full, or a project that can't be written: the page should ask before going
-        }
-      }
+      const kept = journalNow();
       // Don't wait for the quiet moment: the page may live long enough for the store's save too.
       if (timer !== null) {
         timers.clearTimeout(timer);
@@ -481,19 +554,52 @@ export function startAutosave(
           // Kept in the journal (when it could be written), put back on the next visit. Refused because another tab
           // saved since: kept apart as a separate project, and the entry goes once that is stored (the entry names the
           // state it was made from, so should the copy fail, the next visit keeps it apart too, never over that work).
-          if (e instanceof ProjectChangedError && (await keepApart(last, at).kept) && journalVersion === v) {
-            try {
-              journal?.removeItem(key);
-              journalVersion = null;
-            } catch {
-              // left in place: storage off, so it can't be read back either
+          if (e instanceof ProjectChangedError) {
+            if ((await keepApart(last, at).kept) && journalVersion === v) {
+              try {
+                journal?.removeItem(key);
+                journalVersion = null;
+              } catch {
+                // left in place: storage off, so it can't be read back either
+              }
             }
+            return;
+          }
+          // The store had no room (or failed): the entry is this project's newest state, so it is marked kept, as the
+          // next visit's recovery would mark it. The app then opens it in place of the older stored state (keptEntry)
+          // and no tab saves over it (#643 item 3: the project opened again showed the older state, marked "Saved").
+          try {
+            if (journalVersion === v && ownEntryThere() && journal?.getItem(key) != null) journal.setItem(key, journalEntry(last, at, true));
+          } catch {
+            // left as it was: the next visit puts it back, or marks it then
           }
         }
       });
       return null;
     },
     refused: () => conflicted,
+    async check() {
+      if (stopped || conflicted || base === undefined || timer !== null || inFlight) return;
+      const knew = base;
+      let holds: Date | null | undefined;
+      try {
+        const summary = (await store.list()).find((s) => s.id === id);
+        holds = summary === undefined ? null : summary.problem !== undefined ? undefined : summary.modified;
+      } catch {
+        return; // can't be read: the next save says what is wrong
+      }
+      // Not listed: deleted (the next save says so) or the store emptied (the next save stores it again). A change or
+      // a save of this tab's own since the question was asked finds out by itself.
+      if (holds == null || stopped || conflicted || base !== knew || timer !== null || inFlight) return;
+      if (holds.getTime() === knew.getTime()) return;
+      conflicted = true;
+      refuse("this project was changed in another tab, so this tab shows an older version. Reload to see the newer one.");
+    },
+    lost() {
+      if (stopped || conflicted) return;
+      written = null; // whatever was stored may be gone
+      changed();
+    },
     settled: () => flight.then(
       () => {},
       () => {},

@@ -1,4 +1,4 @@
-// Symmetric extrude (step 53a1, Design data version 20): half the distance
+// Symmetric extrude (step 53a1, Design data version 21): half the distance
 // each way from the sketch's plane, the distance the whole thickness. The
 // hand-worked cases are built by the real rebuild on the real kernel, every
 // expected box and volume worked out from the sketch and the distance
@@ -183,10 +183,10 @@ test("the data: Symmetric drops Flip, says so in the summary, and opens again as
   assert.throws(() => setExtrudeSymmetric(partDocument("box", 1, 1, 1), true, "feature-1"), /is not an extrude of a sketch/);
   const read = readDesignDocument(JSON.parse(JSON.stringify(sym)));
   assert.deepEqual(read, sym);
-  assert.equal(read.version, 20);
+  assert.equal(read.version, 21);
 });
 
-test("the reader refuses a symmetric that is not true, a symmetric flip, and version 19 data holding one; version 19 data without opens", () => {
+test("the reader refuses a symmetric that is not true, a symmetric flip, and version 19 or 20 data holding one; older data without opens", () => {
   const sym = symmetricRect(null, [0, 0], [10, 10], 10);
   const json = () => JSON.parse(JSON.stringify(sym.doc));
   const params = (d: { timeline: { features: { id: string; intent: { parameters: Record<string, unknown> } }[] } }) => d.timeline.features.find((f) => f.id === sym.id)!.intent.parameters;
@@ -196,11 +196,10 @@ test("the reader refuses a symmetric that is not true, a symmetric flip, and ver
   const both = json();
   params(both).flip = true;
   assert.throws(() => readDesignDocument(both), new RegExp(`Design feature ${sym.id} is symmetric and flipped`));
-  const old = { ...json(), version: 19 };
-  assert.throws(() => readDesignDocument(old), /says version 19 but has a symmetric extrude, which version 20 brought/);
+  for (const v of [19, 20]) assert.throws(() => readDesignDocument({ ...json(), version: v }), new RegExp(`says version ${v} but has a symmetric extrude, which version 21 brought`));
   const plain = json();
   delete params(plain).symmetric;
-  assert.equal(readDesignDocument({ ...plain, version: 19 }).version, 20, "older data is read as it is");
+  for (const v of [19, 20]) assert.equal(readDesignDocument({ ...plain, version: v }).version, 21, "older data is read as it is");
 });
 
 test("Edit feature: Symmetric ticked or unticked with the distance, Flip not read while it is ticked", () => {

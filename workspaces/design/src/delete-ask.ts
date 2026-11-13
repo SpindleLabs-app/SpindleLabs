@@ -13,14 +13,14 @@
 // it can't promise a kept shape the rebuild then doesn't have.
 // Styles: src/styles/delete-ask.css.
 
-import type { KernelCalls } from "@fission/core";
+import type { Feature, KernelCalls } from "@fission/core";
 import { bodyItem, isMoveItem, isSketchExtrude, isSketchItem, type DesignDocument } from "./document.ts";
 import { movedBodies } from "./move.ts";
 import { faceFeature, isFaceSketch } from "./face-sketch.ts";
 import { settleKept, type BodyCache } from "./rebuild.ts";
 import { deleteItem, itemName } from "./timeline-edits.ts";
 import { bodyWords, shapings } from "./body-uses.ts";
-import { extrudeSketches, keptKey } from "./extrude-profiles.ts";
+import { profileParts } from "./extrude-profiles.ts";
 
 /** What the box asks before a used item is deleted. */
 export interface DeleteQuestion {
@@ -62,8 +62,13 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
       ? ""
       : `${later.map((s) => `${itemName(s.of)} uses ${bodyWords(before, s.body)} as ${name} leaves it`).join("; ")}, so ${later.length === 1 ? `${itemName(later[0].of)} changes` : `${listWords(later.map((s) => itemName(s.of)))} change`} without it.`;
   if (users.length === 0) return later.length === 0 ? null : { heading: `Delete ${name}?`, words: `${changes} Undo brings ${name} back.` };
-  // The shape kept of this sketch, filed by the extrude and the sketch (`keptKey`: a second profile's sketch's is "<extrude>/<sketch>", SL #611).
-  const keeps = users.filter((f) => isSketchExtrude(f) && after.kept !== undefined && Object.hasOwn(after.kept, extrudeSketches(f).includes(id) ? keptKey(f, id) : f.id)).map(itemName);
+  // The shapes kept of this sketch's profiles, each filed under its own key (`profileParts`' ids: "<extrude>/profile:k"
+  // after the first, version 20, SL #632; SL #611): it keeps its last shape when each of them does.
+  const keptAll = (f: Feature) => {
+    const parts = profileParts(f).filter((p) => p.intent.parameters.sketch === id);
+    return (parts.length > 0 ? parts : [f]).every((p) => after.kept !== undefined && Object.hasOwn(after.kept, p.id));
+  };
+  const keeps = users.filter((f) => isSketchExtrude(f) && keptAll(f)).map(itemName);
   const staying = users.filter((f) => isFaceSketch(f) && faceFeature(f.intent.parameters.plane as string) === id);
   const stays = staying.map(itemName);
   // 27c and 27d (rule 13): a sketch only pinned to its edges, or projecting them, keeps those points and edges where they are.
@@ -75,7 +80,7 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   const held = pins && projects ? "snapped points and projected edges" : projects ? "projected edges" : "snapped points";
   // 26e (Q1): what is built from a sketch that stays stays with it, saying its source is lost.
   const built = before.timeline.features.filter((f) => isSketchExtrude(f) && staying.some((s) => f.dependsOn.includes(s.id))).map(itemName);
-  // A Move has no shape of its own: it fails, and moves all its bodies or none, so the others it moves go back (hunt 11-01).
+  // A Move has no shape of its own: with nothing left to move it fails; else it moves the rest and shows a warning (SL #506 item 4).
   const moving = users.filter(isMoveItem);
   const moves = moving.map((m) => {
     const others = [...new Set(movedBodies(m).map((b) => bodyItem(b)).filter((f) => f !== undefined && f !== id))].flatMap((f) => {
@@ -84,7 +89,7 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
     });
     return others.length === 0
       ? `${itemName(m)} has nothing left to move and fails`
-      : `${itemName(m)} fails, so ${listWords(others)} ${others.length === 1 ? "goes" : "go"} back to where ${others.length === 1 ? "it was" : "they were"} before it`;
+      : `${itemName(m)} moves only ${listWords(others)} and shows a warning`;
   });
   const movers = moving.map(itemName);
   const fails = users.map(itemName).filter((n) => !keeps.includes(n) && !stays.includes(n) && !holds.includes(n) && !movers.includes(n));

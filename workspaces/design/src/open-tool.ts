@@ -53,3 +53,8 @@ export function openToolRefusal(tool: OpenTool | null, verb: string): string | n
   if (tool === null) return null;
   return `${tool.name} is still open: ${tool.finish} first, then ${verb}. ${verb} saves the design as it is recorded, not what an open tool shows.`;
 }
+
+/** What `verb` says when the design is not built as it is now (a rebuild failed to end, or the design was replaced meanwhile): nothing is saved (SL #675 item 1). */
+export function stillRebuilding(verb: string): string {
+  return `The design has not finished rebuilding, so nothing was saved: try ${verb} again in a moment.`;
+}

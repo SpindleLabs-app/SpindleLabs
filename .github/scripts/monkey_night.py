@@ -28,7 +28,16 @@ says both, and a night with none tried (or no such line) is a failure of
 its own (folder seed-monkey-combine): the hidden Combine tool went
 untested, as it would if ?combine were dropped from the monkey's address.
 
-Exit code: 1 when any seed failed or went unreported, else 0."""
+Exit code: 1 when any seed failed or went unreported, else 0.
+
+  python3 monkey_night.py day <out dir> <unix seconds>
+
+The daytime (round the clock) run's plan: prints "<first seed> <seeds>
+<minutes>" for the sessions that fit before 14:50 UTC, or, when not even
+one fits (issue #671: a run reaching its monkey at 14:03 had 31 minutes,
+so its one session was cut off and the run read as having tested too
+little), writes <out>/report.txt saying the monkey was not run and prints
+"skip": no session that cannot finish, and no failure for it."""
 
 import json
 import os
@@ -182,7 +191,41 @@ def write(log, results, out, first, count, steps, combine=False):
     return total
 
 
+# Daytime runs (round the clock): every minute's seeds are new and never a night's (those are 2026MMDD0 and 1, about
+# 202,6xx,xxx): 300,000,000 plus twice the minutes since 1970 (about 359,9xx,xxx in November 2026), well under the
+# monkey's 32-bit seeds (2,147,483,647) for centuries. Up to four sessions, the run's monkey done 15 minutes before
+# 14:50 UTC so the report is written in time, and one session per 40 minutes (a 2,000-action session's 25 or so with
+# room for a failure's replays; issue #476).
+DAY_SEEDS, DAY_MAX_MINUTES, DAY_REPORT_MINUTES, SESSION_MINUTES = 4, 300, 15, 40
+
+
+def day_plan(now):
+    """(first seed, seeds, minutes) for a daytime run whose monkey starts at `now` (unix seconds); seeds 0 and first
+    None when not one session fits in the minutes left."""
+    day_end = now - now % 86400 + (14 * 60 + 50) * 60
+    if now >= day_end:
+        day_end += 86400
+    limit = min(DAY_MAX_MINUTES, (day_end - now) // 60 - DAY_REPORT_MINUTES)
+    seeds = min(DAY_SEEDS, max(limit, 0) // SESSION_MINUTES)
+    return (300000000 + 2 * (now // 60) if seeds else None), seeds, limit
+
+
+def day(out, now):
+    first, seeds, limit = day_plan(now)
+    if seeds:
+        print(first, seeds, limit)
+        return 0
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "report.txt"), "w") as f:
+        f.write(f"Monkey, daytime: not run, only {max(limit, 0)} minutes were left before 14:50 UTC, "
+                f"fewer than one {SESSION_MINUTES}-minute session needs\n")
+    print("skip")
+    return 0
+
+
 def main(argv):
+    if argv[:1] == ["day"]:
+        return day(argv[1], int(argv[2]))
     log_path, results, out, first, count, steps = argv[:6]
     log = open(log_path, errors="replace").read() if os.path.isfile(log_path) else ""
     failed = write(log, results, out, int(first), int(count), int(steps), combine=argv[6:7] == ["combine"])
