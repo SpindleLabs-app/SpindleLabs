@@ -88,3 +88,100 @@ test("the starter materials can't be changed by whoever reads them", () => {
   assert.throws(() => pla.notes.push("x"));
   assert.equal(mech("pla").density, 1240);
 });
+
+test("each starter material shows its name and, for every number, the document it came from and what that document says", () => {
+  // Written out from the documents themselves (not read back from the code): the three plastics cite the maker's
+  // sheet for their filament (PLA and ABS sheet V2.0, high-flow PETG V1.0), printed bars at 100% infill.
+  const sheet = (plastic: string, version: string) => `Maker's technical data sheet ${version} for a ${plastic} filament (printed test bars, 100% infill)`;
+  const pla = sheet("PLA", "V2.0");
+  const petg = sheet("high-flow PETG", "V1.0");
+  const abs = sheet("ABS", "V2.0");
+  const alu = "Metal supplier's data sheet for aluminium 6061-T6 / 6061-T651";
+  const a36 = "ASTM A36 structural steel, as summarised in its encyclopaedia entry";
+  assert.equal(pla, "Maker's technical data sheet V2.0 for a PLA filament (printed test bars, 100% infill)");
+  assert.equal(petg, "Maker's technical data sheet V1.0 for a high-flow PETG filament (printed test bars, 100% infill)");
+  const printed = [
+    "Measured on test bars printed solid (100% infill); a part with less infill is weaker and bends more.",
+    "Strength is where a test bar broke when pulled, not a safe working limit.",
+  ];
+  const expected = {
+    pla: {
+      name: "PLA",
+      sources: {
+        density: { document: pla, says: "Density 1.24 g/cm³, ISO 1183" },
+        stiffness: { document: pla, says: "Young's modulus 2680 ± 130 MPa (X-Y) and 2160 ± 90 MPa (Z), ISO 527; bending modulus 2750 ± 60 MPa (X-Y) and 2370 ± 50 MPa (Z), ISO 178" },
+        strength: { document: pla, says: "Tensile strength 39 ± 2 MPa (X-Y) and 35 ± 3 MPa (Z), ISO 527" },
+        poissonsRatio: { document: "Sabik, Rucka, Andrzejewska and Wojtczak, Tensile failure study of 3D printed PLA using DIC technique and FEM analysis, Mechanics of Materials 175 (2022) 104506", says: "Poisson's ratio 0.349 ± 0.009, printed PLA pulled along the raster" },
+      },
+      notes: printed,
+    },
+    petg: {
+      name: "PETG",
+      sources: {
+        density: { document: petg, says: "Density 1.28 g/cm³, ISO 1183" },
+        stiffness: { document: petg, says: "Young's modulus 1810 ± 190 MPa (X-Y) and 1540 ± 130 MPa (Z), ISO 527; bending modulus 2050 ± 120 MPa (X-Y) and 1810 ± 140 MPa (Z), ISO 178" },
+        strength: { document: petg, says: "Tensile strength 34 ± 4 MPa (X-Y) and 23 ± 4 MPa (Z), ISO 527" },
+        poissonsRatio: { document: "Sabik et al. 2022 for PLA and Cantrell et al., Table II, for ABS (both cited on those materials)", says: "Assumed from printed PLA (0.35) and ABS (0.36 to 0.38): no measurement for printed PETG was found" },
+      },
+      notes: [...printed, "Poisson's ratio is assumed, not measured for PETG; it changes the bend only a little."],
+    },
+    abs: {
+      name: "ABS",
+      sources: {
+        density: { document: abs, says: "Density 1.05 g/cm³, ISO 1183" },
+        stiffness: { document: abs, says: "Young's modulus 3800 ± 190 MPa (X-Y) and 2960 ± 110 MPa (Z), ISO 527; bending modulus 1880 ± 110 MPa (X-Y) and 1590 ± 100 MPa (Z), ISO 178" },
+        strength: { document: abs, says: "Tensile strength 41 ± 1 MPa (X-Y) and 32 ± 2 MPa (Z), ISO 527" },
+        poissonsRatio: { document: "Cantrell et al., Experimental characterization of the mechanical properties of 3D-printed ABS and polycarbonate parts (University of Florida), Table II", says: "Poisson's ratio 0.36 to 0.38 for printed ABS in every orientation tested" },
+      },
+      notes: [...printed, "The sheet's pulling stiffness is twice its bending stiffness, so the lower, bending figure is used."],
+    },
+    "aluminium-6061": {
+      name: "Aluminium 6061-T6",
+      sources: {
+        density: { document: alu, says: "Density 2.7 g/cc" },
+        stiffness: { document: alu, says: "Modulus of elasticity 68.9 GPa" },
+        strength: { document: alu, says: "Tensile yield strength 276 MPa" },
+        poissonsRatio: { document: alu, says: "Poisson's ratio 0.33" },
+      },
+      notes: ["Typical values for the T6 temper; other tempers are much softer."],
+    },
+    "steel-a36": {
+      name: "Steel (A36 structural)",
+      sources: {
+        density: { document: a36, says: "Density 7.8 g/cm³" },
+        stiffness: { document: a36, says: "Young's modulus 29,000 ksi (200 GPa)" },
+        strength: { document: "ASTM A36 (the standard's minimum for plates, bars and shapes under 8 in thick)", says: "Minimum yield strength 36 ksi (250 MPa)" },
+        poissonsRatio: { document: a36, says: "Poisson's ratio 0.26" },
+      },
+      notes: ["The yield strength is the standard's minimum, so real A36 is usually a little stronger."],
+    },
+  };
+  assert.deepEqual(Object.keys(expected), materialLibrary().all().map((m) => m.id));
+  for (const [id, want] of Object.entries(expected)) {
+    const m = materialLibrary().get(id);
+    assert.equal(m?.name, want.name, id);
+    assert.deepEqual(mech(id).sources, want.sources, `${id}: where each number came from`);
+    assert.deepEqual(mech(id).notes, want.notes, `${id}: notes`);
+  }
+  // Each number stored is the figure its source states, in SI: g/cm³ (and g/cc) × 1000 = kg/m³; 1.24 → 1240,
+  // 1.28 → 1280, 1.05 → 1050, 2.7 → 2700, 7.8 → 7800.
+  for (const m of STARTER_MATERIALS) {
+    const says = m.mechanical!.sources.density.says;
+    const figure = Number(/Density ([\d.]+) g\/c/.exec(says)?.[1]);
+    assert.equal(Math.round(figure * 1000), m.mechanical!.density, `${m.id}: ${says}`);
+  }
+});
+
+test("a material that isn't printed is refused when only its stiffness differs between the two ways", () => {
+  // Steel with equal strength both ways but 200 GPa along and 190 GPa across: a metal has no layers, so the
+  // two ways must agree for stiffness on its own, not only for strength.
+  const steel = mech("steel-a36");
+  assert.deepEqual(mechanicalProblems({ ...steel, stiffness: { alongLayers: 200e9, acrossLayers: 190e9 } }), ["A material that isn't printed is the same both ways."]);
+  assert.deepEqual(mechanicalProblems({ ...steel, stiffness: { alongLayers: 200e9, acrossLayers: 200e9 } }), []);
+});
+
+test("a metal's strength is its yield strength, where it starts to bend for good", () => {
+  // Both metal sources give a yield figure ("Tensile yield strength 276 MPa", "Minimum yield strength 36 ksi"),
+  // so both are "yield", unlike the plastics' tensile (breaking) strength.
+  assert.deepEqual([mech("aluminium-6061").strengthKind, mech("steel-a36").strengthKind], ["yield", "yield"]);
+});
