@@ -678,7 +678,14 @@ let autosave: Autosave | null = null;
 // 4; it answered "all kept" and went without a word): while an opened file is not kept yet, and after a change when
 // this browser's storage failed at the start. A new project not changed yet has nothing to lose.
 // (#627 item 1, a size still waiting its turn in Design, is flushed here by the Undo and edit thread's fix.)
-const leaving = () => (steps.flush(), autosave ? autosave.leaving() : statusBeforeOpening === null && (canKeep || !ctx.history.canUndo()));
+// An OK still with the kernel (held work, `history.waitingToRecord`) has recorded nothing yet, so neither the journal nor
+// the store can keep it: the page asks before going while one is held (flat stress hunt 2026-11-13, SL #708 item 1: a reload
+// straight after a Combine's OK went without a word and opened without the Combine; the lost-work family of #627).
+const leaving = () => {
+  steps.flush();
+  const kept = autosave ? autosave.leaving() : statusBeforeOpening === null && (canKeep || !ctx.history.canUndo());
+  return kept && !ctx.history.waitingToRecord();
+};
 // Shown again, or its window chosen again: a tab left open while another tab changed the project is told at once, before
 // anything is edited, saved to a file or exported from the older state (export hunt 2026-11-12, #642 item 3: it went
 // on saying "Saved"). Known stale before its next edit, it also writes no undo steps over the other tab's (item 4).
@@ -705,9 +712,14 @@ const saveStatus = (s: AutosaveStatus) => {
   el.textContent = s.state === "saving" ? "Saving…" : s.state === "saved" ? "Saved" : `Not saved: ${s.message}`;
   el.title = el.textContent; // the words behind the mark at phone width
   if (s.state === "saved") accountHooks?.saved(); // My designs: kept in the account a few seconds later, when signed in
-  if (s.state === "saved") window.removeEventListener("beforeunload", askBeforeLeaving);
-  else window.addEventListener("beforeunload", askBeforeLeaving);
+  askWhileUnsaved();
 };
+/** Listens for beforeunload only while something could be lost (a saved page with nothing held stays fit for the back/forward cache). */
+function askWhileUnsaved() {
+  if (shownStatus.state === "saved" && !ctx.history.waitingToRecord()) window.removeEventListener("beforeunload", askBeforeLeaving);
+  else window.addEventListener("beforeunload", askBeforeLeaving);
+}
+ctx.history.onBusy(askWhileUnsaved);
 /**
  * After the first save of the user's own work (an edit, or a file opened), asks the browser not to clear the kept
  * projects when space runs low (real-use hunt B3). Never on load: the empty project a first visit stores is no work.
