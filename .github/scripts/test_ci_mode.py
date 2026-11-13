@@ -276,6 +276,13 @@ class Workflows(unittest.TestCase):
         self.assertIn("if: always()", ci["e2e"])
         self.assertIn('if [ "$FULL" = false ]', ci["e2e"])
         self.assertIn("needs.mode.outputs.full != 'false'", ci["e2e-shard"])
+        # The switched-off features' browser checks (tabs.config.mjs, home.config.mjs) run with every full run and the
+        # required e2e check fails without them, so a feature waiting for release cannot go stale unseen.
+        self.assertIn("needs.mode.outputs.full != 'false'", ci["e2e-switches"])
+        self.assertIn("e2e-switches", re.search(r"needs: (.*)", ci["e2e"]).group(1))
+        self.assertIn('test "$SWITCHES" = success', ci["e2e"])
+        for script in ("npm run e2e:tabs", "npm run e2e:home"):
+            self.assertIn(script, ci["e2e-switches"])
         self.assertIn("merge_group:", open(os.path.join(WORKFLOWS, "ci.yml")).read())
 
     def test_docs_only_skips_only_on_an_explicit_true(self):
@@ -295,10 +302,10 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("docs", ci["kernel"])
         self.assertRegex(ci["kernel"], r"- run: python3 -m unittest discover -s \.github/scripts\n      - ")
         self.assertIn("run: python3 .github/scripts/check_kernel_build.py", ci["kernel"])
-        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "e2e-quick", "browsers", "phone"):
+        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "e2e-switches", "e2e-quick", "browsers", "phone"):
             self.assertIn("needs.mode.outputs.docs != 'true'", ci[job], job)
             self.assertIn("mode", re.search(r"needs: (.*)", ci[job]).group(1), job)
-        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "browsers", "phone"):
+        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "e2e-switches", "browsers", "phone"):
             self.assertIn("!cancelled()", ci[job], job)
         self.assertIn('if [ "$DOCS" = true ]; then', ci["e2e"])
         # The gate named app (required) reports whatever its shares did, and
@@ -333,7 +340,7 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("pull_request.draft", text)
         for job in ("browsers", "phone"):
             self.assertIn("&& needs.mode.outputs.draft != 'true' }}", ci[job], job)
-        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "e2e-quick"):
+        for job in ("app-design", "app-rest", "app-journeys", "baseline", "e2e-shard", "e2e-switches", "e2e-quick"):
             self.assertIn("github.event.action != 'converted_to_draft'", ci[job], job)
             self.assertNotIn("pull_request.draft", ci[job], job)
         self.assertNotIn("draft", ci["kernel"] + ci["mutants-in-diff"])
