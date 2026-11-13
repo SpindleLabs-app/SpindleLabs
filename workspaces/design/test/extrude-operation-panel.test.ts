@@ -4,7 +4,7 @@
 // hand from the boxes and the list given, beside each assertion.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bodyChoices, boxesMeet, operationNote, REACH, tickedBodies, type Bounds } from "../src/extrude-operation.ts";
+import { bodyChoices, boxesMeet, operationNote, REACH, tickedBodies, touchingOnly, type Bounds } from "../src/extrude-operation.ts";
 import { extrudePanel, NEW_BODY_NOTE } from "../src/extrude-panel.ts";
 
 const { Window } = await import("happy-dom");
@@ -149,4 +149,27 @@ test("the list's words never show under New body, and opening the panel again st
   panel.show("Sketch 2", "5", true);
   assert.equal($<HTMLSelectElement>("extrude-operation").value, "new");
   assert.equal(panel.operation, "new");
+});
+
+test("hand-worked: a Cut whose extrude only touches the bodies ticked says it points away, before OK asks (SL #677 item 5)", () => {
+  const one = [{ body: "body:feature-1", label: "Body 1", ticked: true }];
+  const bodies = [{ body: "body:feature-1", label: "Body 1", bounds: CUBE }];
+  // A rectangle on the cube's top (z = 5) extruded +20 runs z 5..25: the boxes share only the plane z = 5, no thickness, so it cuts nothing.
+  const up = box([2, 2, 5], [6, 6, 25]);
+  assert.deepEqual([...touchingOnly(up, bodies)], ["body:feature-1"]);
+  assert.deepEqual(operationNote("cut", one, touchingOnly(up, bodies)), { text: "The extrude only touches Body 1, so it cuts nothing: it may point the wrong way (Flip turns it round).", ready: true });
+  // Extruded −5 instead it runs z 0..5: inside the cube's z −5..5, 5 mm deep, so it cuts, and the words say so as before.
+  const down = box([2, 2, 0], [6, 6, 5]);
+  assert.deepEqual([...touchingOnly(down, bodies)], []);
+  assert.deepEqual(operationNote("cut", one, touchingOnly(down, bodies)), { text: "The extrude is cut from Body 1.", ready: true });
+  // Join onto a face is what a sketch on a face is for: touching only is right there, so Join's words don't change.
+  assert.deepEqual(operationNote("join", one, touchingOnly(up, bodies)), { text: "The extrude is joined to Body 1.", ready: true });
+  // Two ticked, one reached properly: the Cut does something, so no warning (OK's own question covers the one it misses).
+  const two = [...one, { body: "body:feature-4", label: "Body 2", ticked: true }];
+  assert.deepEqual(operationNote("cut", two, new Set(["body:feature-1"])).text, "The extrude is cut from Body 1 and Body 2.");
+  // The boundary: sinking into the top by 0.9 × REACH still counts as touching only, 1.1 × REACH counts as reaching in.
+  for (const [k, only] of [[0.9, true], [1.1, false]] as const) {
+    assert.equal(touchingOnly(box([2, 2, 5 - k * REACH], [6, 6, 25]), bodies).size === 1, only, `${k} × REACH into the top`);
+    assert.equal(touchingOnly(box([2, 2, -25], [6, 6, -5 + k * REACH]), bodies).size === 1, only, `${k} × REACH into the bottom`);
+  }
 });

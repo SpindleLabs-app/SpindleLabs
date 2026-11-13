@@ -22,7 +22,7 @@ import { shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { bringForward, forget, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { listedProjects } from "./projects.ts";
 import { versionList, versionTime, type VersionPlace } from "@fission/ui";
 import { createAssistant } from "./assistant.ts";
@@ -74,7 +74,20 @@ if (import.meta.env.PROD) openLatest();
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
 // The shell opens whole projects, dropped or pasted like any other file (X6).
-representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(bytes, name) });
+representations.registerImporter({
+  formats: ["project"],
+  workspace: null,
+  open: async (name, bytes) => {
+    // A browser that can't keep projects holds the design on screen nowhere else: Open asks before it replaces one
+    // with changes (it was gone without a question, export hunt 2026-11-12, #644 item 2). A file that can't be read
+    // is refused first, in its own words, so no one is asked about an Open that won't happen.
+    if (!canKeep && ctx.history.canUndo()) {
+      projectFromJson(bytes, workspaces);
+      if (!window.confirm(`Open "${name}" in place of your design? This browser can't keep projects, so the design on screen is saved nowhere: Cancel, then use Save to keep it as a file first.`)) return;
+    }
+    openProject(bytes, name);
+  },
+});
 // The one action registry: the verbs each workspace offers for a selection.
 const actions = new ActionRegistry();
 for (const w of workspaces) w.registerActions?.(actions);
@@ -148,6 +161,7 @@ const ctx: WorkspaceContext = {
   startedFresh: () => {
     savedTo = null;
     projectFile = null;
+    fileOwner++;
   },
   fileName: () => (projectFile === null ? null : baseNameOf(projectFile, PROJECT_KIND.extension)),
 };
@@ -595,7 +609,9 @@ if (everyWorkspace) {
 // after each change; the top bar says "Saving…", "Saved" or what went wrong.
 // Each project has its own stored id: an opened file becomes a new stored
 // project rather than overwriting the one that was open.
-const store = localStore(workspaces);
+// The browser closing the database under the page (site data cleared): the open project is stored again at once
+// (export hunt 2026-11-12, #643 item 4: the mark said "Saved" over an empty store, and a reload opened nothing).
+const store = localStore(workspaces, () => autosave?.lost());
 // The kept project's undo steps, kept beside it in this browser (step 89), so a reload carries on where it was.
 // Written as each save lands, never by a tab whose saves are refused (another tab stored the project since).
 const steps = keptSteps(ctx.history, store.steps, () => projectToJson(ctx.project), {
@@ -642,9 +658,15 @@ let autosave: Autosave | null = null;
 // this browser's storage failed at the start. A new project not changed yet has nothing to lose.
 // (#627 item 1, a size still waiting its turn in Design, is flushed here by the Undo and edit thread's fix.)
 const leaving = () => (steps.flush(), autosave ? autosave.leaving() : statusBeforeOpening === null && (canKeep || !ctx.history.canUndo()));
+// Shown again, or its window chosen again: a tab left open while another tab changed the project is told at once, before
+// anything is edited, saved to a file or exported from the older state (export hunt 2026-11-12, #642 item 3: it went
+// on saying "Saved"). Known stale before its next edit, it also writes no undo steps over the other tab's (item 4).
+const backInView = () => void autosave?.check();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") leaving();
+  else backInView();
 });
+window.addEventListener("focus", backInView);
 window.addEventListener("pagehide", leaving);
 function askBeforeLeaving(e: BeforeUnloadEvent) {
   if (leaving()) return;
@@ -725,18 +747,29 @@ let savedTo: FileHandle | null = null;
  * a new or other project lets it go.
  */
 let projectFile: string | null = null;
+/** Goes up each time another project takes the open one's place (new, opened, restored): a save that was still asking then knows its file is not this project's. */
+let fileOwner = 0;
+/** A Save is asking where or under what name: Save and Save As pressed again meanwhile (Ctrl+S held or mashed, the menu, the key behind the name box) do nothing, so there is one question and one file (export hunt 2026-11-12, SL #644 item 4; the Save icon's repeat guard only covered the icon). */
+let saveAsking = false;
 async function save(asNew = false) {
+  if (saveAsking) return;
+  saveAsking = true;
   try {
     await started; // the project shown, not the empty one the app starts with
+    const owner = fileOwner;
     const result = await saveFile(document, { suggestedName: projectFile || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
     if (result.status === "failed") return fileStatus(result.message);
-    if (result.status === "saved") {
+    // Another project opened while this save was asking: the file holds the last project, so it is not kept as
+    // this one's, or the next Save would write this project over it without asking (SL #644 item 5).
+    if (result.status === "saved" && owner === fileOwner) {
       savedTo = result.handle;
       projectFile = result.name;
     }
     fileStatus("");
   } catch (e) {
     fileStatus(e instanceof Error ? e.message : String(e));
+  } finally {
+    saveAsking = false;
   }
 }
 // The phone's keyboard opening never hides the box being typed in (clumsy-human hunt 11-04, keep-typing-visible.ts).
@@ -793,6 +826,7 @@ const keptApartWords = (name: string) => `Your changes in this tab couldn't be s
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
   projectFile = null; // and so did its name
+  fileOwner++;
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -810,7 +844,11 @@ function replaceProject(project: Project) {
  * freezes the tab while it builds is never stored, so never reopened.
  */
 function openProject(file: string | Uint8Array, fileName = "") {
-  const project = projectFromJson(file, workspaces);
+  const read = projectFromJson(file, workspaces);
+  // A project never named takes its file's name, so two opened files can be told apart in Projects in this browser
+  // (every one said "Untitled", export hunt 2026-11-12, #644 item 3); a name of its own it keeps.
+  const fromFile = fileName.replace(/(\.spindlelabs|\.panosolid|\.fission)?\.json$|\.spindle$/i, "").trim().slice(0, MAX_PROJECT_NAME);
+  const project = (read.name === "" || read.name === "Untitled") && fromFile !== "" ? { ...read, name: fromFile } : read;
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet. Changes this tab couldn't
   // store (another tab saved since) are kept as a separate project, and said (round 2 hunt A5: Open dropped them).
@@ -821,7 +859,15 @@ function openProject(file: string | Uint8Array, fileName = "") {
   // copy no one can reach (real-use hunt B3). Looked up while it opens, once the last project's saves have landed
   // (#331: one still landing, Save's new name stored by New's last save, left the save time read here stale, and
   // the opened file's first save was refused as another tab's); a store that can't answer means a new copy.
-  const copy = canKeep ? lastWrites.then(() => storedCopy(store, project)).catch(() => undefined) : Promise.resolve(undefined);
+  // A file whose project took the file's name is also looked up under the name inside it: the project it was saved
+  // from, still "Untitled" here, goes on under its id with the new name, not as a second copy beside it.
+  const nothing = { found: undefined, exact: false } as { found: Awaited<ReturnType<typeof storedCopy>>; exact: boolean };
+  const lookUp = async () => {
+    const exact = await storedCopy(store, project);
+    if (exact !== undefined || project === read) return { found: exact, exact: exact !== undefined };
+    return { found: await storedCopy(store, read), exact: false };
+  };
+  const copy = canKeep ? lastWrites.then(lookUp).catch(() => nothing) : Promise.resolve(nothing);
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus(apart === null ? "" : keptApartWords(apart));
   replaceProject(project);
@@ -832,7 +878,9 @@ function openProject(file: string | Uint8Array, fileName = "") {
   if (canKeep) saveStatus({ state: "saving" });
   let kept = false;
   const keepIt = () =>
-    void copy.then((found) => {
+    void copy.then((looked) => {
+      const found = looked.found;
+      let exact = looked.exact;
       if (kept) return;
       kept = true;
       unfollow();
@@ -840,8 +888,27 @@ function openProject(file: string | Uint8Array, fileName = "") {
       statusBeforeOpening = null;
       // Its first save writes it (so it is the project a reload opens), checking no other tab changed the copy since.
       openedFile = true;
-      keep(found?.id ?? newId(), false, found?.modified ?? null);
-      autosave?.changed(); // store the opened file, with anything changed while it opened
+      // A file already kept here as it is, and not changed while it opened, is not stored again: only brought
+      // forward (the same save time), as a project opened from the list is. Stored again it got a new save time, and
+      // another tab still on that project had every later edit refused as "changed in another tab" (export hunt
+      // 2026-11-12, #642 item 1).
+      // Kept here already under the name inside the file (the project it was saved from) and not changed while it
+      // opened: it stays that project, name and all, so nothing is stored and no other tab on it is overtaken.
+      if (found !== undefined && !exact && !ctx.history.canUndo()) {
+        ctx.project = { ...ctx.project, name: read.name };
+        ctx.history.reset();
+        exact = true;
+      }
+      if (found === undefined || !exact || ctx.history.canUndo()) {
+        keep(found?.id ?? newId(), false, found?.modified ?? null);
+        return autosave?.changed(); // store the opened file, with anything changed while it opened
+      }
+      keep(found.id, true, found.modified);
+      const waiting: AutosaveStatus = { state: "saving" };
+      saveStatus(waiting);
+      const mine = autosave;
+      const done = () => void (autosave === mine && shownStatus === waiting && saveStatus({ state: "saved" }));
+      bringForward(store, found.id, found.modified).then(done, () => (autosave === mine ? autosave?.changed() : undefined)); // can't be brought forward: stored as before
     });
   // Changed before it has shown (the engine still downloading on a first visit, a big file's first build): a tab that
   // takes an edit is not frozen, so the file is kept now, with the edit. It waited for the build, and a reload or a
@@ -1158,6 +1225,29 @@ const panesInUse = (): PaneId[] => (activePane === "split" ? ["split", "main"] :
 /** Typing in a field: a text box, text area, list or editable text. A tickbox, radio or button takes no letters, so keys still reach the shortcuts after one is clicked (found in SF1: ticking Snap to grid stopped L, R, C and A). */
 const TEXT_FIELDS = "input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=reset], [type=range], [type=color], [type=file]), textarea, select, [contenteditable]:not([contenteditable=false])";
 const inText = (t: EventTarget | null) => t instanceof Element && t.closest(TEXT_FIELDS) !== null;
+/**
+ * Undo and Redo keys in a text field are the browser's own, of the typing in it, except where the field holds no typing
+ * of its own to take back: a field whose typing is the project's steps as typed (`data-undo="app"`, Design's size
+ * boxes), a list, and a box emptied once its value was used (`data-undo="app-empty"`, the sketch's typed sizes after
+ * Enter). There the keys are the project's Undo and Redo. Left to the browser they did nothing for the emptied box, and
+ * in a size box untyped a digit as a NEW step, a 60 mm box becoming 6 mm (Undo hunt 2026-11-12, #623).
+ */
+const UNDO_KEYS = new Set(["undo", "redo", "redo-y"]);
+function undoIsOurs(t: EventTarget | null): boolean {
+  const field = t instanceof Element ? t.closest(TEXT_FIELDS) : null;
+  if (!(field instanceof HTMLElement)) return false;
+  return field instanceof HTMLSelectElement || field.dataset.undo === "app" || (field.dataset.undo === "app-empty" && (field as HTMLInputElement).value === "");
+}
+// The browser keeps one undo of typing for the whole page, not one per field: Ctrl+Z in the command search or a panel's
+// box, with nothing left of its own to untype, went on to untype the last size typed in a size box, wherever the keys
+// were. A size box's typing is never the browser's to take back or redo.
+document.addEventListener(
+  "beforeinput",
+  (e) => {
+    if ((e.inputType === "historyUndo" || e.inputType === "historyRedo") && e.target instanceof HTMLElement && e.target.dataset.undo === "app") e.preventDefault();
+  },
+  true,
+);
 const shellShortcuts: Record<string, (e: Event) => boolean> = {
   shortcuts: () => (showShortcuts(), true),
   undo: () => (undoRedo("undo"), true),
@@ -1181,7 +1271,7 @@ function runShortcut(chord: Chord, e: Event) {
   if (document.querySelector("dialog[open]")) return;
   const panes = panesInUse();
   const entry = shortcuts.lookup(chord, panes.map((p) => pool.showing(p)!));
-  if (!entry || (!entry.inText && inText(e.target))) return;
+  if (!entry || (!entry.inText && inText(e.target) && !(UNDO_KEYS.has(entry.id) && undoIsOurs(e.target)))) return;
   const done = entry.scope === "app" ? shellShortcuts[entry.id]?.(e) : pool.awake(panes.find((p) => pool.showing(p) === entry.scope)!)?.view.shortcut?.(entry.id, e);
   if (done !== false && done !== undefined) e.preventDefault();
 }
@@ -1365,12 +1455,15 @@ function undoRedo(which: "undo" | "redo") {
   pressesWaiting++;
   waitingOn[which]++;
   showUndoRedo();
+  // What it waits for may end with nothing recorded (an OK refused, a question cancelled or still open: the history's
+  // `callOff`). The press was for that, so it is dropped: carried out, it took back the step before (#622).
+  const calledOff = ctx.history.callsOff();
   pressed = pressed
     .then(() => ctx.history.whenIdle())
     .then(() => {
       pressesWaiting--;
       waitingOn[which]--;
-      undoRedoNow(which);
+      if (ctx.history.callsOff() === calledOff) undoRedoNow(which);
       showUndoRedo();
     });
 }
@@ -1508,13 +1601,17 @@ phone.addEventListener("change", () => {
   const phone = window.matchMedia("(max-width: 640px)");
   let wanted = false;
   let opened = false;
+  let shows = ""; // the Combine panel's count of times it was shown: one more means a Combine started again, even over an open one (#586)
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
     const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null ||
       // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null);
-    if (now === wanted && !(turned && now)) return;
+    const again = props.querySelector<HTMLElement>("#combine-panel:not([hidden])")?.dataset.shows ?? "";
+    const restarted = now && again !== "" && again !== shows;
+    shows = again;
+    if (now === wanted && !(turned && now) && !restarted) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
     if (now && phone.matches && !open) {
@@ -1533,7 +1630,7 @@ phone.addEventListener("change", () => {
     } else if (!now) opened = false;
   };
   phone.addEventListener("change", () => phone.matches && update(true));
-  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden", "data-shows"] });
 }
 // At phone width the bar over the view (phone-float.ts) ends the tool in use; a tool ending puts the Properties sheet away.
 startPhoneFloat($("workspace"), $("viewport"), () => {

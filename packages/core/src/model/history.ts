@@ -99,6 +99,15 @@ export interface History {
    * back that step, not the one before (clumsy hunt 2026-11-04: the step was lost, and the one before it undone).
    */
   hold<T>(work: Promise<T>): Promise<T>;
+  /**
+   * Held work the person asked for ended with nothing recorded (an OK the kernel refused, a question answered Cancel
+   * or still open): an Undo or Redo that waited for it was pressed to take that back, and there is nothing of it to
+   * take, so the shell drops the press (`callsOff` changed while it waited) instead of taking back the step before
+   * (Undo hunt 2026-11-12, #622: the width typed before a refused Move was undone and the refusal never seen).
+   */
+  callOff(): void;
+  /** How many times `callOff` was called. */
+  callsOff(): number;
   /** The present step, for `amendStep` to name later: the same step until a record merges into it or an amend changes it. */
   present(): HistoryStep;
   /**
@@ -178,6 +187,7 @@ export function createHistory(options: HistoryOptions): History {
   };
   /** Held work still running (`hold`). */
   const held = new Set<Promise<unknown>>();
+  let calledOff = 0;
   const listeners = new Set<() => void>();
   const changed = () => {
     for (const l of [...listeners]) l();
@@ -346,6 +356,8 @@ export function createHistory(options: HistoryOptions): History {
       held.add(done);
       return work;
     },
+    callOff: () => void calledOff++,
+    callsOff: () => calledOff,
     present: () => entries[index],
     amendStep(step, rewrite) {
       if (restoring || grouping > 0) return false;

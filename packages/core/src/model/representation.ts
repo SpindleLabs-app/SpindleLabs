@@ -11,7 +11,7 @@
 import type { BodySpec, DisplayMesh, Outline } from "../kernel/kernel-types.ts";
 import type { FileFormat, FileImporter } from "./files.ts";
 import type { Project } from "./project.ts";
-import type { BodyReference, FaceReference } from "./references.ts";
+import type { BodyReference, FaceReference, GeometryReference } from "./references.ts";
 
 export type RepresentationKind = "solid" | "outline" | "mesh" | "image" | "data";
 
@@ -87,6 +87,8 @@ export interface ListedObject extends Producible {
   label: string;
   /** The stable reference a link to it keeps (a body's), when its owner names it so: what `facesOf` takes. */
   ref?: BodyReference;
+  /** What the one selection holds when it is picked, when its owner lets it be picked from another workspace (Laser's parts, L1b3). */
+  selectAs?: GeometryReference;
 }
 
 /**

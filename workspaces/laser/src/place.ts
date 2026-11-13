@@ -28,12 +28,58 @@
 import type { Loop, Outline } from "@fission/core";
 import { mmWords, moveOutline, outlineBox, type Bed, type Layout, type OutlineBox, type PlacedPart, type SheetPart } from "./sheet.ts";
 
-/** Where a hand-placed part sits: turned `angle` degrees counter-clockwise, then moved so its box's lower-left corner is at (x, y), mm. */
+/**
+ * Where a hand-placed part sits: mirrored left to right when `flip` (L1b4), then turned `angle` degrees
+ * counter-clockwise, then moved so its box's lower-left corner is at (x, y), mm. `flip` is left out when false.
+ */
 export interface Placement {
   x: number;
   y: number;
   angle: number;
+  flip?: true;
 }
+
+/** How a mirror runs: x kept (+1) or turned (−1), and the same for y (core's `SeenAs`, as viewport's `planeSeenAs` gives it). */
+export interface Mirror {
+  right: 1 | -1;
+  up: 1 | -1;
+}
+
+/** A path loop gone round the other way: the same corners and arcs, each piece from its end to its start (so its bulge's sign turns). */
+function reversedLoop(corners: readonly number[], bulges: readonly number[]): Loop {
+  const n = corners.length / 2;
+  const out: number[] = [];
+  const bs: number[] = [];
+  for (let j = 0; j < n; j++) {
+    const i = (n - j) % n; // corners c0, c(n−1), …, c1
+    out.push(corners[2 * i], corners[2 * i + 1]);
+    bs.push(-(bulges[(2 * n - j - 1) % n] ?? 0) + 0); // the piece c(i) → c(i−1) is piece i−1 backwards
+  }
+  return { path: { corners: out, bulges: bs } };
+}
+
+function mirrorLoop(loop: Loop, m: Mirror): Loop {
+  if ("circle" in loop) return { circle: { center: [m.right * loop.circle.center[0] + 0, m.up * loop.circle.center[1] + 0], radius: loop.circle.radius } };
+  const corners = loop.path.corners.map((v, i) => (i % 2 === 0 ? m.right : m.up) * v + 0);
+  if (corners.length % 2 === 1) return { path: { corners, bulges: [...loop.path.bulges] } }; // malformed: kept so, for the box to refuse in words
+  const turn = m.right * m.up;
+  const bulges = loop.path.bulges.map((b) => turn * b + 0);
+  // A mirror turns every loop the other way round; going round it backwards puts each back the way it was (outer
+  // counter-clockwise, holes clockwise), and turns every bulge's sign once more, so an arc bulges the side it did.
+  return turn === 1 ? { path: { corners, bulges } } : reversedLoop(corners, bulges);
+}
+
+/**
+ * The outline as seen in mirror `m` (exact: every x and y times ±1; a mirror turns each arc's way round, and the loop
+ * is then written backwards so it keeps its own way round). The identity when both are +1.
+ */
+export function mirrorOutline(outline: Outline, m: Mirror): Outline {
+  if (m.right === 1 && m.up === 1) return outline;
+  return { outer: mirrorLoop(outline.outer, m), holes: outline.holes.map((h) => mirrorLoop(h, m)) };
+}
+
+/** Left to right: what Flip does to a part (its own x turned). */
+export const FLIP: Mirror = { right: -1, up: 1 };
 
 /** The furthest from the bed's corner a part may be put, mm (10 m: far past any bed, and small enough that every number stays exact to a nanometre). */
 export const MAX_REACH = 10_000;
@@ -86,9 +132,9 @@ export function turnOutline(outline: Outline, degrees: number): Outline {
   return { outer: turnLoop(outline.outer, c, s), holes: outline.holes.map((h) => turnLoop(h, c, s)) };
 }
 
-/** The outline as it sits on the bed at `at`: turned, then moved so its box's lower-left corner is (at.x, at.y). Throws, in words, for a malformed outline. */
+/** The outline as it sits on the bed at `at`: mirrored if flipped, turned, then moved so its box's lower-left corner is (at.x, at.y). Throws, in words, for a malformed outline. */
 export function placeOutline(outline: Outline, at: Placement): { outline: Outline; box: OutlineBox } {
-  const turned = turnOutline(outline, at.angle);
+  const turned = turnOutline(at.flip ? mirrorOutline(outline, FLIP) : outline, at.angle);
   const box = outlineBox(turned);
   const [width, height] = [box.maxX - box.minX, box.maxY - box.minY];
   return { outline: moveOutline(turned, at.x - box.minX, at.y - box.minY), box: { minX: at.x, minY: at.y, maxX: at.x + width, maxY: at.y + height } };
@@ -97,12 +143,21 @@ export function placeOutline(outline: Outline, at: Placement): { outline: Outlin
 /**
  * The placement that turns a part to `angle` about the middle of its box as
  * it sits now (`now`, with the box's size), so it turns on the spot: the
- * new box has the same middle. Throws, in words, for a malformed outline.
+ * new box has the same middle; `flip` says whether it is mirrored then. Throws, in words, for a malformed outline.
  */
-export function turnedOnTheSpot(outline: Outline, now: { x: number; y: number; width: number; height: number }, angle: number): Placement {
+export function turnedOnTheSpot(outline: Outline, now: { x: number; y: number; width: number; height: number }, angle: number, flip = false): Placement {
   const a = normalAngle(angle);
-  const { box } = placeOutline(outline, { x: 0, y: 0, angle: a });
-  return { x: cleanMm(now.x + now.width / 2 - box.maxX / 2), y: cleanMm(now.y + now.height / 2 - box.maxY / 2), angle: a };
+  const { box } = placeOutline(outline, { x: 0, y: 0, angle: a, ...(flip && { flip: true as const }) });
+  return { x: cleanMm(now.x + now.width / 2 - box.maxX / 2), y: cleanMm(now.y + now.height / 2 - box.maxY / 2), angle: a, ...(flip && { flip: true as const }) };
+}
+
+/**
+ * The placement that mirrors a part left to right as it sits now (turned `angle`, flipped or not), on the spot. A
+ * mirror after a turn is the mirror before the opposite turn (M·R(a) = R(−a)·M), so the flip changes and the angle
+ * goes to −angle.
+ */
+export function flippedOnTheSpot(outline: Outline, now: { x: number; y: number; width: number; height: number; angle: number; flip: boolean }): Placement {
+  return turnedOnTheSpot(outline, now, -now.angle, !now.flip);
 }
 
 /** The placements a project holds, read defensively: an entry that is not a usable placement is dropped, never thrown on. */
@@ -111,10 +166,10 @@ export function readPlacements(data: unknown): Record<string, Placement> {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return out;
   for (const [id, v] of Object.entries(data as Record<string, unknown>)) {
     if (typeof v !== "object" || v === null) continue;
-    const { x, y, angle } = v as Record<string, unknown>;
+    const { x, y, angle, flip } = v as Record<string, unknown>;
     if (typeof x !== "number" || typeof y !== "number") continue;
     const p = { x, y, angle: typeof angle === "number" ? angle : 0 };
-    if (placementRefusal(p) === null) out[id] = { x: p.x, y: p.y, angle: normalAngle(p.angle) };
+    if (placementRefusal(p) === null) out[id] = { x: p.x, y: p.y, angle: normalAngle(p.angle), ...(flip === true && { flip: true as const }) };
   }
   return out;
 }
@@ -122,6 +177,8 @@ export function readPlacements(data: unknown): Record<string, Placement> {
 /** A part on the bed, with the angle it is turned by and whether the person placed it ("hand") or the rows did ("rows"). */
 export interface LaidPart extends PlacedPart {
   angle: number;
+  /** Mirrored left to right before the turn (Flip, L1b4). */
+  flip: boolean;
   by: "hand" | "rows";
 }
 
@@ -157,7 +214,7 @@ export function layOutPlaced(parts: readonly SheetPart[], bed: Bed, gap: number,
     if (!at) return;
     try {
       const { outline, box } = placeOutline(part.outline, at);
-      const laid: LaidPart = { id: part.id, label: part.label, outline, x: box.minX, y: box.minY, width: box.maxX - box.minX, height: box.maxY - box.minY, angle: normalAngle(at.angle), by: "hand" };
+      const laid: LaidPart = { id: part.id, label: part.label, outline, x: box.minX, y: box.minY, width: box.maxX - box.minX, height: box.maxY - box.minY, angle: normalAngle(at.angle), flip: at.flip === true, by: "hand" };
       slots[i] = laid;
       hand.push(laid);
     } catch (e) {
@@ -194,7 +251,7 @@ export function layOutPlaced(parts: readonly SheetPart[], bed: Bed, gap: number,
       clear = Math.min(clear, blocker.y + blocker.height + gap);
       x = blocker.x + blocker.width + gap; // on, past the part in the way
     }
-    slots[i] = { id: part.id, label: part.label, outline: moveOutline(part.outline, x - box.minX, y - box.minY), x, y, width, height, angle: 0, by: "rows" };
+    slots[i] = { id: part.id, label: part.label, outline: moveOutline(part.outline, x - box.minX, y - box.minY), x, y, width, height, angle: 0, flip: false, by: "rows" };
     x += width + gap;
     row = Math.max(row, height);
   });

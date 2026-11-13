@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodiesChanged, shapings } from "../src/body-uses.ts";
 import { changedCombine, insertCombine } from "../src/combine.ts";
+import { insertDuplicates } from "../src/duplicate.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { deleteWords, planDelete } from "../src/delete-ask.ts";
@@ -130,4 +131,86 @@ test("what each item changes for the items after it (body-uses.ts), each kind by
   assert.deepEqual(bodiesChanged(item("feature-1")), []);
   const kept = insertCombine(doc, b1, [b2], "cut", true);
   assert.deepEqual(bodiesChanged(kept.doc.timeline.features.find((f) => f.id === kept.id)!), [b1]);
+});
+
+// SL #676 item 1 (final Combine hunt): the rule above was one-way. An item that reads a body (a Copy, a Mirror, a
+// Combine keeping its tools) must also stay before a later item that changes that body, or it silently reads the
+// changed body instead.
+
+const volumeOf = async (doc: DesignDocument, body: string) => {
+  const cache = new BodyCache(kernel);
+  const build = await rebuildTimeline(doc, cache, kernel);
+  const v = (await cache.view(build.bodies[body].handle)).volume;
+  await cache.close();
+  return v;
+};
+
+test("#676 item 1, by hand: Move 2 of a kept tool can't go before the Combine that cut with it (Box 1 21000 → 19500 mm³)", async () => {
+  // Box 1 and Box 2, 40 × 30 × 20; Move 1 shifts Box 2 by (20, 15, 10); Combine 1 cuts Box 2 from Box 1 keeping it;
+  // Move 2 then shifts Box 2 by x −10.
+  let doc = partDocument("box", 40, 30, 20);
+  const b1 = `body:${doc.timeline.features[0].id}`;
+  let id: string;
+  ({ doc, id } = insertPreset(doc, "box", 40, 30, 20));
+  const b2 = `body:${id}`;
+  doc = insertMove(doc, [b2], { ...NO_MOVE, x: 20, y: 15, z: 10 }).doc;
+  const wrong = insertMove(doc, [b2], { ...NO_MOVE, x: -10 }).doc;
+  const combine = insertCombine(doc, b1, [b2], "cut", true);
+  const move2 = insertMove(combine.doc, [b2], { ...NO_MOVE, x: -10 });
+  doc = move2.doc;
+  // As shown, Box 2 is cut at x 20..60, y 15..45, z 10..30: the bite is 20 × 15 × 10 = 3000, so Box 1 is 24000 − 3000 = 21000 mm³.
+  near(await volumeOf(doc, b1), 21000);
+  // With Move 2 first Box 2 is at x 10..50: the bite is 30 × 15 × 10 = 4500 and Box 1 would be 19500 mm³, a silent change.
+  near(await volumeOf(insertCombine(wrong, b1, [b2], "cut", true).doc, b1), 19500);
+  // Timeline: Box 1, Box 2, Move 1, Combine 1, Move 2.
+  const early = reorderItem(doc, move2.id, place(doc, combine.id));
+  assert.equal(early.refused, "before-dependency");
+  assert.equal(early.message, "Move 2 can't go before Combine 1: Combine 1 uses Box 2 as it is before Move 2");
+  const late = reorderItem(doc, combine.id, 4);
+  assert.equal(late.refused, "after-dependent");
+  assert.equal(late.message, "Combine 1 can't go after Move 2: it uses Box 2 as it is before Move 2");
+});
+
+test("#676 item 1, by hand: a Copy of Box 1 can't go after the Join that changes Box 1 (69000 → 90000 mm³)", async () => {
+  const { doc: joined, b1, combine } = moveThenJoin();
+  // Copy 1 of Box 1 put in before Combine 1: timeline Box 1, Box 2, Move 1, Copy 1, Combine 1.
+  const copy = insertDuplicates({ ...joined, timeline: { ...joined.timeline, marker: "feature-3" } }, [b1]);
+  const doc = { ...copy.doc, timeline: { ...copy.doc.timeline, marker: null } };
+  const copyId = copy.ids[0];
+  assert.deepEqual(doc.timeline.features.map((f) => f.id), ["feature-1", "feature-2", "feature-3", copyId, combine]);
+  // Shown: the copy is of the plain box, 24000 mm³, beside the Join's 45000 (#506's working): 69000 in all. After the
+  // Join it would be a copy of the 45000 mm³ Join: 90000 in all, a silent change.
+  near(await volumeOf(doc, `body:${copyId}`), 24000);
+  const after = reorderItem(doc, copyId, 4);
+  assert.equal(after.refused, "after-dependent");
+  assert.equal(after.message, "Copy 1 can't go after Combine 1: it uses Box 1 as it is before Combine 1");
+  const before = reorderItem(doc, combine, 3);
+  assert.equal(before.refused, "before-dependency");
+  assert.equal(before.message, "Combine 1 can't go before Copy 1: Copy 1 uses Box 1 as it is before Combine 1");
+});
+
+test("#676 item 1: a Copy of a Join's tool can't go after the Join that uses it up", () => {
+  const { doc: joined, b2, combine } = moveThenJoin();
+  const copy = insertDuplicates({ ...joined, timeline: { ...joined.timeline, marker: "feature-3" } }, [b2]);
+  const doc = { ...copy.doc, timeline: { ...copy.doc.timeline, marker: null } };
+  const after = reorderItem(doc, copy.ids[0], 4);
+  assert.equal(after.message, "Copy 1 can't go after Combine 1: it uses Box 2 as it is before Combine 1");
+});
+
+test("#676 item 1: Move 1 can't go before a Copy of the box it moves (the copy would sit on the moved box)", () => {
+  let doc = partDocument("box", 40, 30, 20);
+  const b1 = `body:${doc.timeline.features[0].id}`;
+  const copy = insertDuplicates(doc, [b1]);
+  const move = insertMove(copy.doc, [b1], { ...NO_MOVE, x: 50 });
+  doc = move.doc;
+  const early = reorderItem(doc, move.id, 1);
+  assert.equal(early.refused, "before-dependency");
+  assert.equal(early.message, "Move 1 can't go before Copy 1: Copy 1 uses Box 1 as it is before Move 1");
+  // An item may still go past a Copy of a body it doesn't change: Box 2 and Copy 2 of it put in last, then Move 1 (of
+  // Box 1) dragged to the end, after Copy 2.
+  const box2 = insertPreset(doc, "box", 10, 10, 10);
+  const other = insertDuplicates(box2.doc, [`body:${box2.id}`]);
+  const last = reorderItem(other.doc, move.id, 4);
+  assert.equal(last.refused, undefined, last.message);
+  assert.equal(place(last.doc!, move.id), 4);
 });
