@@ -271,7 +271,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 20;
+  version: 21;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -1187,6 +1187,8 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   if (Object.hasOwn(face, "body")) checkPlane(face.body, `${at}'s body frame`);
   // SL #583 item 3 (version 19): whether its face was its name's face turned round when drawn.
   if (Object.hasOwn(face, "reversed") && typeof face.reversed !== "boolean") throw new Error(`${at}'s reversed must be true or false, not ${shown(face.reversed)}`);
+  // SL #707 (version 21): marked as drawn before, its body frame its face's first input's; only ever true, and with a body frame.
+  if (Object.hasOwn(face, "first") && (face.first !== true || !Object.hasOwn(face, "body"))) throw new Error(`${at}'s first must be true, on a sketch with a body frame, not ${shown(face.first)}`);
   // SL #539: the body's size when drawn (its scale factors multiplied), a number above 0.
   const body = face.body as Record<string, unknown> | undefined;
   if (body !== undefined && Object.hasOwn(body, "size") && !(typeof body.size === "number" && Number.isFinite(body.size) && body.size > 0)) throw new Error(`${at}'s body frame's size must be a number above 0, not ${shown(body.size)}`);
@@ -1667,6 +1669,23 @@ function hasVersion19Fields(d: Record<string, unknown>): boolean {
   return (Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "reversed"));
 }
 
+/** Whether version 20 data has a face sketch marked as drawn before version 21 (SL #707), which only version 21 marks. */
+function hasVersion21Fields(d: Record<string, unknown>): boolean {
+  return (Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "first"));
+}
+
+/**
+ * Version 20 data as version 21 (SL #707): each face sketch with a body frame is marked `first`, as drawn before. Its
+ * frame is the first input face's of the face it was drawn on (the target's on a face a Join merged from level faces),
+ * which is what carries it, so the design builds as it did; from version 21 a sketch records the frame of the input
+ * face its name names. Anything not a sketch on a face with a body frame is left for the checks.
+ */
+export function migrateDesignV20(d: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(d.sketches)) return { ...d, version: 21 };
+  const sketches = d.sketches.map((s) => (isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "body") ? { ...s, face: { ...s.face, first: true } } : s));
+  return { ...d, sketches, version: 21 };
+}
+
 /** Whether version 17 data has an extrude holding more profiles (`more`), which only version 18 allows. */
 function hasVersion18Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
@@ -1845,7 +1864,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 20;
+export const DESIGN_VERSION = 21;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1915,10 +1934,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const v19 = v18.version === 18 ? { ...v18, version: 19 } : v18;
   // Version 20 (SL #632) files each profile's kept shape under its own key, where version 19 filed every profile of a
   // sketch under one: copied to each profile that read it (`migrateDesignV19`).
-  const d = (v19.version === 19 ? migrateDesignV19(v19) : v19) as Partial<DesignDocument>;
+  const v20 = v19.version === 19 ? migrateDesignV19(v19) : v19;
+  // Version 21 (SL #707): a face sketch's `body` is the frame of the input face its name names; one from before recorded
+  // the first input's of the face it was drawn on, and is marked so (`first`, `migrateDesignV20`), carried as before.
+  if (v20.version === 20 && hasVersion21Fields(v20)) throw new Error(`Design data says version ${shown(given)} but has a sketch marked as drawn before version 21, which only version 21 marks`);
+  const d = (v20.version === 20 ? migrateDesignV20(v20) : v20) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 or 20)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
