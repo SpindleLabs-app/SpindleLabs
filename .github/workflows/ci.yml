@@ -142,9 +142,8 @@ jobs:
           path: ${{ runner.temp }}/measured.json
           if-no-files-found: ignore
 
-  # The app's tests, build and journeys in two parallel jobs (Design's tests
-  # alone took 13 minutes of one 20-minute job): `app (design)` and
-  # `app (rest)`; the job named `app` below is the one auto-merge and main's
+  # The app's tests, build and journeys in three parallel jobs (one job ran
+  # into its time limit): `app (design)`, `app (rest)` and `app (journeys)`; the job named `app` below is the one auto-merge and main's
   # ruleset wait for. Which workspace is in which share: .github/scripts/app_tests.py.
   app-design:
     name: app (design)
@@ -180,14 +179,32 @@ jobs:
       - run: npm run build
         working-directory: apps/fission
       - run: npm run typecheck
+
+  # The journeys (12 minutes of the app's 17 on CI, 2026-11-13) get their own runner.
+  app-journeys:
+    name: app (journeys)
+    needs: mode
+    if: ${{ !cancelled() && needs.mode.outputs.docs != 'true' && github.event.action != 'converted_to_draft' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run build
+        working-directory: apps/fission
       - run: npm run journeys
 
   # The one app check auto-merge and main's ruleset wait for (REQUIRED_CHECKS
-  # in .github/scripts/automerge.py): green only when both shares passed. Where
+  # in .github/scripts/automerge.py): green only when all three passed. Where
   # the shares are skipped (docs only, or a pull request just moved back to
   # draft) it is skipped too, as the single app job was.
   app:
-    needs: [mode, app-design, app-rest]
+    needs: [mode, app-design, app-rest, app-journeys]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -197,6 +214,7 @@ jobs:
           DRAFTED: ${{ github.event.action == 'converted_to_draft' }}
           DESIGN: ${{ needs.app-design.result }}
           REST: ${{ needs.app-rest.result }}
+          JOURNEYS: ${{ needs.app-journeys.result }}
         run: |
           if [ "$DRAFTED" = true ]; then
             echo "moved back to draft: nothing tested until it is ready again"
@@ -204,7 +222,8 @@ jobs:
             echo "docs only: no app tests needed"
           else
             test "$DESIGN" = success || { echo "the design tests did not pass ($DESIGN)"; exit 1; }
-            test "$REST" = success || { echo "the other tests, build or journeys did not pass ($REST)"; exit 1; }
+            test "$REST" = success || { echo "the other tests, build or typecheck did not pass ($REST)"; exit 1; }
+            test "$JOURNEYS" = success || { echo "the journeys did not pass ($JOURNEYS)"; exit 1; }
           fi
 
   # The Chromium browser checks (`npm run e2e`), split by e2e/shard.mjs into
