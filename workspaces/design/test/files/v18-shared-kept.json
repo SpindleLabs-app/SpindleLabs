@@ -1,0 +1,306 @@
+{
+  "version": 18,
+  "nextId": 19,
+  "profiles": [],
+  "sketches": [
+    {
+      "id": "sketch-1",
+      "points": [
+        {
+          "id": "point-2",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "point-3",
+          "x": 10,
+          "y": 0
+        },
+        {
+          "id": "point-5",
+          "x": 20,
+          "y": 10
+        },
+        {
+          "id": "point-7",
+          "x": 0,
+          "y": 10
+        },
+        {
+          "id": "point-10",
+          "x": 30,
+          "y": 0
+        },
+        {
+          "id": "point-11",
+          "x": 40,
+          "y": 0
+        },
+        {
+          "id": "point-13",
+          "x": 40,
+          "y": 10
+        },
+        {
+          "id": "point-15",
+          "x": 30,
+          "y": 10
+        }
+      ],
+      "curves": [
+        {
+          "id": "line-4",
+          "kind": "line",
+          "start": "point-2",
+          "end": "point-3"
+        },
+        {
+          "id": "line-6",
+          "kind": "line",
+          "start": "point-3",
+          "end": "point-5"
+        },
+        {
+          "id": "line-8",
+          "kind": "line",
+          "start": "point-5",
+          "end": "point-7"
+        },
+        {
+          "id": "line-9",
+          "kind": "line",
+          "start": "point-7",
+          "end": "point-2"
+        },
+        {
+          "id": "line-12",
+          "kind": "line",
+          "start": "point-10",
+          "end": "point-11"
+        },
+        {
+          "id": "line-14",
+          "kind": "line",
+          "start": "point-11",
+          "end": "point-13"
+        },
+        {
+          "id": "line-17",
+          "kind": "line",
+          "start": "point-15",
+          "end": "point-10"
+        }
+      ],
+      "constraints": []
+    }
+  ],
+  "timeline": {
+    "features": [
+      {
+        "id": "sketch-1",
+        "intent": {
+          "type": "sketch",
+          "parameters": {
+            "plane": "XY"
+          },
+          "summary": "Sketch 1 on the XY plane"
+        },
+        "provenance": {
+          "self": {
+            "workspace": "design",
+            "id": "sketch-1",
+            "label": "Sketch 1"
+          },
+          "from": []
+        },
+        "dependsOn": [],
+        "suppressed": false
+      },
+      {
+        "id": "feature-18",
+        "intent": {
+          "type": "extrude",
+          "parameters": {
+            "sketch": "sketch-1",
+            "distance": 1,
+            "region": {
+              "outer": [
+                {
+                  "curve": "line-4",
+                  "reversed": false
+                },
+                {
+                  "curve": "line-6",
+                  "reversed": false
+                },
+                {
+                  "curve": "line-8",
+                  "reversed": false
+                },
+                {
+                  "curve": "line-9",
+                  "reversed": false
+                }
+              ],
+              "centroid": [
+                7.777777777777779,
+                5.555555555555556
+              ]
+            },
+            "more": [
+              {
+                "sketch": "sketch-1",
+                "region": {
+                  "outer": [
+                    {
+                      "curve": "line-12",
+                      "reversed": false
+                    },
+                    {
+                      "curve": "line-14",
+                      "reversed": false
+                    },
+                    {
+                      "curve": "line-16",
+                      "reversed": false
+                    },
+                    {
+                      "curve": "line-17",
+                      "reversed": false
+                    }
+                  ],
+                  "centroid": [
+                    35,
+                    5
+                  ]
+                }
+              }
+            ]
+          },
+          "summary": "Extrude Sketch 1 and 1 more profile by 1 mm"
+        },
+        "provenance": {
+          "self": {
+            "workspace": "design",
+            "id": "feature-18",
+            "label": "Extrude 1"
+          },
+          "from": [
+            {
+              "workspace": "design",
+              "id": "sketch-1",
+              "label": "Sketch 1"
+            }
+          ]
+        },
+        "dependsOn": [
+          "sketch-1"
+        ],
+        "suppressed": false
+      }
+    ]
+  },
+  "bodies": [
+    {
+      "id": "body:feature-18",
+      "number": 1
+    }
+  ],
+  "nextBody": 2,
+  "kept": {
+    "feature-18": {
+      "points": [
+        {
+          "id": "point-2",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "point-3",
+          "x": 10,
+          "y": 0
+        },
+        {
+          "id": "point-5",
+          "x": 10,
+          "y": 10
+        },
+        {
+          "id": "point-7",
+          "x": 0,
+          "y": 10
+        },
+        {
+          "id": "point-10",
+          "x": 30,
+          "y": 0
+        },
+        {
+          "id": "point-11",
+          "x": 40,
+          "y": 0
+        },
+        {
+          "id": "point-13",
+          "x": 40,
+          "y": 10
+        },
+        {
+          "id": "point-15",
+          "x": 30,
+          "y": 10
+        }
+      ],
+      "curves": [
+        {
+          "id": "line-4",
+          "kind": "line",
+          "start": "point-2",
+          "end": "point-3"
+        },
+        {
+          "id": "line-6",
+          "kind": "line",
+          "start": "point-3",
+          "end": "point-5"
+        },
+        {
+          "id": "line-8",
+          "kind": "line",
+          "start": "point-5",
+          "end": "point-7"
+        },
+        {
+          "id": "line-9",
+          "kind": "line",
+          "start": "point-7",
+          "end": "point-2"
+        },
+        {
+          "id": "line-12",
+          "kind": "line",
+          "start": "point-10",
+          "end": "point-11"
+        },
+        {
+          "id": "line-14",
+          "kind": "line",
+          "start": "point-11",
+          "end": "point-13"
+        },
+        {
+          "id": "line-16",
+          "kind": "line",
+          "start": "point-13",
+          "end": "point-15"
+        },
+        {
+          "id": "line-17",
+          "kind": "line",
+          "start": "point-15",
+          "end": "point-10"
+        }
+      ]
+    }
+  }
+}

@@ -155,6 +155,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
     input.autocomplete = "off";
     input.spellcheck = false;
     input.id = `typed-${f}`; // read by the e2e test
+    input.dataset.undo = "app-empty"; // empty, it has no typing to take back: Ctrl+Z is the project's Undo (main.ts `undoIsOurs`)
     input.setAttribute("aria-label", unitOf(f, unitNow()) === "" ? FIELD_LABELS[f] : `${FIELD_LABELS[f]} (${unitOf(f, unitNow())})`);
     if (f === "sides") input.inputMode = "numeric";
     const unit = document.createElement("span");

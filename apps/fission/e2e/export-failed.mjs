@@ -59,7 +59,7 @@ try {
       assert.equal(b.state, "missing");
       assert.equal(b.title, "Not the whole design");
       assert.ok(b.detail.startsWith(`${MISSING_STL} What was built is solid.`), b.detail);
-      assert.equal(await page.textContent("#action-note"), `Exported spindlelabs-box.stl. ${MISSING_STL} What was built is checked solid.`);
+      assert.equal(await page.textContent("#action-note"), `Exported Holed box.stl. ${MISSING_STL} What was built is checked solid.`);
       if (shots) await page.screenshot({ path: `${shots}/export-failed-${width}.png` });
       await (tap ? page.tap("#solid-badge-close") : page.click("#solid-badge-close"));
     });
