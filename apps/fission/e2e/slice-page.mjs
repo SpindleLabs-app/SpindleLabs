@@ -2,6 +2,7 @@
 // - On the normal build (the page is off until released) DESIGN ▾ > Slice still opens the dialog, and #slice shows no page.
 //   `npm run e2e:slice-page` builds one with the page on (dist-slice/, E2E_DIST names another) and checks:
 // - With a box in the design, the page lists "Body 1" and says "1 body on the plate."; an empty design says nothing is there.
+// - Slice on the page slices the box through the registry's exact files: 100 layers, then 125 at 0.16 mm (20 / 0.16).
 // - Going back to Design and adding a second body, then coming back to Slice, lists both ("2 bodies on the plate.").
 // - A Combine's result (35f1f2d, behind ?combine): a file with Box 2 joined to Box 1 lists "Body 1", "1 body on the plate.", and
 //   none unread; one with a bar cut in three by two slabs lists three bodies (the two pieces of one Combine each its own).
@@ -63,6 +64,26 @@ if (!WITH_PAGE) {
     await active(page, "slice");
     await plateWords(page, "1 body on the plate");
     assert.deepEqual(await listed(page), ["Body 1"]);
+    await context.close();
+  });
+  await check("Slice on the page slices the box: 100 layers on the defaults (a 20 mm box at 0.2 mm), 125 at 0.16 mm (20 / 0.16)", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    await page.click("#slice-page-slice");
+    await until(page, () => /^100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 100 layers", 60000);
+    // Quality is the first choice: pick the Detailed 0.16 mm layers (its option label names the height).
+    await page.evaluate(() => {
+      const select = document.querySelector(".slice-page-print select");
+      const fine = [...select.options].find((o) => o.textContent.includes("0.16"));
+      select.value = fine.value;
+      select.dispatchEvent(new Event("change"));
+    });
+    await page.click("#slice-page-slice");
+    await until(page, () => /^125 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 125 layers", 60000);
+    if (shots) await page.screenshot({ path: `${shots}/slice-page-sliced.png` });
     await context.close();
   });
   await check("an empty design says there is nothing to print", async () => {

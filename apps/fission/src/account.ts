@@ -14,6 +14,7 @@ import { pageShareSwitch } from "./share-switch.ts";
 import { startLibrary } from "./library.ts";
 import { type ShareHost, startShares } from "./share.ts";
 import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
+import { startPrintLogSync } from "./print-log-sync.ts";
 import "./styles/account.css";
 
 /** What signing in gives, shown beside the button. Each line must be true in the build that ships it. */
@@ -37,6 +38,18 @@ export const PRO_PRICES = {
   monthly: "US$9 a month",
   yearly: "US$54 for the first year, then US$90 a year",
 };
+
+/** The print log's sign-out and account-deletion step (startAccounts sets it; the account dialog calls it). */
+let printLogForget: ((user: string, deleted: boolean) => void) | null = null;
+
+/** This browser's localStorage, or null where it is blocked. */
+function localStorageOrNull(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
 
 function browserStore(): SmallStore {
   try {
@@ -89,6 +102,9 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const data = accountData(client, store);
   const designs = host ? startDesigns(client, host, store) : null;
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
+  // The print log kept in the account (account features 5): the log itself works without an account (src/print-log.ts).
+  const printLog = startPrintLogSync(client, store, localStorageOrNull());
+  printLogForget = printLog.forget;
   const links = { show: null as (() => void) | null, library: null as (() => void) | null }; // My links and My library, once sharing is on (below)
   const ui = accountUi(client, data, store, designs, settings, links);
   say = () => {
@@ -134,6 +150,7 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   else void designs?.sendNow();
   // Settings that follow you: the account's are brought here and this browser's sent, signed in now or from before.
   void settings?.now();
+  void printLog.now();
   // A sharing link in the address opens as a frozen copy, signed in or not.
   if (shares && switched.id) void shares.openLink(switched.id);
   // Another tab signing in or out shows here too.
@@ -255,6 +272,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         out.disabled = true;
         data.forgetEmailChoice();
         settings?.forget(state.user.id);
+        printLogForget?.(state.user.id, false);
         const result = await client.signOut();
         // Signed out on this device either way: nothing here can use the old session any more.
         const why = { offline: "couldn't be reached", unavailable: "is having trouble right now", rejected: "didn't accept the request" };
@@ -478,6 +496,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         if (before.kind === "signed-in") {
           designs?.forget(before.user.id);
           settings?.forget(before.user.id);
+          printLogForget?.(before.user.id, true);
         }
         note = "Your account was deleted. Designs on this device are still here.";
         render();
