@@ -98,7 +98,11 @@ async function isBuildFile(response, path, build) {
  * checked once the answer is on its way.
  */
 async function fromAnywhere(request, path, { fetch, caches, current, build, keep = () => {} }) {
-  const fromCache = () => caches.match(request, { ignoreSearch: request.mode === "navigate" });
+  // A build file has one address, whatever ?query or #part it was asked with: its copy is kept under
+  // that address, once, so asking again and again under new addresses stores nothing more.
+  const own = build?.hashes?.[path] ? ownAddress(request.url) : null;
+  const fromCache = async () =>
+    (await caches.match(request, { ignoreSearch: request.mode === "navigate" })) ?? (own === null ? undefined : caches.match(own));
   let response;
   try {
     response = await fetch(request);
@@ -107,16 +111,25 @@ async function fromAnywhere(request, path, { fetch, caches, current, build, keep
     if (cached) return cached;
     throw e;
   }
-  if (response.ok && build?.hashes?.[path]) {
+  if (response.ok && own !== null) {
     const copy = response.clone();
     keep(
-      isBuildFile(copy, path, build)
-        .then((ok) => ok && caches.open(current).then((cache) => cache.put(request, copy)))
+      caches
+        .open(current)
+        .then(async (cache) => !(await cache.match(own)) && (await isBuildFile(copy, path, build)) && cache.put(own, copy))
         .catch(() => {}), // storage full: the file still answered this once
     );
   }
   if (response.status === 404 || response.status === 410) return (await fromCache()) ?? response;
   return response;
+}
+
+/** `address` without its ?query and #part. */
+function ownAddress(address) {
+  const u = new URL(address);
+  u.search = "";
+  u.hash = "";
+  return u.href;
 }
 
 async function readState(caches, scope) {
