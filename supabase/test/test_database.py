@@ -58,10 +58,14 @@ class Cluster:
         """Starts `sql` in one transaction as `role` (signed in as `uid`) and returns at once: a Popen whose
         communicate() gives (stdout, stderr). For two requests at the same moment, as the service runs them."""
         claim = f"select set_config('request.jwt.claim.sub', '{uid}', true);" if uid else ""
+        # The SQL comes from a file, so the process has all of it at once and communicate() has no stdin to write
+        # (writing to a pipe closed by hand fails in Python 3.12's communicate()).
+        script = tempfile.TemporaryFile("w+")
+        script.write(f"begin;\nset local role {role};\n\\o /dev/null\nselect 1; {claim}\n\\o\n{sql}\ncommit;\n")
+        script.seek(0)
         p = subprocess.Popen([*self.user, pg_bin("psql"), "-h", self.dir, "-U", "postgres", "-d", db, "-X", "-q", "-t", "-A", "-v", "ON_ERROR_STOP=1"],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        p.stdin.write(f"begin;\nset local role {role};\n\\o /dev/null\nselect 1; {claim}\n\\o\n{sql}\ncommit;\n")
-        p.stdin.close()
+                             stdin=script, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        script.close()
         return p
 
     def wait_for_sleep(self, timeout=20):
