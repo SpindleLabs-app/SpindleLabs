@@ -13,7 +13,9 @@ import {
   P1S_KIND,
   PLATE_OPTIONS,
   printFileName,
+  gcodeOfPackage,
   printFileOfStls,
+  printMovesOf,
   PRINT_DEFAULTS,
   QUALITY_OPTIONS,
   refusalOf,
@@ -63,6 +65,8 @@ export interface PrintPanelParts {
   storage: Pick<Storage, "getItem"> | null;
   /** Saves the print file the way the app saves files (the page passes `saveFile`): where the user picks, or a download. */
   save?(request: { suggestedName: string; kind: typeof P1S_KIND; bytes: Uint8Array<ArrayBuffer> }): Promise<{ status: "saved"; name: string } | { status: "cancelled" } | { status: "failed"; message: string }>;
+  /** Shows the print preview of a slice: its G-code and the words about it (the page passes the shared preview, over the view). */
+  openPreview?(gcode: string, words: string): void;
   /** The design's name for the file's name (null: the default). */
   projectName?(): string | undefined;
 }
@@ -75,6 +79,8 @@ export interface PrintPanel {
   file(): { plate: BuildPlate; nozzle: NozzleType };
   /** Slices the plate with the choices; resolves when its words are on screen. */
   slice(): Promise<void>;
+  /** Slices the plate as the P1S's file would be and opens the print preview of it; resolves once it is open (or its refusal is said). */
+  preview(): Promise<void>;
   /** Slices the plate into the P1S's print file and saves it; resolves when its words are on screen. */
   download(): Promise<void>;
   destroy(): void;
@@ -144,17 +150,52 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   download.className = "slice-page-slice slice-page-download";
   download.textContent = "Slice and download";
   download.title = "Slices the plate into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA) and saves it.";
+  const previewButton = doc.createElement("button");
+  previewButton.type = "button";
+  previewButton.id = "slice-page-preview";
+  previewButton.className = "slice-page-slice slice-page-preview";
+  previewButton.textContent = "Preview";
+  previewButton.title = "Watch it print: the slice in 3D, layer by layer, with a time-lapse of the nozzle laying it down.";
   const status = doc.createElement("p");
   status.className = "slice-page-slice-words";
   status.setAttribute("role", "status");
-  element.append(button, download, status);
+  element.append(button, previewButton, download, status);
 
   const busy = (on: boolean) => {
     running = on;
     button.disabled = on;
     download.disabled = on;
+    previewButton.disabled = on;
     for (const c of controls) c.disabled = on;
     button.textContent = on ? "Slicing…" : "Slice";
+  };
+  const previewPrint = async () => {
+    if (running || !live) return;
+    const objects = parts.objects();
+    if (objects.length === 0) {
+      status.textContent = "Nothing to slice: make or show a body in Design first.";
+      return;
+    }
+    if (!parts.openPreview) {
+      status.textContent = "The preview is not available here.";
+      return;
+    }
+    busy(true);
+    status.textContent = "";
+    try {
+      // The file the download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
+      const files = () => plateFiles(parts.registry, objects);
+      const file = await printFileOfStls(parts.kernel, files, choices, plate, nozzle);
+      const moves = printMovesOf(gcodeOfPackage(file.package) ?? "");
+      const done = moves !== null ? { ...file, gcode: moves } : await sliceStls(parts.kernel, files, choices);
+      if (!live) return;
+      status.textContent = "";
+      parts.openPreview(done.gcode, sliceWords(done));
+    } catch (e) {
+      if (live && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
+    } finally {
+      if (live) busy(false);
+    }
   };
   const downloadFile = async () => {
     if (running || !live) return;
@@ -203,11 +244,13 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   };
   button.addEventListener("click", () => void slice());
   download.addEventListener("click", () => void downloadFile());
+  previewButton.addEventListener("click", () => void previewPrint());
   return {
     element,
     choices: () => choices,
     file: () => ({ plate, nozzle }),
     slice,
+    preview: previewPrint,
     download: downloadFile,
     destroy() {
       live = false;

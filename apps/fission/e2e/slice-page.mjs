@@ -100,6 +100,34 @@ if (!WITH_PAGE) {
     assert.ok(bytes.length > 2000, `a real package: ${bytes.length} bytes`);
     await context.close();
   });
+  await check("Preview on the page opens the print preview of the box (100 layers) and plays it, then closes back to the page", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    await page.click("#slice-page-preview");
+    await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 90000 });
+    assert.equal(await page.getAttribute("#print-preview-layers", "max"), "100", "20 mm / 0.2 mm");
+    assert.equal(await page.textContent("#print-preview-layer-words"), "Layer 100 of 100 · 20.00 mm");
+    assert.match(await page.textContent("#print-preview-words"), /^100 layers, /, "the slice's own words over the view");
+    // Play moves the clock on: the scrubber passes where it was set (layer 50).
+    await page.$eval("#print-preview-layers", (r) => {
+      r.value = "50";
+      r.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const before = Number(await page.inputValue("#print-preview-scrub"));
+    await page.selectOption("#print-preview-speed", "10");
+    await page.click("#print-preview-play");
+    assert.equal(await page.textContent("#print-preview-play"), "Pause");
+    await until(page, (b) => Number(document.getElementById("print-preview-scrub").value) > b, before, "the time-lapse moving the clock on", 20000);
+    await page.click("#print-preview-play");
+    if (shots) await page.screenshot({ path: `${shots}/slice-page-preview.png` });
+    await page.click("#print-preview-close");
+    await page.waitForFunction(() => !document.querySelector("#print-preview[open]"), null, { timeout: 5000 });
+    assert.equal(await page.locator("#slice-page-preview").isEnabled(), true);
+    await context.close();
+  });
   await check("an empty design says there is nothing to print", async () => {
     const { context, page } = await newPage();
     await page.locator("#start-hint").waitFor();
