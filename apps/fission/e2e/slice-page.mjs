@@ -97,6 +97,11 @@ if (!WITH_PAGE) {
     await until(page, () => /^Saved .*\.gcode\.3mf: 100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the words saying saved and 100 layers", 60000);
     const bytes = readFileSync(await file.path());
     assert.equal(bytes.subarray(0, 2).toString("latin1"), "PK", "a zip (3MF) package");
+    // The weight and cost line shows (a 40 × 30 × 20 mm box in PLA), and the file went into the print log.
+    assert.match(await page.textContent(".slice-page-cost-words"), /^About \d+(\.\d)? g of PLA, A\$\d+\.\d\d, /);
+    assert.match(await page.textContent(".slice-page-slice-words"), /Added to your print log\.$/);
+    const logged = await page.evaluate(() => Object.keys(localStorage).filter((k) => /print/i.test(k)));
+    assert.ok(logged.length > 0, `the print log is in this browser's storage: ${logged}`);
     assert.ok(bytes.length > 2000, `a real package: ${bytes.length} bytes`);
     await context.close();
   });

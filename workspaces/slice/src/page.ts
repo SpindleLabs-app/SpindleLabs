@@ -4,7 +4,7 @@
 // arrive in the next steps (the download is the panel's Slice and download), and until then Design's File ▾ Slice for printing is the way to a file. Styles: src/styles/slice-page.css.
 
 import { saveFile } from "@fission/ui";
-import { openPrintPreview, printLead } from "@fission/print";
+import { logPrint, openPrintPreview, printLead } from "@fission/print";
 import { printView } from "@fission/viewport";
 import { printPanel, type PrintPanel } from "./print-panel.ts";
 import { playback, type DisplayMesh, type ListedObject, type MountedWorkspace, type RepresentationRegistry, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
@@ -95,6 +95,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
     storage,
     save: (request) => saveFile(doc, request),
     openPreview: (gcode, words) => void openPrintPreview(ctx.toolbar, playback(gcode), words, (host, p) => printView(host, p)),
+    log: (made) => logPrint(doc, made),
     projectName: () => printLead(ctx.project.name, ctx.fileName?.()),
   });
   ctx.properties.append(panel.element);

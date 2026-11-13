@@ -8,3 +8,7 @@
 .slice-page .slice-page-slice { width: 100%; min-height: 44px; margin: var(--look-space-2) 0; background: var(--look-primary-fill); color: var(--look-on-accent); border: 0; box-shadow: var(--look-primary-glow); border-radius: var(--look-radius-s); font-weight: 600; cursor: pointer; }
 .slice-page .slice-page-slice:disabled { opacity: 0.6; cursor: progress; }
 .slice-page .slice-page-slice-words { margin: 0; font-size: 13px; color: var(--text-body); }
+.slice-page .slice-page-check { display: flex; grid-template-columns: none; gap: var(--look-space-2); align-items: center; }
+.slice-page .slice-page-cost { display: grid; gap: var(--look-space-1, 4px); margin: var(--look-space-2) 0 0; font-size: 13px; color: var(--text-body); }
+.slice-page .slice-page-price { display: flex; gap: var(--look-space-2); align-items: center; color: var(--text-dim); }
+.slice-page .slice-page-price input { width: 5em; }
