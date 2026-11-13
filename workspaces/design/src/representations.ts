@@ -9,7 +9,7 @@
 import type { BodyFaces, BodyReference, BodySpec, FaceFound, FaceReference, KernelCalls, Outline, Plane, Producible, Producer, Project, RepresentationRegistry, SourceLookup } from "@fission/core";
 import { bodyFeatures, designBodies } from "./browser.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, makesPieces, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
-import { endSpec } from "./move-tool.ts";
+import { endSpec, endStls } from "./move-tool.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { outline } from "./profiles.ts";
 import { bodyReference, readDesignReference, profileReference, readProfileReference } from "./references.ts";
@@ -232,6 +232,23 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
   });
   // Where a body's faces are now, by name (TestLab's held and pushed faces).
   registry.registerFaceFinder("design", (project, body, refs) => bodyFaces(kernel, project, body, refs));
+  // A body's exact STL file from the kernel (the file the slicer reads, a Combine's pieces too), as data: the files of every
+  // body shown are made together, once for the design as it stands, since a Combine's rebuild is the costly part.
+  const stlFiles = new WeakMap<DesignDocument, Promise<Map<string, Uint8Array>>>();
+  const stlOf = async (o: Producible): Promise<Uint8Array> => {
+    const { document, body } = o as FeatureHandle;
+    let made = stlFiles.get(document);
+    if (!made) {
+      const bodies = designBodies(document).filter((b) => !bodyHidden(document, b.body));
+      made = endStls(kernel, document, bodies.map((b) => ({ ...b, name: "body" }))).then((files) => new Map(bodies.map((b, i) => [b.body, files[i].bytes])));
+      stlFiles.set(document, made);
+      made.catch(() => stlFiles.delete(document)); // a failed build is tried again next time
+    }
+    const bytes = (await made).get(body ?? bodyIdOf(o.id));
+    if (!bytes) throw new Error(`${body ?? o.id} is not a body of the design that is shown`);
+    return bytes;
+  };
+  registry.registerProducer("design.feature", "data", async (o) => ({ kind: "data", values: { format: "stl", bytes: await stlOf(o) } }));
   registry.registerProducer("design.feature", "solid", async (o) => ({ kind: "solid", spec: await spec(o) }));
   registry.registerProducer("design.feature", "mesh", async (o) => {
     const { document, body } = o as FeatureHandle;
