@@ -10,6 +10,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import nightly_gate as ng  # noqa: E402
+import monkey_night  # noqa: E402
 
 UTC = datetime.timezone.utc
 
@@ -330,14 +331,16 @@ class WithFakeGh(unittest.TestCase):
         # (2026MMDD0/1, at most 202,912,311) and below 2^31 - 1 = 2,147,483,647.
         t = int(at(3, 0, day=9).timestamp())
         self.assertEqual(t, 1794193200)
-        first = 300000000 + 2 * (t // 60)
+        # The formula is monkey_night.day_plan's now (issue #671), which nightly.yml's daytime monkey runs.
+        first = monkey_night.day_plan(t)[0]
         self.assertEqual(first, 359806440)
         self.assertGreater(first, 202912311)
         # Still under 2^31 in 2500: about 300,000,000 + 2 x 279,000,000 minutes.
         far = int(datetime.datetime(2500, 1, 1, tzinfo=UTC).timestamp())
         self.assertLess(300000000 + 2 * (far // 60) + 3, 2**31 - 1)
+        self.assertLess(monkey_night.day_plan(far)[0] + 3, 2**31 - 1)
         with open(os.path.join(os.path.dirname(HERE), "workflows", "nightly.yml")) as f:
-            self.assertIn("first=$(( 300000000 + 2 * (now / 60) )) seeds=4", f.read())
+            self.assertIn('plan=$(python3 ../../.github/scripts/monkey_night.py day "$OUT" "$(date -u +%s)")', f.read())
 
     def test_the_apps_night_is_found_by_its_own_title_and_journeys(self):
         self.use(FAKE_RUNS="10 11 17 18")
