@@ -112,6 +112,30 @@ test("turning on needs a display name; turning off deletes the ID, friends and r
   assert.equal(ok(await api(s, "bo").read()).friends.length, 0);
 });
 
+test("a block looks exactly like a decline to the asker, and a no can't be dodged by taking it back (hunt B1, B2)", async () => {
+  const s = fakeFriends();
+  people(s, ["ada", "Ada M"], ["bo", "Bo Builds"], ["cy", "Cy3D"]);
+  for (const p of ["ada", "bo", "cy"]) await api(s, p).turn(true);
+  const ada = await codeOf(s, "ada");
+  await api(s, "bo").ask(ada);
+  await api(s, "cy").ask(ada);
+  const asking = ok(await api(s, "ada").read()).askingMe;
+  await api(s, "ada").decline(asking.find((r) => r.name === "Cy3D")!.id);
+  await api(s, "ada").block(asking.find((r) => r.name === "Bo Builds")!.id);
+  const bo = ok(await api(s, "bo").read()).iAsked;
+  assert.equal(bo.length, ok(await api(s, "cy").read()).iAsked.length);
+  assert.equal(ok(await api(s, "bo").ask(ada)), ok(await api(s, "cy").ask(ada)));
+  await api(s, "ada").unblock(ok(await api(s, "ada").read()).blocked[0].id);
+  assert.deepEqual(ok(await api(s, "bo").read()).iAsked, bo, "unblocking changes nothing Bo can see");
+  // Cy takes the declined request back and asks again: Ada never sees it; Cy sees it waiting from now.
+  s.now += 60_000;
+  assert.equal(ok(await api(s, "cy").cancel(ok(await api(s, "cy").read()).iAsked[0].id)), true);
+  assert.deepEqual(ok(await api(s, "cy").read()).iAsked, []);
+  assert.equal(ok(await api(s, "cy").ask(ada)), "sent");
+  assert.equal(ok(await api(s, "cy").read()).iAsked[0].sentAt.getTime(), s.now);
+  assert.deepEqual(ok(await api(s, "ada").read()).askingMe, []);
+});
+
 test("IDs typed a day: 18 (0.9x of 20) leave two tries, 22 (1.1x) are refused, and a day later they're back", async () => {
   const s = fakeFriends();
   people(s, ["ada", "Ada M"]);
@@ -165,7 +189,7 @@ test("a service that is down, has no Friends yet, or a person signed out: said, 
 });
 
 // Seeded sessions: four people pressing at random through the API, every view checked after each step against a
-// plain model of sets (who is on, friends, requests with declined, blocks).
+// plain model of sets (who is on, friends, requests as open, declined or taken back after a no, blocks).
 test("60 seeded sessions of four people agree with a set model", async () => {
   const names: Record<string, string> = { ada: "Ada M", bo: "Bo Builds", cy: "Cy3D", di: "Di Prints" };
   const all = Object.keys(names);
@@ -179,7 +203,9 @@ test("60 seeded sessions of four people agree with a set model", async () => {
     };
     const on = new Set<string>();
     const friends = new Set<string>();
-    const reqs = new Map<string, boolean>(); // "from>to" -> declined
+    // "from>to" -> open; declined (said no to, or blocked: kept, hidden from them); back (taken back after a no, or the
+    // asker turned Friends off: hidden from the asker too, until asked again)
+    const reqs = new Map<string, "open" | "declined" | "back">();
     const blocks = new Set<string>(); // "blocker>blocked"
     const key = (x: string, y: string) => [x, y].sort().join("+");
     const join = (x: string, y: string) => {
@@ -201,7 +227,11 @@ test("60 seeded sessions of four people agree with a set model", async () => {
         await api(s, me).turn(false);
         on.delete(me);
         for (const f of [...friends]) if (f.split("+").includes(me)) friends.delete(f);
-        for (const q of [...reqs.keys()]) if (q.split(">").includes(me)) reqs.delete(q);
+        for (const [q, state] of [...reqs]) {
+          const [from, to] = q.split(">");
+          if (to === me || (from === me && state === "open")) reqs.delete(q);
+          else if (from === me) reqs.set(q, "back");
+        }
       } else if (kind === "ask") {
         const code = on.has(them) ? await codeOf(s, them) : "0000000000";
         let want: string;
@@ -209,13 +239,13 @@ test("60 seeded sessions of four people agree with a set model", async () => {
         else if (!on.has(them)) want = "not-found";
         else if (blocks.has(`${me}>${them}`)) want = "blocked";
         else if (friends.has(key(me, them))) want = "already";
-        else if (reqs.has(`${me}>${them}`)) want = "waiting";
-        else if (reqs.has(`${them}>${me}`) && !blocks.has(`${them}>${me}`)) {
+        else if (reqs.has(`${me}>${them}`) && reqs.get(`${me}>${them}`) !== "back") want = "waiting";
+        else if (reqs.has(`${them}>${me}`) && reqs.get(`${them}>${me}`) !== "back" && !blocks.has(`${them}>${me}`)) {
           want = "friends";
           join(me, them);
         } else {
           want = "sent";
-          reqs.set(`${me}>${them}`, false);
+          reqs.set(`${me}>${them}`, reqs.get(`${me}>${them}`) === "back" ? "declined" : "open");
         }
         assert.equal(ok(await api(s, me).ask(code)), want, where);
       } else if ((kind === "accept" || kind === "decline" || kind === "block") && view.askingMe.length) {
@@ -226,13 +256,13 @@ test("60 seeded sessions of four people agree with a set model", async () => {
           join(me, asker);
         } else if (kind === "decline") {
           assert.equal(ok(await api(s, me).decline(row.id)), true, where);
-          reqs.set(`${asker}>${me}`, true);
+          reqs.set(`${asker}>${me}`, "declined");
         } else {
           assert.equal(ok(await api(s, me).block(row.id)), true, where);
           blocks.add(`${me}>${asker}`);
           friends.delete(key(me, asker));
           reqs.delete(`${me}>${asker}`);
-          reqs.delete(`${asker}>${me}`);
+          reqs.set(`${asker}>${me}`, "declined");
         }
       } else if ((kind === "remove" || kind === "block") && view.friends.length) {
         const row = pick(view.friends);
@@ -242,28 +272,29 @@ test("60 seeded sessions of four people agree with a set model", async () => {
         if (kind === "block") {
           blocks.add(`${me}>${other}`);
           reqs.delete(`${me}>${other}`);
-          reqs.delete(`${other}>${me}`);
+          if (reqs.get(`${other}>${me}`) === "open") reqs.set(`${other}>${me}`, "declined");
         }
       } else if (kind === "unblock" && view.blocked.length) {
         const row = pick(view.blocked);
         const other = nameOf(row.name);
         assert.equal(ok(await api(s, me).unblock(row.id)), true, where);
         blocks.delete(`${me}>${other}`);
-        reqs.delete(`${other}>${me}`);
+        if (reqs.get(`${other}>${me}`) === "open") reqs.set(`${other}>${me}`, "declined");
       } else if (kind === "cancel" && view.iAsked.length) {
         const row = pick(view.iAsked);
         const to = s.requests.find((q) => q.id === row.id)!.to; // the model has no IDs: whom it went to, from the fake
         assert.equal(ok(await api(s, me).cancel(row.id)), true, where);
-        reqs.delete(`${me}>${to}`);
+        if (reqs.get(`${me}>${to}`) === "declined") reqs.set(`${me}>${to}`, "back");
+        else reqs.delete(`${me}>${to}`);
       }
       for (const p of all) {
         const v = ok(await api(s, p).read());
         assert.equal(v.on, on.has(p), `${where}: ${p} on`);
         const fr = [...friends].filter((f) => f.split("+").includes(p)).map((f) => names[f.split("+").find((x) => x !== p)!]).sort();
         assert.deepEqual(v.friends.map((f) => f.name).sort(), fr, `${where}: ${p}'s friends`);
-        const asking = on.has(p) ? [...reqs].filter(([q, declined]) => q.endsWith(`>${p}`) && !declined && !blocks.has(`${p}>${q.split(">")[0]}`)).map(([q]) => names[q.split(">")[0]]).sort() : [];
+        const asking = on.has(p) ? [...reqs].filter(([q, state]) => q.endsWith(`>${p}`) && state === "open" && !blocks.has(`${p}>${q.split(">")[0]}`)).map(([q]) => names[q.split(">")[0]]).sort() : [];
         assert.deepEqual(v.askingMe.map((x) => x.name).sort(), asking, `${where}: asking ${p}`);
-        assert.equal(v.iAsked.length, [...reqs.keys()].filter((q) => q.startsWith(`${p}>`)).length, `${where}: ${p} asked`);
+        assert.equal(v.iAsked.length, [...reqs].filter(([q, state]) => q.startsWith(`${p}>`) && state !== "back").length, `${where}: ${p} asked`);
         assert.deepEqual(v.blocked.map((x) => x.name).sort(), [...blocks].filter((k) => k.startsWith(`${p}>`)).map((k) => names[k.split(">")[1]]).sort(), `${where}: ${p} blocked`);
       }
     }

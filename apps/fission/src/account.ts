@@ -284,6 +284,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         copy.disabled = true;
         const r = await data.myData();
         copy.disabled = false;
+        if (r.kind === "wait") return say(`You downloaded your data a moment ago. You can download it again from ${r.retryAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`);
         if (r.kind !== "ok") return say(dataWords(r));
         const a = el("a");
         a.href = URL.createObjectURL(new Blob([r.value], { type: "application/json" }));
