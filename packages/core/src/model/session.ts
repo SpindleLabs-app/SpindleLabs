@@ -79,5 +79,7 @@ export const historyNotBuilt: History = {
   present: notBuilt,
   amendStep: notBuilt,
   busy: notBuilt,
+  callOff: notBuilt,
+  callsOff: notBuilt,
   whenIdle: notBuilt,
 };
