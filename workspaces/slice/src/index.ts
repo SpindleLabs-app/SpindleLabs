@@ -38,3 +38,4 @@ export const sliceWorkspace: WorkspacePlugin = {
 };
 
 export { mountSlicePage, plateMesh, plateWords, readPlate, slicePageWorkspace, type PlateBody } from "./page.ts";
+export { plateFiles, printPanel, sliceWords, type PrintPanel, type PrintPanelParts } from "./print-panel.ts";

@@ -291,7 +291,8 @@ async function refindSession(seed: number, steps: number, plugin = designWorkspa
       } else if (roll < 0.5 && solids.length > 0) {
         const id = pickOf(solids);
         if ((await a.menu(id, "edit")) === null) {
-          for (const input of [...a.window.document.querySelectorAll("#feature-edit input")] as unknown as HTMLInputElement[])
+          // The size boxes only: a value written on a tick box (Flip, Symmetric) ticks nothing, it only used up a draw.
+          for (const input of [...a.window.document.querySelectorAll("#feature-edit input:not([type=checkbox])")] as unknown as HTMLInputElement[])
             input.value = r() < 0.15 ? pickOf(["0", "-5", "", "abc"]) : String(1 + Math.floor(r() * 60));
           a.$("#feature-edit-ok")!.click();
           await a.settle();

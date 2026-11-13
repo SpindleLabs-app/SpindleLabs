@@ -258,7 +258,7 @@ Assemblies and drawings
 Extras
 - [ ] 84. Realistic rendering
 - [ ] 85. Tetrahedral meshing + FEM stress
-- [ ] 86. CAM: 2.5D toolpaths, G-code
+- [ ] 86. CAM: 2.5D toolpaths, G-code (CNCLab M0–M4, `docs/progress/cnc.md`)
 - [ ] 87. Sheet metal
 - [ ] 88. Cloud saving, versions, sharing (recipes, origin and remix lineage: X12)
 
@@ -403,11 +403,20 @@ TestLab, the Simulate workspace (owner's decision, 2026-11-12: start now with a 
 - [ ] S4. Thermal and modal studies
 - The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; TestLab's stress study (T5, S3) becomes its outside oracle (H4c).
 
-Manufacture workspace (starts after CAD step 40, booleans and full topological naming)
-- [ ] M1. Setups, stock, work coordinates; a tool library shared across projects
-- [ ] M2. 2D/2.5D strategies on referenced faces and edges (shares step 86)
-- [ ] M3. Toolpath simulation in the viewport
-- [ ] M4. G-code through post-processors for different machines; 3D strategies
+Manufacture workspace, CNCLab (CAM: CNC toolpaths; plan added 2026-11-13 on the owner's ask). Starts after the launch work (fillets 44–46, chamfers and the slicer), in the "everything else" slot, never ahead of a primary kernel step; its exact cuts need curved booleans (37–43), K1's offsets (52), full naming (40) and the hole feature (54). Our own engine on the exact kernel, private like the slicer's; toolpaths from the exact solid and every one checked against it for gouges. Decisions, substeps and the test plan: `docs/progress/cnc.md`.
+- [ ] M0. Test harness first: a milling G-code replayer, an independent stock simulator, gouge and leftover checks against the exact solid, hand-worked parts
+- [ ] M1. Setups, stock, work coordinates; a tool library shared across projects; feeds and speeds from the materials library; machine profiles
+- [ ] M2. 2.5D strategies on referenced faces and edges (shares step 86): facing, contours, tabs, drilling, pockets, adaptive clearing, chamfer and engrave, rest machining
+- [ ] M3. Toolpath simulation in the viewport, with collision checks and the cycle time (an estimate)
+- [ ] M4. G-code through post-processors: GRBL first, then LinuxCNC and a Fanuc-style dialect
+- [ ] M5. 3D roughing (z-level, adaptive, rest)
+- [ ] M6. 3D finishing (parallel and waterline by wall angle, scallop height chosen)
+- [ ] M7. Toolpaths that follow design edits by stable id
+- [ ] M8. Machinability overlay in Design (corners tighter than the smallest tool, pockets too deep)
+- [ ] M9. Workholding (clamps, vice, two-sided setups)
+- [ ] M10. Circuit board milling from Circuit (after E2)
+- [ ] M11. Sending GRBL jobs from the browser, behind the confirmation screen
+- [ ] M12. Later: 3+2, fourth axis, five-axis, lathe, feature recognition
 
 Slice workspace (3D printing; starts right after CAD step 52, ahead of Render or taking turns with it, since both use the "everything else" pull request slot; owner's decision, 2026-10-22). It slices a triangle mesh made from each design body at the printer's resolution, so it needs no kernel step past 52. Early start (owner's decision, 2026-10-28): the test harness (P0) and the engine's own halves of P2, P3, P4 and P6, which touch nothing else, start now; everything touching Design or the app still waits for step 52. The engine is private like the kernel and ships as a compiled build; the Slice screen and its adapter are public. Decisions, substeps and test plans: `docs/progress/slice.md`. The first printer is the owner's Bambu Lab P1S with an AMS (four spools).
 - [ ] P0. Test harness before any slicing code: a G-code reader that replays our output and checks it (plastic laid down matches the part's volume, nothing leaves the bed, no travel crosses a wall, no move outside the printer's limits), PrusaSlicer's command line as the oracle (an oracle script), hand-worked parts (a 20 mm cube, a cylinder, a bridge, an overhang ramp)
