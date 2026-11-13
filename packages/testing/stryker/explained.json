@@ -77,6 +77,13 @@
     "why": "As above: an undefined value is dropped by JSON.stringify either way."
   },
   {
+    "file": "packages/core/src/model/project.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return null; }",
+    "replacement": "{}",
+    "why": "withWorkspaceDocument with a snapshot that does not parse: with the catch emptied, data stays undefined, and the next line refuses it with the same null (!isObject(undefined))."
+  },
+  {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
@@ -448,6 +455,13 @@
     "why": "WORKSPACES holds only strings and includes() never converts, so a non-string is refused all the same."
   },
   {
+    "file": "packages/core/src/model/material.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x !== null",
+    "replacement": "true",
+    "why": "deepFreeze is not exported and runs only on STARTER_MATERIALS, which hold no null anywhere (a part a material lacks is left out, not null), so typeof x === \"object\" never meets a null."
+  },
+  {
     "file": "packages/core/src/model/shortcuts.ts",
     "mutator": "StringLiteral",
     "original": "\"Space\"",
@@ -763,6 +777,13 @@
     "why": "sign returns only -1 or 1, never 0, so < 0 and <= 0 agree."
   },
   {
+    "file": "packages/viewport/src/views.ts",
+    "mutator": "EqualityOperator",
+    "original": "up[0] * y[0] + up[1] * y[1] + up[2] * y[2] < 0",
+    "replacement": "up[0] * y[0] + up[1] * y[1] + up[2] * y[2] <= 0",
+    "why": "planeSeenAs: the up Look At gives is this y or its opposite, made from the unit normal and x axis, so the dot is never 0 unless y is the zero vector, which needs a normal along the plane's own x axis: that is no plane, it has no picture to keep the right way round, and nothing in the app makes one."
+  },
+  {
     "file": "packages/viewport/src/framing.ts",
     "mutator": "EqualityOperator",
     "original": "i + 2 < positions.length",
@@ -882,13 +903,6 @@
     "why": "`events` is only compared with 0 and only ever moves one way from 0 (up by one per data line, or down by one with the change), so after the first data line it is non-zero either way and the comparison gives the same answer."
   },
   {
-    "file": "packages/ai/src/hosted.ts",
-    "mutator": "UpdateOperator",
-    "original": "events++",
-    "replacement": "events--",
-    "why": "`events` is only compared with 0 and only ever moves one way from 0 (up by one per data line, or down by one with the change), so after the first data line it is non-zero either way and the comparison gives the same answer."
-  },
-  {
     "file": "packages/ai/src/ollama.ts",
     "mutator": "MethodExpression",
     "original": "endpoint.trim()",
@@ -922,6 +936,13 @@
     "original": "b > 0",
     "replacement": "b >= 0",
     "why": "A bulge of 0 is drawn straight and never reaches the arc, so b is never 0 here."
+  },
+  {
+    "file": "packages/core/src/model/svg.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "seen.right * seen.up",
+    "replacement": "seen.right / seen.up",
+    "why": "seenLoop is only reached through outlineToSvg, which first refuses any seen whose right or up is not 1 or -1, and for those a / b equals a × b (1/1 = 1, 1/-1 = -1, -1/1 = -1, -1/-1 = 1)."
   },
   {
     "file": "workspaces/design/src/document.ts",
