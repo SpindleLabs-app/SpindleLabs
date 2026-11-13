@@ -462,6 +462,48 @@ test("check() whose own tab stored a save while it read the list takes that save
   assert.deepEqual([tab.refused(), out.at(-1)], [false, "saved"]);
 });
 
+test("check() whose tab changed the project while it read the list leaves it to that change's save (catches `timer !== null` dropped after the read)", async () => {
+  // The tab knew save time 0. While check() reads the list, another tab stores 70 at t = 500 and this tab changes to
+  // 45: its save, a quiet moment later, is the one to find the other tab's work, so check() says nothing itself.
+  const clock = fakeClock();
+  const real = projectStore(memoryKeyValue(), [], clock.now);
+  await real.save("p", part(40), new Date(0));
+  const hold = gate();
+  const store: ProjectStore = { ...real, list: async () => (await hold.wait, real.list()) };
+  let p = part(40);
+  const out: string[] = [];
+  const tab = startAutosave(store, "p", () => p, said(out), { timers: clock.timers, stored: true, storedAt: new Date(0), now: clock.now });
+  const asked = tab.check();
+  await real.save("p", part(70), new Date(500));
+  p = part(45);
+  tab.changed();
+  hold.open();
+  await asked;
+  assert.deepEqual([tab.refused(), out], [false, ["saving"]]);
+  await clock.advance(1000);
+  assert.deepEqual([tab.refused(), out.at(-1)], [true, REFUSED]);
+  assert.equal(widthOf(await real.open("p")), 70);
+});
+
+test("finish() on a full store marks nothing kept once the project was deleted meanwhile, entries and all (catches the entry's presence not checked)", async () => {
+  const clock = fakeClock();
+  const real = projectStore(memoryKeyValue(), [], clock.now);
+  await real.save("p", part(40), new Date(0));
+  const journal = fakeStorage();
+  const hold = gate();
+  const full: ProjectStore = { ...real, save: async () => (await hold.wait, Promise.reject(new Error(FULL))) };
+  let a = part(40);
+  const tab = startAutosave(full, "p", () => a, () => {}, { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now, writer: "tab-a" });
+  a = part(60);
+  tab.changed();
+  assert.equal(tab.finish(), null);
+  assert.equal(widthIn(entryAt(journal, unsavedKey("p"))), 60);
+  await forget(real, journal, "p"); // another tab: File > Projects, Delete
+  hold.open();
+  await tab.settled();
+  assert.deepEqual([...journal.items.keys()], [], "the deleted project's entry came back, marked kept");
+});
+
 test("lost() in a refused tab stores nothing: the other tab's newer work is what goes back into the emptied store (catches lost()'s guard dropped)", async () => {
   // A (45, refused) and B (the other tab's 70, stored at t = 500): the browser empties the store under both. A's
   // lost() comes first; only B, whose state the store last held, stores again.
@@ -569,13 +611,26 @@ test("remove() on a store that refuses even deletes says storage is full and lea
 
 test("remove() rethrows a failure that isn't a full store, deleting nothing: words that only mention a full store later aren't one (catches every failure taken for full, and the words' start not checked)", async () => {
   for (const words of ["browser storage failed: planted", "UnknownError: not because browser storage is full"]) {
-    const { kv, state } = fullKeyValue({ refuseDeletes: true, refusal: () => new Error(words) });
+    // the step writing the mark fails with these words; a step of deletes alone would go through
+    const { kv, state } = fullKeyValue({ refusal: () => new Error(words) });
     const store = projectStore(kv, [], () => new Date(2000));
     await store.save("p", part(40), new Date(0));
     state.full = true;
     await assert.rejects(store.remove("p"), { message: words });
     state.full = false;
     assert.equal(widthOf(await store.open("p")), 40);
+  }
+});
+
+test("remove() on a full store deletes a project left half there, its text without a summary or its summary without a text (catches the second step reading the wrong keys)", async () => {
+  for (const half of ["summary/p", "project/p"]) {
+    const { kv, state } = fullKeyValue();
+    const store = projectStore(kv, [], () => new Date(2000));
+    await store.save("p", part(40), new Date(0));
+    await kv.delete(half); // an older build's half-finished delete, or damage
+    state.full = true;
+    await store.remove("p");
+    assert.deepEqual([await kv.get("project/p"), await kv.get("summary/p")], [undefined, undefined], `with ${half} gone`);
   }
 });
 
