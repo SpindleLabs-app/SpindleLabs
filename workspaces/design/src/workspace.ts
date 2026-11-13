@@ -42,7 +42,6 @@ import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, P1S_AREA, type BuildArea, type FirstLayerExtras } from "@fission/print";
 import { printFileOf, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
 import { gcodeName, gcodeOfPackage, P1S_KIND, PREVIEW_EARLIER, openPrintPreview, printFileName, printLead, printMovesOf, printWords, settingsWords, SliceDropped, testPieceFile } from "@fission/print";
-import { logPrint } from "./print-logged.ts";
 
 import { openTool, openToolRefusal, stillRebuilding, type OpenTool } from "./open-tool.ts";
 import { DOWNLOAD_3MF, DOWNLOAD_OBJ } from "./mesh-export.ts";
@@ -84,7 +83,7 @@ import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep,
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import { toggleConstruction } from "./construction.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
-import { rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } from "@fission/print";
+import { logPrint, rememberedBetterGrip, rememberedWarmUp, type Fit, type PrintFacts } from "@fission/print";
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { refusalOverlay, REFUSAL_OVERLAY } from "./refusal-overlay.ts";
 import { ALL_PRINT_CHECK_IDS, checkShown, keepPrintCheckShown, printCheckShownIn, printCheckSummary, printRulesIn } from "./print-check-view.ts";
@@ -3414,6 +3413,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (choice !== null && choice.bodies.length === 0) return extrudeBox.showError(`Tick a body to ${operation === "join" ? "join to" : operation} first.`);
     let made: ReturnType<typeof extrudeSketch>;
     let misses: Miss[] = [];
+    // The design with the pieces the check made numbered, recorded by this OK (SL #622 item 7).
+    let numbered: DesignDocument | undefined;
     try {
       // Symmetric (53a1): the whole thickness, never flipped.
       const both = extrudeBox.symmetric;
@@ -3425,6 +3426,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, made.doc, made.id)));
         if (checked.refused !== null) throw new Error(checked.refused);
         misses = checked.misses;
+        numbered = checked.numbered;
       }
     } catch (e) {
       if (extrudeOpenings === opened && extruding?.sketch === id && extruding.region === region && extruding.more === picked) extrudeBox.showError(e instanceof Error ? e.message : String(e));
@@ -3444,7 +3446,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Recorded as update starts (before its first wait), so the Undo held for this OK (`hold`) can go while it shows.
     // SL #611 C6: every sketch its profiles come from is hidden, not only the first's.
     const madeItem = made.doc.timeline.features.find((x) => x.id === made.id)!;
-    const hidden = extrudeSketches(madeItem).reduce((d, sk) => usedSketchHidden(d, sk), made.doc);
+    const hidden = extrudeSketches(madeItem).reduce((d, sk) => usedSketchHidden(d, sk), numbered ?? made.doc);
     void update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, hidden);
   }
 
@@ -3913,7 +3915,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Named as the panel named them, before the Combine uses them up and the selection lets them go.
     const words = combineDoneWords(next.timeline.features.find((f) => f.id === made)?.provenance.self.label ?? "Combine", op, combineLabel(combineTarget), combineTools.map(combineLabel), combineBox.keepTools);
     if (id === null) ctx.selection.clear();
-    menuHost.record(id === null ? COMBINE_STEP : editStep(before, id), next);
+    // Its pieces numbered as the check built them, in this step (SL #622 item 7).
+    menuHost.record(id === null ? COMBINE_STEP : editStep(before, id), checked.numbered ?? next);
     sayCombineDone(words);
   }
 
@@ -4100,11 +4103,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     editBox.busy(true);
     let refused: string | null;
     let misses: Miss[] = [];
+    let numbered: DesignDocument | undefined;
     try {
       refused = await okCheck(refusedSizes(kernel, before, next, id));
       // An extrude that joins, cuts or intersects: its boolean must work too, or the edit says why and records nothing.
       const now = next.timeline.features.find((f) => f.id === id);
-      if (refused === null && now !== undefined && isOperationExtrude(now)) ({ refused, misses } = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id))));
+      if (refused === null && now !== undefined && isOperationExtrude(now)) ({ refused, misses, numbered } = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id))));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
@@ -4119,7 +4123,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (!(await okCheck(askExtrudeMisses(next, id, op, misses))) || editBox.editing !== id || editOpenings !== opened) return;
       if (designDoc() !== before) return editBox.showError(CHANGED_WHILE_CHECKING);
     }
-    menuHost.record(editStep(before, id), next);
+    // Its pieces numbered as the check built them, in this step (SL #622 item 7).
+    menuHost.record(editStep(before, id), numbered ?? next);
   }
 
   /**

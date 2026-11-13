@@ -906,3 +906,31 @@ test("callsOff counts the held work that ended with nothing recorded, and nothin
   assert.deepEqual(doc, { w: 60 }, "calling off changes no data");
   assert.equal(h.canUndo(), true, "and no step");
 });
+
+test("SL #708 item 3: onBusy is told when held work starts and when it ends, a failure too, and onChange never is for it", async () => {
+  // The shell's Undo button reads it: from the moment an OK is held it says Undo will wait and take it back.
+  const h = createHistory({ capture: () => "s", restore: () => {} });
+  const busySeen: boolean[] = [];
+  let changes = 0;
+  const stop = h.onBusy(() => busySeen.push(h.busy()));
+  h.onChange(() => changes++);
+  let okDone!: () => void;
+  let editFailed!: (e: Error) => void;
+  const ok = h.hold(new Promise<void>((r) => (okDone = r)));
+  assert.deepEqual(busySeen, [true], "told at once, busy");
+  const edit = h.hold(new Promise<never>((_, j) => (editFailed = j)));
+  edit.catch(() => {});
+  assert.deepEqual(busySeen, [true, true]);
+  okDone();
+  await ok;
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(busySeen, [true, true, true], "the OK ended, the edit still held");
+  editFailed(new Error("refused"));
+  await assert.rejects(edit, /refused/);
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(busySeen, [true, true, true, false], "the last ended: no longer busy");
+  assert.equal(changes, 0, "nothing that can be undone changed, so nothing is saved for it");
+  stop();
+  await h.hold(Promise.resolve());
+  assert.equal(busySeen.length, 4, "an unsubscribed listener is not told");
+});

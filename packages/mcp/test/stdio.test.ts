@@ -10,7 +10,7 @@ import { join } from "node:path";
 test("a whole session over stdio, then a clean exit", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mcp-"));
   const main = new URL("../bin/main.ts", import.meta.url).pathname;
-  const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", main], { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", main, "--folder", dir], { stdio: ["pipe", "pipe", "pipe"] });
   const lines = [
     { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } } },
     { jsonrpc: "2.0", method: "notifications/initialized" },

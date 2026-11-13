@@ -133,6 +133,12 @@ export interface History {
   /** Whether held work is still held, a question it waits on included. */
   busy(): boolean;
   /**
+   * Called each time held work starts or ends (`busy` may have changed); returns an unsubscribe. Not `onChange`: nothing
+   * that can be undone changed, so nothing is saved for it. The shell's Undo button reads it (SL #708 item 3: grey, or
+   * naming the step before, for the seconds an OK was still with the kernel, and a press then was lost).
+   */
+  onBusy(listener: () => void): () => void;
+  /**
    * Whether held work is running by itself: held work that is not waiting on the person's answer. The page changes
    * again without anyone touching it only while this is true (the monkey's settle, `fissionTest.historyBusy`; SL #397).
    */
@@ -230,6 +236,10 @@ export function createHistory(options: HistoryOptions): History {
   const listeners = new Set<() => void>();
   const changed = () => {
     for (const l of [...listeners]) l();
+  };
+  const busyListeners = new Set<() => void>();
+  const busyChanged = () => {
+    for (const l of [...busyListeners]) l();
   };
   const start = () => {
     entries = [entry(options.capture(), "", undefined, now())];
@@ -401,12 +411,18 @@ export function createHistory(options: HistoryOptions): History {
       return () => listeners.delete(listener);
     },
     hold(work) {
-      const done = work.then(
-        () => void held.delete(done),
-        () => void held.delete(done),
-      );
+      const end = () => {
+        held.delete(done);
+        busyChanged();
+      };
+      const done = work.then(end, end);
       held.add(done);
+      busyChanged();
       return work;
+    },
+    onBusy(listener) {
+      busyListeners.add(listener);
+      return () => busyListeners.delete(listener);
     },
     callOff: () => void calledOff++,
     callsOff: () => calledOff,

@@ -1558,8 +1558,11 @@ function showUndoRedo() {
       b.title = id === "undo" ? `Undo: cancel ${tool.name} (${chordLabel(chord, mac)})` : `Redo waits until ${tool.name} is closed (OK or Cancel)`;
       continue;
     }
-    b.disabled = label === null && !waiting;
-    b.title = waiting ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
+    // From the moment an OK is pressed (held work, `history.hold`) Undo would take it back once it lands, so it says so and
+    // takes a press (SL #708 item 3: it stayed grey, or named the step before, until the kernel answered, and a press was lost).
+    const ahead = id === "undo" && ctx.history.busy();
+    b.disabled = label === null && !waiting && !ahead;
+    b.title = waiting || ahead ? `${verb} waits for the change still being worked out${id === "undo" ? ", then takes it back" : ""}` : label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
 // At phone width the pair leaves the bar for the main viewport's
@@ -1583,6 +1586,7 @@ $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
 refreshUndoRedo = showUndoRedo;
+ctx.history.onBusy(showUndoRedo);
 showUndoRedo();
 // History: every step kept, to go back (or forward) to any of them at once. Waits for an OK the kernel still checks
 // like Undo and Redo do, so it goes back from the finished step.

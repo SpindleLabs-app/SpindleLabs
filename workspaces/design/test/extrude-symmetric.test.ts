@@ -183,7 +183,7 @@ test("the data: Symmetric drops Flip, says so in the summary, and opens again as
   assert.throws(() => setExtrudeSymmetric(partDocument("box", 1, 1, 1), true, "feature-1"), /is not an extrude of a sketch/);
   const read = readDesignDocument(JSON.parse(JSON.stringify(sym)));
   assert.deepEqual(read, sym);
-  assert.equal(read.version, 21);
+  assert.equal(read.version, 22);
 });
 
 test("the reader refuses a symmetric that is not true, a symmetric flip, and version 19 or 20 data holding one; older data without opens", () => {
@@ -199,7 +199,7 @@ test("the reader refuses a symmetric that is not true, a symmetric flip, and ver
   for (const v of [19, 20]) assert.throws(() => readDesignDocument({ ...json(), version: v }), new RegExp(`says version ${v} but has a symmetric extrude, which version 21 brought`));
   const plain = json();
   delete params(plain).symmetric;
-  for (const v of [19, 20]) assert.equal(readDesignDocument({ ...plain, version: v }).version, 21, "older data is read as it is");
+  for (const v of [19, 20]) assert.equal(readDesignDocument({ ...plain, version: v }).version, 22, "older data is read as it is");
 });
 
 test("Edit feature: Symmetric ticked or unticked with the distance, Flip not read while it is ticked", () => {

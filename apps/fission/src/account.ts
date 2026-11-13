@@ -11,6 +11,8 @@ import { displayNameRow } from "./display-name.ts";
 import { hideNotice, showNotice } from "./app-notice.ts";
 import { type Designs, type DesignsHost, SIGNED_OUT_WORDS, startDesigns } from "./my-designs.ts";
 import { pageShareSwitch } from "./share-switch.ts";
+import { pageFriendsSwitch } from "./friends-switch.ts";
+import { type FriendsDialog, friendsDialog } from "./friends.ts";
 import { type ShareHost, startShares } from "./share.ts";
 import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
 import { startPrintLogSync } from "./print-log-sync.ts";
@@ -192,6 +194,8 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
 
   const dialog = el("dialog", "account");
   dialog.id = "account";
+  const friendsOn = pageFriendsSwitch();
+  let friends: FriendsDialog | null = null;
   dialog.setAttribute("aria-labelledby", "account-title");
   doc.body.append(dialog);
   dialog.addEventListener("click", (e) => {
@@ -280,6 +284,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         copy.disabled = true;
         const r = await data.myData();
         copy.disabled = false;
+        if (r.kind === "wait") return say(`You downloaded your data a moment ago. You can download it again from ${r.retryAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`);
         if (r.kind !== "ok") return say(dataWords(r));
         const a = el("a");
         a.href = URL.createObjectURL(new Blob([r.value], { type: "application/json" }));
@@ -312,6 +317,17 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         mine.addEventListener("click", () => {
           dialog.close();
           show();
+        });
+        rows.unshift(mine);
+      }
+      // Friends (account features 6): only with the ?friends switch until the legal check of sharing.
+      if (friendsOn) {
+        const mine = el("button", "account-action account-friends", "Friends");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          friends ??= friendsDialog(client);
+          void friends.show();
         });
         rows.unshift(mine);
       }
