@@ -150,3 +150,13 @@ test("an entry's key shows at its item's right; an entry without one has none (m
   // Without keys nothing is shown: the field is left out, not set to an empty word.
   assert.deepEqual(fileSections(p)[0].items.map((i) => "key" in i), [false, false, false]);
 });
+
+test("Print log… comes after Earlier versions… and before My designs…, runs as the shell's own, and is left out when not given", () => {
+  const { ran, entry, parts: p } = parts(() => null);
+  const all = { ...p, versions: entry("file-versions", "Earlier versions…"), printLog: entry("file-print-log", "Print log…"), myDesigns: entry("file-my-designs", "My designs…") };
+  const items = fileSections(all)[0].items;
+  assert.deepEqual(items.map((i) => [i.id, i.icon]), [[NEW_ID, "new"], ["open", "open"], ["file-versions", "undo"], ["file-print-log", "print-check"], ["file-my-designs", "account"], ["file-save", "save"]]);
+  items[3].run();
+  assert.deepEqual(ran, ["file-print-log"]);
+  assert.equal(fileSections({ ...all, printLog: undefined })[0].items.some((i) => i.id === "file-print-log"), false);
+});

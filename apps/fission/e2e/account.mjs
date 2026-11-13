@@ -66,8 +66,8 @@ function fakeService() {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    // My designs' and settings' own requests (e2e/my-designs.mjs and e2e/settings-follow.mjs check them) are kept apart, so these checks see only the account's.
-    const designsCall = /^\/rest\/v1\/rpc\/(my_designs|save_design|get_design|delete_design|my_design_space|my_settings|save_settings|set_keep_settings)$/.test(url.pathname) || url.searchParams.get("select") === "keep_designs";
+    // My designs', settings', the print log's and Friends' own requests (e2e/my-designs.mjs, e2e/settings-follow.mjs, e2e/print-log-sync.mjs and e2e/friends.mjs check them) are kept apart, so these checks see only the account's.
+    const designsCall = /^\/rest\/v1\/rpc\/(my_designs|save_design|get_design|delete_design|my_design_space|my_settings|save_settings|set_keep_settings|my_print_log|save_prints|delete_prints|set_keep_print_log|my_friends|set_friends|new_friend_code|send_friend_request|accept_friend_request|decline_friend_request|cancel_friend_request|remove_friend|block_friend|unblock_friend)$/.test(url.pathname) || url.searchParams.get("select") === "keep_designs";
     (designsCall ? svc.designCalls : svc.calls).push(`${req.method()} ${url.pathname}${url.search.startsWith("?grant_type") || url.pathname.startsWith("/rest/") ? url.search : ""}`);
     if (url.pathname === "/auth/v1/authorize") {
       const back = new URL(url.searchParams.get("redirect_to"));

@@ -2,12 +2,13 @@
 // - On the normal build (the page is off until released) DESIGN ▾ > Slice still opens the dialog, and #slice shows no page.
 //   `npm run e2e:slice-page` builds one with the page on (dist-slice/, E2E_DIST names another) and checks:
 // - With a box in the design, the page lists "Body 1" and says "1 body on the plate."; an empty design says nothing is there.
+// - Slice on the page slices the box through the registry's exact files: 100 layers, then 125 at 0.16 mm (20 / 0.16).
 // - Going back to Design and adding a second body, then coming back to Slice, lists both ("2 bodies on the plate.").
 // - A Combine's result (35f1f2d, behind ?combine): a file with Box 2 joined to Box 1 lists "Body 1", "1 body on the plate.", and
 //   none unread; one with a bar cut in three by two slabs lists three bodies (the two pieces of one Combine each its own).
 // - At 393 px nothing runs off the side; screenshots (SHOTS=<dir>) at 1280 and 393 px in both themes.
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
@@ -63,6 +64,68 @@ if (!WITH_PAGE) {
     await active(page, "slice");
     await plateWords(page, "1 body on the plate");
     assert.deepEqual(await listed(page), ["Body 1"]);
+    await context.close();
+  });
+  await check("Slice on the page slices the box: 100 layers on the defaults (a 20 mm box at 0.2 mm), 125 at 0.16 mm (20 / 0.16)", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    await page.click("#slice-page-slice");
+    await until(page, () => /^100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 100 layers", 60000);
+    // Quality is the first choice: pick the Detailed 0.16 mm layers (its option label names the height).
+    await page.evaluate(() => {
+      const select = document.querySelector(".slice-page-print select");
+      const fine = [...select.options].find((o) => o.textContent.includes("0.16"));
+      select.value = fine.value;
+      select.dispatchEvent(new Event("change"));
+    });
+    await page.click("#slice-page-slice");
+    await until(page, () => /^125 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 125 layers", 60000);
+    if (shots) await page.screenshot({ path: `${shots}/slice-page-sliced.png` });
+    await context.close();
+  });
+  await check("Slice and download on the page saves the box's P1S print file named as the dialog names it", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    const [file] = await Promise.all([page.waitForEvent("download", { timeout: 90000 }), page.click("#slice-page-download")]);
+    assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc-textured.gcode.3mf"); // the dialog's name on the same defaults (e2e/slice-print.mjs)
+    await until(page, () => /^Saved .*\.gcode\.3mf: 100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the words saying saved and 100 layers", 60000);
+    const bytes = readFileSync(await file.path());
+    assert.equal(bytes.subarray(0, 2).toString("latin1"), "PK", "a zip (3MF) package");
+    assert.ok(bytes.length > 2000, `a real package: ${bytes.length} bytes`);
+    await context.close();
+  });
+  await check("Preview on the page opens the print preview of the box (100 layers) and plays it, then closes back to the page", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    await page.click("#slice-page-preview");
+    await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 90000 });
+    assert.equal(await page.getAttribute("#print-preview-layers", "max"), "100", "20 mm / 0.2 mm");
+    assert.equal(await page.textContent("#print-preview-layer-words"), "Layer 100 of 100 · 20.00 mm");
+    assert.match(await page.textContent("#print-preview-words"), /^100 layers, /, "the slice's own words over the view");
+    // Play moves the clock on: the scrubber passes where it was set (layer 50).
+    await page.$eval("#print-preview-layers", (r) => {
+      r.value = "50";
+      r.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const before = Number(await page.inputValue("#print-preview-scrub"));
+    await page.selectOption("#print-preview-speed", "10");
+    await page.click("#print-preview-play");
+    assert.equal(await page.textContent("#print-preview-play"), "Pause");
+    await until(page, (b) => Number(document.getElementById("print-preview-scrub").value) > b, before, "the time-lapse moving the clock on", 20000);
+    await page.click("#print-preview-play");
+    if (shots) await page.screenshot({ path: `${shots}/slice-page-preview.png` });
+    await page.click("#print-preview-close");
+    await page.waitForFunction(() => !document.querySelector("#print-preview[open]"), null, { timeout: 5000 });
+    assert.equal(await page.locator("#slice-page-preview").isEnabled(), true);
     await context.close();
   });
   await check("an empty design says there is nothing to print", async () => {
