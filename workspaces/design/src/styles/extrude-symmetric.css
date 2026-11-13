@@ -1,0 +1,6 @@
+/* Symmetric in the Extrude panel (step 53a1, extrude-panel.ts): lit while on, as Pick several is; `:not(#none)` outweighs
+   the workspace's own button rule, which has an id in it. A 44 px target on a touch screen (Ben's rule, 2026-11-11). */
+.extrude-symmetric:not(#none):not(#none)[aria-pressed="true"] { background: var(--fill-23384f); border-color: var(--look-accent, var(--accent)); color: var(--look-accent-text, var(--accent-text)); }
+@media (hover: none), (pointer: coarse), (max-width: 700px) {
+  .extrude-symmetric:not(#none):not(#none) { min-height: 44px; }
+}
