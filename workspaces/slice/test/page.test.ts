@@ -126,6 +126,9 @@ test("the words of a slice: layers, grams and time as the dialog says them, with
   assert.match(words, /Body 2 floats\.$/);
 });
 
+/** The panel's choice boxes (quality … nozzle), not the presets list that sits above them. */
+const choiceSelects = (doc: Document) => [...doc.querySelectorAll("select")].filter((x) => (x as unknown as HTMLElement).id !== "slice-presets-list") as unknown as HTMLSelectElement[];
+
 function panelIn(kernelCall: (name: string, ...a: unknown[]) => Promise<unknown>, list = objects, extra: Partial<Parameters<typeof printPanel>[1]> = {}) {
   const window = new Window();
   const doc = window.document as unknown as Document;
@@ -137,7 +140,7 @@ function panelIn(kernelCall: (name: string, ...a: unknown[]) => Promise<unknown>
 test("the panel starts on the beginner's defaults, and picking a choice changes only that choice", () => {
   const { doc, panel } = panelIn(async () => ({}));
   assert.deepEqual(panel.choices(), PRINT_DEFAULTS);
-  const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
+  const selects = choiceSelects(doc);
   assert.equal(selects.length, 7, "quality, walls, infill, supports, file, build plate, nozzle");
   selects[1].value = "3"; // Walls: the options are 1..6, index 3 is 4 walls
   selects[1].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
@@ -177,7 +180,7 @@ test("Slice and download makes the P1S's file for the plate and nozzle chosen, s
     objects,
     { save: async (r) => (saved.push(r), { status: "saved", name: "chosen.gcode.3mf" }), projectName: () => "Bracket" },
   );
-  const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
+  const selects = choiceSelects(doc);
   selects[5].value = "2"; // Cool Plate
   selects[5].dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
   assert.deepEqual(panel.file(), { format: "p1s", plate: "cool_plate", nozzle: "standard" });
@@ -305,7 +308,7 @@ test("File: plain G-code slices without the P1S's file, saves the G-code as text
     objects,
     { save: async (r) => (saved.push(r), { status: "saved", name: "plain.gcode" }), projectName: () => "Bracket" },
   );
-  const selects = [...doc.querySelectorAll("select")] as unknown as HTMLSelectElement[];
+  const selects = choiceSelects(doc);
   const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
   const [file, plate, nozzle] = [selects[4], selects[5], selects[6]];
   assert.equal(plate.disabled, false);
@@ -359,4 +362,36 @@ test("the bar shows while it slices, follows the engine's reports forward only, 
   await failing.panel.slice();
   assert.equal((failing.doc.querySelector(".slice-page-progress") as unknown as HTMLElement).hidden, true);
   assert.equal(stopped, 2);
+});
+
+test("a printer preset picked puts every setting in (the selects, ticks, file, plate and nozzle), and a change afterwards marks it changed", () => {
+  const stored = new Map<string, string>();
+  const settings = { layerHeight: 0.12, walls: 4, infill: 40, supports: "tree", warmUp: false, betterGrip: true, format: "p1s", plate: "smooth", nozzle: "high-flow" };
+  stored.set("spindlelabs.slice.presets", JSON.stringify({ version: 1, presets: [{ id: "p-1", name: "Strong", printer: "bambu-p1s", settings, updatedAt: 1 }] }));
+  const storage = { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => void stored.set(k, v) };
+  const { doc, panel } = panelIn(async () => ({}), objects, { storage });
+  const Ev = (doc.defaultView as unknown as { Event: typeof Event }).Event;
+  const list = doc.querySelector("#slice-presets-list") as unknown as HTMLSelectElement;
+  assert.ok(list, "the presets bar is on the page");
+  list.value = "p-1";
+  list.dispatchEvent(new Ev("change"));
+  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.12, walls: 4, infill: 40, supports: "tree", warmUp: false, betterGrip: true });
+  assert.deepEqual(panel.file(), { format: "p1s", plate: "smooth", nozzle: "high-flow" });
+  const selects = choiceSelects(doc);
+  assert.equal(selects[1].selectedOptions[0].textContent, "4", "the Walls box shows 4");
+  assert.equal((doc.querySelector("#slice-page-grip") as unknown as HTMLInputElement).checked, true);
+  assert.equal((doc.querySelector("#slice-page-warm-up") as unknown as HTMLInputElement).checked, false);
+  assert.equal(stored.get("spindlelabs.slice.nozzle"), "high-flow", "remembered as if picked");
+  assert.match(doc.querySelector(".slice-page-fits-words")?.textContent ?? "", /High Flow/, "the fits line follows the nozzle");
+});
+
+test("Printer fits: the row shows only where the page can save a test piece, says typical sizes until measured, and its button opens the calibration", () => {
+  const without = panelIn(async () => ({}));
+  assert.equal((without.doc.querySelector(".slice-page-fits") as unknown as HTMLElement).hidden, true);
+  const withIt = panelIn(async () => ({}), objects, { testPiece: async () => ({ saved: true, name: "x" }) });
+  const row = withIt.doc.querySelector(".slice-page-fits") as unknown as HTMLElement;
+  assert.equal(row.hidden, false);
+  assert.match(row.textContent!, /typical sizes for the Standard nozzle \(not measured yet\)/);
+  (withIt.doc.querySelector("#slice-page-fits-open") as unknown as HTMLButtonElement).click();
+  assert.ok(withIt.doc.querySelector("dialog[open], dialog"), "the calibration dialog exists once asked");
 });

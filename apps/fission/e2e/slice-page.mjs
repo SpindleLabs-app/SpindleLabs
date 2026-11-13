@@ -76,7 +76,7 @@ if (!WITH_PAGE) {
     await until(page, () => /^100 layers, /.test(document.querySelector(".slice-page-slice-words")?.textContent ?? ""), null, "the slice saying 100 layers", 60000);
     // Quality is the first choice: pick the Detailed 0.16 mm layers (its option label names the height).
     await page.evaluate(() => {
-      const select = document.querySelector(".slice-page-print select");
+      const select = document.querySelector(".slice-page-print select:not(#slice-presets-list)");
       const fine = [...select.options].find((o) => o.textContent.includes("0.16"));
       select.value = fine.value;
       select.dispatchEvent(new Event("change"));
@@ -113,16 +113,43 @@ if (!WITH_PAGE) {
     await plateWords(page, "1 body");
     // File is the fifth choice (after Quality, Walls, Infill, Supports): pick its plain G-code option.
     await page.evaluate(() => {
-      const select = document.querySelectorAll(".slice-page-print select")[4];
+      const select = document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[4];
       select.value = String([...select.options].findIndex((o) => /Plain G-code/.test(o.textContent)));
       select.dispatchEvent(new Event("change"));
     });
-    assert.equal(await page.evaluate(() => [...document.querySelectorAll(".slice-page-print select")].slice(5).every((s) => s.disabled)), true, "plate and nozzle off");
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")].slice(5).every((s) => s.disabled)), true, "plate and nozzle off");
     const [file] = await Promise.all([page.waitForEvent("download", { timeout: 90000 }), page.click("#slice-page-download")]);
     assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc.gcode");
     const text = readFileSync(await file.path(), "utf8");
     assert.match(text, /^[;GM]/m, "G-code text");
     assert.equal((text.match(/^;LAYER_CHANGE$/gm) ?? []).length, 100, "20 mm / 0.2 mm layers");
+    await context.close();
+  });
+  await check("Presets and Printer fits on the page: a preset saved from the choices puts them back, and Printer fits opens its dialog", async () => {
+    const { context, page } = await newPage();
+    await startWithBox(page);
+    await page.evaluate(() => (location.hash = "#slice"));
+    await active(page, "slice");
+    await plateWords(page, "1 body");
+    const pick = (index, label) =>
+      page.evaluate(([i, text]) => {
+        const select = document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[i];
+        select.value = String([...select.options].findIndex((o) => o.textContent.includes(text)));
+        select.dispatchEvent(new Event("change"));
+      }, [index, label]);
+    await pick(0, "0.16"); // Quality
+    await pick(1, "4"); // Walls
+    await page.click("#slice-presets-save-as");
+    await page.fill("#slice-presets-name", "Strong");
+    await page.click("#slice-presets-name-ok");
+    await pick(1, "2"); // Walls back to 2
+    const options = await page.$$eval("#slice-presets-list option", (os) => os.map((o) => o.textContent));
+    assert.ok(options.some((o) => o.includes("Strong")), `the saved preset is listed: ${JSON.stringify(options)}; ${await page.textContent(".slice-page-slice-words")}`);
+    await page.selectOption("#slice-presets-list", { index: options.findIndex((o) => o.includes("Strong")) });
+    assert.equal(await page.evaluate(() => document.querySelectorAll(".slice-page-print select:not(#slice-presets-list)")[1].selectedOptions[0].textContent), "4", "the preset put its walls back");
+    assert.match(await page.textContent(".slice-page-fits-words"), /typical sizes/);
+    await page.click("#slice-page-fits-open");
+    await page.waitForSelector("dialog[open]", { timeout: 5000 });
     await context.close();
   });
   await check("Preview on the page opens the print preview of the box (100 layers) and plays it, then closes back to the page", async () => {
