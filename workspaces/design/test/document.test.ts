@@ -116,7 +116,7 @@ test("Design's saved data reads back, and anything else is refused clearly", asy
   const doc = partDocument("slot", 40, 30, 20);
   assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(doc))), doc);
   assert.throws(() => readDesignDocument(null), /Design data is missing/);
-  assert.throws(() => readDesignDocument({ ...doc, version: 21 }), /version 21 is not one this SpindleLabs reads \(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21\)/);
+  assert.throws(() => readDesignDocument({ ...doc, version: 22 }), /version 22 is not one this SpindleLabs reads \(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21\)/);
   // An empty timeline is a design with everything deleted (24f4): it opens, with no part; a missing one is still refused.
   const emptied = readDesignDocument({ ...doc, profiles: [], timeline: { features: [] }, bodies: [] });
   assert.deepEqual(emptied.timeline.features, []);
@@ -202,7 +202,7 @@ test("Design data the panel can't show is refused when the file is opened, each 
   assert.throws(broken((d) => (d.timeline.features = {})), /Design data has no timeline/);
   // Everything deleted (24f4): opens as a design with no body.
   assert.equal(partOf(projectFromJson(JSON.stringify({ ...JSON.parse(HAND_WRITTEN), workspaces: { design: { ...JSON.parse(HAND_WRITTEN).workspaces.design, profiles: [], timeline: { features: [] } } } }), DESIGN).workspaces.design as DesignDocument), null);
-  assert.throws(broken((d) => ((d as { version: number }).version = 21)), /Design data version 21 is not one this SpindleLabs reads \(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21\)/);
+  assert.throws(broken((d) => ((d as { version: number }).version = 22)), /Design data version 22 is not one this SpindleLabs reads \(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21\)/);
   const extrude = (edit: (d: DesignDocument) => void) => {
     const doc = partDocument("slot", 40, 30, 20);
     edit(doc);
@@ -230,7 +230,7 @@ test("a Design version written as text is quoted, so \"5\" doesn't read as the 5
   assert.throws(() => readDesignDocument({ ...doc, version: "5" }), { message: 'Design data version "5" is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)' });
   assert.throws(() => readDesignDocument({ ...doc, version: "" }), { message: 'Design data version "" is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)' });
   // A number, and anything that isn't text, read as they did.
-  assert.throws(() => readDesignDocument({ ...doc, version: 21 }), { message: "Design data version 21 is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)" });
+  assert.throws(() => readDesignDocument({ ...doc, version: 22 }), { message: "Design data version 22 is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)" });
   assert.throws(() => readDesignDocument({ ...doc, version: null }), { message: "Design data version null is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)" });
   assert.throws(() => readDesignDocument({ ...doc, version: [4] }), { message: "Design data version a list is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 or 21)" });
 });
