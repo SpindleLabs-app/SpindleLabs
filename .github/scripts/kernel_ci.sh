@@ -15,7 +15,8 @@
 #       (RESULTS_REPO: another repo to push to, for the tests)
 #   kernel_ci.sh run NAME LOGDIR COMMAND...
 #       runs COMMAND with all its output in LOGDIR/NAME.log and prints only
-#       RESULT NAME PASS|FAIL <seconds>; exits with COMMAND's exit code
+#       RESULT NAME PASS|FAIL <seconds>; exits with COMMAND's exit code. No
+#       key or token (KERNEL_READ, RESULTS_WRITE, GH_TOKEN, ...) reaches COMMAND
 #   kernel_ci.sh checkout DIR REF [ALSO]
 #       fetches the kernel commit or branch REF (and commit ALSO, e.g. the
 #       mutants' base) into DIR with its history (no other branch or
@@ -107,7 +108,11 @@ run)
   shift 3
   mkdir -p "$dir"
   start=$SECONDS code=0
-  "$@" >"$dir/$name.log" 2>&1 </dev/null || code=$?
+  # The kernel's code (and whatever its build pulls in) runs here, and
+  # sees every variable it is started with: none of the keys or tokens goes
+  # to it, whatever the step's environment held.
+  env -u KERNEL_READ -u RESULTS_WRITE -u GH_TOKEN -u GITHUB_TOKEN -u CODE_TOKEN -u APP_PR -u APP_DISPATCH -u MERGE_QUEUE_TOKEN \
+    "$@" >"$dir/$name.log" 2>&1 </dev/null || code=$?
   echo "RESULT $name $([ $code = 0 ] && echo PASS || echo FAIL) $((SECONDS - start))"
   exit $code
   ;;

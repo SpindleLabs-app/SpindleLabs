@@ -47,5 +47,9 @@
 /* Two fingers on the toolbar or the timeline never zoom the whole page (it
    took the toolbar, the view and the timeline off the screen's edges with
    nothing to zoom back by: phone hunt 11-01); a finger still scrolls them
-   sideways. The 3D view takes a pinch as its own zoom (touch-action: none). */
-.phone-sheet :is(#toolbar, #split-toolbar, #timeline, #split-timeline) { touch-action: pan-x pan-y; }
+   sideways. The 3D view takes a pinch as its own zoom (touch-action: none).
+   So do the top bar, the float bar over the view (Finish Combine and Cancel)
+   and the Browser and Properties sheets (stress hunt 11-13, SL #708 item 2:
+   a pinch started there zoomed the page about 3x and took OK and STL off the
+   screen); a finger still scrolls a sheet. */
+.phone-sheet :is(#toolbar, #split-toolbar, #timeline, #split-timeline, #topbar, #phone-float, #browser, #properties) { touch-action: pan-x pan-y; }

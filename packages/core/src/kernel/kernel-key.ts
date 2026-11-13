@@ -1,3 +1,3 @@
 // Written by the kernel repo's Release workflow with each kernel build
-// (0.33.49, build 2ebc4d75961f1a00); never edit by hand.
-export const KERNEL_KEY = "2250c1dceac20ce30dc7b91ffc6c8bea";
+// (0.33.65, build 369a26648c74c40d); never edit by hand.
+export const KERNEL_KEY = "39424040a6278204f8a72757d4ecd2e2";

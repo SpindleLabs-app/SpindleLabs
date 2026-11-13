@@ -254,9 +254,9 @@ class LikesDatabase(unittest.TestCase):
     def test_my_data_lists_my_likes_and_nobody_elses(self):
         self.like(BO)
         self.like(CY)
-        mine = json.loads(self.as_user(BO, "select my_data();")[1])["likes"]
+        mine = json.loads(self.as_role("postgres", "select my_data();", BO)[1])["likes"]
         self.assertEqual([l["share_id"] for l in mine], [self.link])
-        self.assertEqual(json.loads(self.as_user(ADA, "select my_data();")[1])["likes"], [])
+        self.assertEqual(json.loads(self.as_role("postgres", "select my_data();", ADA)[1])["likes"], [])
 
     def test_deleting_an_account_takes_its_likes_and_the_likes_on_its_links(self):
         self.like(BO)
