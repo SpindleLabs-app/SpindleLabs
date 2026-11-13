@@ -6,7 +6,7 @@ import { summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
-import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
+import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
 import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
@@ -56,7 +56,7 @@ import { showAllBodies, showOnlyBody } from "./show-only.ts";
 import { applyChange, pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { sketchPlaceScene } from "./sketch-place.ts";
-import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, missesMessage, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, keptUnsettled, missesMessage, placedOnBodies, rebuildTimeline, settleKept, SlowItems, tookTooLong, unitedViews, type CurveIds, type TimelineBuild } from "./rebuild.ts";
 import { droppedNote, followedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { measureView } from "./measure-view.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
@@ -2833,7 +2833,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     offer: string | null;
     region: RegionRef | null;
     distance: number | null;
-    base: { doc: DesignDocument; sketch: string; region: RegionRef | null; spec: BodySpec } | null;
+    base: { doc: DesignDocument; sketch: string; region: RegionRef | null; spec: BodySpec; curves?: CurveIds } | null;
     preview: BodyView | null;
     arrow: ExtrudeArrow | null;
     /** Fusion's Operation (only with Combine shown): a new body, or Join, Cut or Intersect with the bodies listed and ticked. */
@@ -2844,7 +2844,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     /** The profiles picked after the first (Ctrl, Cmd or Shift click, or Pick several; Design data version 18), each a new array when they change. */
     more: PickedProfile[];
     /** Each of those profiles' extrude going 1 mm, by its id in the view, in the design it was worked out in. */
-    moreBases: Map<string, { doc: DesignDocument; spec: BodySpec }>;
+    moreBases: Map<string, { doc: DesignDocument; spec: BodySpec; curves?: CurveIds }>;
     /** Pick several is on (a phone's Ctrl): every tap adds or takes away a profile. */
     pickMany: boolean;
   } | null = null;
@@ -3128,9 +3128,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     try {
       if (e.base?.doc !== doc || e.base.sketch !== id || e.base.region !== region) {
         const made = extrudeSketch(doc, sketch, 1, false, region ?? undefined);
-        const spec = await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!);
+        const { spec, curves } = await featureBuild(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!);
         if (extruding !== e || e.sketch !== id || e.region !== region) return;
-        e.base = { doc, sketch: id, region, spec };
+        e.base = { doc, sketch: id, region, spec, ...(curves ? { curves } : {}) };
       }
       // At 0 mm (where Extrude starts) nothing is drawn, but the arrow still stands on the profile: it is found from a 1 mm build.
       const at = d === 0 ? 1 : d;
@@ -3138,20 +3138,34 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const handle = await kernel.call("body_build", previewSpec(spec, at));
         return await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
       };
-      const first = await viewOf(e.base.spec);
-      // The other profiles picked (version 18), each built as its own extrude and drawn with the first.
+      // The other profiles picked (version 18), each built as its own extrude, then joined as OK's rebuild joins them
+      // (SL #632 item 3: drawn apart, an overlap was counted twice in the preview's volume).
       const extras = e.more;
-      const views = [first];
+      const prisms = [{ spec: e.base.spec, curves: e.base.curves }];
       for (const m of extras) {
         let b = e.moreBases.get(m.id);
         if (b?.doc !== doc) {
           const made = extrudeSketch(doc, m.sketch, 1, false, m.region ?? undefined);
-          b = { doc, spec: await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!) };
+          const { spec, curves } = await featureBuild(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!);
+          b = { doc, spec, ...(curves ? { curves } : {}) };
           e.moreBases.set(m.id, b);
         }
-        views.push(await viewOf(b.spec));
+        prisms.push({ spec: b.spec, curves: b.curves });
       }
-      const view = joinedView(views);
+      let view: BodyView;
+      if (extras.length === 0) view = await viewOf(e.base.spec);
+      else {
+        // Each prism builds (a profile that can't let go above), so a refusal here is of joining them, which OK would refuse
+        // in the same words: the picks stay, with no preview under the words (as for a refused distance).
+        const joined = await unitedViews(kernel, prisms.map((p) => ({ spec: previewSpec(p.spec, at), ...(p.curves ? { curves: p.curves } : {}) }))).catch((err: unknown) => err as Error);
+        if (joined instanceof Error) {
+          if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || e.distance !== d) return;
+          e.preview = null;
+          extrudeBox.showError(joined.message);
+          return void showExtrudeView();
+        }
+        view = joinedView(joined);
+      }
       // Out of date: another sketch or region chosen or the panel closed. A newer distance only means another build follows.
       if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras) return;
       // A distance refused since this build began (extrudeDistance said why) shows no preview under the words.
