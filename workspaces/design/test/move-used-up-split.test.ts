@@ -33,7 +33,7 @@ async function built(doc: DesignDocument) {
  * bar; Box 3 20 × 20 × 20; Combine 2 cuts the bar out of Box 3 (using the bar up); Move 2, of the bar and of Box 4
  * (10 × 10 × 10, so the Move still has a body to move), lifts them 50.
  */
-function design(depth: number, moveBar = true) {
+function design(depth: number, moveBar = true, withBox4 = true) {
   let doc = partDocument("box", 100, 40, 10);
   const bar = doc.timeline.features[0].id;
   let slot: string, box3: string, box4: string;
@@ -43,7 +43,7 @@ function design(depth: number, moveBar = true) {
   ({ doc, id: box3 } = insertPreset(c1.doc, "box", 20, 20, 20));
   doc = insertCombine(doc, `body:${box3}`, [`body:${bar}`], "cut").doc;
   ({ doc, id: box4 } = insertPreset(doc, "box", 10, 10, 10));
-  const m2 = insertMove(doc, moveBar ? [`body:${bar}`, `body:${box4}`] : [`body:${box4}`], { ...NO_MOVE, z: 50 });
+  const m2 = insertMove(doc, moveBar ? [`body:${bar}`, ...(withBox4 ? [`body:${box4}`] : [])] : [`body:${box4}`], { ...NO_MOVE, z: 50 });
   return { doc: m2.doc, bar, slot, box3, box4, combine: c1.id, move: m2.id };
 }
 
@@ -90,4 +90,29 @@ test("control: a Move that never held the bar leaves the far piece where the spl
   assert.deepEqual(await s1.bounds(piece), [[40, 0, 0], [100, 40, 10]]);
   assert.equal((s1.build.results[move] as { takes?: string[] }).takes, undefined);
   await s1.cache.close();
+});
+
+test("hand-worked (SL #760 item 1): a Move holding the used-up bar alone lifts the piece split from it, by the build that splits it as by the file opened again", async () => {
+  const { doc, bar, slot, combine, move } = design(30, true, false);
+  // Before the split the Move holds only the bar, which Combine 2 uses up: nothing to move, so it fails, naming the bar.
+  const s0 = await built(doc);
+  assert.equal(s0.build.results[move].status, "failed");
+  await s0.cache.close();
+  // Box 2 made 60 deep: the far end x 40..100 (24,000, piece 1) is split from the bar the Move holds, so it is lifted
+  // 50 (z 50..60) by this very build, the Move built with a warning about the bar it can no longer move, and holds the
+  // piece from now on. The screen and the file agree: built again from the saved file, the same.
+  const piece = `body:${combine}/piece:1`;
+  const s1 = await built(changePreset(s0.doc, slot, "box", 10, 60, 30));
+  near(await s1.volume(piece), 24000);
+  assert.deepEqual(await s1.bounds(piece), [[40, 0, 50], [100, 40, 60]], "lifted by the build that splits it");
+  const r = s1.build.results[move] as { status: string; takes?: string[]; missing?: { bodies: string[] } };
+  assert.deepEqual([r.status, r.takes, r.missing?.bodies], ["built", [piece], [`body:${bar}`]]);
+  assert.deepEqual(movedBodies(s1.doc.timeline.features.find((f) => f.id === move)!), [`body:${bar}`, piece]);
+  await s1.cache.close();
+  const reopened = readDesignDocument(JSON.parse(JSON.stringify(s1.doc)));
+  const s2 = await built(reopened);
+  assert.deepEqual(await s2.bounds(piece), [[40, 0, 50], [100, 40, 60]]);
+  assert.equal(s2.build.results[move].status, "built");
+  assert.equal(s2.doc, reopened, "nothing more to take in");
+  await s2.cache.close();
 });

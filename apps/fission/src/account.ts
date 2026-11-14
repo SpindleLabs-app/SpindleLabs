@@ -11,6 +11,7 @@ import { displayNameRow } from "./display-name.ts";
 import { hideNotice, showNotice } from "./app-notice.ts";
 import { type Designs, type DesignsHost, SIGNED_OUT_WORDS, startDesigns } from "./my-designs.ts";
 import { pageShareSwitch } from "./share-switch.ts";
+import { startLibrary } from "./library.ts";
 import { pageFriendsSwitch } from "./friends-switch.ts";
 import { type FriendsDialog, friendsDialog } from "./friends.ts";
 import { type ShareHost, startShares } from "./share.ts";
@@ -76,6 +77,8 @@ export interface AccountHooks {
   versionText(localId: string, at: Date): Promise<string>;
   /** File > Share… (only with the ?share switch on): the sharing dialog, or Sign in when signed out. */
   share(): void;
+  /** File > Publish to the library… (only with the ?share switch on): the Publish dialog, or Sign in when signed out. */
+  publish(): void;
 }
 
 export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost, shareHost?: ShareHost): Promise<AccountHooks | undefined> {
@@ -104,7 +107,7 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   // The print log kept in the account (account features 5): the log itself works without an account (src/print-log.ts).
   const printLog = startPrintLogSync(client, store, localStorageOrNull());
   printLogForget = printLog.forget;
-  const links = { show: null as (() => void) | null }; // My links, once sharing is on (below)
+  const links = { show: null as (() => void) | null, library: null as (() => void) | null }; // My links and My library, once sharing is on (below)
   const ui = accountUi(client, data, store, designs, settings, links);
   say = () => {
     ui.render();
@@ -115,6 +118,9 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   const switched = pageShareSwitch();
   const shares = shareHost && switched.on ? startShares(client, shareHost, (w) => ui.open(w)) : null;
   if (shares) links.show = () => shares.links();
+  // The public library (community C3c): behind the same switch.
+  const library = shareHost && switched.on ? startLibrary(client, shareHost, (w) => ui.open(w)) : null;
+  if (library) links.library = () => library.mine();
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
@@ -160,6 +166,7 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
       else ui.open("Sign in to keep your designs in your account and open them on any device.");
     },
     share: () => shares?.show(),
+    publish: () => library?.publish(),
     versionsOf: async (localId) => (designs ? designs.versionsOf(localId) : null),
     versionText: async (localId, at) => {
       if (!designs) throw new Error("This build keeps no versions in an account.");
@@ -175,7 +182,7 @@ function dataWords(r: Exclude<DataResult<unknown>, { kind: "ok" }>): string {
   return r.kind === "signed-out" ? "You're signed out. Sign in again to do that." : FAILURE_WORDS[r.reason];
 }
 
-function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null, links: { show: (() => void) | null }) {
+function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null, links: { show: (() => void) | null; library: (() => void) | null }) {
   const doc = document;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
     const e = doc.createElement(tag);
@@ -298,21 +305,11 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       yours.append(copy, del);
       const kept = settings ? settingsBox(settings) : null;
       const rows = [displayNameRow(client), emails.row, ...(kept ? [kept] : []), out, yours];
-      // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
-      if (links.show) {
-        const show = links.show;
-        const mine = el("button", "account-action account-my-links", "My links");
-        mine.type = "button";
-        mine.addEventListener("click", () => {
-          dialog.close();
-          show();
-        });
-        rows.unshift(mine);
-      }
-      // My links: the sharing links that are on, only with the ?share switch (sharing is still being checked).
-      if (links.show) {
-        const show = links.show;
-        const mine = el("button", "account-action account-my-links", "My links");
+      // My library and My links: the person's published designs and the sharing links that are on, only with the ?share
+      // switch (sharing is still being checked). One button each (a merge once built My links twice).
+      for (const [show, kind, words] of [[links.library, "account-my-library", "My library"], [links.show, "account-my-links", "My links"]] as const) {
+        if (!show) continue;
+        const mine = el("button", `account-action ${kind}`, words);
         mine.type = "button";
         mine.addEventListener("click", () => {
           dialog.close();
