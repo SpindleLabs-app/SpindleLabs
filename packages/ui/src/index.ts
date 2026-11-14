@@ -12,6 +12,7 @@ export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type Sett
 export { BUG_REPORT_EMPTY, BUG_REPORT_ORIGINS, BUG_REPORT_SERVICE, bugReportEndpoint, ISSUES_NEW, MAX_DESIGN_BYTES, MAX_REPORT_URL, bugDesignFile, bugReportBody, bugReportDialog, bugReportPayload, bugReportTitle, bugReportUrl, sendBugReport, type BugDialogHooks, type BugFacts, type BugPayload, type BugReport, type DesignFile } from "./bug-report.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
+export { nameToKeep, projectNameBox, type ProjectNameBox, type ProjectNameParts } from "./project-name.ts";
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
 export { toolGroup, TOOL_ICON_SIZE, type ToolGroup, type ToolGroupOptions } from "./tool-group.ts";
 export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type FileMenuEntry, type FileMenuParts } from "./file-menu.ts";
