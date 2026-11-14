@@ -103,6 +103,8 @@ export type FeatureResult =
        */
       solved?: { point: string; at: SketchXY }[];
       constraints?: { message: string };
+      /** A face sketch marked as drawn before version 22 (`SketchFace.first`) on which the mark changes nothing now (SL #759 item 2): `followedDoc` takes it off. */
+      unmark?: true;
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
       /** A Move's (SL #583 item 2): the pieces it moved that it doesn't hold yet, new pieces of a body it holds; `followedDoc` adds them to it. */
@@ -1161,7 +1163,12 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
-    return { status: "built", placement, ...warn, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
+    // SL #759 item 2: the mark from before version 22 changes nothing while no face built holds the sketch's name as an
+    // input face that is not its first, so `followedDoc` takes it off (`unmark`) and a later merge carries the sketch by
+    // the part it was drawn on, as one drawn today. The version 21 upgrade marks every face sketch; most were never on a
+    // merged face.
+    const unmark = p.first === true && (name === undefined || !Object.values(bodies).some((b) => b.named?.faces.some((x) => (x.origins?.findIndex((o) => o.names.includes(name)) ?? -1) > 0)));
+    return { status: "built", placement, ...warn, ...(unmark && { unmark: true as const }), ...(await follow(f, index, done, bodies, cache, placement.plane, featureId, kernel)) };
   };
   // SL #430: a reference made on a piece (it holds a tag) is read by rule 3 even when no Combine is built now (the one
   // that split its face suppressed, or no longer touching): found on the face whole again, with a warning when that face
@@ -1209,10 +1216,15 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
  * Sketch `content` with each of its pinned points where `r` (its result in
  * a rebuild) found it (26f), and each projection that found its edge where
  * that edge is seen now, a circle's radius too (27d); `content` itself
- * when nothing moved.
+ * when nothing moved; and its mark from before version 22 taken off when it changes nothing (`unmark`, SL #759 item 2).
  */
 export function followedSketch(content: Sketch, r: FeatureResult | undefined): Sketch {
-  if (r?.status !== "built" || (!r.pinned && !r.projected)) return content;
+  if (r?.status !== "built") return content;
+  if (r.unmark && content.face?.first === true) {
+    const { first: _, ...face } = content.face;
+    content = { ...content, face };
+  }
+  if (!r.pinned && !r.projected) return content;
   return movedTo(content, [...(r.pinned ?? []), ...(r.projected ?? []).flatMap((q) => q.points), ...(r.solved ?? [])], (r.projected ?? []).flatMap((q) => (q.radius === undefined ? [] : [{ projection: q.id, radius: q.radius }])));
 }
 
