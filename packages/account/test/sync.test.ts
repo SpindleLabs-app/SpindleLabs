@@ -18,6 +18,7 @@ function browser(acc: FakeAccount, user: string, tag: string, tidy = (t: string)
   const sync = designSync({
     api: designsApi(acc.as(user) as AuthClient),
     userId: user,
+    who: () => user,
     store,
     local: {
       list: async () => [...projects.entries()].map(([id, p]) => ({ id, name: p.name, modified: p.modified })),
@@ -132,10 +133,12 @@ test("a design deleted from the account is never sent back; the project here sta
   await a.sync.syncAll();
   await designsApi(acc.as("ada") as AuthClient).remove(acc.rows[0]!.id); // deleted on another device
   a.edit("p1", "v2");
-  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [] });
+  // Not sent, and said by name (issue #628 item 2: it was silent, round after round).
+  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [], gone: ["Gear"] });
   assert.deepEqual(acc.rows, []);
+  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [] }, "nothing changed since: nothing to say");
   a.edit("p1", "v3");
-  await a.sync.syncAll();
+  assert.deepEqual(await a.sync.syncAll(), { kind: "done", sent: 0, copies: [], tooBig: [], gone: ["Gear"] });
   assert.deepEqual(acc.rows, [], "still not sent after more changes");
   assert.equal(a.projects.get("p1")!.text, "v3");
   assert.equal(a.sync.remoteOf("p1"), null);
@@ -254,7 +257,10 @@ test("each person's links are their own, and damaged links lose nothing", async 
   const a = browser(acc, "ada", "a");
   a.edit("p1", "v1", "Peg");
   await a.sync.syncAll();
-  assert.ok(a.store.getItem(LINKS_PREFIX + "ada"));
+  // Ada's one project linked at its first revision; read back by readLinks, not just "something stored".
+  const ada = readLinks(a.store, "ada");
+  assert.deepEqual([...ada.keys()], ["p1"]);
+  assert.equal(ada.get("p1")?.revision, 1);
   assert.equal(readLinks(a.store, "bo").size, 0);
   for (const bad of ["{", "[]", '"x"', '{"p1":{"remote":5}}', '{"p1":{"remote":"r","revision":0,"hash":"h"}}']) {
     a.store.setItem(LINKS_PREFIX + "ada", bad);

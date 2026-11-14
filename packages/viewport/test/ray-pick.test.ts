@@ -54,7 +54,7 @@ function meshOf(positions: number[], indices: number[], side: THREE.Side) {
 /** What three.js itself says: the first of its sorted hits. */
 function threeHit(mesh: THREE.Mesh, raycaster: THREE.Raycaster) {
   const [hit] = raycaster.intersectObject(mesh, false);
-  return hit ? { distance: hit.distance, faceIndex: hit.faceIndex } : null;
+  return hit ? { distance: hit.distance, faceIndex: hit.faceIndex, point: [hit.point.x, hit.point.y, hit.point.z] } : null;
 }
 
 test("a ray straight down onto a square finds the first face, worked by hand", () => {
@@ -64,13 +64,14 @@ test("a ray straight down onto a square finds the first face, worked by hand", (
   const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
   const mesh = meshOf(positions, indices, THREE.FrontSide);
   const raycaster = new THREE.Raycaster(new THREE.Vector3(0.25, 0.75, 5), new THREE.Vector3(0, 0, -1));
-  assert.deepEqual(firstHit(mesh, raycaster), { distance: 5, faceIndex: 1 });
+  // It meets z = 0 straight under its start: (0.25, 0.75, 0).
+  assert.deepEqual(firstHit(mesh, raycaster), { distance: 5, faceIndex: 1, point: [0.25, 0.75, 0] });
   // From underneath, the front-side squares face away: nothing is hit (three.js culls back faces of a front-side material).
   raycaster.set(new THREE.Vector3(0.25, 0.75, -5), new THREE.Vector3(0, 0, 1));
   assert.equal(firstHit(mesh, raycaster), null);
   // Double-sided, the lower square is first from below: 5 − 2 = 3 mm, triangle 3.
   (mesh.material as THREE.Material).side = THREE.DoubleSide;
-  assert.deepEqual(firstHit(mesh, raycaster), { distance: 3, faceIndex: 3 });
+  assert.deepEqual(firstHit(mesh, raycaster), { distance: 3, faceIndex: 3, point: [0.25, 0.75, -2] });
   // Far set short of it: no hit; a ray beside the squares: none either.
   raycaster.far = 2.9;
   assert.equal(firstHit(mesh, raycaster), null);
@@ -84,8 +85,8 @@ test("a ray through the shared corner of two triangles picks the lower-numbered 
   // meets both at exactly 5 mm, and three.js lists hits in triangle order before a stable sort: triangle 0.
   const mesh = meshOf([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], [0, 1, 2, 0, 2, 3], THREE.FrontSide);
   const raycaster = new THREE.Raycaster(new THREE.Vector3(0.5, 0.5, 5), new THREE.Vector3(0, 0, -1));
-  assert.deepEqual(threeHit(mesh, raycaster), { distance: 5, faceIndex: 0 });
-  assert.deepEqual(firstHit(mesh, raycaster), { distance: 5, faceIndex: 0 });
+  assert.deepEqual(threeHit(mesh, raycaster), { distance: 5, faceIndex: 0, point: [0.5, 0.5, 0] });
+  assert.deepEqual(firstHit(mesh, raycaster), { distance: 5, faceIndex: 0, point: [0.5, 0.5, 0] });
 });
 
 test("the same face and distance as three.js on seeded rays over many bodies (pointer rays, rays to vertices, edge points and from inside)", () => {

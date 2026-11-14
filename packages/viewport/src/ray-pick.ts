@@ -22,6 +22,8 @@ import * as THREE from "three";
 export interface RayHit {
   distance: number;
   faceIndex: number;
+  /** Where the ray meets the triangle, in the world, exactly as three.js gives it (its `point`). */
+  point: [number, number, number];
 }
 
 /** Triangles a leaf of the tree holds at most. */
@@ -217,7 +219,7 @@ export function firstHit(mesh: THREE.Mesh, raycaster: THREE.Raycaster): RayHit |
   const tree = plain ? treeOf(geometry) : null;
   if (!tree) {
     const [hit] = raycaster.intersectObject(mesh, false);
-    return hit && hit.faceIndex != null ? { distance: hit.distance, faceIndex: hit.faceIndex } : hit ? { distance: hit.distance, faceIndex: NaN } : null;
+    return hit ? { distance: hit.distance, faceIndex: hit.faceIndex ?? NaN, point: [hit.point.x, hit.point.y, hit.point.z] } : null;
   }
   // Mesh.raycast's checks, step for step: the bounding sphere in the world, then the bounding box in the mesh's space.
   const matrixWorld = mesh.matrixWorld;
@@ -271,7 +273,7 @@ export function firstHit(mesh: THREE.Mesh, raycaster: THREE.Raycaster): RayHit |
       world.copy(point).applyMatrix4(matrixWorld);
       const distance = raycaster.ray.origin.distanceTo(world);
       if (distance < raycaster.near || distance > raycaster.far) continue;
-      if (!best || distance < best.distance || (distance === best.distance && t < best.faceIndex)) best = { distance, faceIndex: t };
+      if (!best || distance < best.distance || (distance === best.distance && t < best.faceIndex)) best = { distance, faceIndex: t, point: [world.x, world.y, world.z] };
     }
   }
   return best;

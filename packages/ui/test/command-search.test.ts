@@ -4,7 +4,7 @@
 // press outside close it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { commandSearch, matchCommands, type Command } from "../src/command-search.ts";
+import { commandSearch, matchCommands, shellCommands, type Command } from "../src/command-search.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -94,4 +94,53 @@ test("Escape and a press outside close it, running nothing; the commands are rea
   doc.querySelector(".command-search")!.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }) as unknown as Event);
   assert.equal(box.isOpen, false);
   assert.deepEqual(ran, []);
+});
+
+test("issue #523: a press on a dimmed row keeps the focus in the box, so Escape still closes it", () => {
+  ran.length = 0;
+  const { doc, window, key, type } = page();
+  const box = commandSearch(doc, () => COMMANDS);
+  box.open();
+  type("fillet");
+  const row = doc.querySelector("#command-search-list li") as HTMLElement;
+  // The browser moves the focus on a mousedown unless it is prevented: a row must prevent it.
+  const down = new window.MouseEvent("mousedown", { bubbles: true, cancelable: true }) as unknown as Event;
+  row.dispatchEvent(down);
+  assert.equal(down.defaultPrevented, true, "a press on a row would take the focus out of the box");
+  // Should the focus have gone anyway (a touch), the click on the off row puts it back.
+  (doc.activeElement as HTMLElement).blur();
+  row.click();
+  assert.deepEqual(ran, []);
+  assert.equal(doc.activeElement?.id, "command-search-input");
+  key("Escape");
+  assert.equal(box.isOpen, false);
+});
+
+test("issue #523: the shell's commands (Undo, Save…) are listed after the workspace's, read at each open", () => {
+  ran.length = 0;
+  const { doc, type, rows } = page();
+  let undoOff: string | undefined = "Nothing to undo";
+  shellCommands(doc, () => [cmd("undo", "Undo", undoOff), cmd("save", "Save")]);
+  const box = commandSearch(doc, () => COMMANDS.slice(0, 2));
+  box.open();
+  assert.deepEqual(rows(), ["Create sketch *", "Extrude", "UndoNothing to undo", "Save"]);
+  box.close();
+  undoOff = undefined;
+  box.open();
+  type("und");
+  assert.deepEqual(rows(), ["Undo *"]);
+  box.close();
+});
+
+test("the box is modal (accessibility pass 2026-11-11): Tab never leaves it for the page behind, and the list is named", () => {
+  const { doc, window } = page();
+  const box = commandSearch(doc, () => COMMANDS);
+  box.open();
+  const tab = new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }) as unknown as Event;
+  doc.getElementById("command-search-input")!.dispatchEvent(tab);
+  // A browser moves the focus on a Tab only when nothing prevented it: here the box prevents it, so the focus stays put.
+  assert.equal(tab.defaultPrevented, true, "Tab is kept in the box");
+  assert.equal(box.isOpen, true);
+  assert.equal(doc.getElementById("command-search-list")!.getAttribute("aria-label"), "Commands");
+  box.close();
 });

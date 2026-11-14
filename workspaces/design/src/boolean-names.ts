@@ -30,13 +30,24 @@
 // boolean-naming-model.ts (`rebuildBooleans`); the tests compare the two
 // on the real kernel (test/boolean-names.test.ts).
 
-import type { BodyHandle, BodyView, BooleanOp, BooleanResult, FaceRole } from "@fission/core";
+import type { BodyHandle, BodyView, BooleanOp, BooleanResult, FaceRole, Plane } from "@fission/core";
 import type { BodyNames } from "./naming.ts";
 
 /** A face's names, the one shown first. */
 export interface FaceNames {
   /** Every full face name it answers to, the one shown first; empty when it has none (a name two faces would share). */
   names: readonly string[];
+  /**
+   * A face merged from several input faces lying level (kernel 36c1, the history's `also`; SL #502): each input face it
+   * lies on, first origin first, with that face's names and its input body's view as the boolean saw it, so a click on
+   * the merged face can name the input face under it (face-pick.ts `clickedName`). `frame` is the face's frame then
+   * (rebuild.ts `BuiltBody.frames`; absent: the world's), so a later Move's motion can be taken off the click first.
+   * Dropped by a copy (built-body.ts `copiedNames`), which then names the face by its first name as before. Each
+   * origin's `frame` is its input face's frame then (built-body.ts `frameOfFace`; absent: not moved), so a sketch
+   * named after an origin that is not the first is carried by that input's Moves (SL #707).
+   */
+  origins?: readonly { names: readonly string[]; view: BodyView; face: number; frame?: Plane & { size?: number } }[];
+  frame?: Plane;
 }
 
 /** A body with a name on each face, by kernel face index: what a boolean takes in and gives. */
@@ -231,34 +242,60 @@ export function combineNames(
     if (!kept.has(p)) kept.set(p, b.id);
   }
   const rest = order.filter((p) => !kept.has(p));
-  // Each remembered piece of this Combine to the one piece with its faces, when no other remembered piece has them too.
+  // The pieces keeping no id are numbered (`pieceIds`), each remembered one found again by its faces.
+  const numbered = pieceIds(feature, rest.map((p) => shownFaces(named[p])), remembered, own, firstPiece);
+  const body = (p: number, id: string): NamedBody => ({ id, handle: result.bodies[p], view: views[p], faces: named[p], made });
+  return {
+    bodies: [...[...kept].map(([p, id]) => body(p, id)), ...rest.map((p, i) => body(p, numbered.ids[i]))],
+    nextPiece: numbered.next,
+    renumbered: numbered.renumbered,
+  };
+}
+
+/**
+ * The ids of the pieces item `feature` (a Combine, an extrude with an
+ * operation) leaves that keep no body's id, numbered once for the whole
+ * item (SL #538 item 1): `faces` holds each such piece's shown face names
+ * (`shownFaces`), the item's booleans in order and each one's pieces in
+ * rank order. `remembered` holds the pieces the data numbered, each by
+ * its id and the shown names of its faces when first numbered: each goes
+ * to the one piece of the item with exactly those faces, when it is the
+ * only remembered piece with them; the rest take the lowest numbers from
+ * `firstPiece` that no piece of the item has, in the order given. So no
+ * two pieces ever get one id, whatever is remembered and whichever
+ * boolean made them (numbered one boolean at a time, a new chunk of one
+ * body took the number a chunk of another body was remembered with, and
+ * one overwrote the other). With `own` (an Extrude join's own body id,
+ * version 16), number 1 is that id and number k + 1 is piece k. Also the
+ * remembered ids now on a piece whose faces are not the ones remembered
+ * (`renumbered`), and the next piece number free (`next`).
+ */
+export function pieceIds(feature: string, faces: readonly (readonly string[])[], remembered: ReadonlyMap<string, readonly string[]> = new Map(), own?: string, firstPiece = 1): { ids: string[]; renumbered: string[]; next: number } {
   const prefix = `body:${feature}/piece:`;
   // With `own`, number 1 is its id and number k + 1 piece k (version 15 named it piece 1; Design data's upgrade renames so).
   const shift = own === undefined ? 0 : 1;
   const numberOf = (id: string) => (id === own ? 1 : id.startsWith(prefix) && /^[1-9][0-9]*$/.test(id.slice(prefix.length)) ? Number(id.slice(prefix.length)) + shift : null);
   const idOf = (k: number) => (k === shift ? own! : `${prefix}${k - shift}`);
   const key = (names: readonly string[]) => JSON.stringify([...new Set(names)].sort());
-  const keys = rest.map((p) => key(shownFaces(named[p])));
+  const keys = faces.map(key);
   const ours = [...remembered].filter(([id]) => numberOf(id) !== null).map(([id, names]) => ({ id, k: numberOf(id)!, key: key(names) }));
-  const given = new Map<number, number>(); // piece → its number
+  const given = new Map<number, number>(); // piece (its place in `faces`) → its number
   for (const r of ours) {
     const at = keys.flatMap((k, i) => (k === r.key ? [i] : []));
-    if (at.length === 1 && ours.filter((o) => o.key === r.key).length === 1) given.set(rest[at[0]], r.k);
+    if (at.length === 1 && ours.filter((o) => o.key === r.key).length === 1) given.set(at[0], r.k);
   }
   const taken = new Set(given.values());
   let free = firstPiece;
-  for (const p of rest) {
-    if (given.has(p)) continue;
+  keys.forEach((_, i) => {
+    if (given.has(i)) return;
     while (taken.has(free)) free++;
-    given.set(p, free);
+    given.set(i, free);
     taken.add(free);
-  }
-  const renumbered = ours.filter((r) => rest.some((p) => given.get(p) === r.k && keys[rest.indexOf(p)] !== r.key)).map((r) => r.id);
-  const body = (p: number, id: string): NamedBody => ({ id, handle: result.bodies[p], view: views[p], faces: named[p], made });
+  });
   return {
-    bodies: [...[...kept].map(([p, id]) => body(p, id)), ...rest.map((p) => body(p, idOf(given.get(p)!)))],
-    nextPiece: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1 - shift)),
-    renumbered,
+    ids: keys.map((_, i) => idOf(given.get(i)!)),
+    renumbered: ours.filter((r) => keys.some((k, i) => given.get(i) === r.k && k !== r.key)).map((r) => r.id),
+    next: Math.max(firstPiece, ...[...given.values()].map((k) => k + 1 - shift)),
   };
 }
 
@@ -436,6 +473,8 @@ export interface FaceNameReference {
   name: string;
   tag?: readonly string[];
   origin?: readonly [number, number, number];
+  /** The reference's origin as it would lie on face `index` of body `body` now (SL #707 item 2: a sketch's own middle carried by that piece's Moves since it was drawn); in place of `origin` when given. */
+  originOn?: (body: number, index: number) => readonly number[];
 }
 
 /** What a reference finds on the design's bodies: a face or edge by body and kernel index; two or more, never guessed between; or none. */
@@ -508,7 +547,8 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
   const want = ref.tag === undefined ? undefined : [...ref.tag].sort().join(","); // tags are kept sorted (tagAmong); one written in another order is the same set
   if (pieces.length === 1) {
     const [one] = pieces;
-    const same = want === undefined || names.tagFor(one.body, one.index, ref.name).join(",") === want || ref.origin === undefined || faceHolds(bodies[one.body].view, one.index, ref.origin);
+    const at = ref.originOn?.(one.body, one.index) ?? ref.origin;
+    const same = want === undefined || names.tagFor(one.body, one.index, ref.name).join(",") === want || at === undefined || faceHolds(bodies[one.body].view, one.index, at);
     return { ...one, warning: same ? null : "whole" };
   }
   if (want !== undefined) {
@@ -517,8 +557,11 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
     if (match.length > 1) return { ambiguous: match.length };
     return { ...match[0], warning: null };
   }
-  const origin = ref.origin;
-  const holding = origin === undefined ? [] : pieces.filter((p) => faceHolds(bodies[p.body].view, p.index, origin));
+  const originOf = (p: { body: number; index: number }) => ref.originOn?.(p.body, p.index) ?? ref.origin;
+  const holding = pieces.filter((p) => {
+    const at = originOf(p);
+    return at !== undefined && faceHolds(bodies[p.body].view, p.index, at);
+  });
   if (holding.length === 1) return { ...holding[0], warning: "split" };
   const area = (p: { body: number; index: number }) => bodies[p.body].view.face_areas[p.index];
   const largest = Math.max(...pieces.map(area));

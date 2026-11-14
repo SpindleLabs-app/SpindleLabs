@@ -9,14 +9,15 @@ export { SPLIT_MIN_WIDTH_PX, defaultSplit, splitChoices, type SplitEntry } from 
 export { WarmPool, type WarmHooks } from "./warm.ts";
 export { CUSTOM_KEYS, applyCustom, readCustom, THEME_CHOICES, THEME_COLOURS, THEME_SETTING, applyTheme, isThemeChoice, readThemeChoice, resolveTheme, startTheme, type Theme, type ThemeChoice } from "./theme-choice.ts";
 export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type SettingsParts, type SettingsSection, type SettingsStorage, type SettingValue } from "./settings.ts";
-export { BUG_REPORT_EMPTY, ISSUES_NEW, MAX_REPORT_URL, bugReportBody, bugReportDialog, bugReportTitle, bugReportUrl, type BugFacts, type BugReport } from "./bug-report.ts";
+export { BUG_REPORT_EMPTY, BUG_REPORT_ORIGINS, BUG_REPORT_SERVICE, bugReportEndpoint, ISSUES_NEW, MAX_DESIGN_BYTES, MAX_REPORT_URL, bugDesignFile, bugReportBody, bugReportDialog, bugReportPayload, bugReportTitle, bugReportUrl, sendBugReport, type BugDialogHooks, type BugFacts, type BugPayload, type BugReport, type DesignFile } from "./bug-report.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
+export { nameToKeep, projectNameBox, type ProjectNameBox, type ProjectNameParts } from "./project-name.ts";
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
 export { toolGroup, TOOL_ICON_SIZE, type ToolGroup, type ToolGroupOptions } from "./tool-group.ts";
 export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type FileMenuEntry, type FileMenuParts } from "./file-menu.ts";
 export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-elsewhere.ts";
-export { commandSearch, matchCommands, type Command, type CommandSearch } from "./command-search.ts";
+export { commandSearch, matchCommands, shellCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { REPEAT_MS, repeatGuard, type RepeatGuard } from "./press-guard.ts";
 export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visible.ts";
 export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
@@ -24,6 +25,10 @@ export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELET
 export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, homeScreen, usedAt, workspacesIn, type HomeParts, type HomeProject, type HomeRow, type HomeScreen } from "./home-screen.ts";
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
 export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type DesignRowWords, type MyDesigns, type MyDesignsParts } from "./my-designs.ts";
+export { amountWords, NO_PRINTS, PRINT_NOT_KEPT, PRINT_LOG_NOTE, PRINT_LOG_TITLE, printLogDialog, removePrintQuestion, RESULT_WORDS, type PrintLogDialog, type PrintLogParts, type PrintLogResult, type PrintLogRow } from "./print-log.ts";
+export { NO_LINKS, REPORT_ANSWERS, REPORT_KIND_WORDS, SHARE_NOTE, SHARE_REFUSALS, SHARE_TERMS_PLACEHOLDER, SHARE_TITLE, shareDialog, sharedView, SIGN_IN_TO_SHARE, turnOffQuestion, type Dialog as ShareDialog, type SharedCopy, type SharedParts, type ShareLinkRow, type ShareParts } from "./share.ts";
+export { type LibraryRow, type LicenceChoice, MY_LIBRARY_TITLE, myLibraryDialog, type MyLibraryParts, NO_ENTRIES, PUBLISH_TERMS_PLACEHOLDER, PUBLISH_TITLE, publishDialog, PUBLISHED_WORDS, type PublishForm, type PublishParts, rowWhen, SIGN_IN_TO_PUBLISH, tagsFrom, takeDownQuestion } from "./publish.ts";
+export { likeCountText, likeRow, type LikeParts, type LikeRow, type LikeState, SIGN_IN_TO_LIKE } from "./like.ts";
 export { ACCOUNT_NOTE, ACCOUNT_TAG, NOT_KEPT, NO_VERSIONS, VERSIONS_NOTE, VERSIONS_TITLE, versionList, versionRows, versionTime, type AccountVersions, type VersionList, type VersionListParts, type VersionPlace, type VersionRow } from "./version-list.ts";
 export { startTooltips, tipWords, quickInfoFor, TIP_SHORT_MAX, type TipWords, type Tooltips } from "./tooltip.ts";
 export { agoWords, historyPanel, stepWords, type HistoryPanel, type HistoryPanelParts } from "./history-panel.ts";
@@ -31,5 +36,5 @@ export { currentDesignDefaults, DEFAULT_GRID_MM, DEFAULT_GRID_SNAP_ON, GRID_SIZE
 export { currentMouse, MOUSE_SETTING, readMouseChoice, startMouse } from "./mouse-choice.ts";
 export { currentUnit, readUnitChoice, startUnits, UNIT_CHOICES, UNIT_EVENT, UNIT_SETTING } from "./unit-choice.ts";
 export { CUSTOM_NAMES, DEFAULT_CUSTOM, contrast, deriveCustom, parseHex, readTokens, toHex, type CustomColours, type CustomResult } from "./custom-theme.ts";
-export { activate as activateTab, addTab, canAdd as canAddTab, closeQuestion, confirmClose, designTabs, MAX_TABS, NO_TABS, removeTab, restored as restoredTabs, shortName as tabShortName, stored as storedTabs, tabName, update as updateTab, workspaceChip, type DesignTab, type DesignTabsParts, type DesignTabsStrip, type TabsState } from "./design-tabs.ts";
+export { activate as activateTab, addTab, canAdd as canAddTab, closeQuestion, confirmClose, designTabs, MAX_TABS, NO_TABS, removeTab, restored as restoredTabs, shortName as tabShortName, stored as storedTabs, switcherLabel as tabsSwitcherLabel, tabLabel, tabName, TABS_PHONE_QUERY, update as updateTab, workspaceChip, type DesignTab, type DesignTabsParts, type DesignTabsStrip, type TabsState } from "./design-tabs.ts";
 export { parseWhatsNew, whatsNewDate, whatsNewList, whatsNewNote, type WhatsNewVersion } from "./whats-new.ts";

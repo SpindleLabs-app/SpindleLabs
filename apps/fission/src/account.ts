@@ -7,8 +7,16 @@
 
 import { accountData, type AccountData, authClient, type AuthClient, checkConfig, type DataResult, FAILURE_WORDS, PENDING_EMAIL_KEY, type Plan, SESSION_KEY, type SmallStore } from "@fission/account";
 import { type AccountVersions, withIcon } from "@fission/ui";
-import { type Designs, type DesignsHost, startDesigns } from "./my-designs.ts";
+import { displayNameRow } from "./display-name.ts";
+import { hideNotice, showNotice } from "./app-notice.ts";
+import { type Designs, type DesignsHost, SIGNED_OUT_WORDS, startDesigns } from "./my-designs.ts";
+import { pageShareSwitch } from "./share-switch.ts";
+import { startLibrary } from "./library.ts";
+import { pageFriendsSwitch } from "./friends-switch.ts";
+import { type FriendsDialog, friendsDialog } from "./friends.ts";
+import { type ShareHost, startShares } from "./share.ts";
 import { type Settings, type SettingsHost, startSettings } from "./settings-sync.ts";
+import { startPrintLogSync } from "./print-log-sync.ts";
 import "./styles/account.css";
 
 /** What signing in gives, shown beside the button. Each line must be true in the build that ships it. */
@@ -33,6 +41,18 @@ export const PRO_PRICES = {
   yearly: "US$54 for the first year, then US$90 a year",
 };
 
+/** The print log's sign-out and account-deletion step (startAccounts sets it; the account dialog calls it). */
+let printLogForget: ((user: string, deleted: boolean) => void) | null = null;
+
+/** This browser's localStorage, or null where it is blocked. */
+function localStorageOrNull(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
 function browserStore(): SmallStore {
   try {
     return window.localStorage;
@@ -55,24 +75,52 @@ export interface AccountHooks {
   versionsOf(localId: string): Promise<AccountVersions | null>;
   /** The file text of the account's version of `localId` saved `at`; throws the words to say when it can't. */
   versionText(localId: string, at: Date): Promise<string>;
+  /** File > Share… (only with the ?share switch on): the sharing dialog, or Sign in when signed out. */
+  share(): void;
+  /** File > Publish to the library… (only with the ?share switch on): the Publish dialog, or Sign in when signed out. */
+  publish(): void;
 }
 
-export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost): Promise<AccountHooks | undefined> {
+export async function startAccounts(service: { url: string; anonKey: string }, host?: DesignsHost, settingsHost?: SettingsHost, shareHost?: ShareHost): Promise<AccountHooks | undefined> {
   const redirectTo = location.origin + location.pathname;
   const checked = checkConfig({ ...service, redirectTo });
   if (!checked.ok) return; // a build with broken settings simply has no sign-in
+  /** The session ended under the app; said once the account button exists (a renewal refused while still starting). */
+  let lost = false;
+  let say: (() => void) | null = null;
   const client = authClient({
     config: checked.config,
     fetch: (input, init) => fetch(input, init),
     store: browserStore(),
     now: () => Date.now(),
     random: (bytes) => void crypto.getRandomValues(bytes as Uint8Array<ArrayBuffer>),
+    // Whichever request found it (designs, settings, sharing): the button stops showing the name, and the page says so.
+    sessionLost: () => {
+      lost = true;
+      say?.();
+    },
   });
   const store = browserStore();
   const data = accountData(client, store);
   const designs = host ? startDesigns(client, host, store) : null;
   const settings = settingsHost ? startSettings(client, store, settingsHost) : null;
-  const ui = accountUi(client, data, store, designs, settings);
+  // The print log kept in the account (account features 5): the log itself works without an account (src/print-log.ts).
+  const printLog = startPrintLogSync(client, store, localStorageOrNull());
+  printLogForget = printLog.forget;
+  const links = { show: null as (() => void) | null, library: null as (() => void) | null }; // My links and My library, once sharing is on (below)
+  const ui = accountUi(client, data, store, designs, settings, links);
+  say = () => {
+    ui.render();
+    showNotice("signed-out", SIGNED_OUT_WORDS, { label: "Sign in", title: "Open the sign-in dialog", press: () => (hideNotice("signed-out"), ui.open()) });
+  };
+  if (lost) say();
+  // Sharing links (community C2): only with ?share in the address, until the legal check.
+  const switched = pageShareSwitch();
+  const shares = shareHost && switched.on ? startShares(client, shareHost, (w) => ui.open(w)) : null;
+  if (shares) links.show = () => shares.links();
+  // The public library (community C3c): behind the same switch.
+  const library = shareHost && switched.on ? startLibrary(client, shareHost, (w) => ui.open(w)) : null;
+  if (library) links.library = () => library.mine();
   // Back from the sign-in page: finish, and take the code out of the address straight away.
   const back = await client.finishSignIn(location.href);
   if (back.kind !== "none") history.replaceState(history.state, "", back.cleanUrl);
@@ -104,6 +152,9 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
   else void designs?.sendNow();
   // Settings that follow you: the account's are brought here and this browser's sent, signed in now or from before.
   void settings?.now();
+  void printLog.now();
+  // A sharing link in the address opens as a frozen copy, signed in or not.
+  if (shares && switched.id) void shares.openLink(switched.id);
   // Another tab signing in or out shows here too.
   addEventListener("storage", (e) => {
     if (e.key === SESSION_KEY || e.key === null) ui.render();
@@ -114,6 +165,8 @@ export async function startAccounts(service: { url: string; anonKey: string }, h
       if (client.state().kind === "signed-in" && designs) void designs.show();
       else ui.open("Sign in to keep your designs in your account and open them on any device.");
     },
+    share: () => shares?.show(),
+    publish: () => library?.publish(),
     versionsOf: async (localId) => (designs ? designs.versionsOf(localId) : null),
     versionText: async (localId, at) => {
       if (!designs) throw new Error("This build keeps no versions in an account.");
@@ -129,7 +182,7 @@ function dataWords(r: Exclude<DataResult<unknown>, { kind: "ok" }>): string {
   return r.kind === "signed-out" ? "You're signed out. Sign in again to do that." : FAILURE_WORDS[r.reason];
 }
 
-function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null) {
+function accountUi(client: AuthClient, data: AccountData, store: SmallStore, designs: Designs | null, settings: Settings | null, links: { show: (() => void) | null; library: (() => void) | null }) {
   const doc = document;
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
     const e = doc.createElement(tag);
@@ -148,6 +201,8 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
 
   const dialog = el("dialog", "account");
   dialog.id = "account";
+  const friendsOn = pageFriendsSwitch();
+  let friends: FriendsDialog | null = null;
   dialog.setAttribute("aria-labelledby", "account-title");
   doc.body.append(dialog);
   dialog.addEventListener("click", (e) => {
@@ -221,8 +276,11 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         out.disabled = true;
         data.forgetEmailChoice();
         settings?.forget(state.user.id);
-        const { ended } = await client.signOut();
-        note = ended ? "Signed out." : "Signed out on this device. The sign-in service couldn't be reached, so the old session stops working by itself within the hour.";
+        printLogForget?.(state.user.id, false);
+        const result = await client.signOut();
+        // Signed out on this device either way: nothing here can use the old session any more.
+        const why = { offline: "couldn't be reached", unavailable: "is having trouble right now", rejected: "didn't accept the request" };
+        note = result.ended ? "Signed out." : `Signed out on this device. The sign-in service ${why[result.reason]}, so it couldn't end the session there too; nothing on this device can use it any more.`;
         render();
       });
       const plan = planBox();
@@ -233,6 +291,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         copy.disabled = true;
         const r = await data.myData();
         copy.disabled = false;
+        if (r.kind === "wait") return say(`You downloaded your data a moment ago. You can download it again from ${r.retryAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`);
         if (r.kind !== "ok") return say(dataWords(r));
         const a = el("a");
         a.href = URL.createObjectURL(new Blob([r.value], { type: "application/json" }));
@@ -245,7 +304,30 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
       del.addEventListener("click", () => confirmDelete());
       yours.append(copy, del);
       const kept = settings ? settingsBox(settings) : null;
-      const rows = [emails.row, ...(kept ? [kept] : []), out, yours];
+      const rows = [displayNameRow(client), emails.row, ...(kept ? [kept] : []), out, yours];
+      // My library and My links: the person's published designs and the sharing links that are on, only with the ?share
+      // switch (sharing is still being checked). One button each (a merge once built My links twice).
+      for (const [show, kind, words] of [[links.library, "account-my-library", "My library"], [links.show, "account-my-links", "My links"]] as const) {
+        if (!show) continue;
+        const mine = el("button", `account-action ${kind}`, words);
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          show();
+        });
+        rows.unshift(mine);
+      }
+      // Friends (account features 6): only with the ?friends switch until the legal check of sharing.
+      if (friendsOn) {
+        const mine = el("button", "account-action account-friends", "Friends");
+        mine.type = "button";
+        mine.addEventListener("click", () => {
+          dialog.close();
+          friends ??= friendsDialog(client);
+          void friends.show();
+        });
+        rows.unshift(mine);
+      }
       if (designs) {
         const mine = el("button", "account-action account-my-designs", "My designs");
         mine.type = "button";
@@ -430,6 +512,7 @@ function accountUi(client: AuthClient, data: AccountData, store: SmallStore, des
         if (before.kind === "signed-in") {
           designs?.forget(before.user.id);
           settings?.forget(before.user.id);
+          printLogForget?.(before.user.id, true);
         }
         note = "Your account was deleted. Designs on this device are still here.";
         render();

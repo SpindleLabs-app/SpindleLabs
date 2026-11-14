@@ -928,7 +928,7 @@ try {
     try {
       await useOllama(page);
       await page.selectOption("#ai-provider", "api-key");
-      assert.match(await page.textContent("#ai-key-state"), /No key saved for https:\/\/api.anthropic.com. Saving one asks https:\/\/api.anthropic.com which models it can use; only the key is sent/);
+      assert.match(await page.textContent("#ai-key-state"), /No key saved for https:\/\/api.anthropic.com. Pasting or saving one asks https:\/\/api.anthropic.com which models it can use; only the key is sent, nothing from your project\./);
       await page.fill("#ai-key", KEY);
       assert.match(await page.textContent("#ai-key-state"), /This is an Anthropic key: Save key to use it/, "a typed key waits for Save key");
       assert.equal(listed.length, 0);
@@ -1032,8 +1032,8 @@ try {
       await page.waitForFunction(() => document.querySelector("#ai-model-pick").value === "qwen2.5:1.5b");
       await switchTo(page, "laser");
       assert.equal(await page.isDisabled("#ai-ask-button"), true);
-      assert.match(await page.textContent("#ai-ask-note"), /can change Design's part/);
-      assert.match(await page.textContent("#assistant"), /Planned in Laser.*finger-joint boxes/s);
+      assert.match(await page.textContent("#ai-ask-note"), /can change DesignLab's part/);
+      assert.match(await page.textContent("#assistant"), /Planned in LaserLab.*finger-joint boxes/s);
     } finally {
       await page.close();
     }
@@ -1052,13 +1052,13 @@ try {
     }
   });
 
-  await check("the in-browser model's size isn't asked of huggingface.co until the user says yes; saying no sends nothing (audit S13/L7)", async () => {
+  await check("the default in-browser model's size is known ahead: one question, and huggingface.co hears nothing before a yes; another model's size is looked up only after a yes (audit S13/L7)", async () => {
     const { page } = await fresh([], { gpu: true });
     const hf = [];
     await page.context().route("https://huggingface.co/**", (route) => {
       hf.push(route.request().url());
-      // Two weight files: 600 MB + 300 MB, so the size prompt must say 900 MB.
-      return route.fulfill({ headers: { "access-control-allow-origin": "*", "content-type": "application/json" }, body: JSON.stringify({ records: [{ nbytes: 6e8 }, { nbytes: 3e8 }] }) });
+      // Two weight files: 300 MB + 200 MB, so the size prompt must say 500 MB.
+      return route.fulfill({ headers: { "access-control-allow-origin": "*", "content-type": "application/json" }, body: JSON.stringify({ records: [{ nbytes: 3e8 }, { nbytes: 2e8 }] }) });
     });
     const dialogs = [];
     let answers = [];
@@ -1066,25 +1066,36 @@ try {
       dialogs.push({ text: d.message(), hfBefore: hf.length });
       return answers.shift() ? d.accept() : d.dismiss();
     });
+    const declined = () =>
+      page.waitForFunction(() => /Nothing was downloaded or sent\./.test(document.querySelector("#ai-result").textContent) && document.querySelector("#ai-ask-button").disabled === false);
     try {
       await looked(page);
       await page.selectOption("#ai-provider", "in-browser");
-      // 1. No to the size request: nothing at all reaches huggingface.co.
+      // 1. The default model: its size is known ahead, so the only question is the download itself, and No sends nothing at all.
       answers = [false];
       await ask(page, "make it taller");
-      await page.waitForFunction(() => /Nothing was downloaded or sent\./.test(document.querySelector("#ai-result").textContent));
+      await declined();
       assert.equal(dialogs.length, 1);
-      assert.match(dialogs[0].text, /asks huggingface\.co for the model's file list/);
+      assert.match(dialogs[0].text, /^Qwen2\.5-1\.5B-Instruct-q4f16_1-MLC is downloaded once from huggingface\.co to run in your browser: about 900 MB\. Download it now\?$/);
+      assert.deepEqual(hf, [], "huggingface.co is asked nothing before a yes");
+      // 2. A model whose size this build doesn't know: asked before the size is looked up, then the size is shown.
+      await page.selectOption("#ai-model-pick", "");
+      await page.fill("#ai-model", "Qwen2.5-0.5B-Instruct-q4f16_1-MLC");
+      await page.dispatchEvent("#ai-model", "change");
+      answers = [false];
+      await ask(page, "make it taller");
+      await declined();
+      assert.equal(dialogs.length, 2);
+      assert.match(dialogs[1].text, /asks huggingface\.co for the model's file list/);
       assert.deepEqual(hf, []);
-      // 2. Yes to the size request, no to the download: one request for the file list, after the yes, then the size is shown.
       answers = [true, false];
       await ask(page, "make it taller");
-      await page.waitForFunction(() => /Nothing was downloaded or sent\./.test(document.querySelector("#ai-result").textContent) && document.querySelector("#ai-ask-button").disabled === false);
-      assert.equal(dialogs.length, 3);
-      assert.equal(dialogs[1].hfBefore, 0, "the size question came before any request");
-      assert.match(dialogs[2].text, /: 900 MB\. Download it now\?$/);
+      await declined();
+      assert.equal(dialogs.length, 4);
+      assert.equal(dialogs[2].hfBefore, 0, "the size question came before any request");
+      assert.match(dialogs[3].text, /: 500 MB\. Download it now\?$/);
       assert.equal(hf.length, 1);
-      assert.match(hf[0], /\/resolve\/main\/ndarray-cache\.json$/);
+      assert.match(hf[0], /Qwen2\.5-0\.5B-Instruct-q4f16_1-MLC\/resolve\/main\/ndarray-cache\.json$/);
     } finally {
       await page.close();
     }

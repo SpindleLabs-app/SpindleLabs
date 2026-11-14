@@ -9,15 +9,16 @@
 // from 23a) from the curves rebuilt from point ids, every time it is asked
 // for.
 
-import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, SketchLine, SketchXY } from "@fission/core";
+import type { Feature, KernelCalls, Outline, OutlinePiece, Plane, SketchArc, SketchCircle, SketchLine, SketchRegions, SketchXY } from "@fission/core";
 import { XY_PLANE } from "@fission/core";
 import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { constraintPoints, counted, curvePoints, insertAt, insertItem, hasOwnFaces, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { counted, curvePoints, insertAt, insertItem, hasOwnFaces, heldByBody, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { sketchRoom } from "./sketch-room.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
-import { keptConstraints, withoutCurveConstraints } from "./constraints.ts";
+import { followingPoints, keptConstraints, withoutCurveConstraints } from "./constraints.ts";
 import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
@@ -70,7 +71,11 @@ function sketchIn(doc: DesignDocument, id: string): Sketch {
   return s;
 }
 
-const withSketch = (doc: DesignDocument, sketch: Sketch): DesignDocument => ({ ...doc, sketches: doc.sketches.map((s) => (s.id === sketch.id ? sketch : s)) });
+/** `doc` with `sketch` in place of its sketch of that id; an edit that would make it hold more than the reader opens is refused (`sketchRoom`, #641 item 2). */
+function withSketch(doc: DesignDocument, sketch: Sketch): DesignDocument {
+  sketchRoom(doc, sketch);
+  return { ...doc, sketches: doc.sketches.map((s) => (s.id === sketch.id ? sketch : s)) };
+}
 
 /**
  * What an outline reference names in `doc` (25c1): a ready-made profile,
@@ -112,7 +117,7 @@ export function addSketch(doc: DesignDocument, plane: SketchPlane = "XY"): { doc
  * the face as built now), depending on that feature so it can't be dragged
  * before it.
  */
-export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
+export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string; reversed?: boolean }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
   if (!isFacePlane(face.plane) || faceFeature(face.plane) !== face.feature) throw new Error(`${shown(face.plane)} is not a face of ${shown(face.feature)}`);
   const on = doc.timeline.features.find((f) => f.id === face.feature);
   if (!on || !hasOwnFaces(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
@@ -122,7 +127,10 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   const label = on.provenance.self.label;
   const body = drawn.body === undefined ? null : squared(drawn.body);
   if (drawn.body !== undefined && body === null) throw new Error("a sketch on a moved face needs a frame for where its body was moved to");
-  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body } : {}) });
+  const size = drawn.body?.size ?? 1;
+  if (!Number.isFinite(size) || size <= 0) throw new Error(`a sketch on a scaled face needs its body's size above 0, not ${size}`);
+  // SL #539: the body's size is always recorded (1 too), so a sketch without one is known to be from before and carried as it was.
+  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body: { ...body, size } } : {}), ...(face.reversed !== undefined && { reversed: face.reversed }) });
 }
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {
@@ -303,7 +311,8 @@ export function pointNear(sketch: Sketch, at: readonly [number, number]): string
  * points a line already joins is that line, not a second one on top of it
  * (the line tool's SAME_LINE; app sweep 2026-10-28): `ids` are the four
  * sides, shared ones by their own ids. A projected line (27d) is traced
- * over, not shared: the outline leaves it out (27e). Corners on one row or column, or
+ * over, not shared: the outline leaves it out (27e); so is a construction
+ * line, which is never an ordinary side (hunt 2026-11-12). Corners on one row or column, or
  * closer to it than 2·SAME_PLACE (two corners that near could both be one
  * point already there), have no width or no height and are refused.
  */
@@ -317,7 +326,7 @@ export function drawRectangle(doc: DesignDocument, sketchId: string, a: readonly
   for (let i = 0; i < 4; i++) {
     const [from, to] = [corners[i], corners[(i + 1) % 4]];
     const now = sketchIn(next, sketchId);
-    const there = typeof from === "string" && typeof to === "string" ? now.curves.find((x) => x.kind === "line" && !now.projected?.some((p) => p.made === x.id) && ((x.start === from && x.end === to) || (x.start === to && x.end === from))) : undefined;
+    const there = typeof from === "string" && typeof to === "string" ? now.curves.find((x) => x.kind === "line" && x.construction !== true && !now.projected?.some((p) => p.made === x.id) && ((x.start === from && x.end === to) || (x.start === to && x.end === from))) : undefined;
     if (there) {
       ids.push(there.id);
       continue;
@@ -409,10 +418,10 @@ export function pinNewPoints(before: DesignDocument, after: DesignDocument, sket
       if (t) pins.push(pinOf(p.id, t, own));
   }
   if (pins.length === (sketch.pins?.length ?? 0)) return after;
-  // A constraint can't name a point that follows a body: one the same edit made on a point it pins (a rectangle's own
-  // Horizontal on a corner at the origin, the solver bug hunt 2026-11-06) goes, or the design would not open again.
-  const pinned = new Set(pins.map((p) => p.point));
-  const constraints = sketch.constraints.filter((c) => !constraintPoints(c).some((p) => pinned.has(p)));
+  // A constraint can't name only points that follow a body (#517; document.ts `heldByBody`): one the same edit made between
+  // two points it pins (a rectangle's side along a box's edge) goes, or the design would not open again. One with a point of
+  // the sketch's own stays, so a rectangle from a body's corner keeps its sides square.
+  const constraints = sketch.constraints.filter((c) => !heldByBody(c, followingPoints({ ...sketch, pins })));
   return withRefs(after, constraints.length === sketch.constraints.length ? sketch : { ...sketch, constraints }, pins);
 }
 
@@ -434,7 +443,9 @@ export function movePointOnto(doc: DesignDocument, sketchId: string, pointId: st
   const was = sketchIn(doc, sketchId).pins ?? [];
   const k = was.findIndex((p) => p.point === pointId);
   const pins = k < 0 ? [...(sketch.pins ?? []), pin] : was.map((p, j) => (j === k ? pin : p));
-  const next = withRefs(moved, sketch, pins);
+  // As pinNewPoints: a constraint left naming only followed points goes (#517).
+  const constraints = sketch.constraints.filter((c) => !heldByBody(c, followingPoints({ ...sketch, pins })));
+  const next = withRefs(moved, constraints.length === sketch.constraints.length ? sketch : { ...sketch, constraints }, pins);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
 }
 
@@ -590,7 +601,40 @@ export async function sketchOutline(kernel: KernelCalls, doc: DesignDocument, sk
   const sketch = sketchIn(doc, sketchId);
   const none = projectedOpen(sketch);
   if (none !== null) throw new Error(`${sketchItem(doc, sketchId).provenance.self.label} has no closed outline: ${none}`);
-  const result = await askOutline(kernel, sketchCurves(sketch));
-  if ("open" in result) throw new Error(`${sketchItem(doc, sketchId).provenance.self.label} has no closed outline: ${result.open}`);
-  return result.closed;
+  const curves = sketchCurves(sketch);
+  const result = await askOutline(kernel, curves);
+  if (!("open" in result)) return result.closed;
+  // Several loops: one shape with holes (a plate with holes, the commonest laser part) is still one outline, as
+  // Extrude takes it (export hunt 2026-11-12, #639 item 3: it was refused as "no closed outline").
+  const holed = await shapeWithHoles(kernel, curves);
+  if (holed !== null) return holed;
+  throw new Error(`${sketchItem(doc, sketchId).provenance.self.label} has no closed outline: ${result.open}`);
+}
+
+/**
+ * The sketch as one outline with holes, from the kernel's regions, or null when it is not that. It is that when one
+ * region holds every other: each of the others is exactly the inside of one of its holes (the same curves round it)
+ * with no hole of its own, and every region can be extruded. Two shapes side by side, shapes that cross, a ring inside
+ * a hole or loose curves are not one outline, and neither is a sketch the kernel can't split into regions.
+ */
+async function shapeWithHoles(kernel: KernelCalls, curves: ReturnType<typeof sketchCurves>): Promise<Outline | null> {
+  let answer: SketchRegions;
+  try {
+    answer = await kernel.call("sketch_regions", curves.lines, curves.circles, curves.arcs);
+  } catch {
+    return null;
+  }
+  const regions = answer?.regions;
+  if (!Array.isArray(regions) || regions.length < 2 || (answer.loose?.length ?? 0) > 0 || answer.why !== undefined) return null;
+  if (!regions.every((r) => r.extrudes)) return null;
+  /** A loop by the curves round it, whatever their order or direction. */
+  const loopKey = (pieces: readonly OutlinePiece[]) => pieces.map((p) => `${p.curve}:${p.index}`).sort().join(" ");
+  const plates = regions.filter((r) => r.holes.length > 0);
+  if (plates.length !== 1) return null;
+  const plate = plates[0]!;
+  const others = regions.filter((r) => r !== plate);
+  const holes = new Set(plate.holes.map(loopKey));
+  if (holes.size !== plate.holes.length || others.length !== holes.size) return null;
+  for (const r of others) if (!holes.delete(loopKey(r.outer))) return null;
+  return { outer: plate.profile.outer, holes: plate.profile.holes, pieces: plate.profile.pieces };
 }

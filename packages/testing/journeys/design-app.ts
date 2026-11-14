@@ -158,6 +158,24 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     },
   });
   ctx.history = history;
+  // The shell's Undo and Redo presses (main.ts `undoRedo` and `undoRedoNow`), for `pressUndo` and `pressRedo` below.
+  let pressesWaiting = 0;
+  let pressed: Promise<void> = Promise.resolve();
+  const pressNow = (which: "undo" | "redo") => {
+    history[which]();
+    history.amend();
+  };
+  const shellPress = (which: "undo" | "redo") => {
+    if (pressesWaiting === 0 && !history.busy()) return pressNow(which);
+    pressesWaiting++;
+    const calledOff = history.callsOff(); // as main.ts: a press that waited for work that recorded nothing is dropped
+    pressed = pressed
+      .then(() => history.whenIdle())
+      .then(() => {
+        pressesWaiting--;
+        if (history.callsOff() === calledOff) pressNow(which);
+      });
+  };
   const startBodies = (await kernel.call("body_count")) as number;
   mount();
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null;
@@ -286,9 +304,11 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     pointer(kind: SketchPointer["kind"], at: [number, number] | null, under: { edge?: number; face?: number } = {}) {
       viewport.onSketchPointer?.({ kind, at, pixel: 0.1, ...under });
     },
-    async key(id: string) {
-      view.shortcut?.(id);
+    /** Shortcut `id`, waited for; `e` is the event the shell hands over (a copy or paste carries its clipboard). */
+    async key(id: string, e?: Event) {
+      const done = view.shortcut?.(id, e);
       await settle();
+      return done;
     },
     /** Shortcut `id` as the shell runs it, not waited for (with the kernel held, nothing it asks is answered yet). */
     press(id: string) {
@@ -319,6 +339,15 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
       $("#finish-sketch")!.click();
       await settle();
     },
+    /**
+     * Undo or Redo pressed as the shell runs it (apps/fission/src/main.ts `undoRedo`, #503), not waited for: at once
+     * when no press waits and nothing is held in the history, else after the presses before it and the held work, in
+     * the order pressed; then the defaults a mount filled in are taken in (`amend`), as `undoRedoNow` does.
+     * `presses()` ends when every press so far has run.
+     */
+    pressUndo: () => shellPress("undo"),
+    pressRedo: () => shellPress("redo"),
+    presses: () => pressed,
     async undo() {
       const label = history.undo();
       await settle();
@@ -353,4 +382,26 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   let doubleClicks = 0;
   previous = a;
   return a;
+}
+
+/**
+ * The rule every seeded session checks at its end (SL #641, save hunt 2026-11-12: a sketch on a scaled body opened as
+ * a slightly different design every time): a rebuild of a design the rebuild just wrote changes nothing. `doc`, the
+ * design a session left (settled, as the app saved it), is saved, opened in a fresh app, and saved again once that app
+ * has rebuilt it; null when the two files are the same byte for byte, else where they first differ. Puts away the app
+ * last made (`app`), so call it once the session's own app is closed.
+ */
+export async function rebuildChanges(doc: DesignDocument, plugin: WorkspacePlugin = designWorkspace): Promise<string | null> {
+  const file = (d: DesignDocument) => projectToJson({ ...emptyProject("Rebuilt again"), workspaces: { design: d } });
+  const text = file(doc);
+  const opened = projectFromJson(text, [plugin]).workspaces.design as DesignDocument;
+  const b = await app(opened, plugin);
+  const after = file(b.doc());
+  const freed = await b.close();
+  if (after !== text) {
+    let i = 0;
+    while (i < text.length && i < after.length && text[i] === after[i]) i++;
+    return `the rebuild changed the design it wrote, at ${i}: «${text.slice(Math.max(0, i - 80), i + 120)}» became «${after.slice(Math.max(0, i - 80), i + 120)}»`;
+  }
+  return freed ? null : "a body was not freed when the reopened design was put away";
 }

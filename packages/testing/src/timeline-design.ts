@@ -52,6 +52,8 @@ import {
   combineBodies,
   isSketchExtrude,
   moveMarker,
+  followedDoc,
+  numberPieces,
   movePoint,
   nameBody,
   outlineCurves,
@@ -77,6 +79,7 @@ import {
   type SketchPlacement,
   type TimelineBuild,
   bodyIdOf,
+  bodyItem,
 } from "@fission/design";
 import { edgeName, faceKey, type Vec3, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type Turn, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
 import type { EdgeClose, TimelineSubject } from "./timeline-session.ts";
@@ -363,6 +366,8 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       case "reorder": {
         const r = reorderItem(doc, op.item, op.to);
         if ("refused" in r) {
+          // The timeline model has no Extrude Join, so its sessions never meet a drag refused for one (SL #538 item 3).
+          if (r.refused === "join-order") throw new Error(`a drag refused for an Extrude Join the timeline model has none of: ${r.message}`);
           // Planted bug: the refusal is ignored and the item is moved anyway, as the data was written before 24e.
           if (!fs.has("reorder-unchecked")) return { kind: "refused", cause: r.refused };
           const features = doc.timeline.features.filter((f) => f.id !== op.item);
@@ -443,7 +448,9 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
           .filter((x) => x.feature === id && x.body !== bodyIdOf(id))
           .sort((x, y) => Number(x.body.split("/piece:")[1]) - Number(y.body.split("/piece:")[1]))
           .map((x) => measureBody(x.body));
-        const extra = pieces.length > 0 ? { pieces } : {};
+        const extra: { pieces?: ModelBody[]; missing?: string[] } = pieces.length > 0 ? { pieces } : {};
+        // SL #506 item 4: a Move's bodies no longer there, by the items that made them (the model's ids).
+        if (r.missing) extra.missing = r.missing.bodies.map((b) => bodyItem(b) ?? b);
         if (build.bodies[bodyIdOf(id)] === undefined || !shown.has(bodyIdOf(id))) results[id] = { status: "built", ...(r.source && { source: r.source.sketch }), ...extra };
         // 35eb: an item's body by its body id.
         else results[id] = { status: "built", body: measureBody(bodyIdOf(id)), ...(r.warning && { warning: { cause: r.warning.cause, input: r.warning.sketch } }), ...(r.source && { source: r.source.sketch }), ...extra };
@@ -524,6 +531,13 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
   async function build(): Promise<TimelineBuild> {
     if (fs.has("leak-bodies")) cache = new BodyCache(counted);
     if (fs.has("full-replay")) await cache.clear();
+    const b = await rebuildTimeline(state.doc, cache, kernel);
+    // As the app takes in what a rebuild settles into the edit's own step (workspace.ts `takeIn`): each piece numbered
+    // when it first appears (its faces not remembered: the model numbers pieces by rank order alone), a Move holding
+    // the new pieces of a body it holds (SL #583 item 2). A Move put in later then holds only what was picked.
+    const next = numberPieces(followedDoc(state.doc, b), Object.keys(b.bodies));
+    if (next === state.doc) return b;
+    state = { ...state, doc: next };
     return rebuildTimeline(state.doc, cache, kernel);
   }
 

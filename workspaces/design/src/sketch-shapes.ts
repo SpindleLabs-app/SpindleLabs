@@ -28,6 +28,7 @@
 
 import type { SketchArc, SketchXY } from "@fission/core";
 import { counted, type DesignDocument, type Sketch, type SketchConstraint, type SketchCurve, type SketchLineCurve } from "./document.ts";
+import { sketchRoom } from "./sketch-room.ts";
 import { arcThere, MIN_CHORD } from "./centre-arc.ts";
 import { drawArc, drawCircle, drawLine, drawPoint, pointAt, pointNear, type LineEnd } from "./sketch.ts";
 import { followingPoints } from "./constraints.ts";
@@ -314,7 +315,7 @@ export function shapePlan(kind: ShapeKind, clicks: readonly SketchXY[], sides = 
  * (same y) and Vertical on each exactly upright (same x), as the rectangle
  * tool gives its sides (constraints.ts `squaredRectangle`): only where it
  * holds exactly as drawn, so the sketch stays solved with no solve and
- * nothing can fight. A pair through a point that follows a body, or
+ * nothing can fight. A pair of points that both follow a body (#517: one is fine), or
  * already so by a constraint of its own, gets none. Ids from the counter.
  */
 export function levelled(doc: DesignDocument, sketchId: string, pairs: readonly (readonly [string, string])[]): DesignDocument {
@@ -326,7 +327,7 @@ export function levelled(doc: DesignDocument, sketchId: string, pairs: readonly 
   const added: SketchConstraint[] = [];
   for (const [a, b] of pairs) {
     const [p, q] = [at.get(a), at.get(b)];
-    if (!p || !q || a === b || follows.has(a) || follows.has(b)) continue;
+    if (!p || !q || a === b || (follows.has(a) && follows.has(b))) continue;
     const kind = p.y === q.y ? "horizontal" : p.x === q.x ? "vertical" : null;
     if (kind === null) continue;
     const holds = (c: SketchConstraint) => c.kind === kind && ((c.a === a && c.b === b) || (c.a === b && c.b === a));
@@ -335,7 +336,9 @@ export function levelled(doc: DesignDocument, sketchId: string, pairs: readonly 
     nextId = counted(nextId + 1);
   }
   if (added.length === 0) return doc;
-  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, constraints: [...s.constraints, ...added] } : s)) };
+  const levelled = { ...sketch, constraints: [...sketch.constraints, ...added] };
+  sketchRoom(doc, levelled); // no more than the reader opens (#641 item 2)
+  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? levelled : s)) };
 }
 
 const sketchOf = (doc: DesignDocument, id: string): Sketch => {
@@ -437,7 +440,8 @@ export function shapeClick(doc: DesignDocument, tool: ShapeTool, at: SketchXY): 
   const drawn = drawPlan(doc, tool.sketch, plan);
   const done: ShapeTool = { ...tool, clicks: [] };
   if (drawn === null) return { doc, tool, drew: false, note: TOO_CLOSE };
-  if (drawn === doc) return { doc, tool: done, drew: false, note: tool.kind === "point" ? POINT_THERE : SAME_SHAPE };
+  // Drawn already: nothing placed, so the clicks before stay, as for any refusal (and the typed boxes with them, hunt 2026-11-12).
+  if (drawn === doc) return { doc, tool, drew: false, note: tool.kind === "point" ? POINT_THERE : SAME_SHAPE };
   return { doc: drawn, tool: done, drew: true };
 }
 
@@ -581,7 +585,8 @@ export function shapeAim(tool: ShapeTool, p: SketchXY | null, locks: Locks): Ske
 
 /** The tool a click with these locks goes to: a polygon with a typed number of sides takes it (kept for the next polygon); any other tool is itself. */
 export function shapeWithLocks(tool: ShapeTool, locks: Locks): ShapeTool {
-  return locks.sides !== undefined && (tool.kind === "polygon" || tool.kind === "outside-polygon") ? { ...tool, sides: locks.sides } : tool;
+  // The same tool when the sides typed are its own already: the workspace tells a placed click by a new tool (hunt 2026-11-12).
+  return locks.sides !== undefined && locks.sides !== tool.sides && (tool.kind === "polygon" || tool.kind === "outside-polygon") ? { ...tool, sides: locks.sides } : tool;
 }
 
 /** What each box shows while not typed in: the size the aim would draw (twice the centre's distance for a centre rectangle's width and height and a slot's width, the polygon's sides as they stand). */

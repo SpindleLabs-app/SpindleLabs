@@ -9,7 +9,8 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle, StlFile } from "@fission/core";
-import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, makesPieces, MOVE_PARAMS, type DesignDocument } from "./document.ts";
+import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, makesPieces, MOVE_PARAMS, type DesignDocument, type SketchPlane } from "./document.ts";
+import { mirrorOf } from "./duplicate.ts";
 import { featureSpec } from "./extrude.ts";
 import { factorOf, madeAfter, movedBodies, moveValues, type MoveBox, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
@@ -164,6 +165,16 @@ export function movedMesh(scene: Scene, moving: readonly string[], v: MoveValues
   return mappedMesh(scene, (body) => (moving.includes(body) ? (p, vector) => movedPoint(p, v, vector) : null));
 }
 
+/** The axis each origin plane doesn't hold: the one a Mirror across it negates. */
+const MIRROR_AXIS: Record<SketchPlane, number> = { XY: 2, XZ: 1, YZ: 0 };
+
+/** `p` mirrored across origin plane `plane` as a Mirror body's copy is (duplicate.ts `mirrorMotion`): the axis the plane doesn't hold negated; a direction (a normal) alike, the plane being through the origin. */
+export function mirroredPoint(p: readonly number[], plane: SketchPlane): Point {
+  const q: Point = [p[0], p[1], p[2]];
+  q[MIRROR_AXIS[plane]] = -q[MIRROR_AXIS[plane]];
+  return q;
+}
+
 /**
  * The preview of Move `id` edited to `v` (35e2c), on `scene` as `doc`
  * built it (`results`): each body it moves taken back through the built
@@ -175,7 +186,11 @@ export function movedMesh(scene: Scene, moving: readonly string[], v: MoveValues
  * there is nothing to take back. Since 35e2i the Move may move `bodies`
  * instead of its own: a body taken out is only taken back out of where the
  * Move put it, one put in only moved by `v`. Numbers and bodies as built
- * give the mesh itself.
+ * give the mesh itself. A copy a built Duplicate or Mirror after the Move
+ * made of such a body (or of a copy of one) is carried the same way (hunt
+ * 11-11, #539 item 3: it stayed where it was and OK then moved it): taken
+ * back through its own later Moves and its making (a Mirror is its own
+ * undoing), so it is its source as the Move left it, then on as above.
  */
 export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Readonly<Record<string, { status: string }>>, id: string, v: MoveValues, bodies?: readonly string[]): DisplayMesh {
   const at = doc.timeline.features.findIndex((f) => f.id === id);
@@ -188,18 +203,33 @@ export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Reado
   const sameBodies = now.length === held.length && now.every((b) => held.includes(b));
   if (status === "built" && sameBodies && factorOf(before) === factorOf(v) && MOVE_PARAMS.every((k) => before[k] === v[k])) return scene.mesh;
   if (status === "failed" && still(v)) return scene.mesh;
-  const later = doc.timeline.features.slice(at + 1).filter((f) => isMoveItem(f) && results[f.id]?.status === "built");
+  const later = doc.timeline.features.slice(at + 1).filter((f) => (isMoveItem(f) || isDuplicateItem(f)) && results[f.id]?.status === "built");
   return mappedMesh(scene, (body) => {
-    const was = held.includes(body);
-    const is = now.includes(body);
+    // What the built items after the Move did to `body`, in timeline order (each with its undoing), and the body it was at the Move.
+    const after: { go: PointMap; back: PointMap }[] = [];
+    let source = body;
+    for (const f of [...later].reverse()) {
+      if (isMoveItem(f) && movedBodies(f).includes(source)) {
+        const m = moveValues(f);
+        after.unshift({ go: (p, vector) => movedPoint(p, m, vector), back: (p, vector) => unmovedPoint(p, m, vector) });
+      } else if (isDuplicateItem(f) && bodyIdOf(f.id) === source && typeof f.intent.parameters.body === "string") {
+        const plane = mirrorOf(f);
+        if (plane !== undefined) {
+          const mirrored: PointMap = (p) => mirroredPoint(p, plane);
+          after.unshift({ go: mirrored, back: mirrored });
+        }
+        source = f.intent.parameters.body;
+      }
+    }
+    const was = held.includes(source);
+    const is = now.includes(source);
     if (!was && !is) return null;
-    const after = later.filter((f) => movedBodies(f).includes(body)).map(moveValues);
     return (p, vector) => {
       let q: readonly number[] = p;
-      for (const m of [...after].reverse()) q = unmovedPoint(q, m, vector);
+      for (const m of [...after].reverse()) q = m.back(q, vector);
       if (status === "built" && was) q = unmovedPoint(q, before, vector);
       if (is) q = movedPoint(q, v, vector);
-      for (const m of after) q = movedPoint(q, m, vector);
+      for (const m of after) q = m.go(q, vector);
       return q as Point;
     };
   });

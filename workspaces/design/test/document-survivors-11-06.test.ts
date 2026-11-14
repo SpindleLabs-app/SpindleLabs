@@ -114,7 +114,7 @@ const V8_ONLY = "Design data says version 7 but has construction curves or dimen
 test("version 7 data without a bodies list opens, its bodies numbered as they were shown", () => {
   // Kills `v3.version === 7` => false / `!==` in which versions may leave out the bodies' numbers.
   const d = readDesignDocument(v7().raw);
-  assert.equal(d.version, 16); // read as the current version (16 from Extrude Joins' own bodies; 15 from Combine results' edge names; 14 from circles' fits; 13 from Combine pieces' faces; 12 from Scale and Mirror; 11 from Duplicate; 10 from Extrude's Operation row)
+  assert.equal(d.version, 22); // read as the current version (22 from face sketches marked as drawn before; 21 from symmetric extrudes; 20 from profiles keeping their own shapes; 19 from face sketches recording their side; 18 from extrudes of several profiles; 17 from constraints on followed points; 16 from Extrude Joins' own bodies; 15 from Combine results' edge names; 14 from circles' fits; 13 from Combine pieces' faces; 12 from Scale and Mirror; 11 from Duplicate; 10 from Extrude's Operation row)
   // One box (feature-1), the only body: number 1, and the next body gets 2.
   assert.deepEqual(d.bodies, [{ id: "body:feature-1", number: 1 }]);
   assert.equal(d.nextBody, 2);
@@ -189,7 +189,7 @@ const sketchOf = (doc: DesignDocument): Sketch => doc.sketches[0];
 const lastPoint = (doc: DesignDocument) => sketchOf(doc).points.at(-1)!.id;
 /** The file with one fix constraint on `point`, ids moved above the counter. */
 const fixed = (doc: DesignDocument, point: string): Raw => withConstraints(doc, [{ id: "constraint-100", kind: "fix", point }]);
-const FOLLOWS = (point: string) => `Design sketch sketch-2: constraint constraint-100 names ${point}, which follows a body's edge, so a constraint can't hold it`;
+const FOLLOWS = (point: string) => `Design sketch sketch-2: constraint constraint-100 names only points that follow a body's edge (${point}), so the body holds them and the constraint could only fight it`;
 
 test("a constraint can't hold any point a projection made: a projected point, a line's ends, a circle's centre, an arc's ends and centre", () => {
   // Kills, in the follows list: `c === undefined` => false (a projected point has no curve: reading c.kind would crash),

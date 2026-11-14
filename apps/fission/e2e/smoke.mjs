@@ -2,11 +2,18 @@
 // what is on screen. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { chooseShape, closePanels, insertPreset, openPanel, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
+
+// The box this run saves with #save, written outside the repo: saving over the committed
+// e2e/saved.spindle changed the worktree and made the other checks that read it depend on
+// which run of smoke wrote it last. The later checks here read this run's own copy.
+const savedCopy = join(tmpdir(), `smoke-saved-${process.pid}.spindle`);
 
 const server = await preview({ preview: { port: 4174, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4174/";
@@ -165,7 +172,7 @@ try {
     assert.equal(await text("topology"), "8 V · 12 E · 6 F");
     assert.equal(await text("status"), "valid");
     assert.equal(await text("intent"), "Box: 40 × 30 × 20 mm");
-    assert.equal(await text("provenance"), "Box 1 was made in Design.");
+    assert.equal(await text("provenance"), "Box 1 was made in DesignLab.");
   });
 
   await check("no Downstream section shows while no workspace makes anything from the design (X4b)", async () => {
@@ -710,7 +717,7 @@ try {
     assert.equal(await text("height-label"), "Extrude by");
     // The part is feature #1 of the timeline, and knows what it is and where it came from.
     assert.equal(await text("intent"), "Extrude: L-bracket profile 40 × 30 mm, by 20 mm");
-    assert.equal(await text("provenance"), "L-bracket 1 comes from L-bracket profile in Design.");
+    assert.equal(await text("provenance"), "L-bracket 1 comes from L-bracket profile in DesignLab.");
     // A new shape is framed: r = √(40² + 30² + 20²)/2 ≈ 26.93.
     const r = Number(await page.$eval("#viewport", (el) => el.dataset.framedRadius));
     assert.ok(Math.abs(r - Math.sqrt(2900) / 2) < 1e-4, `framed radius ${r}`);
@@ -878,7 +885,7 @@ try {
     assert.equal(await page.isVisible("#selection-actions"), false);
     await page.click("#browser [data-node=body-1]");
     await page.waitForFunction(() => document.body.dataset.selection === "body:feature-1");
-    assert.deepEqual(await verbs(), [["Download STL", "design.download-stl"]]);
+    assert.deepEqual(await verbs(), [["Download STL", "design.download-stl"], ["Download 3MF", "design.download-3mf"], ["Download OBJ", "design.download-obj"]]);
     assert.equal(await page.isVisible("#selection-actions"), true);
     const f = await downloadStl("#selection-actions [data-action='design.download-stl']");
     assert.equal(f.name, "spindlelabs-box.stl");
@@ -952,14 +959,14 @@ try {
   });
 
   await check("DESIGN ▾ names Design and lists Design and Slice only (the public app's, src/listed-workspaces.ts), Design marked, neither greyed", async () => {
-    assert.equal(await page.textContent("#workspace-menu"), "Design ▾");
+    assert.equal(await page.textContent("#workspace-menu"), "DesignLab ▾");
     assert.equal(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DESIGN ▾, as Fusion's");
     assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "design");
     await page.click("#workspace-menu");
     const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (ts) => ts.map((t) => [t.querySelector(".menu-button-name").textContent, t.querySelector(".menu-button-note")?.textContent ?? "", t.getAttribute("aria-current") === "true"]));
     assert.deepEqual(items, [
-      ["Design", "", true],
-      ["Slice", "", false],
+      ["DesignLab", "", true],
+      ["SliceLab", "", false],
     ]);
     // Not greyed: Slice is no placeholder (data-soon dims one, styles/workspace-menu.css) and is not off.
     assert.deepEqual(await page.$eval('#workspace-menu-menu [data-workspace="slice"]', (b) => ["soon" in b.dataset, b.getAttribute("aria-disabled")]), [false, null]);
@@ -977,7 +984,7 @@ try {
     const radius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
     const before = await pixel(0.5, 0.5);
     // Each opened by its link: none is listed in the public app, and Slice's item opens Slice for printing (src/listed-workspaces.ts).
-    for (const [id, title] of [["render", "Render"], ["simulate", "Simulate"], ["manufacture", "Manufacture"], ["laser", "Laser"], ["slice", "Slice"], ["circuit", "Circuit"], ["vector", "Vector"], ["layout", "Layout"]]) {
+    for (const [id, title] of [["render", "RenderLab"], ["simulate", "TestLab"], ["manufacture", "CNCLab"], ["laser", "LaserLab"], ["slice", "SliceLab"], ["circuit", "PCBLab"], ["vector", "VectorLab"], ["layout", "LayoutLab"]]) {
       await page.evaluate((hash) => (location.hash = hash), `#${id}`);
       await page.waitForFunction((want) => document.body.dataset.activeWorkspace === want, id);
       assert.equal(await page.textContent(".placeholder h2"), title);
@@ -1013,8 +1020,8 @@ try {
 
   await check("opening a workspace link goes straight to it", async () => {
     await page.goto(`${url}#laser`);
-    assert.equal(await page.textContent(".placeholder h2"), "Laser");
-    assert.equal(await page.textContent("#workspace-menu"), "Laser ▾");
+    assert.equal(await page.textContent(".placeholder h2"), "LaserLab");
+    assert.equal(await page.textContent("#workspace-menu"), "LaserLab ▾");
     assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "laser");
   });
 
@@ -1027,7 +1034,7 @@ try {
     await page.click("#assistant-toggle");
     assert.equal(await page.isDisabled("#ai-ask-button"), true, "nothing to ask with until a provider is chosen");
     assert.match(await page.textContent("#ai-status-detail"), /Nothing is sent anywhere/);
-    assert.match(await page.textContent("#assistant"), /Planned in Design.*Plain-English commands/s);
+    assert.match(await page.textContent("#assistant"), /Planned in DesignLab.*Plain-English commands/s);
     // The settings list the four providers and say which keep data local.
     assert.equal(await page.locator("#assistant [data-provider]").count(), 4);
     assert.match(await page.textContent('[data-provider="ollama"]'), /stays on your machine.*OLLAMA_ORIGINS/s);
@@ -1277,7 +1284,7 @@ try {
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
     const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);
     assert.equal(download.suggestedFilename(), "Untitled.spindle");
-    const saved = "e2e/saved.spindle";
+    const saved = savedCopy;
     await download.saveAs(saved);
     const file = JSON.parse(readFileSync(saved, "utf8"));
     assert.equal(file.formatVersion, 2);
@@ -1349,7 +1356,7 @@ try {
       };
       // saved.spindle is this same Untitled 50 × 30 × 20 box: opening it goes on with the stored copy, not a second
       // one (real-use hunt B3); a file that differs (another name) makes a new stored project, the autosaved one kept.
-      const file = readFileSync("e2e/saved.spindle", "utf8");
+      const file = readFileSync(savedCopy, "utf8");
       assert.equal(await open(file), id, "the same project, kept once");
       assert.equal(await stored(), 1);
       const other = await open(JSON.stringify({ ...JSON.parse(file), name: "Another" }));
@@ -1395,7 +1402,7 @@ try {
       await kept.reload({ waitUntil: "domcontentloaded" });
       const download = kept.waitForEvent("download");
       await kept.click("#save");
-      const wide = JSON.parse(readFileSync("e2e/saved.spindle", "utf8"));
+      const wide = JSON.parse(readFileSync(savedCopy, "utf8"));
       wide.workspaces.design.timeline.features[0].intent.parameters.width = 60;
       await kept.setInputFiles("#open-file", { name: "wide.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(wide)) });
       await holder.evaluate(() => (window.release = true));
@@ -1471,7 +1478,7 @@ try {
       // The longest workspace name still fits whole: MANUFACTURE ▾.
       await phone.goto(url + "#manufacture");
       await phone.waitForFunction(() => document.body.dataset.activeWorkspace === "manufacture");
-      assert.equal(await phone.textContent("#workspace-menu"), "Manufacture ▾");
+      assert.equal(await phone.textContent("#workspace-menu"), "CNCLab ▾");
       const named = await rect("#workspace-menu");
       assert.ok(named.left >= 0 && named.right <= (await rect("#menu-toggle")).left, `MANUFACTURE ▾ whole: ${JSON.stringify(named)}`);
       // Again in DejaVu Sans, the wide font CI's Linux uses (it ran 23 px into Menu there before 13 px capitals on phones).
@@ -1613,7 +1620,7 @@ try {
       await phone.goto(url + "#design");
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "error");
       const words = await phone.textContent("#save-status");
-      assert.match(words, /^Not saved: browser storage is full: can't save "project\/.+" \(use Save to keep your work as a file\)$/);
+      assert.match(words, /^Not saved: browser storage is full: can't save this project \(use Save to keep your work as a file\)$/);
       const shown = await phone.$eval("#save-status", (el) => ({ ...el.getBoundingClientRect().toJSON(), size: getComputedStyle(el).fontSize, cut: el.scrollWidth > el.clientWidth }));
       assert.ok(shown.width > 0 && shown.left >= 0 && shown.right <= 375 && shown.size === "12px" && !shown.cut, JSON.stringify(shown));
       assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");
@@ -1642,7 +1649,7 @@ try {
       // Nothing pretends to autosave.
       await bare.fill("#width", "50");
       await bare.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
-      assert.equal(await bare.textContent("#save-status"), "");
+      assert.equal(await bare.textContent("#save-status"), "Not saved: nothing is kept in this browser. Use Save to keep your work as a file."); // said for as long as it is so (issue #627 item 4); it was empty
       const [download] = await Promise.all([bare.waitForEvent("download"), bare.click("#save")]);
       assert.equal(download.suggestedFilename(), "Untitled.spindle");
     } finally {
@@ -1759,10 +1766,10 @@ try {
       // drawing, its canvas, cube and bar are hidden, its properties column too.
       await wide.selectOption("#split-choice", "slice");
       await wide.waitForFunction(() => document.body.dataset.split === "slice");
-      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "Slice");
+      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "SliceLab");
       assert.equal(await wide.textContent("#split-viewport .split-soon .coming-soon"), "Coming soon");
       assert.equal(await wide.isVisible("#split-viewport .split-soon"), true);
-      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "Slice", "the workspace's own page, where the card comes from");
+      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "SliceLab", "the workspace's own page, where the card comes from");
       assert.equal(await wide.isVisible("#split-properties"), false, "no second copy beside the card");
       assert.equal(await wide.$eval("#split-viewport", (el) => el.dataset.drawing), "off");
       for (const part of ["canvas", ".view-cube", ".view-controls"]) assert.equal(await wide.isVisible(`#split-viewport > ${part}`), false, `no ${part} in the placeholder's pane`);
@@ -1992,7 +1999,7 @@ try {
       await wide.waitForTimeout(50);
       // The note is about Slice, which is not on screen: Design's pane shows none.
       assert.deepEqual(await notesIn("#viewport"), []);
-      const text = "Print plate out of date: you changed the box in Design. Rerun it in Slice.";
+      const text = "Print plate out of date: you changed the box in DesignLab. Rerun it in SliceLab.";
       // Slice beside Design: the note shows over Slice's pane.
       await wide.click("#split-toggle");
       await wide.selectOption("#split-choice", "slice");
@@ -2003,13 +2010,13 @@ try {
       assert.equal(await wide.getAttribute("#split-viewport .change-note", "role"), "status");
       // Why? opens the chain from the cause to the result.
       await wide.click("#split-viewport .change-note summary");
-      assert.deepEqual(await wide.$$eval("#split-viewport .change-note li", (li) => li.map((l) => l.textContent)), ["Box: 42 × 30 × 20 mm in Design", "Print plate in Slice"]);
+      assert.deepEqual(await wide.$$eval("#split-viewport .change-note li", (li) => li.map((l) => l.textContent)), ["Box: 42 × 30 × 20 mm in DesignLab", "Print plate in SliceLab"]);
       assert.equal(await wide.isVisible("#split-viewport .change-note li"), true);
       await wide.screenshot({ path: "e2e/change-note.png" });
       // The plate is rebuilt (the graph marks it fresh): the same note says so, its chain still open.
       await wide.evaluate(() => window.fissionTest.graph.markFresh("e2e.plate"));
       await wide.waitForFunction(() => document.querySelector("#split-viewport .change-note")?.dataset.state === "updated");
-      assert.deepEqual(await notesIn("#split-viewport"), ["Print plate updated: you changed the box in Design."]);
+      assert.deepEqual(await notesIn("#split-viewport"), ["Print plate updated: you changed the box in DesignLab."]);
       assert.equal(await wide.isVisible("#split-viewport .change-note li"), true, "a redraw keeps Why? open");
       // × dismisses it, for good.
       await wide.click("#split-viewport .note-dismiss");
@@ -2049,7 +2056,7 @@ try {
       await wide.selectOption("#split-choice", "slice");
       await wide.waitForFunction(() => document.body.dataset.split === "slice");
       // The marker to the start: the box's own data is unchanged, but it builds nothing now, so its plate is out of date.
-      const text = "Print plate out of date: you moved the timeline marker in Design. Rerun it in Slice.";
+      const text = "Print plate out of date: you moved the timeline marker in DesignLab. Rerun it in SliceLab.";
       await wide.click('#timeline [data-button="start"]');
       await wide.waitForSelector("#split-viewport .change-note");
       assert.deepEqual(await notesIn("#split-viewport"), [text]);

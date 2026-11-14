@@ -1,0 +1,24 @@
+/* The design tabs' part of the top bar (tabs T3a): the shell marks the top bar design-tabs-bar when it holds the phone's
+   count button (@fission/ui design-tabs.ts `count`, placed just before Menu). On a phone the open designs are that one
+   button, showing their count in a rounded square as phone browsers do, instead of a row of tabs under the bar; it opens
+   the list (styles/design-tabs.css). Wide screens show the strip and no button. The query is TABS_PHONE_QUERY, the same
+   as design-tabs.css's (a unit test holds them together). The button is 44 px tall over the bar's 43 px row, its last
+   pixel over the bar's bottom line (margin -1 px), so the bar stays 44 px. ":not(#none)" lifts a rule over the base
+   layout's "#topbar button". */
+.design-tabs-bar .design-tabs-switch { display: none; }
+@media (max-width: 640px), (pointer: coarse), (max-height: 500px) {
+  .design-tabs-bar .design-tabs-switch:not(#none):not([hidden]) { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; margin: 0 0 -1px; padding: 0; background: none; border: none; color: var(--text-body); font: inherit; cursor: pointer; }
+  .design-tabs-bar .design-tabs-switch .design-tabs-count { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 22px; height: 22px; padding: 0 3px; font-size: 12px; font-weight: 600; line-height: 1; border: 2px solid currentColor; border-radius: 6px; }
+  .design-tabs-bar .design-tabs-switch[aria-expanded="true"] .design-tabs-count { color: var(--accent); }
+}
+/* Room for the count button on the narrowest phones (measured, T3a): at 320 px the name, File, the Lab button and Menu
+   left 5 px (CI's wider DejaVu Sans ran the Lab button 20 px into Menu), and at 375 px 27 px in DejaVu Sans. Up to
+   420 px the app's name shows as its mark (the hexagon of the app's icon; the words stay its name for screen readers,
+   and the save tick stays at its corner), and up to 360 px the bar's items sit 4 px apart, not 8. */
+@media (max-width: 420px) {
+  .design-tabs-bar h1:not(#none) { display: flex; align-items: center; font-size: 0; }
+  .design-tabs-bar h1::before { content: ""; flex: 0 0 22px; width: 22px; height: 22px; margin-right: 6px; background: var(--text-body); clip-path: polygon(50% 9%, 88% 31%, 88% 69%, 50% 91%, 12% 69%, 12% 31%); }
+}
+@media (max-width: 360px) {
+  .design-tabs-bar:not(#none) { column-gap: 4px; }
+}

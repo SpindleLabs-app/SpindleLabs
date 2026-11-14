@@ -10,9 +10,9 @@
 // reference app refuses a typed 0 (the owner's answer, 2026-10-19).
 // These are pure document functions; workspace.ts drives the panel.
 
-import { KernelError, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
-import { changePreset, isOperationExtrude, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
-import { featureSpec, isFlipped, setExtrudeDistance, setExtrudeFlip, setExtrudeRegion } from "./extrude.ts";
+import { commaWords, KernelError, readSizeText, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
+import { changePreset, isOperationExtrude, profileSizeRefused, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
+import { featureSpec, isFlipped, isSymmetric, setExtrudeDistance, setExtrudeFlip, setExtrudeRegion, setExtrudeSymmetric } from "./extrude.ts";
 import type { RegionRef } from "./regions.ts";
 import type { Outline } from "./profiles.ts";
 import { parameterRows, SIZE_KEYS, type SizeKey } from "./properties.ts";
@@ -28,6 +28,8 @@ export interface EditableFeature {
   sizes: PartSizes;
   keys: SizeKey[];
   flip?: boolean;
+  /** An extrude of a sketch's Symmetric (53a1). */
+  symmetric?: boolean;
 }
 
 function featureIn(doc: DesignDocument, id: string): Feature {
@@ -45,7 +47,7 @@ export function editableFeature(doc: DesignDocument, id: string): EditableFeatur
   if (!canEditFeature(f)) throw new Error(`${itemName(f)} is a sketch: it has no sizes to edit`);
   const { shape, sizes } = shapeOf(doc, f);
   const keys = parameterRows(shape).filter((r) => r.shown).map((r) => r.key);
-  return isSketchExtrude(f) ? { id, name: itemName(f), shape, sizes, keys, flip: isFlipped(f) } : { id, name: itemName(f), shape, sizes, keys };
+  return isSketchExtrude(f) ? { id, name: itemName(f), shape, sizes, keys, flip: isFlipped(f), symmetric: isSymmetric(f) } : { id, name: itemName(f), shape, sizes, keys };
 }
 
 /** OK's words when the design changed while the kernel checked the sizes (another edit, Undo): nothing was recorded. */
@@ -60,12 +62,21 @@ export const editStep = (doc: DesignDocument, id: string) => TIMELINE_STEPS.edit
  * the sizes its shape uses are read (a size left out keeps its value). An
  * extrude of a sketch takes its distance from `height`, and its Flip from
  * `flip` (left out keeps it; a preset has none to set), and its region
- * from `region` (48d4; left out keeps it). The document
+ * from `region` (48d4; left out keeps it), and whether it is symmetric
+ * from `symmetric` (53a1; left out keeps it; ticked, its Flip is dropped and
+ * `flip` not read). The document
  * itself comes back when nothing changes, so nothing is recorded. Every
  * other item is left as it was (the "edit-leaks" plant breaks this).
  */
-export function editFeature(doc: DesignDocument, id: string, typed: PartSizes, flip?: boolean, region?: RegionRef): DesignDocument {
+export function editFeature(doc: DesignDocument, id: string, typed: PartSizes, flip?: boolean, region?: RegionRef, symmetric?: boolean): DesignDocument {
   const now = editableFeature(doc, id);
+  // Symmetric (53a1) first: turned on it drops Flip, so the Flip box (off while it is ticked) is not read.
+  if (symmetric !== undefined) {
+    if (now.symmetric === undefined) throw new Error(`${now.name} has no Symmetric: only an extrude of a sketch goes both ways`);
+    if (typeof symmetric !== "boolean") throw new Error(`${now.name}: Symmetric must be true or false, not ${shown(symmetric)}`);
+    const turned = symmetric === now.symmetric ? doc : setExtrudeSymmetric(doc, symmetric, id);
+    return editFeature(turned, id, typed, symmetric ? undefined : flip, region);
+  }
   // Another region of its sketch (48d4): set first, then the sizes and Flip as before.
   if (region !== undefined) {
     if (now.shape !== "sketch-extrude") throw new Error(`${now.name} has no region: only an extrude of a sketch extrudes one`);
@@ -130,6 +141,10 @@ const namesASize = (e: unknown) => e instanceof KernelError && e.inputs.some((i)
  */
 export async function refusedSizes(kernel: KernelCalls, before: DesignDocument, next: DesignDocument, id: string): Promise<string | null> {
   const f = featureIn(next, id);
+  // A preset's profile outside the sizes a profile can have: refused in words, never handed to the kernel, which built
+  // a negative width as a mirrored body (save/load hunt B4).
+  const outside = profileSizeRefused(next, f);
+  if (outside !== null) return outside;
   const spec = await specIn(kernel, next, f);
   if (spec === null) {
     // No outline from its sketch: judge the distance alone.
@@ -156,8 +171,10 @@ export function readTyped(keys: readonly SizeKey[], typed: Partial<Record<SizeKe
   for (const key of SIZE_KEYS) {
     if (!keys.includes(key)) continue;
     const text = typed[key] ?? "";
-    const v = Number(text);
-    if (text.trim() === "" || !Number.isFinite(v)) return { bad: key };
+    // The boxes give millimetres as text, or the text typed when it is no size (properties.ts `sizeBox`, issue #518).
+    const read = readSizeText(text, "mm");
+    if ("why" in read) return read.why === "comma" ? { refused: key, why: commaWords(text) } : { bad: key };
+    const v = read.mm;
     const why = v === 0 ? null : lengthRefused(Math.abs(v));
     if (why !== null) return { refused: key, why };
     sizes[key] = v;

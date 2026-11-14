@@ -163,14 +163,19 @@ test("remove takes away exactly its own two entries, and works when only one of 
   await store.save("a", part(1));
   await store.save("b", part(2));
   await store.remove("a");
-  // The save count is shared by every project, so it stays (B5).
-  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/b"]);
+  // The save count is shared by every project, so it stays (B5). A removed project's text is deleted and its summary
+  // left as its deletion mark, in one step (save/load hunt C2, C3); b's entries are untouched.
+  const mark = (id: string) => /^\{"deleted":"[^"]*"\}$/.test(kv.entries.get(`summary/${id}`) ?? "");
+  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/a", "summary/b"]);
+  assert.deepEqual([mark("a"), mark("b")], [true, false]);
   await kv.delete("summary/b"); // only the project left
   await store.remove("b");
-  assert.deepEqual([...kv.entries.keys()], ["order"]);
+  assert.deepEqual([kv.entries.has("project/b"), mark("b")], [false, true]);
   await kv.set("summary/c", "{}"); // only the summary left
   await store.remove("c");
-  assert.deepEqual([...kv.entries.keys()], ["order"]);
+  assert.deepEqual([kv.entries.has("project/c"), mark("c")], [false, true]);
+  assert.deepEqual(await store.list(), [], "none of them listed");
+  await assert.rejects(store.remove("a"), /no stored project "a" to remove/);
 });
 
 // ---------- unsaved.ts ----------
@@ -443,7 +448,7 @@ test("following a history change back to the written state after a failed save s
   project = part(20);
   autosave.changed();
   await clock.advance(1000);
-  assert.deepEqual(statuses.at(-1), { state: "error", message: "disk full" });
+  assert.deepEqual(statuses.at(-1), { state: "error", message: "disk full. Use Save to keep your work as a file." }); // the way out, said with every failed save (SL #643 item 6)
   failing = false;
   project = part(10);
   history.fire();

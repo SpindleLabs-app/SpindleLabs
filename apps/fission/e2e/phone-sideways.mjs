@@ -225,9 +225,11 @@ console.log("checked - 320, 340 and 375 px: Slice for printing's Close inside th
   check(t.count >= 7, `393: the timeline's buttons, item, marker and ⋯ found (${t.count})`);
   check(t.small.length === 0, `393: timeline tap areas under 40 × 40 px: ${t.small.join(", ")}`);
   check(t.height <= 40, `393: the timeline row is ${t.height} px (at most 40, layout.mjs)`);
+  // SL #708 item 2 (stress hunt 11-13): the top bar, the float bar (Finish Combine and Cancel) and the sheets too: a pinch
+  // there zoomed the page about 3x and took OK and STL off the screen.
   // A touch's allowed gestures are those of the element and every ancestor (touch-action is not inherited, it is intersected):
   // a pinch zooms the page only when every one of them allows it.
-  const pinchable = await page.evaluate(() => [["the toolbar", "#toolbar button"], ["the timeline", "#timeline .timeline-bar-item"], ["the view controls", "#viewport .view-controls button"]]
+  const pinchable = await page.evaluate(() => [["the toolbar", "#toolbar button"], ["the timeline", "#timeline .timeline-bar-item"], ["the view controls", "#viewport .view-controls button"], ["the top bar", "#topbar #save"], ["the float bar over the view", "#phone-float"], ["the Properties sheet", "#properties"], ["the Browser sheet", "#browser"]]
     .filter(([, sel]) => {
       for (let e = document.querySelector(sel); e; e = e.parentElement) if (!/auto|manipulation|pinch-zoom/.test(getComputedStyle(e).touchAction)) return false;
       return true;
@@ -302,6 +304,67 @@ if (browserName === "chromium") {
     await context.close();
   }
   console.log("checked - a held Move handle: a second finger never moves the camera; a cancelled touch puts the number back");
+}
+
+// 9. Issue #522 (the owner's rule: one tap never covers most of the view). Sideways, Insert > Box and Cancel of its Move
+//    leave the Properties card folded (its button one tap away) and under half the view covered; the Browser's eye and
+//    ⋯ take a finger's 44 × 44 px on any touch screen. A touch tablet in portrait (641 to 820 px) drawing a sketch keeps
+//    the drawing area clear: the points (10, 10) to (40, 30) mm, up and right of the origin, are on the view, not the card.
+{
+  const covered = (page) => page.evaluate(() => {
+    const v = document.getElementById("viewport").getBoundingClientRect();
+    let n = 0;
+    for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) if (!document.elementFromPoint(v.left + ((i + 0.5) * v.width) / 12, v.top + ((j + 0.5) * v.height) / 12)?.closest("#viewport")) n++;
+    return n / 144;
+  });
+  const sizes = (page, sel) => page.$$eval(sel, (es) => es.filter((e) => e.getClientRects().length).map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }));
+  for (const [width, height] of [[667, 375], [740, 360], [852, 393], [768, 1024]]) {
+    const { page, context } = await open(width, height); // Insert > Box, its Move cancelled (start.mjs)
+    const at = `${width} × ${height}`;
+    await page.waitForTimeout(300);
+    const share = await covered(page);
+    check(share < 0.5, `${at}: after Insert > Box and Cancel ${Math.round(share * 100)}% of the view is covered`);
+    check(await page.evaluate(() => document.getElementById("properties").hasAttribute("data-folded")), `${at}: the Properties card stays open over the new box`);
+    for (const [w, h] of [...(await sizes(page, "#browser .browser-row-eye")), ...(await sizes(page, "#browser .delete-ask-more"))]) check(w >= 44 && h >= 44, `${at}: a Browser eye or ⋯ is ${w} × ${h} px, under 44 × 44`);
+    if (shots) await page.screenshot({ path: `${shots}/sideways-insert-cancel-${width}x${height}.png` });
+    await context.close();
+  }
+  const onScreen = async (page, p) => {
+    const cam = await page.evaluate(() => window.fissionTest.camera());
+    const box = await page.locator("#viewport canvas").boundingBox();
+    const sub = (a, b) => a.map((x, i) => x - b[i]);
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const unit = (a) => a.map((x) => x / Math.hypot(...a));
+    const fwd = unit(sub(cam.target, cam.position));
+    const right = unit(cross(fwd, cam.up));
+    const up = cross(right, fwd);
+    const v = sub(p, cam.position);
+    const t = Math.tan(Math.PI / 8);
+    const x = dot(v, right) / (dot(v, fwd) * t * (box.width / box.height));
+    const y = dot(v, up) / (dot(v, fwd) * t);
+    return { x: box.x + ((x + 1) / 2) * box.width, y: box.y + ((1 - y) / 2) * box.height };
+  };
+  for (const [width, height] of [[641, 900], [744, 1133], [820, 1180]]) {
+    const { page, context } = await open(width, height);
+    const at = `${width} × ${height}`;
+    await page.tap("#create-sketch");
+    await page.waitForSelector("#sketch-plane-XY", { state: "visible" });
+    await page.tap("#sketch-plane-XY");
+    await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+    await page.waitForTimeout(1200);
+    for (const p of [[10, 10, 0], [20, 10, 0], [30, 20, 0], [40, 30, 0]]) {
+      const s = await onScreen(page, p);
+      const hit = await page.evaluate(({ x, y }) => { const e = document.elementFromPoint(x, y); return e?.tagName === "CANVAS" ? "view" : `#${e?.closest("[id]")?.id}`; }, s);
+      check(hit === "view", `${at}: sketch point (${p[0]}, ${p[1]}) lands on ${hit}, not the view`);
+    }
+    // The sketch's panel is one tap away.
+    await page.tap("#properties-handle");
+    check(await page.isVisible("#sketch-grid"), `${at}: a tap on Properties shows the sketch's panel`);
+    if (shots) await page.screenshot({ path: `${shots}/tablet-sketch-${width}x${height}.png` });
+    await context.close();
+  }
+  console.log("checked - issue #522: sideways Insert leaves the view clear, touch targets 44 px, a tablet's sketch area clear");
 }
 
 await browser.close();
