@@ -18,6 +18,7 @@ CY = "33333333-3333-4333-8333-333333333333"
 MIB = 1024 * 1024
 # library_limits()
 MAX_ENTRIES, MAX_BYTES, MAX_FILE, MAX_PICTURE, PER_DAY, MAX_TITLE, MAX_DESCRIPTION, MAX_TAGS, MAX_TAG = 50, 50 * MIB, 5 * MIB, 32768, 10, 100, 2000, 8, 24
+MAX_SEARCH = 200  # library_limits().max_search (20261113200000_library_limits.sql)
 
 
 class LibraryDatabase(unittest.TestCase):
@@ -310,6 +311,77 @@ class LibraryDatabase(unittest.TestCase):
         self.assertEqual([e["title"] for e in data["library"]], ["Bracket"])
         self.owner(f"delete from auth.users where id = '{ADA}';")
         self.assertEqual(self.owner("select count(*) from library_entries;"), "0")
+
+    # Security hunt 2026-11-13 (bug-reports#4 B4, B6): fixed by 20261113200000_library_limits.sql.
+
+    def bucket_bytes(self, uid):
+        return int(self.owner(f"select coalesce(sum((o.metadata->>'size')::bigint), 0) from storage.objects o join library_entries e on o.name = e.id::text || '.spindle' where e.user_id = '{uid}';"))
+
+    def test_uploads_never_finished_still_count_so_the_bucket_holds_at_most_50_mib_and_one_file(self):
+        # B4: an account that uploads ten 5 MiB files a day and never calls finish_publish. Before the fix the bucket
+        # grew by 50 MiB every day (the 50 MiB sum was only in finish_publish). The rule now: begin_publish counts every
+        # file of the person's in the bucket plus 5 MiB for each entry still waiting for its file, and an upload is
+        # refused once the person's files already pass 50 MiB. So the most one account can hold is 50 MiB plus the one
+        # file that crossed the line: 55 MiB, whatever it does for three days.
+        for day in range(3):
+            for _ in range(PER_DAY):
+                b = self.begin(ADA)
+                if b["status"] != "ready":
+                    break
+                self.upload(ADA, b["file"], MAX_FILE)
+            self.owner(f"update library_entries set created_at = created_at - interval '25 hours' where user_id = '{ADA}';")
+        self.assertLessEqual(self.bucket_bytes(ADA), MAX_BYTES + MAX_FILE, "at most 50 MiB and one file")
+        self.assertEqual(self.begin(ADA)["status"], "full", "and nothing more starts")
+
+    def test_waiting_entries_count_5_mib_each_at_0_9_and_1_1_of_50_mib(self):
+        # begin_publish counts the person's files plus 5 MiB for each entry still waiting for its file, and says full once
+        # that passes 50 MiB. Ada: 8 live files of 5 MiB = 40 MiB, nothing waiting: ready. Then 40 + one waiting (5) =
+        # 45 MiB = 0.9 x 50: ready. Cy: 10 live files = 50 MiB, nothing waiting: ready (finish_publish then says full);
+        # then 50 + one waiting = 55 MiB = 1.1 x 50: full, before anything is uploaded.
+        for _ in range(8):
+            self.publish(ADA, size=MAX_FILE)
+        self.owner(f"update library_entries set created_at = now() - interval '2 days' where user_id = '{ADA}';")
+        self.assertEqual(self.begin(ADA)["status"], "ready", "40 MiB, nothing waiting")
+        self.assertEqual(self.begin(ADA)["status"], "ready", "40 + 5 waiting = 45 MiB (0.9x)")
+        self.assertEqual(self.begin(BO)["status"], "ready", "Bo's space is his own")
+        for _ in range(10):
+            self.publish(CY, size=MAX_FILE)
+        self.owner(f"update library_entries set created_at = now() - interval '2 days' where user_id = '{CY}';")
+        self.assertEqual(self.begin(CY)["status"], "ready", "50 MiB of files and nothing waiting: may start, finish then says full")
+        self.assertEqual(self.begin(CY)["status"], "full", "50 MiB + 5 waiting = 55 MiB (1.1x)")
+
+    def test_an_upload_is_refused_once_the_persons_files_pass_50_mib(self):
+        # Entries begun while there was room, then filled: 45 MiB (0.9 x 50) of files lets the next upload in; 55 MiB
+        # (1.1 x 50) refuses it, even to an entry begun earlier.
+        waiting = [self.begin(ADA) for _ in range(3)]
+        self.owner(f"insert into library_entries (id, user_id, title, licence, state, created_at) select gen_random_uuid(), '{ADA}', 'x', 'CC0-1.0', 'live', now() - interval '2 days' from generate_series(1, 11);")
+        files = self.owner(f"select e.id from library_entries e where e.user_id = '{ADA}' and e.state = 'live' order by e.id;").split()
+        for f in files[:9]:
+            self.owner(f"insert into storage.objects (bucket_id, name, owner_id, metadata) values ('library', '{f}.spindle', '{ADA}', jsonb_build_object('size', {MAX_FILE}));")
+        self.assertTrue(self.upload(ADA, waiting[0]["file"], 1000)[0], "45 MiB of files: allowed")
+        for f in files[9:]:
+            self.owner(f"insert into storage.objects (bucket_id, name, owner_id, metadata) values ('library', '{f}.spindle', '{ADA}', jsonb_build_object('size', {MAX_FILE}));")
+        self.assertFalse(self.upload(ADA, waiting[1]["file"], 1000)[0], "55 MiB of files: refused")
+
+    def test_a_long_search_is_cheap_and_finds_nothing(self):
+        # B6: a signed-out search of 200 KB against 2,000 entries took 40 s, because the search text was worked out
+        # again for every entry. Now a search over max_search characters finds nothing at once, under a 1 s limit.
+        self.owner(f"""insert into library_entries (user_id, title, description, licence, tags, state, published_at, search)
+            select '{ADA}', 'part ' || g, 'a gear bracket ' || g, 'CC0-1.0', '{{gear,m3}}', 'live', now() - g * interval '1 second',
+                   library_search_text('part ' || g, 'a gear bracket ' || g, '{{gear,m3}}') from generate_series(1, 2000) g;""")
+        ok, out = self.as_role("anon", "set local statement_timeout = '1s'; select jsonb_array_length(browse_library(repeat('a.', 100000), null, null, null, 48));")
+        self.assertEqual((ok, out), (True, "0"), out)
+        ok, out = self.as_role("anon", f"set local statement_timeout = '1s'; select jsonb_array_length(browse_library(repeat('a.', {MAX_SEARCH // 2}), null, null, null, 48));")
+        self.assertEqual((ok, out), (True, "0"), "a search of exactly the limit is worked out once: fast")
+        ok, out = self.as_role("anon", "set local statement_timeout = '1s'; select jsonb_array_length(browse_library(null, repeat('a', 100000), null, null, 48));")
+        self.assertEqual((ok, out), (True, "0"), "a long tag too")
+
+    def test_search_text_at_0_9_and_1_1_of_200_characters(self):
+        # "hook" then spaces: 180 characters (0.9 x 200) still finds the hook; 220 (1.1 x 200) finds nothing.
+        self.publish(ADA, title="Wall hook", tags="array['hook']")
+        self.assertEqual([c["title"] for c in self.browse(search="hook" + " " * (int(0.9 * MAX_SEARCH) - 4))], ["Wall hook"])
+        self.assertEqual(self.browse(search="hook" + " " * (int(1.1 * MAX_SEARCH) - 4)), [])
+        self.assertEqual(self.value(None, "select (library_limits()->>'max_search')::int;", "anon"), str(MAX_SEARCH))
 
     def test_every_function_the_browser_may_call_is_granted_and_no_other(self):
         anon = {"library_limits", "browse_library", "library_entry"}

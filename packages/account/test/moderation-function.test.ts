@@ -253,3 +253,26 @@ test("a person's view gives their display name from the name column, and null wi
   const none = world();
   assert.deepEqual(await (await none.handle(ask({ do: "person", user: BEN }))).json(), { name: null, hold: null, links: [], record: [] });
 });
+
+// Security hunt 2026-11-13 (private bug-reports#4 C5): EXTRA_ORIGINS is one secret every function of the project reads,
+// so an address added there for the app's billing or bug reports also became a review page. The moderation function now
+// reads only REVIEW_EXTRA_ORIGINS, and refuses to start (503) when that names one of the app's own addresses.
+test("C5: an address in EXTRA_ORIGINS is not a review page; REVIEW_EXTRA_ORIGINS is, but never the app's", async () => {
+  for (const origin of ["https://spindlelabs.app", "https://preview.spindlelabs.app"]) {
+    const { handle, calls } = world({ env: { EXTRA_ORIGINS: "https://spindlelabs.app,https://preview.spindlelabs.app" } });
+    const res = await handle(ask({ do: "me" }, { origin }));
+    assert.equal(res.status, 403, origin);
+    assert.equal(res.headers.get("access-control-allow-origin"), null);
+    assert.equal(calls.length, 0);
+  }
+  const extra = "https://review.example.org";
+  const ok = world({ env: { REVIEW_EXTRA_ORIGINS: ` ${extra} ` } });
+  assert.equal((await ok.handle(ask({ do: "me" }, { origin: extra }))).status, 200, "a page of its own may be added");
+  for (const app of ["https://spindlelabs.app", "https://www.spindlelabs.app"]) {
+    const { handle, calls } = world({ env: { REVIEW_EXTRA_ORIGINS: `${extra},${app}` } });
+    const res = await handle(ask({ do: "me" }, { origin: extra }));
+    assert.equal(res.status, 503, `${app} listed: not set up`);
+    assert.deepEqual(await res.json(), { error: "not-set-up" });
+    assert.equal(calls.length, 0);
+  }
+});
