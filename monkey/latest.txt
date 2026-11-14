@@ -1,4 +1,6 @@
-tested commit b8c7f4f on main, 2026-11-13 18:46 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43448159679)
-Monkey, seeds 202611130-202611131: 2 session(s) of 2000 actions in Chromium; 0 Combines made of 3 tried; 1 FAILED
-seed 202611130: FAIL: Bodies group matches the file: rows ["body-4 Body 4"], the file builds ["body-4 Body 4","body-5 Body 5"]
-seed 202611131: pass (2000 actions)
+tested commit e03bf05 on main, 2026-11-14 01:54 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43524024023)
+Monkey, seeds 359820366-359820369: 4 session(s) of 2000 actions in Chromium; 4 Combines made of 66 tried; 1 FAILED
+seed 359820366: pass (2000 actions)
+seed 359820367: FAIL: settles: an action took over 30 s
+seed 359820368: pass (2000 actions)
+seed 359820369: pass (2000 actions)
