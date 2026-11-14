@@ -3027,7 +3027,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const e = extruding;
     // Edit feature's regions (48d4) stay drawn while it is open.
     if (!e) return editRegions !== null ? showEditRegions() : viewport.showExtrude(null);
-    const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
+    // Symmetric (53a1): the arrow is half the thickness long, its tip on the end cap, as `arrowOf` and `symmetricDrag` have it
+    // (app-wide hunt 2026-11-14, R-2: at the whole thickness each grab of the arrow doubled the distance).
+    const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: extrudeBox.symmetric ? Math.abs(e.distance) / 2 : e.distance } : null;
     viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, ...(e.more.length > 0 ? { alsoChosen: e.more.map((m) => m.id) } : {}), preview: e.preview?.mesh ?? null, arrow, ...(e.operation === "cut" ? { cut: true } : {}) });
     // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
@@ -3244,7 +3246,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       else {
         // Each prism builds (a profile that can't let go above), so a refusal here is of joining them, which OK would refuse
         // in the same words: the picks stay, with no preview under the words (as for a refused distance).
-        const joined = await unitedViews(kernel, prisms.map((p) => ({ spec: previewSpec(p.spec, at), ...(p.curves ? { curves: p.curves } : {}) }))).catch((err: unknown) => err as Error);
+        const joined = await unitedViews(kernel, prisms.map((p) => ({ spec: previewSpec(p.spec, at, both), ...(p.curves ? { curves: p.curves } : {}) }))).catch((err: unknown) => err as Error);
         if (joined instanceof Error) {
           if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || e.distance !== d) return;
           e.preview = null;
