@@ -55,6 +55,8 @@ export class ProjectGone extends Error {
 export interface ShellTabsParts {
   /** The tab strip goes after this element (the top bar). */
   after: HTMLElement;
+  /** The phone's count button goes in the top bar just before this element (Menu); at the bar's end without it (tabs T3a). */
+  countBefore?: Element | null;
   /** The kept id of the project on screen; null while a new one waits for its first change. */
   keptId(): string | null;
   projectName(): string;
@@ -137,6 +139,10 @@ export function shellTabs(doc: Document, parts: ShellTabsParts): ShellTabs {
     view: parts.view,
   });
   parts.after.after(strip.element);
+  // On a phone the tabs take no row of their own: their count button sits in the top bar (tabs T3a), which is marked so
+  // the narrowest phones make room for it (@fission/ui styles/design-tabs-bar.css).
+  parts.after.insertBefore(strip.count, parts.countBefore?.parentElement === parts.after ? parts.countBefore : null);
+  parts.after.classList.add("design-tabs-bar");
 
   const save = () => {
     const text = storedTabs(state, (k) => !isTemporary(k));
