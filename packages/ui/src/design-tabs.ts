@@ -125,6 +125,11 @@ export interface DesignTabsParts {
 
 export interface DesignTabsStrip {
   element: HTMLElement;
+  /**
+   * The phone's count button (tabs T3a): the shell puts it in the top bar, so on a phone the tabs take no row of their
+   * own. Pressing it opens the list under the top bar. Hidden on wide screens (the strip shows) and with no tabs.
+   */
+  count: HTMLElement;
   render(s: TabsState): void;
 }
 
@@ -149,11 +154,13 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   plus.title = "New design in a new tab";
   plus.textContent = "+";
   plus.addEventListener("click", () => parts.add());
-  // On a phone the strip is one button naming the design on screen (and how many are open); it opens a short list under
-  // the strip, so one tap never covers most of the view (styles/design-tabs.css shows one or the other by width).
+  // On a phone the open designs are one small button in the top bar with their count, as phone browsers have (tabs T3a:
+  // a row of its own under the top bar took 47 px from the 3D view); it opens a short list under the top bar, so one tap
+  // never covers most of the view (styles/design-tabs.css shows the button or the strip by TABS_PHONE_QUERY).
   const switcher = doc.createElement("button");
   switcher.type = "button";
   switcher.className = "design-tabs-switch";
+  switcher.hidden = true;
   switcher.id = "design-tabs-switch";
   switcher.setAttribute("aria-haspopup", "true");
   switcher.setAttribute("aria-expanded", "false");
@@ -161,10 +168,28 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   menu.className = "design-tabs-menu";
   menu.id = "design-tabs-menu";
   menu.hidden = true;
-  element.append(list, switcher, plus, menu);
+  element.append(list, plus, menu);
   let shown: TabsState = NO_TABS;
   const isOpen = () => !menu.hidden;
-  const fillMenu = () => menu.replaceChildren(...shown.tabs.map((t) => tabRow(t, t.key === shown.active, parts.titles(), true))); // only while open: the strip alone holds the tabs otherwise
+  // + New design is the list's first row, so it is in sight without scrolling however many tabs are open (tabs T3a).
+  const newRow = (): HTMLElement => {
+    const row = doc.createElement("div");
+    row.className = "design-tabs-new";
+    const add = doc.createElement("button");
+    add.type = "button";
+    add.id = "design-tabs-menu-add";
+    add.className = "design-tabs-new-button";
+    add.textContent = "+ New design";
+    add.disabled = !canAdd(shown);
+    add.title = canAdd(shown) ? "New design in a new tab" : `${MAX_TABS} designs are open: close one to open another`;
+    add.addEventListener("click", () => {
+      openMenu(false);
+      parts.add();
+    });
+    row.append(add);
+    return row;
+  };
+  const fillMenu = () => menu.replaceChildren(newRow(), ...shown.tabs.map((t) => tabRow(t, t.key === shown.active, parts.titles(), true))); // only while open: the strip alone holds the tabs otherwise
   const openMenu = (open: boolean) => {
     menu.hidden = !open;
     if (open) {
@@ -180,7 +205,9 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   };
   switcher.addEventListener("click", () => openMenu(!isOpen()));
   doc.addEventListener("pointerdown", (e) => {
-    if (isOpen() && e.target instanceof Node && !element.contains(e.target)) openMenu(false);
+    // The count button is outside the strip (in the top bar): its own press toggles the list, never a press outside it.
+    const t = e.target as Node | null;
+    if (isOpen() && typeof t?.nodeType === "number" && !element.contains(t) && !switcher.contains(t)) openMenu(false);
   });
   doc.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && isOpen()) {
@@ -258,29 +285,23 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
 
   return {
     element,
+    count: switcher,
     render(s) {
       shown = s;
       // One tab means nothing to switch between: Fusion shows its strip then too, and so do we, so "+" is always there.
       element.hidden = s.tabs.length === 0;
+      switcher.hidden = s.tabs.length === 0;
       if (s.tabs.length === 0) openMenu(false);
       const titles = parts.titles();
       plus.disabled = !canAdd(s);
       plus.title = canAdd(s) ? "New design in a new tab" : `${MAX_TABS} designs are open: close one to open another`;
-      const active = s.tabs.find((t) => t.key === s.active);
-      switcher.replaceChildren();
-      if (active) {
-        const name = doc.createElement("span");
-        name.className = "design-tabs-name";
-        name.textContent = shortName(active.name);
-        const kind = doc.createElement("span");
-        kind.className = "design-tabs-kind";
-        kind.textContent = workspaceChip(active.workspace, titles);
-        const count = doc.createElement("span");
-        count.className = "design-tabs-count";
-        count.textContent = String(s.tabs.length);
-        switcher.append(name, kind, count);
-      }
-      switcher.setAttribute("aria-label", `${s.tabs.length} designs open, ${active ? tabName(active.name) : "none"} on screen: choose another`);
+      // Only the number, in a rounded square; the words are its name for a screen reader and its tooltip.
+      const count = doc.createElement("span");
+      count.className = "design-tabs-count";
+      count.textContent = String(s.tabs.length);
+      switcher.replaceChildren(count);
+      switcher.setAttribute("aria-label", switcherLabel(s));
+      switcher.title = switcherLabel(s);
       // The tabs are made afresh, so a focused one would leave the focus on <body>: it goes to the tab on screen, which
       // after Enter or Space is the one just chosen (tabs hunt E6).
       const focused = list.contains(doc.activeElement);
@@ -289,6 +310,13 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
       if (isOpen()) fillMenu();
     },
   };
+}
+
+/** The phone's count button's words: "3 designs open, Bracket on screen: choose another" ("1 design" for one). Pure. */
+export function switcherLabel(s: TabsState): string {
+  const active = s.tabs.find((t) => t.key === s.active);
+  const n = s.tabs.length;
+  return `${n} design${n === 1 ? "" : "s"} open, ${active ? tabName(active.name) : "none"} on screen: choose another`;
 }
 
 /** A tab's name for a screen reader: the design's name, then its workspace's title ("Bracket, Design"). */
