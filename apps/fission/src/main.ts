@@ -703,6 +703,8 @@ function askBeforeLeaving(e: BeforeUnloadEvent) {
 }
 /** What the save mark says now: put back when an opened file is abandoned before it was kept (issue #247). */
 let shownStatus: AutosaveStatus = { state: "saved" };
+/** Marks that say "Saving…" only while an opened project is stored again as it is: no change of the person's is waiting (tabs hunt A5). */
+const storingAgain = new WeakSet<AutosaveStatus>();
 const saveStatus = (s: AutosaveStatus) => {
   shownStatus = s;
   const el = $("save-status");
@@ -894,6 +896,7 @@ function replaceProject(project: Project) {
   show(current); // mounts the workspace on the new project
   if (split) mountSplit(split.id); // and the second one
   ctx.history.reset(); // a new start: nothing from the old project to undo
+  assistant.projectReplaced(); // an AI answer asked about the old project never reaches this one (tabs hunt E1)
   tabs?.landed();
 }
 /**
@@ -964,6 +967,7 @@ function openProject(file: string | Uint8Array, fileName = "") {
       }
       keep(found.id, true, found.modified);
       const waiting: AutosaveStatus = { state: "saving" };
+      storingAgain.add(waiting); // kept already as it is: nothing of the person's is waiting (tabs hunt A5)
       saveStatus(waiting);
       const mine = autosave;
       const done = () => void (autosave === mine && shownStatus === waiting && saveStatus({ state: "saved" }));
@@ -1005,13 +1009,16 @@ async function openStored(id: string, modified: Date | null) {
   // stored it (#627 item 2). Only bringing it forward waits for the build, so one that freezes the tab is not reopened.
   keep(id, kept === null, kept === null ? modified : null, kept !== null);
   statusBeforeOpening ??= before;
-  saveStatus({ state: "saving" });
+  const opening: AutosaveStatus = { state: "saving" };
+  if (kept === null) storingAgain.add(opening); // it is in the store as it shows (one from the journal is not)
+  saveStatus(opening);
   whileOpening(OPENING_FILE, () => {
     statusBeforeOpening = null;
     if (kept !== null) return saveStatus({ state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
     if (modified === null) return autosave?.changed(); // no save time to expect: its first save stores it, and lists it first
     // "Saving…" until it is the project a reload opens (leaving meanwhile asks first), unless an edit's own save took over the mark.
     const waiting: AutosaveStatus = { state: "saving" };
+    storingAgain.add(waiting);
     saveStatus(waiting);
     const mine = autosave;
     const done = (s: AutosaveStatus) => void (autosave === mine && shownStatus === waiting && saveStatus(s));
@@ -1111,9 +1118,12 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
         // The camera once the workspace has shown the project and framed it, unless another tab was chosen meanwhile.
         void shownOnScreen().then(() => ctx.project === project && viewer.main.restorePose(v.camera));
       },
-      unsaved: () => shownStatus.state !== "saved",
+      // Only changes not stored yet: "Saving…" while an opened project is only being stored again as it is asked for
+      // nothing (tabs hunt A5).
+      unsaved: () => shownStatus.state !== "saved" && !storingAgain.has(shownStatus),
       report: fileStatus,
-      kept: async () => (await inTime(store.list())).map((s) => s.id),
+      kept: async () => (await inTime(store.list())).map((s) => ({ id: s.id, name: s.problem === undefined ? s.name : null })),
+      view: () => $("viewport"),
       held: (id) => keptEntry(local, id) !== null,
       storage: local,
       session: (() => {
@@ -1138,6 +1148,7 @@ const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
   rename: async (id, name) => {
     if (id === keptId()) throw new Error("rename the open project in its own name box");
     await renameKept(store, id, name);
+    tabs?.rename(id, name); // its tab says the new name (tabs hunt C5)
   },
   newProject: () => startNewProject(),
   chooseFile: () => $("open-file").click(),

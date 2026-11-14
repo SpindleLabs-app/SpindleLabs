@@ -26,6 +26,13 @@ export const TAB_NAME_SHOWN = 24;
 
 export const NO_TABS: TabsState = { tabs: [], active: null };
 
+/**
+ * When the strip is the phone's one switcher button (styles/design-tabs.css uses this same query; a unit test holds the
+ * two together): narrow screens, and also touch screens and short windows, so a phone held sideways (667 x 375) never
+ * gets the wide row with its 33 px tabs and × beside each (tabs hunt E2).
+ */
+export const TABS_PHONE_QUERY = "(max-width: 640px), (pointer: coarse), (max-height: 500px)";
+
 /** The tab's words for a name: an empty name reads "Untitled". */
 export const tabName = (name: string): string => (name.trim() === "" ? "Untitled" : name.trim());
 
@@ -112,6 +119,8 @@ export interface DesignTabsParts {
   add(): void;
   /** The workspace titles, for the chips (id → title). */
   titles(): Record<string, string>;
+  /** The 3D view: the phone's open list never covers more than half of it (tabs hunt E3). */
+  view?(): HTMLElement | null;
 }
 
 export interface DesignTabsStrip {
@@ -158,7 +167,13 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   const fillMenu = () => menu.replaceChildren(...shown.tabs.map((t) => tabRow(t, t.key === shown.active, parts.titles(), true))); // only while open: the strip alone holds the tabs otherwise
   const openMenu = (open: boolean) => {
     menu.hidden = !open;
-    if (open) fillMenu();
+    if (open) {
+      // At most half the 3D view (the stylesheet's cap is of the window, which at 320 x 568 left 59% of the view
+      // covered, tabs hunt E3), and never less than one row.
+      const view = parts.view?.()?.getBoundingClientRect().height ?? 0;
+      if (view > 0) menu.style.setProperty("--design-tabs-view-half", `${Math.max(44, Math.floor(view / 2))}px`);
+      fillMenu();
+    }
     else menu.replaceChildren();
     switcher.setAttribute("aria-expanded", String(open));
     element.dataset.open = String(open);
@@ -175,10 +190,17 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   });
 
   list.addEventListener("keydown", (e) => {
-    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     const all = [...list.querySelectorAll<HTMLElement>(".design-tabs-main")];
     const at = all.indexOf(doc.activeElement as HTMLElement);
     if (at < 0) return;
+    // Delete closes the focused tab: × beside each tab is for the mouse and taps, kept out of the tablist (tabs hunt E6).
+    if (e.key === "Delete") {
+      e.preventDefault();
+      const key = all[at].closest<HTMLElement>(".design-tabs-tab")?.dataset.key;
+      if (key !== undefined) parts.close(key);
+      return;
+    }
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     e.preventDefault();
     all[(at + (e.key === "ArrowRight" ? 1 : all.length - 1)) % all.length].focus();
   });
@@ -196,10 +218,13 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
     if (!inMenu) {
       main.setAttribute("role", "tab");
       main.setAttribute("aria-selected", String(on));
+      main.setAttribute("aria-keyshortcuts", "Delete");
       main.tabIndex = on ? 0 : -1;
     } else if (on) main.setAttribute("aria-current", "true");
     const chip = workspaceChip(t.workspace, titles);
     main.title = `${tabName(t.name)} (${chip.toLowerCase()})`;
+    // Read as "Untitled, DesignLab": the name and chip ran together as "UntitledDESIGNLAB" (tabs hunt E6).
+    main.setAttribute("aria-label", tabLabel(t, titles));
     const name = doc.createElement("span");
     name.className = "design-tabs-name";
     name.textContent = shortName(t.name);
@@ -217,6 +242,12 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
     close.setAttribute("aria-label", `Close ${tabName(t.name)}`);
     close.title = `Close ${tabName(t.name)}`;
     close.textContent = "×";
+    if (!inMenu) {
+      // Only tabs belong in a tablist: on the strip × is for the mouse and taps, and the keyboard closes a tab with Delete
+      // (tabs hunt E6). In the phone's list (no tablist) × stays a button of its own.
+      close.tabIndex = -1;
+      close.setAttribute("aria-hidden", "true");
+    }
     close.addEventListener("click", () => {
       openMenu(false);
       parts.close(t.key);
@@ -250,16 +281,28 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
         switcher.append(name, kind, count);
       }
       switcher.setAttribute("aria-label", `${s.tabs.length} designs open, ${active ? tabName(active.name) : "none"} on screen: choose another`);
+      // The tabs are made afresh, so a focused one would leave the focus on <body>: it goes to the tab on screen, which
+      // after Enter or Space is the one just chosen (tabs hunt E6).
+      const focused = list.contains(doc.activeElement);
       list.replaceChildren(...s.tabs.map((t) => tabRow(t, t.key === s.active, titles, false)));
+      if (focused) list.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
       if (isOpen()) fillMenu();
     },
   };
 }
 
-/** The question when a tab with unsaved changes is closed. */
-export const closeQuestion = (name: string): string => `"${tabName(name)}" has changes that are not saved yet. Close it anyway?`;
+/** A tab's name for a screen reader: the design's name, then its workspace's title ("Bracket, Design"). */
+export const tabLabel = (t: DesignTab, titles: Record<string, string> = {}): string => `${tabName(t.name)}, ${titles[t.workspace] ?? t.workspace}`;
 
-/** A small dialog asking `closeQuestion`: resolves true for "Close anyway", false for "Keep it open" or Escape. */
+/**
+ * The question when the tab on screen is closed while its changes are still being stored. Closing never throws them
+ * away (the shell finishes storing them as the next tab opens, or keeps them aside when it can't), so the words say so;
+ * they used to say the changes were "not saved" as if closing lost them (tabs hunt A5).
+ */
+export const closeQuestion = (name: string): string =>
+  `"${tabName(name)}" has changes this browser hasn't finished storing. Closing the tab doesn't lose them: they stay kept here, and File > Projects in this browser opens it again. Close the tab?`;
+
+/** A small dialog asking `closeQuestion`: resolves true for "Close the tab", false for "Keep it open" or Escape. */
 export function confirmClose(doc: Document, name: string): Promise<boolean> {
   return new Promise((resolve) => {
     const dialog = doc.createElement("dialog");
@@ -276,7 +319,7 @@ export function confirmClose(doc: Document, name: string): Promise<boolean> {
     const go = doc.createElement("button");
     go.type = "button";
     go.id = "design-tabs-close-anyway";
-    go.textContent = "Close anyway";
+    go.textContent = "Close the tab";
     row.append(keep, go);
     dialog.append(words, row);
     let answered = false;

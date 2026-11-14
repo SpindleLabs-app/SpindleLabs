@@ -629,6 +629,254 @@ if (!WITH_TABS) {
     await context.close();
   });
 
+  // T2b: the hunt's smaller leftovers (E1, E2, E3, E6, C5, A5), each failed before its fix.
+  /** A browser that answers like Ollama, holding the AI's answer until window.allowLines says (as e2e/assistant.mjs does). */
+  const heldOllama = () => {
+    delete globalThis.LanguageModel;
+    Object.defineProperty(Navigator.prototype, "gpu", { get: () => undefined, configurable: true });
+    const realFetch = globalThis.fetch;
+    Object.assign(globalThis, { heldLines: [], allowLines: 0 });
+    globalThis.fetch = async (input, init) => {
+      if (!String(input).endsWith("/api/chat")) return realFetch(input, init);
+      let sent = 0;
+      const body = new ReadableStream({
+        async pull(c) {
+          while (sent >= globalThis.allowLines && sent < globalThis.heldLines.length) await new Promise((r) => setTimeout(r, 20));
+          if (sent >= globalThis.heldLines.length) return c.close();
+          c.enqueue(new TextEncoder().encode(globalThis.heldLines[sent++]));
+        },
+      });
+      return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
+    };
+  };
+  /** Two tabs that each hold the default box (textually the same project), the first on screen, the AI set to the fake Ollama. */
+  async function twoBoxesWithAI() {
+    const { context, page } = await newPage(1280, false, "dark", heldOllama);
+    const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "content-type": "application/json" };
+    for (const host of ["http://localhost:11434/**", "http://127.0.0.1:11434/**"])
+      await context.route(host, (route) => (route.request().method() === "OPTIONS" ? route.fulfill({ status: 204, headers: cors }) : route.fulfill({ headers: cors, body: JSON.stringify({ models: [{ name: "qwen2.5:1.5b" }] }) })));
+    await pastHome(page);
+    await startWithBox(page);
+    await saved(page);
+    await page.click("#design-tabs-add");
+    await until(page, () => document.querySelectorAll(".design-tabs-tab").length === 2, null, "two tabs");
+    await startWithBox(page); // the second tab: the same default box
+    await saved(page);
+    await page.click(".design-tabs-tab:first-child .design-tabs-main");
+    await volume(page, "24,000 mm³");
+    await settled(page);
+    await page.click("#assistant-toggle");
+    await until(page, () => !/Looking/.test(document.querySelector("#ai-found").textContent) && document.querySelector("#ai-found").textContent !== "", null, "the AI looked around");
+    await page.click("#ai-detect");
+    await until(page, () => document.querySelector("#assistant-toggle").textContent === "AI Ollama", null, "Ollama chosen");
+    const answer = JSON.stringify({ commands: [{ op: "set_part", shape: "box", width: 50, depth: 30, height: 20 }], explanation: "Box 50 wide." });
+    await page.evaluate((a) => (globalThis.heldLines = [JSON.stringify({ message: { role: "assistant", content: a }, done: false }) + "\n", '{"message":{"role":"assistant","content":""},"done":true}\n']), answer);
+    return { context, page };
+  }
+  async function toSecondTab(page) {
+    await page.click(".design-tabs-tab:last-child .design-tabs-main");
+    await until(page, () => document.querySelector(".design-tabs-tab:last-child").dataset.active === "true", null, "the second tab on screen");
+    await volume(page, "24,000 mm³");
+    await settled(page);
+  }
+
+  await check("tabs hunt E1: an AI answer asked in one tab is never previewed or applied in another tab with the same design", async () => {
+    const { context, page } = await twoBoxesWithAI();
+    await page.fill("#ai-prompt", "Make it 50 mm wide.");
+    await page.click("#ai-ask-button");
+    await page.waitForTimeout(300);
+    await toSecondTab(page); // switched while the AI answers
+    await page.evaluate(() => (globalThis.allowLines = 2));
+    await until(page, () => /changed while the AI was answering/.test(document.querySelector("#ai-result").textContent), null, "the answer refused: it was for the other tab's design", 20000);
+    assert.equal((await page.$("#ai-accept")) === null, true, "no Accept in the tab that never asked");
+    assert.equal(await vol(page), "24,000 mm³", "the second tab's box unchanged");
+    await context.close();
+  });
+
+  await check("tabs hunt E1: an AI preview shown in one tab is dropped when another tab is chosen (its Accept never reaches that tab)", async () => {
+    const { context, page } = await twoBoxesWithAI();
+    await page.evaluate(() => (globalThis.allowLines = 2));
+    await page.fill("#ai-prompt", "Make it 50 mm wide.");
+    await page.click("#ai-ask-button");
+    await page.locator("#ai-accept").waitFor({ timeout: 20000 });
+    await toSecondTab(page);
+    assert.equal((await page.$("#ai-accept")) === null, true, "the preview went with the tab it was for");
+    assert.match(await page.textContent("#ai-result"), /another design/i, "and that is said");
+    assert.equal(await vol(page), "24,000 mm³");
+    await context.close();
+  });
+
+  /** A phone-sized page of `w` × `h` with taps, past the home screen, holding the box and `more` new tabs. */
+  async function phone(w, h, more, scheme = "dark") {
+    const context = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true, colorScheme: scheme });
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(url + "?test-hooks#design");
+    await pastHome(page);
+    await startWithBox(page, true);
+    await saved(page);
+    for (let i = 0; i < more; i++) {
+      await page.tap("#design-tabs-add");
+      await until(page, (n) => document.querySelectorAll("#design-tabs .design-tabs-tab").length === n, i + 2, "another tab");
+      await page.waitForTimeout(200);
+    }
+    return { context, page };
+  }
+  for (const [w, h] of [[667, 375], [852, 393]]) {
+    await check(`tabs hunt E2: a phone held sideways (${w}x${h}) gets the switcher, every strip target 44 px`, async () => {
+      const { context, page } = await phone(w, h, 2);
+      assert.equal(await page.isVisible("#design-tabs-switch"), true, "the switcher shows");
+      assert.equal(await page.isVisible(".design-tabs-list"), false, "not the wide row of tabs, × beside each");
+      const small = await page.$$eval(".design-tabs button", (b) => b.filter((x) => x.offsetParent !== null).map((x) => { const r = x.getBoundingClientRect(); return `${x.className}:${Math.round(r.width)}x${Math.round(r.height)}`; }).filter((s) => s.split(":")[1].split("x").some((n) => Number(n) < 44)));
+      assert.deepEqual(small, [], "every shown strip button is 44 px or more both ways");
+      if (shots) await page.screenshot({ path: `${shots}/tabs-${w}x${h}.png` });
+      await context.close();
+    });
+  }
+
+  for (const [w, h] of [[320, 568], [375, 667], [667, 375]]) {
+    await check(`tabs hunt E3: at ${w}x${h} the open phone list never covers more than half the 3D view`, async () => {
+      const { context, page } = await phone(w, h, 6, "light");
+      await page.tap("#design-tabs-switch");
+      await page.locator("#design-tabs-menu").waitFor({ state: "visible" });
+      const cover = await page.evaluate(() => {
+        const m = document.querySelector("#design-tabs-menu").getBoundingClientRect();
+        const v = document.querySelector("#viewport").getBoundingClientRect();
+        return { part: (Math.min(m.bottom, v.bottom) - Math.max(m.top, v.top)) / v.height, scrolls: document.querySelector("#design-tabs-menu").scrollHeight > document.querySelector("#design-tabs-menu").clientHeight };
+      });
+      assert.ok(cover.part <= 0.5, `the list covers ${cover.part.toFixed(2)} of the view's height`);
+      assert.ok(cover.scrolls, "seven tabs: the list scrolls");
+      // Undo, Redo, the timeline and the bottom bar stay clear.
+      const clear = await page.evaluate(() => {
+        const m = document.querySelector("#design-tabs-menu").getBoundingClientRect();
+        return ["#undo", "#redo", "#timeline"].filter((s) => {
+          const e = document.querySelector(s);
+          if (!e || e.offsetParent === null) return false;
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && !(r.right <= m.left || m.right <= r.left || r.bottom <= m.top || m.bottom <= r.top);
+        });
+      });
+      assert.deepEqual(clear, [], "nothing it must never cover");
+      if (shots) await page.screenshot({ path: `${shots}/tabs-${w}x${h}-list.png` });
+      await context.close();
+    });
+  }
+
+  await check("tabs hunt E6: a tab chosen by keyboard keeps the focus; tabs read as name and Lab; only tabs in the tablist", async () => {
+    const { context, page } = await two();
+    const focused = () => page.evaluate(() => { const a = document.activeElement; return a === document.body ? "BODY" : `${a.getAttribute("role")}|${a.getAttribute("aria-selected")}|${a.closest(".design-tabs-tab")?.dataset.key ?? ""}`; });
+    await page.focus(".design-tabs-tab[data-active=true] .design-tabs-main");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Enter");
+    await volume(page, "24,000 mm³");
+    await page.waitForTimeout(500);
+    const first = await page.$eval(".design-tabs-tab:first-child", (t) => t.dataset.key);
+    assert.equal(await focused(), `tab|true|${first}`, "Enter: focus on the chosen tab");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press(" ");
+    await page.locator("#start-hint").waitFor();
+    await page.waitForTimeout(500);
+    const second = await page.$eval(".design-tabs-tab:last-child", (t) => t.dataset.key);
+    assert.equal(await focused(), `tab|true|${second}`, "Space: focus on the chosen tab");
+    const aria = await page.evaluate(() => {
+      const list = document.querySelector("[role=tablist]");
+      return {
+        names: [...list.querySelectorAll("[role=tab]")].map((t) => t.getAttribute("aria-label")),
+        others: [...list.querySelectorAll("button, [tabindex]")].filter((b) => b.getAttribute("role") !== "tab" && !b.closest("[aria-hidden=true]")).map((b) => b.className),
+      };
+    });
+    assert.deepEqual(aria.names, ["Untitled, DesignLab", "Untitled, DesignLab"]);
+    assert.deepEqual(aria.others, [], "nothing but tabs in the tablist for a screen reader");
+    // Delete on a tab closes it (× beside it is for the mouse and taps): the one not on screen just leaves.
+    await page.focus(".design-tabs-tab[data-active=true] .design-tabs-main");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Delete");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on"], "Delete closed the tab with the box");
+    await context.close();
+  });
+
+  await check("tabs hunt A5: × right after choosing an unchanged tab asks nothing (only real unsaved changes ask)", async () => {
+    const { context, page } = await newPage(1280, false, "dark", slowStorage);
+    await pastHome(page);
+    await startWithBox(page);
+    await saved(page);
+    await page.click("#design-tabs-add");
+    await tabsAre(page, ["Untitled|DESIGNLAB|", "Untitled|DESIGNLAB|on"], "two tabs");
+    await page.locator("#start-hint").waitFor();
+    await saved(page);
+    await page.evaluate(() => (window.__idbDelay = 600)); // the store's reads slow, so the opened project is still being brought forward
+    await page.click(".design-tabs-tab:first-child .design-tabs-main");
+    await until(page, () => document.querySelector(".design-tabs-tab:first-child").dataset.active === "true", null, "the box's tab on screen", 30000);
+    await until(page, () => document.querySelector("#save-status").dataset.state === "saving", null, "the box's project being stored again (the moment the hunt found)");
+    await page.click(".design-tabs-tab[data-active=true] .design-tabs-close");
+    await page.waitForTimeout(150);
+    assert.equal(await page.isVisible("#design-tabs-keep"), false, "nothing changed in it: no question");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on"], "closed");
+    // A change of the person's not stored yet still asks, in words that say closing keeps it.
+    await page.locator("#start-hint").waitFor();
+    await saved(page);
+    await page.evaluate(() => {
+      // × pressed the moment the change's save starts, before it can land.
+      const mark = document.querySelector("#save-status");
+      const watch = new MutationObserver(() => {
+        if (mark.dataset.state !== "saving") return;
+        watch.disconnect();
+        document.querySelector(".design-tabs-tab[data-active=true] .design-tabs-close")?.click();
+      });
+      watch.observe(mark, { attributes: true, attributeFilter: ["data-state"] });
+    });
+    await insertPreset(page, "cylinder");
+    await page.locator("#design-tabs-keep").waitFor({ timeout: 10000 });
+    assert.match(await page.textContent(".design-tabs-ask p"), /doesn't lose them/);
+    await page.click("#design-tabs-keep");
+    await tabsAre(page, ["Untitled|DESIGNLAB|on"], "kept open");
+    await context.close();
+  });
+
+  await check("tabs hunt C5: Home > Rename of a tab not on screen renames its tab, also after a reload", async () => {
+    const { context, page } = await newPage();
+    await pastHome(page);
+    if ((await page.$("#home")) === null) return void (await context.close()); // only the home screen has Rename for another project
+    await startWithBox(page);
+    await saved(page);
+    const a = await keyOf(page);
+    await page.click("#design-tabs-add");
+    await page.locator("#start-hint").waitFor();
+    await insertPreset(page, "cylinder");
+    await saved(page);
+    const b = await keyOf(page);
+    await chooseFile(page, "file-home");
+    await until(page, () => !document.getElementById("home").hidden && document.querySelectorAll("#home-items .home-row").length > 1, null, "the home screen");
+    await page.locator(`#home-items .home-row[data-id="${a}"] .home-rename`).click();
+    await page.fill(".home-rename-box", "Gear");
+    await page.click(".home-rename-ok");
+    await until(page, () => [...document.querySelectorAll(".home-row-name")].some((n) => n.textContent === "Gear"), null, "Gear on Home");
+    await page.click("#home-close");
+    await until(page, (k) => document.querySelector(`.design-tabs-tab[data-key="${k}"] .design-tabs-name`)?.textContent === "Gear", a, "the tab says Gear");
+    await page.waitForTimeout(500);
+    await page.reload();
+    await reloaded(page);
+    await until(page, (k) => document.querySelector(`.design-tabs-tab[data-key="${k}"] .design-tabs-name`)?.textContent === "Gear", a, "the tab says Gear after a reload");
+    // Renamed on another window's home screen: this window's tab takes the kept name at its next reload.
+    const w2 = await window2(context);
+    if ((await keyOf(w2)) !== b) await goTo(w2, b); // Home renames only a project not open in its window
+    await chooseFile(w2, "file-home");
+    await until(w2, () => !document.getElementById("home").hidden && document.querySelectorAll("#home-items .home-row").length > 1, null, "window 2's home screen");
+    await w2.locator(`#home-items .home-row[data-id="${a}"] .home-rename`).click();
+    await w2.fill(".home-rename-box", "Cog");
+    await w2.click(".home-rename-ok");
+    await until(w2, () => [...document.querySelectorAll(".home-row-name")].some((n) => n.textContent === "Cog"), null, "Cog on window 2's Home");
+    await w2.click("#home-close");
+    await insertPreset(w2, "sphere"); // the cylinder's project changed last, so a reload opens it and Cog's tab is not on screen
+    await saved(w2);
+    await w2.waitForTimeout(500);
+    await page.reload();
+    await reloaded(page);
+    assert.equal(await keyOf(page), b, "the cylinder's project on screen");
+    await until(page, (k) => document.querySelector(`.design-tabs-tab[data-key="${k}"] .design-tabs-name`)?.textContent === "Cog", a, "the tab says Cog, renamed in another window, after a reload");
+    await context.close();
+  });
+
 }
 
 await browser.close();
