@@ -114,7 +114,7 @@ const V8_ONLY = "Design data says version 7 but has construction curves or dimen
 test("version 7 data without a bodies list opens, its bodies numbered as they were shown", () => {
   // Kills `v3.version === 7` => false / `!==` in which versions may leave out the bodies' numbers.
   const d = readDesignDocument(v7().raw);
-  assert.equal(d.version, 21); // read as the current version (21 from symmetric extrudes; 20 from profiles keeping their own shapes; 19 from face sketches recording their side; 18 from extrudes of several profiles; 17 from constraints on followed points; 16 from Extrude Joins' own bodies; 15 from Combine results' edge names; 14 from circles' fits; 13 from Combine pieces' faces; 12 from Scale and Mirror; 11 from Duplicate; 10 from Extrude's Operation row)
+  assert.equal(d.version, 22); // read as the current version (22 from face sketches marked as drawn before; 21 from symmetric extrudes; 20 from profiles keeping their own shapes; 19 from face sketches recording their side; 18 from extrudes of several profiles; 17 from constraints on followed points; 16 from Extrude Joins' own bodies; 15 from Combine results' edge names; 14 from circles' fits; 13 from Combine pieces' faces; 12 from Scale and Mirror; 11 from Duplicate; 10 from Extrude's Operation row)
   // One box (feature-1), the only body: number 1, and the next body gets 2.
   assert.deepEqual(d.bodies, [{ id: "body:feature-1", number: 1 }]);
   assert.equal(d.nextBody, 2);

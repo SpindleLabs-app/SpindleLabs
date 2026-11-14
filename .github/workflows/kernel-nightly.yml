@@ -219,28 +219,40 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
-      - name: Random rounds until the time is up (logs in kernel-results)
+      # The watcher that stops the rounds when CI wants the runner has the
+      # keys, so it starts in its own step, before any kernel code runs, and
+      # the rounds' step has no key in its environment (a step's environment
+      # reaches every program the kernel's build starts: security hunt H2).
+      # It keeps running after this step ends, until the job does.
+      - name: Watch for the runner to be wanted (stop-on-merge.sh)
         env:
-          DEADLINE: ${{ needs.plan.outputs.deadline }}
           FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
           GH_TOKEN: ${{ github.token }}
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
           KERNEL_REPO: SpindleLabs-app/kernel
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
-          watcher=
           # A branch's run, every daytime job, and tonight's jobs past the
-          # first two (the night always keeps two), give their runners to CI
-          # (stop-on-merge.sh).
+          # first two (the night always keeps two), give their runners to CI.
           if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || [ "$DAY" = true ] || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
-            .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
-            watcher=$!
+            nohup .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 </dev/null &
           fi
+      - name: Random rounds until the time is up (logs in kernel-results)
+        env:
+          DEADLINE: ${{ needs.plan.outputs.deadline }}
+          FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
+        run: |
           code=0
           .github/scripts/kernel_ci.sh run rounds "$RUNNER_TEMP/out" k/kernel/scripts/run-until.sh "$DEADLINE" || code=$?
-          [ -z "$watcher" ] || kill "$watcher" 2>/dev/null || true
           cp "$RUNNER_TEMP/watcher.log" "$RUNNER_TEMP/out/" 2>/dev/null || true
           exit $code
+      # The kernel's result files are gathered by a step with no key; the
+      # step that saves them holds the key and never names the kernel's files.
+      - name: Gather the kernel's result files
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
       - name: Save the results to kernel-results
         if: always()
         env:
@@ -252,7 +264,6 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
-          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
           .github/scripts/kernel_ci.sh save endless-a-${{ matrix.job }} "$RUNNER_TEMP/out"
 
   test-second-leg:
@@ -282,28 +293,40 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
-      - name: Random rounds until the time is up (logs in kernel-results)
+      # The watcher that stops the rounds when CI wants the runner has the
+      # keys, so it starts in its own step, before any kernel code runs, and
+      # the rounds' step has no key in its environment (a step's environment
+      # reaches every program the kernel's build starts: security hunt H2).
+      # It keeps running after this step ends, until the job does.
+      - name: Watch for the runner to be wanted (stop-on-merge.sh)
         env:
-          DEADLINE: ${{ needs.plan.outputs.deadline }}
           FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
           GH_TOKEN: ${{ github.token }}
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
           KERNEL_REPO: SpindleLabs-app/kernel
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
-          watcher=
           # A branch's run, every daytime job, and tonight's jobs past the
-          # first two (the night always keeps two), give their runners to CI
-          # (stop-on-merge.sh).
+          # first two (the night always keeps two), give their runners to CI.
           if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || [ "$DAY" = true ] || { [ "$NIGHT" = true ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
-            .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
-            watcher=$!
+            nohup .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 </dev/null &
           fi
+      - name: Random rounds until the time is up (logs in kernel-results)
+        env:
+          DEADLINE: ${{ needs.plan.outputs.deadline }}
+          FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
+        run: |
           code=0
           .github/scripts/kernel_ci.sh run rounds "$RUNNER_TEMP/out" k/kernel/scripts/run-until.sh "$DEADLINE" || code=$?
-          [ -z "$watcher" ] || kill "$watcher" 2>/dev/null || true
           cp "$RUNNER_TEMP/watcher.log" "$RUNNER_TEMP/out/" 2>/dev/null || true
           exit $code
+      # The kernel's result files are gathered by a step with no key; the
+      # step that saves them holds the key and never names the kernel's files.
+      - name: Gather the kernel's result files
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
       - name: Save the results to kernel-results
         if: always()
         env:
@@ -315,7 +338,6 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
-          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
           .github/scripts/kernel_ci.sh save endless-b-${{ matrix.job }} "$RUNNER_TEMP/out"
 
   mutants:

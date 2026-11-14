@@ -151,6 +151,23 @@ try {
       assert.equal(await page.getAttribute("#command-search-list li", "aria-disabled"), "true");
       await page.keyboard.press("Enter");
       assert.equal(await page.isVisible("#command-search-input"), true, "an off command is not run, the box stays");
+      // Issue #523: a click on the dimmed row runs nothing and leaves the focus in the box, so Escape still closes it.
+      await page.click("#command-search-list li", { force: true }); // a person's click: Playwright waits for an enabled row
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "command-search-input", "a click on a dimmed row took the focus out of the box");
+      await page.keyboard.press("Escape");
+      await page.waitForSelector("#command-search-input", { state: "detached" });
+      await page.keyboard.press("s");
+      await page.waitForSelector("#command-search-input", { state: "visible" });
+      // "mirror" finds the three Mirror body rows; the shell's Undo, Redo, Save, Open, New and Settings are listed;
+      // Duplicate shows its key.
+      await page.fill("#command-search-input", "mirror");
+      assert.deepEqual(await names(), ["Mirror body: Across XY", "Mirror body: Across XZ", "Mirror body: Across YZ"]);
+      await page.fill("#command-search-input", "");
+      const every = await names();
+      for (const n of ["Undo", "Redo", "Save", "Open…", "New", "Settings", "Export STL"]) assert.ok(every.includes(n), `${n} in ${every}`);
+      assert.equal(every.filter((n) => n === "Export STL").length, 1, "Export STL listed once");
+      await page.fill("#command-search-input", "duplicate");
+      assert.equal(await page.$eval("#command-search-list li kbd", (k) => k.textContent), "Ctrl+D");
       // "mo" narrows to Move first (its name starts so); Enter runs it.
       await page.fill("#command-search-input", "mo");
       assert.equal((await names())[0], "Move");
@@ -169,6 +186,32 @@ try {
       assert.equal(await page.isVisible("#move-panel"), false);
     } finally {
       await page.close();
+    }
+  });
+
+  // Issue #523: on an empty design the search's Export STL is off with File ▾'s reason, as File ▾ has it, and Undo has nothing to undo.
+  await check("On an empty design the command search offers Export STL off, saying why, as File ▾ does", async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    page.on("pageerror", (e) => errors.push(e.message));
+    try {
+      await page.goto(url);
+      await page.locator("#start-hint").waitFor();
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press("s");
+      await page.waitForSelector("#command-search-input", { state: "visible" });
+      await page.fill("#command-search-input", "export stl");
+      const row = await page.$eval("#command-search-list li", (li) => ({ label: li.querySelector(".command-search-label").textContent, off: li.getAttribute("aria-disabled"), why: li.querySelector(".command-search-off")?.textContent ?? "" }));
+      await page.keyboard.press("Escape");
+      await page.click("#file-menu");
+      const fileWhy = await page.$eval("#file-export-stl", (b) => b.title);
+      assert.equal(row.label, "Export STL");
+      assert.equal(row.off, "true", "Export STL offered as ready on an empty design");
+      assert.ok(row.why.length > 0, "the search says why it is off");
+      assert.equal(row.why, fileWhy, "the search's reason is File ▾'s");
+    } finally {
+      await context.close();
     }
   });
 

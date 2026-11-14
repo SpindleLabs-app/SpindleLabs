@@ -44,7 +44,7 @@ import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from 
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
-import { copiedNames, frameOfFace, framesOfResult, namedBody, namesOfBody, reversedOfResult } from "./built-body.ts";
+import { copiedNames, frameOfFace, framesOfResult, namedBody, namedFrame, namesOfBody, reversedOfResult } from "./built-body.ts";
 import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
@@ -1144,7 +1144,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
   const p = content.face!;
   let cause: PlaneWarning["cause"] = "plane-lost";
   const held = (): FeatureResult => ({ status: "built", placement: { plane: squared(p.held ?? p.frame)!, side: p.side }, plane: { cause, face: plane, message: planeWords(cause, f.provenance.self.label) } });
-  const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false): Promise<FeatureResult> => {
+  const place = async (on: BuiltBody, view: BodyView, face: number, split: boolean, whole = false, name?: string): Promise<FeatureResult> => {
     // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried);
     // SL #539: a change of size since by a Scale carries the middle of its own points (not those pinned or projected, which follow
     // edges by name and are written back after, nor those a constraint or arc ties to them, which settling moves: SL #641 item 1;
@@ -1154,7 +1154,10 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     // made a Join or Intersect, or suppressed), or the other way about: not the face it was drawn on, which is gone. A
     // sketch from before version 19 records neither, and is placed as before.
     if (p.reversed !== undefined && (on.reversed?.[face] ?? false) !== p.reversed) return held();
-    const carry = p.body === undefined ? null : carried(p.body, frameOfFace(on, face) ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
+    // SL #707: carried by the input face its name names (on a face merged from level faces, that input's own frame, as it
+    // was drawn with); one drawn before version 22 (`first`) recorded the merged face's first input's, and is carried by it.
+    const now = name === undefined || p.first === true ? frameOfFace(on, face) : namedFrame(on, face, name);
+    const carry = p.body === undefined ? null : carried(p.body, now ?? undefined, sketchMiddle(squared(p.frame)!, ownPoints(content)));
     const outward = view.face_normals[face]!;
     const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
     const warn = split ? { plane: { cause: "plane-split" as const, face: plane, message: planeWords("plane-split", f.provenance.self.label, whole) } } : {};
@@ -1172,8 +1175,18 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const r = readDesignReference(faceReference(plane))!;
     // SL #632 item 2: a file from before names a later profile's cap "end" tagged by its sides; read as that profile's own name.
     const capNow = r.tag === undefined ? null : profileCapNamed(list, `face:${r.featureId}/${r.part}`, r.tag);
-    const found = resolveFaceName(list, designNames(list), capNow !== null ? { name: capNow, origin: p.frame.origin } : { name: `face:${r.featureId}/${r.part}`, ...(r.tag && { tag: r.tag }), origin: p.frame.origin });
-    if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split" || found.warning === "whole", found.warning === "whole");
+    // SL #707 item 2: a sketch drawn on a whole face now split goes with the piece under its own points (their middle),
+    // carried as each piece has moved since it was drawn; the frame's origin (the world's origin seen onto the face) could
+    // be under another piece. A sketch with no points of its own, or never carried (no `body`), uses the frame's origin.
+    const name = capNow ?? `face:${r.featureId}/${r.part}`;
+    const middle = sketchMiddle(squared(p.frame)!, ownPoints(content)) ?? p.frame.origin;
+    const originOn = (b: number, i: number): readonly number[] => {
+      const built = bodies[ids[b]];
+      const move = p.body === undefined ? null : carried(p.body, (p.first === true ? frameOfFace(built, i) : namedFrame(built, i, name)) ?? undefined);
+      return move === null ? middle : move(middle, false);
+    };
+    const found = resolveFaceName(list, designNames(list), capNow !== null ? { name: capNow, origin: p.frame.origin, originOn } : { name, ...(r.tag && { tag: r.tag }), origin: p.frame.origin, originOn });
+    if ("body" in found && list[found.body].view.face_normals[found.index]) return place(bodies[ids[found.body]], list[found.body].view, found.index, found.warning === "split" || found.warning === "whole", found.warning === "whole", name);
     if ("ambiguous" in found) cause = "plane-ambiguous";
     // A name two faces of its own plain body would share carries on neither (naming.ts): ambiguous, as before a Combine.
     const own = bodies[bodyIdOf(featureId)];
@@ -1544,12 +1557,15 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
   const words = (body: string) => (isPiece(body) ? `a piece of ${label(bodyItem(body)!)}` : label(bodyItem(body)!));
   const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
   // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
+  // Held whether or not that body is still here to move (SL #430): an earlier Combine using up the piece that kept the
+  // body's id leaves the other pieces split from it, which the Move holds as it holds the whole body, as `followedDoc`
+  // has a Move that is off take them.
   const numbered = doc.bodies === undefined ? null : new Set(doc.bodies.map((b) => b.id));
   const takes: string[] = [];
   for (let grew = numbered !== null; grew; ) {
     grew = false;
     for (const [id, b] of Object.entries(bodies))
-      if (b.from !== undefined && !numbered!.has(id) && !from.some(([x]) => x === id) && from.some(([x]) => x === b.from)) {
+      if (b.from !== undefined && !numbered!.has(id) && !from.some(([x]) => x === id) && (held.includes(b.from) || from.some(([x]) => x === b.from))) {
         from.push([id, b]);
         takes.push(id);
         grew = true;
@@ -1669,7 +1685,7 @@ async function namedStep(feature: string, op: BooleanOp, inputs: readonly NamedB
   for (const nb of named.bodies) {
     const h = result.history[result.bodies.indexOf(nb.handle)];
     const frames = framesOfResult(h, built);
-    const faces = withOrigins(nb.faces, h, inputs, frames);
+    const faces = withOrigins(nb.faces, h, inputs, frames, built);
     const reversed = reversedOfResult(h, views[result.bodies.indexOf(nb.handle)], new Map(inputs.map((x) => [x.handle, { built: built.get(x.handle)!, view: x.view }])));
     bodies.push({ id: nb.id, handle: nb.handle, faces, made: nb.made, ...(frames && { frames }), ...(reversed && { reversed }) });
   }
@@ -1890,7 +1906,7 @@ export function missesMessage(doc: DesignDocument, f: Feature, misses: readonly 
  * input faces lying level (the history's `also`), the input faces it lies on
  * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then.
  */
-function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined): readonly FaceNames[] {
+function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined, built: ReadonlyMap<BodyHandle, BuiltBody>): readonly FaceNames[] {
   if (h?.also === undefined || !h.also.some((a) => a.length > 0)) return faces;
   const byHandle = new Map(inputs.map((x) => [x.handle, x] as const));
   return faces.map((face, i) => {
@@ -1898,7 +1914,10 @@ function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][nu
     if (more.length === 0) return face;
     const origins = [h.faces[i], ...more].flatMap((from) => {
       const input = from === undefined ? undefined : byHandle.get(from.body);
-      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face }];
+      // Its own frame then (SL #707), for a sketch named after it to be carried by its input's Moves.
+      const b = built.get(from.body);
+      const frame = b === undefined ? null : frameOfFace(b, from.face);
+      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face, ...(frame !== null && { frame }) }];
     });
     const frame = frames?.[i] ?? null;
     return { ...face, origins, ...(frame !== null && { frame }) };

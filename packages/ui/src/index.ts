@@ -12,11 +12,12 @@ export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type Sett
 export { BUG_REPORT_EMPTY, BUG_REPORT_ORIGINS, BUG_REPORT_SERVICE, bugReportEndpoint, ISSUES_NEW, MAX_DESIGN_BYTES, MAX_REPORT_URL, bugDesignFile, bugReportBody, bugReportDialog, bugReportPayload, bugReportTitle, bugReportUrl, sendBugReport, type BugDialogHooks, type BugFacts, type BugPayload, type BugReport, type DesignFile } from "./bug-report.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
+export { nameToKeep, projectNameBox, type ProjectNameBox, type ProjectNameParts } from "./project-name.ts";
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
 export { toolGroup, TOOL_ICON_SIZE, type ToolGroup, type ToolGroupOptions } from "./tool-group.ts";
 export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type FileMenuEntry, type FileMenuParts } from "./file-menu.ts";
 export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-elsewhere.ts";
-export { commandSearch, matchCommands, type Command, type CommandSearch } from "./command-search.ts";
+export { commandSearch, matchCommands, shellCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { REPEAT_MS, repeatGuard, type RepeatGuard } from "./press-guard.ts";
 export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visible.ts";
 export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
@@ -35,5 +36,5 @@ export { currentDesignDefaults, DEFAULT_GRID_MM, DEFAULT_GRID_SNAP_ON, GRID_SIZE
 export { currentMouse, MOUSE_SETTING, readMouseChoice, startMouse } from "./mouse-choice.ts";
 export { currentUnit, readUnitChoice, startUnits, UNIT_CHOICES, UNIT_EVENT, UNIT_SETTING } from "./unit-choice.ts";
 export { CUSTOM_NAMES, DEFAULT_CUSTOM, contrast, deriveCustom, parseHex, readTokens, toHex, type CustomColours, type CustomResult } from "./custom-theme.ts";
-export { activate as activateTab, addTab, canAdd as canAddTab, closeQuestion, confirmClose, designTabs, MAX_TABS, NO_TABS, removeTab, restored as restoredTabs, shortName as tabShortName, stored as storedTabs, tabName, update as updateTab, workspaceChip, type DesignTab, type DesignTabsParts, type DesignTabsStrip, type TabsState } from "./design-tabs.ts";
+export { activate as activateTab, addTab, canAdd as canAddTab, closeQuestion, confirmClose, designTabs, MAX_TABS, NO_TABS, removeTab, restored as restoredTabs, shortName as tabShortName, stored as storedTabs, tabLabel, tabName, TABS_PHONE_QUERY, update as updateTab, workspaceChip, type DesignTab, type DesignTabsParts, type DesignTabsStrip, type TabsState } from "./design-tabs.ts";
 export { parseWhatsNew, whatsNewDate, whatsNewList, whatsNewNote, type WhatsNewVersion } from "./whats-new.ts";

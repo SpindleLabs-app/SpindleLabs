@@ -2,11 +2,12 @@
 // (offline.config.mjs), the one that ships until offline mode is released:
 // - No service worker is registered and nothing is cached, and the page has
 //   no manifest link, so the browser offers no install.
-// - A browser that chooses offline with `?offline` (Ben, 2026-11-13: for a
-//   school web filter) gets the offline worker and the manifest link, says
+// - `?offline` only asks (security hunt G2: another site's pop-up with it
+//   keeps nothing). A browser that chooses offline with `?offline` and Keep
+//   (Ben, 2026-11-13: for a school web filter) gets the offline worker and the manifest link, says
 //   so once, opens with no network after (the address without the switch,
 //   as an installed app opens), says it is offline there, and `?offline=off`
-//   removes everything again. The full offline checks run on this build too
+//   with Remove removes everything again. The full offline checks run on this build too
 //   with offline chosen (e2e/offline.mjs).
 // - A browser that already has the old worker (a copy of the build with the
 //   real offline worker, installed and caching, controlling the page) is
@@ -176,11 +177,68 @@ try {
     }
   });
 
-  await check("?offline: this browser keeps the app, can install it, opens it with no network and says so; ?offline=off removes it", async () => {
+  await check("G2: another site's pop-up opening ?offline keeps nothing; the next plain visit has no worker, no choice, no cache", async () => {
+    // Security hunt 2026-11-13 G2: a stranger's page opened the app with ?offline in a pop-up on one click, and the
+    // app remembered that choice for good and installed the offline worker. The address may only ask now.
+    const stranger = createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(`<button id=b>Free 3D models</button><script>b.onclick = () => window.open("${app}?offline", "pop", "width=400,height=400");</script>`);
+    });
+    await new Promise((done) => stranger.listen(4242, "localhost", done));
     const { context, page } = await newApp();
     try {
+      await page.goto("http://localhost:4242/");
+      const [popup] = await Promise.all([context.waitForEvent("page"), page.click("#b")]);
+      await kernelUp(popup);
+      await popup.waitForTimeout(4000); // time a worker would have taken to install
+      // The pop-up only asks (judged after the visit below, so the old app fails on what it kept); the stranger's page can't press anything in it.
+      const asked = await popup.$eval("#app-update", (e) => e.dataset.kind).catch(() => null);
+      await popup.close();
+      await page.close();
+      const visit = await context.newPage();
+      await visit.goto(`${app}?test-hooks`);
+      await kernelUp(visit);
+      await visit.waitForTimeout(1500);
+      assert.equal(await visit.evaluate(() => localStorage.getItem("spindlelabs.offline")), null, "the choice was not remembered");
+      assert.deepEqual(await state(visit), { registrations: 0, caches: [], controlled: false });
+      assert.equal(await visit.$('link[rel="manifest"]'), null);
+      assert.equal(await visit.$("#app-update"), null, "nothing asked on a plain visit");
+      assert.equal(asked, "ask-keep", "the pop-up asked whether to keep it");
+    } finally {
+      await context.close();
+      stranger.closeAllConnections();
+      await new Promise((done) => stranger.close(done));
+    }
+  });
+
+  await check("?offline asks, and Keep keeps the app: it can install, opens with no network and says so; ?offline=off asks, and Remove removes it", async () => {
+    const { context, page } = await newApp();
+    try {
+      // The address only asks (G2): Not now changes nothing and takes the switch out of the address.
       await page.goto(`${app}?offline&test-hooks`);
       await kernelUp(page);
+      await page.waitForSelector('#app-update[data-kind="ask-keep"]', { timeout: 20000 });
+      assert.equal(await page.textContent("#app-update span"), "Keep SpindleLabs on this device so it opens without internet? It uses a few MB of storage.");
+      if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/offline-ask-1280.png` });
+      await page.click("#app-update-other");
+      assert.equal(await page.$("#app-update"), null, "Not now hides it");
+      assert.equal(new URL(page.url()).search, "?test-hooks", "and the switch leaves the address");
+      await page.waitForTimeout(1500);
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.offline")), null);
+      assert.deepEqual(await state(page), { registrations: 0, caches: [], controlled: false });
+      // Asked again, at phone width the question and both buttons fit; Keep keeps it.
+      await page.setViewportSize({ width: 320, height: 568 });
+      await page.goto(`${app}?offline&test-hooks`);
+      await kernelUp(page);
+      await page.waitForSelector('#app-update[data-kind="ask-keep"]', { timeout: 20000 });
+      const fits = await page.evaluate(() => [...document.querySelectorAll("#app-update, #app-update button")].every((e) => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight && r.width > 0; }));
+      assert.equal(fits, true, "the question and its buttons on screen at 320 px");
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/offline-ask-320.png` });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.offline")), null, "nothing kept before the press");
+      await page.click("#app-update-reload");
+      assert.equal(new URL(page.url()).search, "?test-hooks");
       // The worker that keeps the app is offline-sw.js (sw.js stays the clean-up worker), and the page links the manifest.
       await page.waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.active?.scriptURL.endsWith("/offline-sw.js") === true, null, { timeout: 20000, polling: 250 });
       await page.waitForSelector('link[rel="manifest"]', { state: "attached" });
@@ -231,6 +289,12 @@ try {
       const loaded = () => loads++;
       page.on("load", loaded);
       await page.goto(`${app}?offline=off&test-hooks`);
+      // A link only asks to stop too: nothing goes until Remove is pressed.
+      await page.waitForSelector('#app-update[data-kind="ask-remove"]', { timeout: 20000 });
+      assert.equal(await page.textContent("#app-update span"), "Stop keeping SpindleLabs on this device? It will need the internet to open again.");
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.offline")), "on");
+      assert.equal((await state(page)).registrations, 1);
+      await page.click("#app-update-reload");
       await untilClean(page);
       for (let i = 0; i < 80 && loads < 2; i++) await page.waitForTimeout(250);
       page.off("load", loaded);

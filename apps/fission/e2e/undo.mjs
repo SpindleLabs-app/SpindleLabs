@@ -645,6 +645,10 @@ try {
         });
         await press("#move-ok");
         await page.waitForFunction(() => (window.kernelHeld ?? 0) > 0); // the Move sent to the kernel, its answer held back
+        // SL #708 item 3 (stress hunt 11-13): from the moment OK is pressed the button says it will wait for it and takes a
+        // press; it still named the step before ("Undo Insert Box"), or was grey with nothing before, until the kernel answered.
+        await page.waitForFunction(() => /^Undo waits for the change still being worked out/.test(document.getElementById("undo").title), null, { timeout: 1000 });
+        assert.equal(await page.$eval("#undo", (b) => b.disabled), false, "it takes a press");
         assert.equal(await page.getAttribute("#undo", "aria-busy"), null, "not busy before it is pressed");
         if (touch) await closePanels(page, true); // the sheet opened by hand stays after OK, over the docked Undo
         await press("#undo");

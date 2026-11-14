@@ -119,6 +119,21 @@ class PrintLogDatabase(unittest.TestCase):
         self.owner(f"update print_log set updated_at = now() - interval '1 minute' where user_id = '{ADA}';")
         self.assertEqual(self.save(ADA, [print_(0, result="well", updated_at="2098-01-01T00:00:00Z")])["saved"], [pid(0)])
 
+    def test_grams_keep_at_most_three_decimals(self):
+        # Security hunt 2026-11-13 A2: grams took up to 16,383 decimal digits, so 500 prints held 4.3 MB of free
+        # space. The app sends grams to 0.1 g; three decimals (a milligram) is the most kept.
+        self.assertEqual(self.save(ADA, [print_(1, grams=12.345)])["status"], "done", "three decimals")
+        self.assertEqual(self.save(ADA, [print_(2, grams=12.3456)]), {"status": "invalid"}, "four")
+        self.assertEqual(self.save(ADA, [print_(3, grams=0.5)])["status"], "done")
+        huge = lit([print_(4, grams=0.5)]).replace('"grams": 0.5', '"grams": 0.' + "1" * 16383)
+        self.assertEqual(self.save(ADA, huge), {"status": "invalid"}, "16,383 digits")
+        self.assertEqual(self.save(ADA, lit([print_(5, grams=0.5)]).replace('"grams": 0.5', '"grams": 1.200')), {"status": "done", "saved": [pid(5)], "older": [], "full": []}, "trailing zeros are still three")
+        self.assertEqual(self.save(ADA, lit([print_(6, grams=0.5)]).replace('"grams": 0.5', '"grams": 5e-4')), {"status": "invalid"}, "written with an exponent, four places")
+        # The table holds it too, should a later function forget the check.
+        ok, out = self.pg.psql(f"insert into print_log (user_id, id, made_at, name, settings, grams, result, updated_at) values ('{ADA}', '{pid(9)}', now(), 'Box', '', 1.2345, 'waiting', now());")
+        self.assertFalse(ok, "the table refuses four decimals")
+        self.assertIn("check constraint", out)
+
     # Other people
 
     def test_another_person_cannot_read_change_or_delete_your_prints(self):
@@ -296,10 +311,10 @@ class PrintLogDatabase(unittest.TestCase):
         self.assertEqual(len(self.mine(BO)["prints"]), 1)
 
     def test_my_data_holds_the_prints_and_the_keep_choice(self):
-        self.assertEqual(json.loads(self.as_user(ADA, "select my_data();")[1])["print_log"], [], "none kept: an empty list")
+        self.assertEqual(json.loads(self.as_role("postgres", "select my_data();", ADA)[1])["print_log"], [], "none kept: an empty list")
         self.save(ADA, [print_(0, note="Ada's note")])
         self.save(BO, [print_(1, note="Bo's note")])
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual([p["note"] for p in data["print_log"]], ["Ada's note"])
         self.assertTrue(data["profile"]["keep_print_log"])
         self.assertIn("print_log_since", data["profile"])
