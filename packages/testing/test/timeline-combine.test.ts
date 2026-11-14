@@ -214,3 +214,43 @@ test("hand-worked: a sketch on a face of a Combine result's copy finds that face
   assert.deepEqual(r.results["item-5"], { status: "built", lift: 20 });
   assert.deepEqual(r.results["item-7"], { status: "built", lift: 8 });
 });
+
+test("hand-worked: a sketch on a tool's top that a Join merges with the target's is carried by the tool's Moves, not the target's (SL #430, Design's rule from SL #707)", () => {
+  // A 20 × 20 × 10 (item-1) moved +10 in x (item-2): x 10..30. B the same (item-3) moved +25 (item-4): x 25..45. A
+  // circle on B's top (item-5, z = 10, drawn with B's motion: 0°, (25, 0)) and one on A's top (item-7, with A's: 0°,
+  // (10, 0)), both drawn before any Combine. Then a Join, A the target, put in before both sketches (the marker on B's
+  // Move, item-9): the two tops lie level at z = 10 and overlap at x 25..30, so they merge into one face x 10..45,
+  // 35 · 20 = 700, named A's top first (rule 4) and answering to B's too.
+  const m = createModel();
+  run(
+    m,
+    { op: "add-preset", kind: "box", sizes: [20, 20, 10] },
+    { op: "add-move", bodies: ["item-1"], shift: [10, 0, 0], turnZ: 0, pivot: [0, 0] },
+    { op: "add-preset", kind: "box", sizes: [20, 20, 10] },
+    { op: "add-move", bodies: ["item-3"], shift: [25, 0, 0], turnZ: 0, pivot: [0, 0] },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [35, 10], radius: 1 }, face: { feature: "item-3", role: "top" } },
+    { op: "add-face-sketch", shape: { kind: "circle", centre: [20, 10], radius: 1 }, face: { feature: "item-1", role: "top" } },
+    { op: "marker", at: "item-4" },
+    { op: "add-combine", target: "item-1", tool: "item-3", operation: "join", keep: false },
+    { op: "marker", at: null },
+  );
+  const r0 = rebuild(m.doc);
+  const top = (r0.results["item-1"] as { body?: ModelBody }).body?.faces.find((f) => faceKey(f.name) === "item-1/top");
+  assert.deepEqual([(top?.also ?? []).map(faceKey), top?.area], [["item-3/top"], 700]);
+  // Nothing has moved since either was drawn: both where drawn, the merged face found by each one's own name, one face.
+  assert.deepEqual([r0.results["item-5"], r0.results["item-7"]], [{ status: "built", lift: 10 }, { status: "built", lift: 10 }]);
+  // B's Move made +28: B x 28..58, still overlapping A (x 28..30), so the tops still merge (x 10..58). B's top has moved
+  // 3 mm along x since its sketch was drawn, and its sketch with it: the motion since turns by 0° and takes the world's
+  // origin to (28, 0) − (25, 0) = (3, 0). A's top has not moved, nor has its sketch (no turn). Before this rule the model
+  // carried both by the merged face's first input, A, so B's sketch stayed put (no turn), and Design disagreed.
+  run(m, { op: "set-move", item: "item-4", shift: [28, 0, 0], turnZ: 0, pivot: [0, 0] });
+  const r1 = rebuild(m.doc);
+  assert.deepEqual(r1.results["item-5"], { status: "built", lift: 10, turn: { x: [1, 0], at: [3, 0] } });
+  assert.deepEqual(r1.results["item-7"], { status: "built", lift: 10 });
+  // A's Move made +12: the merged face's first input moved 2 mm (A x 12..32), so A's sketch takes (12, 0) − (10, 0) =
+  // (2, 0); B's still (3, 0), its own input unmoved since.
+  run(m, { op: "set-move", item: "item-2", shift: [12, 0, 0], turnZ: 0, pivot: [0, 0] });
+  const r2 = rebuild(m.doc);
+  assert.deepEqual(r2.results["item-5"], { status: "built", lift: 10, turn: { x: [1, 0], at: [3, 0] } });
+  assert.deepEqual(r2.results["item-7"], { status: "built", lift: 10, turn: { x: [1, 0], at: [2, 0] } });
+});
