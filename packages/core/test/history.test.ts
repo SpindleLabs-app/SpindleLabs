@@ -880,6 +880,36 @@ test("a second held work beside one waiting on the person keeps the history work
   assert.deepEqual([h.busy(), h.working()], [false, false]);
 });
 
+test("a question answered, or failed, no longer counts once settled: other held work runs again (issue #421)", async () => {
+  // By hand: work A held, asking the person (held 1, asking 1: not working), then work B held (2 > 1: working).
+  // The question settles, either way: asking 0. B ends: held 1 (A, still finishing after its answer) > 0, so the
+  // history is working. Kept counting (the settle callbacks emptied: () => void asked.delete(done) => () => undefined)
+  // it would say 1 > 1, not working, though A runs.
+  for (const settle of ["answered", "failed"] as const) {
+    const h = createHistory({ capture: () => "s", restore: () => {} });
+    let answer!: (yes: boolean) => void;
+    let fail!: (e: Error) => void;
+    let finishA!: () => void;
+    let finishB!: () => void;
+    const question = h.asking(new Promise<boolean>((r, j) => ((answer = r), (fail = j))));
+    void h.hold((async () => {
+      await question.catch(() => false);
+      await new Promise<void>((r) => (finishA = r));
+    })());
+    assert.equal(h.working(), false, `${settle}: one held, one asking`);
+    void h.hold(new Promise<void>((r) => (finishB = r)));
+    if (settle === "answered") answer(true);
+    else fail(new Error("closed"));
+    await new Promise((r) => setImmediate(r));
+    finishB();
+    await new Promise((r) => setImmediate(r));
+    assert.equal(h.working(), true, `${settle}: A still runs after its question settled`);
+    finishA();
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual([h.busy(), h.working()], [false, false], settle);
+  }
+});
+
 test("callsOff counts the held work that ended with nothing recorded, and nothing else moves it (#622)", async () => {
   // By hand: a new history has called nothing off (0). Holding work, recording a step, Undo and Redo are not
   // callOff, so the count stays 0. Two callOffs make it 2: the shell compares the count at an Undo press with
