@@ -102,3 +102,26 @@ test("a box beside an extrude that fails: the box is offered and its exact STL i
   assert.equal(got, "delivered 684 bytes");
   assert.deepEqual(listed.map((o) => o.label), ["Body 1"], "only the body Design shows is offered");
 });
+
+// What the list leaves out, for the page to say (SL #761 follow-up). The box beside an extrude that fails: the failed extrude
+// is named by its timeline name; hiding the box's eye names Body 1 as hidden and the failed one stays only in `failed`.
+test("the registry says which items failed and which bodies are hidden", async () => {
+  const { drawLine } = await import("../src/sketch.ts");
+  let doc = partDocument("box", 40, 30, 20);
+  const s = addSketch(doc);
+  doc = extrudeSketch(drawLine(s.doc, s.id, [100, 0], [110, 0]).doc, s.id, 5).doc;
+  const cache = new BodyCache(kernel);
+  const build = await rebuildTimeline(doc, cache, kernel);
+  await cache.close();
+  const r = new RepresentationRegistry();
+  registerDesign(r, kernel);
+  const project = { ...emptyProject(), workspaces: { design: doc } };
+  assert.deepEqual(r.leftOutOf("design", project), { failed: [], hidden: [] }, "before a rebuild has been told, nothing is said");
+  noteRebuild(doc, failedIds(doc, build.results, new Set(Object.keys(build.bodies))));
+  const extrude = doc.timeline.features.at(-1)!.provenance.self.label;
+  assert.deepEqual(r.leftOutOf("design", project), { failed: [extrude], hidden: [] });
+  // Box 1's eye shut: it is named as hidden, and the list offers nothing but still says why.
+  const shut = { ...doc, hidden: [...(doc.hidden ?? []), "body:feature-1"] };
+  noteRebuild(shut, failedIds(shut, build.results, new Set(Object.keys(build.bodies))));
+  assert.deepEqual(r.leftOutOf("design", { ...project, workspaces: { design: shut } }), { failed: [extrude], hidden: ["Body 1"] });
+});

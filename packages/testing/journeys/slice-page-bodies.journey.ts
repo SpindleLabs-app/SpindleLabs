@@ -29,7 +29,7 @@ async function page(doc: Parameters<typeof app>[0]) {
   const objects = registry.objectsOf("design", { ...(await import("@fission/core")).emptyProject(), workspaces: { design: a.doc() } });
   const plate = await readPlate(registry, objects);
   const sliced = (await plateFiles(registry, objects)).reduce((v, f) => v + stlVolume(f), 0);
-  return { a, labels: plate.bodies.map((b) => b.label), sliced };
+  return { a, labels: plate.bodies.map((b) => b.label), sliced, left: registry.leftOutOf("design", { ...(await import("@fission/core")).emptyProject(), workspaces: { design: a.doc() } }) };
 }
 
 const twoApart = () => {
@@ -58,4 +58,6 @@ test("a red Combine: the page holds the bodies it left as they were (SL #761 cas
   assert.deepEqual(r.labels, ["Body 1", "Body 2"]);
   assert.equal(Math.round(r.sliced), 25000);
   assert.equal(Math.round(r.a.volume()), 25000);
+  // The red Combine is named for the page to say (Slice's words: "Combine 1 failed in Design, ...").
+  assert.deepEqual(r.left, { failed: ["Combine 1"], hidden: [] });
 });

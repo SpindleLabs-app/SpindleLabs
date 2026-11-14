@@ -221,6 +221,20 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
       return [{ type: "design.feature", id: feature.id, document: doc, label: `Body ${numbers.get(body) ?? "?"}`, ref: bodyReference(body) as BodyReference, ...(pieces && { body }) }];
     });
   });
+  // What that list leaves out, for a workspace that takes it to say so (SL #761 follow-up): the timeline items the last
+  // rebuild failed, by their names in the timeline, and the built bodies their eyes hide, by their browser names.
+  registry.registerLeftOut("design", (project) => {
+    let doc: DesignDocument;
+    try {
+      doc = readDesignDocument(project.workspaces.design);
+    } catch {
+      return { failed: [], hidden: [] };
+    }
+    const failed = rebuilt.get(project.workspaces.design as object) ?? NO_FAILED;
+    const numbers = bodyNumbers(doc);
+    const hidden = designBodies(doc, failed).flatMap(({ body }) => (bodyHidden(doc, body) && numbers.has(body) ? [numbers.get(body)!] : [])).sort((a, b) => a - b);
+    return { failed: doc.timeline.features.filter((f) => failed.has(f.id)).map((f) => f.provenance.self.label), hidden: hidden.map((n) => `Body ${n}`) };
+  });
   // What Laser (and any workspace that takes flat shapes) can list: every ready-made profile and every sketch with
   // curves that is not suppressed, by its name in the browser, as exact outlines (a sketch's found by the kernel when
   // delivered, so an open one is refused then, in words). A lister of its own, so the bodies' list stays bodies.
