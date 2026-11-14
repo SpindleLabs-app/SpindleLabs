@@ -174,6 +174,21 @@ export async function bodyFaces(kernel: KernelCalls, project: Project, body: Bod
 export const DESIGN_OUTLINES = "design:outlines";
 
 /** Says what Design produces. `kernel` builds meshes. */
+/**
+ * What each design's last rebuild said (`failedIds`: the failed items, a mark for each body an Extrude Join left alone, the
+ * numbered pieces it did not make), by the project's own Design data. The lister and the STL producer read it, so other
+ * workspaces are handed the bodies Design shows (SL #761); data nobody has rebuilt yet is read from the data alone.
+ */
+const rebuilt = new WeakMap<object, ReadonlySet<string>>();
+/** The failed set the lister read for each design it listed, so that design's STL files are made for those bodies. */
+const listedWith = new WeakMap<DesignDocument, ReadonlySet<string>>();
+const NO_FAILED: ReadonlySet<string> = new Set();
+
+/** Design says what its rebuild of `data` (the design in the project) found: its failed set, as the workspace works it out. */
+export function noteRebuild(data: object, failed: ReadonlySet<string>): void {
+  rebuilt.set(data, failed);
+}
+
 export function registerDesign(registry: RepresentationRegistry, kernel: KernelCalls): void {
   registry.registerProducer("design.profile", "outline", outlineProducer);
   registry.registerProducer("design.sketch", "outline", outlineProducer);
@@ -193,11 +208,13 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
     } catch {
       return []; // no Design data yet, or data that does not read: nothing to offer
     }
+    const failed = rebuilt.get(project.workspaces.design as object) ?? NO_FAILED;
+    listedWith.set(doc, failed);
     const numbers = bodyNumbers(doc);
     const seen = new Set<string>();
     // With a Combine, each body by itself (35f1f2d: a Combine's pieces share their item); else by its item, as before.
     const pieces = byBody(doc);
-    return designBodies(doc).flatMap(({ body, feature }) => {
+    return designBodies(doc, failed).flatMap(({ body, feature }) => {
       const key = pieces ? body : feature.id;
       if (bodyHidden(doc, body) || seen.has(key)) return [];
       seen.add(key);
@@ -239,7 +256,7 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
     const { document, body } = o as FeatureHandle;
     let made = stlFiles.get(document);
     if (!made) {
-      const bodies = designBodies(document).filter((b) => !bodyHidden(document, b.body));
+      const bodies = designBodies(document, listedWith.get(document) ?? NO_FAILED).filter((b) => !bodyHidden(document, b.body));
       made = endStls(kernel, document, bodies.map((b) => ({ ...b, name: "body" }))).then((files) => new Map(bodies.map((b, i) => [b.body, files[i].bytes])));
       stlFiles.set(document, made);
       made.catch(() => stlFiles.delete(document)); // a failed build is tried again next time
