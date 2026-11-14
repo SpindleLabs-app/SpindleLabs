@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RepresentationRegistry, type WorkspaceContext } from "@fission/core";
-import { mountSlicePage, plateFiles, plateMesh, plateWords, printPanel, readPlate, sliceWords, slicePageWorkspace } from "../src/index.ts";
+import { leftOutWords, mountSlicePage, plateFiles, plateMesh, plateWords, printPanel, readPlate, sliceWords, slicePageWorkspace } from "../src/index.ts";
 import { PRINT_DEFAULTS } from "@fission/print";
 
 const { Window } = await import("happy-dom");
@@ -394,4 +394,15 @@ test("Printer fits: the row shows only where the page can save a test piece, say
   assert.match(row.textContent!, /typical sizes for the Standard nozzle \(not measured yet\)/);
   (withIt.doc.querySelector("#slice-page-fits-open") as unknown as HTMLButtonElement).click();
   assert.ok(withIt.doc.querySelector("dialog[open], dialog"), "the calibration dialog exists once asked");
+});
+
+// SL #761 follow-up: the page says what a failed Design item or a hidden body leaves off the plate, in Slice's own words.
+test("leftOutWords names the failed items and the hidden bodies, and says nothing when nothing is left out", () => {
+  assert.equal(leftOutWords({ failed: [], hidden: [] }), "");
+  assert.equal(leftOutWords({ failed: ["Extrude 2"], hidden: [] }), "Extrude 2 failed in Design, so the print is without what it makes. Fix it in the Design timeline (red) to include it.");
+  assert.equal(leftOutWords({ failed: ["Extrude 2", "Combine 1"], hidden: [] }), "Extrude 2 and Combine 1 failed in Design, so the print is without what they make. Fix them in the Design timeline (red) to include them.");
+  assert.equal(leftOutWords({ failed: ["A", "B", "C", "D"], hidden: [] }).slice(0, 25), "A, B and 2 more failed in");
+  assert.equal(leftOutWords({ failed: [], hidden: ["Body 2"] }), "Body 2 is hidden in Design, so it is not on the plate.");
+  assert.equal(leftOutWords({ failed: [], hidden: ["Body 1", "Body 3"] }), "Body 1 and Body 3 are hidden in Design, so they are not on the plate.");
+  assert.equal(leftOutWords({ failed: ["Extrude 2"], hidden: ["Body 1"] }).endsWith("Body 1 is hidden in Design, so it is not on the plate."), true);
 });
