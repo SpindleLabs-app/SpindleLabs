@@ -168,16 +168,18 @@ test("an extrude in words, for the preview and its undo step", () => {
 
 const extruded = () => documentFor({ op: EXTRUDE_OP, distance: 10 }, rectangleSketch());
 
-test("hand-worked: rename_item changes a name and the copies of it in the items built from it, and nothing else (AI7d)", () => {
+test("hand-worked: rename_item changes a name, the copies of it and the descriptions naming it in the items built from it, and nothing else (AI7d)", () => {
   // Sketch 1 (sketch-1) and the extrude built from it (feature-14, "Extrude 1", its `from` naming Sketch 1).
   const before = extruded();
   const after = documentFor({ op: RENAME_OP, item: "Sketch 1", name: "base" }, before);
   const [sketch, extrude] = after.timeline.features;
   assert.deepEqual([sketch.provenance.self.label, extrude.provenance.self.label, extrude.provenance.from.map((p) => p.label)], ["base", "Extrude 1", ["base"]]);
-  // Nothing else moves: the same ids and order, the same drawing, the same extrude parameters and description.
+  // Nothing else moves: the same ids and order, the same drawing and extrude parameters; its description names the
+  // sketch by its new name (SL #524 item 1: "Extrude Sketch 1 by 10 mm" became "Extrude base by 10 mm").
   assert.deepEqual(after.timeline.features.map((f) => f.id), ["sketch-1", "feature-14"]);
   assert.deepEqual(after.sketches, before.sketches);
-  assert.deepEqual([extrude.intent.parameters, extrude.intent.summary], [before.timeline.features[1].intent.parameters, before.timeline.features[1].intent.summary]);
+  assert.equal(before.timeline.features[1].intent.summary, "Extrude Sketch 1 by 10 mm");
+  assert.deepEqual([extrude.intent.parameters, extrude.intent.summary], [before.timeline.features[1].intent.parameters, "Extrude base by 10 mm"]);
   // Parsed first, as the assistant gets it: the same result.
   const parsed = parseCommand({ op: RENAME_OP, item: "Sketch 1", name: "base" }, DESIGN_COMMANDS);
   assert.ok(parsed.ok);
