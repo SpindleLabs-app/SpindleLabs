@@ -119,6 +119,65 @@ function assertFree(got, want, px, what) {
   assert.ok(got.some((c) => Math.abs(c / 10 - Math.round(c / 10)) > 1e-9), `${what}: ${got} is on the 10 mm grid`);
 }
 
+/** The edited line's previewed end (the preview's first piece runs from the start to the aimed end). */
+const previewEnd = async (page) => {
+  const first = (await data(page, "sketchPreview")).split("|")[0].trim().split(" ");
+  return first[first.length - 1].split(",").map(Number);
+};
+
+/**
+ * Turns Snap off, zooms 7 wheel notches of `dy` (below 0 in, above 0 out) toward (3.7, 2.3), off the grid and
+ * the axes, then starts a line there. Returns the start (its point, and the screen point `r` px
+ * away at `deg`°), mm per pixel there, measured from the preview 100 and 300 px to the right (a
+ * pixel is mm per CSS pixel; the browser's pointer is whole pixels), and `under`, where the
+ * pointer at `deg`°, `r` px is on the plane.
+ */
+async function zoomedFromStart(page, dy) {
+  // Snap off in the toolbar, as Ben had it: nothing lines up.
+  await page.click("#sketch-snap");
+  await until(page, () => document.querySelector("#sketch-snap")?.textContent.includes("Snap off"), null, "Snap off");
+  const box = await page.locator("#viewport canvas").boundingBox();
+  const s = screenPoint(box, [3.7, 2.3, 0], TOP);
+  const sx = Math.round(s.x);
+  const sy = Math.round(s.y);
+  await page.mouse.move(sx, sy);
+  for (let i = 0; i < 7; i++) {
+    await page.mouse.wheel(0, dy);
+    await page.waitForTimeout(50);
+  }
+  await page.mouse.click(sx, sy);
+  const [at0] = await nPoints(page, 1);
+  const start = { at: at0, screenAt: (deg, r) => [sx + r * Math.cos((deg * Math.PI) / 180), sy - r * Math.sin((deg * Math.PI) / 180)] };
+  const one = await aimAt(page, start, 0, 100);
+  const two = await aimAt(page, start, 0, 300);
+  const pixel = Math.hypot(two[0] - one[0], two[1] - one[1]) / 200;
+  const centre = [one[0] - 100 * pixel, one[1]];
+  start.under = (deg, r) => [centre[0] + r * pixel * Math.cos((deg * Math.PI) / 180), centre[1] + r * pixel * Math.sin((deg * Math.PI) / 180)];
+  return { start, pixel };
+}
+
+/** Moves the pointer `r` px from the start's screen point at `deg`° and waits for the preview to end somewhere new; its end. */
+async function aimAt(page, start, deg, r) {
+  const before = await data(page, "sketchPreview");
+  await page.mouse.move(...start.screenAt(deg, r));
+  await page.waitForFunction((b) => { const p = document.querySelector("#viewport").dataset.sketchPreview; return p && p !== b; }, before, { timeout: 5000 }).catch(() => {});
+  return previewEnd(page);
+}
+
+/**
+ * Aims the line 150 px out at 36 angles (5°, 15°, … 355°): each end must be within 3 px of where the pointer is on the plane.
+ */
+async function linesRound(page, start, pixel) {
+  const ends = [];
+  for (let deg = 5; deg < 360; deg += 10) {
+    const e = await aimAt(page, start, deg, 150);
+    const want = start.under(deg, 150);
+    assert.ok(Math.hypot(e[0] - want[0], e[1] - want[1]) <= 3 * pixel, `aimed at ${deg}°: the line ends at ${e}, not near ${want} (pixel ${pixel} mm)`);
+    ends.push(e);
+  }
+  return ends;
+}
+
 let failed = 0;
 async function check(name, fn) {
   try {
@@ -218,6 +277,39 @@ try {
     assert.ok(row.height >= 44, `the Snap to grid row is ${row.height} px tall`);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
     if (shots) await page.screenshot({ path: `${shots}/free-triangle-375.png`, fullPage: true });
+    await page.context().close();
+  });
+
+  await check("zoomed in to a few nm a pixel: the line follows the pointer all the way round, not a handful of fixed lines (Ben, 2026-11-14)", async () => {
+    const page = await fresh();
+    await startSketch(page);
+    const { start, pixel } = await zoomedFromStart(page, -700);
+    assert.ok(pixel < 2e-5 && pixel > 1e-6, `a pixel is ${pixel} mm, not a few nm`);
+    const ends = await linesRound(page, start, pixel);
+    // Every one of 36 directions gives its own end (before the fix there were only a handful).
+    assert.equal(new Set(ends.map((e) => e.join())).size, 36, `only ${new Set(ends.map((e) => e.join())).size} different lines`);
+    // Draw one, 1.5 µm long or so at 67°: the length box showed the drawn length to 10 nm while aiming, and the click lands where the line was aimed.
+    const [x, y] = await aimAt(page, start, 67, 300);
+    const box = await page.getAttribute("#typed-length", "placeholder");
+    assert.equal(box, String(Math.round(Math.hypot(x - start.at[0], y - start.at[1]) * 1e5) / 1e5), "the length box shows the aimed length to 10 nm");
+    assert.match(box, /^0\.00\d{2,3}$/, `the length box shows ${box}`);
+    if (shots) await page.screenshot({ path: `${shots}/free-micrometre-1280.png` });
+    await page.mouse.click(...start.screenAt(67, 300));
+    const pts = await nPoints(page, 2);
+    assert.ok(Math.hypot(pts[1][0] - x, pts[1][1] - y) <= 1e-12, `the point ${pts[1]} is not the aimed end ${[x, y]}`);
+    await page.context().close();
+  });
+
+  await check("zoomed out to a metre or two a pixel: the line still follows the pointer, ends on whole powers of ten no bigger than a pixel", async () => {
+    const page = await fresh();
+    await startSketch(page);
+    const { start, pixel } = await zoomedFromStart(page, 700);
+    assert.ok(pixel > 100 && pixel < 1e4, `a pixel is ${pixel} mm, not a metre or two`);
+    const ends = await linesRound(page, start, pixel);
+    assert.equal(new Set(ends.map((e) => e.join())).size, 36);
+    const spacing = Number(`1e${Math.floor(Math.log10(pixel))}`);
+    for (const e of ends) for (const c of e) assert.ok(Math.abs(c / spacing - Math.round(c / spacing)) < 1e-6, `${c} is not a whole number of ${spacing} mm`);
+    if (shots) await page.screenshot({ path: `${shots}/free-kilometre-1280.png` });
     await page.context().close();
   });
 

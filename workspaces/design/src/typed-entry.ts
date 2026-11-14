@@ -296,9 +296,14 @@ export function liveValues(anchor: SketchXY, aim: SketchXY, tool: SketchTool): L
   return { length: lengthOf(anchor, aim), angle: angleOf(anchor, aim) };
 }
 
-/** A size as a box shows it: at most 3 decimals (µm), no trailing zeros, "-0" as "0". */
+/**
+ * A size as a box shows it: at most 3 decimals (µm), or 5 (10 nm) under
+ * 0.01, so a line a few µm long shows its own
+ * length (0.00137, not 0.001), no trailing zeros, "-0" as "0".
+ */
 export function shownValue(v: number): string {
-  const s = String(Math.round(v * 1000) / 1000);
+  const scale = Math.abs(v) < 0.01 ? 1e5 : 1e3;
+  const s = String(Math.round(v * scale) / scale);
   return s === "-0" ? "0" : s;
 }
 
