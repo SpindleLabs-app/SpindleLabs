@@ -1,0 +1,3 @@
+Monkey, seeds 359821374-359821377: 4 session(s) of 2000 actions in Chromium; 13 Combines made of 80 tried; 1 FAILED
+failure: open shows the file or keeps the project: opening a file edited by "add-solid" left neither: /workspaces/design/bodies/7/faces: undefined became ["face:feature-1/top","face:feature-2/back","face:feature-2/front","face:feature-2/left","face:feature-2/right","face:fe | seed 359821374 at action 1730; replay: cd apps/fission && npm run build && FISSION_SEED=359821374 MONKEY_STEPS=2000 node e2e/monkey.mjs
+actions.json: the shortest list found before shrinking ran out of time, not the shortest there is

@@ -47,6 +47,7 @@ monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #
 monkey no kernel body leaks: the kernel holds # bodies, the Bodies group lists #, and its Moves and Combines keep # bodies as they were
 monkey no result: the session never finished (job out of time, or the tester crashed)
 monkey no session finished in the run's time limit (each was cut off or never started), so the run tested too little
+monkey open shows the file or keeps the project: opening a file edited by "add-solid" left neither: /workspaces/design/bodies/#/faces: undefined became ["fac
 monkey save: Save gave no file
 monkey selection agrees: clicking hidden Body # (Sphere: ⌀# mm) selected "body:feature#"
 monkey selection agrees: with Body # (Box: # × # × # mm) selected the Feature panel says "Box: # × # × # in" (in in)

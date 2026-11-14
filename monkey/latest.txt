@@ -1,6 +1,6 @@
-tested commit 4389e95 on main, 2026-11-14 07:26 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43544098233)
-Monkey, seeds 359820996-359820999: 4 session(s) of 2000 actions in Chromium; 11 Combines made of 59 tried; 1 FAILED
-seed 359820996: FAIL: an edit changes only its item: Undo Edit Box 24 (Ctrl+Z): its sketches changed
-seed 359820997: pass (2000 actions)
-seed 359820998: pass (2000 actions)
-seed 359820999: pass (2000 actions)
+tested commit 8dbe597 on main, 2026-11-14 11:10 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43554724096)
+Monkey, seeds 359821374-359821377: 4 session(s) of 2000 actions in Chromium; 13 Combines made of 80 tried; 1 FAILED
+seed 359821374: FAIL: open shows the file or keeps the project: opening a file edited by "add-solid" left neither: /workspaces/design/bodies/7/faces: undefined became ["face:feature-1/top","face:feature-2/back","face:feature-2/front","face:feature-2/left","face:feature-2/right","face:fe
+seed 359821375: pass (2000 actions)
+seed 359821376: pass (2000 actions)
+seed 359821377: pass (2000 actions)
