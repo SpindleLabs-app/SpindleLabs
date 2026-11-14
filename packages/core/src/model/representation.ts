@@ -151,7 +151,15 @@ const nouns: Record<RepresentationKind, string> = {
   data: "data",
 };
 
+/** What a workspace's list leaves out, by the names its owner shows: items that failed to build, and bodies hidden by their eye. Each workspace words it itself. */
+export interface LeftOut {
+  readonly failed: readonly string[];
+  readonly hidden: readonly string[];
+}
+export type LeftOutOf = (project: Project) => LeftOut;
+
 export class RepresentationRegistry {
+  private leftOuts = new Map<string, LeftOutOf>();
   private producers = new Map<string, Map<RepresentationKind, Producer>>();
   private converters: Converter[] = [];
   private listers = new Map<string, Lister>();
@@ -170,6 +178,17 @@ export class RepresentationRegistry {
   registerLister(workspace: string, lister: Lister): void {
     if (this.listers.has(workspace)) throw new Error(`${workspace} already has a lister`);
     this.listers.set(workspace, lister);
+  }
+
+  /** Says what workspace `workspace`'s list leaves out in a project (failed items, hidden bodies), so a workspace that takes the list can say so; one per workspace. */
+  registerLeftOut(workspace: string, leftOut: LeftOutOf): void {
+    if (this.leftOuts.has(workspace)) throw new Error(`${workspace} already says what its list leaves out`);
+    this.leftOuts.set(workspace, leftOut);
+  }
+
+  /** What workspace `workspace`'s list leaves out in `project`: nothing when it says nothing. */
+  leftOutOf(workspace: string, project: Project): LeftOut {
+    return this.leftOuts.get(workspace)?.(project) ?? { failed: [], hidden: [] };
   }
 
   /** What workspace `workspace` offers in `project`, in its own order; none when it lists nothing (or the project holds nothing of it). */

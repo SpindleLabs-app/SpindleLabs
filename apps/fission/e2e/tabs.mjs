@@ -10,6 +10,9 @@
 // - A reload brings the tabs back, in order, with the same one on screen.
 // - At 393 px (taps) nothing runs off the side and every strip button is at least 44 px tall; screenshots (SHOTS=<dir>) at
 //   1280 and 393 px in both themes.
+// - T3a: on a phone (TABS_PHONE_QUERY) no row of tabs: a 44 px count button in the top bar opens the list (+ New design
+//   first); at 320, 375, 393 and sideways 667 and 852 px the top bar stays one row with nothing cut off or overlapping,
+//   and the 3D view is exactly as tall as with the tabs taken out of the page.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -48,12 +51,17 @@ const tabsAre = (page, want, what) =>
     want,
     what,
   );
-/** Chooses the nth tab (from 0) as a person does: on a phone by the switcher's list, else on the strip. */
+/** Chooses the nth tab (from 0) as a person does on a phone: by the top bar's count button and its list. */
 async function tapTab(page, n) {
   await page.tap("#design-tabs-switch");
-  await page.tap(`#design-tabs-menu .design-tabs-tab:nth-child(${n + 1}) .design-tabs-main`);
+  await page.locator("#design-tabs-menu .design-tabs-tab .design-tabs-main").nth(n).tap();
 }
-const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
+/** + as a person presses it: on a phone the list's first row (the count button opens it, T3a), else the strip's +. */
+async function addTab(page, phone) {
+  if (!phone) return page.click("#design-tabs-add");
+  await page.tap("#design-tabs-switch");
+  await page.tap("#design-tabs-menu-add");
+}
 
 async function newPage(width = 1280, touch = false, scheme = "dark", init = null) {
   const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch, isMobile: touch, colorScheme: scheme });
@@ -86,7 +94,7 @@ if (!WITH_TABS) {
     await pastHome(page);
     await startWithBox(page, touch);
     await saved(page);
-    await press(page, "#design-tabs-add", touch);
+    await addTab(page, touch);
     await tabsAre(page, ["Untitled|DESIGNLAB|", "Untitled|DESIGNLAB|on"], "two tabs, the new one on screen");
     await page.locator("#start-hint").waitFor();
     return { context, page };
@@ -206,18 +214,21 @@ if (!WITH_TABS) {
       else await page.click(".design-tabs-tab:first-child .design-tabs-main");
       await volume(page, "24,000 mm³");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, "nothing runs off the side");
-      const small = await page.$$eval(".design-tabs button", (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.getBoundingClientRect().height).filter((h) => h < (innerWidth <= 640 ? 44 : 30)));
+      assert.equal(await page.isVisible("#design-tabs-switch"), touch, touch ? "the count button in the top bar" : "no count button on the wide strip");
+      const small = await page.$$eval(".design-tabs button, #design-tabs-switch", (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.getBoundingClientRect().height).filter((h) => h < (innerWidth <= 640 ? 44 : 30)));
       assert.deepEqual(small, [], "every shown strip button is tall enough");
       if (shots) await page.screenshot({ path: `${shots}/tabs-${width}-${scheme}.png` });
       await context.close();
     });
   }
 
-  await check("a phone shows one button for the design on screen and a short list; nothing covers most of the view", async () => {
+  await check("a phone shows one count button in the top bar and a short list; nothing covers most of the view", async () => {
     const { context, page } = await two(393, true);
-    // The strip is the switcher and +, not the wide row of tabs.
+    // No row of tabs: the top bar's count button, reading 2.
     assert.equal(await page.isVisible(".design-tabs-list"), false);
-    assert.match(await page.textContent("#design-tabs-switch"), /Untitled\s*DESIGNLAB\s*2/);
+    assert.equal(await page.isVisible("#design-tabs-add"), false, "the strip's + is in the list on a phone");
+    assert.equal((await page.textContent("#design-tabs-switch")).trim(), "2");
+    assert.equal(await page.getAttribute("#design-tabs-switch", "aria-label"), "2 designs open, Untitled on screen: choose another");
     assert.equal(await page.isHidden("#design-tabs-menu"), true);
     await page.tap("#design-tabs-switch");
     await page.locator("#design-tabs-menu").waitFor({ state: "visible" });
@@ -237,11 +248,11 @@ if (!WITH_TABS) {
     await tabsAre(page, ["Untitled|DESIGNLAB|on", "Untitled|DESIGNLAB|"], "the first tab on screen");
     // × in the list closes that tab.
     await page.tap("#design-tabs-switch");
-    await page.tap("#design-tabs-menu .design-tabs-tab:nth-child(2) .design-tabs-close");
+    await page.locator("#design-tabs-menu .design-tabs-tab .design-tabs-close").nth(1).tap();
     await tabsAre(page, ["Untitled|DESIGNLAB|on"], "one tab left");
     // Many tabs: the list scrolls inside half the screen.
     for (let i = 0; i < 9; i++) {
-      await page.tap("#design-tabs-add");
+      await addTab(page, true);
       await until(page, (n) => document.querySelectorAll(".design-tabs-tab").length === n, i + 2, "another tab");
     }
     await page.tap("#design-tabs-switch");
@@ -716,7 +727,7 @@ if (!WITH_TABS) {
     await startWithBox(page, true);
     await saved(page);
     for (let i = 0; i < more; i++) {
-      await page.tap("#design-tabs-add");
+      await addTab(page, true);
       await until(page, (n) => document.querySelectorAll("#design-tabs .design-tabs-tab").length === n, i + 2, "another tab");
       await page.waitForTimeout(200);
     }
@@ -727,7 +738,7 @@ if (!WITH_TABS) {
       const { context, page } = await phone(w, h, 2);
       assert.equal(await page.isVisible("#design-tabs-switch"), true, "the switcher shows");
       assert.equal(await page.isVisible(".design-tabs-list"), false, "not the wide row of tabs, × beside each");
-      const small = await page.$$eval(".design-tabs button", (b) => b.filter((x) => x.offsetParent !== null).map((x) => { const r = x.getBoundingClientRect(); return `${x.className}:${Math.round(r.width)}x${Math.round(r.height)}`; }).filter((s) => s.split(":")[1].split("x").some((n) => Number(n) < 44)));
+      const small = await page.$$eval(".design-tabs button, #design-tabs-switch", (b) => b.filter((x) => x.offsetParent !== null).map((x) => { const r = x.getBoundingClientRect(); return `${x.className}:${Math.round(r.width)}x${Math.round(r.height)}`; }).filter((s) => s.split(":")[1].split("x").some((n) => Number(n) < 44)));
       assert.deepEqual(small, [], "every shown strip button is 44 px or more both ways");
       if (shots) await page.screenshot({ path: `${shots}/tabs-${w}x${h}.png` });
       await context.close();
@@ -761,6 +772,102 @@ if (!WITH_TABS) {
       await context.close();
     });
   }
+
+  // T3a: on a phone the tabs took a 47 px row under the top bar, so the 3D view was shorter (e2e/phone-sketch-row.mjs and
+  // typed-entry.mjs failed on a tabs build). Now the open designs are a count button in the top bar.
+  /** The top bar's shown items, left to right, with any that run off the screen, overlap the next or cut their words. */
+  const barTrouble = (page) =>
+    page.evaluate(() => {
+      const bar = document.querySelector("#topbar");
+      const items = ["#topbar h1", "#file-menu", "#save", "#undo-redo", "#workspace-menu", "#design-tabs-switch", "#menu-toggle", "#assistant-toggle", "#guide-open", "#community", "#settings-open"]
+        .map((s) => [s, document.querySelector(s)])
+        .filter(([, e]) => e && bar.contains(e) && e.checkVisibility() && e.getBoundingClientRect().width > 0)
+        .map(([s, e]) => [s, e, e.getBoundingClientRect()])
+        .sort((a, b) => a[2].left - b[2].left);
+      const trouble = [];
+      for (const [s, e, r] of items) {
+        if (r.left < 0 || r.right > innerWidth) trouble.push(`${s} off the screen (${Math.round(r.left)}..${Math.round(r.right)})`);
+        if (r.top < 0 || r.bottom > bar.getBoundingClientRect().bottom + 1) trouble.push(`${s} below the bar's row`);
+        // Words cut with "…" or clipped (a word kept only for screen readers, 1 px and clipped on purpose, is not shown words).
+        for (const b of [e, ...e.querySelectorAll("button, span")]) if (b.checkVisibility() && b.getBoundingClientRect().width > 1 && b.scrollWidth > b.clientWidth + 1 && getComputedStyle(b).overflow !== "visible") trouble.push(`${s}: words cut`);
+      }
+      for (let i = 1; i < items.length; i++) if (items[i][2].left < items[i - 1][2].right - 0.5) trouble.push(`${items[i - 1][0]} runs into ${items[i][0]}`);
+      return { order: items.map(([s]) => s), trouble, height: bar.getBoundingClientRect().height, wide: document.documentElement.scrollWidth > innerWidth };
+    });
+  for (const [w, h] of [[320, 568], [375, 667], [393, 852], [667, 375], [852, 393]]) {
+    await check(`tabs T3a: at ${w}x${h} the open designs are a 44 px count button in a one-row top bar, and the 3D view loses nothing`, async () => {
+      const { context, page } = await phone(w, h, 2);
+      // One 44 px row (as the shipped build's, e2e/app-bar.mjs), nothing off the screen, overlapping or cut.
+      const bar = await barTrouble(page);
+      assert.equal(bar.height, 44, `the top bar one row (${bar.height} px)`);
+      assert.deepEqual(bar.trouble, [], `the bar's items ${bar.order.join(", ")}`);
+      assert.equal(bar.wide, false, "the page never scrolls sideways");
+      assert.ok(bar.order.includes("#design-tabs-switch"), "the count button is in the top bar");
+      if (bar.order.includes("#menu-toggle")) assert.equal(bar.order.at(-1), "#menu-toggle", "Menu stays last, the count button before it");
+      if (bar.order.includes("#menu-toggle")) assert.equal(bar.order.at(-2), "#design-tabs-switch");
+      // The count button: a 44 x 44 target reading 3 (the box, two new designs), named in words.
+      const button = await page.$eval("#design-tabs-switch", (b) => { const r = b.getBoundingClientRect(); return { w: r.width, h: r.height, text: b.textContent.trim(), label: b.getAttribute("aria-label") }; });
+      assert.deepEqual(button, { w: 44, h: 44, text: "3", label: "3 designs open, Untitled on screen: choose another" });
+      // No tabs row: the strip under the bar is 0 px tall, so the view is as tall as with the tabs taken out of the page.
+      // Worked: the view's height is the window less what stands above and below it; the tabs add nothing above it when
+      // their strip is 0 px, so taking them out (strip, count button and the bar's mark) must leave the view exactly as
+      // it is. The shipped build measured the same (this sandbox, 2026-11-14): 427 px at 320x568, 526 at 375x667, 254 at
+      // 667x375 and 272 at 852x393, with the tabs row 47 px less each (380, 479, ...).
+      const view = () => page.evaluate(() => document.querySelector("#viewport").getBoundingClientRect().height);
+      assert.equal(await page.$eval("#design-tabs", (n) => n.getBoundingClientRect().height), 0, "the strip takes no row");
+      const withTabs = await view();
+      // A control first: the strip given back its old 47 px row must change the view's height (so the check can fail).
+      await page.addStyleTag({ content: ".design-tabs:not(#none):not(#nope) { height: 47px; }" });
+      await page.waitForTimeout(100);
+      const withRow = await view();
+      assert.ok(withRow < withTabs - 40, `with a tabs row the view is shorter (${withRow} against ${withTabs})`);
+      await page.evaluate(() => {
+        document.querySelector("#design-tabs").remove();
+        document.querySelector("#design-tabs-switch").remove();
+        document.querySelector("#topbar").classList.remove("design-tabs-bar");
+      });
+      await page.waitForTimeout(100);
+      const without = await view();
+      assert.ok(withTabs === without, `the view ${withTabs} px with the tabs, ${without} px without`);
+      if (shots) await page.screenshot({ path: `${shots}/tabs-t3a-${w}x${h}.png` });
+      await context.close();
+    });
+  }
+
+  await check("tabs T3a: the count button's list opens and closes (a tap outside, Escape, the button again), and + in it opens a new design", async () => {
+    const { context, page } = await phone(375, 667, 1);
+    const open = () => page.$eval("#design-tabs-menu", (m) => !m.hidden);
+    assert.equal(await open(), false);
+    await page.tap("#design-tabs-switch");
+    assert.equal(await open(), true, "a tap opens it");
+    assert.equal(await page.getAttribute("#design-tabs-switch", "aria-expanded"), "true");
+    // Its rows: + New design first, then the two designs; every row 44 px tall; it starts under the top bar.
+    const rows = await page.$$eval("#design-tabs-menu > *", (r) => r.map((x) => `${x.className}:${Math.round(x.getBoundingClientRect().height)}`));
+    assert.deepEqual(rows.map((r) => r.split(":")[0]), ["design-tabs-new", "design-tabs-tab", "design-tabs-tab"]);
+    assert.ok(rows.every((r) => Number(r.split(":")[1]) >= 44), `rows 44 px or taller: ${rows}`);
+    const under = await page.evaluate(() => Math.round(document.querySelector("#design-tabs-menu").getBoundingClientRect().top - document.querySelector("#topbar").getBoundingClientRect().bottom));
+    assert.equal(under, 0, "the list drops right under the top bar");
+    await page.tap("#design-tabs-switch");
+    assert.equal(await open(), false, "the button again shuts it");
+    await page.tap("#design-tabs-switch");
+    await page.tap("#topbar h1"); // a tap outside the list
+    assert.equal(await open(), false, "a tap outside shuts it");
+    await page.tap("#design-tabs-switch");
+    await page.keyboard.press("Escape");
+    assert.equal(await open(), false, "Escape shuts it");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "design-tabs-switch", "and gives the focus back to the button");
+    // + in the list: a third design, on screen and empty, the count 3, the list shut.
+    await page.tap("#design-tabs-switch");
+    await page.tap("#design-tabs-menu-add");
+    await until(page, () => document.querySelector("#design-tabs-switch").textContent.trim() === "3", null, "the count reads 3");
+    await page.locator("#start-hint").waitFor();
+    assert.equal(await open(), false);
+    await tabsAre(page, ["Untitled|DESIGNLAB|", "Untitled|DESIGNLAB|", "Untitled|DESIGNLAB|on"], "the new design on screen");
+    // The box's tab from the list brings it back.
+    await tapTab(page, 0);
+    await volume(page, "24,000 mm³");
+    await context.close();
+  });
 
   await check("tabs hunt E6: a tab chosen by keyboard keeps the focus; tabs read as name and Lab; only tabs in the tablist", async () => {
     const { context, page } = await two();

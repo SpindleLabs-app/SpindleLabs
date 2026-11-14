@@ -853,6 +853,7 @@ const fileParts: FileMenuParts = {
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
+  ...(__ACCOUNTS__ && pageShareSwitch().on ? { publish: { id: "file-publish", label: "Publish to the library…", title: "Publish to the library: put a copy of this design in the public library, with a licence, for anyone to find (this feature is still being checked)", run: () => void accountHooks?.publish() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
   printLog: { id: "file-print-log", label: "Print log…", title: "Print log: the print files you saved from Slice for printing, to note how each one printed", run: () => printLog.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, key: fileKey("Mod+S"), run: () => void save() },
@@ -1094,6 +1095,7 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
   ? null
   : shellTabs(document, {
       after: $("topbar"),
+      countBefore: $("menu-toggle"),
       keptId,
       projectName: () => ctx.project.name,
       workspace: () => current,

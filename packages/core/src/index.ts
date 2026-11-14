@@ -28,7 +28,7 @@ export type { BuildAreaShown, CornerView, ExtrudeArrow, ExtrudePointer, ExtrudeS
 export { NO_HIGHLIGHT, ORIGIN_AT_FIRST } from "./model/viewport.ts";
 export type { AnalysisOverlay, OverlayMark, OverlayPlace, OverlaySeverity, OverlayTarget } from "./model/overlay.ts";
 export { overlayPlaces, SEVERITY_COLOURS, triangleColours, worstSeverity } from "./model/overlay.ts";
-export type { BodyFaces, Converter, DataRep, Delivery, FaceFinder, FaceFound, ImageRep, ListedObject, Lister, MeshRep, OutlineRep, Plane, Producer, Producible, Representation, RepresentationKind, RepresentationOf, SolidRep } from "./model/representation.ts";
+export type { BodyFaces, Converter, DataRep, Delivery, FaceFinder, FaceFound, ImageRep, LeftOut, LeftOutOf, ListedObject, Lister, MeshRep, OutlineRep, Plane, Producer, Producible, Representation, RepresentationKind, RepresentationOf, SolidRep } from "./model/representation.ts";
 export type { Cost, GraphNode, Staleness } from "./model/graph.ts";
 export { DependencyGraph } from "./model/graph.ts";
 export type { DownstreamSource, DownstreamState, DownstreamSummary } from "./model/downstream.ts";
