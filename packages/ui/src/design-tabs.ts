@@ -26,6 +26,13 @@ export const TAB_NAME_SHOWN = 24;
 
 export const NO_TABS: TabsState = { tabs: [], active: null };
 
+/**
+ * When the strip is the phone's one switcher button (styles/design-tabs.css uses this same query; a unit test holds the
+ * two together): narrow screens, and also touch screens and short windows, so a phone held sideways (667 x 375) never
+ * gets the wide row with its 33 px tabs and × beside each (tabs hunt E2).
+ */
+export const TABS_PHONE_QUERY = "(max-width: 640px), (pointer: coarse), (max-height: 500px)";
+
 /** The tab's words for a name: an empty name reads "Untitled". */
 export const tabName = (name: string): string => (name.trim() === "" ? "Untitled" : name.trim());
 
@@ -112,10 +119,17 @@ export interface DesignTabsParts {
   add(): void;
   /** The workspace titles, for the chips (id → title). */
   titles(): Record<string, string>;
+  /** The 3D view: the phone's open list never covers more than half of it (tabs hunt E3). */
+  view?(): HTMLElement | null;
 }
 
 export interface DesignTabsStrip {
   element: HTMLElement;
+  /**
+   * The phone's count button (tabs T3a): the shell puts it in the top bar, so on a phone the tabs take no row of their
+   * own. Pressing it opens the list under the top bar. Hidden on wide screens (the strip shows) and with no tabs.
+   */
+  count: HTMLElement;
   render(s: TabsState): void;
 }
 
@@ -140,11 +154,13 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   plus.title = "New design in a new tab";
   plus.textContent = "+";
   plus.addEventListener("click", () => parts.add());
-  // On a phone the strip is one button naming the design on screen (and how many are open); it opens a short list under
-  // the strip, so one tap never covers most of the view (styles/design-tabs.css shows one or the other by width).
+  // On a phone the open designs are one small button in the top bar with their count, as phone browsers have (tabs T3a:
+  // a row of its own under the top bar took 47 px from the 3D view); it opens a short list under the top bar, so one tap
+  // never covers most of the view (styles/design-tabs.css shows the button or the strip by TABS_PHONE_QUERY).
   const switcher = doc.createElement("button");
   switcher.type = "button";
   switcher.className = "design-tabs-switch";
+  switcher.hidden = true;
   switcher.id = "design-tabs-switch";
   switcher.setAttribute("aria-haspopup", "true");
   switcher.setAttribute("aria-expanded", "false");
@@ -152,20 +168,46 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   menu.className = "design-tabs-menu";
   menu.id = "design-tabs-menu";
   menu.hidden = true;
-  element.append(list, switcher, plus, menu);
+  element.append(list, plus, menu);
   let shown: TabsState = NO_TABS;
   const isOpen = () => !menu.hidden;
-  const fillMenu = () => menu.replaceChildren(...shown.tabs.map((t) => tabRow(t, t.key === shown.active, parts.titles(), true))); // only while open: the strip alone holds the tabs otherwise
+  // + New design is the list's first row, so it is in sight without scrolling however many tabs are open (tabs T3a).
+  const newRow = (): HTMLElement => {
+    const row = doc.createElement("div");
+    row.className = "design-tabs-new";
+    const add = doc.createElement("button");
+    add.type = "button";
+    add.id = "design-tabs-menu-add";
+    add.className = "design-tabs-new-button";
+    add.textContent = "+ New design";
+    add.disabled = !canAdd(shown);
+    add.title = canAdd(shown) ? "New design in a new tab" : `${MAX_TABS} designs are open: close one to open another`;
+    add.addEventListener("click", () => {
+      openMenu(false);
+      parts.add();
+    });
+    row.append(add);
+    return row;
+  };
+  const fillMenu = () => menu.replaceChildren(newRow(), ...shown.tabs.map((t) => tabRow(t, t.key === shown.active, parts.titles(), true))); // only while open: the strip alone holds the tabs otherwise
   const openMenu = (open: boolean) => {
     menu.hidden = !open;
-    if (open) fillMenu();
+    if (open) {
+      // At most half the 3D view (the stylesheet's cap is of the window, which at 320 x 568 left 59% of the view
+      // covered, tabs hunt E3), and never less than one row.
+      const view = parts.view?.()?.getBoundingClientRect().height ?? 0;
+      if (view > 0) menu.style.setProperty("--design-tabs-view-half", `${Math.max(44, Math.floor(view / 2))}px`);
+      fillMenu();
+    }
     else menu.replaceChildren();
     switcher.setAttribute("aria-expanded", String(open));
     element.dataset.open = String(open);
   };
   switcher.addEventListener("click", () => openMenu(!isOpen()));
   doc.addEventListener("pointerdown", (e) => {
-    if (isOpen() && e.target instanceof Node && !element.contains(e.target)) openMenu(false);
+    // The count button is outside the strip (in the top bar): its own press toggles the list, never a press outside it.
+    const t = e.target as Node | null;
+    if (isOpen() && typeof t?.nodeType === "number" && !element.contains(t) && !switcher.contains(t)) openMenu(false);
   });
   doc.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && isOpen()) {
@@ -175,10 +217,17 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   });
 
   list.addEventListener("keydown", (e) => {
-    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     const all = [...list.querySelectorAll<HTMLElement>(".design-tabs-main")];
     const at = all.indexOf(doc.activeElement as HTMLElement);
     if (at < 0) return;
+    // Delete closes the focused tab: × beside each tab is for the mouse and taps, kept out of the tablist (tabs hunt E6).
+    if (e.key === "Delete") {
+      e.preventDefault();
+      const key = all[at].closest<HTMLElement>(".design-tabs-tab")?.dataset.key;
+      if (key !== undefined) parts.close(key);
+      return;
+    }
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     e.preventDefault();
     all[(at + (e.key === "ArrowRight" ? 1 : all.length - 1)) % all.length].focus();
   });
@@ -196,10 +245,13 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
     if (!inMenu) {
       main.setAttribute("role", "tab");
       main.setAttribute("aria-selected", String(on));
+      main.setAttribute("aria-keyshortcuts", "Delete");
       main.tabIndex = on ? 0 : -1;
     } else if (on) main.setAttribute("aria-current", "true");
     const chip = workspaceChip(t.workspace, titles);
     main.title = `${tabName(t.name)} (${chip.toLowerCase()})`;
+    // Read as "Untitled, DesignLab": the name and chip ran together as "UntitledDESIGNLAB" (tabs hunt E6).
+    main.setAttribute("aria-label", tabLabel(t, titles));
     const name = doc.createElement("span");
     name.className = "design-tabs-name";
     name.textContent = shortName(t.name);
@@ -217,6 +269,12 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
     close.setAttribute("aria-label", `Close ${tabName(t.name)}`);
     close.title = `Close ${tabName(t.name)}`;
     close.textContent = "×";
+    if (!inMenu) {
+      // Only tabs belong in a tablist: on the strip × is for the mouse and taps, and the keyboard closes a tab with Delete
+      // (tabs hunt E6). In the phone's list (no tablist) × stays a button of its own.
+      close.tabIndex = -1;
+      close.setAttribute("aria-hidden", "true");
+    }
     close.addEventListener("click", () => {
       openMenu(false);
       parts.close(t.key);
@@ -227,39 +285,52 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
 
   return {
     element,
+    count: switcher,
     render(s) {
       shown = s;
       // One tab means nothing to switch between: Fusion shows its strip then too, and so do we, so "+" is always there.
       element.hidden = s.tabs.length === 0;
+      switcher.hidden = s.tabs.length === 0;
       if (s.tabs.length === 0) openMenu(false);
       const titles = parts.titles();
       plus.disabled = !canAdd(s);
       plus.title = canAdd(s) ? "New design in a new tab" : `${MAX_TABS} designs are open: close one to open another`;
-      const active = s.tabs.find((t) => t.key === s.active);
-      switcher.replaceChildren();
-      if (active) {
-        const name = doc.createElement("span");
-        name.className = "design-tabs-name";
-        name.textContent = shortName(active.name);
-        const kind = doc.createElement("span");
-        kind.className = "design-tabs-kind";
-        kind.textContent = workspaceChip(active.workspace, titles);
-        const count = doc.createElement("span");
-        count.className = "design-tabs-count";
-        count.textContent = String(s.tabs.length);
-        switcher.append(name, kind, count);
-      }
-      switcher.setAttribute("aria-label", `${s.tabs.length} designs open, ${active ? tabName(active.name) : "none"} on screen: choose another`);
+      // Only the number, in a rounded square; the words are its name for a screen reader and its tooltip.
+      const count = doc.createElement("span");
+      count.className = "design-tabs-count";
+      count.textContent = String(s.tabs.length);
+      switcher.replaceChildren(count);
+      switcher.setAttribute("aria-label", switcherLabel(s));
+      switcher.title = switcherLabel(s);
+      // The tabs are made afresh, so a focused one would leave the focus on <body>: it goes to the tab on screen, which
+      // after Enter or Space is the one just chosen (tabs hunt E6).
+      const focused = list.contains(doc.activeElement);
       list.replaceChildren(...s.tabs.map((t) => tabRow(t, t.key === s.active, titles, false)));
+      if (focused) list.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
       if (isOpen()) fillMenu();
     },
   };
 }
 
-/** The question when a tab with unsaved changes is closed. */
-export const closeQuestion = (name: string): string => `"${tabName(name)}" has changes that are not saved yet. Close it anyway?`;
+/** The phone's count button's words: "3 designs open, Bracket on screen: choose another" ("1 design" for one). Pure. */
+export function switcherLabel(s: TabsState): string {
+  const active = s.tabs.find((t) => t.key === s.active);
+  const n = s.tabs.length;
+  return `${n} design${n === 1 ? "" : "s"} open, ${active ? tabName(active.name) : "none"} on screen: choose another`;
+}
 
-/** A small dialog asking `closeQuestion`: resolves true for "Close anyway", false for "Keep it open" or Escape. */
+/** A tab's name for a screen reader: the design's name, then its workspace's title ("Bracket, Design"). */
+export const tabLabel = (t: DesignTab, titles: Record<string, string> = {}): string => `${tabName(t.name)}, ${titles[t.workspace] ?? t.workspace}`;
+
+/**
+ * The question when the tab on screen is closed while its changes are still being stored. Closing never throws them
+ * away (the shell finishes storing them as the next tab opens, or keeps them aside when it can't), so the words say so;
+ * they used to say the changes were "not saved" as if closing lost them (tabs hunt A5).
+ */
+export const closeQuestion = (name: string): string =>
+  `"${tabName(name)}" has changes this browser hasn't finished storing. Closing the tab doesn't lose them: they stay kept here, and File > Projects in this browser opens it again. Close the tab?`;
+
+/** A small dialog asking `closeQuestion`: resolves true for "Close the tab", false for "Keep it open" or Escape. */
 export function confirmClose(doc: Document, name: string): Promise<boolean> {
   return new Promise((resolve) => {
     const dialog = doc.createElement("dialog");
@@ -276,7 +347,7 @@ export function confirmClose(doc: Document, name: string): Promise<boolean> {
     const go = doc.createElement("button");
     go.type = "button";
     go.id = "design-tabs-close-anyway";
-    go.textContent = "Close anyway";
+    go.textContent = "Close the tab";
     row.append(keep, go);
     dialog.append(words, row);
     let answered = false;

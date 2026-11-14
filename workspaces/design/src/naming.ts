@@ -118,9 +118,11 @@ function repeated(names: readonly (string | null)[]): Map<string, number> {
  * can't tell, an edge whose faces are unnamed or not one pair, and any name
  * two faces or two edges would share, are null.
  */
-export function nameBody(feature: string, view: BodyView, curveOf: CurveOf, ways?: PieceWays): BodyNames {
+export function nameBody(feature: string, view: BodyView, curveOf: CurveOf, ways?: PieceWays, profile?: number): BodyNames {
   const given = view.face_roles.map((r) => {
     if (r === null) return null;
+    // SL #632 item 2: an extrude's profile after the first names its caps by its place ("end:2"), never by its sides.
+    if ((r.role === "start" || r.role === "end") && profile !== undefined && profile > 1) return `${r.role}:${profile}`;
     if (r.role !== "side" || r.piece === undefined) return r.role;
     const curve = curveOf(r.boundary ?? 0, r.piece);
     return curve === null ? null : typeof curve === "string" ? `side:${esc(curve)}` : `side:${esc(curve.curve)}#${curve.run}`;
@@ -262,12 +264,12 @@ export const shapeSpec = (spec: BodySpec): ShapeSpec => ("moved" in spec ? spec.
  * number; a box, cylinder or sphere needs no curves. The one way Design
  * names a body it built (scene.ts `shownBodies`).
  */
-export function featureNames(featureId: string, built: { spec: BodySpec; curves?: CurveIds }, view: BodyView): BodyNames {
+export function featureNames(featureId: string, built: { spec: BodySpec; curves?: CurveIds; profile?: number }, view: BodyView): BodyNames {
   // A moved body's faces are its shape's, wherever it is (step 35e2).
   const shape = shapeSpec(built.spec);
   if (!("extrude" in shape)) return nameBody(featureId, view, () => null);
   const { profile, flip } = shape.extrude;
-  return nameBody(featureId, view, outlineCurves(profile, built.curves), pieceWays(profile, flip === true));
+  return nameBody(featureId, view, outlineCurves(profile, built.curves), pieceWays(profile, flip === true), built.profile);
 }
 
 /** `PieceWays` for an outline from sketch_outline built flipped or not (step 27b); none for a ready-made profile, whose pieces carry no way round. */

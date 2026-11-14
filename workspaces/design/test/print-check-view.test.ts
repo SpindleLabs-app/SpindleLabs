@@ -111,3 +111,27 @@ test("checkShown: a box floating 1 mm up over another, end to end", () => {
   assert.equal(printCheckSummary(found), "supports 2 thin 0 sag 0 weakest 0");
   assert.equal(overlays[0].label, "Needs supports: 25 mm²");
 });
+
+test("issue #519: with inches chosen the words are in inches, worked by hand", () => {
+  const found: PrintCheck = {
+    ...none,
+    supports: [3],
+    supportsArea: 803.1, // 803.1 / 25.4² = 803.1 / 645.16 = 1.2448 in², two significant figures: about 1.2 in²
+    thin: [7],
+    thinnest: 0.3, // 0.3 / 25.4 = 0.011811 in: 0.0118 in
+    sag: [9],
+    longestBridge: 14.2, // 14.2 / 25.4 = 0.559055 in: 0.559 in
+    // 36 / 645.16 = 0.0558001 in²: 0.0558 in²; 14.1 / 25.4 = 0.555118 in: 0.555 in
+    weakest: { z: 14.1, area: 36, above: 360, centre: [11, 15, 14.1], outline: [] },
+  };
+  const o = printCheckOverlays(found, P1S_RULES, "in");
+  assert.deepEqual(
+    o.map((x) => x.label),
+    ["Needs supports: about 1.2 in²", "Too thin to print: 0.0118 in thinnest", "Bridge may sag: 0.559 in across", "Weakest spot (estimate): 0.0558 in² at 0.555 in up"],
+  );
+  for (const x of o) assert.doesNotMatch(`${x.label} ${x.detail}`.replace("0.4 mm nozzle", ""), /mm/, `millimetres left in "${x.label}: ${x.detail}"`);
+  // A small area exactly: 25 / 645.16 = 0.03875 in², 3 significant figures 0.0388.
+  assert.equal(printCheckOverlays({ ...none, supports: [0], supportsArea: 25 }, P1S_RULES, "in")[0].label, "Needs supports: 0.0388 in²");
+  // Nothing found: 0.16 mm layers are 0.16 / 25.4 = 0.0062992 in, 0.0063 in.
+  assert.equal(printCheckOverlays(none, { ...P1S_RULES, layerHeight: 0.16 }, "in")[0].label, "Print check: nothing to fix (P1S, 0.0063 in layers)");
+});

@@ -289,3 +289,34 @@ test("the middle a Scale carries a sketch by is of its own points: one pinned or
   // Nothing pinned or projected: every point.
   assert.deepEqual(ownPoints({ ...sketch, pins: undefined, projected: undefined } as unknown as Sketch).map((p) => p.id), ["a", "b", "c", "d", "e"]);
 });
+
+test("the middle a Scale carries a sketch by leaves out points a constraint or arc ties to a followed point, through any chain (SL #641 item 1)", () => {
+  // Followed: c (pinned). Tied to c: f by Horizontal with c, g by a distance from f (a chain), and an arc's centre h and ends
+  // i, j, i Coincident with g. Left: a and b, whose own Horizontal ties them only to each other, and k with a Fix of its own,
+  // and l sized by a diameter only (it names no point). So the box is of a (0, 0), b (10, 4), k (2, 6) and l (6, 1): x 0..10,
+  // y 0..6, middle (5, 3), on the top (5, 3, 20).
+  const p = (id: string, x: number, y: number) => ({ id, x, y });
+  const sketch = {
+    id: "sketch-3",
+    points: [p("a", 0, 0), p("b", 10, 4), p("c", 100, 100), p("f", 50, 100), p("g", 50, 60), p("h", 70, 70), p("i", 50, 60), p("j", 80, 70), p("k", 2, 6), p("l", 6, 1)],
+    curves: [{ id: "arc1", kind: "arc", centre: "h", start: "i", end: "j" }, { id: "circle1", kind: "circle", centre: "l", radius: 2 }],
+    constraints: [
+      { id: "k1", kind: "horizontal", a: "f", b: "c" },
+      { id: "k2", kind: "distance", a: "g", b: "f", value: 40 },
+      { id: "k3", kind: "coincident", a: "i", b: "g" },
+      { id: "k4", kind: "horizontal", a: "a", b: "b" },
+      { id: "k5", kind: "fix", point: "k" },
+      { id: "k6", kind: "diameter", circle: "circle1", value: 4 },
+    ],
+    pins: [{ point: "c", kind: "endpoint", name: "v" }],
+  } as unknown as Sketch;
+  assert.deepEqual(ownPoints(sketch).map((q) => q.id), ["a", "b", "k", "l"]);
+  near(sketchMiddle(TOP, ownPoints(sketch))!, [5, 3, 20], "middle of the points settling can't move");
+  // The chain broken at k2: g, and the arc through it, are the sketch's own again.
+  const broken = { ...sketch, constraints: sketch.constraints.filter((c) => c.id !== "k2") } as Sketch;
+  assert.deepEqual(ownPoints(broken).map((q) => q.id), ["a", "b", "g", "h", "i", "j", "k", "l"]);
+  // Every point tied to the followed one: none left, so no middle (carried as a sketch drawn before the rule).
+  const all = { ...sketch, constraints: [...sketch.constraints, { id: "k7", kind: "vertical", a: "a", b: "f" }, { id: "k8", kind: "vertical", a: "k", b: "l" }, { id: "k9", kind: "coincident", a: "k", b: "c" }] } as Sketch;
+  assert.deepEqual(ownPoints(all).map((q) => q.id), []);
+  assert.equal(sketchMiddle(TOP, ownPoints(all)), undefined);
+});

@@ -33,7 +33,8 @@
 // changed later (`changeDimension`), solved again the same way.
 
 import type { KernelCalls } from "@fission/core";
-import { constraintPoints, counted, curvePoints, DIMENSION_LIMITS, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
+import { constraintPoints, counted, curvePoints, DIMENSION_LIMITS, idNumber, MAX_SKETCH_CONSTRAINTS, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
+import { constraintsFull, sketchRoom } from "./sketch-room.ts";
 import { madePoints } from "./projection.ts";
 
 /** The smallest feature the kernel builds (the kernel's MIN_FEATURE, mm): no constraint may shrink a line or an arc below it. */
@@ -203,7 +204,34 @@ export function dimensionProblem(value: number): string | null {
 }
 
 /**
- * Adds a constraint to sketch `sketchId` (the first pick held), solved by
+ * The point a distance between `a` and `b` holds still (hunt 2026-11-12,
+ * SL #612): `a`, the first pick, unless a line joins the two, a line's
+ * length. Then the end nearer, along the sketch's curves, to the oldest
+ * point joined to it (the id counter's smallest: the corner a rectangle or
+ * a chain was started from) stays and the far end moves, so a rectangle
+ * drawn from the origin keeps that corner whichever side is sized; on a
+ * tie the older end.
+ */
+export function heldEnd(sketch: Sketch, a: string, b: string): string {
+  if (!sketch.curves.some((c) => c.kind === "line" && ((c.start === a && c.end === b) || (c.start === b && c.end === a)))) return a;
+  const next = new Map<string, Set<string>>();
+  for (const c of sketch.curves) {
+    const ps = curvePoints(c);
+    for (const p of ps) for (const q of ps) if (p !== q) (next.get(p) ?? next.set(p, new Set()).get(p)!).add(q);
+  }
+  const age = (p: string): number => idNumber(p) ?? Infinity;
+  const joined = new Set([a]);
+  for (const p of joined) for (const q of next.get(p) ?? []) joined.add(q);
+  const oldest = [...joined].reduce((x, y) => (age(y) < age(x) ? y : x));
+  const steps = new Map([[oldest, 0]]);
+  for (const [p, n] of steps) for (const q of next.get(p) ?? []) if (!steps.has(q)) steps.set(q, n + 1);
+  const [da, db] = [steps.get(a)!, steps.get(b)!];
+  return da < db || (da === db && age(a) <= age(b)) ? a : b;
+}
+
+/**
+ * Adds a constraint to sketch `sketchId` (the first pick held; a line's
+ * length holds `heldEnd`), solved by
  * the kernel, or refuses it: a point it can't name (`namingProblem`), a
  * conflict (the constraints and arcs that fight), a constraint that
  * already holds (wholly redundant: Fusion refuses one too), or one that
@@ -215,10 +243,12 @@ export async function addConstraint(kernel: KernelCalls, doc: DesignDocument, sk
   if (!sketch) throw new Error(`there is no sketch ${sketchId} in the design`);
   const problem = namingProblem(sketch, c);
   if (problem !== null) return { refused: problem, fighting: [] };
+  // A sketch at the reader's limit takes no more (#641 item 2), said before the solver is asked.
+  if (sketch.constraints.length >= MAX_SKETCH_CONSTRAINTS) return { refused: constraintsFull(), fighting: [] };
   const id = `constraint-${doc.nextId}`;
   const made: SketchConstraint = { id, ...c };
   const trial: Sketch = { ...sketch, constraints: [...sketch.constraints, made] };
-  const got = await solvedWith(kernel, trial, made, made.kind === "diameter" ? [] : [constraintPoints(made)[0]], true);
+  const got = await solvedWith(kernel, trial, made, made.kind === "diameter" ? [] : made.kind === "distance" ? [heldEnd(sketch, made.a, made.b)] : [constraintPoints(made)[0]], true);
   if ("refused" in got) return got;
   return { id, doc: { ...doc, nextId: counted(doc.nextId + 1), sketches: doc.sketches.map((s) => (s.id === sketchId ? got.sketch : s)) } };
 }
@@ -274,8 +304,8 @@ export type Changed = { doc: DesignDocument } | { refused: string; fighting: str
 
 /**
  * Changes dimension `id` of sketch `sketchId` to `value` mm, solved by the
- * kernel with the dimension's first point held (a line's start stays, its
- * end moves, as when it was made), or refuses it with the reason and what
+ * kernel with the point `heldEnd` holds (the same one as when it was
+ * made), or refuses it with the reason and what
  * fights. One undo step for the caller.
  */
 export async function changeDimension(kernel: KernelCalls, doc: DesignDocument, sketchId: string, id: string, value: number): Promise<Changed> {
@@ -288,7 +318,7 @@ export async function changeDimension(kernel: KernelCalls, doc: DesignDocument, 
   if (value === old.value) return { doc };
   const made: SketchConstraint = { ...old, value };
   const trial: Sketch = { ...sketch, constraints: sketch.constraints.map((c) => (c.id === id ? made : c)) };
-  const got = await solvedWith(kernel, trial, made, made.kind === "distance" ? [made.a] : [], false);
+  const got = await solvedWith(kernel, trial, made, made.kind === "distance" ? [heldEnd(sketch, made.a, made.b)] : [], false);
   if ("refused" in got) return got;
   return { doc: { ...doc, sketches: doc.sketches.map((s) => (s.id === sketchId ? got.sketch : s)) } };
 }
@@ -360,7 +390,9 @@ export function squaredRectangle(doc: DesignDocument, sketchId: string, sides: r
     nextId = counted(nextId + 1);
   }
   if (added.length === 0) return doc;
-  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, constraints: [...s.constraints, ...added] } : s)) };
+  const squared = { ...sketch, constraints: [...sketch.constraints, ...added] };
+  sketchRoom(doc, squared); // no more than the reader opens (#641 item 2)
+  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? squared : s)) };
 }
 
 /** The points a line picked gives a horizontal or vertical constraint: its start, held, then its end. */

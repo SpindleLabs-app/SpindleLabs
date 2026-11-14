@@ -6,8 +6,8 @@ import "./styles/app-update.css";
 
 export type NoticeButton = { label: string; title: string; press: () => void };
 
-/** Shows the notice `kind` with `words` and its button, in place of any other. */
-export function showNotice(kind: string, words: string, button: NoticeButton) {
+/** Shows the notice `kind` with `words` and its button (and a quieter second one, such as Not now), in place of any other. */
+export function showNotice(kind: string, words: string, button: NoticeButton, other?: NoticeButton) {
   hideNotice();
   const box = Object.assign(document.createElement("div"), { id: "app-update", className: "app-update" });
   box.setAttribute("role", "status");
@@ -17,9 +17,20 @@ export function showNotice(kind: string, words: string, button: NoticeButton) {
   press.title = button.title;
   press.addEventListener("click", () => {
     press.disabled = true;
+    const second = document.getElementById("app-update-other") as HTMLButtonElement | null;
+    if (second) second.disabled = true;
     button.press();
   });
   box.append(text, press);
+  if (other) {
+    const second = Object.assign(document.createElement("button"), { type: "button", id: "app-update-other", className: "quiet", textContent: other.label });
+    second.title = other.title;
+    second.addEventListener("click", () => {
+      press.disabled = second.disabled = true;
+      other.press();
+    });
+    box.append(second);
+  }
   document.body.append(box);
 }
 

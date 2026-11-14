@@ -26,6 +26,12 @@ export interface AuthDeps {
    * the browser has it). Given as undefined, or with no navigator.locks, renewals take no lock.
    */
   readonly lock?: (<T>(name: string, fn: () => Promise<T>) => Promise<T>) | undefined;
+  /**
+   * Told when the service refuses to renew the stored session and it is dropped (the service's own time limit, the
+   * account's sessions ended elsewhere): nothing is kept in the account from then on, which the shell must say. It
+   * was silent, the top bar still showing the person's name (lost-work hunt 2026-11-12, issue #628 item 4).
+   */
+  readonly sessionLost?: () => void;
 }
 
 type LockFn = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
@@ -47,6 +53,8 @@ export const PENDING_MAX_MS = 10 * 60 * 1000;
 export const PENDING_LIMIT = 3;
 /** How long one request to the service may take (milliseconds). */
 export const REQUEST_MS = 15_000;
+/** How long sending or fetching a design's file through Storage may take (milliseconds): up to 5 MiB on a slow connection. */
+export const FILE_MS = 120_000;
 
 export type AccountState = { readonly kind: "signed-out" } | { readonly kind: "signed-in"; readonly user: AccountUser };
 
@@ -72,6 +80,22 @@ export type PersonReply =
   | { readonly kind: "ok"; readonly body: unknown }
   | { readonly kind: "signed-out" }
   | { readonly kind: "failed"; readonly reason: "offline" | "unavailable" | "rejected" | "malformed" | "storage" };
+
+/**
+ * A Storage answer. A refusal carries Storage's own code: the HTTP status, or the `statusCode` in its body where Storage
+ * answers 400 and names the real one there (413 too big, 409 already there, 403 refused by a policy, 404 not found).
+ */
+export type StorageReply =
+  | { readonly kind: "ok"; readonly body: unknown }
+  | { readonly kind: "signed-out" }
+  | { readonly kind: "failed"; readonly reason: "offline" | "unavailable" | "malformed" | "storage" }
+  | { readonly kind: "failed"; readonly reason: "rejected"; readonly code: number };
+
+/** What a Storage request sends: JSON, or a file's text as it is with its type. */
+export type StorageBody = { readonly json: unknown } | { readonly file: string; readonly type: string };
+
+/** A file fetched through a signed link: its text, or why not ("too-big": longer than the most asked for). */
+export type FileReply = { readonly kind: "ok"; readonly text: string } | { readonly kind: "failed"; readonly reason: "offline" | "unavailable" | "rejected" | "malformed" | "too-big" };
 
 /** What signing out did at the service: `ended`, or why not (this browser is signed out either way). */
 export type SignOutResult = { readonly ended: true } | { readonly ended: false; readonly reason: "offline" | "unavailable" | "rejected" };
@@ -182,6 +206,53 @@ export function authClient(deps: AuthDeps) {
      */
     async asPersonFunction(path: string, body?: unknown): Promise<PersonReply> {
       return asPersonTo("POST", `/functions/v1/${path}`, body, {});
+    },
+
+    /**
+     * A request to the service's file storage (`path` under /storage/v1/) as the signed-in person, token refreshed first;
+     * one refused for its token (401, or Storage's 400 saying the token ran out) is renewed once and sent again. Storage
+     * checks every request against the bucket's policies, run as the person.
+     */
+    async asPersonStorage(method: "POST" | "DELETE", path: string, body: StorageBody): Promise<StorageReply> {
+      let t = await token(true);
+      if (t.kind !== "ok") return t;
+      let reply = await storageRequest(method, path, body, t.token);
+      if (reply.kind === "token") {
+        t = await token(true, t.token);
+        if (t.kind !== "ok") return t;
+        reply = await storageRequest(method, path, body, t.token);
+      }
+      return reply.kind === "token" ? { kind: "failed", reason: "rejected", code: 401 } : reply;
+    },
+
+    /**
+     * A file through a signed link Storage gave (`signedPath`, as Storage gives it: /object/sign/… with its token), with
+     * no account headers: the link is the permission. At most `maxBytes` bytes, read as UTF-8 (a file that isn't is malformed).
+     */
+    async getSignedFile(signedPath: string, maxBytes: number): Promise<FileReply> {
+      if (!signedPath.startsWith("/object/sign/")) return { kind: "failed", reason: "malformed" };
+      let res: Response;
+      try {
+        res = await deps.fetch(`${config.url}/storage/v1${signedPath}`, { method: "GET", credentials: "omit", redirect: "error", signal: AbortSignal.timeout(FILE_MS) });
+      } catch {
+        return { kind: "failed", reason: "offline" };
+      }
+      if (res.status === 429 || res.status >= 500) return { kind: "failed", reason: "unavailable" };
+      if (!res.ok) return { kind: "failed", reason: "rejected" };
+      const said = Number(res.headers.get("content-length"));
+      if (Number.isFinite(said) && said > maxBytes) return { kind: "failed", reason: "too-big" };
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await res.arrayBuffer();
+      } catch {
+        return { kind: "failed", reason: "offline" }; // the connection broke on the way
+      }
+      if (bytes.byteLength > maxBytes) return { kind: "failed", reason: "too-big" };
+      try {
+        return { kind: "ok", text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
+      } catch {
+        return { kind: "failed", reason: "malformed" };
+      }
     },
 
     /** Forgets the session on this device without asking the service (after the account itself was deleted). */
@@ -330,7 +401,10 @@ export function authClient(deps: AuthDeps) {
     if (!r.ok) {
       if (r.reason === "rejected") {
         // Only when the stored session is still the one refreshed: another tab may have refreshed it meanwhile.
-        if (stored === renewedText) remove(SESSION_KEY);
+        if (stored === renewedText) {
+          remove(SESSION_KEY);
+          deps.sessionLost?.();
+        }
         return samePerson() ? token(false) : { kind: "signed-out" };
       }
       return { kind: "failed", reason: r.reason };
@@ -389,6 +463,37 @@ export function authClient(deps: AuthDeps) {
       reply = await request(method, path, body ?? {}, t.token, extra);
     }
     return reply.ok ? { kind: "ok", body: reply.body } : { kind: "failed", reason: reply.reason };
+  }
+
+  /**
+   * One Storage request with `bearer`. "token": refused for the token itself, to renew and send again. Storage's own
+   * code is read from the body's `statusCode` when it answers 400 with one (its older answers), else the HTTP status.
+   */
+  async function storageRequest(method: "POST" | "DELETE", path: string, body: StorageBody, bearer: string): Promise<StorageReply | { kind: "token" }> {
+    const isFile = "file" in body;
+    const headers: Record<string, string> = { apikey: config.anonKey, authorization: `Bearer ${bearer}`, "content-type": isFile ? body.type : "application/json" };
+    let res: Response;
+    try {
+      res = await deps.fetch(`${config.url}/storage/v1/${path}`, {
+        method,
+        headers,
+        body: isFile ? body.file : JSON.stringify(body.json),
+        credentials: "omit",
+        redirect: "error",
+        signal: AbortSignal.timeout(isFile ? FILE_MS : REQUEST_MS),
+      });
+    } catch {
+      return { kind: "failed", reason: "offline" };
+    }
+    const answer: unknown = await res.json().catch(() => undefined);
+    if (res.ok) return { kind: "ok", body: answer };
+    const a = (typeof answer === "object" && answer !== null ? answer : {}) as Record<string, unknown>;
+    const inBody = typeof a.statusCode === "string" || typeof a.statusCode === "number" ? Number(a.statusCode) : NaN;
+    const code = res.status === 400 && Number.isSafeInteger(inBody) && inBody >= 400 && inBody < 600 ? inBody : res.status;
+    const message = typeof a.message === "string" ? a.message : typeof a.error === "string" ? a.error : "";
+    if (res.status === 401 || code === 401 || ((code === 400 || code === 403) && /\bjwt\b|token.*expired|exp.*claim/i.test(message))) return { kind: "token" };
+    if (code === 429 || code >= 500) return { kind: "failed", reason: "unavailable" };
+    return { kind: "failed", reason: "rejected", code };
   }
 
   /** The sign-ins started in this browser that may still come back (a damaged value, or an old one, counts as none). */

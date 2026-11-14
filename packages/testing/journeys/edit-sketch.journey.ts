@@ -352,6 +352,13 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
   const undo: SketchState[][] = [];
   const redo: SketchState[][] = [];
   const labels: string[] = [];
+  /**
+   * While a sketch is open, Undo and Redo reach only the steps recorded since it opened (issue #520, as Fusion's): the
+   * undo steps there were when it opened, and the redos then waiting, are out of reach until it is finished.
+   */
+  let fence: { labels: number; redos: number } | null = null;
+  /** What Undo offers: the last step, unless it is behind the fence. */
+  const undoable = () => (fence !== null && labels.length <= fence.labels ? null : (labels.at(-1) ?? null));
   /** Where the line tool is: a chain started (its last point) or not. */
   let chain = false;
   /** Whether Escape with no chain going chose the Select tool (missing basics, 2026-11-04): L goes back to drawing first. */
@@ -378,7 +385,7 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
     const wantWarning = kept.map((i) => `Extrude ${i + 1} keeps its last shape. Sketch ${i + 1}`);
     if (parts.length !== wantWarning.length || parts.some((p, k) => !p.startsWith(wantWarning[k]))) return `${what}: the warning is ${JSON.stringify(warning)}, the model's ${JSON.stringify(wantWarning)}`;
     if (a.error() !== errorLine) return `${what}: the error line says ${JSON.stringify(a.error())}, the model ${JSON.stringify(errorLine)}`;
-    if (a.history.undoLabel() !== (labels.at(-1) ?? null)) return `${what}: Undo is ${JSON.stringify(a.history.undoLabel())}, the model's ${JSON.stringify(labels.at(-1) ?? null)}`;
+    if (a.history.undoLabel() !== undoable()) return `${what}: Undo is ${JSON.stringify(a.history.undoLabel())}, the model's ${JSON.stringify(undoable())}`;
     return null;
   };
   const record = (next: SketchState[], label: string) => {
@@ -386,6 +393,7 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
     labels.push(label);
     redo.length = 0;
     redoLabels.length = 0;
+    if (fence !== null) fence.redos = 0;
     states = next;
     dirty = true;
   };
@@ -419,6 +427,7 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
         if (editing !== null) reached.add(dirty ? "switch after drawing" : "switch with nothing drawn");
         if (editing !== null && dirty) rebuilt();
         editing = step.i;
+        fence = { labels: labels.length, redos: redo.length };
         chain = false;
         selecting = false; // a sketch opens with the line tool
       }
@@ -459,13 +468,17 @@ async function runSession(seed: number, steps: Step[], plugin: WorkspacePlugin =
       await a.finish();
       reached.add(dirty ? "finish after drawing" : "finish with nothing drawn");
       editing = null;
+      fence = null;
       chain = false;
       if (dirty) rebuilt();
     } else if (step.do === "undo" || step.do === "redo") {
       const from = step.do === "undo" ? undo : redo;
       const to = step.do === "undo" ? redo : undo;
       const label = step.do === "undo" ? await a.undo() : await a.redo();
-      const back = from.pop();
+      // Behind the fence: the open sketch's Undo and Redo do nothing.
+      const fenced = fence !== null && (step.do === "undo" ? labels.length <= fence.labels : redo.length <= fence.redos);
+      if (fenced) reached.add(`${step.do} fenced in a sketch`);
+      const back = fenced ? undefined : from.pop();
       if (back === undefined) {
         if (label !== null) return `${what}: ${step.do} did ${label}, the model has nothing`;
         continue;
@@ -497,7 +510,7 @@ test(`seeded: ${SEEDS} sessions × ${STEPS} steps of Edit Sketch, drawing, Finis
   if (only !== null) return;
   // The 25a5 hunt's failing session, kept (it failed before strays got rows of their own).
   assert.equal(await runSession(18, randomSteps(18, 120, randomSpecs(18).specs.length), designWorkspace, reached), null);
-  const every = ["line again after Select", "open by menu", "open by bar", "open by row", "refused: already open", "switch after drawing", "switch with nothing drawn", "closed: builds", "closed: strays still there", "stray: breaks a closing outline", "stray: on an open outline", "finish after drawing", "finish with nothing drawn", "undo inside a sketch", "undo outside a sketch", "redo inside a sketch", "redo outside a sketch"];
+  const every = ["line again after Select", "open by menu", "open by bar", "open by row", "refused: already open", "switch after drawing", "switch with nothing drawn", "closed: builds", "closed: strays still there", "stray: breaks a closing outline", "stray: on an open outline", "finish after drawing", "finish with nothing drawn", "undo inside a sketch", "undo outside a sketch", "redo inside a sketch", "redo outside a sketch", "undo fenced in a sketch"];
   assert.deepEqual(every.filter((c) => !reached.has(c)), [], `reached: ${[...reached].join(", ")}`);
 });
 

@@ -39,6 +39,8 @@ export interface TimelineBarItem {
   greyed: string | null;
   /** Built from something that is gone, or failed in the rebuild (`failed`): drawn red. Never when rolled back, suppressed or greyed. */
   failed: boolean;
+  /** Why it failed, in the rebuild's own words (#505); null when it didn't fail or the rebuild gave none (the data's own failures). */
+  reason: string | null;
   /** Built with a warning (26e: a kept shape, a lost plane or a lost source; the rebuild's words): drawn red with the words. */
   warning: string | null;
 }
@@ -62,7 +64,7 @@ function iconOf(f: Feature): TimelineIcon {
  * greyed instead (26e, Q3), from the data alone. `warnings` are the
  * rebuild's words for the items built with a warning.
  */
-export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map(), describe: (summary: string) => string = (s) => s): { items: TimelineBarItem[]; marker: number } {
+export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<string> = new Set(), warnings: ReadonlyMap<string, string> = new Map(), describe: (summary: string) => string = (s) => s, reasons: ReadonlyMap<string, string> = new Map()): { items: TimelineBarItem[]; marker: number } {
   const { features, marker } = document.timeline;
   let at = features.length;
   if (marker === "start") at = 0;
@@ -78,6 +80,7 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
     const on = i < at && !f.suppressed;
     const by = on ? greyed.get(f) : undefined;
     const ok = on && by === undefined;
+    const isFailed = ok && (!building.has(f) || failed.has(f.id));
     return {
       id: f.id,
       label: `${i + 1}. ${itemName(f)}`,
@@ -86,7 +89,8 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
       suppressed: f.suppressed,
       rolledBack: i >= at,
       greyed: by === undefined ? null : (label.get(by) ?? by),
-      failed: ok && (!building.has(f) || failed.has(f.id)),
+      failed: isFailed,
+      reason: (isFailed && reasons.get(f.id)) || null,
       warning: (ok && warnings.get(f.id)) || null,
     };
   });
@@ -570,6 +574,8 @@ export interface BarWiring {
   onRetry?(id: string): void;
   /** 26e: the rebuild's warnings by item (a kept shape, a lost plane, a lost source): the item red, the words in its title. */
   warnings?: ReadonlyMap<string, string>;
+  /** #505: why each failed item failed, in the rebuild's words, by item: in its title and card. */
+  reasons?: ReadonlyMap<string, string>;
   picked?: string | null;
   /** The sketch being edited (24f5): a playback button that would put it after the marker is off and says why. */
   editing?: string | null;
@@ -613,7 +619,7 @@ const cardsOff = (page: Document) => TEST_BUILD && (page.defaultView as unknown 
  */
 export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: BarWiring = {}) {
   const document = slot.ownerDocument;
-  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings, wiring.describe);
+  const { items, marker } = timelineBarItems(doc, wiring.failed, wiring.warnings, wiring.describe, wiring.reasons);
   // The card of an item on the old bar goes with it; one picked by a finger shows again below.
   hideCard(document);
   const card = (li: HTMLElement, i: number) => {
@@ -657,7 +663,7 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       (item.suppressed ? " (suppressed)" : "") +
       (item.greyed !== null ? ` (greyed: ${item.greyed} is suppressed)` : "") +
       (item.rolledBack ? " (after the marker)" : "") +
-      (item.failed ? (wiring.slow?.has(item.id) ? " (failed: took too long)" : " (failed)") : "") +
+      (item.failed ? (wiring.slow?.has(item.id) ? " (failed: took too long)" : item.reason !== null ? ` (failed: ${item.reason})` : " (failed)") : "") +
       (item.warning !== null ? ` (warning: ${item.warning})` : "");
     li.title = words;
     // Its card (timeline-card.ts) says all this and shows its shape, so the app's own hover box holds the title back and shows nothing.

@@ -398,11 +398,14 @@ def key(kind):
     return hashlib.sha1(kind.encode()).hexdigest()[:12]
 
 
-def plan(found, issues, branch):
+def plan(found, issues, branch, predates=lambda issue: False):
     """What to do for this run. found: {kind: [(seed, example), ...]};
     issues: [{number, state, stateReason, body}] already labelled. Returns a
     list of ('create', kind, None) / ('comment', kind, number) /
-    ('reopen', kind, number)."""
+    ('reopen', kind, number) / ('old', kind, number). `predates(issue)`: the
+    run tested code older than that closed issue's closing, so a kind closed
+    as fixed only gets a comment ('old') instead of being reopened (SL #430
+    and #484, 11-11: runs that started before the fix merged reopened them)."""
     by_key = {}
     for issue in issues:
         m = MARK_RE.search(issue.get("body") or "")
@@ -419,7 +422,7 @@ def plan(found, issues, branch):
         elif (issue.get("stateReason") or "").upper() == "NOT_PLANNED":
             continue
         elif branch == "main":
-            actions.append(("reopen", kind, issue["number"]))
+            actions.append(("old" if predates(issue) else "reopen", kind, issue["number"]))
         else:
             actions.append(("comment", kind, issue["number"]))
     return actions
@@ -629,7 +632,8 @@ def texts(action, kind, hits, run_url, commit, branch):
             "main reopens it; one closed as not planned is not reported again."
         )
         return f"Random testing: {kind}"[:250], body
-    head = "Seen again after this issue was closed" if action == "reopen" else "Seen again"
+    head = {"reopen": "Seen again after this issue was closed",
+            "old": "Seen again, on a commit older than this issue's closing, so not reopened"}.get(action, "Seen again")
     if kind.startswith("check "):
         return None, f"{head} ({where}):\n{fenced(example)}"
     folder = "fuzz/failures" if kind.startswith("fuzzing the ") else "failures"
@@ -688,6 +692,34 @@ def gh(*args, stdin=None):
     return subprocess.run(["gh", *args], input=stdin, capture_output=True, text=True, check=True).stdout
 
 
+def code_api(path):
+    """GET on the API of the tested code's repository (CODE_REPO), with
+    CODE_TOKEN when set (the kernel's is private), else GH_TOKEN."""
+    env = dict(os.environ)
+    if os.environ.get("CODE_TOKEN"):
+        env["GH_TOKEN"] = os.environ["CODE_TOKEN"]
+    return subprocess.run(["gh", "api", path], capture_output=True, text=True, check=True, env=env, timeout=60).stdout
+
+
+def older_than_close(repo, commit, log=print):
+    """predates() for plan(): whether `commit` is older than main was when the
+    issue closed: main's last commit at closedAt is ahead of it (compare says
+    behind). Without CODE_REPO, or on any failed lookup, False: reopen, as
+    before (a missed regression is the worse mistake)."""
+    def predates(issue):
+        closed = issue.get("closedAt")
+        if not repo or not closed:
+            return False
+        try:
+            at_close = json.loads(code_api(f"repos/{repo}/commits?sha=main&until={closed}&per_page=1"))[0]["sha"]
+            status = json.loads(code_api(f"repos/{repo}/compare/{at_close}...{commit}"))["status"]
+        except (subprocess.SubprocessError, ValueError, KeyError, IndexError, TypeError) as e:
+            log(f"Could not tell whether {commit[:7]} predates #{issue.get('number')}'s closing ({type(e).__name__}); reopening")
+            return False
+        return status == "behind"
+    return predates
+
+
 def lock(number, log):
     """Lock an issue this script filed, so only people with write access (Ben,
     his Claude sessions and this workflow) can comment: anyone on GitHub can
@@ -727,8 +759,9 @@ def run(incoming, dry_run=False, log=print):
         except subprocess.CalledProcessError as e:
             log(f"Could not create the {LABEL} label (it may exist already): {e.stderr.strip()}")
         issues = json.loads(gh("issue", "list", "--label", LABEL, "--state", "all", "--limit", "1000",
-                               "--json", "number,state,stateReason,body"))
-    actions, found = cap(plan(found, issues, branch), found, issues, branch)
+                               "--json", "number,state,stateReason,body,closedAt"))
+    predates = older_than_close(os.environ.get("CODE_REPO", ""), commit, log)
+    actions, found = cap(plan(found, issues, branch, predates), found, issues, branch)
     failed = []
     for action, kind, number in actions:
         title, body = texts(action, kind, found[kind], run_url, commit, branch)

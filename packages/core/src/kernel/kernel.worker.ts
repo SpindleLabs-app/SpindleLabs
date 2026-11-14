@@ -62,7 +62,10 @@ ready.then(
 const loose = (f: unknown) => f as (...args: unknown[]) => unknown;
 
 const ops = {
-  kernel_version: () => kernel.kernel_version(),
+  // The release's own version (kernel.json, written with the build by the kernel's Release workflow and checked
+  // against it by CI), not the kernel crate's, which is never bumped from 0.1.0 (bug-reports #1, #2). The call
+  // still goes to the kernel, so an answer still means the kernel is up.
+  kernel_version: () => (kernel.kernel_version(), release.version),
   make_box: (w: number, d: number, h: number) => kernel.make_box(w, d, h),
   make_cylinder: (r: number, h: number) => kernel.make_cylinder(r, h),
   make_sphere: (r: number) => kernel.make_sphere(r),

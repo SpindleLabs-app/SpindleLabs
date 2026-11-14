@@ -73,7 +73,7 @@ test("what a file should show, worked by hand", () => {
   const added = { workspaces: { design: { ...numbered, version: 16, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.nextBody, 5);
-  const fresh = { workspaces: { design: { ...design(), version: 17, bodies: [], nextBody: 1 } } };
+  const fresh = { workspaces: { design: { ...design(), version: 22, bodies: [], nextBody: 1 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(fresh))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(settledText("not json"), "not json");
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
@@ -399,6 +399,70 @@ test("hand-worked: what a file with Combines should show (35f1d)", () => {
   assert.deepEqual(expectedView(gone).numbered.bodies.map((b) => b.id), ["body:feature-1", "body:feature-2", "body:feature-4"]);
 });
 
+test("hand-worked: what a file with Extrude Join, Cut and Intersect should show (SL #507)", () => {
+  const item = (id, type, parameters, dependsOn = []) => ({ id, intent: { type, parameters, summary: id }, provenance: { self: { workspace: "design", id, label: id }, from: [] }, dependsOn, suppressed: false });
+  const box = (id) => item(id, "box", { width: 10, depth: 10, height: 10 });
+  const sketch = (id) => item(id, "sketch", { plane: "XY" });
+  const extrude = (id, s, operation, bodies) => item(id, "extrude", { sketch: s, distance: 5, operation, bodies }, [s, ...bodies.map((b) => b.slice(5))]);
+  // Box 1 and Box 2 (feature-1, -2); Extrude 1 (feature-4) cuts from Box 1; Extrude 2 (feature-6) joins Box 2 and has a
+  // piece apart from it, its own body (version 16), numbered 3 by the app when it was built; then Box 3 (feature-7), 4.
+  const design = {
+    version: 17,
+    nextId: 8,
+    profiles: [],
+    sketches: [],
+    timeline: { features: [box("feature-1"), box("feature-2"), sketch("sketch-3"), extrude("feature-4", "sketch-3", "cut", ["body:feature-1"]), sketch("sketch-5"), extrude("feature-6", "sketch-5", "join", ["body:feature-2"]), box("feature-7")] },
+    bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { id: "body:feature-6", number: 3 }, { id: "body:feature-7", number: 4 }],
+    nextBody: 5,
+  };
+  const v = expectedView(design);
+  // An extrude with an operation changes the bodies it picks in place and has no row of its own for a Cut or an
+  // Intersect; a Join's piece apart from the bodies it joins is its own body, which only the kernel can say is there,
+  // so it is a piece row, added as the extrude builds: before Box 3.
+  assert.deepEqual(v.rows, [
+    { row: "body-1", place: 1, id: "feature-1", body: "body:feature-1", combined: true },
+    { row: "body-2", place: 2, id: "feature-2", body: "body:feature-2", combined: true },
+    { row: "body-3", place: 3, id: "feature-6", body: "body:feature-6", piece: true, combined: true },
+    { row: "body-4", place: 4, id: "feature-7", body: "body:feature-7" },
+  ]);
+  // Neither extrude is a solid that makes a body of its own up front.
+  assert.deepEqual(v.solids, ["feature-1", "feature-2", "feature-7"]);
+  // The rebuild keeps each one's inputs, to build it again at once (rebuild.ts booleanSteps' holds): the body picked and
+  // the extrude's own body, 2 each, 4 in all.
+  assert.equal(v.held, 4);
+  // No number is given out to either extrude: the file's numbers stand, the counter stays at 5.
+  assert.deepEqual(v.numbered, { bodies: design.bodies, nextBody: 5 });
+  // The Join's own body not numbered yet (the kernel left nothing apart, or it was never built): no row, no number.
+  const joined = { ...structuredClone(design), bodies: design.bodies.filter((b) => b.id !== "body:feature-6") };
+  assert.deepEqual(expectedView(joined).rows.map((r) => r.row), ["body-1", "body-2", "body-4"]);
+  assert.deepEqual(expectedView(joined).numbered.bodies.map((b) => b.id), ["body:feature-1", "body:feature-2", "body:feature-7"]);
+  // A Cut on two bodies keeps three: both bodies and its own.
+  const two = structuredClone(design);
+  two.timeline.features[3] = extrude("feature-4", "sketch-3", "cut", ["body:feature-1", "body:feature-2"]);
+  assert.equal(expectedView(two).held, 3 + 2);
+  // Intersect: like a Cut, no row of its own.
+  const meet = structuredClone(design);
+  meet.timeline.features[3] = extrude("feature-4", "sketch-3", "intersect", ["body:feature-1"]);
+  assert.deepEqual(expectedView(meet).rows.map((r) => r.row), ["body-1", "body-2", "body-3", "body-4"]);
+  // The Cut failed (the bar marks it): Box 1 as it was, nothing held for it.
+  const failed = expectedView(design, new Set(["feature-4"]));
+  assert.deepEqual(failed.rows[0], { row: "body-1", place: 1, id: "feature-1", body: "body:feature-1" });
+  assert.equal(failed.held, 2);
+  // Box 2 suppressed: the Join has a body missing, so it is greyed: no piece, nothing held for it.
+  const off = structuredClone(design);
+  off.timeline.features[1].suppressed = true;
+  assert.deepEqual(expectedView(off).rows.map((r) => r.row), ["body-1", "body-4"]);
+  assert.equal(expectedView(off).held, 2);
+  // Its sketch suppressed: the Cut is greyed too, Box 1 as it was.
+  const noSketch = structuredClone(design);
+  noSketch.timeline.features[2].suppressed = true;
+  assert.equal(expectedView(noSketch).rows[0].combined, undefined);
+  // The Join deleted: its own body's number goes, the counter stays.
+  const gone = structuredClone(design);
+  gone.timeline.features.splice(5, 1);
+  assert.deepEqual(expectedView(gone).numbered, { bodies: design.bodies.filter((b) => b.id !== "body:feature-6"), nextBody: 5 });
+});
+
 test("35f1d: Combine is drawn only when the page offers it, about 6 picks in the weights' total, each well formed", () => {
   const base = { prompt: false, targets: [{ sel: "#ok" }], inputs: [], rows: [{ sel: "#r", body: true }], sketching: false, haveSave: true };
   const draws = (page) => {
@@ -439,6 +503,46 @@ test("regression (35f1d monkey, seed 1): a built Move keeps the bodies it moved 
   const off = structuredClone(design);
   off.timeline.features[1].suppressed = true;
   assert.equal(expectedView(off).held, 0);
+});
+
+test("an extrude of a sketch on a suppressed body's face is greyed and makes no body, worked by hand (issue #472)", () => {
+  // The nightly's file (seed 202611130, action 22): Box 1 suppressed, Box 2, Sketch 1 drawn on Box 1's front face with
+  // its four edges projected, and Extrude 1 of that sketch; the marker at the end. Design greys an item built on a
+  // suppressed one, through its sketch's face (26e, Q3), so the sketch and its extrude are off: the only row is Box 2's,
+  // Body 2. The monkey used to expect the extrude's Body 3 as well, because the sketch itself is neither suppressed nor
+  // rolled back.
+  const box = (n, suppressed) => ({ id: `feature-${n}`, intent: { type: "box", parameters: { width: 40, depth: 30, height: 20 }, summary: "Box: 40 × 30 × 20 mm" }, dependsOn: [], suppressed });
+  const sketch = { id: "sketch-3", intent: { type: "sketch", parameters: { plane: "face:feature-1/front" }, summary: "Sketch 1 on a face of Box 1" }, dependsOn: ["feature-1"], suppressed: false };
+  const extrude = { id: "feature-20", intent: { type: "extrude", parameters: { sketch: "sketch-3", distance: 7 }, summary: "Extrude Sketch 1 by 7 mm" }, dependsOn: ["sketch-3"], suppressed: false };
+  const content = { id: "sketch-3", points: [], curves: [], constraints: [], projected: [{ id: "projection-4", feature: "feature-1", edge: "bottom+front", made: "line-7" }] };
+  const file = () => ({ version: 21, nextId: 21, profiles: [], sketches: [structuredClone(content)], bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-2", number: 2 }, { id: "body:feature-20", number: 3 }], nextBody: 4, timeline: { features: structuredClone([box(1, true), box(2, false), sketch, extrude]), marker: "feature-20" } });
+  assert.deepEqual(expectedView(file()).rows.map((r) => r.row), ["body-2"]);
+  assert.deepEqual(expectedView(file()).solids, ["feature-2"]);
+  // Box 1 on again: the sketch builds on its face, so the extrude does too: Bodies 1, 2 and 3.
+  const on = file();
+  on.timeline.features[0].suppressed = false;
+  assert.deepEqual(expectedView(on).rows.map((r) => r.row), ["body-1", "body-2", "body-3"]);
+  // On an origin plane with only an edge of Box 1 projected: still built on Box 1, so still greyed.
+  const projected = file();
+  projected.timeline.features[2].intent.parameters.plane = "XZ";
+  assert.deepEqual(expectedView(projected).rows.map((r) => r.row), ["body-2"]);
+  // On an origin plane with nothing taken from Box 1: it builds whatever Box 1 is.
+  const plain = file();
+  plain.timeline.features[2].intent.parameters.plane = "XZ";
+  plain.sketches[0].projected = [];
+  assert.deepEqual(expectedView(plain).rows.map((r) => r.row), ["body-2", "body-3"]);
+  // A point pinned to Box 2 (27c), Box 2 suppressed instead: greyed through the pin.
+  const pinned = file();
+  pinned.timeline.features[0].suppressed = false;
+  pinned.timeline.features[1].suppressed = true;
+  pinned.sketches[0].pins = [{ point: "point-5", feature: "feature-2" }];
+  assert.deepEqual(expectedView(pinned).rows.map((r) => r.row), ["body-1"]);
+  // Greyed passes on: a second sketch on a face of the greyed extrude, and its extrude, make nothing either.
+  const chain = file();
+  chain.timeline.features.push({ id: "sketch-21", intent: { type: "sketch", parameters: { plane: "face:feature-20/end" }, summary: "Sketch 2 on a face of Extrude 1" }, dependsOn: ["feature-20"], suppressed: false });
+  chain.timeline.features.push({ id: "feature-22", intent: { type: "extrude", parameters: { sketch: "sketch-21", distance: 3 }, summary: "Extrude Sketch 2 by 3 mm" }, dependsOn: ["sketch-21"], suppressed: false });
+  chain.timeline.marker = "feature-22";
+  assert.deepEqual(expectedView(chain).rows.map((r) => r.row), ["body-2"]);
 });
 
 test("a Duplicate builds only when the body it copies does, worked by hand (issues #472, #475, #479)", () => {

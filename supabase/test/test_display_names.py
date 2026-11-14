@@ -185,8 +185,8 @@ class DisplayNamesDatabase(unittest.TestCase):
 
     def test_my_data_holds_my_name_and_deleting_the_account_frees_it(self):
         self.name(ADA, "Ada")
-        self.assertEqual(json.loads(self.as_user(ADA, "select my_data();")[1])["display_name"]["name"], "Ada")
-        self.assertIsNone(json.loads(self.as_user(BO, "select my_data();")[1])["display_name"])
+        self.assertEqual(json.loads(self.as_role("postgres", "select my_data();", ADA)[1])["display_name"]["name"], "Ada")
+        self.assertIsNone(json.loads(self.as_role("postgres", "select my_data();", BO)[1])["display_name"])
         ok, out = self.as_user(ADA, "select delete_my_account();")
         self.assertTrue(ok, out)
         self.assertEqual(self.name(BO, "ADA"), "saved")
