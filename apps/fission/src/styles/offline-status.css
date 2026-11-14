@@ -1,0 +1,11 @@
+/* The small "Offline" mark in the top bar while the device has no connection (offline mode, src/offline.ts): next to
+   the save status, never over the view or the bottom bar; a press says what still works. #topbar in each selector
+   so the top bar's own button rule doesn't take its border and padding. */
+#topbar .offline-status { flex: none; align-self: center; padding: 0 7px; border: 1px solid var(--warn); border-radius: var(--look-radius-s); color: var(--text-b5bbc4); font-size: 11px; line-height: 20px; }
+#topbar .offline-status:hover { color: var(--text-body); }
+/* On a phone the row has no room for the word: an amber dot at the top right corner of the bar, by Menu, like a
+   badge (the words stay in the tooltip, for screen readers and a press). The bar is position: relative there. */
+@media (max-width: 640px) {
+  #topbar .offline-status { position: absolute; top: 3px; right: 2px; z-index: 1; width: 16px; height: 16px; padding: 0; border: none; font-size: 0; }
+  #topbar .offline-status::before { content: ""; position: absolute; left: 3px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); }
+}

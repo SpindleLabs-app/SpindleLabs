@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 // file styles its own feature alone: every rule's selectors start with
 // .<feature>, so load order never matters.
 const repo = resolve(import.meta.dirname, "../../..");
-const dirs = [join(repo, "packages/ui/src/styles"), ...readdirSync(join(repo, "workspaces")).map((w) => join(repo, "workspaces", w, "src/styles"))];
+const dirs = [join(repo, "packages/ui/src/styles"), join(repo, "packages/print/src/styles"), ...readdirSync(join(repo, "workspaces")).map((w) => join(repo, "workspaces", w, "src/styles"))];
 
 /** A selector list split at its own commas, not those inside :is(…) or :not(…). */
 function topLevel(list: string): string[] {

@@ -4,6 +4,7 @@
 // src/share.ts, @fission/account shares.ts); this file is the two dialogs and their words. Styles: styles/share.css.
 // Every word about terms here is a PLACEHOLDER until a lawyer has checked it.
 
+import { likeRow, type LikeParts } from "./like.ts";
 import { savedWhen } from "./project-list.ts";
 
 export const SHARE_TITLE = "Share this design";
@@ -69,8 +70,8 @@ const make = (doc: Doc) => <K extends keyof HTMLElementTagNameMap>(tag: K, props
   return e;
 };
 
-/** A modal card with a title and Close; `body` is what the caller fills. Escape and a click outside close it. */
-function card(doc: Doc, id: string, title: string) {
+/** A modal card with a title and Close; `body` is what the caller fills. Escape and a click outside close it. Also the library dialogs' (publish.ts). */
+export function shareCard(doc: Doc, id: string, title: string) {
   const el = make(doc);
   const dialog = el("dialog", { id, className: "share" });
   dialog.setAttribute("aria-labelledby", `${id}-title`);
@@ -121,7 +122,7 @@ export const MY_LINKS_NOTE = "The sharing links you have on. Turn one off and no
 export function shareDialog(doc: Doc, parts: ShareParts, options: { linksOnly?: boolean } = {}): Dialog {
   const only = options.linksOnly === true;
   const id = only ? "my-links" : "share";
-  const c = card(doc, id, only ? MY_LINKS_TITLE : SHARE_TITLE);
+  const c = shareCard(doc, id, only ? MY_LINKS_TITLE : SHARE_TITLE);
   const { el } = c;
   const note = el("p", { className: "share-note", textContent: only ? MY_LINKS_NOTE : SHARE_NOTE });
   const terms = el("p", { className: "share-note share-terms", id: `${id}-terms`, textContent: SHARE_TERMS_PLACEHOLDER });
@@ -264,16 +265,24 @@ export interface SharedParts {
   report(kind: string, reason: string): Promise<string>;
   /** Called when the view closes, with or without opening the copy (the app takes the link out of the address). */
   closed(): void;
+  /** The like button and count (community C7b); left out when not given. */
+  like?: LikeParts;
   now?: () => Date;
+}
+
+/** "just now", "5 minutes ago", "on 10 Nov 2026": savedWhen's words without its "Saved". */
+function sharedWhen(at: Date, now: Date): string {
+  const w = savedWhen(at, now).replace(/^Saved /, "");
+  return w === "just now" || w.endsWith(" ago") ? w : `on ${w}`;
 }
 
 /** The shared view (id `shared`): the frozen copy's name and picture, Open my own copy, Report. */
 export function sharedView(doc: Doc, copy: SharedCopy, parts: SharedParts): Dialog {
-  const c = card(doc, "shared", "A shared design");
+  const c = shareCard(doc, "shared", "A shared design");
   const { el } = c;
   const name = el("p", { className: "share-shared-name", id: "shared-name", textContent: copy.name || "Untitled" });
   const picture = copy.picture ? Object.assign(el("img", { className: "share-picture", src: copy.picture, alt: "" }), { width: 192, height: 128 }) : null;
-  const when = el("p", { className: "share-note", textContent: `A frozen copy, shared ${savedWhen(copy.createdAt, (parts.now ?? (() => new Date()))())}. Opening it makes your own copy in this browser; the link and the person who shared it are never changed.` });
+  const when = el("p", { className: "share-note", textContent: `A frozen copy, shared ${sharedWhen(copy.createdAt, (parts.now ?? (() => new Date()))())}. Opening it makes your own copy in this browser; the link and the person who shared it are never changed.` });
   const openButton = el("button", { type: "button", id: "shared-open", className: "share-button share-primary", textContent: "Open my own copy" });
   const reportButton = el("button", { type: "button", id: "shared-report", className: "share-button", textContent: "Report this design" });
   const status = el("p", { id: "shared-status", className: "share-status" });
@@ -287,7 +296,8 @@ export function sharedView(doc: Doc, copy: SharedCopy, parts: SharedParts): Dial
   reason.setAttribute("aria-label", "Details");
   const send = el("button", { type: "button", id: "shared-report-send", className: "share-button", textContent: "Send report" });
   form.append(select, reason, send);
-  c.body.append(name, ...(picture ? [picture] : []), when, openButton, reportButton, form, status, el("p", { className: "share-note share-terms", textContent: SHARE_TERMS_PLACEHOLDER }));
+  const like = parts.like ? likeRow(doc, "shared", parts.like) : null;
+  c.body.append(name, ...(picture ? [picture] : []), ...(like ? [like.element] : []), when, openButton, reportButton, form, status, el("p", { className: "share-note share-terms", textContent: SHARE_TERMS_PLACEHOLDER }));
   let busy = false;
   const say = (words: string, bad = false) => {
     status.textContent = words;
@@ -331,6 +341,7 @@ export function sharedView(doc: Doc, copy: SharedCopy, parts: SharedParts): Dial
   return {
     async show() {
       c.open();
+      await like?.load();
     },
     close: c.finish,
     get open() {

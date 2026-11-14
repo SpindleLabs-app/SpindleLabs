@@ -11,7 +11,7 @@ import type { Plane, StableId, ViewportPick } from "@fission/core";
 import { faceHolds, type FaceNames } from "./boolean-names.ts";
 import { SKETCH_PLANES, type SketchPlane } from "./document.ts";
 import { drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
-import { shownFrame } from "./built-body.ts";
+import { originFrameNow, shownFrame } from "./built-body.ts";
 import { findInScene, sceneHit, shownReference, type Scene } from "./scene.ts";
 
 /** What a click on a curved face says (Q5). */
@@ -23,7 +23,7 @@ export const UNNAMED_FACE = "This face has no name of its own (another face shar
 /** Where a click puts the new sketch: an origin plane, a flat face (its name, its feature and the frame it is drawn with), or nowhere with the words why. */
 export type SketchSpot =
   | { kind: "plane"; plane: SketchPlane }
-  | { kind: "face"; face: { plane: string; feature: string }; drawn: SketchPlacement }
+  | { kind: "face"; face: { plane: string; feature: string; reversed: boolean }; drawn: SketchPlacement }
   | { kind: "refused"; message: string };
 
 /**
@@ -50,7 +50,23 @@ export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot 
   if (ref === null || feature === null) return { kind: "refused", message: UNNAMED_FACE };
   const again = scene.design === undefined ? null : findInScene(ref, scene);
   if (again === null ? feature !== body.feature : again.status !== "found" || again.index !== pick.face) return { kind: "refused", message: UNNAMED_FACE };
-  return { kind: "face", face: { plane: ref.id, feature }, drawn: { ...drawn, body: shownFrame(body, hit.index) ?? worldFrame() } };
+  // SL #583 item 3: whether the face is its name's face turned round (a Cut's wall), recorded with the sketch.
+  return { kind: "face", face: { plane: ref.id, feature, reversed: body.reversed?.[hit.index] ?? false }, drawn: { ...drawn, body: namedFrameShown(scene, hit.body, hit.index, ref.id) ?? worldFrame() } };
+}
+
+/**
+ * The frame a sketch named `id` on face `index` of shown body `body` is drawn with (SL #707): on a face merged from
+ * level input faces, the frame now of the input face the name (without its tag) names (built-body.ts `originFrameNow`),
+ * whose Moves carry it; else the face's own (`shownFrame`). Undefined: not moved.
+ */
+function namedFrameShown(scene: Scene, body: number, index: number, id: string): Plane | undefined {
+  const shown = scene.bodies[body];
+  const at = scene.design?.shown.indexOf(body) ?? -1;
+  const face = at < 0 ? undefined : scene.design!.bodies[at]?.faces[index];
+  const name = id.split("#")[0];
+  const k = face?.origins?.findIndex((o) => o.names.includes(name)) ?? -1;
+  if (face === undefined || k <= 0) return shownFrame(shown, index);
+  return originFrameNow(shownFrame(shown, index) ?? null, face.frame, face.origins![k].frame ?? null) ?? undefined;
 }
 
 /** The faces of the bodies on screen a sketch can go on (joined numbering, for the viewport to light): the flat ones with a name of their own. */

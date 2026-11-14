@@ -13,6 +13,9 @@ export interface DesignsHost {
   list(): Promise<readonly { id: string; name: string; modified: Date; problem?: string }[]>;
   /** A kept project's file text, or null when it is gone or can't be read. */
   text(id: string): Promise<string | null>;
+  /** The same text exactly as stored, not brought up to date (store.text); and a design's text as today's readers write it (null: unreadable). Both for #628 item 1. */
+  stored?(id: string): Promise<string | null>;
+  asRead?(text: string): string | null;
   /** Keeps a project's file text under `id` (null: a new id), saved at `savedAt`; gives the id. Throws when it can't. */
   put(id: string | null, text: string, name: string, savedAt: Date): Promise<string>;
   /** The kept project open now, or null. */
@@ -54,6 +57,9 @@ const ROUND_WORDS: Readonly<Record<RequestFailure, string>> = {
   storage: "Your latest changes couldn't be sent to your account: this browser's storage is full or turned off, so it can't keep track of what was sent. Free some space (close other tabs of SpindleLabs, or delete old projects); they're sent at your next change.",
 };
 
+/** The session ended under the app (the service's time limit, the account's sessions ended elsewhere): said at the foot of the page by account.ts, and by a round that found nobody signed in (#628 item 4). */
+export const SIGNED_OUT_WORDS = "You're signed out, so your changes are no longer kept in your account. Sign in again to keep them.";
+
 /** The words about a sending round, for the My designs dialog. "" when there is nothing to say. */
 export function reportWords(r: SyncReport | null): string {
   if (r === null) return "";
@@ -64,6 +70,8 @@ export function reportWords(r: SyncReport | null): string {
       if (r.tooBig.length) words.push(`${r.tooBig.map((n) => `“${n}”`).join(", ")} ${r.tooBig.length === 1 ? "is" : "are"} too big to keep in your account (over 5 MB each), so ${r.tooBig.length === 1 ? "it stays" : "they stay"} only in this browser.`);
       const refused = r.refused ?? [];
       if (refused.length) words.push(`The account service refused ${refused.map((n) => `“${n}”`).join(", ")}, so ${refused.length === 1 ? "it stays" : "they stay"} only in this browser until ${refused.length === 1 ? "it changes" : "they change"}. Your other designs are still kept.`);
+      const gone = r.gone ?? [];
+      if (gone.length) words.push(`${gone.map((n) => `“${n}”`).join(", ")} ${gone.length === 1 ? "was" : "were"} deleted from your account, so the changes made here since are kept only in this browser. Use Save to keep a file of ${gone.length === 1 ? "it" : "them"}.`);
       return words.join(" ");
     }
     case "full":
@@ -71,7 +79,7 @@ export function reportWords(r: SyncReport | null): string {
     case "off":
       return "";
     case "signed-out":
-      return "";
+      return SIGNED_OUT_WORDS;
     case "failed":
       return ROUND_WORDS[r.reason];
   }
@@ -209,9 +217,11 @@ export function startDesigns(client: AuthClient, host: DesignsHost, store: Small
       local: {
         list: () => host.list(), // a project with a problem keeps its link, and isn't sent
         text: (id) => host.text(id),
+        ...(host.stored ? { stored: (id: string) => host.stored!(id) } : {}),
         put: (id, text, name, savedAt) => host.put(id, text, name, savedAt),
       },
       hash: sha256,
+      ...(host.asRead ? { asRead: (text: string) => host.asRead!(text) } : {}),
       source: (id) => sourceOf(id),
       picture: (id) => (id === host.openId() ? host.picture() : null),
       lock: (fn) => (globalThis.navigator?.locks ? navigator.locks.request("spindle-design-sync", fn) : leaseLock(fn)),

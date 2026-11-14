@@ -2,7 +2,7 @@
 
 **Draft 0.1, not yet used by the app.** Written 2026-11-11. This draft can still change in any way. The app still saves the plain JSON project described in `docs/project-format.md`; nothing here changes that until phase 1 of the migration plan (section 21).
 
-JSON Schemas for this draft: `schema/manifest.schema.json` (the package manifest) `schema/design-17.schema.json` (the history part with Design data version 17, the current one) and `schema/design-16.schema.json` (version 16).
+JSON Schemas for this draft: `schema/manifest.schema.json` (the package manifest) `schema/design-18.schema.json` (the history part with Design data version 18, the current one), `schema/design-17.schema.json` (version 17) and `schema/design-16.schema.json` (version 16).
 
 ## Contents
 
@@ -331,7 +331,7 @@ An optional picture of the design for file browsers and the library: PNG or WebP
 
 The history part is the project itself: the recipe that builds the design. **Its bytes are exactly the plain project JSON the app saves today.** A plain `.spindle` file and the history part of a package are the same thing; converting one to the other changes no byte of it (section 21.1).
 
-This section describes that JSON field by field, for outer format 2 with Design data version 17, the current versions. The schema is `schema/design-17.schema.json` (`schema/design-16.schema.json` for version 16, which differs only in the constraint rule of 10.4.3 and its version number). `docs/project-format.md` and `docs/document-model.md` (section 8, names) hold the full history and reasons behind each rule; this section states what a reader needs.
+This section describes that JSON field by field, for outer format 2 with Design data version 18, the current versions. The schema is `schema/design-18.schema.json` (`schema/design-17.schema.json` for version 17, which differs only in having no extrude `more`, 10.6, and its version number; `schema/design-16.schema.json` for version 16, which also lacks the constraint rule of 10.4.3). `docs/project-format.md` and `docs/document-model.md` (section 8, names) hold the full history and reasons behind each rule; this section states what a reader needs.
 
 ### 10.1 Outer layout (format 2)
 
@@ -364,7 +364,7 @@ How the app writes it, which every writer MUST follow so the same project gives 
 
 Limits the app enforces on open: at most 64 MiB, nesting at most 256 deep, no non-finite numbers. A reader MUST also refuse duplicate keys (the app's own parser keeps the last one today; see open question 7).
 
-### 10.2 Design data, version 17: top level
+### 10.2 Design data, version 18: top level
 
 ```json
 {
@@ -535,15 +535,15 @@ All lengths are mm, all angles degrees. Lengths and sizes are within 1 µm to 1 
 
 **`extrude` of a ready-made profile**: `{ "profile", "distance" }`. Sweeps the profile's outline (10.3) along its plane's normal by `distance`. `dependsOn` is `[<profile id>]`. Nothing else is allowed in its parameters.
 
-**`extrude` of a sketch**: `{ "sketch", "distance", "flip"?, "region"?, "operation"?, "bodies"? }`.
+**`extrude` of a sketch**: `{ "sketch", "distance", "flip"?, "region"?, "operation"?, "bodies"?, "more"? }`.
 
 - `sketch`: the sketch item it extrudes, before it in the timeline (or deleted: then it builds from `kept`, 10.8, or fails).
 - `distance`: how far, in mm. The extrude goes from the sketch's plane along side × normal (side and normal as in 10.4.6; on an origin plane side is 1); its start cap lies on the sketch plane and its end cap `distance` away.
 - `flip`: only ever `true`: it goes the other way, its start cap still on the plane. Left out otherwise.
 - `region`: which closed region of the sketch it extrudes: `{ "outer": [{ "curve", "reversed" }, ...], "centroid": [x, y] }`. `outer` lists the curves round the region's outside, counter-clockwise, `reversed` true where the region runs a curve from its end to its start; `centroid` is the region's centre of area when it was picked, in sketch mm. Regions inside it are its holes. Without `region` (files before version 9) the extrude takes the sketch's one closed outline. On rebuild the region is found again by its curves, in order from any start, the one with the nearest centroid if two match; failing that, the same curves the other way round; failing that, the one region whose centre is within 10 nm of `centroid` and that still has one of the curves. When none matches, the extrude keeps its last shape with a warning (10.8).
 - `operation` and `bodies`, always together: `operation` is `join`, `cut` or `intersect`; `bodies` lists one or more body ids made before it, each once. Join puts the extrude together with those bodies; cut takes the extrude out of each; intersect keeps only what each shares with the extrude. Without them the extrude is a new body.
-- `dependsOn`: the sketch, then (with an operation) the items that made the listed bodies, each once, in the order of `bodies`. Without an operation, exactly `[<sketch id>]`.
-- Design data version 18 (SL #531, coming) adds `more`: further sketches (and their regions) extruded together into one body.
+- `more` (from Design data version 18): the extrude's profiles after its first (which stays in `sketch` and `region`), a list of 1 to 200 `{ "sketch", "region"? }`. Each `sketch` is a sketch item before the extrude (the first's or another; deleted ones build from `kept`, 10.8), each `region` as above; no profile is listed twice or repeats the first. An extrude with `more` has no `operation`. Each profile is swept as a one-profile extrude with the same `distance` and `flip`, then the prisms are joined: profiles that touch become one body, profiles apart separate bodies. The body holding the first profile is `body:<extrude>`, the others its pieces `body:<extrude>/piece:k` (10.9). A sketch other than the first keeps its last shape in `kept` under `<extrude>/<sketch>`. Version 17 (and older) data holding `more` MUST be refused.
+- `dependsOn`: the sketch, then (with an operation) the items that made the listed bodies, each once, in the order of `bodies`. Without an operation, the sketch then each other sketch `more` names, once each, in the order first named (exactly `[<sketch id>]` without `more`).
 
 **`sketch`**: `{ "plane" }`. `plane` is `"XY"`, `"XZ"`, `"YZ"`, or the name of a flat face of a body made before it (`"face:feature-1/top"`, 10.11). The sketch's content is the `sketches` entry with the same id. `dependsOn` is the face's item (for a face sketch), then every item its pins and projections name, each once.
 
@@ -569,7 +569,7 @@ Which items make a body of their own: `box`, `cylinder`, `sphere`, `extrude` wit
 
 ### 10.8 Kept shapes
 
-`kept` maps the id of an extrude of a sketch to `{ "points", "curves", "placement"? }`: the sketch's points and curves as they were just before the edit that lost the sketch (deleted it, or left it with no outline). While its sketch is lost, the extrude builds from this shape, by its distance now, with a warning. When the sketch makes an outline again, the entry is dropped. `placement`, `{ "plane": <frame>, "side": 1 | -1, "body"?: <frame> }`, is where a sketch not on XY lay, so the kept shape stays there. A kept shape's ids are the sketch's old ones (they may repeat ids still in the sketch; the counter is above them).
+`kept` maps the id of an extrude of a sketch to `{ "points", "curves", "placement"? }`: the sketch's points and curves as they were just before the edit that lost the sketch (deleted it, or left it with no outline). While its sketch is lost, the extrude builds from this shape, by its distance now, with a warning. When the sketch makes an outline again, the entry is dropped. `placement`, `{ "plane": <frame>, "side": 1 | -1, "body"?: <frame> }`, is where a sketch not on XY lay, so the kept shape stays there. A kept shape's ids are the sketch's old ones (they may repeat ids still in the sketch; the counter is above them). From version 18 an extrude with `more` (10.6) keeps one shape per sketch: its first sketch's under the extrude's id, each other sketch's under `<extrude id>/<sketch id>`.
 
 ### 10.9 Bodies, numbers and pieces
 
@@ -578,6 +578,7 @@ Which items make a body of their own: `box`, `cylinder`, `sphere`, `extrude` wit
 - A body's id is `body:<the item that first made it>`, for example `body:feature-5`.
 - A piece split off a body, or a second piece an item leaves, is `body:<the item that split it>/piece:<k>`, k counting from 1.
 - An Extrude Join's piece holding only the new extrude is `body:<the extrude>` (from version 16).
+- An extrude with `more` (from version 18) that leaves several bodies keeps `body:<the extrude>` on the one holding its first profile; the others are its pieces, remembered by `faces` as a Combine's.
 - `number` is the number people read in "Body 3". It is **given once**, when the body first appears, and never worked out again: a reorder, a suppress, a rollback, or an earlier body failing leaves it alone. `nextBody` is above every number ever given, so no number is given twice. A deleted item's body loses its number.
 - `faces`, only on a piece or an Extrude Join's own body: the sorted names of the body's faces (each face's first name) when it was first numbered. On a rebuild the id goes to the one piece with exactly those faces, so an edit earlier in the timeline never silently moves "Body 4" to another piece. When no piece has them, or two do, the piece gets its number by the item's own order of its pieces, with a warning.
 
@@ -607,7 +608,7 @@ Ids inside names are escaped with JavaScript's `encodeURIComponent`, so the sepa
 | box | `bottom` (z = 0), `top`, `front` (y = 0), `back`, `left` (x = 0), `right` |
 | cylinder | `bottom`, `top`, `side` |
 | sphere | `lower`, `upper` (the two halves) |
-| extrude of a sketch | `start` (the cap on the sketch plane), `end` (the cap `distance` away), `side:<curve id>` (the side swept from that curve; `side:circle-3#2` for the second run of a curve that a region passes more than once, counted from 1 in `outer` order) |
+| extrude of a sketch | `start` (the cap on the sketch plane), `end` (the cap `distance` away; for an extrude of several profiles, the first profile's, and `start:<k>`, `end:<k>` for profile k after it, counted from 1), `side:<curve id>` (the side swept from that curve; `side:circle-3#2` for the second run of a curve that a region passes more than once, counted from 1 in `outer` order) |
 | extrude of a ready-made profile | `start`, `end`, `side:<kind>-piece-<n>` (side n of the outline, from 0), `side:<kind>-hole-<i>-piece-<n>` (the side of hole i) |
 | duplicate of a combined body | `<role>:<source item>`, and `side:<source item>~<curve id>` for a side |
 
@@ -1009,7 +1010,7 @@ Design data (`workspaces.design.version`). From version 8 on, most versions add 
 | 15 | Design-wide edge names (`design:`) in pins and projections may appear. | None. |
 | 16 | An Extrude Join's piece holding only the extrude is `body:<the extrude>`. | Every `body:<join>/piece:1` becomes `body:<join>`, and `piece:k` becomes `piece:(k − 1)`, wherever a body is named. |
 | 17 (2026-11-11) | A constraint may name a pinned or projected point beside one of the sketch's own points. | None. |
-| 18 (coming, SL #531) | An extrude of a sketch may extrude several sketches together (`more`). | None. |
+| 18 (2026-11-11) | An extrude of a sketch may hold `more`: further profiles, from the same or other sketches, extruded together as one item. | None. |
 
 ## 22. Open questions for Ben
 

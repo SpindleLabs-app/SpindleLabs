@@ -49,6 +49,13 @@
     "why": "In load, an empty kept list has no entry at any index, so present is undefined and !present refuses it first with the same false; the length test only says so explicitly."
   },
   {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "EqualityOperator",
+    "original": "entries.length > limit + 1",
+    "replacement": "entries.length >= limit + 1",
+    "why": "load's cut to the limit: at exactly limit + 1 entries the mutant sets the length to limit + 1, the length it already has."
+  },
+  {
     "file": "packages/core/src/model/project.ts",
     "mutator": "ConditionalExpression",
     "original": "typeof v !== \"number\"",
@@ -68,6 +75,13 @@
     "original": "x[key] !== undefined",
     "replacement": "true",
     "why": "As above: an undefined value is dropped by JSON.stringify either way."
+  },
+  {
+    "file": "packages/core/src/model/project.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return null; }",
+    "replacement": "{}",
+    "why": "withWorkspaceDocument with a snapshot that does not parse: with the catch emptied, data stays undefined, and the next line refuses it with the same null (!isObject(undefined))."
   },
   {
     "file": "workspaces/design/src/document.ts",
@@ -155,10 +169,122 @@
   },
   {
     "file": "packages/storage/src/autosave.ts",
-    "mutator": "ConditionalExpression",
-    "original": "timer !== null",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "ownEntryThere() with no journal: the call throws inside its try, whose catch gives false, as the undefined entry does. It is reached only after journalVersion matched, which needs a journal anyway."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "dropOwnEntries() with no journal: the call throws inside its try, leaving journalVersion as it was, which is null already without a journal."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "finish() marking its entry kept with no journal: the call throws inside its try, whose catch writes nothing, as the undefined entry does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "ownEntryThere()'s catch: undefined instead of false, and both callers use it only in an && condition, where the two read the same."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
     "replacement": "true",
-    "why": "stop(): clearTimeout(null) does nothing."
+    "why": "owner = false after finish()'s own save: finish() has stopped the autosave, and nothing that runs after it reads owner (rebase() keeps the entry's own kept mark)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null",
+    "replacement": "true",
+    "why": "dropOwnEntries(): readJournalEntry of a missing entry reads no writer, so the writer test that follows is false all the same and nothing is removed under the key."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries(): the writer test that follows decides alone. A missing entry reads no writer, and an empty ownName matches no entry's writer (a writer has 1 to 64 characters), so the key is removed exactly when it was."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "entry != null || ownName !== \"\"",
+    "why": "dropOwnEntries(): the writer test that follows decides whenever the mutant lets it run. A missing entry reads no writer, and an empty ownName matches no entry's writer, so the key is removed exactly when it was."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries(): with an empty ownName the writer test that follows is false all the same, since an entry's writer has 1 to 64 characters."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!journal",
+    "replacement": "false",
+    "why": "journalNow() with no journal: the try then throws (putAsideOthers or setItem on null) and its catch returns false, as this line does; nothing else is changed first (projectToJson and keptFromLastVisit read only)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v === version",
+    "replacement": "true",
+    "why": "save(), back at the text last written: v is read from version a few lines up with no await in between, so they are always equal here."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!stopped && timer === null",
+    "replacement": "true",
+    "why": "Starting the retry timer anyway: a stopped autosave's save() returns at once, and a waiting quiet-moment save always runs before the retry would (changed(), leaving(), stop() and save() itself clear the retry with noRetry() first)."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "!stopped && timer === null",
+    "replacement": "!stopped || timer === null",
+    "why": "Starting the retry timer when stopped, or with a save waiting: a stopped autosave's save() returns at once, and the waiting save clears the retry (noRetry()) before it would fire."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "timer === null",
+    "replacement": "true",
+    "why": "The retry timer started with a quiet-moment save waiting: that save, or whatever clears it (changed(), leaving(), stop()), calls noRetry() first, so the retry never fires."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "summary === undefined",
+    "replacement": "false",
+    "why": "check(), project not listed: reading .problem of undefined throws inside the same try, whose catch returns, as holds = null does a few lines on."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return; // can't be read: the next save says what is wrong }",
+    "replacement": "{}",
+    "why": "check() when the store can't be listed: holds stays undefined, and the guard after it returns on holds == null, the same as returning here."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "OptionalChaining",
+    "original": "written?.getTime",
+    "replacement": "written.getTime",
+    "why": "copyId is only called for an entry refused over newer work, which needs a base, and an entry's base is read only from a head that also gave its written time, so written is never null there."
   },
   {
     "file": "packages/storage/src/autosave.ts",
@@ -439,6 +565,13 @@
     "original": "typeof x === \"string\"",
     "replacement": "true",
     "why": "WORKSPACES holds only strings and includes() never converts, so a non-string is refused all the same."
+  },
+  {
+    "file": "packages/core/src/model/material.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x !== null",
+    "replacement": "true",
+    "why": "deepFreeze is not exported and runs only on STARTER_MATERIALS, which hold no null anywhere (a part a material lacks is left out, not null), so typeof x === \"object\" never meets a null."
   },
   {
     "file": "packages/core/src/model/shortcuts.ts",
@@ -756,6 +889,13 @@
     "why": "sign returns only -1 or 1, never 0, so < 0 and <= 0 agree."
   },
   {
+    "file": "packages/viewport/src/views.ts",
+    "mutator": "EqualityOperator",
+    "original": "up[0] * y[0] + up[1] * y[1] + up[2] * y[2] < 0",
+    "replacement": "up[0] * y[0] + up[1] * y[1] + up[2] * y[2] <= 0",
+    "why": "planeSeenAs: the up Look At gives is this y or its opposite, made from the unit normal and x axis, so the dot is never 0 unless y is the zero vector, which needs a normal along the plane's own x axis: that is no plane, it has no picture to keep the right way round, and nothing in the app makes one."
+  },
+  {
     "file": "packages/viewport/src/framing.ts",
     "mutator": "EqualityOperator",
     "original": "i + 2 < positions.length",
@@ -917,6 +1057,13 @@
     "why": "A bulge of 0 is drawn straight and never reaches the arc, so b is never 0 here."
   },
   {
+    "file": "packages/core/src/model/svg.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "seen.right * seen.up",
+    "replacement": "seen.right / seen.up",
+    "why": "seenLoop is only reached through outlineToSvg, which first refuses any seen whose right or up is not 1 or -1, and for those a / b equals a × b (1/1 = 1, 1/-1 = -1, -1/1 = -1, -1/-1 = 1)."
+  },
+  {
     "file": "workspaces/design/src/document.ts",
     "mutator": "EqualityOperator",
     "original": "there.at > byId.get(f.id)!.at",
@@ -1059,13 +1206,6 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "typeof id !== \"string\"",
-    "replacement": "false",
-    "why": "The shown planes (issue #220): an entry that is not text is not in ORIGIN_PLANES (all text), so it is refused with the same message."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
     "original": "typeof f.id === \"string\"",
     "replacement": "true",
     "why": "migrateDesignV5 (issue #220): an item whose id is not text then joins solids, but solids is only looked up with text (the hidden list maps an entry only when typeof id === \"string\"), so that id is never found; the item is refused later by the item check either way."
@@ -1181,6 +1321,69 @@
     "original": "last === undefined",
     "replacement": "false",
     "why": "Number(undefined) is NaN, and count() turns NaN into 0, the same as the undefined it replaces."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "text === undefined",
+    "replacement": "false",
+    "why": "deletionMark: JSON.parse(undefined) throws (the text \"undefined\" is no JSON), and the catch says false, as the early return does."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof s === \"object\" && s !== null && !Array.isArray(s)",
+    "replacement": "true",
+    "why": "deletionMark: only an object can hold a \"deleted\" text (JSON gives null, arrays, numbers, texts and booleans no named fields), so typeof s.deleted !== \"string\" refuses the rest before \"name\" in s is asked, and null throws on .deleted into the catch's false."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "LogicalOperator",
+    "original": "typeof s === \"object\" && s !== null && !Array.isArray(s)",
+    "replacement": "typeof s === \"object\" && s !== null || !Array.isArray(s)",
+    "why": "deletionMark: only an object can hold a \"deleted\" text (JSON gives null, arrays, numbers, texts and booleans no named fields), so typeof s.deleted !== \"string\" refuses the rest before \"name\" in s is asked, and null throws on .deleted into the catch's false."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof s === \"object\" && s !== null",
+    "replacement": "true",
+    "why": "deletionMark: only an object can hold a \"deleted\" text (JSON gives null, arrays, numbers, texts and booleans no named fields), so typeof s.deleted !== \"string\" refuses the rest before \"name\" in s is asked, and null throws on .deleted into the catch's false."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "LogicalOperator",
+    "original": "typeof s === \"object\" && s !== null",
+    "replacement": "typeof s === \"object\" || s !== null",
+    "why": "deletionMark: only an object can hold a \"deleted\" text (JSON gives null, arrays, numbers, texts and booleans no named fields), so typeof s.deleted !== \"string\" refuses the rest before \"name\" in s is asked, and null throws on .deleted into the catch's false."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof s === \"object\"",
+    "replacement": "true",
+    "why": "deletionMark: only an object can hold a \"deleted\" text (JSON gives null, arrays, numbers, texts and booleans no named fields), so typeof s.deleted !== \"string\" refuses the rest before \"name\" in s is asked, and null throws on .deleted into the catch's false."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "s !== null",
+    "replacement": "true",
+    "why": "deletionMark: only an object can hold a \"deleted\" text (JSON gives null, arrays, numbers, texts and booleans no named fields), so typeof s.deleted !== \"string\" refuses the rest before \"name\" in s is asked, and null throws on .deleted into the catch's false."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "deletionMark's catch: with the block emptied it returns undefined, which every caller (filter, if, !) reads as false."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "remove's mark for a clock that reads NaN: any text in \"deleted\" makes it a mark, and nothing reads the time it holds."
   },
   {
     "file": "packages/storage/src/unsaved.ts",
@@ -2730,6 +2933,41 @@
     "why": "parsesAsProject's catch returning undefined instead of false: its only caller (identifyFile) tests it in an &&, where undefined and false are alike."
   },
   {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "ConditionalExpression",
+    "original": "i < t.length",
+    "replacement": "true",
+    "why": "afterPart21Comments' space skip (save-load hunt D1): past the end t[i] is undefined and /\\s/.test(undefined) tests the text \"undefined\", which has no space, so the loop stops at the same place."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < t.length",
+    "replacement": "i <= t.length",
+    "why": "afterPart21Comments' space skip (save-load hunt D1): past the end t[i] is undefined and /\\s/.test(undefined) tests the text \"undefined\", which has no space, so the loop stops at the same place."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "ConditionalExpression",
+    "original": "end < 0",
+    "replacement": "false",
+    "why": "afterPart21Comments with an unclosed comment: the mutant goes on from i = -1 + 2 = 1, the comment's \"*\", which is no space and starts no \"/*\", so it returns text starting \"*\"; the only caller asks startsWith(\"ISO-10303-21;\"), false for both that and \"\"."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "EqualityOperator",
+    "original": "end < 0",
+    "replacement": "end <= 0",
+    "why": "afterPart21Comments: end is searched for from i + 2 >= 2, so it is -1 or at least 2 and never 0."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "afterPart21Comments' unclosed comment: the only caller asks startsWith(\"ISO-10303-21;\"), false for \"\" and for \"Stryker was here!\" alike."
+  },
+  {
     "file": "packages/ai/src/context.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
@@ -2879,37 +3117,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "c.kind === \"circle\"",
-    "replacement": "false",
-    "why": "A projected circle then takes the arc's list, [start, end, centre]: a circle has no start or end (undefined, which no constraint names), and its centre is still there."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "StringLiteral",
-    "original": "\"circle\"",
-    "replacement": "\"\"",
-    "why": "A projected circle then takes the arc's list, [start, end, centre]: a circle has no start or end (undefined, which no constraint names), and its centre is still there."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
     "original": "c.kind === \"diameter\"",
     "replacement": "true",
     "why": "Only a diameter names a circle: any other constraint's .circle is undefined, which no projection's made is."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "c.kind === \"line\"",
-    "replacement": "false",
-    "why": "A projected line then takes the arc's list, [start, end, centre]: its start and end are still there, and a line has no centre (undefined, which no constraint names)."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "StringLiteral",
-    "original": "\"line\"",
-    "replacement": "\"\"",
-    "why": "A projected line then takes the arc's list, [start, end, centre]: its start and end are still there, and a line has no centre (undefined, which no constraint names)."
   },
   {
     "file": "packages/account/src/auth.ts",
@@ -3052,6 +3262,83 @@
     "why": "A fix's point is looked up in the set of the sketch's point ids (text): any other value is not in it, so it is refused either way."
   },
   {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof f.intent.type !== \"string\"",
+    "replacement": "false",
+    "why": "version3Named (issue #220, 11-14): the regex's capture is always text, so a type that is not text never equals it and the item comes back as it is, as the guard gave it."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion21Fields' features when the data has no timeline list (issue #220, 11-14): a text in place of the empty list is not a record, so some() finds no symmetric extrude either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion22Fields' sketches when the data has no list (issue #220, 11-14): a text in place of the empty list is not a record, so some() finds no face marked first either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion18Fields' features when the data has no timeline list (issue #220, 11-14): a text in place of the empty list is not a record, so some() finds no extrude with more either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion17Fields' list() for a value that is not a list (issue #220, 11-14): as the sketches, a text has no curves list, so it returns false; as pins or projections, a text's .point and .made are undefined, and a constraint's point counts only when it is text (typeof p === \"string\"), so nothing more follows."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion15Fields' sketches when the data has no list (issue #220, 11-14): a text's .pins and .projected are undefined, which held() reads as no list, so it finds nothing either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "migrateDesignV19's features when the data has no timeline list (issue #220, 11-14): the loop skips a text as not a record, so nothing is read or copied either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof body.size === \"number\"",
+    "replacement": "true",
+    "why": "A face sketch's body size (issue #220, 11-14): Number.isFinite is false for anything that is not a number, so the check refuses the same values with the same words."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at > i",
+    "replacement": "there.at >= i",
+    "why": "checkMore (issue #220, 11-14): there.at === i only when a profile names the extrude itself, which is no sketch item, so !isSketchItem refuses it with the same words."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "slash < 0",
+    "replacement": "slash <= 0",
+    "why": "The kept shapes' extrude lookup (issue #220, 11-14): slash === 0 is a key starting with \"/\"; the code looks up \"\" (no item) and the mutant the whole key, and an item found by that is either no extrude of a sketch or one whose profile key (keptKey) is never that key, so both refuse it with the same words (the message still says slash >= 0)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "slash >= 0",
+    "replacement": "slash > 0",
+    "why": "The kept shapes' extrude lookup (issue #220, 11-14): with slash === 0 the extrude looked up is byId.get(\"\"), and no item has an empty id, so !f refuses the key before the profile-key test is read, with the same words."
+  },
+  {
     "file": "packages/account/src/data.ts",
     "mutator": "OptionalChaining",
     "original": "store?.setItem",
@@ -3150,6 +3437,76 @@
     "why": "(issue #275) reached only with journalVersion non-null, which needs a journal."
   },
   {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "dropOwnEntries: an entry's writer is 1 to 64 letters, digits, \"-\" or \"_\" (readJournalEntry's pattern), never \"\" nor \"Stryker was here!\", so with ownName \"\" the writer test is false either way."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "dropOwnEntries and the removal after a kept copy run only while journalVersion is not null, which is only ever set when a journal was given (its first value reads the journal, leaving() sets it after journal.setItem), so journal is never undefined there."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null",
+    "replacement": "true",
+    "why": "dropOwnEntries: readJournalEntry never throws (getItem gives null or text; null is read as the text \"null\", no entry head) and gives a writer only for 1 to 64 letters, digits, \"-\" or \"_\", so with no entry or an ownName of \"\" the writer test is false whatever the first two tests say."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.removeItem",
+    "replacement": "journal.removeItem",
+    "why": "dropOwnEntries and the removal after a kept copy run only while journalVersion is not null, which is only ever set when a journal was given (its first value reads the journal, leaving() sets it after journal.setItem), so journal is never undefined there."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.removeItem",
+    "replacement": "journal.removeItem",
+    "why": "dropOwnEntries and the removal after a kept copy run only while journalVersion is not null, which is only ever set when a journal was given (its first value reads the journal, leaving() sets it after journal.setItem), so journal is never undefined there."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries: readJournalEntry never throws (getItem gives null or text; null is read as the text \"null\", no entry head) and gives a writer only for 1 to 64 letters, digits, \"-\" or \"_\", so with no entry or an ownName of \"\" the writer test is false whatever the first two tests say."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "LogicalOperator",
+    "original": "entry != null && ownName !== \"\"",
+    "replacement": "entry != null || ownName !== \"\"",
+    "why": "dropOwnEntries: readJournalEntry never throws (getItem gives null or text; null is read as the text \"null\", no entry head) and gives a writer only for 1 to 64 letters, digits, \"-\" or \"_\", so with no entry or an ownName of \"\" the writer test is false whatever the first two tests say."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "ownName !== \"\"",
+    "replacement": "true",
+    "why": "dropOwnEntries: readJournalEntry never throws (getItem gives null or text; null is read as the text \"null\", no entry head) and gives a writer only for 1 to 64 letters, digits, \"-\" or \"_\", so with no entry or an ownName of \"\" the writer test is false whatever the first two tests say."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "StringLiteral",
+    "original": "\"no stale state to name\"",
+    "replacement": "\"\"",
+    "why": "leaving(): the error is thrown only to reach the catch, which reads nothing from it."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "journalVersion !== null",
+    "replacement": "true",
+    "why": "finish(): with journalVersion null this autosave has no entry: under its key only another writer's or the last visit's can be, which dropOwnEntries leaves, and aside under its own writer (a random id per tab) nothing, so dropping finds nothing to take."
+  },
+  {
     "file": "packages/testing/src/boolean-naming-model.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
@@ -3211,5 +3568,117 @@
     "original": "same.length > 1",
     "replacement": "same.length >= 1",
     "why": "resolveEdgeName: same.length === 1 has already returned on the line before, so at this point >= 1 and > 1 are the same test."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof locks?.request !== \"function\"",
+    "replacement": "false",
+    "why": "browserLock with no locks.request: the returned lock then throws when called, renew() catches a failing lock and renews without it, which is what no lock does."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "t.kind === \"ok\"",
+    "replacement": "true",
+    "why": "asAnyone's bearer: when the token result is not ok, t.token is undefined, and request() adds no authorization header for an undefined bearer, so the same anonymous request goes out."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "code === \"\"",
+    "replacement": "true",
+    "why": "finishSignIn's cancel test: this line is reached only when error is not null or the code is falsy, and a null code with a null error returned 'none' above, so with error === null the code is always \"\" here."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "StringLiteral",
+    "original": "\"rejected\"",
+    "replacement": "\"\"",
+    "why": "finishSignIn's first failure value: the loop runs at least once (no secrets returned 'expired' above) and every pass either returns or sets failed, so the initial value is never read."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "stored === sessionToText(r.session)",
+    "replacement": "false",
+    "why": "token() after a renewal stored over its session: with the check gone, the stored text still differs from the renewed one, so samePerson() then token(false) reads that same fresh session and answers the same token."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!lock",
+    "replacement": "false",
+    "why": "renew with no lock: calling the undefined lock throws inside the try, and the catch renews without it, which is what the early return does."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v !== null && typeof v === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "LogicalOperator",
+    "original": "v !== null && typeof v === \"object\"",
+    "replacement": "v !== null || typeof v === \"object\"",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v !== null",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof v === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "pendingSignIns' single-object fallback: a non-array, non-object value wrapped in a list is still dropped by the filter (a primitive or null has no verifier and fails isVerifier, and null fails r !== null), so the list of live sign-ins is the same."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof r === \"object\"",
+    "replacement": "true",
+    "why": "pendingSignIns' typeof r === \"object\": a primitive left in passes r !== null but has no verifier property, so isVerifier(undefined) refuses it as before."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "EqualityOperator",
+    "original": "inBody >= 400",
+    "replacement": "inBody > 400",
+    "why": "Storage's code in the body is read only when the HTTP status is 400 (res.status === 400 is tested first), so a body code of exactly 400 gives code 400 whichever is used: the body's or the status."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "The message when Storage gives no text: it is only tested against the token-expired words (jwt, token…expired, exp…claim), which neither \"\" nor any other text without them matches, so the answer is a plain refusal either way."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "res.status === 401",
+    "replacement": "false",
+    "why": "code is the HTTP status unless the status is 400, so an HTTP 401 always has code === 401, the next test, which renews just the same."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "ConditionalExpression",
+    "original": "r.kind === \"failed\"",
+    "replacement": "true",
+    "why": "Only a failed reply has a reason: an ok or signed-out reply has none, so r.reason === \"rejected\" alone already means a refused request."
   }
 ]

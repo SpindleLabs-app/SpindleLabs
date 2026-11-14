@@ -181,3 +181,15 @@ test("the Downstream section: hidden with no chips, one button per chip, a click
   assert.equal($("downstream").hidden, true, "hidden again when the last chip goes");
   assert.deepEqual(shown(), []);
 });
+
+// #505: the Feature section says why the selected item failed, in visible text (a phone has no tooltips).
+test("the Feature section shows why the selected item failed, and clears it", () => {
+  const { p, $ } = panel();
+  assert.equal($("feature-failure").hidden, true);
+  p.showFeatureFailure("Box 2 doesn't reach Body 1.");
+  assert.equal($("feature-failure").hidden, false);
+  assert.equal($("feature-failure").textContent, "Couldn't be made: Box 2 doesn't reach Body 1.");
+  p.showFeatureFailure("");
+  assert.equal($("feature-failure").hidden, true);
+  assert.equal($("feature-failure").textContent, "");
+});

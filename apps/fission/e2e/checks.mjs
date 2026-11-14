@@ -17,10 +17,12 @@ export const HELPERS = [
   "monkey-units.mjs",
   "png.mjs",
   "properties.mjs",
+  "save-picker-lib.mjs",
   "sketch-screen.mjs",
   "soak-judge.mjs",
   "soak-model.mjs",
   "start.mjs",
+  "toolbar-swipe.mjs",
 ];
 
 /** Files run somewhere else, or by hand. */

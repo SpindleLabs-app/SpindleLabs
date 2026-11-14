@@ -86,29 +86,72 @@ class NextVersion(unittest.TestCase):
     def test_hand_worked(self):
         nv = changelog.next_version
         self.assertEqual(nv((0, 32, 21), "fix"), (0, 32, 22))  # bug fix adds one
-        self.assertEqual(nv((0, 32, 21), ("step", 33)), (0, 33, 0))  # a new step starts at .0
-        self.assertEqual(nv((0, 32, 21), ("step", 35)), (0, 35, 0))  # a jump of steps is allowed
-        self.assertIsNone(nv((0, 32, 21), ("step", 32)))  # step 32 already started
-        self.assertIsNone(nv((0, 32, 21), ("step", 31)))  # an older step's late piece
+        self.assertEqual(nv((0, 32, 21), ("step", 33)), (0, 33, 0))  # a new step: one more, starting at .0
+        # The step's own number never moves the version by more than one: the
+        # middle number counts steps started. Step 89 done early from 0.35.53
+        # is 0.36.0, not 0.89.0 (the jump this rule ends), and the main line's
+        # step 37 from 0.89.72 is 0.90.0, not "nothing" (37 < 89).
+        self.assertEqual(nv((0, 35, 53), ("step", 89)), (0, 36, 0))
+        self.assertEqual(nv((0, 89, 72), ("step", 37)), (0, 90, 0))
+        self.assertEqual(nv((0, 89, 72), ("step", 0)), (0, 90, 0))
         self.assertIsNone(nv((0, 32, 21), "none"))
+
+    def test_legacy_rule_kept(self):
+        # The fragments merged under the old rule (0.N.0, or nothing when
+        # step N or later had started) keep it, so their numbers never move.
+        nv = changelog.next_version
+        self.assertEqual(nv((0, 32, 21), ("step", 35), legacy=True), (0, 35, 0))
+        self.assertEqual(nv((0, 35, 53), ("step", 89), legacy=True), (0, 89, 0))
+        self.assertIsNone(nv((0, 89, 5), ("step", 77), legacy=True))
+        self.assertIsNone(nv((0, 89, 5), ("step", 89), legacy=True))
+        self.assertEqual(changelog.bumped((0, 35, 53), frag("oubx5f-kept-history.md", ("step", 89))), (0, 89, 0))
+        self.assertEqual(changelog.bumped((0, 35, 53), frag("other.md", ("step", 89))), (0, 36, 0))
+
+    def test_main_history_replayed(self):
+        # The app's own history, by hand (`changelog.py show`, 14 Nov 2026):
+        # 0.35.53, then step 89 (kept history, legacy) made 0.89.0; a fix
+        # 0.89.1; step 77 (3MF and OBJ, legacy) nothing; a fix 0.89.2; step
+        # 53 (symmetric, legacy) and step 66 (mass, legacy) nothing. From
+        # then on: step 37 makes 0.90.0, a fix 0.90.1, step 38 0.91.0. The
+        # numbers already shown stay exactly as they were and none goes back.
+        start = "# Changelog\n\n## 0.35.53 (2026-11-09)\n\n- Start.\n"
+        order = [frag("oubx5f-kept-history.md", ("step", 89)), frag("a.md", "fix"),
+                 frag("p357ph-3mf-obj.md", ("step", 77)), frag("b.md", "fix"),
+                 frag("gig53r-symmetric.md", ("step", 53)), frag("gig53r-body-mass.md", ("step", 66)),
+                 frag("c.md", ("step", 37)), frag("d.md", "fix"), frag("e.md", ("step", 38))]
+        versions = [v for _, v in changelog.versions_of(parse_changelog(start)[1], order)]
+        self.assertEqual(versions, [(0, 89, 0), (0, 89, 1), (0, 89, 1), (0, 89, 2), (0, 89, 2), (0, 89, 2),
+                                    (0, 90, 0), (0, 90, 1), (0, 91, 0)])
+
+    def test_legacy_names_are_the_merged_step_fragments(self):
+        # Every step fragment still on main is a legacy one (all merged before
+        # the rule changed); a new one there would mean the list is stale or a
+        # pull request added itself to it.
+        fragments, _ = changelog.read_fragments(ROOT)
+        steps = {n for n, f in fragments.items() if isinstance(f.bump, tuple)}
+        for name in steps - changelog.LEGACY_STEPS:
+            self.assertNotIn(fragments[name].bump[1], changelog.STARTED_STEPS, name)
 
 
 class Number(unittest.TestCase):
     def test_hand_worked(self):
-        # Merged in this order: a none, b fix, c none, d step 33, e fix, f step 33, g step 32.
+        # Merged in this order: a none, b fix, c none, d step 33, e fix, f none, g step 40.
         # a joins 0.32.21 (on top: newest first); b makes 0.32.22, c joins it;
-        # d makes 0.33.0; e makes 0.33.1; f (step 33 already started) and g
-        # (an older step) join 0.33.1, f above e and g above f.
+        # d makes 0.33.0; e makes 0.33.1; f joins 0.33.1 above e; g (step 40,
+        # done early) makes 0.34.0, one more, never 0.40.0.
         order = [frag("a", "none", "2026-10-28"), frag("b", "fix", "2026-10-28"), frag("c", "none", "2026-10-29"),
                  frag("d", ("step", 33), "2026-10-29"), frag("e", "fix", "2026-10-30"),
-                 frag("f", ("step", 33), "2026-10-30"), frag("g", ("step", 32), "2026-10-31")]
+                 frag("f", "none", "2026-10-30"), frag("g", ("step", 40), "2026-10-31")]
         self.assertEqual(numbered_text(START, order), """# Changelog
 
 Intro.
 
-## 0.33.1 (2026-10-30)
+## 0.34.0 (2026-10-31)
 
 - Entry g.
+
+## 0.33.1 (2026-10-30)
+
 - Entry f.
 - Entry e.
 
@@ -155,19 +198,16 @@ Intro.
 
 def model(start, bumps):
     """The version after these bumps, worked out independently of number():
-    the step is the highest of the start's and every step named; the fix
-    count is the start's plus every fix when no step rose past the start,
-    otherwise the fixes merged after the last step that set a new highest."""
+    the middle number is the start's plus one per step (whatever its number);
+    the fix count is the start's plus every fix when no step merged,
+    otherwise the fixes merged after the last step. Every fix and every step
+    makes a new version."""
     big, step, fixes = start
-    highest, last_rise = step, None
-    for i, b in enumerate(bumps):
-        if b != "fix" and b != "none" and b[1] > highest:
-            highest, last_rise = b[1], i
-    if last_rise is None:
-        return (big, step, fixes + bumps.count("fix")), bumps.count("fix")
-    rises = sum(1 for i, b in enumerate(bumps)
-                if b not in ("fix", "none") and b[1] > max([step] + [c[1] for c in bumps[:i] if c not in ("fix", "none")]))
-    return (big, highest, bumps[last_rise + 1:].count("fix")), bumps.count("fix") + rises
+    steps = [i for i, b in enumerate(bumps) if b not in ("fix", "none")]
+    new = bumps.count("fix") + len(steps)
+    if not steps:
+        return (big, step, fixes + bumps.count("fix")), new
+    return (big, step + len(steps), bumps[steps[-1] + 1:].count("fix")), new
 
 
 class RandomMergeOrders(unittest.TestCase):
@@ -206,6 +246,11 @@ class RandomMergeOrders(unittest.TestCase):
                 expected_version, expected_new = model((0, step, fixes), [f.bump for f in fragments])
                 self.assertEqual(sections[0].version, expected_version)
                 self.assertEqual(len(sections) - 1, expected_new)
+                # No jump and no going back: each entry's version is the one
+                # before or one more fix or one more step.
+                versions = [(0, step, fixes)] + [v for _, v in changelog.versions_of(parse_changelog(start)[1], fragments)]
+                for before, after in zip(versions, versions[1:]):
+                    self.assertIn(after, (before, (0, before[1], before[2] + 1), (0, before[1] + 1, 0)))
                 k = rng.randint(0, len(fragments))
                 folded = numbered_text(start, fragments[:k])
                 self.assertEqual(numbered_text(folded, fragments[k:]), text)
@@ -262,6 +307,35 @@ class CheckPr(unittest.TestCase):
 
     def test_one_new_fragment(self):
         self.assertEqual(self.run_check([("A", "changelog.d/new.md"), ("M", "kernel/src/lib.rs")], {}), [])
+
+    def step_check(self, step, base_extra=None):
+        base = dict(self.BASE, **(base_extra or {}))
+        new = {"changelog.d/new.md": f"step {step}\n\n- A step.\n\npublic: none\n"}
+        files = dict(base, **new)
+        return check_pr([("A", "changelog.d/new.md")], lambda p: base[p], lambda p: files[p],
+                        [p for p in base if p.startswith("changelog.d/")])
+
+    def test_a_step_not_started_yet(self):
+        # Step 37 (the main line's next) and step 90 have not started: fine.
+        self.assertEqual(self.step_check(37), [])
+        self.assertEqual(self.step_check(90), [])
+
+    def test_a_step_already_started_is_refused(self):
+        # Step 89 (done early), 53, 66, 77 and every step to 36 had started
+        # by 14 Nov 2026: a second start would count one step twice.
+        for step in (89, 77, 66, 53, 36, 35, 1, 0):
+            problems = self.step_check(step)
+            self.assertEqual(len(problems), 1, step)
+            self.assertIn(f"step {step} has already started", problems[0])
+            self.assertIn("write 'none'", problems[0])
+
+    def test_a_step_another_fragment_on_main_started(self):
+        # A fragment on main started step 40; this one may not start it again.
+        problems = self.step_check(40, {"changelog.d/s40.md": "step 40\n\n- Step 40.\n\npublic: none\n"})
+        self.assertEqual(len(problems), 1)
+        self.assertIn("step 40 has already started (changelog.d/s40.md)", problems[0])
+        # Step 41 is still free.
+        self.assertEqual(self.step_check(41, {"changelog.d/s40.md": "step 40\n\n- Step 40.\n\npublic: none\n"}), [])
 
     def test_no_fragment(self):
         problems = self.run_check([("M", "kernel/src/lib.rs")], {})
@@ -416,17 +490,17 @@ class FoldPublic(unittest.TestCase):
     def test_hand_worked(self):
         # From 0.32.21: f1 is a fix with nothing public (0.32.22), f2 a fix
         # with a line (0.32.23), f3 a none with a line (joins 0.32.23, on top
-        # of f2), f4 step 40 (0.40.0). 0.32.22 gets no heading: the list jumps
-        # from 0.32.23 to 0.32.21, and nothing is renumbered.
+        # of f2), f4 step 40 (one more step: 0.33.0). 0.32.22 gets no heading:
+        # the list jumps from 0.32.23 to 0.32.21, and nothing is renumbered.
         sections = parse_changelog(START)[1]
         fragments = [pfrag("f1", "fix", "", "2026-10-28"), pfrag("f2", "fix", "- B.", "2026-10-29"),
                      pfrag("f3", "none", "- C.", "2026-10-30"), pfrag("f4", ("step", 40), "- D.", "2026-10-31")]
         assigned = changelog.versions_of(sections, fragments)
-        self.assertEqual([v for _, v in assigned], [(0, 32, 22), (0, 32, 23), (0, 32, 23), (0, 40, 0)])
+        self.assertEqual([v for _, v in assigned], [(0, 32, 22), (0, 32, 23), (0, 32, 23), (0, 33, 0)])
         dates = {s.version: s.date for s in number(sections, fragments)}
         got = changelog.fold_public(PUBLIC_START, assigned, dates)
         self.assertEqual(got, PUBLIC_START.replace(
-            "## 0.32.21", "## 0.40.0 (2026-10-31)\n\n- D.\n\n## 0.32.23 (2026-10-29)\n\n- C.\n- B.\n\n## 0.32.21"))
+            "## 0.32.21", "## 0.33.0 (2026-10-31)\n\n- D.\n\n## 0.32.23 (2026-10-29)\n\n- C.\n- B.\n\n## 0.32.21"))
         self.assertEqual(changelog.check_public(got, number(sections, fragments)), [])
 
     def test_into_the_middle(self):
@@ -659,6 +733,22 @@ class RealGit(unittest.TestCase):
         self.branch("new", "none", base="good")
         r = subprocess.run([sys.executable, SCRIPT, "pr", "main", "new", self.dir], capture_output=True, text=True)
         self.assertEqual((r.returncode, r.stdout), (0, "this pull request's changelog files are in order\n"))
+
+    def test_pr_command_refuses_a_step_started_on_main(self):
+        # The real command reads the base's fragments from git: step 40
+        # merged, so a second `step 40` is refused and `step 41` passes; the
+        # version counts each step once (0.32.21 -> 0.33.0 -> 0.34.0).
+        self.branch("s40", "step 40")
+        self.merge("s40", "2026-10-28T12:00:00Z")
+        self.branch("again", "step 40")
+        r = subprocess.run([sys.executable, SCRIPT, "pr", "main", "again", self.dir], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("step 40 has already started (changelog.d/s40.md)", r.stdout)
+        self.branch("s41", "step 41")
+        r = subprocess.run([sys.executable, SCRIPT, "pr", "main", "s41", self.dir], capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stdout), (0, "this pull request's changelog files are in order\n"))
+        self.merge("s41", "2026-10-29T12:00:00Z")
+        self.assertEqual(self.run_script("version"), (0, "0.34.0\n"))
 
     def test_check_refuses_a_bad_fragment(self):
         self.write("changelog.d/bad.md", "bugfix\n\n- x\n")

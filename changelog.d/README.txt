@@ -11,7 +11,9 @@ branch's last part and a word or two, like ev4faw-version-bot.md):
     - What a person using SpindleLabs notices, in plain words.
 
 First line: `fix` (the bug-fix number goes up by one), `step N` (the first
-piece of CAD step N: the version becomes 0.N.0) or `none` (anything else).
+piece of CAD step N: the middle number goes up by one, 0.89.72 -> 0.90.0,
+whatever N is; a step starts once, so its later pieces are `none` or `fix`)
+or `none` (anything else).
 Then a blank line and the entry, "- " lines in plain words.
 
 Last, after a blank line, the public part: the lines for What's new, the
