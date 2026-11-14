@@ -1206,13 +1206,6 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "typeof id !== \"string\"",
-    "replacement": "false",
-    "why": "The shown planes (issue #220): an entry that is not text is not in ORIGIN_PLANES (all text), so it is refused with the same message."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
     "original": "typeof f.id === \"string\"",
     "replacement": "true",
     "why": "migrateDesignV5 (issue #220): an item whose id is not text then joins solids, but solids is only looked up with text (the hidden list maps an entry only when typeof id === \"string\"), so that id is never found; the item is refused later by the item check either way."
@@ -3124,37 +3117,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "c.kind === \"circle\"",
-    "replacement": "false",
-    "why": "A projected circle then takes the arc's list, [start, end, centre]: a circle has no start or end (undefined, which no constraint names), and its centre is still there."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "StringLiteral",
-    "original": "\"circle\"",
-    "replacement": "\"\"",
-    "why": "A projected circle then takes the arc's list, [start, end, centre]: a circle has no start or end (undefined, which no constraint names), and its centre is still there."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
     "original": "c.kind === \"diameter\"",
     "replacement": "true",
     "why": "Only a diameter names a circle: any other constraint's .circle is undefined, which no projection's made is."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "c.kind === \"line\"",
-    "replacement": "false",
-    "why": "A projected line then takes the arc's list, [start, end, centre]: its start and end are still there, and a line has no centre (undefined, which no constraint names)."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "StringLiteral",
-    "original": "\"line\"",
-    "replacement": "\"\"",
-    "why": "A projected line then takes the arc's list, [start, end, centre]: its start and end are still there, and a line has no centre (undefined, which no constraint names)."
   },
   {
     "file": "packages/account/src/auth.ts",
@@ -3295,6 +3260,83 @@
     "original": "typeof c.point !== \"string\"",
     "replacement": "false",
     "why": "A fix's point is looked up in the set of the sketch's point ids (text): any other value is not in it, so it is refused either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof f.intent.type !== \"string\"",
+    "replacement": "false",
+    "why": "version3Named (issue #220, 11-14): the regex's capture is always text, so a type that is not text never equals it and the item comes back as it is, as the guard gave it."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion21Fields' features when the data has no timeline list (issue #220, 11-14): a text in place of the empty list is not a record, so some() finds no symmetric extrude either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion22Fields' sketches when the data has no list (issue #220, 11-14): a text in place of the empty list is not a record, so some() finds no face marked first either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion18Fields' features when the data has no timeline list (issue #220, 11-14): a text in place of the empty list is not a record, so some() finds no extrude with more either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion17Fields' list() for a value that is not a list (issue #220, 11-14): as the sketches, a text has no curves list, so it returns false; as pins or projections, a text's .point and .made are undefined, and a constraint's point counts only when it is text (typeof p === \"string\"), so nothing more follows."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "hasVersion15Fields' sketches when the data has no list (issue #220, 11-14): a text's .pins and .projected are undefined, which held() reads as no list, so it finds nothing either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "migrateDesignV19's features when the data has no timeline list (issue #220, 11-14): the loop skips a text as not a record, so nothing is read or copied either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof body.size === \"number\"",
+    "replacement": "true",
+    "why": "A face sketch's body size (issue #220, 11-14): Number.isFinite is false for anything that is not a number, so the check refuses the same values with the same words."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at > i",
+    "replacement": "there.at >= i",
+    "why": "checkMore (issue #220, 11-14): there.at === i only when a profile names the extrude itself, which is no sketch item, so !isSketchItem refuses it with the same words."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "slash < 0",
+    "replacement": "slash <= 0",
+    "why": "The kept shapes' extrude lookup (issue #220, 11-14): slash === 0 is a key starting with \"/\"; the code looks up \"\" (no item) and the mutant the whole key, and an item found by that is either no extrude of a sketch or one whose profile key (keptKey) is never that key, so both refuse it with the same words (the message still says slash >= 0)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "slash >= 0",
+    "replacement": "slash > 0",
+    "why": "The kept shapes' extrude lookup (issue #220, 11-14): with slash === 0 the extrude looked up is byId.get(\"\"), and no item has an empty id, so !f refuses the key before the profile-key test is read, with the same words."
   },
   {
     "file": "packages/account/src/data.ts",
