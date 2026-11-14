@@ -78,7 +78,8 @@ import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, CONSTRAINT_MARK_PIXELS, curveCount, hoverTool, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
-import { PICK_PIXELS, deleteCurves, deleteStep, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { PICK_PIXELS, deleteCurves, deleteStep, labelPicks, pickCurve, selectStatus, stillPicked } from "./sketch-select.ts";
+import { addsToSelection } from "./select-keys.ts";
 import { changeDimensionTool, clickConstraint, constraintPickAt, constraintStep, dimensionLine, isConstraintTool, selectAt } from "./constraint-tool.ts";
 import { addConstraint, changeDimension, type NewConstraint } from "./constraints.ts";
 import { toggleConstruction } from "./construction.ts";
@@ -206,7 +207,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting, duplicate: Duplicating): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; explode: HTMLButtonElement; measure: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onCombine: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting, duplicate: Duplicating): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; printCheck: HTMLButtonElement; explode: HTMLButtonElement; measure: HTMLButtonElement; search: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -312,7 +313,14 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   modifying.element.dataset.modelling = "";
   const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
   // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
-  slot.append(creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
+  // The command search button (the S key's box for a touch screen, which has no S): first in the row so a phone's scroll never hides it.
+  const search = button("command-search-button", "Search commands", "Search commands: find a command by name (key S), type a few letters, then pick the one you want.", () => {});
+  search.dataset.modelling = ""; // like the S key, not while a sketch is edited
+  const searching = toolGroup(document, { name: "Search" });
+  searching.element.classList.add("command-search-button");
+  searching.element.dataset.modelling = "";
+  searching.add([search, "search"]);
+  slot.append(searching.element, creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
   /** The toolbar's own buttons as the command search names them: the group's name, then the button's ("Export STL"). */
   const named: [string, HTMLButtonElement][] = [];
   for (const group of toolbarGroups()) {
@@ -335,7 +343,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
     const items = [createSections(), modifySections(), [{ items: comingItems("Construct") }], inspectSections(), insertSections(onInsert)].flatMap((ss) => ss.flatMap((sec) => sec.items.map((i) => (sec.heading === "Mirror body" ? { ...i, label: `${sec.heading}: ${i.label}` } : i))));
     return items.map((i) => ({ id: i.id, label: i.label, key: i.key, off: i.off, run: i.run }));
   };
-  return { made, insert: inserting.menu!, facts, printCheck, explode, measure, commands };
+  return { made, insert: inserting.menu!, facts, printCheck, explode, measure, search, commands };
 }
 
 /** A browser row's icon (U0f3): 16 px, before its words, hidden from screen readers. */
@@ -462,7 +470,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         row.dataset.label = n.label;
         row.dataset.tip = row.title;
         row.dataset.node = n.id;
-        if (ref) row.addEventListener("click", (e) => onSelect(ref, (e as MouseEvent).shiftKey));
+        if (ref) row.addEventListener("click", (e) => onSelect(ref, addsToSelection(e as MouseEvent))); // Shift, Ctrl or Cmd adds (SL #524)
         if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith("body-")) {
           row.addEventListener("dblclick", () => onOpen(n.id));
           // The row's menu: a right-click at the pointer, or the ⋯ button under itself.
@@ -607,9 +615,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     exploded: () => explodeSpread !== null,
     noExplode: () => ((lastScene?.bodies.length ?? 0) >= 2 ? null : NO_EXPLODE),
   };
-  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
+  const { insert: insertMenu, facts: factsButton, printCheck: printCheckButton, explode: explodeButton, measure: measureButton, search: searchButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), () => startCombine(), (kind) => afterOk(() => void insertBody(kind)), inspecting, { run: () => void duplicateBodies(), off: duplicateOff, mirror: (plane) => void duplicateBodies(undefined, plane), scale: () => startMove(null, "scale") });
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
+  searchButton.addEventListener("click", () => searchBox.open());
   // File ▾ Export 3MF or OBJ… (step 77): the format asked, then every body shown, as the whole design's STL takes them.
   const meshChoice = exportChoice(ctx.toolbar, async (format) => {
     if (!(await exportReady(`Export ${format.name}`))) return;
@@ -744,6 +753,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = designDoc();
     drawBrowser(doc);
     showBar(doc);
+    if (mode.kind === "edit") drawSketches(); // the dimension labels' values (SL #519 item 1)
     return true;
   };
   followUnit(ctx.properties.ownerDocument, unitWatch);
@@ -2062,6 +2072,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function modelling(on: boolean) {
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-modelling]")) el.hidden = !on;
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-sketching]")) el.hidden = on;
+    ctx.toolbar.scrollLeft = 0; // a different row of buttons: start from its left end, not where the last one was scrolled to
   }
   const designDoc = () => ctx.project.workspaces.design as DesignDocument;
   /** Counts tool changes (a tool chosen, Escape, the sketch entered again): a click the kernel was still snapping across one is dropped. */
@@ -2104,7 +2115,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Marks and dimension labels are sized in screen pixels at the camera as it is now, never at the pointer's last move: a camera
     // that moved since left them sized for the old view, and the next click jumped a label from under the pointer (47e, Firefox).
     const pixel = editing ? (pixelNow(editing.pointer) ?? editing.pixel) : undefined;
-    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
+    viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, pixel, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap, unit: currentUnit(ctx.properties.ownerDocument) }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
     sketchBar.showPicked(editing?.tool.kind === "select" ? stillPicked(doc.sketches.find((s) => s.id === editing.tool.sketch), editing.tool.picked).length : 0);
     if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
@@ -2760,6 +2771,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const onLabelClick = (e: MouseEvent) => {
     const label = e.target instanceof Element ? e.target.closest<HTMLElement>(".sketch-label") : null;
     if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "dimension") editDimension(label.dataset.dimension);
+    // With Select a click on a dimension's number picks the dimension, as a click on its line does (SL #524 item 4).
+    if (label?.dataset.dimension && mode.kind === "edit" && mode.tool.kind === "select") {
+      const tool = mode.tool;
+      const picked = labelPicks(designDoc().sketches.find((s) => s.id === tool.sketch), tool.picked, label.dataset.dimension, e.shiftKey);
+      if (picked === null) return;
+      mode.tool = { ...tool, picked, hover: null };
+      sketchBox.showError("");
+      showSketchStatus();
+      drawSketches();
+    }
   };
 
   function constrain(sketchId: string, add: NewConstraint, refused: () => void = () => {}) {
@@ -3031,7 +3052,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const e = extruding;
     // Edit feature's regions (48d4) stay drawn while it is open.
     if (!e) return editRegions !== null ? showEditRegions() : viewport.showExtrude(null);
-    const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
+    // Symmetric (53a1): the arrow is half the thickness long, its tip on the end cap, as `arrowOf` and `symmetricDrag` have it
+    // (app-wide hunt 2026-11-14, R-2: at the whole thickness each grab of the arrow doubled the distance).
+    const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: extrudeBox.symmetric ? Math.abs(e.distance) / 2 : e.distance } : null;
     viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, ...(e.more.length > 0 ? { alsoChosen: e.more.map((m) => m.id) } : {}), preview: e.preview?.mesh ?? null, arrow, ...(e.operation === "cut" ? { cut: true } : {}) });
     // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
@@ -3248,7 +3271,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       else {
         // Each prism builds (a profile that can't let go above), so a refusal here is of joining them, which OK would refuse
         // in the same words: the picks stay, with no preview under the words (as for a refused distance).
-        const joined = await unitedViews(kernel, prisms.map((p) => ({ spec: previewSpec(p.spec, at), ...(p.curves ? { curves: p.curves } : {}) }))).catch((err: unknown) => err as Error);
+        const joined = await unitedViews(kernel, prisms.map((p) => ({ spec: previewSpec(p.spec, at, both), ...(p.curves ? { curves: p.curves } : {}) }))).catch((err: unknown) => err as Error);
         if (joined instanceof Error) {
           if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || e.distance !== d) return;
           e.preview = null;

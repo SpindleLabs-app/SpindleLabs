@@ -366,9 +366,19 @@ export function runBarSession(bar: Bar, steps: readonly Step[], onRename?: (outc
         onRename?.("cause" in haveRename ? haveRename.cause : haveRename.kind);
         if (JSON.stringify(haveRename) !== JSON.stringify(wantRename)) return fail(`renaming ${got.id} to ${JSON.stringify(typed)} gave ${JSON.stringify(haveRename)}, the model ${JSON.stringify(wantRename)}`);
         if (!("refused" in r) && r.doc !== doc) {
-          // Nothing but the names changed (descriptions never do, U0e2).
-          const strip = (d: DesignDocument) => JSON.stringify(d, (key, v) => (key === "label" ? undefined : v));
+          // Nothing but the names changed, and the descriptions of the items made from it (SL #524 item 1): each says the
+          // new name where it said the old one (split and joined here, checked only where the old name stands alone).
+          const strip = (d: DesignDocument) => JSON.stringify(d, (key, v) => (key === "label" || key === "summary" ? undefined : v));
           if (strip(r.doc) !== strip(doc)) return fail(`renaming ${got.id} changed more than names`);
+          const oldName = model.items[k].name;
+          const newName = typed.trim();
+          for (const [n, f] of r.doc.timeline.features.entries()) {
+            const was = doc.timeline.features[n].intent.summary;
+            const made = f.id !== got.id && f.provenance.from.some((p) => p.id === got.id);
+            const alone = was.split(oldName).length === was.split(new RegExp(`(?<![\\p{L}\\p{N}])${oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "u")).length;
+            const want = made ? (alone ? was.split(oldName).join(newName) : null) : was;
+            if (want !== null && f.intent.summary !== want) return fail(`renaming ${got.id} to ${JSON.stringify(typed)} made ${f.id}'s words "${f.intent.summary}", not "${want}"`);
+          }
           record(r.doc, after);
         }
       }

@@ -1,7 +1,9 @@
 // Browser check of the sketch's typed-size boxes in the chosen unit (U2c3): with inches chosen the Length box says
 // "in", shows the live length in inches, a typed 1 locks a 25.4 mm line, the Angle box stays degrees, a bad size is
 // refused in inches, and a unit change with a length typed shows the same length in the other unit. Millimetres are
-// as before (typed-entry.mjs). Run with `npm run e2e` (after `npm run build`). SHOTS=dir saves screenshots.
+// as before (typed-entry.mjs). SL #519: in inches the Grid box shows and reads inches, a dimension's label reads 1 for
+// a 25.4 mm line, and in millimetres "1 in" typed in the Length box draws a 25.4 mm line. Run with `npm run e2e` (after
+// `npm run build`). SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
@@ -113,6 +115,55 @@ try {
     await page.locator("#typed-entry").waitFor();
     await page.keyboard.press("0");
     await until(page, () => /more than 0 in/.test(document.querySelector("label[data-field=length] .typed-entry-error")?.textContent ?? ""), null, "the refusal in inches");
+    await page.context().close();
+  });
+
+  await check("SL #519: inches in the Grid box and a dimension's label; '1 in' typed in millimetres", async () => {
+    const page = await fresh();
+    await chooseUnit(page, "in");
+    await sketch(page);
+    // The Grid box: the grid in inches, "in" after it; 0.5 typed is a 12.7 mm grid (0.5 x 25.4), shown 12.7 in mm.
+    await openPanel(page, "properties", false);
+    assert.match((await page.locator(".sketch-grid").textContent()).trim(), / in$/);
+    await page.fill("#sketch-grid", "0.5");
+    await page.press("#sketch-grid", "Enter");
+    await page.locator("#sketch-grid").blur();
+    await until(page, () => document.querySelector("#sketch-grid-error")?.hidden !== false, null, "the 0.5 in grid taken");
+    assert.equal(await page.inputValue("#sketch-grid"), "0.5");
+    if (shots) await page.screenshot({ path: `${shots}/sketch-grid-inch-1280.png` });
+    await chooseUnit(page, "mm");
+    await openPanel(page, "properties", false);
+    assert.equal(await page.inputValue("#sketch-grid"), "12.7", "the same grid, 12.7 mm");
+    assert.match((await page.locator(".sketch-grid").textContent()).trim(), / mm$/);
+    // Back to a 1 mm grid, then a line typed "1 in" in millimetres: 25.4 mm (it was "isn't a length").
+    await page.fill("#sketch-grid", "1");
+    await page.locator("#sketch-grid").blur();
+    await closePanels(page, false);
+    await page.waitForTimeout(300);
+    await clickPlane(page, [0, 0]);
+    await hover(page, [20, 0]);
+    await page.locator("#typed-entry").waitFor();
+    await page.keyboard.type("1 in");
+    await until(page, () => document.querySelector("#viewport").dataset.sketchPreview === "0,0 25.4,0", null, "a 25.4 mm preview").catch(async (e) => assert.fail(`${e.message} shown "${await data(page, "sketchPreview")}"`));
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Escape");
+    // The line dimensioned as drawn (25.4 mm): in inches its label reads 1, never 25.4.
+    await chooseUnit(page, "in");
+    await page.click("#sketch-tool-dimension");
+    await until(page, () => document.querySelector("#sketch-tool-dimension")?.getAttribute("aria-pressed") === "true", null, "Dimension pressed");
+    await hover(page, [12.7, 0]);
+    const box = await page.locator("#viewport canvas").boundingBox();
+    const mid = screenPoint(box, [12.7, 0, 0], TOP);
+    await page.mouse.click(mid.x, mid.y);
+    await until(page, () => document.activeElement?.id === "typed-length", null, "the Length box has the keys");
+    await page.keyboard.type("1");
+    await page.keyboard.press("Enter");
+    await until(page, () => [...document.querySelectorAll(".sketch-label")].map((l) => l.textContent).join("|") === "1", null, "the label reads 1").catch(async (e) =>
+      assert.fail(`${e.message}: "${await page.evaluate(() => [...document.querySelectorAll(".sketch-label")].map((l) => l.textContent).join("|"))}"`));
+    if (shots) await page.screenshot({ path: `${shots}/sketch-label-inch-1280.png` });
+    // Choosing millimetres says the same dimension as 25.4.
+    await chooseUnit(page, "mm");
+    await until(page, () => [...document.querySelectorAll(".sketch-label")].map((l) => l.textContent).join("|") === "25.4", null, "the label reads 25.4 in mm");
     await page.context().close();
   });
 
