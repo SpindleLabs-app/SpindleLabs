@@ -446,7 +446,7 @@ export function createHistory(options: HistoryOptions): History {
       const snapshot = rewrite(entries[at].snapshot);
       if (snapshot === null || snapshot === entries[at].snapshot) return false;
       if (at > 0 && snapshot === entries[at - 1].snapshot) {
-        entries.splice(at, 1);
+        dropEntry(at); // a fence's floor moves to the entry before, the same design (app-wide hunt 2026-11-14, R-4)
         if (at === index) lastWasRecord = false;
         if (at <= index) index--;
       } else entries[at] = { ...entries[at], snapshot };
