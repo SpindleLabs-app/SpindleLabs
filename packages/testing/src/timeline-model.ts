@@ -299,7 +299,7 @@ export interface Rebuild {
   results: Record<string, ItemResult>;
 }
 
-export type RefuseCause = "before-dependency" | "after-dependent";
+export type RefuseCause = "before-dependency" | "after-dependent" | "join-order";
 
 /** An edit with its targets named: what the session runner hands the model and the code under test. */
 export type ConcreteOp =
@@ -1407,12 +1407,16 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
         const deps = (i: ModelItem) => (faults.has("face-sketch-unbound") && i.kind === "sketch" ? [] : dependsOn(i));
         if (deps(item).some((d) => at(d) > op.to)) return { kind: "refused", cause: "before-dependency" };
         if (doc.items.some((i, j) => j < op.to && deps(i).includes(item.id))) return { kind: "refused", cause: "after-dependent" };
+        const before = [...doc.items];
+        before.splice(op.to, 1);
+        before.splice(k, 0, item);
+        // SL #760 item 2: nor the maker of the other body a Combine's Join joins with its own: the joined body is the
+        // one made first, which a later split's "Body 1" follows, so the swap would quietly make it the other piece.
+        const swapped = (other: string) => before.findIndex((i) => i.id === other) < k !== at(other) < op.to;
+        if (doc.items.some((i) => i.kind === "combine" && i.operation === "join" && i.target !== i.tool && ((i.target === item.id && swapped(i.tool)) || (i.tool === item.id && swapped(i.target))))) return { kind: "refused", cause: "join-order" };
         // SL #506 item 1: an item never passes one that placed or changed a body it works on (a Move's bodies, a
         // Combine's target and its tool unless kept), nor one working on a body it placed or changed, as they stood.
         if (!faults.has("reorder-past-shaper")) {
-          const before = [...doc.items];
-          before.splice(op.to, 1);
-          before.splice(k, 0, item);
           const uses = (i: ModelItem) => (i.kind === "move" ? i.bodies : i.kind === "combine" ? [i.target, i.tool] : i.kind === "duplicate" ? [i.body] : []);
           const changes = (i: ModelItem) => (i.kind === "move" ? i.bodies : i.kind === "combine" ? (i.keep ? [i.target] : [i.target, i.tool]) : []);
           const shapes = (a: ModelItem, b: ModelItem) => before.indexOf(a) < before.indexOf(b) && uses(b).some((x) => changes(a).includes(x));

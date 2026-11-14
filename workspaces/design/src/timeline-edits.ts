@@ -14,7 +14,7 @@
 
 import { bodyWords, readings, shapings } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
-import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, combineBodies, isCombineItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -196,7 +196,8 @@ function link(doc: DesignDocument, f: Feature, on: Feature): string {
  * an Extrude Join joins with one of its own: the joined body keeps the id
  * of the one made first (docs/document-model.md section 8, rule 1), so the
  * swap would quietly make it the other body, and a later Move or Combine
- * of it would find its body gone.
+ * of it would find its body gone. The same under a Combine's Join (SL #760
+ * item 2), for the items that made its target and its tools.
  */
 export function reorderItem(doc: DesignDocument, id: string, to: number): Reordered {
   const item = itemIn(doc, id);
@@ -209,8 +210,10 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   const user = features.find((f, j) => j < to && f.dependsOn.includes(id));
   if (user) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(user)}: ${itemName(user)} is ${link(doc, user, item)} it` };
   const was = (x: string) => doc.timeline.features.findIndex((f) => f.id === x);
-  for (const join of features.filter(isExtrudeJoin)) {
-    const makers = operationMakers(join).filter((m) => m !== join.id);
+  // SL #760 item 2: a Combine's Join too. Its body keeps the target's id, but once a later Cut splits it, the piece
+  // that keeps that id is the one holding the input made first, so the swap would make "Body 1" the other piece.
+  for (const join of features.filter((f) => isExtrudeJoin(f) || (isCombineItem(f) && combineBodies(f).operation === "join"))) {
+    const makers = isCombineItem(join) ? [...new Set([combineBodies(join).target, ...combineBodies(join).tools].flatMap((body) => bodyItem(body) ?? []))] : operationMakers(join).filter((m) => m !== join.id);
     if (!makers.includes(id)) continue;
     const passed = makers.find((m) => m !== id && was(m) >= 0 && was(m) < was(id) !== place(m) < to);
     if (passed !== undefined) {
