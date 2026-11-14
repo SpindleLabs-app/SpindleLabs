@@ -137,13 +137,16 @@ try {
       await at(page, [20, 0], tap);
       await shown(page, "sketchLines", "1");
       if (!tap) await page.keyboard.press("Escape");
+      // The line drawn along the grid may come with constraints of its own (a horizontal one, since auto-constraints
+      // landed after this check was written): the dimension adds one more, and Delete takes only that one away.
+      const before = Number(await data(page, "sketchConstraints") || 0);
       await press(page, "#sketch-tool-dimension", tap);
       await at(page, [10, 0], tap);
       await until(page, () => document.activeElement?.id === "typed-length" || !document.querySelector("#typed-entry")?.hidden, null, "the Length box");
       if (tap) await page.locator("#typed-length").focus();
       await page.keyboard.type("30");
       await page.keyboard.press("Enter");
-      await shown(page, "sketchConstraints", "1");
+      await shown(page, "sketchConstraints", String(before + 1));
       await shown(page, "sketchLabels", "30");
       await press(page, "#sketch-tool-select", tap);
       const label = page.locator(".sketch-label", { hasText: "30" }).first();
@@ -153,7 +156,7 @@ try {
         assert.fail(`${e.message}: picked "${await data(page, "sketchPicked")}"`));
       if (shots) await page.screenshot({ path: `${shots}/fusion-label-picked-${width}.png` });
       await press(page, "#sketch-delete", tap);
-      await shown(page, "sketchConstraints", "0");
+      await shown(page, "sketchConstraints", String(before));
       assert.equal(await page.locator(".sketch-label").count(), 0, "its label gone");
       assert.equal(await data(page, "sketchLines"), "1", "the line kept");
       await page.context().close();
