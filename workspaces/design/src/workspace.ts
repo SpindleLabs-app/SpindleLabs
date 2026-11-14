@@ -313,7 +313,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
   // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
   // The command search button (the S key's box for a touch screen, which has no S): first in the row so a phone's scroll never hides it.
-  const search = button("command-search-button", "Search commands", "Search the commands by name (key S): type a few letters, then pick the one you want.", () => {});
+  const search = button("command-search-button", "Search commands", "Search commands: find a command by name (key S), type a few letters, then pick the one you want.", () => {});
   search.dataset.modelling = ""; // like the S key, not while a sketch is edited
   const searching = toolGroup(document, { name: "Search" });
   searching.element.classList.add("command-search-button");
@@ -2070,6 +2070,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function modelling(on: boolean) {
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-modelling]")) el.hidden = !on;
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-sketching]")) el.hidden = on;
+    ctx.toolbar.scrollLeft = 0; // a different row of buttons: start from its left end, not where the last one was scrolled to
   }
   const designDoc = () => ctx.project.workspaces.design as DesignDocument;
   /** Counts tool changes (a tool chosen, Escape, the sketch entered again): a click the kernel was still snapping across one is dropped. */
