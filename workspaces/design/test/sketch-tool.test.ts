@@ -30,18 +30,27 @@ function clicks<T extends SketchTool>(doc: DesignDocument, tool: T, at: SketchXY
 test("hand-worked: five clicks draw a closed 40 × 30 rectangle whose corners are shared", () => {
   // The part holds feature-1 and the sketch took 2. Click 1 at (0, 0) only
   // marks the start. Click 2 at (40, 0): both ends are new, point-3 and
-  // point-4, then line-5. Click 3 at (40, 30): point-6, line-7 from point-4.
-  // Click 4 at (0, 30): point-8, line-9. Click 5 at (0, 0) lands on point-3,
-  // so line-10 runs point-8 → point-3 and the chain ends. 4 points, 4 lines,
-  // the counter at 11.
+  // point-4, then line-5, drawn level so constraint-6 Horizontal (SL #630).
+  // Click 3 at (40, 30): point-7, line-8 from point-4, upright so
+  // constraint-9 Vertical. Click 4 at (0, 30): point-10, line-11,
+  // constraint-12 Horizontal. Click 5 at (0, 0) lands on point-3, so line-13
+  // runs point-10 → point-3, constraint-14 Vertical, and the chain ends.
+  // 4 points, 4 lines, 4 constraints, the counter at 15 (as the Rectangle
+  // tool's two clicks, below).
   const f = fresh();
   const { doc, tool, drew } = clicks(f.doc, f.tool, [[0, 0], [40, 0], [40, 30], [0, 30], [0, 0]]);
   assert.equal(drew, 4);
   assert.equal(tool.from, null, "closing the shape ends the chain");
-  assert.equal(doc.nextId, 11);
+  assert.equal(doc.nextId, 15);
   const sketch = doc.sketches[0];
-  assert.deepEqual(sketch.points.map((p) => [p.id, p.x, p.y]), [["point-3", 0, 0], ["point-4", 40, 0], ["point-6", 40, 30], ["point-8", 0, 30]]);
-  assert.deepEqual(sketch.curves.map((c) => [c.id, c.start, c.end]), [["line-5", "point-3", "point-4"], ["line-7", "point-4", "point-6"], ["line-9", "point-6", "point-8"], ["line-10", "point-8", "point-3"]]);
+  assert.deepEqual(sketch.points.map((p) => [p.id, p.x, p.y]), [["point-3", 0, 0], ["point-4", 40, 0], ["point-7", 40, 30], ["point-10", 0, 30]]);
+  assert.deepEqual(sketch.curves.map((c) => [c.id, c.start, c.end]), [["line-5", "point-3", "point-4"], ["line-8", "point-4", "point-7"], ["line-11", "point-7", "point-10"], ["line-13", "point-10", "point-3"]]);
+  assert.deepEqual(sketch.constraints, [
+    { id: "constraint-6", kind: "horizontal", a: "point-3", b: "point-4" },
+    { id: "constraint-9", kind: "vertical", a: "point-4", b: "point-7" },
+    { id: "constraint-12", kind: "horizontal", a: "point-7", b: "point-10" },
+    { id: "constraint-14", kind: "vertical", a: "point-10", b: "point-3" },
+  ]);
   // It saves and opens as it is: every sketch rule holds.
   assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(doc))), doc);
 });
@@ -66,26 +75,26 @@ test("a click on the chain's last point draws nothing; a chain started on a poin
 });
 
 test("a line on top of one already there draws nothing and says why; the chain stays where it was (25a5, the report list's \"3 ends meet\")", () => {
-  // The closed 40 × 30 rectangle of the first test: point-3 (0, 0), point-4 (40, 0), point-6 (40, 30), point-8 (0, 30), counter 11.
+  // The closed 40 × 30 rectangle of the first test: point-3 (0, 0), point-4 (40, 0), point-7 (40, 30), point-10 (0, 30), counter 15.
   const f = fresh();
   const closed = clicks(f.doc, f.tool, [[0, 0], [40, 0], [40, 30], [0, 30], [0, 0]]);
   // A chain started on (0, 0) then a click on (40, 0): line-5 already joins point-3 and point-4. A second line there would make three
-  // line ends meet at both corners and break the outline, so nothing is drawn, the counter stays at 11 and the chain stays at point-3.
+  // line ends meet at both corners and break the outline, so nothing is drawn, the counter stays at 15 and the chain stays at point-3.
   const start = clickAt(closed.doc, closed.tool, [0, 0]);
   const again = clickAt(start.doc, start.tool, [40, 0]);
   assert.equal(again.drew, false);
   assert.equal(again.doc, start.doc, "the document is unchanged");
   assert.equal(again.note, SAME_LINE);
   assert.equal((again.tool as LineTool).from, "point-3");
-  // The other way round (point-8 → point-3 is line-10, clicked from (0, 0) to (0, 30)) is the same line: refused too.
+  // The other way round (point-10 → point-3 is line-13, clicked from (0, 0) to (0, 30)) is the same line: refused too.
   const back = clickAt(again.doc, again.tool, [0, 30]);
   assert.equal(back.drew, false);
   assert.equal(back.note, SAME_LINE);
-  // A diagonal to (40, 30) joins two points no line joins: drawn, line-11, and the chain ends there (an existing point).
+  // A diagonal to (40, 30) joins two points no line joins: drawn, line-15 (neither level nor upright, so no constraint), and the chain ends there (an existing point).
   const diagonal = clickAt(back.doc, back.tool, [40, 30]);
   assert.equal(diagonal.drew, true);
   assert.equal(diagonal.note, undefined);
-  assert.deepEqual(diagonal.doc.sketches[0].curves.at(-1), { id: "line-11", kind: "line", start: "point-3", end: "point-6" });
+  assert.deepEqual(diagonal.doc.sketches[0].curves.at(-1), { id: "line-15", kind: "line", start: "point-3", end: "point-7" });
 });
 
 test("the preview runs from the chain's last point to the pointer, and only while a chain is going", () => {
@@ -106,7 +115,11 @@ test("the drawings: the edited sketch with its grid, points and preview; the oth
   const doc = clicks(other.doc, { kind: "line", sketch: other.id, from: null }, [[0, 0], [0, 5]]).doc;
   const [first, second] = sketchDrawings(doc, { tool: drawn.tool, grid: 5, pointer: [20, 10] });
   assert.deepEqual(first.lines, [[[0, 0], [10, 0]], [[10, 0], [10, 10]]]);
-  assert.deepEqual(first.editing, { grid: 5, gridSnap: false, points: [[0, 0], [10, 0], [10, 10]], preview: [[[10, 10], [20, 10]]] });
+  // The level line's Horizontal and the upright one's Vertical (SL #630) add their marks, one each; the rest as before.
+  const { constraints, constraintCount, ...editing } = first.editing!;
+  assert.deepEqual(editing, { grid: 5, gridSnap: false, points: [[0, 0], [10, 0], [10, 10]], preview: [[[10, 10], [20, 10]]] });
+  assert.equal(constraintCount, 2);
+  assert.equal(constraints?.length, 2);
   // Grid snap on reaches the viewport, which then draws the snap grid's multiples (SF2).
   assert.equal(sketchDrawings(doc, { tool: drawn.tool, grid: 5, pointer: null, gridSnap: true })[0].editing!.gridSnap, true);
   assert.deepEqual(first.plane.normal, [0, 0, 1]);
@@ -134,10 +147,9 @@ function freshRectangle() {
 
 test("hand-worked: two rectangle clicks make exactly what five line clicks make", () => {
   // Corners (0, 0) and (40, 30): the sides run (0, 0) → (40, 0) → (40, 30) →
-  // (0, 30) → (0, 0), drawn as the line tool draws them. The counter is at 3
-  // after feature-1 and sketch-2: point-3, point-4, line-5; point-6, line-7;
-  // point-8, line-9; line-10 back to point-3. Counter at 11, the same
-  // curves as the hand-worked five-click chain above. Then, as Fusion's
+  // (0, 30) → (0, 0), the same sides the line tool draws. The counter is
+  // at 3 after feature-1 and sketch-2: point-3, point-4, line-5; point-6,
+  // line-7; point-8, line-9; line-10 back to point-3. Counter at 11. Then, as Fusion's
   // rectangle (the solver bug hunt, 2026-11-06), each side kept level or
   // upright: constraint-11 Horizontal on line-5 (point-3, point-4),
   // constraint-12 Vertical on line-7 (point-4, point-6), constraint-13
@@ -158,7 +170,19 @@ test("hand-worked: two rectangle clicks make exactly what five line clicks make"
     { id: "constraint-13", kind: "horizontal", a: "point-6", b: "point-8" },
     { id: "constraint-14", kind: "vertical", a: "point-8", b: "point-3" },
   ];
-  assert.deepEqual(second.doc, { ...byLines, nextId: 15, sketches: byLines.sketches.map((s) => ({ ...s, constraints: squared })) });
+  const sketch = second.doc.sketches[0];
+  assert.deepEqual(sketch.points.map((p) => [p.id, p.x, p.y]), [["point-3", 0, 0], ["point-4", 40, 0], ["point-6", 40, 30], ["point-8", 0, 30]]);
+  assert.deepEqual(sketch.curves.map((c) => [c.id, c.kind, c.start, c.end]), [["line-5", "line", "point-3", "point-4"], ["line-7", "line", "point-4", "point-6"], ["line-9", "line", "point-6", "point-8"], ["line-10", "line", "point-8", "point-3"]]);
+  assert.deepEqual(sketch.constraints, squared);
+  // The five line clicks make the same shape (SL #630: the Line tool keeps its level and upright sides so too), only
+  // numbered in the order they were drawn: the same sides between the same places, each with the same constraint.
+  const shape = (d: DesignDocument) => {
+    const k = d.sketches[0];
+    const xy = (id: string) => k.points.filter((q) => q.id === id).map((q) => [q.x, q.y])[0];
+    return { sides: k.curves.map((c) => (c.kind === "line" ? [xy(c.start), xy(c.end)] : c.kind)), kept: k.constraints.map((c) => ("a" in c && "b" in c ? [c.kind, xy(c.a), xy(c.b)] : c.kind)) };
+  };
+  assert.deepEqual(shape(second.doc), shape(byLines));
+  assert.deepEqual({ ...second.doc, sketches: [] }, { ...byLines, sketches: [] }, "the rest of the document, the counter too");
   assert.equal(second.doc.nextId, 15);
   assert.equal(drawStep(second.tool), "Draw rectangle", "one undo step, named for the tool");
   assert.equal(drawStep(fresh().tool), SKETCH_STEPS.draw);
@@ -390,7 +414,8 @@ test("tools: Escape ends what is part way, switching starts afresh, L, R, C, A, 
   assert.equal(toolBusy(freshCircle().tool), false);
   assert.equal(toolBusy(clickAt(freshCircle().doc, freshCircle().tool, [0, 0]).tool), true, "a centre down");
   assert.deepEqual(startTool("arc", "sketch-2"), { kind: "arc", sketch: "sketch-2", start: null, end: null });
-  assert.deepEqual(SKETCH_TOOLS.map((t) => [t.kind, t.key]), [["line", "L"], ["rectangle", "R"], ["circle", "C"], ["arc", "A"], ["centre", undefined], ["tangent", undefined], ["project", "P"]]);
+  // 52c's shapes have no keys (Fusion gives them none either), so no letter another tool needs is taken.
+  assert.deepEqual(SKETCH_TOOLS.map((t) => [t.kind, t.key]), [["line", "L"], ["rectangle", "R"], ["centre-rectangle", undefined], ["three-rectangle", undefined], ["circle", "C"], ["three-circle", undefined], ["arc", "A"], ["centre", undefined], ["tangent", undefined], ["polygon", undefined], ["outside-polygon", undefined], ["slot", undefined], ["overall-slot", undefined], ["point", undefined], ["project", "P"]]);
   // 27d: the Project tool places nothing, so nothing is ever part way.
   assert.deepEqual(startTool("project", "sketch-2"), { kind: "project", sketch: "sketch-2" });
   assert.equal(toolBusy(startTool("project", "sketch-2")), false);

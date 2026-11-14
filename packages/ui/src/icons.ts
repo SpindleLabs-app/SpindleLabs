@@ -65,6 +65,16 @@ export const ICONS = {
   arc: [tone("M2.5 18A1.5 1.5 0 1 0 5.5 18A1.5 1.5 0 1 0 2.5 18ZM10.5 5A1.5 1.5 0 1 0 13.5 5A1.5 1.5 0 1 0 10.5 5ZM18.5 18A1.5 1.5 0 1 0 21.5 18A1.5 1.5 0 1 0 18.5 18Z"), line("M4 18A8 13 0 0 1 20 18")],
   "centre-arc": [tone("M10.5 15A1.5 1.5 0 1 0 13.5 15A1.5 1.5 0 1 0 10.5 15Z"), line("M4 15A8 8 0 0 1 20 15M12 15 6.5 9.5")],
   "tangent-arc": [tone("M2.5 18A1.5 1.5 0 1 0 5.5 18A1.5 1.5 0 1 0 2.5 18Z"), line("M4 18H11M11 18A6 6 0 0 0 17 12V4")],
+  // The more sketch shapes (step 52c): a rectangle round its centre, one from three corners, a circle through three points,
+  // a polygon (corners on a circle, or sides round one), a slot by its centres or by its ends, and a lone point.
+  "centre-rectangle": [tone("M4 6H20V18H4Z"), line("M4 6H20V18H4ZM10.5 12A1.5 1.5 0 1 0 13.5 12A1.5 1.5 0 1 0 10.5 12Z")],
+  "three-rectangle": [tone("M3 11 11 3 21 13 13 21Z"), line("M3 11 11 3 21 13 13 21Z")],
+  "three-circle": [tone("M10.5 4A1.5 1.5 0 1 0 13.5 4A1.5 1.5 0 1 0 10.5 4ZM3.57 16A1.5 1.5 0 1 0 6.57 16A1.5 1.5 0 1 0 3.57 16ZM17.43 16A1.5 1.5 0 1 0 20.43 16A1.5 1.5 0 1 0 17.43 16Z"), line("M4 12A8 8 0 1 1 20 12A8 8 0 1 1 4 12Z")],
+  polygon: [tone("M21 12 16.5 19.79H7.5L3 12 7.5 4.21H16.5Z"), line("M21 12 16.5 19.79H7.5L3 12 7.5 4.21H16.5Z")],
+  "outside-polygon": [tone("M5.5 12A6.5 6.5 0 1 1 18.5 12A6.5 6.5 0 1 1 5.5 12Z"), line("M21 12 16.5 19.79H7.5L3 12 7.5 4.21H16.5ZM5.5 12A6.5 6.5 0 1 1 18.5 12A6.5 6.5 0 1 1 5.5 12Z")],
+  "centre-slot": [tone("M6.5 12A1.5 1.5 0 1 0 9.5 12A1.5 1.5 0 1 0 6.5 12ZM14.5 12A1.5 1.5 0 1 0 17.5 12A1.5 1.5 0 1 0 14.5 12Z"), line("M8 7H16A5 5 0 0 1 16 17H8A5 5 0 0 1 8 7Z")],
+  "overall-slot": [tone("M8 7H16A5 5 0 0 1 16 17H8A5 5 0 0 1 8 7Z"), line("M8 7H16A5 5 0 0 1 16 17H8A5 5 0 0 1 8 7ZM3 4V20M21 4V20")],
+  point: [tone("M10 12A2 2 0 1 0 14 12A2 2 0 1 0 10 12Z"), line("M12 4V8M12 16V20M4 12H8M16 12H20")],
   project: [tone("M4 14 12 18 20 14 12 10Z"), line("M4 14 12 18 20 14 12 10ZM12 3V9M9.5 6.5 12 9 14.5 6.5")],
   // Select (an arrow pointer) and Delete (a bin), for single sketch curves (missing basics, 2026-11-04).
   select: [tone("M6 3V18L10 14.5 13 21 15.5 20 12.5 13.5H18Z"), line("M6 3V18L10 14.5 13 21 15.5 20 12.5 13.5H18Z")],

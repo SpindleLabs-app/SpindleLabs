@@ -154,6 +154,7 @@ function ownClicks(sketch: Sketch, tool: SketchTool): SketchXY[] {
     const p = sketch.points.find((x) => x.id === tool.from);
     return p ? [[p.x, p.y]] : [];
   }
+  if ("clicks" in tool) return [...tool.clicks];
   const at = tool.kind === "rectangle" ? tool.corner : tool.kind === "circle" ? tool.centre : null;
   return at ? [at] : [];
 }
@@ -195,10 +196,11 @@ export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly Ed
   for (const o of own) if (!refs.some((r) => same(r, o))) refs.push(o);
   for (const c of body.corners) if (!refs.some((r) => same(r, c))) refs.push(c);
   if (!refs.some((r) => same(r, ORIGIN))) refs.push(ORIGIN);
-  const corner = tool.kind === "rectangle" ? (own[0] ?? null) : null;
+  const corner = tool.kind === "rectangle" || tool.kind === "centre-rectangle" ? (own[0] ?? null) : null;
   // A point within SAME_PLACE of one of the tool's own clicks is that click to the kernel (a twin a rounding off it, hunt
   // 2026-11-01), so it is left out as the click is; a rectangle's column or row within 2·SAME_PLACE of its first corner's
-  // would make it flat (sketch.ts `flat`), so it is left out as the corner's own is.
+  // (a centre rectangle's centre's, hunt 2026-11-12) would make it flat (sketch.ts `flat`), so it is left out as the corner's
+  // own is. Polygons and slots keep their first click's: lining up with it is what they want.
   const apart = (a: SketchXY, b: SketchXY) => Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) > SAME_PLACE;
   return {
     points: points.filter((t) => own.every((o) => apart(t.at, o))),

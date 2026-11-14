@@ -93,12 +93,13 @@ const near = (got, want, what) => got.flat().forEach((x, i) => assert.ok(Math.ab
 const panel = (page) =>
   page.evaluate(() => {
     const $ = (id) => document.getElementById(id);
-    const boxes = Object.fromEntries([...document.querySelectorAll("#move-panel input")].map((i) => [i.id.slice(5), i.value]));
+    const boxes = Object.fromEntries([...document.querySelectorAll("#move-panel input[inputmode=decimal]")].map((i) => [i.id.slice(5), i.value]));
     return { open: !$("move-panel").hidden, title: $("move-title").textContent, bodies: $("move-bodies").hidden ? null : $("move-bodies").textContent, pick: !$("move-pick").hidden, boxes, pivot: $("move-pivot-summary").textContent, error: $("move-error").hidden ? null : $("move-error").textContent };
   });
 const opened = (page) => until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the Move panel open");
 const closed = (page) => until(page, () => document.getElementById("move-panel")?.hidden === true, null, "the Move panel closed");
-const undoTitle = (page) => page.getAttribute("#undo", "title");
+// What Undo says of the project's steps: with a tool open its title says it cancels the tool (issue #520).
+const undoTitle = (page) => page.getAttribute("#undo", "data-project-step");
 const items = (page) => page.$$eval("#timeline [data-item]", (els) => els.map((e) => e.dataset.item));
 /** Which of the panel's rows show: the distances, the angles, the pivot, Snap. */
 const rowsShown = (page) => page.evaluate(() => ["move-distance", "move-angle", "move-pivot-fold", "move-snap"].filter((id) => !document.getElementById(id).hidden));
@@ -351,9 +352,10 @@ try {
       await page.focus("#move-x");
       await page.keyboard.press("Control+a");
       await page.keyboard.type("1e");
-      assert.equal(await page.$eval("#move-x", (i) => i.validity.badInput), true, "the box holds text it can't read");
+      // A text box since issue #518 (a number box dropped a typed comma or unit): it keeps "1e" as typed, which reads as no number.
+      assert.equal(await page.inputValue("#move-x"), "1e", "the box holds text it can't read");
       await page.focus("#move-z");
-      assert.equal((await panel(page)).boxes.x, "", "left as typed, not filled with 0");
+      assert.equal((await panel(page)).boxes.x, "1e", "left as typed, not filled with 0");
       await page.click("#move-ok");
       await until(page, () => !document.getElementById("move-error").hidden, null, "Move refuses");
       assert.match((await panel(page)).error, /X distance/);

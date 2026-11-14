@@ -527,8 +527,10 @@ export class KernelClient implements KernelCalls {
       const named = (body: BodyHandle) => app.get(body) ?? body;
       return {
         bodies: handles,
-        history: history.map(({ faces, edges }) => ({
+        history: history.map(({ faces, also, edges }) => ({
           faces: faces.map((f) => ({ ...f, body: named(f.body) })),
+          // A face merged from several input faces lying level (kernel 36c1): the others it lies on (SL #502: dropped before).
+          ...(also !== undefined ? { also: also.map((list) => list.map((f) => ({ ...f, body: named(f.body) }))) } : {}),
           edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
         })),
       };

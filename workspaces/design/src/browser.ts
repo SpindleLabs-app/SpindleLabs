@@ -6,7 +6,7 @@
 import { summaryInUnit, type Feature, type GeometryReference, type Unit } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
 import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "@fission/print";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, combineBodies, EYE_FOLDERS, extrudeOperation, isCombineItem, isPiece, isHidden, isSketchItem, makesBody, numberedWhenBuilt, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -79,7 +79,12 @@ export interface DesignBody {
  * and adds the pieces the data numbers for it (`numberPieces`) that the
  * rebuild made (`failed` holds the ids of numbered pieces it didn't). A
  * Combine whose target or tools are not there fails in the rebuild, which
- * says so in `failed`.
+ * says so in `failed`. Which of the bodies an Extrude Join picked are
+ * still bodies after it is the rebuild's to say (`failed` holds a mark for
+ * each, `failedIds`): a body it does not reach stays as it was, and the
+ * rest are joined into the earliest made of them (SL #538 item 2: read
+ * from the data alone, as "every body after the first picked is used up",
+ * a body built and drawn had no row and was left out of the STL).
  */
 export function designBodies(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): DesignBody[] {
   const building = buildingItems(document);
@@ -90,17 +95,27 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
     if (isPiece(b.id)) pieces.set(bodyItem(b.id)!, [...(pieces.get(bodyItem(b.id)!) ?? []), b.id]);
   for (const f of document.timeline.features) {
     if (!building.has(f) || failed.has(f.id)) continue;
-    if (makesBody(f)) out.set(bodyIdOf(f.id), { body: bodyIdOf(f.id), feature: f });
+    if (makesBody(f)) {
+      out.set(bodyIdOf(f.id), { body: bodyIdOf(f.id), feature: f });
+      // An extrude of several profiles apart (version 18): its other bodies are its pieces, once numbered.
+      for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
+    }
     else if (isCombineItem(f)) {
       const { target, tools, keepTools } = combineBodies(f);
       if (![target, ...tools].every((b) => out.has(b))) continue;
       if (!keepTools) for (const t of tools) out.delete(t);
       for (const piece of pieces.get(f.id) ?? []) if (!failed.has(piece)) out.set(piece, { body: piece, feature: f });
     } else {
-      // An extrude with an operation (version 10): its own body never stays; Join uses up every body after the first.
+      // An extrude with an operation (version 10): its own body never stays.
       const op = extrudeOperation(f);
       if (op === null || !op.bodies.every((b) => out.has(b))) continue;
-      if (op.operation === "join") for (const b of op.bodies.slice(1)) out.delete(b);
+      if (op.operation === "join") {
+        // The bodies the rebuild says are still bodies after it; until one has answered, the one every body it picked
+        // is joined into when it reaches them all: the earliest made (docs/document-model.md section 8).
+        const left = op.bodies.filter((b) => failed.has(stays(f.id, b)));
+        const keep = left.length > 0 ? left : [earliestMade(document, op.bodies)];
+        for (const b of op.bodies) if (!keep.includes(b)) out.delete(b);
+      }
       // Its piece holding only the extrude is its own body (version 16), once numbered.
       const own = bodyIdOf(f.id);
       if (op.operation === "join" && !failed.has(own) && numbered.has(own)) out.set(own, { body: own, feature: f });
@@ -108,6 +123,41 @@ export function designBodies(document: DesignDocument, failed: ReadonlySet<strin
     }
   }
   return [...out.values()];
+}
+
+/** In what the last rebuild said (`failedIds`): body `body` is still a body after Extrude Join `join`. No item's or body's id reads so. */
+const stays = (join: string, body: string) => `stays:${join}>${body}`;
+
+/** The earliest made of `bodies` (section 8's rule 1 for an Extrude Join): by its item's place in the timeline, then the item's own body before its pieces, by number. */
+function earliestMade(document: DesignDocument, bodies: readonly string[]): string {
+  const key = (b: string): [number, number] => [document.timeline.features.findIndex((f) => f.id === bodyItem(b)), isPiece(b) ? Number(b.slice(b.lastIndexOf(":") + 1)) : 0];
+  return [...bodies].sort((a, b) => key(a)[0] - key(b)[0] || key(a)[1] - key(b)[1])[0];
+}
+
+/**
+ * What the last rebuild said that the data alone can't, as `designBodies`
+ * reads it: the ids of the items whose result is failed; a mark for each
+ * body an Extrude Join that built picked and left a body (its result's
+ * `bodies`: a body it does not reach, and the earliest made of each lot it
+ * joins); and the ids of the numbered pieces (a Combine's, an Extrude
+ * Join's own body) the design should hold now but the rebuild didn't make
+ * (`built`, the ids of the bodies it holds). A piece a later
+ * item used up is not held either, and it did not fail: counting it as
+ * failed made `designBodies` skip the item that used it, so that item's
+ * new pieces had no row and were left out of the STL (#499). So only the
+ * pieces the design's bodies would hold with nothing but the failed items
+ * left out are looked for.
+ */
+export function failedIds(document: DesignDocument, results: Readonly<Record<string, { status: string; bodies?: readonly string[] }>>, built: ReadonlySet<string>): Set<string> {
+  const failed = Object.keys(results).filter((id) => results[id].status === "failed");
+  const makers = new Map(document.timeline.features.map((f) => [f.id, f] as const));
+  const left = document.timeline.features.flatMap((f) => {
+    const [op, r] = [extrudeOperation(f), results[f.id]];
+    return op?.operation === "join" && r?.status === "built" ? op.bodies.filter((b) => r.bodies?.includes(b)).map((b) => stays(f.id, b)) : [];
+  });
+  const items = [...failed, ...left];
+  const absent = designBodies(document, new Set(items)).flatMap(({ body }) => (numberedWhenBuilt(body, makers.get(bodyItem(body)!)) && results[bodyItem(body)!]?.status === "built" && !built.has(body) ? [body] : []));
+  return new Set([...items, ...absent]);
 }
 
 /**
@@ -123,6 +173,39 @@ export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> =
     const n = numbers.get(body);
     return n === undefined ? [] : [{ id: `body-${n}`, label: `Body ${n}`, feature, body }];
   });
+}
+
+/**
+ * What the Combine panel and its questions call `body` (SL #677 item 5):
+ * its Bodies row ("Body 2") when the list shows it, else its item's name
+ * ("Box 2", or "a piece of Combine 1"): an edited Combine's tools are used
+ * up, so the list has no row for them, and a number it doesn't show would
+ * send a person looking for a body that isn't there. A body whose item is
+ * deleted is named as `by` (the Combine using it) remembers it, then
+ * "(deleted)"; never a raw id.
+ */
+export function bodyLabel(document: DesignDocument, body: string, failed: ReadonlySet<string> = NONE_FAILED, by?: Feature): string {
+  const row = bodyRows(document, failed).find((r) => r.body === body);
+  if (row !== undefined) return row.label;
+  const id = bodyItem(body);
+  const item = document.timeline.features.find((f) => f.id === id);
+  if (item !== undefined) return isPiece(body) ? `a piece of ${item.provenance.self.label}` : item.provenance.self.label;
+  const was = by?.provenance.from.find((x) => x.id === id)?.label;
+  return was === undefined ? "a deleted body" : `${was} (deleted)`;
+}
+
+/**
+ * The Bodies rows' tags while Combine is open (SL #677 item 5): "Target"
+ * on the target's row and "Tool" on each tool's, by row id ("body-2"),
+ * in the list's order; words, so they don't rest on colour alone.
+ */
+export function combineRowTags(document: DesignDocument, failed: ReadonlySet<string>, target: string | null, tools: readonly string[]): Map<string, "Target" | "Tool"> {
+  const tags = new Map<string, "Target" | "Tool">();
+  for (const r of bodyRows(document, failed)) {
+    if (r.body === target) tags.set(r.id, "Target");
+    else if (tools.includes(r.body)) tags.set(r.id, "Tool");
+  }
+  return tags;
 }
 
 /**

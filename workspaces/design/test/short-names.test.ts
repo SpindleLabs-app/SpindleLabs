@@ -156,6 +156,37 @@ test("an older project's file opens with short names, and saves and reopens byte
   assert.deepEqual(names(readDesignDocument(JSON.parse(JSON.stringify(oldDoc())))), names(doc));
 });
 
+/** Version 2 data as step 23a saved it: a sketch, then the part made a cylinder, which took a new id (feature-14) but was named "Feature 1 (cylinder)". */
+function version2(label: string, type = "cylinder"): Record<string, unknown> {
+  const part = { id: "feature-14", intent: { type, parameters: { diameter: 20, height: 30 }, summary: "Cylinder: ⌀20 × 30 mm" }, provenance: { self: { workspace: "design", id: "feature-14", label }, from: [] }, dependsOn: [], suppressed: false };
+  const sketch = { id: "sketch-2", intent: { type: "sketch", parameters: { plane: "XY" }, summary: "Sketch 1 on the XY plane" }, provenance: { self: { workspace: "design", id: "sketch-2", label: "Sketch 1" }, from: [] }, dependsOn: [], suppressed: false };
+  return { version: 2, nextId: 15, profiles: [], sketches: [{ id: "sketch-2", points: [], curves: [], constraints: [] }], timeline: { features: [sketch, part] } };
+}
+
+test("issue #541 item 3: a version 2 part named \"Feature 1 (cylinder)\" whatever its id is renamed Cylinder 1, and changed to a box it is Box 1", () => {
+  // Version 2 named its one part "Feature 1 (<type>)" though each change of shape gave it the counter's next id; version 3 would
+  // have said "Feature 14 (cylinder)" (oldPresetName). Either way the old app's own name, so it gets the short name: the first
+  // cylinder, Cylinder 1. Then made a box it takes the boxes' next name, Box 1 (no other box), as a design made today does.
+  const doc = readDesignDocument(version2("Feature 1 (cylinder)"));
+  assert.deepEqual(names(doc), ["Sketch 1", "Cylinder 1"]);
+  assert.deepEqual(names(changePreset(doc, "feature-14", "box", 20, 30, 30)), ["Sketch 1", "Box 1"]);
+  // Any number in the old form is version 2's (the counter's own number as well).
+  assert.deepEqual(names(readDesignDocument(version2("Feature 14 (cylinder)"))), ["Sketch 1", "Cylinder 1"]);
+  assert.deepEqual(names(readDesignDocument(version2("Feature 3 (cylinder)"))), ["Sketch 1", "Cylinder 1"]);
+});
+
+test("issue #541 item 3, controls: a version 2 name not of the old form with its own type stays, and version 3's rule is unchanged", () => {
+  // Another type in the brackets, no number, a number no counter gave (0), or not the old form at all: kept as it is.
+  for (const label of ["Feature 1 (box)", "Feature (cylinder)", "Feature 0 (cylinder)", "My part"]) assert.deepEqual(names(readDesignDocument(version2(label))), ["Sketch 1", label], label);
+  // A sketch is never a preset, so a sketch named in the old form stays (version 2's rule changes only ready-made shapes).
+  const data = version2("Feature 1 (cylinder)");
+  const timeline = data.timeline as { features: Feature[] };
+  timeline.features[0] = { ...timeline.features[0], provenance: { ...timeline.features[0].provenance, self: { ...timeline.features[0].provenance.self, label: "Feature 2 (sketch)" } } };
+  assert.deepEqual(names(readDesignDocument(data)), ["Feature 2 (sketch)", "Cylinder 1"]);
+  // Version 3 data names presets by their ids' numbers, so there "Feature 1 (cylinder)" on feature-14 is no name that app gave: kept.
+  assert.deepEqual(names(readDesignDocument({ ...version2("Feature 1 (cylinder)"), version: 3 })), ["Sketch 1", "Feature 1 (cylinder)"]);
+});
+
 // The nightly's mutation run found these left unchecked (10-26): each case below is one a project file can hold,
 // since readDesignDocument hands withShortNames the file's data before anything checks provenance.
 

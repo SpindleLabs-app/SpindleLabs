@@ -126,6 +126,8 @@ export interface WorkspaceContext {
   openFile?(): void;
   /** The design was cleared by Start fresh (File > New): the shell lets go of the file it was saved to or opened from, so Save asks again. */
   startedFresh?(): void;
+  /** A tool's panel opened or closed (`MountedWorkspace.openTool`), so the Undo and Redo buttons say what they would do. */
+  toolChanged?(): void;
   /** The name of the file the project was opened from or last saved to, without its ending; null when it has none. Print files take it when the project has no name of its own. */
   fileName?(): string | null;
 }
@@ -170,6 +172,13 @@ export interface MountedWorkspace {
   check?(commands: readonly Command[]): Promise<string | null>;
   /** What the AI assistant is told before a request, as things stand now (`AIView`). Leave out when the workspace offers the AI no command. */
   aiView?(): AIView;
+  /**
+   * The tool whose panel is open now (Edit feature, Move, the Extrude panel…), or null when none is (issue #520, as
+   * Fusion's): while one is, Undo cancels just it, taking back no older step, and Redo and History's jumps wait until
+   * it closes. `name` is the tool's ("Move"), for the button's words; `cancel` closes it as its own Cancel does. Tell the
+   * shell when one opens or closes with `WorkspaceContext.toolChanged`. Leave out when the workspace has no such tools.
+   */
+  openTool?(): { name: string; cancel(): void } | null;
   /** Its entries in the top bar's File ▾ (U0f2a), read each time the menu opens so an entry's off state is current. Leave out when it has none. */
   fileEntries?(): FileEntries;
   /** Gone for good (a project opened, its pane closed): stops listening if awake, and empties every slot it filled. */

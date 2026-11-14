@@ -6,10 +6,11 @@
 
 /** Contacted: each `name` must appear on the privacy page. */
 export const CONTACTED = [
-  { name: "GitHub", hosts: ["spindlelabs.app", "github.com", "githubusercontent.com"], why: "hosts the site (GitHub Pages); the in-browser AI's code is downloaded from GitHub" },
+  { name: "GitHub", hosts: ["spindlelabs.app", "github.com", "github.io", "githubusercontent.com"], why: "hosts the site (GitHub Pages); the in-browser AI's code is downloaded from GitHub" },
   { name: "Hugging Face", hosts: ["huggingface.co"], why: "the in-browser AI model's files, downloaded once when the person chooses it" },
   { name: "Anthropic", hosts: ["api.anthropic.com"], why: "the AI assistant, only with the person's own key and after showing what is sent" },
   { name: "OpenAI", hosts: ["api.openai.com"], why: "the AI assistant, only with the person's own key and after showing what is sent" },
+  { name: "Supabase", hosts: ["supabase.co"], why: "Report a bug's service, only when the person presses Send (signed in or not)" },
   { name: "Ollama", hosts: ["localhost", "127.0.0.1"], why: "the AI assistant on the person's own computer, or one they name" },
 ];
 
@@ -23,6 +24,8 @@ export const ACCOUNT_SERVICES = [
 /** Addresses in the source that are never contacted, each with why. */
 export const NOT_CONTACTED = [
   { host: "www.w3.org", why: "XML namespace names in SVG, never fetched" },
+  { host: "schemas.microsoft.com", why: "XML namespace names inside an exported 3MF file (the 3MF format's own), never fetched" },
+  { host: "schemas.openxmlformats.org", why: "XML package namespace names inside an exported 3MF file, never fetched" },
   { host: "example.com", why: "an example address shown as a hint" },
   { host: "your-fission-address", why: "a placeholder shown as a hint" },
   { host: "192.168.1.50", why: "an example address shown as a hint (a computer the person names is asked first, and is Ollama)" },

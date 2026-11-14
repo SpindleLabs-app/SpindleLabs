@@ -152,7 +152,10 @@ export class ViewportView {
     container.appendChild(this.cube.element);
     this.bar = navBar({
       // A lit tool pressed again puts itself away where the left button rests as a picker (Fusion's way).
-      mode: (mode) => this.setMode(mode === this.mode && this.home === "select" ? "select" : mode),
+      mode: (mode) => {
+        this.panTouchOnly = false; // a mode picked on the bar is the mouse's too
+        this.setMode(mode === this.mode && this.home === "select" ? "select" : mode);
+      },
       fit: () => this.fitSelection() ?? this.fit(),
       lookAt: () => {
         const plane = this.host.sketchPlane();
@@ -245,7 +248,9 @@ export class ViewportView {
       // Extrude (UX1b): a click picks the closed outline under the pointer, or none.
       if (this.host.extruding()) {
         const profile = this.profileAt(e.clientX, e.clientY);
-        return this.host.extrudePointer({ kind: "pick", profile, face: profile === null ? this.faceAt(e.clientX, e.clientY) : null });
+        // Ctrl, Cmd or Shift held adds or takes away a profile (several extruded at once), as Fusion's Ctrl-click.
+        const add = e.ctrlKey || e.metaKey || e.shiftKey;
+        return this.host.extrudePointer({ kind: "pick", profile, face: profile === null ? this.faceAt(e.clientX, e.clientY) : null, ...(add ? { add: true as const } : {}) });
       }
       // Sketching: a click places a point on the sketch's plane, it picks nothing.
       const plane = this.host.sketchPlane();
@@ -379,9 +384,11 @@ export class ViewportView {
     );
   }
 
-  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit nothing changes and it says false. */
+  /** Escape on the view bar: Pan or Zoom lit goes back to Orbit and this says true; with Orbit lit (or a sketch's own Pan, sketchPans) nothing changes and it says false. */
   leaveNavTool(): boolean {
-    if (this.mode === this.home) return false;
+    // Pan lit for a sketch on a touch screen (sketchPans) is the sketch's resting mode, not a tool picked: Escape goes on to
+    // the sketch (ending a line's chain), as with Orbit lit.
+    if (this.mode === this.home || (this.sketchPanned && this.mode === "pan")) return false;
     this.setMode(this.home);
     return true;
   }
@@ -400,6 +407,36 @@ export class ViewportView {
     }, { signal: this.listening.signal });
   }
 
+  /**
+   * A sketch being edited on a touch screen (SL #648, Ben 2026-11-12): one finger pans by default, since a drag meant to
+   * draw spun the sketch with no word; the view bar shows Pan lit, and its Orbit brings the spin back. While `on` and the
+   * view rests in its home mode, Pan is lit; once off, Pan lit by this goes back to the home mode (a mode the person chose
+   * on the bar meanwhile stays). With a mouse nothing changes.
+   */
+  sketchPans(on: boolean) {
+    if (on && !this.sketchPanned && this.mode === this.home && typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches) {
+      this.sketchPanned = true;
+      this.panTouchOnly = true;
+      this.setMode("pan");
+    } else if (!on && this.sketchPanned) {
+      this.sketchPanned = false;
+      this.panTouchOnly = false;
+      if (this.mode === "pan") this.setMode(this.home);
+    }
+  }
+  /** Pan was lit by sketchPans for the sketch being edited. */
+  private sketchPanned = false;
+  /**
+   * Pan lit by sketchPans is the finger's only: a mouse on the same touch screen keeps its home mode's left button, so
+   * its clicks still draw (merge queue 2026-11-12: Pan took the mouse's press and a rectangle never drew). A mode picked
+   * on the bar clears it.
+   */
+  private panTouchOnly = false;
+  /** The mode the mouse's buttons follow. */
+  private mouseMode(): NavMode {
+    return this.panTouchOnly && this.mode === "pan" ? this.home : this.mode;
+  }
+
   /** What a left-button drag does from now on: orbit, pan, zoom or nothing (the navigation bar's first three buttons, or none lit). */
   setMode(mode: NavMode) {
     this.mode = mode;
@@ -412,7 +449,8 @@ export class ViewportView {
   private applyButtons() {
     const flat = this.image !== null;
     // A flat (2D image) view keeps its left-drag pan whichever mouse preset rests the left button as a picker in 3D (U2d).
-    this.controls.mouseButtons.LEFT = this.mode === "orbit" || (flat && this.mode === "select") ? (flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE) : null;
+    const mouse = this.mouseMode();
+    this.controls.mouseButtons.LEFT = mouse === "orbit" || (flat && mouse === "select") ? (flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE) : null;
     this.controls.touches.ONE = this.mode === "pan" || flat ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
   }
 
@@ -474,7 +512,7 @@ export class ViewportView {
     let drag: { id: number; action: "pan" | "zoom"; x: number; y: number; start: { x: number; y: number } } | null = null;
     this.element.addEventListener("pointerdown", (e) => {
       if (e.target !== canvas || e.pointerType === "touch" || drag) return;
-      const action = dragAction(e.button, e.shiftKey, this.mode);
+      const action = dragAction(e.button, e.shiftKey, this.mouseMode());
       if (action === null || action === "orbit" || action === "select") return; // orbits are OrbitControls', and a picking left button is the click picker's
       e.preventDefault(); // no middle-button autoscroll
       e.stopPropagation(); // neither OrbitControls nor the click picker hears it
@@ -874,6 +912,11 @@ export class ViewportView {
 
   /** The kernel face index under a point on screen (client pixels), or null for empty space. */
   private faceAt(clientX: number, clientY: number): number | null {
+    return this.faceHitAt(clientX, clientY)?.face ?? null;
+  }
+
+  /** The face under a point on screen (client pixels) and where the ray meets it in the world, or null. */
+  private faceHitAt(clientX: number, clientY: number): { face: number; point: [number, number, number] } | null {
     const mesh = this.host.mesh();
     const faceMesh = this.host.faceMesh();
     if (!mesh || !faceMesh || this.image) return null; // the body is not drawn under an image
@@ -882,15 +925,18 @@ export class ViewportView {
     this.raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), this.camera);
     // Nearest hit first; for indexed geometry faceIndex is the triangle number.
     const [hit] = this.raycaster.intersectObject(faceMesh, false);
-    return faceOfTriangle(mesh.triangle_faces, hit?.faceIndex);
+    const face = faceOfTriangle(mesh.triangle_faces, hit?.faceIndex);
+    return face === null || hit === undefined ? null : { face, point: [hit.point.x, hit.point.y, hit.point.z] };
   }
 
   /** While planes are offered (26d): the plane or the face a click there picks (picking.ts planeOrFace), any face, offered or not, so a curved one can be refused in words. */
-  private planeTarget(clientX: number, clientY: number): { plane: string | null; face: number | null } {
-    const face = this.faceAt(clientX, clientY);
+  private planeTarget(clientX: number, clientY: number): { plane: string | null; face: number | null; point?: [number, number, number] } {
+    const hit = this.faceHitAt(clientX, clientY);
+    const face = hit?.face ?? null;
     const plane = face === null ? this.planeAt(clientX, clientY) : null;
     const which = planeOrFace(plane !== null, face !== null);
-    return { plane: which === "plane" ? plane : null, face: which === "face" ? face : null };
+    // Where on the face (SL #502: a face merged from level faces is named by the one under the pointer).
+    return { plane: which === "plane" ? plane : null, face: which === "face" ? face : null, ...(which === "face" && hit !== null ? { point: hit.point } : {}) };
   }
 
   /**
@@ -1519,7 +1565,7 @@ export class Viewer implements SharedViewport {
    */
   showExtrude(show: ExtrudeShow | null) {
     this.extrude.show(show);
-    const said = { extrudeProfiles: show?.profiles.map((p) => p.id).join(" "), extrudeChosen: show?.chosen ?? undefined, extrudePreview: show ? String(show.preview !== null) : undefined, extrudeDistance: show?.arrow ? String(show.arrow.distance) : undefined };
+    const said = { extrudeProfiles: show?.profiles.map((p) => p.id).join(" "), extrudeChosen: show?.chosen ?? undefined, extrudeAlso: show?.alsoChosen?.length ? show.alsoChosen.join(" ") : undefined, extrudePreview: show ? String(show.preview !== null) : undefined, extrudeDistance: show?.arrow ? String(show.arrow.distance) : undefined };
     for (const [key, value] of Object.entries(said)) {
       if (value === undefined) delete this.element.dataset[key];
       else this.element.dataset[key] = value;
@@ -1771,7 +1817,9 @@ export class Viewer implements SharedViewport {
 
   /** Says on the element whether a sketch is being edited with the pointer on it (read by the e2e test). */
   private labelSketches() {
-    this.element.dataset.sketching = String(this.sketchHandler !== null && this.editedPlane !== null);
+    const editing = this.sketchHandler !== null && this.editedPlane !== null;
+    this.element.dataset.sketching = String(editing);
+    this.main.sketchPans(editing);
   }
 
   /**

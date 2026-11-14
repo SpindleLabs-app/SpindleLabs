@@ -76,6 +76,21 @@ test("near misses of a strong signature are not that format", () => {
   assert.deepEqual(identifyFile(file("notes.txt", 'see "formatVersion"')), unknown);
 });
 
+test("save-load hunt D1: a STEP file may start with /* comments */, which Part 21 allows wherever whitespace may be; an unclosed one is not STEP", () => {
+  // ISO 10303-21 section 5.6: a comment is "/*" up to the next "*/" and may stand wherever a space may, so these are STEP.
+  assert.deepEqual(identifyFile(file("lead-comment.step", "/* made by X */\nISO-10303-21;\nHEADER;\n")), is("step"));
+  assert.deepEqual(identifyFile(file("part.txt", " \n/* one */ /* two\nlines */\r\n\tISO-10303-21;")), is("step")); // two comments, whitespace round them
+  assert.deepEqual(identifyFile(file("x", "\xef\xbb\xbf/**/ISO-10303-21;")), is("step")); // an empty comment after a byte order mark
+  assert.deepEqual(identifyFile(file("x", "/* ** / * */ISO-10303-21;")), is("step")); // "*" and "/" alone inside don't end it: only "*/" does
+  // Not STEP: a comment never closed (the signature inside it is commented out), text before the comment, a lone "/".
+  assert.deepEqual(identifyFile(file("open.step", "/* ISO-10303-21;")), renamed("step"));
+  assert.deepEqual(identifyFile(file("x.step", "/* x */ HEADER; ISO-10303-21;")), renamed("step"));
+  assert.deepEqual(identifyFile(file("x.step", "/ ISO-10303-21;")), renamed("step"));
+  assert.deepEqual(identifyFile(file("x", "/*/ISO-10303-21;")), unknown); // "/*/" opens a comment that "/" does not close
+  // Only STEP takes comments this way: a project or an SVG after "/* */" is not one.
+  assert.deepEqual(identifyFile(file("x", '/* */{"formatVersion": 2}')), unknown);
+});
+
 test("binary STL by its size alone, worked out by hand, and only when named .stl", () => {
   // 80-byte header + 4-byte count + 50 bytes per triangle (12 floats of 4 bytes, and 2 attribute bytes):
   // one triangle is 80 + 4 + 50 = 134 bytes; two are 184; none is 84.
@@ -152,14 +167,14 @@ test("routing: a registered importer takes its formats; the rest are refused wit
   const old = routeFiles(registry, [file("plate.fission.json", projectToJson(emptyProject()))]); // saved before the rename
   assert.ok(old?.kind === "open" && old.importer === shell && old.format === "project");
   // The messages, written out in full.
-  assert.equal(refusal(registry, file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
+  assert.equal(refusal(registry, file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. DesignLab will take them as mesh bodies.");
   // Round 2 hunt B1: the valid but quirky ones get the same words, not "damaged, or renamed from another type".
   for (const quirky of [binaryStl(3, 84 + 50 * 3 + 2), binaryStl(0, 84 + 50 * 3), bytes("SOLID PART\nFACET NORMAL 0 0 1\n")])
-    assert.equal(refusal(registry, file("part.stl", quirky)), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
-  assert.equal(refusal(registry, file("logo.svg", "<svg/>")), "Couldn't open “logo.svg”: SpindleLabs can't open SVG drawings yet. Vector and Laser will take them as outlines.");
-  assert.equal(refusal(registry, file("plate.dxf", "0\nSECTION\n")), "Couldn't open “plate.dxf”: SpindleLabs can't open DXF drawings yet. Laser will take them as outlines.");
-  assert.equal(refusal(registry, file("bracket.step", "ISO-10303-21;")), "Couldn't open “bracket.step”: SpindleLabs can't open STEP models yet. Design will take them as exact solids.");
-  assert.equal(refusal(registry, file("poster.pdf", "%PDF-1.4")), "Couldn't open “poster.pdf”: SpindleLabs can't open PDF documents yet. Layout will take them as pages.");
+    assert.equal(refusal(registry, file("part.stl", quirky)), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. DesignLab will take them as mesh bodies.");
+  assert.equal(refusal(registry, file("logo.svg", "<svg/>")), "Couldn't open “logo.svg”: SpindleLabs can't open SVG drawings yet. VectorLab and LaserLab will take them as outlines.");
+  assert.equal(refusal(registry, file("plate.dxf", "0\nSECTION\n")), "Couldn't open “plate.dxf”: SpindleLabs can't open DXF drawings yet. LaserLab will take them as outlines.");
+  assert.equal(refusal(registry, file("bracket.step", "ISO-10303-21;")), "Couldn't open “bracket.step”: SpindleLabs can't open STEP models yet. DesignLab will take them as exact solids.");
+  assert.equal(refusal(registry, file("poster.pdf", "%PDF-1.4")), "Couldn't open “poster.pdf”: SpindleLabs can't open PDF documents yet. LayoutLab will take them as pages.");
   assert.equal(refusal(registry, file("notes.docx", "PK\x03\x04")), "Couldn't open “notes.docx”: SpindleLabs doesn't know this type of file. It opens SpindleLabs projects (.spindle), PNG images and JPEG images.");
   assert.equal(refusal(registry, file("photo.png", "GIF89a")), "Couldn't open “photo.png”: it is named like a PNG image, but its contents aren't one (it may be damaged, or renamed from another type).");
   // Routing opens nothing by itself.
@@ -174,7 +189,7 @@ test("routing: one file at a time, nothing for nothing, and the lists follow wha
   assert.equal(refusal(registry, file("x", "?")), "Couldn't open “x”: SpindleLabs doesn't know this type of file. It can't open any files yet.");
   assert.equal(refusal(registry, file("p.fission.json", '{"formatVersion":2}')), "Couldn't open “p.fission.json”: nothing here opens SpindleLabs projects (.spindle).");
   // A PNG with nobody registered for it is refused naming Image, the workspace that takes images.
-  assert.equal(refusal(registry, file("a.png", new Uint8Array(PNG))), "Couldn't open “a.png”: SpindleLabs can't open PNG images yet. Image will take them as images.");
+  assert.equal(refusal(registry, file("a.png", new Uint8Array(PNG))), "Couldn't open “a.png”: SpindleLabs can't open PNG images yet. ImageLab will take them as images.");
   registry.registerImporter(importer(["jpeg"], "image"));
   assert.equal(refusal(registry, file("x", "?")), "Couldn't open “x”: SpindleLabs doesn't know this type of file. It opens JPEG images.");
 });
@@ -195,7 +210,7 @@ test("routing with only some workspaces listed (the public app: Design and Slice
   assert.equal(refusedIn(file("photo.png", new Uint8Array([...PNG]))), "Couldn't open “photo.png”: SpindleLabs can't open PNG images yet.");
   // SVG's planned workspaces (Vector, Laser) are both unlisted; STL's (Design) is listed and still named.
   assert.equal(refusedIn(file("logo.svg", "<svg/>")), "Couldn't open “logo.svg”: SpindleLabs can't open SVG drawings yet.");
-  assert.equal(refusedIn(file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. Design will take them as mesh bodies.");
+  assert.equal(refusedIn(file("part.stl", "solid x\n")), "Couldn't open “part.stl”: SpindleLabs can't open STL meshes yet. DesignLab will take them as mesh bodies.");
   // What it opens leaves images out.
   assert.equal(refusedIn(file("notes.docx", "PK\x03\x04")), "Couldn't open “notes.docx”: SpindleLabs doesn't know this type of file. It opens SpindleLabs projects (.spindle).");
   // A project, opened by the shell (no workspace), still opens.

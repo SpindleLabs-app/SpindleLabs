@@ -16,7 +16,7 @@ import { SKETCH_TOOLS, type ToolKind } from "./sketch-tool.ts";
 import { CONSTRAINT_TOOLS } from "./constraint-tool.ts";
 
 /** Each sketch tool's icon (U0f). */
-export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project", select: "select", horizontal: "horizontal", vertical: "vertical", coincident: "coincident", fix: "fix", dimension: "dimension" };
+export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", "centre-rectangle": "centre-rectangle", "three-rectangle": "three-rectangle", circle: "circle", "three-circle": "three-circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", polygon: "polygon", "outside-polygon": "outside-polygon", slot: "centre-slot", "overall-slot": "overall-slot", point: "point", project: "project", select: "select", horizontal: "horizontal", vertical: "vertical", coincident: "coincident", fix: "fix", dimension: "dimension" };
 
 export interface SketchToolbarEvents {
   /** A tool chosen, from its button or the Create menu. */
@@ -142,7 +142,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   menuButton.setAttribute("aria-controls", "sketch-create-menu");
   name.append(menuButton);
   create.append(row, name);
-  const tools = SKETCH_TOOLS.map((t) => {
+  const tools = SKETCH_TOOLS.filter((t) => !t.menuOnly).map((t) => {
     const b = button(t.label, `sketch-tool-${t.kind}`); // ids read by the e2e tests
     b.title = t.key ? `${t.label} (${t.key})` : t.label;
     b.setAttribute("aria-label", t.label);
@@ -213,7 +213,9 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   typeButton.setAttribute("aria-label", "Type a size");
   typeButton.hidden = true;
   typeButton.addEventListener("click", () => on.type());
-  row.append(typeButton);
+  // First in the row: at phone width the row is one line scrolled sideways (UI audit 2026-11-12), so Type, wanted the
+  // moment the boxes show, sits where the row starts and is scrolled into sight as it shows (showType).
+  row.prepend(typeButton);
 
   // The menu: fixed to the page under its button, so the toolbar's sideways
   // scroll at phone width never clips it.
@@ -268,7 +270,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     item.tabIndex = -1;
     const name = document.createElement("span");
     name.className = "sketchbar-menu-name";
-    name.append(iconSvg(document, "arc", 16), e.group);
+    name.append(iconSvg(document, TOOL_ICONS[e.rows[0].kind], 16), e.group);
     const more = document.createElement("span");
     more.className = "sketchbar-menu-more";
     more.setAttribute("aria-hidden", "true");
@@ -359,6 +361,9 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     const r = menuButton.getBoundingClientRect();
     menu.style.left = `${Math.max(0, r.left)}px`;
     menu.style.top = `${r.bottom + 2}px`;
+    // Never past the window's foot (a 320 × 568 phone's menu ran 22 px under it): it scrolls instead, 8 px clear.
+    const view = menu.ownerDocument.defaultView;
+    if (view) menu.style.maxHeight = `${Math.max(120, view.innerHeight - (r.bottom + 2) - 8)}px`;
     menu.hidden = false;
     menuButton.setAttribute("aria-expanded", "true");
     document.addEventListener("pointerdown", outside, true);
@@ -420,7 +425,9 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     showSnap,
     showTool,
     showType(on) {
+      const was = typeButton.hidden;
       typeButton.hidden = !on;
+      if (on && was) typeButton.scrollIntoView?.({ block: "nearest", inline: "nearest" });
     },
     showPicked(count) {
       deleteButton.disabled = count === 0;

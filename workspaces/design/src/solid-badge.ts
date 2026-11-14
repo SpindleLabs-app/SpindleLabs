@@ -40,7 +40,8 @@ export function problemMeaning(kind: SolidProblemKind): string {
 }
 
 export interface Badge {
-  state: "solid" | "problems" | "unfinished";
+  /** "touching": every body is solid alone and the file's problems lie between them; "missing": solid, but timeline items failed and are not in it. */
+  state: "solid" | "problems" | "unfinished" | "touching" | "missing";
   /** The card's heading. */
   title: string;
   /** One or two plain sentences under it: why it matters. */
@@ -63,8 +64,43 @@ export function volumeWords(mm3: number): string {
   return `${Number(v.toPrecision(3)).toLocaleString("en")} mm³`;
 }
 
-/** What the card says for a report. */
-export function badgeFor(report: SolidReport): Badge {
+/**
+ * What an export knows beyond its file's own check (export hunt 2026-11-12 D). `missing`: the words naming the timeline
+ * items that failed, so the file is not the whole design (`failedItemsNote`); a file checked solid then never reads as
+ * "Checked solid", and a file with problems says them after it. `touching`: the file holds this many bodies, each
+ * checked solid on its own, so every problem the file has lies between them (they touch or overlap): a milder card
+ * that says so and offers Combine > Join, never "Not solid". `separate`: the file keeps each body its own object (3MF,
+ * OBJ: #640 5), so a slicer reads them apart and the words say only that they touch or overlap.
+ */
+export interface ExportNotes {
+  missing?: string;
+  touching?: number;
+  separate?: boolean;
+}
+
+/**
+ * What the export says when its bodies are each solid but touch or overlap one another (`ExportNotes.touching`);
+ * `separate`: each body is its own object in the file (3MF, OBJ), which slicers read apart.
+ */
+export function touchingWords(bodies: number, separate = false): { title: string; detail: string } {
+  return {
+    title: bodies === 2 ? "The 2 bodies touch or overlap" : `Some of the ${bodies} bodies touch or overlap`,
+    detail: separate
+      ? "Each body is solid on its own and is its own object in the file, but they touch or overlap where they meet, so a slicer prints them as separate parts pressed together. Combine > Join makes them one part."
+      : "Each body is solid on its own, but where they meet their surfaces cross, and some slicers refuse such a file (Slice for printing sends them one by one, which is safe). Combine > Join makes them one part.",
+  };
+}
+
+/** What the card says for a report, with what the export knows beyond it (`notes`). */
+export function badgeFor(report: SolidReport, notes: ExportNotes = {}): Badge {
+  const b = checkedBadge(report, notes.touching, notes.separate);
+  if (!notes.missing) return b;
+  if (b.state === "solid") return { state: "missing", title: "Not the whole design", detail: `${notes.missing} What was built is solid.`, facts: b.facts, items: [] };
+  return { ...b, detail: `${notes.missing} ${b.detail}` };
+}
+
+/** The card for the file's own check; `touching`, the bodies in it when each was checked solid alone. */
+function checkedBadge(report: SolidReport, touching: number | undefined, separate = false): Badge {
   if (report.verdict === "solid") {
     const pieces = report.shells === 1 ? "" : `, ${report.shells} closed pieces`;
     return {
@@ -84,6 +120,7 @@ export function badgeFor(report: SolidReport): Badge {
       items: report.problems.map((p) => ({ words: problemWords(p), means: problemMeaning(p.kind) })),
     };
   }
+  if (report.verdict === "problems" && touching !== undefined && touching >= 2) return { state: "touching", ...touchingWords(touching, separate), facts: "", items: [] };
   const words = report.problems.map(problemWords);
   const title = `Not solid: ${words.slice(0, 2).join(", ")}${words.length > 2 ? ` and ${words.length - 2} more` : ""}`;
   return {
@@ -95,13 +132,14 @@ export function badgeFor(report: SolidReport): Badge {
   };
 }
 
-/** The overlay marking a report's places in red, or null when it has none (solid, or nothing placed). */
-export function solidOverlay(report: SolidReport): AnalysisOverlay | null {
-  const places: OverlayPlace[] = report.problems.flatMap((p) => p.places.map((at) => ({ severity: "error" as const, ...at })));
+/** The overlay marking a report's places in red (amber where bodies each solid alone only touch, `touching`), or null when it has none (solid, or nothing placed). */
+export function solidOverlay(report: SolidReport, touching = false): AnalysisOverlay | null {
+  const severity = touching ? ("warning" as const) : ("error" as const);
+  const places: OverlayPlace[] = report.problems.flatMap((p) => p.places.map((at) => ({ severity, ...at })));
   if (report.verdict === "solid" || places.length === 0) return null;
   return {
     id: SOLID_OVERLAY,
-    label: "Not solid",
+    label: touching ? "Bodies touch" : "Not solid",
     detail: report.problems.map((p) => `${problemWords(p)}: ${problemMeaning(p.kind)}`).join("\n"),
     marks: [],
     places,
@@ -114,22 +152,38 @@ const HEADER = 80;
 export const CHECKED_HEADER = "SpindleLabs STL, checked solid: ";
 
 /**
+ * A binary STL's 80 header bytes for `text`: printable ASCII only (the format has no encoding), each other character,
+ * a newline or an "é" or an emoji alike, written as one "?", as the kernel writes its own header (kernel-results #103),
+ * so the 80 bytes are never cut inside a character and hold no control bytes; spaces after it.
+ */
+export function stlHeader(text: string): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(HEADER).fill(0x20);
+  let i = 0;
+  // By character (code point), not UTF-16 unit: a character outside the basic plane is one "?", not two.
+  for (const c of text) {
+    if (i === HEADER) break;
+    const code = c.codePointAt(0)!;
+    out[i++] = code >= 0x20 && code <= 0x7e ? code : 0x3f;
+  }
+  return out;
+}
+
+/**
  * The file with its header saying it was checked solid, then `name`, cut
- * to the 80 bytes (whole characters, printable ASCII only: the format has
- * no encoding). Only the header changes, so the check still holds.
+ * to the 80 bytes (`stlHeader`). Only the header changes, so the check
+ * still holds.
  */
 export function stampChecked(bytes: Uint8Array<ArrayBuffer>, name: string): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(bytes);
   if (out.length < HEADER) return out;
-  const text = (CHECKED_HEADER + name.replace(/[^\x20-\x7e]/g, "?")).slice(0, HEADER).padEnd(HEADER, " ");
-  for (let i = 0; i < HEADER; i++) out[i] = text.charCodeAt(i);
+  out.set(stlHeader(CHECKED_HEADER + name), 0);
   return out;
 }
 
 export interface SolidBadge {
   readonly element: HTMLElement;
   /** Shows the card for a report (replacing the last one). */
-  show(report: SolidReport): void;
+  show(report: SolidReport, notes?: ExportNotes): void;
   hide(): void;
 }
 
@@ -167,10 +221,10 @@ export function solidBadge(host: HTMLElement, onClose: () => void): SolidBadge {
   host.append(el);
   const api: SolidBadge = {
     element: el,
-    show(report) {
-      const b = badgeFor(report);
+    show(report, notes) {
+      const b = badgeFor(report, notes);
       el.dataset.state = b.state;
-      mark.textContent = b.state === "solid" ? "✓" : b.state === "problems" ? "!" : "?";
+      mark.textContent = b.state === "solid" ? "✓" : b.state === "unfinished" ? "?" : "!";
       title.textContent = b.title;
       why.textContent = b.detail;
       facts.textContent = b.facts === "" ? "" : ` ${b.facts}`;
@@ -186,8 +240,13 @@ export function solidBadge(host: HTMLElement, onClose: () => void): SolidBadge {
       list.hidden = b.items.length === 0;
       el.hidden = false;
     },
+    // Hidden, it keeps nothing of the last report: the same few nodes whatever was saved (the soak counts them, #198).
     hide() {
       el.hidden = true;
+      delete el.dataset.state;
+      for (const part of [mark, title, why, facts]) part.textContent = "";
+      list.replaceChildren();
+      list.hidden = true;
     },
   };
   close.addEventListener("click", () => {

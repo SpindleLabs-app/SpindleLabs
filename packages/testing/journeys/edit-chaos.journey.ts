@@ -30,7 +30,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { emptyProject, projectFromJson, projectToJson, type Feature } from "@fission/core";
 import { addSketch, designWorkspace, drawRectangle, extrudeSketch, insertPreset, partDocument, type DesignDocument } from "@fission/design";
-import { app, close, kernel } from "./design-app.ts";
+import { app, close, kernel, rebuildChanges } from "./design-app.ts";
 
 const SEEDS = Number(process.env.FISSION_SESSIONS ?? 8);
 const STEPS = Number(process.env.FISSION_SESSION_STEPS ?? 60);
@@ -151,10 +151,22 @@ export function leak(before: DesignDocument, after: DesignDocument, id: string):
 const SIZE_BOXES: Record<string, string[]> = { box: ["width", "depth", "height"], extrude: ["height"] };
 export function takes(f: Feature, typed: string[]): boolean {
   return typed.every((t) => {
-    if (!/^\s*-?\d+(\.\d+)?\s*$/.test(t)) return false;
-    const v = Number(t);
-    return v >= 1e-3 && v <= 1e6;
+    const v = typedMm(t);
+    return v !== null && v >= 1e-3 && v <= 1e6;
   });
+}
+/**
+ * The millimetres a typed size means, or null for one the boxes refuse (issue #518, written here apart from the app's
+ * reader): a decimal, its point a point or one comma (a comma before exactly three digits after 1 to 3 others could be a
+ * thousands separator, so is refused), then mm, cm (×10), m (×1000) or in, inch, inches or " (×25.4), or nothing for mm.
+ */
+export function typedMm(t: string): number | null {
+  const m = /^\s*(-?)(\d+)(?:([.,])(\d+))?\s*(mm|cm|m|in|inch|inches|")?\s*$/i.exec(t);
+  if (!m) return null;
+  if (m[3] === "," && /^[1-9]\d{0,2}$/.test(m[2]) && m[4].length === 3) return null;
+  const per: Record<string, number> = { mm: 1, cm: 10, m: 1000, in: 25.4, inch: 25.4, inches: 25.4, '"': 25.4 };
+  const v = Number(`${m[1]}${m[2]}${m[4] === undefined ? "" : `.${m[4]}`}`) * per[(m[5] ?? "mm").toLowerCase()];
+  return Number(v.toPrecision(12));
 }
 /** The sizes a typed edit leaves `f` with, as numbers in the panel's order. */
 const sizesOf = (f: Feature) => {
@@ -163,7 +175,9 @@ const sizesOf = (f: Feature) => {
 };
 
 /** What a careless user types in a size box: mostly a size, some junk, some refused. */
-const JUNK = ["0", "-5", "", " ", "abc", "1e9", "0.0000001", "-0", "12mm", "1,5", "Infinity", "NaN"];
+const JUNK = ["0", "-5", "", " ", "abc", "1e9", "0.0000001", "-0", "12 cx", "1,000", "Infinity", "NaN"];
+/** Sizes typed with a unit or a decimal comma, which the boxes read (issue #518), with the mm they mean, worked by hand. */
+const WITH_UNITS: [string, number][] = [["12mm", 12], ["1,5", 1.5], ["2.5 cm", 25], ["1in", 25.4], ["0,04 m", 40]];
 
 // ---------------------------------------------------------------- the session
 
@@ -188,6 +202,10 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
     for (let k = 0; k < steps; k++) {
       const before = a.doc();
       const labelBefore = a.history.undoLabel();
+      // The steps as History lists them: an open sketch fences Undo to its own steps (issue #520), so labelBefore is null
+      // in a sketch with nothing drawn since it opened; these are the same whether or not a sketch is open.
+      const stepsBefore = JSON.stringify(a.history.steps().map((st) => [st.label, st.state]));
+      const doneLabel = a.history.steps().find((st) => st.state === "current")?.label || null;
       const solids = before.timeline.features.filter((f) => f.intent.type !== "sketch");
       const roll = r();
       let expect: { edit: string; recorded: boolean } | null = null;
@@ -201,7 +219,7 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
           const boxes = SIZE_BOXES[f.intent.type].map((key) => a.$(`#edit-${key}`) as HTMLInputElement | null);
           if (boxes.some((b) => b === null)) return fail(`Edit feature on ${f.id} shows no ${SIZE_BOXES[f.intent.type].join("/")} boxes`);
           const how = r();
-          const typed = boxes.map((b) => (how < 0.25 ? b!.value : r() < 0.2 ? pick(JUNK) : String((f.intent.type === "extrude" && r() < 0.15 ? -1 : 1) * (1 + Math.floor(r() * 60)))));
+          const typed = boxes.map((b) => (how < 0.25 ? b!.value : r() < 0.2 ? pick(r() < 0.75 ? JUNK : WITH_UNITS.map(([t]) => t)) : String((f.intent.type === "extrude" && r() < 0.15 ? -1 : 1) * (1 + Math.floor(r() * 60)))));
           boxes.forEach((b, i) => (b!.value = typed[i]));
           const finish = pick(["ok", "ok", "enter", "cancel", "escape"]);
           done.push(`edit ${f.id} [${typed.map((t) => JSON.stringify(t)).join(", ")}] ${finish}`);
@@ -212,7 +230,7 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
           await a.settle();
           if (finish === "ok" || finish === "enter") {
             const ok = takes(f, typed);
-            const same = ok && typed.every((t, i) => Number(t) === sizesOf(f)[i]);
+            const same = ok && typed.every((t, i) => typedMm(t) === sizesOf(f)[i]);
             expect = { edit: f.id, recorded: ok && !same };
             reach(ok ? (same ? "edit-same" : "edit-taken") : "edit-refused");
             const open = !a.$("#feature-edit")!.hidden;
@@ -316,7 +334,9 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
           if (!/^Edit /.test(label ?? "")) return fail(`Edit feature on ${expect.edit} recorded ${JSON.stringify(label)}`);
           const l = leak(before, after, expect.edit);
           if (l) return fail(`Edit feature on ${expect.edit}: ${l}`);
-        } else if (key !== canonical(before) || label !== labelBefore) return fail(`Edit feature on ${expect.edit} changed the file though nothing should be recorded (Undo now ${JSON.stringify(label)})`);
+          // Nothing recorded: the same file and the same steps, and (Edit feature having closed any sketch, so no fence) Undo
+          // offers the step that was done before.
+        } else if (key !== canonical(before) || JSON.stringify(a.history.steps().map((st) => [st.label, st.state])) !== stepsBefore || label !== doneLabel) return fail(`Edit feature on ${expect.edit} changed the file though nothing should be recorded (Undo now ${JSON.stringify(label)})`);
       }
       const back = projectFromJson(projectToJson({ ...emptyProject("Chaos"), workspaces: { design: after } }), [designWorkspace]).workspaces.design;
       if (canonical(back) !== canonical(after)) return fail(`the file reads back differently: ${canonical(back).slice(0, 300)} vs ${canonical(after).slice(0, 300)}`);
@@ -333,7 +353,11 @@ export async function chaosSession(seed: number, steps: number, plugin = designW
     }
     if (a.sketching()) await a.finish();
     if (errors.length) return fail(`thrown: ${errors.join(" | ")}`);
-    return (await a.close()) ? null : fail("a body was not freed at the end");
+    const ended = a.doc();
+    if (!(await a.close())) return fail("a body was not freed at the end");
+    // The rule for every seeded session (SL #641): the design it ended with, opened again, rebuilds to itself.
+    const changed = await rebuildChanges(ended, plugin);
+    return changed === null ? null : fail(changed);
   } catch (e) {
     await a.close();
     return fail((e as Error).stack ?? String(e));
@@ -383,6 +407,11 @@ test("the size rules at their limits, and the other checks, each able to fail", 
   assert.ok(takes(extrude, ["12"]));
   assert.ok(!takes(extrude, ["-12"]));
   for (const bad of JUNK) assert.ok(!takes(box, [bad, "1", "1"]), JSON.stringify(bad));
+  // A unit or a decimal comma is read (issue #518): 2.5 cm = 25 mm, 1 in = 25.4 mm, "1,5" = 1.5 mm; "1,000" could be 1000 or 1.
+  for (const [t, mm] of WITH_UNITS) assert.equal(typedMm(t), mm, t);
+  assert.ok(takes(box, ["2.5 cm", "1in", "1,5"]));
+  assert.equal(typedMm("1,000"), null);
+  assert.equal(typedMm("0,250"), 0.25);
   // An id handed out again is named; one from the counter is not.
   const doc = start();
   const reused = structuredClone(doc);
@@ -416,7 +445,7 @@ const WORKSPACE = new URL("../../../workspaces/design/src/workspace.ts", import.
 const PLANTS = [
   { name: "refused-recorded", find: "    if (refused !== null) return editBox.showError(refused);", replace: "", caught: "which the rules refuse" },
   { name: "panel-stays", find: "    record(step, next) {\n      leaveExtrude();\n      leaveEdit();", replace: "    record(step, next) {\n      leaveExtrude();", caught: "the panel is still open" },
-  { name: "cancel-records", find: "    cancel: () => leaveEdit(),", replace: "    cancel: () => editBox.editing !== null && void finishEdit(Object.fromEntries([...ctx.properties.querySelectorAll<HTMLInputElement>('#feature-edit input')].map((i) => [i.id.slice(5), i.value]))),", caught: "nothing should be recorded" },
+  { name: "cancel-records", find: "    cancel: () => (okChecks.clear(), leaveEdit()),", replace: "    cancel: () => editBox.editing !== null && void finishEdit(Object.fromEntries([...ctx.properties.querySelectorAll<HTMLInputElement>('#feature-edit input')].map((i) => [i.id.slice(5), i.value]))),", caught: "nothing should be recorded" },
 ];
 
 /** Design with `plant` made: a copy of workspace.ts beside it (so its imports resolve), loaded, then deleted. */

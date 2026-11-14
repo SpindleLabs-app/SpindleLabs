@@ -15,7 +15,8 @@
 #       (RESULTS_REPO: another repo to push to, for the tests)
 #   kernel_ci.sh run NAME LOGDIR COMMAND...
 #       runs COMMAND with all its output in LOGDIR/NAME.log and prints only
-#       RESULT NAME PASS|FAIL <seconds>; exits with COMMAND's exit code
+#       RESULT NAME PASS|FAIL <seconds>; exits with COMMAND's exit code. No
+#       key or token (KERNEL_READ, RESULTS_WRITE, GH_TOKEN, ...) reaches COMMAND
 #   kernel_ci.sh checkout DIR REF [ALSO]
 #       fetches the kernel commit or branch REF (and commit ALSO, e.g. the
 #       mutants' base) into DIR with its history (no other branch or
@@ -32,6 +33,10 @@
 #   kernel_ci.sh filter
 #       copies to stdout only the lines the kernel's ci scripts may print in
 #       public: RESULT, count, shards and missed lines; drops everything else
+#
+#   kernel_ci.sh keygen DIR | seal DIR OUT PUBLIC.pem | unseal IN OUT PRIVATE.pem
+#       a keyless job seals the files it made so only the keyed job opens
+#       them (seal.py: openssl hybrid encryption, safe extraction)
 #
 # Anything this log shows is public, so the full output of every check only
 # ever goes to kernel-results. Tested in test_kernel_ci.py.
@@ -53,8 +58,14 @@ status)
 save)
   job=$2 dir=$3
   work=$(mktemp -d)
-  git clone -q --depth 1 "${RESULTS_REPO:-https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git}" "$work/r" 2>/dev/null
   dest="${RESULTS_PATH:-ci/$LABEL/$HEAD_SHA/$GITHUB_RUN_ID-${GITHUB_RUN_ATTEMPT:-1}}/$job"
+  # Only this save's own folder is ever read or written, and kernel-results
+  # holds every run's logs, so the clone takes no file contents (the clone was
+  # most of the 70 to 115 seconds a save took, 2026-11-11): a blobless, sparse
+  # one, with just $dest checked out (a repo or git that cannot filter clones
+  # all the same, only slower).
+  git clone -q --depth 1 --filter=blob:none --sparse "${RESULTS_REPO:-https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git}" "$work/r" 2>/dev/null
+  git -C "$work/r" sparse-checkout set "$dest" >/dev/null 2>&1
   mkdir -p "$work/r/$dest"
   # GitHub refuses a push with a file over 100 MB, so files over 50 MB stay
   # behind (the release check's three 1.3 GB answer files made every save
@@ -101,7 +112,11 @@ run)
   shift 3
   mkdir -p "$dir"
   start=$SECONDS code=0
-  "$@" >"$dir/$name.log" 2>&1 </dev/null || code=$?
+  # The kernel's code (and whatever its build pulls in) runs here, and
+  # sees every variable it is started with: none of the keys or tokens goes
+  # to it, whatever the step's environment held.
+  env -u KERNEL_READ -u RESULTS_WRITE -u GH_TOKEN -u GITHUB_TOKEN -u CODE_TOKEN -u APP_PR -u APP_DISPATCH -u MERGE_QUEUE_TOKEN \
+    "$@" >"$dir/$name.log" 2>&1 </dev/null || code=$?
   echo "RESULT $name $([ $code = 0 ] && echo PASS || echo FAIL) $((SECONDS - start))"
   exit $code
   ;;
@@ -139,6 +154,9 @@ describe)
   ;;
 filter)
   grep -E '^(RESULT [a-z0-9-]+ (PASS|FAIL) [0-9]+|count ([0-9]+|error)|shards \[[0-9,]*\]|missed [0-9]+)$' || true
+  ;;
+keygen|seal|seal-tar|unseal)
+  exec python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" "$@"
   ;;
 *)
   echo "usage: kernel_ci.sh status|save|run|checkout|describe|filter"; exit 2 ;;

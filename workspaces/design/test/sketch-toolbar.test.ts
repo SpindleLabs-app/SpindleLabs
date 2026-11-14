@@ -5,10 +5,23 @@ import { sketchPanel } from "../src/sketch-panel.ts";
 import type { ToolKind } from "../src/sketch-tool.ts";
 
 test("the Create menu lists every tool with its key, in the tools' order, the three arcs under one Arc row", () => {
-  // Written out by hand: Line L, Rectangle R, Circle C, then Arc opening
-  // 3-point arc A, Centre arc and Tangent arc (no keys: T is kept for Trim, Ben 10-29), then (27d) Project P.
+  // Written out by hand: Line L, Rectangle R and (52c) the centre and 3-point rectangles beside it, Circle C and the
+  // 3-point circle, then Arc opening 3-point arc A, Centre arc and Tangent arc (no keys: T is kept for Trim, Ben 10-29),
+  // then (52c) Polygon opening the inscribed and circumscribed polygons, Slot opening its two kinds, Point, then (27d) Project P.
   const show = (e: MenuEntry): string => ("group" in e ? `${e.group} ▸ [${e.rows.map(show).join(", ")}]` : `${e.label}${e.key ? ` ${e.key}` : ""}`);
-  assert.deepEqual(createMenuRows().map(show), ["Line L", "Rectangle R", "Circle C", "Arc ▸ [3-point arc A, Centre arc, Tangent arc]", "Project P"]);
+  assert.deepEqual(createMenuRows().map(show), [
+    "Line L",
+    "Rectangle R",
+    "Centre rectangle",
+    "3-point rectangle",
+    "Circle C",
+    "3-point circle",
+    "Arc ▸ [3-point arc A, Centre arc, Tangent arc]",
+    "Polygon ▸ [Inscribed polygon, Circumscribed polygon]",
+    "Slot ▸ [Centre to centre slot, Overall slot]",
+    "Point",
+    "Project P",
+  ]);
 });
 
 test("menu keys by hand: Down and Up wrap round five rows, Home and End jump, other keys don't move", () => {
@@ -55,9 +68,11 @@ test("hidden until shown; shown, the Create group comes first, then the modellin
   t.show("line");
   const groups = [...slot.children].map((g) => (g as HTMLElement).getAttribute("aria-label") ?? g.id);
   assert.deepEqual(groups, ["Create", "modelling", "Snapping", "Finish"]);
-  // Select, Delete and Construction (47f), then the constraint tools (47d2) and Dimension (47e), end the Create group's row of tools (so at phone width they wrap with them, app hunt 2026-11-04).
+  // Select, Delete and Construction (47f), then the constraint tools (47d2) and Dimension (47e), end the Create group's row of tools (at phone width one row scrolled sideways, UI audit 2026-11-12).
   const row = [...$("sketch-tool-line").parentElement!.querySelectorAll("button")].map((b) => b.id);
-  assert.deepEqual(row.slice(-9), ["sketch-tool-select", "sketch-delete", "sketch-construction", "sketch-tool-horizontal", "sketch-tool-vertical", "sketch-tool-coincident", "sketch-tool-fix", "sketch-tool-dimension", "sketch-type"]);
+  assert.deepEqual(row.slice(-8), ["sketch-tool-select", "sketch-delete", "sketch-construction", "sketch-tool-horizontal", "sketch-tool-vertical", "sketch-tool-coincident", "sketch-tool-fix", "sketch-tool-dimension"]);
+  // Type starts the row (UI audit 2026-11-12: at phone width the row is one line scrolled sideways, so Type stays in sight).
+  assert.equal(row[0], "sketch-type");
   assert.equal($("sketch-tool-select").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-snap").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-create").closest<HTMLElement>(".tool-group")!.hidden, false);
@@ -217,15 +232,20 @@ test("the menu by keys: Down moves the focus, Escape closes it without reaching 
     (doc.activeElement as HTMLElement).dispatchEvent(ev);
     return ev;
   };
-  // Arc is top row 3 of 0 to 4: Down is row 4, Project (27d), and Down again wraps to row 0, Line.
+  // Arc is top row 6 of 0 to 10 (52c put the centre and 3-point rectangles and the 3-point circle before it): Down is
+  // row 7, the Polygon group, then the Slot group, Point and Project (27d), and Down again wraps to row 0, Line.
   assert.equal(press("ArrowDown").defaultPrevented, true);
-  assert.equal(doc.activeElement?.id, "sketch-menu-project");
-  press("ArrowDown");
-  assert.equal(doc.activeElement?.id, "sketch-menu-line");
+  assert.equal(doc.activeElement?.id, "sketch-menu-group-polygon");
+  for (const id of ["group-slot", "point", "project", "line"]) {
+    press("ArrowDown");
+    assert.equal(doc.activeElement?.id, `sketch-menu-${id}`);
+  }
   press("End");
   assert.equal(doc.activeElement?.id, "sketch-menu-project");
-  press("ArrowUp");
-  assert.equal(doc.activeElement?.id, "sketch-menu-group-arc");
+  for (const id of ["point", "group-slot", "group-polygon", "group-arc"]) {
+    press("ArrowUp");
+    assert.equal(doc.activeElement?.id, `sketch-menu-${id}`);
+  }
   // Right opens the arcs on the ticked one, Tangent arc (row 2 of 0 to 2);
   // Down wraps to 3-point arc, Down again is Centre arc; Left goes back.
   assert.equal(press("ArrowRight").defaultPrevented, true);

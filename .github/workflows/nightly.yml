@@ -215,21 +215,16 @@ jobs:
           mkdir -p "$OUT"
           first="$(date -u +%Y%m%d)0" seeds=2 limit=300
           if [ "${{ inputs.day }}" = true ]; then
-            # Daytime (round the clock): fresh seeds every run, never a night's
-            # (those are 2026MMDD0 and 1, about 202,6xx,xxx): 300,000,000 plus
-            # twice the minutes since 1970 (about 359,8xx,xxx in November 2026), so each
-            # minute's four seeds are new, and well under the monkey's 32-bit
-            # seeds (2,147,483,647) for centuries. Four sessions, cut off 15
-            # minutes before 14:50 UTC so the report is written in time.
-            now=$(date -u +%s)
-            first=$(( 300000000 + 2 * (now / 60) )) seeds=4
-            end=$(date -u -d "$(date -u +%F) 14:50" +%s)
-            [ "$now" -ge "$end" ] && end=$(( end + 86400 ))
-            left=$(( (end - now) / 60 - 15 ))
-            [ "$left" -lt "$limit" ] && limit=$left
-            [ "$limit" -ge 10 ] || { echo "too little time left before 14:50 UTC"; exit 1; }
+            # Daytime (round the clock): fresh seeds every run, only the sessions that fit before 14:50 UTC, and
+            # none when not one can finish (issue #671; monkey_night.py day writes that run's report instead).
+            plan=$(python3 ../../.github/scripts/monkey_night.py day "$OUT" "$(date -u +%s)")
+            [ "$plan" = skip ] && { cat "$OUT/report.txt"; exit 0; }
+            read -r first seeds limit <<<"$plan"
           fi
-          MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + seeds - 1))" MONKEY_STEPS=2000 \
+          # The monkey stops itself 5 minutes before the cut-off (MONKEY_MINUTES: the session it is in says
+          # "cut off", later seeds "not started", and the summary with its Combines line is printed; issues
+          # #476, #477), so `timeout` is only the backstop for a tester that hangs.
+          MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + seeds - 1))" MONKEY_STEPS=2000 MONKEY_MINUTES=$(( limit - 5 )) \
             timeout "${limit}m" node e2e/monkey.mjs 2>&1 | tee "$OUT/monkey.log" | grep -E '^(seed |monkey:)' || true
           python3 ../../.github/scripts/monkey_night.py "$OUT/monkey.log" e2e/monkey-results "$OUT" "$first" "$seeds" 2000 combine
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -415,6 +410,8 @@ jobs:
           # The code every round of this run tested, so old failures can be
           # told apart from current ones.
           COMMIT: ${{ github.sha }}
+          # The tested code's repository: a closed issue seen again on code older than its closing is not reopened (file_issues.py).
+          CODE_REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
           # Each job's result: a red one with no failure folder files an issue too.

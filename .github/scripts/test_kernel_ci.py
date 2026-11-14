@@ -65,6 +65,21 @@ class Run(unittest.TestCase):
         self.assertRegex(out.stdout, r"^RESULT rounds FAIL [0-9]+\n$")
         self.assertEqual((out.stderr, out.returncode, log), ("", 3, "leak\n"))
 
+    def test_the_command_never_sees_a_key(self):
+        # Kernel code runs here, and anything in its environment is readable by
+        # it (and by a compromised dependency it builds): none of the keys, nor
+        # the run's own tokens, reach the command, while other variables do.
+        keys = ["KERNEL_READ", "RESULTS_WRITE", "GH_TOKEN", "GITHUB_TOKEN", "CODE_TOKEN", "APP_PR", "APP_DISPATCH", "MERGE_QUEUE_TOKEN"]
+        env = dict(os.environ, KEEP="kept", **{k: "SECRET-" + k for k in keys})
+        d = tempfile.mkdtemp()
+        command = "echo KEEP=${KEEP:-none}; " + "; ".join(f"echo {k}=${{{k}:-none}}" for k in keys)
+        out = subprocess.run(["bash", SCRIPT, "run", "rounds", d, "bash", "-c", command], capture_output=True, text=True, env=env)
+        with open(os.path.join(d, "rounds.log")) as f:
+            log = f.read()
+        self.assertEqual(log.split("\n")[0], "KEEP=kept")
+        self.assertEqual(log.count("=none"), len(keys), log)
+        self.assertNotIn("SECRET-", log + out.stdout + out.stderr)
+
     def test_the_line_passes_the_filter(self):
         out, _ = self.run_it("true")
         self.assertEqual(filtered(out.stdout), out.stdout)
@@ -144,6 +159,33 @@ class Save(unittest.TestCase):
         self.assertIn("ci/pr-3/abc/1-1/checks/tests.log", files)
         self.assertIn("ci/pr-3/abc/1-1/checks/release/at-limit.bin", files)
         self.assertNotIn("ci/pr-3/abc/1-1/checks/release/plain.jsonl", files)
+
+    def test_other_runs_folders_survive_a_save_through_a_filtered_clone(self):
+        # The save clones without file contents and checks out only its own folder (it was most of a save's
+        # time); the folders of other runs, never checked out, must still be there after the push, and the
+        # clone must really have been filtered (a file:// remote that allows it, as GitHub does).
+        t = self.tmp.name
+        subprocess.run(["git", "-C", self.remote, "config", "uploadpack.allowFilter", "true"], check=True)
+        seed2 = os.path.join(t, "seed2")
+        subprocess.run(["git", "clone", "-q", self.remote, seed2], check=True, capture_output=True)
+        os.makedirs(os.path.join(seed2, "ci", "pr-1", "old", "checks"))
+        with open(os.path.join(seed2, "ci", "pr-1", "old", "checks", "tests.log"), "w") as f:
+            f.write("an earlier run\n")
+        git = ["git", "-C", seed2, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-qm", "an earlier run"], check=True)
+        subprocess.run(git + ["push", "-q", "origin", "HEAD:main"], check=True, capture_output=True)
+        env = dict(os.environ, RESULTS_REPO="file://" + self.remote, RESULTS_PATH="ci/pr-3/abc/1-1", LABEL="pr-3", HEAD_SHA="abc", SAVE_WAIT_SCALE="0")
+        out = subprocess.run(["bash", SCRIPT, "save", "checks", self.logs], capture_output=True, text=True, env=env)
+        self.assertEqual((out.returncode, out.stdout), (0, "saved checks\n"), out.stderr)
+        files = self.saved()
+        self.assertIn("ci/pr-1/old/checks/tests.log", files)
+        self.assertIn("ci/pr-3/abc/1-1/checks/tests.log", files)
+        self.assertIn("README", files)
+        # the whole history the old way (a full clone) would have kept every file; here the save committed one folder
+        last = subprocess.run(["git", "-C", self.remote, "show", "--stat", "--format=%s", "main"], capture_output=True, text=True, check=True).stdout
+        self.assertIn("kernel-ci ci/pr-3/abc/1-1/checks", last)
+        self.assertNotIn("old", last)
 
     def test_small_logs_save_with_no_note(self):
         out = self.save()
@@ -498,6 +540,207 @@ class SecretsOnlyOnMain(unittest.TestCase):
         self.assertEqual(self.problems("w", wf("    environment:\n      name: kernel\n" + key)), [], "the mapping form names it too")
         self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "SOME_NEW_KEY"))), ["w a: uses SOME_NEW_KEY, which this check doesn't know"])
         self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "GITHUB_TOKEN"))), [])
+
+
+class Seal(unittest.TestCase):
+    """seal / unseal: the keyless job that ran kernel code hands its files over in a sealed bundle, which only the
+    keyed job (holding the private key) opens. Nothing readable is left in the bundle, a changed bundle is refused, and
+    opening one never writes outside its folder."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.keys = os.path.join(self.tmp, "keys")
+        self.ci("keygen", self.keys)
+        self.pub = os.path.join(self.keys, "public.pem")
+        self.priv = os.path.join(self.keys, "private.pem")
+        self.logs = os.path.join(self.tmp, "logs")
+        os.makedirs(os.path.join(self.logs, "sub"))
+        with open(os.path.join(self.logs, "a.log"), "w") as f:
+            f.write("panicked at src/widget/gear.rs:812:9 TOPSECRETWORD\n")
+        with open(os.path.join(self.logs, "sub", "b.bin"), "wb") as f:
+            f.write(bytes(range(256)) * 40)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def ci(self, *args, check=True):
+        out = subprocess.run(["bash", SCRIPT, *args], capture_output=True, text=True)
+        if check:
+            self.assertEqual(out.returncode, 0, out.stderr)
+        return out
+
+    def seal(self):
+        sealed = os.path.join(self.tmp, "sealed")
+        out = self.ci("seal", self.logs, sealed, self.pub)
+        self.assertEqual((out.stdout, out.stderr), ("", ""))
+        return sealed
+
+    def test_round_trip_keeps_every_file(self):
+        out = os.path.join(self.tmp, "out")
+        self.ci("unseal", self.seal(), out, self.priv)
+        for rel in ("a.log", os.path.join("sub", "b.bin")):
+            with open(os.path.join(self.logs, rel), "rb") as a, open(os.path.join(out, rel), "rb") as b:
+                self.assertEqual(a.read(), b.read())
+
+    def test_the_bundle_shows_no_plaintext(self):
+        sealed = self.seal()
+        self.assertEqual(sorted(os.listdir(sealed)), ["data.enc", "key.enc"])
+        for name in os.listdir(sealed):
+            with open(os.path.join(sealed, name), "rb") as f:
+                blob = f.read()
+            self.assertNotIn(b"TOPSECRETWORD", blob)
+            self.assertNotIn(b"gear.rs", blob)
+
+    def test_another_private_key_cannot_open_it(self):
+        sealed = self.seal()
+        other = os.path.join(self.tmp, "other")
+        self.ci("keygen", other)
+        out = self.ci("unseal", sealed, os.path.join(self.tmp, "out"), os.path.join(other, "private.pem"), check=False)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "a.log")))
+
+    def test_a_changed_file_is_refused(self):
+        for name in ("data.enc", "key.enc"):
+            sealed = self.seal()
+            path = os.path.join(sealed, name)
+            with open(path, "rb") as f:
+                blob = bytearray(f.read())
+            blob[len(blob) // 2] ^= 1
+            with open(path, "wb") as f:
+                f.write(blob)
+            out_dir = os.path.join(self.tmp, "out-" + name)
+            out = self.ci("unseal", sealed, out_dir, self.priv, check=False)
+            self.assertNotEqual(out.returncode, 0, name)
+            self.assertFalse(os.path.exists(os.path.join(out_dir, "a.log")), name)
+            shutil.rmtree(sealed)
+
+    def hostile(self, build):
+        import tarfile
+        raw = os.path.join(self.tmp, "raw.tar")
+        with tarfile.open(raw, "w") as t:
+            build(t)
+        sealed = os.path.join(self.tmp, "sealed-h")
+        self.ci("seal-tar", raw, sealed, self.pub)
+        return sealed
+
+    def test_a_hostile_archive_writes_nothing_outside(self):
+        import io
+        import tarfile
+        cases = {}
+
+        def dotdot(t):
+            i = tarfile.TarInfo("../escaped.txt")
+            i.size = 3
+            t.addfile(i, io.BytesIO(b"bad"))
+
+        def absolute(t):
+            i = tarfile.TarInfo(os.path.join(self.tmp, "abs.txt"))
+            i.size = 3
+            t.addfile(i, io.BytesIO(b"bad"))
+
+        def link(t):
+            i = tarfile.TarInfo("ln")
+            i.type = tarfile.SYMTYPE
+            i.linkname = "/etc/passwd"
+            t.addfile(i)
+
+        def hard(t):
+            i = tarfile.TarInfo("hl")
+            i.type = tarfile.LNKTYPE
+            i.linkname = "a.log"
+            t.addfile(i)
+
+        def device(t):
+            i = tarfile.TarInfo("dev")
+            i.type = tarfile.CHRTYPE
+            t.addfile(i)
+
+        for name, build in dict(dotdot=dotdot, absolute=absolute, link=link, hard=hard, device=device).items():
+            with self.subTest(name):
+                sealed = self.hostile(build)
+                out_dir = os.path.join(self.tmp, "out-" + name)
+                out = self.ci("unseal", sealed, out_dir, self.priv, check=False)
+                self.assertNotEqual(out.returncode, 0)
+                self.assertFalse(os.path.exists(os.path.join(self.tmp, "escaped.txt")))
+                self.assertFalse(os.path.exists(os.path.join(self.tmp, "abs.txt")))
+                self.assertEqual(os.listdir(out_dir) if os.path.isdir(out_dir) else [], [])
+                shutil.rmtree(sealed)
+
+    def test_keygen_makes_a_matching_pair(self):
+        a = subprocess.run(["openssl", "pkey", "-in", self.priv, "-pubout"], capture_output=True, text=True).stdout
+        with open(self.pub) as f:
+            self.assertEqual(a, f.read())
+
+
+class NoKeyBesideKernelCode(unittest.TestCase):
+    """A step that runs the kernel's code (kernel_ci.sh run, or a script of the
+    kernel's checkout) has no key in its environment: not a secret, and not
+    the run's own token. Environment variables reach every child process, so
+    a build script or dependency of the kernel would see them (security
+    hunt H, 2026-11-13, H2). The keys belong to the steps that only check
+    out, save or report. (A later step of the same job still shares the
+    machine with whatever the kernel's code left running: that is H3's
+    larger fix, not this check's.)"""
+
+    WORKFLOWS = NoNoisyKernelCheckout.WORKFLOWS
+    KERNEL_CODE = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel")
+    KEY = re.compile(r"secrets\s*(?:\.|\[)|github\.token")
+
+    @classmethod
+    def steps(cls, lines):
+        return re.split(r"(?m)^      - ", lines)[1:]
+
+    def problems(self, name, text):
+        out = []
+        for job, lines in jobs(text).items():
+            code = "\n".join(line for line in lines.split("\n") if not line.lstrip().startswith("#"))
+            for step in self.steps(code):
+                if self.KERNEL_CODE.search(step) and self.KEY.search(step):
+                    first = step.split("\n")[0].strip()[:50]
+                    out.append(f"{name} {job}: a step with a key runs kernel code ({first})")
+        return out
+
+    def test_every_workflow(self):
+        found = []
+        for name in sorted(os.listdir(self.WORKFLOWS)):
+            with open(os.path.join(self.WORKFLOWS, name)) as f:
+                found += self.problems(name, f.read())
+        self.assertEqual(found, [])
+
+    def test_the_check_catches_each_break(self):
+        def wf(step):
+            return "on: push\njobs:\n  a:\n    runs-on: x\n    steps:\n" + step
+        good = "      - run: .github/scripts/kernel_ci.sh run rounds out k/kernel/x.sh\n"
+        self.assertEqual(self.problems("w", wf(good)), [])
+        keyed = "      - name: n\n        env:\n          K: ${{ secrets.KERNEL_READ }}\n        run: .github/scripts/kernel_ci.sh run rounds out k/kernel/x.sh\n"
+        self.assertEqual(len(self.problems("w", wf(keyed))), 1)
+        token = keyed.replace("secrets.KERNEL_READ", "github.token")
+        self.assertEqual(len(self.problems("w", wf(token))), 1)
+        direct = keyed.replace("kernel_ci.sh run rounds out k/kernel/x.sh", "k/ci/checks.sh full out")
+        self.assertEqual(len(self.problems("w", wf(direct))), 1)
+        # The same key beside a step that only saves is fine; and the later keyless step too.
+        save = "      - env:\n          R: ${{ secrets.RESULTS_WRITE }}\n        run: .github/scripts/kernel_ci.sh save a out\n"
+        self.assertEqual(self.problems("w", wf(save + good)), [])
+
+
+class LabelCheck(unittest.TestCase):
+    """kernel-ci.yml's input check accepts the kernel repo's merge queue's
+    label train-<number> beside pr-<number> and main, and nothing looser
+    (the label becomes a folder name in kernel-results)."""
+
+    def patterns(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "workflows", "kernel-ci.yml")
+        with open(path) as f:
+            found = re.findall(r"\$LABEL =~ \^(\([^)]*\))\$", f.read())
+        self.assertEqual(len(found), 2, "both input checks")
+        return found
+
+    def test_accepted_and_refused(self):
+        for pattern in self.patterns():
+            for ok in ("pr-1", "pr-215", "train-7", "train-203", "main"):
+                self.assertTrue(re.fullmatch(pattern, ok), ok)
+            for bad in ("train-", "train-x", "train-1/../x", "pr-1 ", "trains-1", "train", "Main", "main2", "-1", ""):
+                self.assertFalse(re.fullmatch(pattern, bad), bad)
 
 
 if __name__ == "__main__":

@@ -693,6 +693,26 @@ test("body_boolean with the app's handles: the kernel's numbers sent, the result
     assert.equal(worker.posted.length, sent);
   }));
 
+test("body_boolean keeps a merged face's other origins (also), named by the app's handles (SL #502)", () =>
+  withFakeWorker(async (client, worker) => {
+    // Regression: two joined blocks whose tops are level give one top (kernel 36c1) lying on both inputs' tops; the
+    // kernel lists the second in `also`, and the client dropped it, so the merged top answered to one block's name only.
+    worker.ready(1);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    const b = client.call("body_build", CUBE_MOVED);
+    worker.answer(2, 12);
+    await Promise.all([a, b]);
+    const joined = client.call("body_boolean", 1, [2], "union");
+    const top = (body: number) => ({ body, face: 5, whole: false, turned: false });
+    worker.answer(3, { bodies: [13], history: [{ faces: [top(11), top(12)], also: [[top(12)], []], edges: [] }] });
+    assert.deepEqual((await joined).history[0].also, [[top(2)], []]);
+    // A kernel answer with no `also` (nothing merged) gives none.
+    const plain = client.call("body_boolean", 1, [2], "subtract");
+    worker.answer(4, { bodies: [14], history: [{ faces: [top(11)], edges: [] }] });
+    assert.equal("also" in (await plain).history[0], false);
+  }));
+
 test("body_measure with the app's handles: the kernel's numbers sent for each pick, the answer as it came; an unknown body refused before sending", () =>
   withFakeWorker(async (client, worker) => {
     // Regression (35e2l2, found by the browser check): Measure sent the app's handles, which the kernel has never heard of.

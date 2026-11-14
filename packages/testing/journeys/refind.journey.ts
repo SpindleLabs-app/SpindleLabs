@@ -201,7 +201,7 @@ test("hand-worked: a link another workspace holds to Extrude 1's top face follow
   assert.equal(await solid(redrawn), 35);
   assert.deepEqual(resolveLink(sideLink, await lookupOf(redrawn)), {
     state: "unresolved",
-    warning: "Linked to Right of Extrude 1 in Design, which can't be found after the last edit. Pick a new source or break the link to keep the last copy.",
+    warning: "Linked to Right of Extrude 1 in DesignLab, which can't be found after the last edit. Pick a new source or break the link to keep the last copy.",
   });
   await cache.clear();
 });
@@ -291,7 +291,8 @@ async function refindSession(seed: number, steps: number, plugin = designWorkspa
       } else if (roll < 0.5 && solids.length > 0) {
         const id = pickOf(solids);
         if ((await a.menu(id, "edit")) === null) {
-          for (const input of [...a.window.document.querySelectorAll("#feature-edit input")] as unknown as HTMLInputElement[])
+          // The size boxes only: a value written on a tick box (Flip, Symmetric) ticks nothing, it only used up a draw.
+          for (const input of [...a.window.document.querySelectorAll("#feature-edit input:not([type=checkbox])")] as unknown as HTMLInputElement[])
             input.value = r() < 0.15 ? pickOf(["0", "-5", "", "abc"]) : String(1 + Math.floor(r() * 60));
           a.$("#feature-edit-ok")!.click();
           await a.settle();

@@ -13,7 +13,7 @@ import { boxShown, type Unit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
 import { followUnit } from "./properties.ts";
 import { readDiameterIn, readLengthIn } from "./typed-length.ts";
-import { readAngle, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
+import { readAngle, readSides, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
 import { keepInside } from "./pointer-hint.ts";
 
 export interface TypedBoxEvents {
@@ -26,14 +26,14 @@ export interface TypedBoxEvents {
 }
 
 /** Each box's label (read by people and the e2e test) and how its text is read. */
-export const FIELD_LABELS: Record<TypedField, string> = { length: "Length", angle: "Angle", width: "Width", height: "Height", radius: "Radius", sweep: "Arc angle", diameter: "Diameter" };
-/** The angles are degrees; every other box holds a length, in the unit chosen in Settings (U2c3). */
-const unitOf = (field: TypedField, length: Unit): string => (field === "angle" || field === "sweep" ? "°" : length);
+export const FIELD_LABELS: Record<TypedField, string> = { length: "Length", angle: "Angle", width: "Width", height: "Height", radius: "Radius", sweep: "Arc angle", diameter: "Diameter", sides: "Sides" };
+/** The angles are degrees, a polygon's sides a count with no unit; every other box holds a length, in the unit chosen in Settings (U2c3). */
+const unitOf = (field: TypedField, length: Unit): string => (field === "angle" || field === "sweep" ? "°" : field === "sides" ? "" : length);
 /** What a box's text means, in millimetres for a length: `unit` is the Settings choice. */
 const read = (field: TypedField, text: string, unit: Unit): Reading =>
-  field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : field === "diameter" ? readDiameterIn(text, unit) : readLengthIn(text, unit);
+  field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : field === "sides" ? readSides(text) : field === "diameter" ? readDiameterIn(text, unit) : readLengthIn(text, unit);
 /** A live size (millimetres, or degrees for the angles) as a box's placeholder: millimetres to 3 decimals as before. */
-const placeholder = (field: TypedField, value: number, unit: Unit): string => (unitOf(field, unit) === "°" || unit === "mm" ? shownValue(value) : boxShown(value, unit));
+const placeholder = (field: TypedField, value: number, unit: Unit): string => (unitOf(field, unit) !== unit || unit === "mm" ? shownValue(value) : boxShown(value, unit));
 
 /** The boxes sit this far right of and below the point they are given (typed-entry.css translate). */
 const BOX_OFFSET = { x: 18, y: 14 };
@@ -155,7 +155,9 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
     input.autocomplete = "off";
     input.spellcheck = false;
     input.id = `typed-${f}`; // read by the e2e test
-    input.setAttribute("aria-label", `${FIELD_LABELS[f]} (${unitOf(f, unitNow())})`);
+    input.dataset.undo = "app-empty"; // empty, it has no typing to take back: Ctrl+Z is the project's Undo (main.ts `undoIsOurs`)
+    input.setAttribute("aria-label", unitOf(f, unitNow()) === "" ? FIELD_LABELS[f] : `${FIELD_LABELS[f]} (${unitOf(f, unitNow())})`);
+    if (f === "sides") input.inputMode = "numeric";
     const unit = document.createElement("span");
     unit.className = "typed-entry-unit";
     unit.textContent = unitOf(f, unitNow());
@@ -210,8 +212,8 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
     for (const [f, b] of boxes) {
       const label = unitOf(f, to);
       b.unit.textContent = label;
-      b.input.setAttribute("aria-label", `${FIELD_LABELS[f]} (${label})`);
-      if (label === "°" || !fields.includes(f)) continue;
+      b.input.setAttribute("aria-label", label === "" ? FIELD_LABELS[f] : `${FIELD_LABELS[f]} (${label})`);
+      if (label !== to || !fields.includes(f)) continue;
       const text = b.input.value.trim();
       const was: Unit = to === "mm" ? "in" : "mm";
       const r = text === "" ? null : read(f, text, was);

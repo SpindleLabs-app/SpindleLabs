@@ -10,7 +10,9 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 import monkey_night
@@ -69,6 +71,8 @@ class Night(unittest.TestCase):
             ({"shrunk": False, "replayed": False}, "actions.json: the whole session; its actions did not fail again when replayed, so it is a timing failure (a slow runner or a race)"),
             ({"shrunk": True, "replayed": True, "outOfTime": True}, "actions.json: the shortest list found before shrinking ran out of time, not the shortest there is"),
             ({"shrunk": False}, "actions.json: the whole session; the job ended before it was replayed"),
+            # The monkey's own time limit came before the replay (issue #476): the whole list, said as such.
+            ({"shrunk": False, "outOfTime": True}, "actions.json: the whole session; the run's time limit came before it was replayed"),
         ]
         for how, line in cases:
             with self.subTest(how=how):
@@ -100,6 +104,40 @@ class Night(unittest.TestCase):
         # Nothing at all (the tester crashed before its first line): both seeds.
         failed, _ = self.night("", first=5)
         self.assertEqual(failed, 2)
+
+    def test_a_session_the_time_limit_stopped_is_said_but_not_failed(self):
+        # Issues #476 and #477: the monkey stops itself on MONKEY_MINUTES, so a session it cut off and a seed it
+        # never began are said in the report, not filed as "no result"; a seed with no line at all still is.
+        log = ("seed 5: pass (2000 actions, 1 Combine made of 2 tried)\n"
+               "seed 6: cut off after 812 actions by the run's time limit (MONKEY_MINUTES 150), every check passed until then\n"
+               "seed 7: not started: the run's time limit (MONKEY_MINUTES 150) came first\n"
+               "monkey: 1 Combine made, 2 tried\nmonkey: all passed\n")
+        failed, files = self.night(log, first=5, count=3, combine=True)
+        self.assertEqual(failed, 0)
+        self.assertEqual(files["report.txt"],
+                         "Monkey, seeds 5-7: 3 session(s) of 2000 actions in Chromium; 1 Combine made of 2 tried; "
+                         "every check passed after every action; 1 cut off and 1 not started by the time limit\n"
+                         "seed 5: pass (2000 actions)\n"
+                         "seed 6: cut off after 812 actions by the time limit (every check passed until then)\n"
+                         "seed 7: not started (the time limit came first)\n")
+        self.assertEqual(sorted(files), ["report.txt"])
+        # The same night with seed 7's line missing (the job killed the monkey): seed 7 is a failure again.
+        failed, files = self.night(log.replace("seed 7: not started", "seed 9: not started"), first=5, count=3, combine=True)
+        self.assertEqual(failed, 1)
+        self.assertIn("failure: no result: the session never finished", files["seed-monkey-7/monkey-report.txt"])
+
+    def test_a_run_where_no_session_finished_fails(self):
+        # Every seed stopped by the time limit: nothing was tested to the end, which must not read as clean.
+        log = ("seed 5: cut off after 40 actions by the run's time limit (MONKEY_MINUTES 9), every check passed until then\n"
+               "seed 6: not started: the run's time limit (MONKEY_MINUTES 9) came first\nmonkey: all passed\n")
+        failed, files = self.night(log, first=5)
+        self.assertEqual(failed, 1)
+        self.assertIn("failure: no session finished in the run's time limit", files["seed-monkey-time/monkey-report.txt"])
+        # One session failing is a finished one: its failure is the night's only one.
+        failed, files = self.night(log.replace("seed 5: cut off after 40 actions by the run's time limit (MONKEY_MINUTES 9), every check passed until then",
+                                               "seed 5: FAIL at action 40: save: Save gave no file"), first=5)
+        self.assertEqual(failed, 1)
+        self.assertNotIn("seed-monkey-time/monkey-report.txt", files)
 
     def test_regression_and_replay_lines_are_not_seeds(self):
         # Only the night's own seeds count, not a kept regression's line.
@@ -185,6 +223,57 @@ class Night(unittest.TestCase):
         _, files = self.night(LOG, saved=[20261026])
         kinds = kinds_of({"monkey-report.txt": files["seed-monkey-20261026/monkey-report.txt"]})
         self.assertEqual(list(kinds), ["monkey no sideways scrolling: the page is # px wider than the window"])
+
+
+class Daytime(unittest.TestCase):
+    """The daytime monkey's plan (issue #671): how many fresh seeds fit before 14:50 UTC, or none at all."""
+
+    @staticmethod
+    def at(hhmmss):
+        # 1 Jan 2026 is day 56 x 365 + 14 leap days (1972 to 2024) = 20,454 since 1970; 13 Nov is 316 days later,
+        # day 20,770, so its midnight is 20,770 x 86,400 = 1,794,528,000 s.
+        h, m, s = map(int, hhmmss.split(":"))
+        return 1794528000 + 3600 * h + 60 * m + s
+
+    def test_the_day_used_by_these_tests(self):
+        self.assertEqual(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.at("14:03:27"))), "2026-11-13 14:03:27")
+
+    def test_issue_671_a_late_start_runs_no_session_that_cannot_finish(self):
+        # 14:03:27 to 14:50 is 46 whole minutes, less the report's 15: 31 minutes, under one session's 40, so no
+        # session is started and the plan says so instead of running one that the time limit must cut off.
+        plan = monkey_night.day_plan(self.at("14:03:27"))
+        self.assertEqual(plan, (None, 0, 31))
+
+    def test_forty_minutes_is_one_session_and_thirty_nine_is_none(self):
+        # 13:55:00 leaves 55 - 15 = 40 minutes: exactly one session's 40 (fit 1). 13:56:00 leaves 39: none.
+        first, seeds, limit = monkey_night.day_plan(self.at("13:55:00"))
+        self.assertEqual((seeds, limit), (1, 40))
+        # First seed: 300,000,000 + twice the minutes since 1970 (1,794,528,000 / 60 = 29,908,800; + 835 for 13:55).
+        self.assertEqual(first, 300000000 + 2 * (29908800 + 835))
+        self.assertEqual(monkey_night.day_plan(self.at("13:56:00")), (None, 0, 39))
+
+    def test_the_seeds_that_fit_and_the_cap_of_four(self):
+        # 12:00 leaves 170 - 15 = 155 minutes: 155 // 40 = 3 sessions.
+        self.assertEqual(monkey_night.day_plan(self.at("12:00:00"))[1:], (3, 155))
+        # 10:00 leaves 275: 6 fit, but a daytime run has four seeds.
+        self.assertEqual(monkey_night.day_plan(self.at("10:00:00"))[1:], (4, 275))
+        # 15:00 counts to tomorrow's 14:50 (1,430 - 15 minutes), and no run is longer than 300.
+        self.assertEqual(monkey_night.day_plan(self.at("15:00:00"))[1:], (4, 300))
+
+    def test_a_skipped_run_writes_a_clean_report_and_no_failure_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            said = subprocess.run([sys.executable, os.path.join(HERE, "monkey_night.py"), "day", out, str(self.at("14:03:27"))],
+                                  capture_output=True, text=True, check=True).stdout
+            self.assertEqual(said.split(), ["skip"])
+            self.assertEqual(os.listdir(out), ["report.txt"])
+            report = open(os.path.join(out, "report.txt")).read()
+            self.assertIn("Monkey, daytime: not run, only 31 minutes were left before 14:50 UTC", report)
+            self.assertNotIn("FAIL", report)
+            # A run with time for sessions prints them for the workflow: first seed, seeds, minutes.
+            said = subprocess.run([sys.executable, os.path.join(HERE, "monkey_night.py"), "day", out, str(self.at("12:00:00"))],
+                                  capture_output=True, text=True, check=True).stdout
+            self.assertEqual(said.split()[1:], ["3", "155"])
 
 
 class Collect(unittest.TestCase):
