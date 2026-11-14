@@ -44,7 +44,7 @@ import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from 
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
 import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
-import { copiedNames, frameOfFace, framesOfResult, namedBody, namedFrame, namesOfBody, reversedOfResult } from "./built-body.ts";
+import { copiedNames, frameOfFace, framesOfResult, namedBody, namedFrame, namesOfBody, originFrameNow, reversedOfResult } from "./built-body.ts";
 import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
@@ -1906,25 +1906,43 @@ export function missesMessage(doc: DesignDocument, f: Feature, misses: readonly 
 /**
  * A boolean result's face names with, on each face merged from several
  * input faces lying level (the history's `also`), the input faces it lies on
- * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then.
+ * (boolean-names.ts `FaceNames.origins`, SL #502) and its frame then. An
+ * input face that was itself merged by an earlier boolean hands on its own
+ * origins in its place, each one's frame brought to now (`originFrameNow`),
+ * on a face this boolean merges or leaves as it was (SL #759 item 1): the
+ * input faces last through a later Cut or Join of the body, so a sketch on
+ * a merged face keeps following the part it was drawn on.
  */
 function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][number] | undefined, inputs: readonly NamedBody[], frames: readonly (Plane | null)[] | undefined, built: ReadonlyMap<BodyHandle, BuiltBody>): readonly FaceNames[] {
-  if (h?.also === undefined || !h.also.some((a) => a.length > 0)) return faces;
+  if (h === undefined) return faces;
   const byHandle = new Map(inputs.map((x) => [x.handle, x] as const));
+  const had = (from: { body: BodyHandle; face: number } | undefined) => (from === undefined ? undefined : byHandle.get(from.body)?.faces[from.face]?.origins);
+  const originsOf = (from: { body: BodyHandle; face: number } | undefined): NonNullable<FaceNames["origins"]> => {
+    const input = from === undefined ? undefined : byHandle.get(from.body);
+    if (input === undefined) return [];
+    // Its own frame then (SL #707), for a sketch named after it to be carried by its input's Moves.
+    const b = built.get(from!.body);
+    const frame = b === undefined ? null : frameOfFace(b, from!.face);
+    const merged = input.faces[from!.face];
+    if (merged?.origins !== undefined)
+      return merged.origins.map((o) => {
+        const now = originFrameNow(frame, merged.frame, o.frame ?? null);
+        return { names: o.names, view: o.view, face: o.face, ...(now !== null && { frame: now }), seen: o.seen ?? o.frame ?? WORLD_FRAME };
+      });
+    return [{ names: merged?.names ?? [], view: input.view, face: from!.face, ...(frame !== null && { frame }) }];
+  };
+  if (!h.faces.some((from, i) => (h.also?.[i]?.length ?? 0) > 0 || had(from) !== undefined)) return faces;
   return faces.map((face, i) => {
-    const more = h.also![i] ?? [];
-    if (more.length === 0) return face;
-    const origins = [h.faces[i], ...more].flatMap((from) => {
-      const input = from === undefined ? undefined : byHandle.get(from.body);
-      // Its own frame then (SL #707), for a sketch named after it to be carried by its input's Moves.
-      const b = built.get(from.body);
-      const frame = b === undefined ? null : frameOfFace(b, from.face);
-      return input === undefined ? [] : [{ names: input.faces[from.face]?.names ?? [], view: input.view, face: from.face, ...(frame !== null && { frame }) }];
-    });
+    const more = h.also?.[i] ?? [];
+    if (more.length === 0 && had(h.faces[i]) === undefined) return face;
+    const origins = [h.faces[i], ...more].flatMap(originsOf);
     const frame = frames?.[i] ?? null;
     return { ...face, origins, ...(frame !== null && { frame }) };
   });
 }
+
+/** The world's frame: an origin's frame when nothing moved it. */
+const WORLD_FRAME: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
 
 /** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */
 export function builtPieceFaces(build: Pick<TimelineBuild, "results">): Map<string, string[]> {

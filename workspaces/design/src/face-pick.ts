@@ -10,7 +10,7 @@
 import type { Plane, StableId, ViewportPick } from "@fission/core";
 import { faceHolds, type FaceNames } from "./boolean-names.ts";
 import { SKETCH_PLANES, type SketchPlane } from "./document.ts";
-import { drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
+import { carried, drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
 import { originFrameNow, shownFrame } from "./built-body.ts";
 import { findInScene, sceneHit, shownReference, type Scene } from "./scene.ts";
 
@@ -107,7 +107,9 @@ const WORLD: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
 export function clickedName(face: FaceNames, now: Plane | undefined, point: readonly number[]): string | null {
   if (face.origins === undefined) return null;
   const then = fromLocal(face.frame ?? WORLD, toLocal(now ?? WORLD, point));
-  const holding = face.origins.find((o) => o.names.length > 0 && faceHolds(o.view, o.face, then));
+  // An origin handed on from an earlier boolean (SL #759 item 1) saw its face where it was then (`seen`): carried back there.
+  const seenBy = (o: NonNullable<FaceNames["origins"]>[number]) => (o.seen === undefined ? then : (carried(o.frame, o.seen)?.(then, false) ?? then));
+  const holding = face.origins.find((o) => o.names.length > 0 && faceHolds(o.view, o.face, seenBy(o)));
   return holding?.names[0] ?? null;
 }
 
