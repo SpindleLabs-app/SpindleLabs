@@ -24,7 +24,7 @@ import type { Miss } from "./misses.ts";
 import { combineShown } from "./combine-flag.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
-import { registerDesign } from "./representations.ts";
+import { noteRebuild, registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
@@ -1051,6 +1051,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }));
     // 35f1: a Combine's numbered piece this rebuild didn't make counts as failed, so no row or STL offers it.
     failedNow = failedIds(doc, build.results, new Set(Object.keys(build.bodies)));
+    noteRebuild(doc, failedNow); // what other workspaces are handed (SL #761)
     builtFor = doc;
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
@@ -1832,7 +1833,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.project.workspaces.design = next;
     if (saved?.doc === doc) saved = { ...saved, doc: next };
     if (shownDoc === doc) shownDoc = next;
-    if (builtFor === doc) builtFor = next;
+    if (builtFor === doc) {
+      builtFor = next;
+      noteRebuild(next, failedNow);
+    }
     ctx.history.amend(true);
   }
   async function showBuilt(doc: DesignDocument, kind: PartKind) {

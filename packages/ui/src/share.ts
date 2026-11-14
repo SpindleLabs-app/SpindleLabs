@@ -70,8 +70,8 @@ const make = (doc: Doc) => <K extends keyof HTMLElementTagNameMap>(tag: K, props
   return e;
 };
 
-/** A modal card with a title and Close; `body` is what the caller fills. Escape and a click outside close it. */
-function card(doc: Doc, id: string, title: string) {
+/** A modal card with a title and Close; `body` is what the caller fills. Escape and a click outside close it. Also the library dialogs' (publish.ts). */
+export function shareCard(doc: Doc, id: string, title: string) {
   const el = make(doc);
   const dialog = el("dialog", { id, className: "share" });
   dialog.setAttribute("aria-labelledby", `${id}-title`);
@@ -122,7 +122,7 @@ export const MY_LINKS_NOTE = "The sharing links you have on. Turn one off and no
 export function shareDialog(doc: Doc, parts: ShareParts, options: { linksOnly?: boolean } = {}): Dialog {
   const only = options.linksOnly === true;
   const id = only ? "my-links" : "share";
-  const c = card(doc, id, only ? MY_LINKS_TITLE : SHARE_TITLE);
+  const c = shareCard(doc, id, only ? MY_LINKS_TITLE : SHARE_TITLE);
   const { el } = c;
   const note = el("p", { className: "share-note", textContent: only ? MY_LINKS_NOTE : SHARE_NOTE });
   const terms = el("p", { className: "share-note share-terms", id: `${id}-terms`, textContent: SHARE_TERMS_PLACEHOLDER });
@@ -278,7 +278,7 @@ function sharedWhen(at: Date, now: Date): string {
 
 /** The shared view (id `shared`): the frozen copy's name and picture, Open my own copy, Report. */
 export function sharedView(doc: Doc, copy: SharedCopy, parts: SharedParts): Dialog {
-  const c = card(doc, "shared", "A shared design");
+  const c = shareCard(doc, "shared", "A shared design");
   const { el } = c;
   const name = el("p", { className: "share-shared-name", id: "shared-name", textContent: copy.name || "Untitled" });
   const picture = copy.picture ? Object.assign(el("img", { className: "share-picture", src: copy.picture, alt: "" }), { width: 192, height: 128 }) : null;
