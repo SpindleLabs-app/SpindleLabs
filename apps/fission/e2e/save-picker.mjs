@@ -217,6 +217,42 @@ try {
     assert.equal(await picks(page), 2, "Save on project B asks where");
     await context.close();
   });
+  // App-wide hunt 2026-11-14, R-3. Hand working: the file last saved to is B (Save As let A go), so the last Ctrl+S
+  // writes B: B holds 75 and A, the copy left behind, still holds the 40 it was saved at. The Undo back to the design
+  // A was saved at put A back as the project's file: A was written over without a question and B missed the work.
+  if (want("G")) await check("G  Save to A (width 40); width 60; Save As B; Undo to 40; width 75; Ctrl+S: B holds 75, A still 40, no question", async () => {
+    const { context, page } = await fresh();
+    const width = async (name) => JSON.parse(await readFile(page, name)).workspaces.design.timeline.features[0].intent.parameters.width;
+    const typeWidth = async (w) => {
+      await page.fill("#width", String(w));
+      await page.click("#viewport");
+      await settle(page, 1300); // past the merge window, so each typed size is its own undo step
+    };
+    await page.evaluate(() => (window.__chosen = "A.spindle"));
+    await saveKey(page);
+    await page.waitForFunction(() => window.__writes.length === 1);
+    await settle(page);
+    assert.equal(await width("A.spindle"), 40, "A saved at width 40");
+    await typeWidth(60);
+    await page.evaluate(() => (window.__chosen = "B.spindle"));
+    await page.keyboard.press("Control+Shift+s");
+    await page.waitForFunction(() => window.__writes.length === 2);
+    await settle(page);
+    assert.equal(await width("B.spindle"), 60, "B saved (Save As) at width 60");
+    await page.keyboard.press("Control+z");
+    await page.waitForFunction(() => document.querySelector("#width").value === "40");
+    await settle(page);
+    await typeWidth(75);
+    const asked = await picks(page);
+    await saveKey(page);
+    await page.waitForFunction(() => window.__writes.length === 3);
+    await settle(page);
+    console.log("  files written in order:", (await page.evaluate(() => window.__writes)).join(", "));
+    assert.equal(await width("A.spindle"), 40, "A, left behind by Save As, is not written over");
+    assert.equal(await width("B.spindle"), 75, "B, the file last saved to, holds the work");
+    assert.equal(await picks(page), asked, "Save writes B again without asking");
+    await context.close();
+  });
 } finally {
   await b.close();
 }

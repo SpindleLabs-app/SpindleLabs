@@ -82,6 +82,7 @@ representations.registerImporter({
     // A browser that can't keep projects holds the design on screen nowhere else: Open asks before it replaces one
     // with changes (it was gone without a question, export hunt 2026-11-12, #644 item 2). A file that can't be read
     // is refused first, in its own words, so no one is asked about an Open that won't happen.
+    await okLanded();
     if (!canKeep && ctx.history.canUndo()) {
       projectFromJson(bytes, workspaces);
       if (!window.confirm(`Open "${name}" in place of your design? This browser can't keep projects, so the design on screen is saved nowhere: Cancel, then use Save to keep it as a file first.`)) return;
@@ -808,6 +809,10 @@ async function save(asNew = false) {
     // Another project opened while this save was asking: the file holds the last project, so it is not kept as
     // this one's, or the next Save would write this project over it without asking (SL #644 item 5).
     if (result.status === "saved" && owner === fileOwner) {
+      // The steps that belonged to the file this project had now belong to the one just saved to: an Undo back to a
+      // design saved before a Save As must not bring the old file back, or the next Save writes over the copy left
+      // behind without asking and the new file misses the work (app-wide hunt 2026-11-14, R-3).
+      if (savedTo !== null || projectFile !== null) for (const [text, file] of filesOf) if (file.handle === savedTo && file.name === projectFile) filesOf.set(text, { handle: result.handle, name: result.name });
       savedTo = result.handle;
       projectFile = result.name;
       fileOf(projectToJson(ctx.project), { handle: savedTo, name: projectFile }); // an Undo back to here finds this file
@@ -898,6 +903,14 @@ function replaceProject(project: Project) {
   ctx.history.reset(); // a new start: nothing from the old project to undo
   assistant.projectReplaced(); // an AI answer asked about the old project never reaches this one (tabs hunt E1)
   tabs?.landed();
+}
+/**
+ * An OK the kernel is still checking lands before another project takes the open one's place (Open, Projects in this
+ * browser, a shared link's copy), as the design tabs wait before a switch: opened at once, the step was dropped from the
+ * project left behind without a word (app-wide hunt 2026-11-14, S-1). A question waiting for the person is not waited on.
+ */
+async function okLanded() {
+  if (ctx.history.working()) await ctx.history.whenIdle();
 }
 /**
  * Replaces the open project with the one in `text`; throws, leaving the
@@ -992,6 +1005,7 @@ const inTime = <T>(asked: Promise<T>) =>
  */
 async function openStored(id: string, modified: Date | null) {
   await started;
+  await okLanded();
   // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
   const kept = keptEntry(local, id);
   // Read before anything is replaced, so a store that never answers leaves the open project as it was (tabs hunt B4).
@@ -1527,6 +1541,7 @@ if (__ACCOUNTS__)
         picture: pictureOfView,
         openText: async (text) => {
           await started;
+          await okLanded();
           openProject(text, "");
         },
       })) ?? null;
