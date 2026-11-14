@@ -1,0 +1,9 @@
+/* The Community page at phone width (SL #522 item 4): its words
+   fill the area under the top bar instead of waiting in the shut Properties sheet, with no Properties pill and no 3D view
+   controls over them. `placeholder-page` is on <body> while such a page shows (apps/fission main.ts `showPage`). Colours are
+   the theme's tokens. */
+@media (max-width: 640px) {
+  .placeholder-page #workspace #properties:not(#none) { display: block; position: absolute; inset: 0; z-index: 15; max-height: none; margin: 0; padding: 16px 18px; overflow-y: auto; border: none; border-radius: 0; background: var(--surface); box-shadow: none; }
+  .placeholder-page #workspace #properties:not(#none)::before { content: none; }
+  .placeholder-page #workspace #panel-toggles:not(#none) { display: none; }
+}

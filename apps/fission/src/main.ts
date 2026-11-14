@@ -408,6 +408,10 @@ function showPage(page: Page) {
     showPlaceholder($("properties"), communityPage);
   }
   markTab(page);
+  // The Community page is all its words: at phone width they fill the view instead of waiting in the shut Properties
+  // sheet over Design's box (SL #522 item 4, styles/placeholder-page.css). Only Community: a workspace still marked
+  // "placeholder" (Laser, TestLab…) mounts a real page of its own, which the words' sheet would cover.
+  document.body.classList.toggle("placeholder-page", !workspace);
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
@@ -424,7 +428,11 @@ function showPage(page: Page) {
 }
 
 // Community pressed again closes it, back to the workspace it was opened from (like AI and Guide).
-$("community").addEventListener("click", () => show(current === "community" ? lastWorkspace : "community"));
+$("community").addEventListener("click", () => {
+  // At phone width the AI sheet would stay over the Community page (SL #522 item 5): Community has nothing for it to do.
+  if (current !== "community" && window.matchMedia("(max-width: 640px)").matches) setAssistant(false);
+  show(current === "community" ? lastWorkspace : "community");
+});
 
 // Split view (X3): Split (over the viewport, wide screens only) puts a
 // second workspace beside the first; the choice in its pane changes which;
@@ -626,6 +634,18 @@ if (everyWorkspace) {
     setMenu(false);
   });
 }
+// At phone width the AI panel is a sheet over the view, and Escape puts it away as it does every other sheet and menu
+// (SL #522 item 5, a phone with a keyboard), its own key: the shortcut table below never also hears it. Wider, the panel
+// sits beside the view and Escape stays the workspace's.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || $("assistant").hidden || !window.matchMedia("(max-width: 640px)").matches) return;
+  if (document.querySelector("dialog[open]")) return; // an open dialog (the first-send question) takes its own Escape
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  setAssistant(false);
+  const opener = $("assistant-toggle");
+  (opener.offsetParent !== null ? opener : $("menu-toggle")).focus(); // behind Menu at phone width
+});
 
 // Autosave (19c): the project is kept in this browser and saved a moment
 // after each change; the top bar says "Saving…", "Saved" or what went wrong.
