@@ -1094,6 +1094,7 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
   ? null
   : shellTabs(document, {
       after: $("topbar"),
+      countBefore: $("menu-toggle"),
       keptId,
       projectName: () => ctx.project.name,
       workspace: () => current,
