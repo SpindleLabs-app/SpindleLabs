@@ -1557,12 +1557,15 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
   const words = (body: string) => (isPiece(body) ? `a piece of ${label(bodyItem(body)!)}` : label(bodyItem(body)!));
   const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
   // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
+  // Held whether or not that body is still here to move (SL #430): an earlier Combine using up the piece that kept the
+  // body's id leaves the other pieces split from it, which the Move holds as it holds the whole body, as `followedDoc`
+  // has a Move that is off take them.
   const numbered = doc.bodies === undefined ? null : new Set(doc.bodies.map((b) => b.id));
   const takes: string[] = [];
   for (let grew = numbered !== null; grew; ) {
     grew = false;
     for (const [id, b] of Object.entries(bodies))
-      if (b.from !== undefined && !numbered!.has(id) && !from.some(([x]) => x === id) && from.some(([x]) => x === b.from)) {
+      if (b.from !== undefined && !numbered!.has(id) && !from.some(([x]) => x === id) && (held.includes(b.from) || from.some(([x]) => x === b.from))) {
         from.push([id, b]);
         takes.push(id);
         grew = true;
