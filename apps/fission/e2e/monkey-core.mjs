@@ -195,8 +195,8 @@ export function editFile(text, edit, at) {
  * (written apart from document.ts's `builds`, from the rules in
  * workspaces/design/CLAUDE.md): the timeline bar's items in order with
  * their suppressed and rolled-back marks, and the Bodies group's rows. A
- * solid builds when it is not suppressed, not after the marker, and, for a
- * sketch extrude, its sketch builds, or the sketch is gone and its last
+ * solid builds when it is not suppressed, not after the marker, not greyed
+ * (built on a suppressed or greyed item, 26e), and, for a sketch extrude, its sketch builds, or the sketch is gone and its last
  * shape was kept. Each one is "Body n", n its own number (35e): the one the
  * file gives it, else (a body the file has no number for: a version 4
  * file, or one edited here) the next after the file's counter and every
@@ -211,7 +211,22 @@ export function expectedView(design, failed = new Set()) {
   const stop = marker === undefined ? features.length : marker === "start" ? 0 : features.findIndex((f) => f.id === marker) + 1;
   const kept = design.kept ?? {};
   const byId = new Map(features.map((f, i) => [f.id, { f, i }]));
-  const active = (i) => i < stop && !features[i].suppressed;
+  // Greyed (26e, Q3): an item built on a suppressed item, or on a greyed one, is off too and makes nothing. A sketch is
+  // built on the feature whose face it is drawn on ("face:<feature>/<face>") and each feature a point is pinned to or an
+  // edge is projected from, read from the sketch itself; any other item on what its `dependsOn` names (its sketch, the
+  // bodies' makers). What an item is built on is always earlier, so one pass in timeline order settles it (issue #472:
+  // an extrude of a sketch on the face of a suppressed box was expected as a row).
+  const sketchOf = new Map((design.sketches ?? []).map((s) => [s.id, s]));
+  const builtOn = (f) => {
+    if (f.intent.type !== "sketch") return f.dependsOn ?? [];
+    const face = /^face:(.+)\/[^/]+$/.exec(String(f.intent.parameters?.plane ?? ""))?.[1];
+    const content = sketchOf.get(f.id);
+    return [...(face === undefined ? [] : [face]), ...(content?.pins ?? []).flatMap((p) => p.feature ?? []), ...(content?.projected ?? []).map((p) => p.feature)];
+  };
+  const greyed = new Set();
+  for (const [i, f] of features.entries())
+    if (i < stop && !f.suppressed && builtOn(f).some((d) => byId.has(d) && (byId.get(d).f.suppressed || greyed.has(d)))) greyed.add(f.id);
+  const active = (i) => i < stop && !features[i].suppressed && !greyed.has(features[i].id);
   // A Move or a Combine (35f1c) acts on bodies and makes none of its own; so does an extrude with an operation (Join,
   // Cut or Intersect: data version 10), whose own body goes into the bodies it picks (SL #507).
   const operation = (f) => f.intent.type === "extrude" && Object.hasOwn(f.intent.parameters, "operation");

@@ -3610,5 +3610,33 @@
     "original": "typeof r === \"object\"",
     "replacement": "true",
     "why": "pendingSignIns' typeof r === \"object\": a primitive left in passes r !== null but has no verifier property, so isVerifier(undefined) refuses it as before."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "EqualityOperator",
+    "original": "inBody >= 400",
+    "replacement": "inBody > 400",
+    "why": "Storage's code in the body is read only when the HTTP status is 400 (res.status === 400 is tested first), so a body code of exactly 400 gives code 400 whichever is used: the body's or the status."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "The message when Storage gives no text: it is only tested against the token-expired words (jwt, token…expired, exp…claim), which neither \"\" nor any other text without them matches, so the answer is a plain refusal either way."
+  },
+  {
+    "file": "packages/account/src/auth.ts",
+    "mutator": "ConditionalExpression",
+    "original": "res.status === 401",
+    "replacement": "false",
+    "why": "code is the HTTP status unless the status is 400, so an HTTP 401 always has code === 401, the next test, which renews just the same."
+  },
+  {
+    "file": "packages/account/src/data.ts",
+    "mutator": "ConditionalExpression",
+    "original": "r.kind === \"failed\"",
+    "replacement": "true",
+    "why": "Only a failed reply has a reason: an ok or signed-out reply has none, so r.reason === \"rejected\" alone already means a refused request."
   }
 ]
