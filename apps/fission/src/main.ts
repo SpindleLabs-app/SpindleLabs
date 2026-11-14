@@ -407,9 +407,10 @@ function showPage(page: Page) {
     showPlaceholder($("properties"), communityPage);
   }
   markTab(page);
-  // A page with nothing to work on yet (Community, a workspace still to be built) is all its words: at phone width they
-  // fill the view instead of waiting in the shut Properties sheet over Design's box (SL #522 item 4, styles/placeholder-page.css).
-  document.body.classList.toggle("placeholder-page", !workspace || workspace.status === "placeholder");
+  // The Community page is all its words: at phone width they fill the view instead of waiting in the shut Properties
+  // sheet over Design's box (SL #522 item 4, styles/placeholder-page.css). Only Community: a workspace still marked
+  // "placeholder" (Laser, TestLab…) mounts a real page of its own, which the words' sheet would cover.
+  document.body.classList.toggle("placeholder-page", !workspace);
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
