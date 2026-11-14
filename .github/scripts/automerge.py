@@ -68,8 +68,8 @@ HOLD = "hold"
 # been tested. (e2e is the gate over its e2e (k/3) shares.)
 REQUIRED_CHECKS = ("kernel", "app", "e2e", "mutants-in-diff", "baseline")
 # ci.yml's matrix jobs whose shares ("e2e (2/3)", "mutants-shard (0)") a
-# required job gathers (e2e, mutants-in-diff).
-SHARDS = ("e2e", "mutants-shard")
+# required job gathers (e2e, mutants-in-diff; app, over "app (design)" and "app (rest)").
+SHARDS = ("e2e", "mutants-shard", "app")
 # ci.yml's jobs that run only on some heads (pull requests that change the
 # app) and, when they ran, gate the merge like a required one: a head
 # without them is not untested.
@@ -111,7 +111,39 @@ def newest(check_runs):
             best[key] = [c]
         elif order(c) == order(best[key][0]):
             best[key].append(c)
-    return [c for kept in best.values() for c in kept]
+    kept = [c for group in best.values() for c in group]
+    # A share ("e2e (2/5)") older than a later run of its job ("e2e", the gate
+    # over the shares) belongs to a run that was replaced (cancelled while
+    # sharding): the later run may name its shares differently (skipped, with
+    # the unexpanded matrix text), so by name alone the old ones never go.
+    gates = {}
+    for c in kept:
+        if c["name"] in SHARDS:
+            key = (c.get("app", {}).get("slug"), c["name"])
+            if key not in gates or order(c) > gates[key]:
+                gates[key] = order(c)
+    return [c for c in kept
+            if not (" (" in c["name"] and c["name"].split(" (")[0] in SHARDS
+                    and order(c) < gates.get((c.get("app", {}).get("slug"), c["name"].split(" (")[0]), ("", 0)))]
+
+
+def own_checks(check_runs, suite_ids):
+    """Only the checks of this pull request's own CI run. Check runs belong to a
+    commit, not to a pull request: a stranger's fork pull request whose head is
+    the same commit gets a run of ci.yml on it too, and its checks (a `draft
+    run` marker, a run still going) would hold this pull request out of
+    merging for as long as they liked. A GitHub Actions check counts only if
+    its check suite is one of `suite_ids` (the pull_request runs of this
+    repository's own branch, own_suites); no known suite means none count.
+    Another app's checks all stay: they only ever count against."""
+    return [c for c in check_runs
+            if c.get("app", {}).get("slug") != "github-actions" or (c.get("check_suite") or {}).get("id") in suite_ids]
+
+
+def own_suites(runs, repo, branch):
+    """The check suites of the pull_request workflow runs (the /actions/runs answer for a head) that came from `branch` of `repo` itself."""
+    return {r["check_suite_id"] for r in runs.get("workflow_runs", [])
+            if r.get("head_branch") == branch and (r.get("head_repository") or {}).get("full_name") == repo}
 
 
 def order(check):
@@ -452,8 +484,11 @@ def gather(gh):
         pr["mergeable"] = gh.call("GET", f"/pulls/{pr['number']}")["mergeable"]
         pr["up_to_date"] = contains(gh, pr["head_sha"], MAIN)
         runs = gh.call("GET", f"/commits/{pr['head_sha']}/check-runs?filter=latest&per_page=100")
-        pr["ci"] = ci_state(runs["check_runs"])
-        pr["green"] = ci_state(runs["check_runs"], quick_ok=True) == "success"
+        suites = own_suites(gh.call("GET", f"/actions/runs?head_sha={pr['head_sha']}&event=pull_request&per_page=100"),
+                            raw["base"]["repo"]["full_name"], head["ref"])
+        mine = own_checks(runs["check_runs"], suites)
+        pr["ci"] = ci_state(mine)
+        pr["green"] = ci_state(mine, quick_ok=True) == "success"
         pr["base_in_main"] = False
         if pr["base_ref"] != MAIN and pr["base_ref"].startswith(PREFIX):
             try:

@@ -401,3 +401,62 @@ test("hand-worked: a bulge on a piece of zero length draws a straight step, not 
   assert.equal(attr(svg.text, "d"), "M0 0L0 0L10 0L0 -10Z");
   assert.equal(attr(svg.text, "viewBox"), "0 -10 10 10");
 });
+
+// ---- Seen from the other side (a sketch on a back or bottom face) ----
+
+// An L: foot along x at the bottom, arm up the left. Area 20·10 + 10·20 = 400.
+const L = [10, 0, 30, 0, 30, 10, 20, 10, 20, 30, 10, 30];
+
+test("hand-worked: an L seen from below (x right, y down the screen) is written with y as it is, not flipped", () => {
+  // From below with the plane's −y up, the point (x, y) is seen at (x, −y)
+  // in a y-up picture; SVG's y runs down, so it is written (x, y). The foot
+  // still runs right from x 10 to 30, and the arm now runs DOWN the page to
+  // y = 30. Seen box: x 10..30, y −30..0, so the viewBox starts at
+  // (min x, −max y) = (10, 0) and is 20 × 30.
+  const svg = outlineToSvg({ outer: path(L), holes: [] }, undefined, { right: 1, up: -1 });
+  assert.equal(attr(svg.text, "d"), "M10 0L30 0L30 10L20 10L20 30L10 30Z");
+  assert.equal(attr(svg.text, "viewBox"), "10 0 20 30");
+  assert.equal(svg.width, 20);
+  assert.equal(svg.height, 30);
+  // The plain view of the same L, for contrast: the arm runs up the page.
+  assert.equal(attr(outlineToSvg({ outer: path(L), holes: [] }).text, "d"), "M10 0L30 0L30 -10L20 -10L20 -30L10 -30Z");
+});
+
+test("hand-worked: an L seen from behind (x left, y up) is written with x negated", () => {
+  // Seen at (−x, y); written (−x, −y). Seen box x −30..−10, y 0..30: viewBox (−30, −30), 20 × 30.
+  const svg = outlineToSvg({ outer: path(L), holes: [] }, undefined, { right: -1, up: 1 });
+  assert.equal(attr(svg.text, "d"), "M-10 0L-30 0L-30 -10L-20 -10L-20 -30L-10 -30Z");
+  assert.equal(attr(svg.text, "viewBox"), "-30 -30 20 30");
+});
+
+test("hand-worked: a mirror turns each arc the other way; a half turn about is no mirror", () => {
+  // The slot (corners (10,0) (50,0) (50,20) (10,20), bulges 0, 1, 0, 1) from
+  // below: its right end goes (50,0) → (60,10) → (50,20) in the model, seen
+  // and written as (50,0) → (60,10) → (50,20) with y down the page: that
+  // bulges to the right going down, clockwise on the page, SVG's sweep flag 1
+  // (the plain view's flag is 0). The left end comes back (10,20) → (0,10) → (10,0).
+  const slot: Outline = { outer: path([10, 0, 50, 0, 50, 20, 10, 20], [0, 1, 0, 1]), holes: [] };
+  const below = outlineToSvg(slot, undefined, { right: 1, up: -1 });
+  assert.equal(attr(below.text, "d"), "M10 0L50 0A10 10 0 0 1 60 10A10 10 0 0 1 50 20L10 20A10 10 0 0 1 0 10A10 10 0 0 1 10 0Z");
+  assert.equal(attr(below.text, "viewBox"), "0 0 60 20");
+  // Both axes turned is the plain picture turned half way round: no mirror, so the flag stays 0.
+  // Points (−x, y) seen… here (−x, −y) seen, written (−x, y): (−10,0) → (−50,0), end through (−60,10) to (−50,20).
+  const about = outlineToSvg(slot, undefined, { right: -1, up: -1 });
+  assert.equal(attr(about.text, "d"), "M-10 0L-50 0A10 10 0 0 0 -60 10A10 10 0 0 0 -50 20L-10 20A10 10 0 0 0 0 10A10 10 0 0 0 -10 0Z");
+});
+
+test("hand-worked: a hole keeps its place in the mirrored picture; x right and y up changes nothing", () => {
+  // A 40 × 30 plate with a circle of radius 2 round (5, 7), from below: the circle is written round (5, 7), y down
+  // the page, so its box is x 3..7, y 5..9; alone, its viewBox is "3 5 4 4".
+  const hole = outlineToSvg({ outer: circle(5, 7, 2), holes: [] }, undefined, { right: 1, up: -1 });
+  assert.equal(attr(hole.text, "viewBox"), "3 5 4 4");
+  assert.match(attr(hole.text, "d") ?? "", /^M7 7A2 2 0 0 0 5 5/, "from its east point (7, 7) toward (5, 5): radius 2 up the page");
+  const plate: Outline = { outer: path([0, 0, 40, 0, 40, 30, 0, 30]), holes: [circle(5, 7, 2)] };
+  assert.equal(outlineToSvg(plate, "P", { right: 1, up: 1 }).text, outlineToSvg(plate, "P").text);
+});
+
+test("a view that is not ±1 each way is refused in words", () => {
+  const plate: Outline = { outer: path([0, 0, 40, 0, 40, 30, 0, 30]), holes: [] };
+  assert.throws(() => outlineToSvg(plate, undefined, { right: 0 as 1, up: 1 }), /seen with x 0 and y 1, and each must be 1 or -1/);
+  assert.throws(() => outlineToSvg(plate, undefined, { right: 1, up: 2 as 1 }), /seen with x 1 and y 2/);
+});

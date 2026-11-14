@@ -168,11 +168,12 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   const shellPress = (which: "undo" | "redo") => {
     if (pressesWaiting === 0 && !history.busy()) return pressNow(which);
     pressesWaiting++;
+    const calledOff = history.callsOff(); // as main.ts: a press that waited for work that recorded nothing is dropped
     pressed = pressed
       .then(() => history.whenIdle())
       .then(() => {
         pressesWaiting--;
-        pressNow(which);
+        if (history.callsOff() === calledOff) pressNow(which);
       });
   };
   const startBodies = (await kernel.call("body_count")) as number;
@@ -303,9 +304,11 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     pointer(kind: SketchPointer["kind"], at: [number, number] | null, under: { edge?: number; face?: number } = {}) {
       viewport.onSketchPointer?.({ kind, at, pixel: 0.1, ...under });
     },
-    async key(id: string) {
-      view.shortcut?.(id);
+    /** Shortcut `id`, waited for; `e` is the event the shell hands over (a copy or paste carries its clipboard). */
+    async key(id: string, e?: Event) {
+      const done = view.shortcut?.(id, e);
       await settle();
+      return done;
     },
     /** Shortcut `id` as the shell runs it, not waited for (with the kernel held, nothing it asks is answered yet). */
     press(id: string) {
@@ -379,4 +382,26 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   let doubleClicks = 0;
   previous = a;
   return a;
+}
+
+/**
+ * The rule every seeded session checks at its end (SL #641, save hunt 2026-11-12: a sketch on a scaled body opened as
+ * a slightly different design every time): a rebuild of a design the rebuild just wrote changes nothing. `doc`, the
+ * design a session left (settled, as the app saved it), is saved, opened in a fresh app, and saved again once that app
+ * has rebuilt it; null when the two files are the same byte for byte, else where they first differ. Puts away the app
+ * last made (`app`), so call it once the session's own app is closed.
+ */
+export async function rebuildChanges(doc: DesignDocument, plugin: WorkspacePlugin = designWorkspace): Promise<string | null> {
+  const file = (d: DesignDocument) => projectToJson({ ...emptyProject("Rebuilt again"), workspaces: { design: d } });
+  const text = file(doc);
+  const opened = projectFromJson(text, [plugin]).workspaces.design as DesignDocument;
+  const b = await app(opened, plugin);
+  const after = file(b.doc());
+  const freed = await b.close();
+  if (after !== text) {
+    let i = 0;
+    while (i < text.length && i < after.length && text[i] === after[i]) i++;
+    return `the rebuild changed the design it wrote, at ${i}: «${text.slice(Math.max(0, i - 80), i + 120)}» became «${after.slice(Math.max(0, i - 80), i + 120)}»`;
+  }
+  return freed ? null : "a body was not freed when the reopened design was put away";
 }

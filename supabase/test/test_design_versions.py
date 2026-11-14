@@ -92,11 +92,13 @@ class DesignVersionsDatabase(unittest.TestCase):
         self.assertEqual(self.as_user(ADA, f"select get_design_version('{did}', '{at(5)}') is null;"), (True, "t"), "B was never kept")
 
     def test_the_ten_minute_gap_at_0_9x_and_1_1x(self):
-        # Versions at 09:00 then a replaced copy that reached the server 540 s later (0.9 x 600 s): not kept.
-        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(9)), ("'C'", at(30))])
+        # Versions at 09:00 then a replaced copy that reached the server 540 s later (0.9 x 600 s): not kept. (Each
+        # replaced copy here stood 8 minutes, under 10, so only the gap after the newest version decides; how long a
+        # copy stood is test_design_versions_session.py's.)
+        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(9)), ("'C'", at(17))])
         self.assertEqual(self.kept(ADA, did), ["09:00:00"])
         # 660 s later (1.1 x 600 s): kept.
-        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(11)), ("'C'", at(30))])
+        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(11)), ("'C'", at(19))])
         self.assertEqual(self.kept(ADA, did), ["09:11:00", "09:00:00"])
 
     def test_a_save_of_the_same_text_keeps_no_version(self):
@@ -160,8 +162,8 @@ class DesignVersionsDatabase(unittest.TestCase):
         did = self.history(ADA, [("'secret A'", at(0)), ("'B'", at(20))])
         self.assertEqual(self.kept(BO, did), [])
         self.assertEqual(self.as_user(BO, f"select get_design_version('{did}', '{at(0)}') is null;"), (True, "t"))
-        self.assertNotIn("secret A", self.as_user(BO, "select my_data()::text;")[1])
-        self.assertIn("secret A", self.as_user(ADA, "select my_data()::text;")[1])
+        self.assertNotIn("secret A", self.as_role("postgres", "select my_data()::text;", BO)[1])
+        self.assertIn("secret A", self.as_role("postgres", "select my_data()::text;", ADA)[1])
 
     def test_the_table_and_the_part_are_closed_to_the_browser(self):
         self.history(ADA, [("'A'", at(0)), ("'B'", at(20))])
@@ -192,9 +194,9 @@ class DesignVersionsDatabase(unittest.TestCase):
 
     def test_download_my_data_holds_every_version_whole(self):
         did = self.history(ADA, [("'{\"v\":1}'", at(0)), ("'{\"v\":2}'", at(20))])
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual([(v["design_id"], v["file"]) for v in data["design_versions"]], [(did, '{"v":1}')])
-        self.assertEqual(json.loads(self.as_user(BO, "select my_data();")[1])["design_versions"], [])
+        self.assertEqual(json.loads(self.as_role("postgres", "select my_data();", BO)[1])["design_versions"], [])
 
 
 if __name__ == "__main__":

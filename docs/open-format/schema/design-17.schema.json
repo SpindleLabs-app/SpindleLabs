@@ -350,7 +350,7 @@
         },
         "dependentRequired": { "operation": ["bodies"], "bodies": ["operation"] },
         "additionalProperties": false,
-        "$comment": "Design data version 18 (SL #531, coming) adds more: [{ sketch, region? }]."
+        "$comment": "Design data version 18 adds more: [{ sketch, region? }] (design-18.schema.json)."
       },
       "sketch": {
         "type": "object",

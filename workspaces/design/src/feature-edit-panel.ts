@@ -18,14 +18,14 @@ import { followUnit, parameterRows, sizeBox, type SizeBox, type SizeKey } from "
 
 export interface FeatureEditEvents {
   /** OK (or Enter), with each shown box as typed and, for an extrude, whether Flip is ticked. */
-  ok(typed: Partial<Record<SizeKey, string>>, flip?: boolean): void;
+  ok(typed: Partial<Record<SizeKey, string>>, flip?: boolean, symmetric?: boolean): void;
   cancel(): void;
   /** The Operation row changed (an extrude of a sketch, with Combine shown). */
   operation?(operation: ExtrudeOperation): void;
   /** A body in its list ticked or unticked. */
   tick?(body: string, on: boolean): void;
   /** A size typed or Flip changed (each shown box as typed, and Flip), so the bodies an extrude reaches can be found again. */
-  sizes?(typed: Partial<Record<SizeKey, string>>, flip?: boolean): void;
+  sizes?(typed: Partial<Record<SizeKey, string>>, flip?: boolean, symmetric?: boolean): void;
 }
 
 export interface FeatureEditPanel {
@@ -68,6 +68,8 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
   let ok: HTMLButtonElement | null = null;
   let inputs: [SizeKey, SizeBox][] = [];
   let flip: HTMLInputElement | null = null;
+  /** An extrude of a sketch's Symmetric (53a1): half its distance each way; Flip is off while it is ticked. */
+  let both: HTMLInputElement | null = null;
   let region: HTMLElement | null = null;
   let select: HTMLSelectElement | null = null;
   let bodies: HTMLElement | null = null;
@@ -88,14 +90,14 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       inputs = [];
       const labels = rows.map((r) => {
         const input = el("input", `edit-${r.key}`);
-        Object.assign(input, { type: "number", step: "any" });
+        Object.assign(input, { type: "text", inputMode: "decimal", autocomplete: "off", spellcheck: false }); // sizeBox reads units and commas (issue #518)
         const field = sizeBox(input, () => currentUnit(document)); // the sizes are millimetres outside the box (U2c3)
         field.value = String(f.sizes[r.key] ?? "");
         // Enter in a box is OK, as in any dialog.
         input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && ok && !ok.disabled) on.ok(typed(), flip?.checked);
+          if (e.key === "Enter" && ok && !ok.disabled) on.ok(typed(), flip?.checked, both?.checked);
         });
-        field.addEventListener("input", () => on.sizes?.(typed(), flip?.checked));
+        field.addEventListener("input", () => on.sizes?.(typed(), flip?.checked, both?.checked));
         inputs.push([r.key, field]);
         const label = el("label", "", "feature-edit-row");
         // A sketch extrude's one size is its distance; the main panel calls the same box "Extrude by".
@@ -107,10 +109,30 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
         flip = el("input", "edit-flip");
         flip.type = "checkbox";
         flip.checked = f.flip;
-        flip.addEventListener("change", () => on.sizes?.(typed(), flip?.checked));
+        flip.addEventListener("change", () => on.sizes?.(typed(), flip?.checked, both?.checked));
         const row = el("label", "", "feature-edit-row feature-edit-flip");
         row.title = "Extrude the other way from the sketch's plane; the body still starts on it";
         row.append(flip, " Flip");
+        labels.push(row);
+      }
+      both = null;
+      if (f.symmetric !== undefined) {
+        const ticked = el("input", "edit-symmetric");
+        both = ticked;
+        ticked.type = "checkbox";
+        ticked.checked = f.symmetric;
+        const flipBox = flip;
+        const flipOff = () => {
+          if (flipBox) flipBox.disabled = ticked.checked;
+        };
+        flipOff();
+        ticked.addEventListener("change", () => {
+          flipOff();
+          on.sizes?.(typed(), flip?.checked, ticked.checked);
+        });
+        const row = el("label", "", "feature-edit-row feature-edit-symmetric");
+        row.title = "Extrude half the distance each way from the sketch's plane: the distance is the whole thickness";
+        row.append(ticked, " Symmetric");
         labels.push(row);
       }
       region = el("p", "edit-region", "feature-edit-region");
@@ -127,7 +149,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       error.setAttribute("role", "alert");
       ok = el("button", "feature-edit-ok", "", "OK");
       ok.type = "button";
-      ok.addEventListener("click", () => on.ok(typed(), flip?.checked));
+      ok.addEventListener("click", () => on.ok(typed(), flip?.checked, both?.checked));
       const cancel = el("button", "feature-edit-cancel", "", "Cancel");
       cancel.type = "button";
       cancel.addEventListener("click", () => on.cancel());
@@ -216,7 +238,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       // holding the panel as hovered, and then in memory once a new design replaces it (e2e/closed-panels.mjs).
       box.replaceChildren();
       box.hidden = true;
-      error = ok = flip = region = null;
+      error = ok = flip = both = region = null;
       select = null;
       bodies = note = operationSlot = null;
       inputs = [];

@@ -424,7 +424,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here || cut;
     $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here || cut;
     $("ai-ask-note").textContent = !here
-      ? "The assistant can change Design's part; other workspaces get their AI features when they are built."
+      ? "The assistant can change DesignLab's part; other workspaces get their AI features when they are built."
       : !s
         ? "Choose a provider in Settings below to ask."
         : cut
@@ -436,7 +436,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     const title = workspaceTitle;
     $("ai-features").innerHTML = `${features.length ? `<h3>Planned in ${escape(title)}</h3>${list(features)}` : ""}<h3>Planned across the project</h3>${list(AI_FEATURES.suite)}`;
   }
-  let workspaceTitle = "Design";
+  let workspaceTitle = "DesignLab";
   addEventListener("online", () => render());
   addEventListener("offline", () => render());
 
@@ -651,6 +651,12 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     if (pending && !pending.decided) pending.reject();
     pending = null;
   }
+  /**
+   * Goes up each time another project takes the open one's place (a tab chosen, a file opened, a new design). An answer
+   * is checked against it as well as against the project's text: two tabs can hold the very same text (two fresh boxes),
+   * and an answer asked in one was previewed and accepted in the other (tabs hunt E1).
+   */
+  let projectsShown = 0;
 
   $("ai-ask").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -667,7 +673,8 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       const view = viewOf(host);
       // The project as the AI is told about it: an answer that arrives after the user changed it (opened a file, typed a size) was made for the old one, so it is refused, never previewed or applied.
       const asked = projectToJson(host.project());
-      const changedWhileAsking = () => projectToJson(host.project()) !== asked;
+      const askedOf = projectsShown;
+      const changedWhileAsking = () => projectsShown !== askedOf || projectToJson(host.project()) !== asked;
       const offered = view.commands ?? AI_COMMANDS;
       const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, offered, view.notes), messages: [{ role: "user", content: words }] }, offered, showProgress);
       if (!answer.ok) return sayTrouble(answer.error, answer.kind, answer.detail);
@@ -675,7 +682,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);
       const design = host.design();
-      if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
+      if (!design?.run) return say("DesignLab isn't open, so nothing was changed.", true);
       // What only the kernel can judge (an extrude's outline) is asked before the preview, so a change that can't be made is never offered (AI7c).
       const problem = await design.check?.(answer.commands);
       if (changedWhileAsking()) return say(CHANGED_WHILE_ASKING, true);
@@ -804,6 +811,16 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     /** The panel was opened: look for what can run here (once per page; Look again repeats it). */
     opened() {
       if (!found) void lookAround();
+    },
+    /**
+     * Another project is on screen in place of the one the AI was asked about: an answer still coming is refused when
+     * it arrives, and a preview waiting for Accept goes, with words (tabs hunt E1).
+     */
+    projectReplaced() {
+      projectsShown++;
+      if (pending === null) return;
+      discard();
+      say("Another design is on screen now, so the AI's suggestion for the last one was dropped. Nothing was changed.");
     },
     /** Points the panel at the active workspace. */
     show(id: WorkspaceId | "community", title: string) {

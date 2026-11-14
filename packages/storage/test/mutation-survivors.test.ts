@@ -448,7 +448,7 @@ test("following a history change back to the written state after a failed save s
   project = part(20);
   autosave.changed();
   await clock.advance(1000);
-  assert.deepEqual(statuses.at(-1), { state: "error", message: "disk full" });
+  assert.deepEqual(statuses.at(-1), { state: "error", message: "disk full. Use Save to keep your work as a file." }); // the way out, said with every failed save (SL #643 item 6)
   failing = false;
   project = part(10);
   history.fire();

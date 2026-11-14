@@ -45,6 +45,8 @@ export interface ProjectStore {
   list(): Promise<ProjectSummary[]>;
   /** Reads and upgrades a stored project; refuses a missing or corrupt one with a message. */
   open(id: string): Promise<Project>;
+  /** A stored project's text exactly as stored, not read or upgraded; null when there is none (account sync compares it with what it last sent, issue #628 item 1). */
+  text(id: string): Promise<string | null>;
   /**
    * Stores the project under `id`, replacing what was there. `read` is when
    * the project was in that state (autosave reads it, a journal entry was
@@ -88,6 +90,9 @@ export class ProjectDeletedError extends ProjectChangedError {
     this.name = "ProjectDeletedError";
   }
 }
+
+/** A refusal for want of room: indexeddb.ts's words for QuotaExceededError, or the error itself (as versions.ts's `storageFull`, which imports this file). */
+const storageFull = (e: unknown) => e instanceof Error && (/^browser storage is full\b|QuotaExceeded/.test(e.message) || e.name === "QuotaExceededError");
 
 const PROJECT = "project/";
 const SUMMARY = "summary/";
@@ -153,6 +158,10 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       // By order first: a project saved while the clock ran ahead must not stay newest once it is put right (B5).
       return all.sort((a, b) => b.order - a.order || b.modified.getTime() - a.modified.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     },
+    async text(id) {
+      checkId(id);
+      return (await kv.get(PROJECT + id)) ?? null;
+    },
     async open(id) {
       checkId(id);
       const text = await kv.get(PROJECT + id);
@@ -196,14 +205,42 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       // The check, the project's text deleted and its summary replaced by the deletion mark, as one step: a delete cut
       // short leaves the project whole or deleted, never a listed one that can't be opened (hunt C3), and the mark is
       // there the moment the project is gone, so another tab's save made from it is refused (C2).
-      await kv.update([PROJECT + id, SUMMARY + id], ([p, s]) => {
+      const there = (p: string | undefined, s: string | undefined) => {
         const project = p !== undefined;
         const summary = s !== undefined && !deletionMark(s);
         if (!project && !summary) throw new Error(`there is no stored project "${id}" to remove`);
+      };
+      const mark = () => {
         const at = now();
-        const mark = JSON.stringify({ deleted: Number.isNaN(at.getTime()) ? "" : at.toISOString() });
-        return { [PROJECT + id]: null, [SUMMARY + id]: mark };
-      });
+        return JSON.stringify({ deleted: Number.isNaN(at.getTime()) ? "" : at.toISOString() });
+      };
+      try {
+        await kv.update([PROJECT + id, SUMMARY + id], ([p, s]) => {
+          there(p, s);
+          return { [PROJECT + id]: null, [SUMMARY + id]: mark() };
+        });
+      } catch (e) {
+        if (!storageFull(e)) throw e;
+        // A full store refuses any step that writes, even this one that makes it smaller, and only a step of deletes
+        // alone goes through (Chromium, measured in the export hunt 2026-11-12, SL #643 item 2): so deleting an old
+        // project, the one way to make room from inside the app, was refused. The text and the listing are deleted
+        // together first (still whole or deleted, never half), which frees the room; then the mark is written. If
+        // even the mark is refused it is left out: no summary reads as "not there" everywhere, and only a tab that
+        // still shows the project could store it again.
+        try {
+          await kv.update([PROJECT + id, SUMMARY + id], ([p, s]) => {
+            there(p, s);
+            return { [PROJECT + id]: null, [SUMMARY + id]: null };
+          });
+        } catch (again) {
+          throw storageFull(again) ? new Error("browser storage is full: can't delete this project") : again;
+        }
+        try {
+          await kv.update([SUMMARY + id], ([s]) => (s === undefined ? { [SUMMARY + id]: mark() } : {}));
+        } catch {
+          // no room even for the mark: the project is deleted all the same
+        }
+      }
     },
   };
 }

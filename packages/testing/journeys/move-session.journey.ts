@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView } from "@fission/core";
 import { bodyReference, builtBody, BodyCache, insertPreset, partDocument, rebuildTimeline, type DesignDocument, type MoveValues } from "@fission/design";
-import { app, kernel } from "./design-app.ts";
+import { app, kernel, rebuildChanges } from "./design-app.ts";
 import { seeded } from "../src/index.ts";
 
 type P = [number, number, number];
@@ -156,6 +156,16 @@ for (let seed = 1; seed <= SEEDS; seed++) {
       } else if (r < 0.72 && model.moves.length > 0) {
         const m = pick(model.moves);
         assert.equal(await a.menu(m.id, "delete"), null);
+        // SL #506 item 2 (rule written apart): a later Move of one of its bodies, suppressed or not, works on the body
+        // as this one leaves it, so the delete asks first; confirmed here.
+        const later = model.moves.slice(model.moves.indexOf(m) + 1).some((x) => x.bodies.some((b) => m.bodies.includes(b)));
+        const ask = a.$("#delete-ask") as HTMLDialogElement | null;
+        assert.equal(ask?.open ?? false, later, `seed ${seed}: asked before deleting ${m.id} (${log.join(" | ")})`);
+        if (later) {
+          assert.match(a.$("#delete-ask-words")!.textContent!, /changes? without it/);
+          a.$("#delete-ask-confirm")!.click();
+          await a.settle();
+        }
         log.push(`delete ${m.id}`);
         record({ ...model, moves: model.moves.filter((x) => x.id !== m.id) });
       } else if (r < 0.88) {
@@ -173,6 +183,9 @@ for (let seed = 1; seed <= SEEDS; seed++) {
       }
       await check(`step ${step}`);
     }
+    const ended = a.doc();
     await a.close();
+    // The rule for every seeded session (SL #641): the design it ended with, opened again, rebuilds to itself.
+    assert.equal(await rebuildChanges(ended), null, `seed ${seed}`);
   });
 }

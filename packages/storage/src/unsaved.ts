@@ -129,7 +129,12 @@ export function readJournalEntry(entry: string): { text: string; written: Date |
  */
 export const keptCopyName = (name: string) => `${name || "Untitled"} (kept copy)`;
 
-const freshId = () => globalThis.crypto?.randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+/**
+ * The id a stale entry's kept copy is stored under: the project's id, the entry's own time (base 36) and the start of
+ * its writer, so two tabs started at the same moment (a restored browser session), each reading the entry before the
+ * other removed it, store one copy between them, not two (export hunt 2026-11-12, #642 item 6; it was a random id).
+ */
+const copyId = (id: string, written: Date | null, writer: string | undefined) => `${id}-kept-${(written?.getTime() ?? 0).toString(36)}${writer === undefined ? "" : `-${writer.slice(0, 8)}`}`;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -143,9 +148,12 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * the store refuses is kept, so the next visit tries again. An entry that
  * names the stored state it was made from is put back only over that state;
  * over another (a stale tab's change) it is stored as a new project, under
- * an id from `newId`, named `keptCopyName`, and says so.
+ * an id from `newId` (by default one made from the entry, so two tabs recovering it at once make one copy), named
+ * `keptCopyName`, and says so. `restored` hears the
+ * id of each project an entry was put back into (its kept undo steps end one
+ * change short of it: kept-steps.ts in the app adds that change as a step).
  */
-export async function recoverUnsaved(store: ProjectStore, journal: JournalStorage | null, readers: readonly DataReader[], newId: () => string = freshId): Promise<string[]> {
+export async function recoverUnsaved(store: ProjectStore, journal: JournalStorage | null, readers: readonly DataReader[], newId: (id: string, written: Date | null, writer: string | undefined) => string = copyId, restored: (id: string) => void = () => {}): Promise<string[]> {
   const problems: string[] = [];
   const keys: string[] = [];
   if (!journal) return problems;
@@ -233,7 +241,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
         }
         const name = keptCopyName(project.name);
         try {
-          await store.save(newId(), { ...project, name }, entry.written ?? undefined, undefined, true); // behind: the newer work still opens
+          await store.save(newId(id, entry.written, entry.writer), { ...project, name }, entry.written ?? undefined, undefined, true); // behind: the newer work still opens
         } catch (copyFailed) {
           problems.push(`changes made to "${project.name}" in another tab couldn't be kept as a separate project (${message(copyFailed)}); they stay in this browser, and the next visit tries again`);
           continue;
@@ -257,6 +265,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
       continue;
     }
     remove(journal, k);
+    restored(id);
   }
   return problems;
 }

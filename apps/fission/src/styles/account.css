@@ -1,10 +1,12 @@
 /* Optional accounts: the top bar's Sign in button and the Account dialog (src/account.ts). */
-/* 761 to 999 px (a phone sideways, a narrow window): with Sign in added the
+/* 761 to 1059 px (a phone sideways, a narrow window): with Sign in added the
    bar's words no longer fit ("Saving…" ran under DESIGN ▾, e2e/phone-short.mjs),
    so AI, Guide, Community and Sign in show their icons only, as they already
    do at 641 to 760 (phone-short.css). Their words stay their names for screen
-   readers, and each title says it. .account-on is on <body> while accounts are on. */
-@media (min-width: 761px) and (max-width: 999px) {
+   readers, and each title says it. .account-on is on <body> while accounts are on.
+   Up to 1059 px, not 999, since the Lab names (DESIGNLAB ▾, 2026-11-12) are about
+   30 px wider: at 1000 px "Saving…" ran under the workspace button in CI's fonts. */
+@media (min-width: 761px) and (max-width: 1059px) {
   .account-on #topbar .app-bar-end button.with-icon:not(#none) { padding-left: 6px; padding-right: 6px; }
   .account-on #topbar .app-bar-end .tool-word, .account-on #topbar .app-bar-end #ai-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }

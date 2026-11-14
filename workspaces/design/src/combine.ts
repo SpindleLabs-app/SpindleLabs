@@ -7,6 +7,7 @@
 // target's piece keeping its id.
 
 import type { Feature } from "@fission/core";
+import { bodiesUsed } from "./body-uses.ts";
 import { bodyItem, bodyNumbers, combineBodies, COMBINE_OPERATIONS, counted, freshName, insertAt, insertItem, isCombineItem, isPiece, makesBody, makesPieces, numberedWhenBuilt, shown, takenNames, type CombineOperation, type DesignDocument } from "./document.ts";
 
 /** The undo step a new Combine is recorded as. */
@@ -98,6 +99,12 @@ export function changedCombine(doc: DesignDocument, id: string, target: string, 
   if (!(COMBINE_OPERATIONS as readonly string[]).includes(operation)) throw new Error(`${shown(operation)} is not join, cut or intersect`);
   const was = combineBodies(old);
   if (was.target === target && was.tools.join() === tools.join() && was.operation === operation && was.keepTools === keepTools) return doc;
+  // SL #506 item 3: a tool it would now use up (Keep tools unticked, or a new tool) that a later item works on refuses the change, as Extrude's does.
+  const usedUp = keepTools ? [] : tools.filter((b) => !(was.keepTools ? [] : was.tools).includes(b));
+  for (const later of doc.timeline.features.slice(at + 1)) {
+    const used = bodiesUsed(later).find((b) => usedUp.includes(b));
+    if (used !== undefined) throw new Error(`${later.provenance.self.label} uses ${numberOf(doc, used) ?? shown(used)}, which ${old.provenance.self.label} would use up: change or delete ${later.provenance.self.label} first`);
+  }
   if (was.target === target && was.tools.join() === tools.join() && [target, ...tools].every((b) => bodyItem(b) !== null)) {
     // Only the operation or Keep tools changed: the bodies stay as picked, even one whose item is gone now (the Combine
     // says so when it fails), so that choice is never refused for it; their words from the Combine's provenance.
