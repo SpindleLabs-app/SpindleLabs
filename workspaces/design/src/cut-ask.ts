@@ -16,7 +16,7 @@
 
 import type { KernelCalls } from "@fission/core";
 import { bodyNumbers, numberPieces, type DesignDocument } from "./document.ts";
-import { BodyCache, builtPieceFaces, rebuildTimeline } from "./rebuild.ts";
+import { BodyCache, builtPieceFaces, followedDoc, rebuildTimeline } from "./rebuild.ts";
 import { listWords, type Miss } from "./misses.ts";
 
 /** What OK's check found: the rebuild's refusal, else the tools that change nothing (none: record at once). */
@@ -27,6 +27,9 @@ export interface Checked {
    * The design checked with the pieces its build made numbered (`numberPieces`, with their faces), for OK to record
    * in its own undo step: numbered only when the rebuild after OK landed, an Insert made before that took the next
    * number first, and Undo and Redo then showed one body under two numbers (SL #622 item 7). Left out when refused.
+   * A Move takes the pieces its check build moved first (`followedDoc`, as the rebuild after OK does before it numbers):
+   * numbered without that, the rebuild found the piece numbered already, the Move never took it, and one end of a body
+   * cut through dropped back to where it was before the Move (app-wide hunt 2026-11-14, T-2).
    */
   numbered?: DesignDocument;
 }
@@ -38,7 +41,7 @@ export async function checkedItem(kernel: KernelCalls, next: DesignDocument, id:
     const build = await rebuildTimeline(next, cache, kernel);
     const r = build.results[id];
     if (r?.status === "failed") return { refused: r.message, misses: [] };
-    return { refused: null, misses: r?.status === "built" ? (r.misses?.list ?? []) : [], numbered: numberPieces(next, Object.keys(build.bodies), builtPieceFaces(build)) };
+    return { refused: null, misses: r?.status === "built" ? (r.misses?.list ?? []) : [], numbered: numberPieces(followedDoc(next, build), Object.keys(build.bodies), builtPieceFaces(build)) };
   } finally {
     await cache.close();
   }
