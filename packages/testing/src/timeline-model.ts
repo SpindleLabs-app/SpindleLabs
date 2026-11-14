@@ -215,6 +215,13 @@ export interface ModelFace {
   down?: true;
   /** A combined body's face (35f1e2): where the Moves had put the input body it came from (left out: not moved); read with `faceMotion`. */
   motion?: Motion2;
+  /**
+   * SL #430 (Design's rule from SL #707): on a face a Combine merged from level faces of its inputs, where the Moves had
+   * put the input face carrying each of the other names (`also`, by `plainKey`; `motion` left out: not moved), so a
+   * sketch named after it is carried by that input's Moves; a name not listed is carried by `motion`. Read with
+   * `faceMotion`; dropped by a copy, as Design's copy drops the merged face's origins.
+   */
+  alsoMotion?: Record<string, { motion?: Motion2 }>;
 }
 
 /**
@@ -897,7 +904,8 @@ function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults:
     faces: r.body.faces.map((f) => {
       const seen = new Set<string>();
       const [shown, ...rest] = [f.name, ...(f.also ?? [])].flatMap(names).filter((n) => !seen.has(faceKey({ ...n, tag: undefined })) && !!seen.add(faceKey({ ...n, tag: undefined })));
-      return { ...f, name: shown, ...(rest.length > 0 ? { also: rest } : {}) };
+      const { alsoMotion: _, ...plain } = f;
+      return { ...plain, name: shown, ...(rest.length > 0 ? { also: rest } : {}) };
     }),
     edges: r.body.edges.map((e) => ({ ...e, name: { ...e.name, feature: owner ?? e.name.feature, faces: [name(e.name.faces[0]), name(e.name.faces[1])] } })),
   };
@@ -975,7 +983,8 @@ function moved(body: ModelBody, m: MoveItem, faults: ReadonlySet<ModelFault>): M
   const edges = body.edges.map((e) => ({ ...e, centroid: at(e.centroid) }));
   // 35f1f2a: a combined body's faces each carry the motion of the body they came from (35f1e2), each followed by this one.
   // Planted bug ("combine-move-frames-kept"): a combined body's faces keep the motions they had, as if never moved.
-  if (body.combined) return sameKind(body, { ...body, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid), ...(faults.has("combine-move-frames-kept") ? {} : { motion: then(f.motion) }) })), edges });
+  const thenAlso = (m: ModelFace["alsoMotion"]) => (m === undefined ? {} : { alsoMotion: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { motion: then(v.motion) }])) });
+  if (body.combined) return sameKind(body, { ...body, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid), ...(faults.has("combine-move-frames-kept") ? {} : { motion: then(f.motion), ...thenAlso(f.alsoMotion) }) })), edges });
   return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges, motion: then(body.motion) });
 }
 
@@ -1019,7 +1028,8 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
   if (found !== null && "body" in found) {
     const body = bodies[found.body];
     // 35e2h: carried along the face by what its body's Moves did since it was drawn. Planted bug ("sketch-not-carried"): only its height follows.
-    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(faceMotion(body, body.faces[found.face]), item.on.motion);
+    // SL #430 (Design's rule from SL #707): on a face merged from level faces, by the Moves of the input face its name names.
+    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(faceMotion(body, body.faces[found.face], ref), item.on.motion);
     // 35f1e2 (seed 137 on the next kernel): on a face a Combine turned to look down (a cut's roof carrying a tool's top)
     // the sketch still faces up, the side it was drawn on (rule 8, naming-model.ts `frameNow`: the normal stays on the
     // drawn normal's side; every face the sessions draw on looks up). 35f1e had it facing down, against rule 8.
