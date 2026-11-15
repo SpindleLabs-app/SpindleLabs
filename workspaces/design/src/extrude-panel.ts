@@ -20,6 +20,7 @@ import { wordsInUnit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
 import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
 import { EXTRUDE_OPERATION_WORDS, EXTRUDE_OPERATIONS, type BodyChoice, type ExtrudeOperation } from "./extrude-operation.ts";
+import { THROUGH_ONLY_CUT, THROUGH_TITLE, THROUGH_WORDS } from "./extrude-through.ts";
 
 export interface ExtrudePanelEvents {
   /** The distance box changed as typed (every keystroke), so the preview and arrow follow it. */
@@ -28,6 +29,8 @@ export interface ExtrudePanelEvents {
   flip(typed: string): void;
   /** Symmetric pressed (step 53a1): `on` whether it now is, with the distance as typed (made positive when it turned on). */
   symmetric?(on: boolean, typed: string): void;
+  /** Through all pressed or let go (version 23, a Cut or Intersect only), with the distance as typed (kept for when it is let go). */
+  through?(on: boolean, typed: string): void;
   /** ✕: no profile chosen. */
   clear(): void;
   /** OK (or Enter in the distance box), with the distance as typed. */
@@ -66,6 +69,8 @@ export interface ExtrudePanel {
   readonly typed: string;
   /** Whether Symmetric is pressed (53a1): half the distance each way from the sketch's plane. */
   readonly symmetric: boolean;
+  /** Whether Through all is pressed (version 23): the extrude goes through every body ticked, however thick. */
+  readonly through: boolean;
 }
 
 /** Symmetric's tooltip (53a1): what it makes, and that the distance is the whole thickness. */
@@ -110,7 +115,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     return e;
   };
   /** The distance is millimetres everywhere outside the box (`field.value`); the box shows the unit chosen in Settings (U2c3). */
-  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; field: SizeBox; profile: HTMLElement; clear: HTMLButtonElement; onUnit: () => boolean; note: HTMLElement; select: HTMLSelectElement | null; bodies: HTMLElement; both: HTMLButtonElement } | null = null;
+  let parts: { status: HTMLElement; error: HTMLElement; ok: HTMLButtonElement; input: HTMLInputElement; field: SizeBox; profile: HTMLElement; clear: HTMLButtonElement; onUnit: () => boolean; note: HTMLElement; select: HTMLSelectElement | null; bodies: HTMLElement; both: HTMLButtonElement; through: HTMLButtonElement } | null = null;
   // OK needs both: the kernel's closed outline, and (Join, Cut, Intersect) a body ticked.
   let closed = false;
   let bodiesReady = true;
@@ -174,11 +179,41 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
         flip.title = pressed ? "A symmetric extrude goes both ways from the sketch's plane: there is nothing to flip" : FLIP_TITLE;
         const n = Number(field.value);
         if (pressed && field.value.trim() !== "" && Number.isFinite(n) && n < 0) field.value = String(-n);
+        through.disabled = pressed || !cuts();
         on.symmetric?.(pressed, field.value);
       });
+      // Through all (version 23, Fusion's All extent): only with the Operation row, pressable for a Cut or Intersect. While
+      // pressed the box steps aside for its words (the distance typed is kept, for when it is let go) and Symmetric is off.
+      // The Operation list is this panel's own `select` (made below; read only once it is): `parts` is still the last panel's.
+      const cuts = () => select !== null && (select.value === "cut" || select.value === "intersect");
+      const through = el("button", "extrude-through", "extrude-through", THROUGH_WORDS);
+      through.type = "button";
+      through.setAttribute("aria-pressed", "false");
+      const throughWords = el("span", "extrude-through-words", "extrude-through-words", "through every body ticked");
+      throughWords.hidden = true;
+      const setThrough = (pressed: boolean) => {
+        through.setAttribute("aria-pressed", String(pressed));
+        input.hidden = pressed;
+        unitName.hidden = pressed;
+        throughWords.hidden = !pressed;
+        both.disabled = pressed;
+        // Flip turns the box's sign: a box at 0 (where Extrude starts) is 1 mm, so Flip has a way to turn.
+        const n = Number(field.value);
+        if (pressed && (field.value.trim() === "" || !Number.isFinite(n) || n === 0)) field.value = "1";
+      };
+      const throughNow = () => {
+        through.disabled = !cuts() || both.getAttribute("aria-pressed") === "true";
+        through.title = cuts() ? THROUGH_TITLE : THROUGH_ONLY_CUT;
+      };
+      through.addEventListener("click", () => {
+        const pressed = through.getAttribute("aria-pressed") !== "true";
+        setThrough(pressed);
+        on.through?.(pressed, field.value);
+      });
+      through.hidden = !operations;
       const distanceRow = el("label", "", "extrude-row");
       const unitName = el("span", "", "unit-name", currentUnit(document));
-      distanceRow.append(el("span", "", "extrude-label", "Distance"), input, " ", unitName, " ", flip, " ", both);
+      distanceRow.append(el("span", "", "extrude-label", "Distance"), input, throughWords, " ", unitName, " ", flip, " ", both, " ", through);
       const status = el("p", "extrude-status", "extrude-status");
       const error = el("p", "extrude-error", "bad");
       error.hidden = true;
@@ -211,19 +246,25 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
           const op = select!.value as ExtrudeOperation;
           bodies.hidden = op === "new";
           if (op === "new") note.textContent = NEW_BODY_NOTE;
+          // A new body or a Join has nothing to go through: Through all lets go, and says why it is off.
+          const let_go = !cuts() && through.getAttribute("aria-pressed") === "true";
+          if (let_go) setThrough(false);
+          throughNow();
           okNow();
           on.operation?.(op);
+          if (let_go) on.through?.(false, field.value);
         });
         const operationRow = el("label", "", "extrude-row");
         operationRow.append(el("span", "", "extrude-label", "Operation"), select);
         rows.push(operationRow, bodies);
       }
+      throughNow();
       box.replaceChildren(
         el("h2", "", "", "Extrude"),
         profileRow,
         distanceRow,
         severalRow,
-        el("p", "", "extrude-note", "Drag the arrow in the view or type the distance; a negative one goes the other way. Symmetric goes half each way."),
+        el("p", "", "extrude-note", `Drag the arrow in the view or type the distance; a negative one goes the other way. Symmetric goes half each way.${operations ? " Through all cuts right through, however thick the part gets." : ""}`),
         ...rows,
         status,
         error,
@@ -240,7 +281,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
         input.setAttribute("aria-label", `Distance in ${currentUnit(document)}`);
         return true;
       };
-      parts = { status, error, ok, input, field, profile, clear, onUnit, note, select, bodies, both }; // `onUnit` is held here: the page's listener holds it only weakly
+      parts = { status, error, ok, input, field, profile, clear, onUnit, note, select, bodies, both, through }; // `onUnit` is held here: the page's listener holds it only weakly
       followUnit(document, onUnit);
       this.showProfile(chosen);
       box.hidden = false;
@@ -315,6 +356,9 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
     },
     get symmetric() {
       return parts?.both.getAttribute("aria-pressed") === "true";
+    },
+    get through() {
+      return parts?.through.getAttribute("aria-pressed") === "true";
     },
   };
 }

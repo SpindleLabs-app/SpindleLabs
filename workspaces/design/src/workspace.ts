@@ -6,8 +6,9 @@ import { chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGH
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
-import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
+import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, setExtrudeThrough, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
+import { throughDistance, throughWords } from "./extrude-through.ts";
 import { FACE_ALONE, joinedView, ONE_PROFILE_OPERATION, pickedWords, severalWords, togglePick, type PickedProfile } from "./extrude-picks.ts";
 import { bodyChoices, operationNote, tickedBodies, touchingOnly, type BodyChoice, type Bounds, type ExtrudeOperation, type ListedBody } from "./extrude-operation.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -2936,6 +2937,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (extruding) extruding.distance = null; // a distance the same as before still builds afresh
       extrudeDistance(signedDistance(typed));
     },
+    // Through all (version 23): the preview as long as the bodies ticked reach, built afresh; the arrow is put away meanwhile.
+    through: (_on, typed) => {
+      if (extruding) extruding.distance = null;
+      extrudeDistance(signedDistance(typed));
+    },
     clear: () => chooseProfile(null),
     ok: (typed) => void holdAsked(finishExtrude(typed)),
     cancel: () => (okChecks.clear(), leaveExtrude()),
@@ -2951,6 +2957,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (on) extruding.unticked.delete(body);
       else extruding.unticked.add(body);
       showOperationBodies();
+      // Through all: as long as the bodies ticked now reach.
+      if (extrudeBox.through) refreshPreview();
     },
     several: (on) => {
       if (extruding) extruding.pickMany = on;
@@ -3054,7 +3062,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!e) return editRegions !== null ? showEditRegions() : viewport.showExtrude(null);
     // Symmetric (53a1): the arrow is half the thickness long, its tip on the end cap, as `arrowOf` and `symmetricDrag` have it
     // (app-wide hunt 2026-11-14, R-2: at the whole thickness each grab of the arrow doubled the distance).
-    const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: extrudeBox.symmetric ? Math.abs(e.distance) / 2 : e.distance } : null;
+    // Through all (version 23): no length to drag, so no arrow.
+    const arrow = e.arrow && e.distance !== null && !extrudeBox.through ? { ...e.arrow, distance: extrudeBox.symmetric ? Math.abs(e.distance) / 2 : e.distance } : null;
     viewport.showExtrude({ profiles: e.offered, chosen: e.offer ?? e.sketch, ...(e.more.length > 0 ? { alsoChosen: e.more.map((m) => m.id) } : {}), preview: e.preview?.mesh ?? null, arrow, ...(e.operation === "cut" ? { cut: true } : {}) });
     // Read by the tests: the sketches it can use, the one chosen (and its region picked), and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
@@ -3202,6 +3211,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (why) extrudeBox.showError(why);
       return;
     }
+    // Through all has no arrow (a drag begun before it was pressed changes nothing).
+    if (extrudeBox.through) return;
     extrudeBox.dragging(!pointer.done); // the distance box glows while the arrow is held
     // Symmetric (53a1): the arrow is half the thickness long, so its tip at s is a distance of 2s.
     const d = extrudeBox.symmetric ? symmetricDrag(pointer.distance, snapDistance) : snapDistance(pointer.distance);
@@ -3246,12 +3257,38 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         e.base = { doc, sketch: id, region, spec, ...(curves ? { curves } : {}) };
       }
       // At 0 mm (where Extrude starts) nothing is drawn, but the arrow still stands on the profile: it is found from a 1 mm build.
-      const at = d === 0 ? 1 : d;
+      let at = d === 0 ? 1 : d;
       const both = extrudeBox.symmetric;
+      const through = extrudeBox.through;
       const viewOf = async (spec: BodySpec) => {
         const handle = await kernel.call("body_build", previewSpec(spec, at, both));
         return await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
       };
+      // Through all (version 23), the rebuild's own rule (rebuild.ts `throughNow`) on the bodies on screen: first as long as
+      // every body not unticked reaches, to find the bodies listed; then as long as those listed and ticked reach.
+      let reached: BodyView | null = null;
+      if (through) {
+        const sign = at < 0 ? -1 : 1;
+        const listed = (lastScene?.bodies ?? []).map((b) => ({ body: b.body, label: `Body ${b.place}`, bounds: b.view.bounds }));
+        const length = (boxes: readonly Bounds[]) => throughDistance(previewSpec(e.base!.spec, sign), boxes);
+        const first = length(listed.filter((b) => !e.unticked.has(b.body)).map((b) => b.bounds));
+        if (typeof first !== "number") {
+          if (extruding !== e || extrudeBox.through !== through) return;
+          e.preview = null;
+          extrudeBox.showError(throughWords("The extrude", first));
+          showOperationBodies();
+          return void showExtrudeView();
+        }
+        at = sign * first;
+        reached = await viewOf(e.base.spec);
+        const ticked = new Set(tickedBodies(bodyChoices(reached.bounds, listed, e.unticked)));
+        const then = length(listed.filter((b) => ticked.has(b.body)).map((b) => b.bounds));
+        if (typeof then === "number" && then !== first) {
+          at = sign * then;
+          reached = null;
+        }
+        extrudeBox.showError("");
+      }
       // The other profiles picked (version 18), each built as its own extrude, then joined as OK's rebuild joins them
       // (SL #632 item 3: drawn apart, an overlap was counted twice in the preview's volume).
       const extras = e.more;
@@ -3267,7 +3304,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         prisms.push({ spec: b.spec, curves: b.curves });
       }
       let view: BodyView;
-      if (extras.length === 0) view = await viewOf(e.base.spec);
+      if (extras.length === 0) view = reached ?? (await viewOf(e.base.spec));
       else {
         // Each prism builds (a profile that can't let go above), so a refusal here is of joining them, which OK would refuse
         // in the same words: the picks stay, with no preview under the words (as for a refused distance).
@@ -3281,7 +3318,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         view = joinedView(joined);
       }
       // Out of date: another sketch or region chosen or the panel closed. A newer distance only means another build follows.
-      if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || extrudeBox.symmetric !== both) return;
+      if (extruding !== e || e.sketch !== id || e.region !== region || e.more !== extras || extrudeBox.symmetric !== both || extrudeBox.through !== through) return;
       // A distance refused since this build began (extrudeDistance said why) shows no preview under the words.
       e.preview = e.distance === null || d === 0 || distanceRefused(e.distance) !== null ? null : view;
       e.arrow = arrowOf(view, d === 0 ? 1 : d, both) ?? e.arrow;
@@ -3447,6 +3484,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const both = extrudeBox.symmetric;
       made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), !both && distance < 0, region ?? undefined, choice, more);
       if (both) made = { ...made, doc: setExtrudeSymmetric(made.doc, true, made.id) };
+      // Through all (version 23): the distance typed kept for when it is let go; the rebuild finds its length.
+      if (extrudeBox.through) made = { ...made, doc: setExtrudeThrough(made.doc, true, made.id) };
       await okCheck((async () => buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!)))());
       // Several profiles are joined only in the rebuild (SL #611 C1): the whole item is built before it is recorded.
       if (choice !== null || more.length > 0) {
@@ -4114,13 +4153,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // A length's limits say "A length …"; a comma that could separate thousands says what it could mean (issue #518).
         return editBox.showError(read.why.startsWith("A length") ? `The ${label}${read.why.slice("A length".length)}` : `The ${label}: ${read.why}`);
       }
-      next = editFeature(before, id, read.sizes, flip, editRegions?.id === id ? (editRegions.picked ?? undefined) : undefined, symmetric);
+      // Through all (version 23) let go first, so Symmetric ticked in the same edit can take its place.
+      const through = editBox.through;
+      const untied = through === false ? setExtrudeThrough(before, false, id) : before;
+      next = editFeature(untied, id, read.sizes, flip, editRegions?.id === id ? (editRegions.picked ?? undefined) : undefined, symmetric);
       // Its operation (with Combine shown): New body, or Join, Cut or Intersect with the bodies ticked.
       const op = editOps?.id === id ? editBox.operation : null;
       if (op !== null && editOps !== null) {
         if (op !== "new" && editOps.candidates === null) return editBox.showError("Wait a moment: the bodies the extrude reaches are still being found.");
         next = setExtrudeOperation(next, id, op === "new" ? null : { operation: op, bodies: tickedBodies(editOps.choices) });
       }
+      // Ticked: last, once it is a Cut or Intersect.
+      if (through === true) next = setExtrudeThrough(next, true, id);
     } catch (e) {
       return editBox.showError(e instanceof Error ? e.message : String(e));
     }

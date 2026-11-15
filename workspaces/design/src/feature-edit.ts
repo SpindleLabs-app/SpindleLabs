@@ -12,7 +12,7 @@
 
 import { commaWords, KernelError, readSizeText, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
 import { changePreset, isOperationExtrude, profileSizeRefused, isSketchExtrude, ownShape, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
-import { featureSpec, isFlipped, isSymmetric, setExtrudeDistance, setExtrudeFlip, setExtrudeRegion, setExtrudeSymmetric } from "./extrude.ts";
+import { featureSpec, isFlipped, isSymmetric, isThrough, setExtrudeDistance, setExtrudeFlip, setExtrudeRegion, setExtrudeSymmetric } from "./extrude.ts";
 import type { RegionRef } from "./regions.ts";
 import type { Outline } from "./profiles.ts";
 import { parameterRows, SIZE_KEYS, type SizeKey } from "./properties.ts";
@@ -30,6 +30,8 @@ export interface EditableFeature {
   flip?: boolean;
   /** An extrude of a sketch's Symmetric (53a1). */
   symmetric?: boolean;
+  /** An extrude of a sketch's Through all (version 23; only a Cut or Intersect can tick it). */
+  through?: boolean;
 }
 
 function featureIn(doc: DesignDocument, id: string): Feature {
@@ -47,7 +49,7 @@ export function editableFeature(doc: DesignDocument, id: string): EditableFeatur
   if (!canEditFeature(f)) throw new Error(`${itemName(f)} is a sketch: it has no sizes to edit`);
   const { shape, sizes } = shapeOf(doc, f);
   const keys = parameterRows(shape).filter((r) => r.shown).map((r) => r.key);
-  return isSketchExtrude(f) ? { id, name: itemName(f), shape, sizes, keys, flip: isFlipped(f), symmetric: isSymmetric(f) } : { id, name: itemName(f), shape, sizes, keys };
+  return isSketchExtrude(f) ? { id, name: itemName(f), shape, sizes, keys, flip: isFlipped(f), symmetric: isSymmetric(f), through: isThrough(f) } : { id, name: itemName(f), shape, sizes, keys };
 }
 
 /** OK's words when the design changed while the kernel checked the sizes (another edit, Undo): nothing was recorded. */
