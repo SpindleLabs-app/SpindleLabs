@@ -1485,6 +1485,11 @@ export class Viewer implements SharedViewport {
 
   /** Another view of the same scene, filling `container`, with its own camera; it starts at the home view of the current body. */
   /** The main view's renderer counts and how many objects the scene holds (the soak test's leak check). */
+  /** The body on show as edge lines (pairs of x y z points), for the home screen's turning picture; null with no body. */
+  outline(): ArrayLike<number> | null {
+    return this.mesh ? this.mesh.edge_lines : null;
+  }
+
   memoryCounts(): { geometries: number; textures: number; programs: number; objects: number } {
     let objects = 0;
     this.scene.traverse(() => objects++);

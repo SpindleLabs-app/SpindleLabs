@@ -174,7 +174,7 @@ interface Part {
 /** Question 2: each curve's material flag, from the part's own regions. Throws Unknown unless they are its material and its holes, nothing else. */
 async function readPart(kernel: KernelCalls, outline: Outline, name: string): Promise<Part> {
   const curves = outlineCurves(outline);
-  const bad = (why: string) => new Unknown(`the kernel does not read the ${name} part as one closed shape with its holes: ${why}`);
+  const bad = (why: string) => new Unknown(`the ${name} part isn't one closed shape with its holes: ${why}`);
   const found = await kernel.call("sketch_regions", curves.lines, curves.circles, curves.arcs);
   const loopOf = (p: Named) => curves.loops[p.curve][p.index];
   const body = found.regions.filter((r) => r.outer.some((p) => loopOf(p) === 0));
@@ -219,7 +219,7 @@ async function study(kernel: KernelCalls, a: Part, b: Part): Promise<Study> {
     // No regions, and the two curves it names (by kind and index, never by its words) are one of each part: they lie along each other.
     const named = (found.invalid ?? []).filter(isCurve).map((i) => ({ curve: i.input, index: i.index }));
     if (named.length === 2 && owner(named[0]) !== owner(named[1])) return { is: "along" };
-    return { is: "doubt", why: found.why ?? "the kernel found no closed shape" };
+    return { is: "doubt", why: found.why ?? "no closed shape was found" };
   }
   type Side = "in" | "out" | null;
   const sides: [Side, Side][] = [];
@@ -312,7 +312,7 @@ async function relate(kernel: KernelCalls, a: Outline, b: Outline): Promise<Part
         if (bad instanceof Unknown) throw bad;
       });
     }
-    throw new Unknown(`the kernel can't cut the two parts out of one sheet: ${words(e)}`);
+    throw new Unknown(`couldn't work out how the two parts sit on one sheet: ${words(e)}`);
   });
   if (beside === "fits") return { relation: "apart" };
   if (beside === "outside") throw new Unknown("the kernel placed a part outside its own box");
@@ -351,7 +351,7 @@ async function relate(kernel: KernelCalls, a: Outline, b: Outline): Promise<Part
   }
   return unknown(
     found.is === "along"
-      ? "an edge of one part lies along an edge of the other, and the kernel can't yet tell a shared edge from a thin overlap there"
+      ? "an edge of one part lies along an edge of the other, and it can't yet tell a shared edge from a thin overlap there"
       : `the parts' edges meet too closely for the kernel to tell a touch from an overlap (${found.why})`,
   );
 }

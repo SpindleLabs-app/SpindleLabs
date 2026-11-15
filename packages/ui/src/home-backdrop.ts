@@ -1,0 +1,1271 @@
+// The home screen's living background: circuit lines that grow, branch and fade across the page, motes drifting in
+// depth, and the design you carry on with turning on a turntable under the words, as thin lines. It tells a calm story
+// again and again: the design builds up from its floor like a print, flashes when whole, has ripples of light run through
+// it and a face pulled out and back, then sinks away to be built again (with no project, a different simple part each
+// time). Drawn on one 2D canvas, behind the screen's words (aria-hidden, no pointer), kept light on purpose: at most 30
+// frames a second, at most about 1,500 segments, the pixel ratio capped at 1.5, nothing at all while the tab is hidden
+// or the screen is closed. Under prefers-reduced-motion, on a weak machine (`lowEnd`) or once a frame proves slow it
+// draws one still picture instead. The pure parts are tested by hand in test/home-backdrop.test.ts. Styles: the end of
+// src/styles/home-screen.css.
+import { formatLength, fromMm, type Unit } from "@fission/core";
+import { currentUnit } from "./unit-choice.ts";
+
+/** The cube shown when the project has no shape to show: 12 edges, as pairs of x y z points, half-size 1. */
+export const NEUTRAL_SHAPE: readonly number[] = (() => {
+  const c = (i: number) => [i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1];
+  const out: number[] = [];
+  for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) out.push(...c(i), ...c(i | bit));
+  return out;
+})();
+
+/**
+ * The edges of a straight prism: the polygon `profile` (x, y corners in order) at heights `z0` and `z1`, joined at every
+ * corner when `sides` (a round hole's polygon is not). Pure.
+ */
+export function prismEdges(profile: readonly (readonly [number, number])[], z0: number, z1: number, sides = true): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < profile.length; i++) {
+    const [ax, ay] = profile[i];
+    const [bx, by] = profile[(i + 1) % profile.length];
+    out.push(ax, ay, z0, bx, by, z0, ax, ay, z1, bx, by, z1);
+    if (sides) out.push(ax, ay, z0, ax, ay, z1);
+  }
+  return out;
+}
+
+/** A regular polygon of `n` corners on a circle of `r`, the first on the x axis. Pure. */
+const polygon = (n: number, r: number): [number, number][] => Array.from({ length: n }, (_, k) => [r * Math.cos((k / n) * Math.PI * 2), r * Math.sin((k / n) * Math.PI * 2)]);
+
+/**
+ * The simple parts built in turn, one each story, when there is no project to show: the cube; an L-bracket (its profile
+ * standing in x and z, 1.4 deep in y); a hex nut (across corners 2.3, 0.7 tall, a round hole of 0.55 drawn as 16 sides);
+ * and a stepped block (a 2.4 × 1.8 × 0.6 base with a 1.2 × 1.8 × 0.7 step on one end).
+ */
+export const NEUTRAL_SHAPES: readonly (readonly number[])[] = [
+  NEUTRAL_SHAPE,
+  (() => {
+    const edges = prismEdges([[0, 0], [2.2, 0], [2.2, 0.5], [0.5, 0.5], [0.5, 1.8], [0, 1.8]], 0, 1.4);
+    for (let i = 0; i < edges.length; i += 3) [edges[i + 1], edges[i + 2]] = [edges[i + 2], edges[i + 1]]; // stand it up: y ↔ z
+    return edges;
+  })(),
+  [...prismEdges(polygon(6, 1.15), 0, 0.7), ...prismEdges(polygon(16, 0.55), 0, 0.7, false)],
+  [...prismEdges([[0, 0], [2.4, 0], [2.4, 1.8], [0, 1.8]], 0, 0.6), ...prismEdges([[0, 0], [1.2, 0], [1.2, 1.8], [0, 1.8]], 0.6, 1.3)],
+];
+
+export const MAX_SEGMENTS = 1500;
+export const FRAME_MS = 1000 / 30;
+export const MAX_ALPHA = 0.5; // the brightest a line gets: words on top stay readable
+export const BASE_ALPHA = 0.2;
+/** Steps of brightness the shape's lines are batched into. */
+export const BUCKETS = 10;
+export const TURN_SECONDS = 40;
+export const PITCH = 0.5;
+export const CAMERA = 7; // far enough to read as a CAD part, near enough for depth
+
+/**
+ * The edges (pairs of x y z points) centred on their box's middle and scaled so the farthest point from it is 1, cut to
+ * at most `max` segments by keeping every n-th. Null when there is nothing to draw: no segment, a bad number, or every
+ * point the same.
+ */
+export function fitShape(lines: ArrayLike<number> | null | undefined, max = MAX_SEGMENTS): Float32Array | null {
+  if (!lines) return null;
+  const count = Math.floor(lines.length / 6);
+  if (count === 0) return null;
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < count * 6; i++) {
+    const v = lines[i];
+    if (!Number.isFinite(v)) return null;
+    lo[i % 3] = Math.min(lo[i % 3], v);
+    hi[i % 3] = Math.max(hi[i % 3], v);
+  }
+  const mid = lo.map((l, k) => (l + hi[k]) / 2);
+  const radius = Math.max(...lo.map((l, k) => Math.max(hi[k] - mid[k], mid[k] - l)));
+  if (!(radius > 0)) return null;
+  const step = Math.max(1, Math.ceil(count / max));
+  const kept = Math.ceil(count / step);
+  const out = new Float32Array(kept * 6);
+  for (let n = 0; n < kept; n++) for (let j = 0; j < 6; j++) out[n * 6 + j] = (lines[n * step * 6 + j] - mid[j % 3]) / radius;
+  return out;
+}
+
+export interface Projected {
+  /** Screen offset from the middle, in units of the shape's radius (y down). */
+  x: number;
+  y: number;
+  /** Nearer is smaller; 0 is the middle's distance. */
+  depth: number;
+  /** The height before turning, up is +1: what the pulse sweeps along. */
+  height: number;
+}
+
+/** A point turned `yaw` about the up (z) axis, tipped towards the viewer by `pitch`, seen from `camera` away. Pure. */
+export function project(x: number, y: number, z: number, yaw: number, pitch = PITCH, camera = CAMERA): Projected {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const rx = x * c - y * s;
+  const ry = x * s + y * c; // the depth axis before tipping
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const up = z * cp - ry * sp;
+  const depth = z * sp + ry * cp;
+  const k = camera / (camera + depth);
+  return { x: rx * k, y: -up * k, depth, height: z };
+}
+
+/*
+ * The story, told again every STORY_SECONDS, one calm thing at a time (as fractions of the story):
+ *   0    .. 0.3   the design builds up from its floor like a print: a glowing plane rises, edges under it are drawn,
+ *                 edges over it wait as faint ghosts, and a point of light marks every edge where the plane crosses it;
+ *   0.3           built: the whole design flashes once;
+ *   0.33 .. 0.49  a ripple of light spreads through the edges from one corner;
+ *   0.5  .. 0.76  the top face is pulled out (or pushed in), held, and let back;
+ *   0.78 .. 0.9   a second ripple, from the opposite corner;
+ *   0.9  .. 1     the plane sinks back to the floor, and the design waits to be built again.
+ */
+export const STORY_SECONDS = 36;
+export const BUILD_END = 0.3;
+export const UNBUILD_AT = 0.9;
+export const FLASH_AT = BUILD_END;
+export const RIPPLES: readonly (readonly [number, number])[] = [
+  [0.33, 0.49],
+  [0.78, 0.9],
+];
+/** How far (shape radii) a ripple spreads in its time: across the fitted shape's whole box (2√3 ≈ 3.46) and a little more. */
+export const RIPPLE_REACH = 3.6;
+/** How bright a ghost (an edge not built yet, drawn dashed) is: under the built ones' BASE_ALPHA to MAX_ALPHA. */
+export const GHOST = 0.1;
+
+const smooth = (x: number) => {
+  const c = Math.max(0, Math.min(1, x));
+  return c * c * (3 - 2 * c);
+};
+
+/** Where the story is at `seconds`: 0 at its start, going to 1 at its end, then round again. Pure. */
+export const storyPhase = (seconds: number): number => (((seconds / STORY_SECONDS) % 1) + 1) % 1;
+
+/** How much of the design's height is built at `seconds`: rising 0 → 1 (eased) to BUILD_END, 1, then sinking from UNBUILD_AT. Pure. */
+export function buildAt(seconds: number): number {
+  const p = storyPhase(seconds);
+  return p < BUILD_END ? smooth(p / BUILD_END) : p < UNBUILD_AT ? 1 : 1 - smooth((p - UNBUILD_AT) / (1 - UNBUILD_AT));
+}
+
+/** The ripple going at `seconds`: which one (0 or 1) and its radius (shape radii from its corner), or null between them. Pure. */
+export function rippleAt(seconds: number): { which: number; radius: number } | null {
+  const p = storyPhase(seconds);
+  for (let k = 0; k < RIPPLES.length; k++) {
+    const [a, b] = RIPPLES[k];
+    if (p >= a && p < b) return { which: k, radius: ((p - a) / (b - a)) * RIPPLE_REACH };
+  }
+  return null;
+}
+
+/**
+ * The glow (0..1) of a built line at `seconds`, `height` of the way up the design (0 floor .. 1 top), `gap` shape radii from
+ * the ripple's front (Infinity with none): a faint base; while building, a bright band just under the plane (the fresh
+ * layers, about 0.12 of the height deep); a band about 0.3 wide where the ripple is; and a slow breathing. Pure.
+ */
+export function glowOf(seconds: number, height: number, gap: number): number {
+  const built = buildAt(seconds);
+  const fresh = storyPhase(seconds) < BUILD_END && height <= built ? Math.exp(-(((built - height) / 0.12) ** 2)) : 0;
+  const wave = Number.isFinite(gap) ? Math.exp(-((gap / 0.3) ** 2)) : 0;
+  const breath = 0.9 + 0.1 * Math.sin(seconds * 0.9);
+  return Math.min(1, (0.32 + 0.68 * Math.max(fresh, wave)) * breath);
+}
+
+/**
+ * The whole design's extra brightness (0..0.6) the moment it is built (FLASH_AT of the story): a short flash fading over
+ * about a second either side. Pure.
+ */
+export function flash(seconds: number): number {
+  const d = (storyPhase(seconds) - FLASH_AT) / 0.025;
+  return 0.6 * Math.exp(-d * d);
+}
+
+/** The corner of a fitted shape farthest along `dir`: where a ripple starts. [0, 0, 0] for no shape. Pure. */
+export function cornerOf(shape: ArrayLike<number>, dir: readonly number[]): [number, number, number] {
+  let best: [number, number, number] = [0, 0, 0];
+  let most = -Infinity;
+  for (let i = 0; i + 2 < shape.length; i += 3) {
+    const d = shape[i] * dir[0] + shape[i + 1] * dir[1] + shape[i + 2] * dir[2];
+    if (d > most) {
+      most = d;
+      best = [shape[i], shape[i + 1], shape[i + 2]];
+    }
+  }
+  return best;
+}
+
+/**
+ * How far the segment a–b is from a sphere of `radius` about `c` (0 when the sphere's surface crosses it), and where along
+ * it (0..1) the sphere crosses, nearest a first (null when it doesn't). Pure.
+ */
+export function sphereGap(a: readonly number[], b: readonly number[], c: readonly number[], radius: number): { gap: number; cross: number | null } {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const f = [a[0] - c[0], a[1] - c[1], a[2] - c[2]];
+  const da = Math.hypot(f[0], f[1], f[2]);
+  const db = Math.hypot(b[0] - c[0], b[1] - c[1], b[2] - c[2]);
+  // The nearest point of the segment to c: the distances along it run down to that and up again.
+  const dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+  const tn = dd > 0 ? Math.max(0, Math.min(1, -(f[0] * d[0] + f[1] * d[1] + f[2] * d[2]) / dd)) : 0;
+  const dn = Math.hypot(f[0] + d[0] * tn, f[1] + d[1] * tn, f[2] + d[2] * tn);
+  const lo = dn;
+  const hi = Math.max(da, db);
+  if (radius < lo) return { gap: lo - radius, cross: null };
+  if (radius > hi) return { gap: radius - hi, cross: null };
+  // |f + t·d| = radius: dd·t² + 2(f·d)t + (|f|² − r²) = 0; the root in 0..1 nearest a.
+  const B = 2 * (f[0] * d[0] + f[1] * d[1] + f[2] * d[2]);
+  const C = da * da - radius * radius;
+  const disc = Math.max(0, B * B - 4 * dd * C);
+  const roots = dd > 0 ? [(-B - Math.sqrt(disc)) / (2 * dd), (-B + Math.sqrt(disc)) / (2 * dd)].filter((t) => t >= -1e-9 && t <= 1 + 1e-9) : [];
+  return { gap: 0, cross: roots.length > 0 ? Math.max(0, Math.min(1, roots[0])) : null };
+}
+
+/** The lowest height of a fitted shape (its z), -1 for none. Pure. */
+export function floorOf(shape: ArrayLike<number>): number {
+  let lo = Infinity;
+  for (let i = 2; i < shape.length; i += 3) lo = Math.min(lo, shape[i]);
+  return Number.isFinite(lo) ? lo : -1;
+}
+
+/** The red, green and blue (0..255) of a #rgb, #rrggbb or rgb() colour; null when it can't be read. Pure. */
+export function rgbOf(colour: string): [number, number, number] | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(colour.trim());
+  if (hex) {
+    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join("") : hex[1];
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+  }
+  const m = colour.match(/[\d.]+/g);
+  return /^\s*rgba?\(/.test(colour) && m && m.length >= 3 ? (m.slice(0, 3).map(Number) as [number, number, number]) : null;
+}
+
+/** Relative luminance (0..1, WCAG) of a colour `rgbOf` reads; 0 when it can't be read. Pure. */
+export function luminance(colour: string): number {
+  const rgb = rgbOf(colour);
+  if (!rgb) return 0;
+  const [r, g, b] = rgb.map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** The size of the edges' box along x, y and z (in their own unit), or null when `fitShape` would draw nothing. Pure. */
+export function extentOf(lines: ArrayLike<number> | null | undefined): [number, number, number] | null {
+  if (!fitShape(lines, 1) || !lines) return null;
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < Math.floor(lines.length / 6) * 6; i++) {
+    lo[i % 3] = Math.min(lo[i % 3], lines[i]);
+    hi[i % 3] = Math.max(hi[i % 3], lines[i]);
+  }
+  return [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+}
+
+/** The size label under the turntable: "61.4 × 56.9 × 22 mm" (millimetres in, shown in `unit`). Pure. */
+export function sizeWords([x, y, z]: readonly number[], unit: Unit): string {
+  const n = (mm: number) => formatLength(mm, unit).split(" ")[0];
+  return `${n(x)} × ${n(y)} × ${formatLength(z, unit)}`;
+}
+
+export interface Placement {
+  cx: number;
+  cy: number;
+  /** Pixels for the shape's radius of 1. */
+  scale: number;
+}
+
+/**
+ * Where the turning shape goes in a `w` × `h` window whose words end `top` pixels down: centred across, and in the room
+ * under the words when it fits there. The picture reaches ABOVE radii over its middle (the top face pulled out with its
+ * handle) and BELOW radii under it (the turntable's front), then the size label's LABEL_PX: (ABOVE + BELOW) radii and
+ * LABEL_PX in all, with 16 px kept above and below. It is never smaller than MIN_SCALE of the window's short side (it then
+ * stands at the window's foot, partly under the words) nor larger than MAX_SCALE. Pure.
+ */
+export function placeShape(w: number, h: number, top: number, extent: Reach = { above: ABOVE, below: BELOW }): Placement {
+  const short = Math.min(w, h);
+  const free = h - Math.max(0, top);
+  const reach = extent.above + extent.below;
+  const scale = Math.max(MIN_SCALE * short, Math.min(MAX_SCALE * short, (free - LABEL_PX - 32) / reach));
+  const block = reach * scale + LABEL_PX;
+  const blockTop = free - 32 >= block ? h - free + 16 + (free - 32 - block) / 2 : h - block - 16;
+  return { cx: w / 2, cy: blockTop + extent.above * scale, scale };
+}
+export const MIN_SCALE = 0.24;
+export const MAX_SCALE = 0.4;
+/** The reach for a shape nobody measured: the neutral cube's, rounded up. */
+export const ABOVE = 1.75;
+export const BELOW = 1.6;
+export const LABEL_PX = 28;
+
+/** How far a picture reaches above and below its middle, in shape radii. */
+export interface Reach {
+  above: number;
+  below: number;
+}
+
+/**
+ * How far points reach above and below the picture's middle whichever way the shape has turned, at each of `pitches`.
+ * Each point is given by its height `z` and its distance `rho` from the up axis. Turned so it comes nearest (its depth
+ * −rho·cos p), a point is drawn highest: up = CAMERA·(z·cos p + rho·sin p) / (CAMERA + z·sin p − rho·cos p); turned
+ * away, lowest: CAMERA·(z·cos p − rho·sin p) / (CAMERA + z·sin p + rho·cos p). (Up falls steadily as the point turns
+ * from nearest to farthest, so these two are the ends.) Pure.
+ */
+export function reachOf(points: readonly { z: number; rho: number }[], pitches: readonly number[] = [PITCH - SWAY, PITCH, PITCH + SWAY]): Reach {
+  let above = -Infinity;
+  let below = -Infinity;
+  for (const p of pitches) {
+    const c = Math.cos(p);
+    const s = Math.sin(p);
+    for (const { z, rho } of points) {
+      above = Math.max(above, (CAMERA * (z * c + rho * s)) / (CAMERA + z * s - rho * c));
+      below = Math.max(below, -(CAMERA * (z * c - rho * s)) / (CAMERA + z * s + rho * c));
+    }
+  }
+  return Number.isFinite(above) && Number.isFinite(below) ? { above, below } : { above: ABOVE, below: BELOW };
+}
+/** How far the camera rises and sinks, radians either way of PITCH. */
+export const SWAY = 0.07;
+
+/** The camera's slow drift back and in again: the picture's size, 1 (nearest) down to 1 − DOLLY and back every DOLLY_SECONDS. Pure. */
+export const dolly = (seconds: number): number => 1 - DOLLY * (0.5 - 0.5 * Math.cos((seconds / DOLLY_SECONDS) * Math.PI * 2));
+export const DOLLY = 0.06;
+export const DOLLY_SECONDS = 53;
+
+/** Where the ends of a fitted shape's segments meet: for each end (2 × segment + 0 or 1), the other segments' ends at the same point. Pure. */
+export function linksOf(shape: ArrayLike<number>): number[][] {
+  const count = Math.floor(shape.length / 6);
+  const key = (e: number) => {
+    const at = Math.floor(e / 2) * 6 + (e % 2) * 3;
+    return `${Math.round(shape[at] * 1e4)},${Math.round(shape[at + 1] * 1e4)},${Math.round(shape[at + 2] * 1e4)}`;
+  };
+  const byPoint = new Map<string, number[]>();
+  for (let e = 0; e < count * 2; e++) {
+    const k = key(e);
+    const list = byPoint.get(k) ?? [];
+    list.push(e);
+    byPoint.set(k, list);
+  }
+  return Array.from({ length: count * 2 }, (_, e) => (byPoint.get(key(e)) ?? []).filter((o) => Math.floor(o / 2) !== Math.floor(e / 2)));
+}
+
+/** A spark of light running along the shape's edges: on segment `seg`, entered at end `from` (0 or 1), `t` of the way along. */
+export interface Spark {
+  seg: number;
+  from: 0 | 1;
+  t: number;
+  /** Which of the shades it wears. */
+  shade: number;
+}
+
+/** Shape units (radii) a spark runs in a second: calm, about a box's edge in two seconds. */
+export const SPARK_SPEED = 0.55;
+
+/**
+ * A spark `dt` seconds on: it runs SPARK_SPEED along its segment; at the far end it carries on into another segment that
+ * meets there (never straight back, unless there is no other), chosen by `rnd`; at a loose end it starts again on a
+ * segment `rnd` picks. Pure apart from `rnd`.
+ */
+export function stepSpark(spark: Spark, dt: number, shape: ArrayLike<number>, links: readonly number[][], rnd: () => number): Spark {
+  const count = Math.floor(shape.length / 6);
+  if (count === 0) return spark;
+  let { seg, from, t } = spark;
+  let travel = SPARK_SPEED * Math.max(0, dt);
+  for (let guard = 0; guard < 64 && travel > 0; guard++) {
+    const i = seg * 6;
+    const length = Math.hypot(shape[i + 3] - shape[i], shape[i + 4] - shape[i + 1], shape[i + 5] - shape[i + 2]) || 1e-6;
+    const left = (1 - t) * length;
+    if (travel < left) {
+      t += travel / length;
+      travel = 0;
+      break;
+    }
+    travel -= left;
+    const end = seg * 2 + (1 - from);
+    const next = links[end] ?? [];
+    if (next.length === 0) {
+      seg = Math.min(count - 1, Math.floor(rnd() * count));
+      from = rnd() < 0.5 ? 0 : 1;
+    } else {
+      const o = next[Math.min(next.length - 1, Math.floor(rnd() * next.length))];
+      seg = Math.floor(o / 2);
+      from = (o % 2) as 0 | 1;
+    }
+    t = 0;
+  }
+  return { seg, from, t, shade: spark.shade };
+}
+
+/** The segments of a fitted shape's top face: both ends at its greatest height (within 1e-3). Fewer than 3: none. Pure. */
+export function topFace(shape: ArrayLike<number>): number[] {
+  let hi = -Infinity;
+  for (let i = 2; i < shape.length; i += 3) hi = Math.max(hi, shape[i]);
+  const out: number[] = [];
+  for (let s = 0; s * 6 + 5 < shape.length; s++) if (Math.abs(shape[s * 6 + 2] - hi) < 1e-3 && Math.abs(shape[s * 6 + 5] - hi) < 1e-3) out.push(s);
+  return out.length >= 3 ? out : [];
+}
+
+export const EXTRUDE_OUT = 0.24;
+export const EXTRUDE_IN = -0.14;
+
+/**
+ * How far the top face is pulled out (+) or pushed in (−), in shape radii, at `seconds`: still until 0.5 of the story,
+ * eased out to 0.58, held to 0.68, eased back by 0.76, still again (never while the design is building). Even stories pull
+ * out by EXTRUDE_OUT, odd ones push in by EXTRUDE_IN. Pure.
+ */
+export function extrudeAmount(seconds: number): number {
+  const story = ((Math.floor(seconds / STORY_SECONDS) % 2) + 2) % 2;
+  const p = storyPhase(seconds);
+  const k = p < 0.5 ? 0 : p < 0.58 ? smooth((p - 0.5) / 0.08) : p < 0.68 ? 1 : p < 0.76 ? smooth(1 - (p - 0.68) / 0.08) : 0;
+  return k * (story === 0 ? EXTRUDE_OUT : EXTRUDE_IN);
+}
+
+/** Hue (0..360), saturation and lightness (0..1) of a red, green, blue (0..255). Pure. */
+export function hslOf([r, g, b]: readonly number[]): [number, number, number] {
+  const [R, G, B] = [r / 255, g / 255, b / 255];
+  const max = Math.max(R, G, B);
+  const min = Math.min(R, G, B);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === R ? (G - B) / d + (G < B ? 6 : 0) : max === G ? (B - R) / d + 2 : (R - G) / d + 4;
+  return [h * 60, s, l];
+}
+
+/** The CSS colour for a hue, saturation and lightness. Pure. */
+export const hslText = ([h, s, l]: readonly number[]): string => `hsl(${(((h % 360) + 360) % 360).toFixed(1)} ${(s * 100).toFixed(1)}% ${(l * 100).toFixed(1)}%)`;
+
+/**
+ * Four blues from the accent for the sparks and the scan: the accent itself, one turned 16° towards cyan, one turned 14°
+ * towards indigo, and one lighter (on a dark page) or deeper (on a light one), so the words keep their contrast. Pure.
+ */
+export function shadesOf(rgb: readonly number[], light: boolean): string[] {
+  const [h, s, l] = hslOf(rgb);
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  return [hslText([h, s, l]), hslText([h - 16, s, clamp(l + (light ? -0.06 : 0.08))]), hslText([h + 14, s, clamp(l + (light ? -0.1 : -0.02))]), hslText([h, s, clamp(l + (light ? -0.18 : 0.2))])];
+}
+
+/** The extrude handle's distance: signed, one decimal in the person's unit ("+7.4 mm", "−0.2 in"). Pure. */
+export function pushWords(mm: number, unit: Unit): string {
+  const v = Math.round(Math.abs(fromMm(mm, unit)) * 10) / 10;
+  return `${mm < 0 ? "−" : "+"}${v.toFixed(1)} ${unit}`;
+}
+
+/** How bright a line is for its depth (−1 nearest .. +1 farthest): 1 at the front down to 0.45 at the back. Pure. */
+export function depthCue(depth: number): number {
+  return 1 - 0.55 * Math.max(0, Math.min(1, (depth + 1) / 2));
+}
+
+/** Small seeded generator (mulberry32): the same seed gives the same lines. */
+export function seeded(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A side line forking off a circuit line: it starts growing once the main line has grown `start` pixels. */
+export interface Branch {
+  start: number;
+  /** Its points relative to the main line's start, from the fork on. */
+  points: { x: number; y: number }[];
+  length: number;
+}
+
+export interface Trace {
+  /** Corner points relative to the line's start; every step is along an axis or a 45° diagonal. */
+  points: { x: number; y: number }[];
+  /** Where it starts on the page. */
+  x: number;
+  y: number;
+  /** The main line's length in pixels. */
+  length: number;
+  /** Side lines forking off at its corners (0 to 2), each also along axes and diagonals. */
+  branches: Branch[];
+  /** How far growth reaches in all, main line or branch: the pixels it takes to grow whole. */
+  reach: number;
+}
+
+const DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]; // round the compass in 45° steps
+
+/**
+ * A run of `turns` steps from `from` heading `heading` (an index into DIRS): each turns 45° or 90° from the one before
+ * (the first by `first` eighths of a turn when given), never straight on or back.
+ */
+function walk(rnd: () => number, from: { x: number; y: number }, heading: number, turns: number, shortest: number, spread: number, first?: number) {
+  const points = [from];
+  let length = 0;
+  let last = heading;
+  for (let t = 0; t < turns; t++) {
+    const turn = t === 0 && first !== undefined ? first : (rnd() < 0.5 ? 1 : -1) * (rnd() < 0.4 ? 2 : 1);
+    last = (last + turn + 8) % 8;
+    const run = shortest + rnd() * spread;
+    const p = points[points.length - 1];
+    const [dx, dy] = DIRS[last];
+    const norm = Math.hypot(dx, dy);
+    points.push({ x: p.x + (dx / norm) * run, y: p.y + (dy / norm) * run });
+    length += run;
+  }
+  return { points, length };
+}
+
+/** `count` circuit lines for a `w` × `h` window: where each starts, its corners and its branches. Pure and seeded. */
+export function makeTraces(seed: number, count: number, w: number, h: number): Trace[] {
+  const rnd = seeded(seed);
+  const out: Trace[] = [];
+  for (let i = 0; i < count; i++) {
+    const main = walk(rnd, { x: 0, y: 0 }, Math.floor(rnd() * 8), 2 + Math.floor(rnd() * 3), 50, 170);
+    const branches: Branch[] = [];
+    let reach = main.length;
+    let along = 0;
+    for (let c = 1; c < main.points.length - 1; c++) {
+      const a = main.points[c - 1];
+      const b = main.points[c];
+      along += Math.hypot(b.x - a.x, b.y - a.y);
+      if (branches.length >= 2 || rnd() > 0.55) continue;
+      // Forks off at this corner, 45° to the other side of the way the main line came in from the way it goes on.
+      const heading = (p: { x: number; y: number }, q: { x: number; y: number }) => (Math.round(Math.atan2(q.y - p.y, q.x - p.x) / (Math.PI / 4)) + 8) % 8;
+      const into = heading(a, b);
+      const turned = (heading(b, main.points[c + 1]) - into + 8) % 8; // 1 or 2: the main line turned clockwise on screen
+      const side = walk(rnd, b, into, 1 + Math.floor(rnd() * 2), 30, 90, turned <= 4 ? -1 : 1);
+      branches.push({ start: along, points: side.points, length: side.length });
+      reach = Math.max(reach, along + side.length);
+    }
+    out.push({ points: main.points, x: rnd() * w, y: rnd() * h, length: main.length, branches, reach });
+  }
+  return out;
+}
+
+/** Pixels a second a circuit line grows at, how long it stays whole, and how long it takes to fade. */
+export const GROW_SPEED = 46;
+export const GROW_HOLD = 5;
+export const GROW_FADE = 3;
+
+/** How long one circuit line lives: growing at GROW_SPEED to its full `length`, held, then faded. Pure. */
+export const growthLife = (length: number): number => length / GROW_SPEED + GROW_HOLD + GROW_FADE;
+
+/**
+ * A circuit line `age` seconds after it began: how much of its `length` has grown (pixels) and how bright it is (1 while
+ * growing and held, falling to 0 over GROW_FADE, and fading in over its first half second). Pure.
+ */
+export function growthAt(age: number, length: number): { grown: number; alpha: number } {
+  const growing = length / GROW_SPEED;
+  const grown = Math.max(0, Math.min(length, age * GROW_SPEED));
+  const fadeIn = Math.min(1, Math.max(0, age / 0.5));
+  const fadeOut = age <= growing + GROW_HOLD ? 1 : Math.max(0, 1 - (age - growing - GROW_HOLD) / GROW_FADE);
+  return { grown, alpha: fadeIn * fadeOut };
+}
+
+/** The first `length` pixels of a polyline (its points relative to its start), the last piece cut part way. Pure. */
+export function grownPath(points: readonly { x: number; y: number }[], length: number): { x: number; y: number }[] {
+  if (points.length === 0) return [];
+  const out = [points[0]];
+  let left = Math.max(0, length);
+  for (let i = 1; i < points.length && left > 0; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const piece = Math.hypot(b.x - a.x, b.y - a.y);
+    if (piece <= left) {
+      out.push(b);
+      left -= piece;
+    } else {
+      const t = left / piece;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      left = 0;
+    }
+  }
+  return out;
+}
+
+/** A mote of dust floating round the shape: where it starts (round the up axis, in shape radii), how fast it rises. */
+export interface Mote {
+  angle: number;
+  radius: number;
+  z: number;
+  rise: number;
+  /** Turning of its own round the axis, radians a second (slow, either way). */
+  spin: number;
+  shade: number;
+}
+export const MOTE_LOW = -1.5;
+export const MOTE_HIGH = 2.3;
+
+/** `count` motes in a ring round the shape (0.5 to 2.8 radii out, MOTE_LOW to MOTE_HIGH high). Pure and seeded. */
+export function makeMotes(seed: number, count: number): Mote[] {
+  const rnd = seeded(seed);
+  return Array.from({ length: count }, (_, k) => ({
+    angle: rnd() * Math.PI * 2,
+    radius: 0.5 + Math.sqrt(rnd()) * 2.3,
+    z: MOTE_LOW + rnd() * (MOTE_HIGH - MOTE_LOW),
+    rise: 0.02 + rnd() * 0.05,
+    spin: (rnd() - 0.5) * 0.06,
+    shade: k % 4,
+  }));
+}
+
+/**
+ * Where a mote is `seconds` on (x, y, z in shape radii) and how much it shows (0..1): it rises and wraps from the top back
+ * to the bottom, fading out over the last 0.3 at either end so it never pops. Pure.
+ */
+export function moteAt(m: Mote, seconds: number): { x: number; y: number; z: number; show: number } {
+  const span = MOTE_HIGH - MOTE_LOW;
+  const z = MOTE_LOW + ((((m.z - MOTE_LOW + m.rise * seconds) % span) + span) % span);
+  const a = m.angle + m.spin * seconds;
+  const edge = Math.min(z - MOTE_LOW, MOTE_HIGH - z);
+  return { x: Math.cos(a) * m.radius, y: Math.sin(a) * m.radius, z, show: Math.max(0, Math.min(1, edge / 0.3)) };
+}
+
+export interface Machine {
+  cores?: number;
+  memory?: number; // GB, navigator.deviceMemory
+  saveData?: boolean;
+}
+
+/** A machine too weak for the moving picture: 2 cores or fewer, 2 GB or less, or data saving on. Unknown counts as fine. Pure. */
+export function lowEnd(m: Machine): boolean {
+  return (m.cores !== undefined && m.cores <= 2) || (m.memory !== undefined && m.memory <= 2) || m.saveData === true;
+}
+
+/** Frames this slow (milliseconds of drawing, averaged over SLOW_WINDOW frames) end the motion. */
+export const SLOW_MS = 14;
+export const SLOW_WINDOW = 24;
+/** The moment the still picture shows: the pulse part way up, the shape turned a little. */
+export const STILL_AT = 9.5;
+
+export interface Backdrop {
+  /** Starts drawing (the screen is up): the moving picture, or one still one. */
+  start(): void;
+  /** Stops all drawing (the screen is closed). */
+  stop(): void;
+  /**
+   * Where the shape to turn comes from: the project's edges, or null for the neutral cube. Asked now and about once a
+   * second while drawing (a project still reopening under the screen shows its body when it arrives); a new array is
+   * fitted again, the same one is not.
+   */
+  setSource(source: () => ArrayLike<number> | null): void;
+  /** The words moved (the list scrolled or changed): a still picture is drawn again in the room left (a moving one follows by itself). */
+  redraw(): void;
+  readonly mode: "live" | "still" | "off";
+}
+
+interface Env {
+  win: Window & typeof globalThis;
+  doc: Document;
+  /** Where the screen's words end, in CSS pixels from the window's top (the picture sits in the room below). */
+  room?: () => number;
+}
+
+/** Draws on `canvas`; harmless where there is no 2D context (a test DOM). */
+export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window, doc: document }): Backdrop {
+  const { win, doc } = env;
+  const ctx = (() => {
+    try {
+      return canvas.getContext("2d");
+    } catch {
+      return null;
+    }
+  })();
+  const neutrals = NEUTRAL_SHAPES.map((lines) => fitShape(lines) as Float32Array);
+  const neutral = neutrals[0];
+  /** Which simple part is shown (with no project), one a story. */
+  let part = 0;
+  let shape = neutral;
+  /** Where the shape is drawn now (eased towards `placeShape`'s answer). */
+  let place: Placement | null = null;
+  /** The project's size in millimetres, for the label under the turntable; null for the neutral cube. */
+  let size3: [number, number, number] | null = null;
+  let links: number[][] = linksOf(neutral);
+  let top: number[] = topFace(neutral);
+  let topZ = 1;
+  let topMid: [number, number] = [0, 0];
+  let floorZ = -1;
+  let ceilZ = 1;
+  /** The ripples' corners: low at the front left, then high at the back right. */
+  let corners: [number, number, number][] = [];
+  /** How far the picture reaches above and below its middle, measured for this shape. */
+  let reach: Reach = { above: ABOVE, below: BELOW };
+  /**
+   * The facts the picture needs about the shape: the top face's height and the middle of its corners (for the extrude and
+   * its handle), its lowest and highest points (for the build), the ripples' corners and its reach.
+   */
+  function topFacts() {
+    topZ = top.length > 0 ? shape[top[0] * 6 + 2] : 1;
+    let mx = 0;
+    let my = 0;
+    for (const sIndex of top) {
+      mx += (shape[sIndex * 6] + shape[sIndex * 6 + 3]) / (2 * top.length);
+      my += (shape[sIndex * 6 + 1] + shape[sIndex * 6 + 4]) / (2 * top.length);
+    }
+    topMid = [mx, my];
+    floorZ = floorOf(shape);
+    ceilZ = -Infinity;
+    for (let i = 2; i < shape.length; i += 3) ceilZ = Math.max(ceilZ, shape[i]);
+    if (!Number.isFinite(ceilZ)) ceilZ = 1;
+    corners = [cornerOf(shape, [-1, -1, -1]), cornerOf(shape, [1, 1, 1])];
+    // Everything the picture draws round the shape: its points (the top face's also pulled out, with its handle), the
+    // turntable under it and the build plane's ring at its top.
+    const points: { z: number; rho: number }[] = [];
+    for (let i = 0; i + 2 < shape.length; i += 3) {
+      const rho = Math.hypot(shape[i], shape[i + 1]);
+      points.push({ z: shape[i + 2], rho });
+      if (top.length > 0 && Math.abs(shape[i + 2] - topZ) < 1e-3) points.push({ z: shape[i + 2] + EXTRUDE_OUT, rho });
+    }
+    if (top.length > 0) points.push({ z: topZ + EXTRUDE_OUT + 0.22, rho: Math.hypot(topMid[0], topMid[1]) });
+    points.push({ z: floorZ - 0.08, rho: 1.25 }, { z: ceilZ, rho: 1.25 });
+    reach = reachOf(points);
+  }
+  topFacts();
+  let sparks: Spark[] = [];
+  let sparkClock = 0;
+  const sparkRnd = seeded(11);
+  /** New sparks on the shape: one for every 10 segments, 3 to 5, spread out and in turn wearing each shade. */
+  function seedSparks() {
+    const count = Math.floor(shape.length / 6);
+    const n = Math.max(3, Math.min(5, Math.round(count / 10)));
+    const rnd = seeded(5);
+    sparks = Array.from({ length: n }, (_, k) => ({ seg: Math.floor(rnd() * count), from: (rnd() < 0.5 ? 0 : 1) as 0 | 1, t: rnd(), shade: k % 4 }));
+    sparkClock = 0;
+  }
+  seedSparks();
+  let source: () => ArrayLike<number> | null = () => null;
+  let from: ArrayLike<number> | null | undefined; // undefined: not read yet
+  let watch = 0;
+  /** Reads the source; true when the shape changed. */
+  function reshape(): boolean {
+    let lines: ArrayLike<number> | null = null;
+    try {
+      lines = source();
+    } catch {
+      lines = null; // a picture is never worth a broken screen
+    }
+    if (lines === from) return false;
+    from = lines;
+    const fitted = fitShape(lines);
+    project3 = fitted;
+    size3 = fitted ? extentOf(lines) : null;
+    use(fitted ?? neutrals[part % neutrals.length]);
+    canvas.dataset.shape = fitted ? `project ${fitted.length / 6}` : "neutral"; // what the browser check reads
+    return true;
+  }
+  /** The project's fitted edges, or null when there is none (the simple parts are shown in turn). */
+  let project3: Float32Array | null = null;
+  /** Shows `next` from here on: the facts about it worked out once. */
+  function use(next: Float32Array) {
+    shape = next;
+    links = linksOf(shape);
+    top = topFace(shape);
+    topFacts();
+    seedSparks();
+  }
+  function watching() {
+    watch = 0;
+    if (!running) return;
+    if (reshape() && !live()) draw(STILL_AT);
+    watch = win.setTimeout(watching, 1000);
+  }
+  /** Circuit lines growing, held and fading, each slot reborn with a new line once its life ends (staggered). */
+  let slots = 0;
+  const grown = new Map<string, Trace>();
+  /** The line slot `k` grows in its `life`-th life, made once and kept. */
+  const lineFor = (k: number, life: number): Trace => {
+    const key = `${k}:${life}`;
+    let t = grown.get(key);
+    if (!t) {
+      t = makeTraces(1000 + k * 131 + life * 7919, 1, w, h)[0];
+      if (grown.size > 4 * slots + 8) grown.clear();
+      grown.set(key, t);
+    }
+    return t;
+  };
+  let motes: Mote[] = [];
+  let sprites: { key: string; images: (HTMLCanvasElement | null)[] } = { key: "", images: [] };
+  /** Soft round sprites, one per blue, so a mote out of focus is one cheap image draw. */
+  function spritesFor(blues: string[]): (HTMLCanvasElement | null)[] {
+    const key = blues.join("|");
+    if (sprites.key === key) return sprites.images;
+    const images = blues.map((colour) => {
+      const c = doc.createElement?.("canvas") as HTMLCanvasElement | undefined;
+      const g = c?.getContext?.("2d");
+      if (!c || !g) return null;
+      c.width = c.height = 32;
+      const fill = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+      fill.addColorStop(0, colour);
+      fill.addColorStop(0.35, colour.replace(")", " / 0.55)"));
+      fill.addColorStop(1, colour.replace(")", " / 0)"));
+      g.fillStyle = fill;
+      g.fillRect(0, 0, 32, 32);
+      return c;
+    });
+    sprites = { key, images };
+    return images;
+  }
+  let w = 0;
+  let h = 0;
+  let timer = 0;
+  let running = false;
+  let slow = false;
+  let lastFrame = 0;
+  let t0 = 0;
+  const costs: number[] = [];
+  const motion = win.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const nav = win.navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
+  const weak = lowEnd({ cores: nav.hardwareConcurrency, memory: nav.deviceMemory, saveData: nav.connection?.saveData });
+  const live = () => !(motion?.matches ?? false) && !weak && !slow;
+  const set = (mode: string) => (canvas.dataset.backdrop = mode);
+  set("off");
+
+  const colour = () => win.getComputedStyle(doc.documentElement).getPropertyValue("--look-accent").trim() || "#4da3ff";
+
+  function size() {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.min(win.devicePixelRatio || 1, weak || slow ? 1 : 1.5);
+    w = Math.max(1, Math.round(rect.width || win.innerWidth || 1));
+    h = Math.max(1, Math.round(rect.height || win.innerHeight || 1));
+    canvas.width = Math.round(w * ratio);
+    canvas.height = Math.round(h * ratio);
+    ctx?.setTransform(ratio, 0, 0, ratio, 0, 0);
+    slots = Math.max(8, Math.min(24, Math.round((w * h) / 52000)));
+    grown.clear();
+    motes = makeMotes(3, w < 640 ? 60 : 110);
+  }
+
+  /** Whether the page is light (its surface bright): glows add light on a dark page, and would wash out a light one. */
+  const lightPage = () => luminance(win.getComputedStyle(doc.documentElement).getPropertyValue("--surface").trim()) > 0.5;
+
+  function draw(seconds: number) {
+    if (!ctx) return;
+    // With no project, a different simple part each story, changed at the story's turn while the last has sunk away.
+    if (!project3) {
+      const n = neutrals.length;
+      const next = ((Math.floor(seconds / STORY_SECONDS) % n) + n) % n; // a frame stamped just before the start is story −1
+
+      if (next !== part) {
+        part = next;
+        use(neutrals[part]);
+      }
+      if (canvas.dataset.part !== String(part)) canvas.dataset.part = String(part); // which part: the tests read it
+    }
+    const ink = colour();
+    const glow = !lightPage();
+    const rgb = rgbOf(ink) ?? [77, 163, 255];
+    const blues = shadesOf(rgb, !glow);
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = ink;
+    ctx.fillStyle = ink;
+    ctx.globalCompositeOperation = glow ? "lighter" : "source-over";
+    // Circuit lines growing slowly across the page like something alive, a bright tip at the growing end, each held a
+    // while then fading as others start elsewhere.
+    for (let k = 0; k < slots; k++) {
+      const first = lineFor(k, 0);
+      const offset = (k / slots) * growthLife(first.reach); // staggered, so lines are always at every stage
+      const clock = seconds + offset;
+      let life = 0;
+      let age = clock;
+      let line = first;
+      for (let guard = 0; guard < 1000 && age > growthLife(line.reach); guard++) {
+        age -= growthLife(line.reach);
+        life += 1;
+        line = lineFor(k, life);
+      }
+      const { grown: length, alpha } = growthAt(age, line.reach);
+      if (alpha <= 0) continue;
+      const { x: ox, y: oy } = line;
+      // The main line and its branches, each grown as far as the growth has reached along it.
+      const paths = [{ path: grownPath(line.points, length), whole: length >= line.length }];
+      for (const b of line.branches) if (length > b.start) paths.push({ path: grownPath(b.points, length - b.start), whole: length - b.start >= b.length });
+      ctx.beginPath();
+      for (const { path } of paths) path.forEach((p, i) => (i === 0 ? ctx.moveTo(ox + p.x, oy + p.y) : ctx.lineTo(ox + p.x, oy + p.y)));
+      ctx.lineWidth = 1.1;
+      ctx.globalAlpha = 0.17 * alpha;
+      ctx.stroke();
+      ctx.globalAlpha = 0.22 * alpha;
+      ctx.beginPath();
+      ctx.arc(ox, oy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      for (const { path, whole } of paths) {
+        const tip = path[path.length - 1];
+        // A growing end carries a bright bead of light; a finished one ends in a small pad.
+        ctx.globalAlpha = (whole ? 0.24 : 0.6) * alpha;
+        ctx.beginPath();
+        ctx.arc(ox + tip.x, oy + tip.y, whole ? 2 : 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        if (glow && !whole) {
+          ctx.globalAlpha = 0.15 * alpha;
+          ctx.beginPath();
+          ctx.arc(ox + tip.x, oy + tip.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    // The design, turning slowly on a turntable in the room under the words.
+    const want = placeShape(w, h, env.room?.() ?? h * 0.5, reach);
+    // Eased towards where it should be, so a list that grows or scrolls moves the picture smoothly (a still picture jumps).
+    place = place === null || !live() ? want : { cx: want.cx, cy: place.cy + (want.cy - place.cy) * 0.12, scale: place.scale + (want.scale - place.scale) * 0.12 };
+    const { cx, cy } = place;
+    const scale = place.scale * dolly(seconds); // the camera drifts back a little and in again, slowly
+    const yaw = (seconds / TURN_SECONDS) * Math.PI * 2 + 0.6;
+    const pitch = PITCH + SWAY * Math.sin((seconds / 37) * Math.PI * 2); // the camera rises and sinks a little, slowly
+    // Now and then the body's top face is extruded out or in: every point on it moves, so its side edges stretch.
+    const push = top.length > 0 ? extrudeAmount(seconds) : 0;
+    const pushed = push.toFixed(2);
+    if (canvas.dataset.extrude !== pushed) canvas.dataset.extrude = pushed; // what the browser check waits on
+    const lifted = (z: number) => (top.length > 0 && Math.abs(z - topZ) < 1e-3 ? z + push : z);
+    const atRaw = (x: number, y: number, z: number) => {
+      const p = project(x, y, z, yaw, pitch);
+      return { x: cx + p.x * scale, y: cy + p.y * scale, depth: p.depth };
+    };
+    const at = (x: number, y: number, z: number) => atRaw(x, y, lifted(z));
+    const lift = flash(seconds);
+    const floor = floorOf(shape) - 0.08;
+    // Motes of dust floating up round the shape, sharp in the middle distance, soft and large when near, dim when far:
+    // the far half now, behind everything, the near half after the shape.
+    const images = spritesFor(blues);
+    const placed = motes.map((m) => {
+      const p = moteAt(m, seconds);
+      return { ...atRaw(p.x, p.y, p.z), show: p.show, shade: m.shade };
+    });
+    const drawMote = (m: { x: number; y: number; depth: number; show: number; shade: number }) => {
+      // depth −2.8 (nearest) .. +2.8 (farthest): out of focus grows with distance from the shape's middle (0).
+      const blur = Math.min(1, Math.abs(m.depth) / 2.4);
+      const near = m.depth < 0;
+      const r = (1.1 + blur * (near ? 7 : 2.5)) * Math.max(0.6, scale / 160);
+      const a = m.show * (near ? 0.5 - 0.32 * blur : 0.42 - 0.3 * blur) * (glow ? 1 : 0.55); // on a light page dots read as dust
+      if (a <= 0.005) return;
+      ctx.globalAlpha = a;
+      const image = images[m.shade % images.length];
+      if (image) ctx.drawImage(image, m.x - r * 2, m.y - r * 2, r * 4, r * 4);
+      else {
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+    for (const m of placed) if (m.depth >= 0) drawMote(m);
+    // A soft pool of light on the turntable.
+    const base = at(0, 0, floor);
+    const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.3 * scale);
+    pool.addColorStop(0, `rgba(${rgb.join(",")},1)`);
+    pool.addColorStop(1, `rgba(${rgb.join(",")},0)`);
+    ctx.save();
+    ctx.translate(base.x, base.y);
+    ctx.scale(1, Math.sin(pitch));
+    ctx.globalAlpha = (glow ? 0.1 : 0.06) * (1 + 0.5 * lift);
+    ctx.fillStyle = pool;
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.3 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = ink;
+    // The turntable: one ring with a tick every 5°, longer every 30°, turning with the shape.
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.14;
+    const ringFoot = ring(at, 1.25, floor);
+    ctx.beginPath();
+    for (let k = 0; k < 72; k++) {
+      const a = (k / 72) * Math.PI * 2;
+      const inner = k % 6 === 0 ? 1.13 : 1.2;
+      const p = at(Math.cos(a) * inner, Math.sin(a) * inner, floor);
+      const q = at(Math.cos(a) * 1.25, Math.sin(a) * 1.25, floor);
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(q.x, q.y);
+    }
+    ctx.globalAlpha = 0.12;
+    ctx.stroke();
+    // The build plane: while the design is building (or sinking back), a glowing level ring with a soft disc rises through
+    // it from the floor; the edges under it are built, the ones over it wait as ghosts.
+    const built = buildAt(seconds);
+    const span = Math.max(1e-6, ceilZ - floorZ);
+    const planeZ = floorZ + built * span;
+    const building = built < 1 - 1e-6;
+    if (building && built > 1e-6) {
+      const edge = Math.min(1, built / 0.05, (1 - built) / 0.05); // fades in off the floor and out at the top
+      const mid = at(0, 0, planeZ);
+      const disc = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.25 * scale);
+      disc.addColorStop(0, blues[1].replace(")", " / 0.5)"));
+      disc.addColorStop(1, blues[1].replace(")", " / 0)"));
+      ctx.save();
+      ctx.translate(mid.x, mid.y);
+      ctx.scale(1, Math.sin(pitch));
+      ctx.globalAlpha = (glow ? 0.16 : 0.1) * edge;
+      ctx.fillStyle = disc;
+      ctx.beginPath();
+      ctx.arc(0, 0, 1.25 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = blues[3];
+      ctx.globalAlpha = 0.26 * edge;
+      ctx.lineWidth = 1.1;
+      ring(at, 1.25, planeZ);
+      ctx.strokeStyle = ink;
+      ctx.fillStyle = ink;
+    }
+    // The ripple going now, from its corner.
+    const wave = rippleAt(seconds);
+    const from3 = wave ? corners[wave.which % corners.length] : null;
+    // What the browser check waits on: the story's stage and how much is built (one decimal).
+    const stage = building ? (storyPhase(seconds) < BUILD_END ? "building" : "sinking") : wave ? "ripple" : Math.abs(push) > 0.002 ? "extrude" : "rest";
+    if (canvas.dataset.stage !== stage) canvas.dataset.stage = stage;
+    const builtWords = built.toFixed(1);
+    if (canvas.dataset.build !== builtWords) canvas.dataset.build = builtWords;
+    // The edges, batched by brightness: built ones by their glow (the fresh layers, the ripple, the flash), ghosts far
+    // fainter, and all much fainter at the back, so the near side reads first and the shape reads as solid. An edge the
+    // plane crosses is split there. The extruded face's edges are drawn apart. Points of light go where the plane or the
+    // ripple crosses an edge.
+    const buckets: number[][] = Array.from({ length: BUCKETS }, () => []);
+    const moving: number[] = [];
+    const ghosts: number[] = []; // not built yet: drawn faint and dashed, like hidden lines on a drawing
+    const beads: number[] = []; // x, y, cue, kind (0 the plane, 1 the ripple)
+    const extruding = Math.abs(push) > 0.002;
+    const brightness = (glowing: number, depth: number) =>
+      Math.min(MAX_ALPHA, (BASE_ALPHA + (MAX_ALPHA - BASE_ALPHA) * Math.min(1, 0.75 * glowing + 0.4 * lift)) * depthCue(depth));
+    const put = (alpha: number, ax: number, ay: number, bx: number, by: number) =>
+      buckets[Math.max(0, Math.min(BUCKETS - 1, Math.round((alpha / MAX_ALPHA) * (BUCKETS - 1))))].push(ax, ay, bx, by);
+    for (let i = 0; i < shape.length; i += 6) {
+      const az = shape[i + 2];
+      const bz = shape[i + 5];
+      const a = at(shape[i], shape[i + 1], az);
+      const b = at(shape[i + 3], shape[i + 4], bz);
+      if (extruding && Math.abs(az - topZ) < 1e-3 && Math.abs(bz - topZ) < 1e-3) {
+        moving.push(a.x, a.y, b.x, b.y);
+        continue;
+      }
+      const height = ((az + bz) / 2 - floorZ) / span;
+      let gap = Infinity;
+      if (wave && from3) {
+        const crossing = sphereGap([shape[i], shape[i + 1], az], [shape[i + 3], shape[i + 4], bz], from3, wave.radius);
+        gap = crossing.gap;
+        if (crossing.cross !== null && (!building || az + crossing.cross * (bz - az) <= planeZ)) {
+          const t = crossing.cross;
+          const p = at(shape[i] + t * (shape[i + 3] - shape[i]), shape[i + 1] + t * (shape[i + 4] - shape[i + 1]), az + t * (bz - az));
+          beads.push(p.x, p.y, depthCue(p.depth), 1);
+        }
+      }
+      const alpha = brightness(glowOf(seconds, height, gap), (a.depth + b.depth) / 2);
+      const lo = Math.min(az, bz);
+      const hi = Math.max(az, bz);
+      if (!building || hi <= planeZ) put(alpha, a.x, a.y, b.x, b.y);
+      else if (lo >= planeZ) ghosts.push(a.x, a.y, b.x, b.y);
+      else {
+        // Crossed by the plane: built up to it, a ghost above, and a point of light where it crosses.
+        const t = (planeZ - az) / (bz - az);
+        const m = at(shape[i] + t * (shape[i + 3] - shape[i]), shape[i + 1] + t * (shape[i + 4] - shape[i + 1]), planeZ);
+        const [under, over] = az < bz ? [a, b] : [b, a];
+        put(alpha, under.x, under.y, m.x, m.y);
+        ghosts.push(m.x, m.y, over.x, over.y);
+        beads.push(m.x, m.y, depthCue(m.depth), 0);
+      }
+    }
+    const strokeList = (list: number[], alpha: number, width: number) => {
+      ctx.beginPath();
+      for (let j = 0; j < list.length; j += 4) {
+        ctx.moveTo(list[j], list[j + 1]);
+        ctx.lineTo(list[j + 2], list[j + 3]);
+      }
+      if (glow) {
+        ctx.globalAlpha = alpha * 0.16; // the soft halo
+        ctx.lineWidth = width + 3;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    };
+    for (let k = 0; k < BUCKETS; k++) if (buckets[k].length > 0) strokeList(buckets[k], (k / (BUCKETS - 1)) * MAX_ALPHA, 1.2);
+    // Ghosts fade in as a story starts and out as it ends, so the part can change unseen between stories.
+    const turn = storyPhase(seconds);
+    const ghostFade = Math.min(1, turn / 0.03, (1 - turn) / 0.03);
+    if (ghosts.length > 0 && ghostFade > 0) {
+      ctx.setLineDash?.([3, 4]);
+      strokeList(ghosts, GHOST * ghostFade, 1);
+      ctx.setLineDash?.([]);
+    }
+    // Points of light where the build plane (the lightest blue) or the ripple (the cyan blue) crosses an edge.
+    for (let j = 0; j < beads.length; j += 4) {
+      const [x, y, cue, kind] = [beads[j], beads[j + 1], beads[j + 2], beads[j + 3]];
+      ctx.fillStyle = kind === 0 ? blues[3] : blues[1];
+      ctx.globalAlpha = 0.85 * cue;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.7, 0, Math.PI * 2);
+      ctx.fill();
+      if (glow) {
+        ctx.globalAlpha = 0.16 * cue;
+        ctx.beginPath();
+        ctx.arc(x, y, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillStyle = ink;
+    if (moving.length > 0) {
+      // The face being extruded, lit in the lightest blue, fading in and out with the move; its handle and distance beside it.
+      const k = Math.min(1, Math.abs(push) / Math.abs(push > 0 ? EXTRUDE_OUT : EXTRUDE_IN));
+      ctx.strokeStyle = blues[3];
+      strokeList(moving, 0.35 + 0.35 * k, 1.4);
+      const foot = atRaw(topMid[0], topMid[1], topZ + push);
+      const tip = atRaw(topMid[0], topMid[1], topZ + push + 0.22); // the handle rides with the face, pointing out
+      const tipY = tip.y;
+      const len = Math.hypot(tip.x - foot.x, tipY - foot.y) || 1;
+      const ux = (tip.x - foot.x) / len;
+      const uy = (tipY - foot.y) / len;
+      ctx.globalAlpha = 0.55 * k;
+      ctx.lineWidth = 1.25;
+      ctx.beginPath();
+      ctx.moveTo(foot.x, foot.y);
+      ctx.lineTo(tip.x, tipY);
+      ctx.moveTo(tip.x - ux * 6 - uy * 3.5, tipY - uy * 6 + ux * 3.5);
+      ctx.lineTo(tip.x, tipY);
+      ctx.lineTo(tip.x - ux * 6 + uy * 3.5, tipY - uy * 6 - ux * 3.5);
+      ctx.stroke();
+      if (size3) {
+        ctx.fillStyle = blues[3];
+        ctx.globalAlpha = 0.6 * k;
+        ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(pushWords(push * (Math.max(...size3) / 2), currentUnit(doc)), tip.x + 8, tipY);
+      }
+      ctx.strokeStyle = ink;
+      ctx.fillStyle = ink;
+    }
+    // A few sparks of light running calmly along the edges, each in its own blue, with a fading tail.
+    const sparkShow = smooth((built - 0.85) / 0.15);
+    const dt = Math.min(0.1, Math.max(0, seconds - sparkClock));
+    sparkClock = seconds;
+    sparks = sparks.map((p) => stepSpark(p, dt, shape, links, sparkRnd));
+    for (const p of sparks) {
+      const i = p.seg * 6;
+      const [ax, ay, az, bx, by, bz] = p.from === 0 ? [0, 1, 2, 3, 4, 5].map((k) => shape[i + k]) : [3, 4, 5, 0, 1, 2].map((k) => shape[i + k]);
+      const length = Math.hypot(bx - ax, by - ay, bz - az) || 1e-6;
+      const along = (t: number) => at(ax + (bx - ax) * t, ay + (by - ay) * t, az + (bz - az) * t);
+      const head = along(p.t);
+      const tail = along(Math.max(0, p.t - 0.35 / length));
+      const colour = blues[p.shade % blues.length];
+      const cue = depthCue(head.depth) * sparkShow; // sparks run only once the design is built
+      const fade = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+      fade.addColorStop(0, colour.replace(")", " / 0)")); // the same blue, see-through: no grey fringe on a light page
+      fade.addColorStop(1, colour);
+      ctx.strokeStyle = fade;
+      ctx.globalAlpha = 0.75 * cue;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(tail.x, tail.y);
+      ctx.lineTo(head.x, head.y);
+      ctx.stroke();
+      ctx.fillStyle = colour;
+      ctx.globalAlpha = 0.85 * cue;
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      if (glow) {
+        ctx.globalAlpha = 0.12 * cue;
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.strokeStyle = ink;
+    ctx.fillStyle = ink;
+    for (const m of placed) if (m.depth < 0) drawMote(m);
+    ctx.fillStyle = ink;
+    if (size3) {
+      ctx.globalAlpha = 0.42;
+      ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(sizeWords(size3, currentUnit(doc)), cx, ringFoot + 12);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  /** A level circle of `radius` about the up axis at height `z`, drawn through `at`; gives its lowest point on screen. */
+  function ring(at: (x: number, y: number, z: number) => { x: number; y: number }, radius: number, z: number): number {
+    let foot = -Infinity;
+    if (!ctx) return foot;
+    ctx.beginPath();
+    for (let k = 0; k <= 64; k++) {
+      const a = (k / 64) * Math.PI * 2;
+      const p = at(Math.cos(a) * radius, Math.sin(a) * radius, z);
+      foot = Math.max(foot, p.y);
+      if (k === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+    return foot;
+  }
+
+  function frame(now: number) {
+    timer = 0;
+    if (!running) return;
+    timer = win.requestAnimationFrame(frame);
+    if (now - lastFrame < FRAME_MS - 1) return; // at most 30 a second
+    lastFrame = now;
+    const begun = win.performance.now();
+    draw(Math.max(0, (now - t0) / 1000)); // a frame can be stamped a moment before the start
+    costs.push(win.performance.now() - begun);
+    if (costs.length >= SLOW_WINDOW) {
+      const mean = costs.reduce((a, b) => a + b, 0) / costs.length;
+      costs.length = 0;
+      if (mean > SLOW_MS) {
+        slow = true; // too slow: one still picture from here on
+        settle();
+      }
+    }
+  }
+
+  /** Runs, or paints the still picture, as the machine and the tab allow now. */
+  function settle() {
+    if (timer) win.cancelAnimationFrame(timer);
+    timer = 0;
+    if (!running || !ctx) return set("off"); // closed, or nothing to draw on (a test DOM): no loop at all
+    size();
+    if (live() && !doc.hidden) {
+      set("live");
+      t0 = win.performance.now();
+      timer = win.requestAnimationFrame(frame);
+    } else {
+      set(live() ? "live" : "still"); // a hidden tab keeps its mode, drawing nothing
+      draw(live() ? 0 : STILL_AT);
+    }
+  }
+
+  const onVisible = () => running && settle();
+  const onResize = () => running && settle();
+  return {
+    start() {
+      if (running) return;
+      running = true;
+      doc.addEventListener("visibilitychange", onVisible);
+      win.addEventListener("resize", onResize);
+      motion?.addEventListener?.("change", onVisible);
+      reshape();
+      settle();
+      if (ctx) watch = win.setTimeout(watching, 1000); // nothing to draw on (a test DOM): nothing to watch for
+    },
+    stop() {
+      running = false;
+      doc.removeEventListener("visibilitychange", onVisible);
+      win.removeEventListener("resize", onResize);
+      motion?.removeEventListener?.("change", onVisible);
+      if (timer) win.cancelAnimationFrame(timer);
+      if (watch) win.clearTimeout(watch);
+      timer = 0;
+      watch = 0;
+      set("off");
+    },
+    setSource(next) {
+      source = next;
+      from = undefined; // read it again even if it gives the same array
+      if (reshape() && running && !live()) draw(STILL_AT);
+    },
+    redraw() {
+      if (running && ctx && !live() && !doc.hidden) draw(STILL_AT);
+    },
+    get mode() {
+      return canvas.dataset.backdrop as "live" | "still" | "off";
+    },
+  };
+}
