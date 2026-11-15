@@ -35,7 +35,7 @@ export const COMING_SOON: readonly ComingTool[] = [
   { id: "sweep", label: "Sweep", group: "Create", step: "70", does: "move a sketch along a path to make a solid", eta: "2028" },
   { id: "loft", label: "Loft", group: "Create", step: "71", does: "blend between two or more sketches to make a solid", eta: "2028" },
   { id: "combine", label: "Combine", group: "Modify", step: "35f", does: "join two bodies into one, cut one from another, or keep only where they overlap", eta: "early 2027" },
-  { id: "chamfer", label: "Chamfer", group: "Modify", step: "44", does: "cut a sloped face along the edges you pick", eta: "mid 2027" },
+  { id: "chamfer", label: "Chamfer", group: "Modify", step: "44", does: "cut a sloped face along the edges you pick", eta: "early 2027" },
   { id: "fillet", label: "Fillet", group: "Modify", step: "45", does: "round the edges you pick", eta: "mid 2027" },
   { id: "shell", label: "Shell", group: "Modify", step: "62", does: "hollow a body out, leaving walls of a set thickness", eta: "late 2027" },
   { id: "draft", label: "Draft", group: "Modify", step: "63", does: "slope faces slightly so a moulded part comes out of its mould", eta: "2028" },
