@@ -10,14 +10,17 @@ name: Kernel CI
 # (its ci/quiet.sh), every line also passes .github/scripts/kernel_ci.sh
 # filter here, the full logs go only to the private kernel-results repo,
 # nothing is cached (a pull request from a fork can read main's caches) and
-# nothing is uploaded as an artifact (public too). The verdicts go back to the
+# nothing is uploaded as an artifact (public too) except a job's files sealed
+# with a per-run public key (kernel_ci.sh seal; only the keyed job opens them). The verdicts go back to the
 # kernel commit as statuses kernel-ci/checks and kernel-ci/mutants, which the
 # kernel repo's auto-merge waits for.
 #
 # Secrets, in the "kernel" environment, which only main may use (Ben adds
 # them; every job that needs them names it, so no other branch's workflow
 # and no fork can read them; test_kernel_ci.py checks): KERNEL_READ, a fine-grained key with
-# read-only contents and read-write commit statuses on SpindleLabs-app/kernel;
+# read-only contents and read-write commit statuses on SpindleLabs-app/kernel
+# (being split into KERNEL_SOURCE, contents read-only, for the jobs that run
+# the kernel's code, and KERNEL_STATUS, commit statuses only);
 # RESULTS_WRITE, contents and issues read-write on SpindleLabs-app/kernel-results.
 # The title names the label, so the kernel repo's ci.yml can find and cancel
 # a pull request's run when it goes back to draft.
@@ -240,7 +243,46 @@ jobs:
   # status, so it never holds a merge. Only for main's runs, after each merge
   # (Ben, 2026-10-29: about 790 runner minutes a day went on every pull
   # request push's copy).
+  #
+  # Split in three so that no job holds a key beside the kernel's code (security
+  # hunt H3: code a job runs on a runner can change what that job's later steps
+  # run, and read the keys they hold):
+  #   coverage-keys: makes a key pair for this run, keeps the private half in
+  #     kernel-results and hands on the public half (a public key is no secret).
+  #   coverage: runs the kernel's code with only KERNEL_SOURCE (read-only on the
+  #     kernel, which that code can read anyway), seals the files with the public
+  #     key and uploads them: an encrypted artifact, 1 day.
+  #   coverage-save: holds RESULTS_WRITE, never runs kernel code; takes the
+  #     artifact as untrusted data (checked, then opened only into files and
+  #     folders) and saves it. A job that was itself compromised can still lie
+  #     about its own run's files; it can't reach a key.
+  coverage-keys:
+    if: inputs.label == 'main'
+    runs-on: ubuntu-24.04
+    environment: kernel
+    timeout-minutes: 10
+    outputs:
+      public: ${{ steps.keys.outputs.public }}
+      folder: ${{ steps.keys.outputs.folder }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: A key pair for this run (the private half only in kernel-results)
+        id: keys
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          .github/scripts/kernel_ci.sh keygen "$RUNNER_TEMP/keys"
+          mkdir -p "$RUNNER_TEMP/private"
+          mv "$RUNNER_TEMP/keys/private.pem" "$RUNNER_TEMP/private/"
+          folder="seal/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          RESULTS_PATH="$folder" .github/scripts/kernel_ci.sh save coverage-key "$RUNNER_TEMP/private"
+          echo "public=$(base64 -w0 "$RUNNER_TEMP/keys/public.pem")" >> "$GITHUB_OUTPUT"
+          echo "folder=$folder/coverage-key" >> "$GITHUB_OUTPUT"
   coverage:
+    needs: coverage-keys
     if: inputs.label == 'main'
     runs-on: ubuntu-latest
     environment: kernel
@@ -252,7 +294,7 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ inputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -265,11 +307,53 @@ jobs:
         run: |
           [ -x k/ci/coverage.sh ] || { echo "this kernel commit has no ci/coverage.sh yet"; exit 0; }
           .github/scripts/kernel_ci.sh run coverage "$RUNNER_TEMP/logs" k/ci/coverage.sh "$RUNNER_TEMP/logs"
-      - name: Save the report to kernel-results
+      - name: Seal the report (only the keyed job can open it)
         if: always()
         env:
+          PUBLIC: ${{ needs.coverage-keys.outputs.public }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/logs" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed report on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-coverage
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
+  coverage-save:
+    needs: [coverage-keys, coverage]
+    if: always() && inputs.label == 'main' && needs.coverage-keys.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: kernel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Take the sealed report
+        id: sealed
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sealed-coverage
+          path: ${{ runner.temp }}/sealed
+      - name: Open it and save it to kernel-results
+        env:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-        run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save coverage "$RUNNER_TEMP/logs"
+          KEY_FOLDER: ${{ needs.coverage-keys.outputs.folder }}
+          COVERAGE: ${{ needs.coverage.result }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          if [ "${{ steps.sealed.outcome }}" = success ]; then
+            .github/scripts/kernel_ci.sh fetch "$KEY_FOLDER" "$RUNNER_TEMP/private"
+            .github/scripts/kernel_ci.sh unseal "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/logs" "$RUNNER_TEMP/private/private.pem"
+          else
+            echo "the coverage job handed on no files (its result: $COVERAGE)" > "$RUNNER_TEMP/logs/not-run.txt"
+          fi
+          .github/scripts/kernel_ci.sh save coverage "$RUNNER_TEMP/logs"
 
   mutants-plan:
     if: inputs.base != ''
