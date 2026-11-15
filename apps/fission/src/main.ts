@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../packages/print/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName, previews } from "@fission/core";
 import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
 import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
@@ -42,6 +42,8 @@ import { laserWorkspace } from "@fission/laser";
 import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
 /** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
 declare const __SLICE_PAGE__: boolean;
+// The build-time switches, also on for a tab opened with `?all` (@fission/core preview.ts): the shipped build carries their code.
+const SLICE_PAGE = __SLICE_PAGE__ || previews().all;
 import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
@@ -54,7 +56,7 @@ const workspaces: WorkspacePlugin[] = [
   simulateWorkspace,
   manufactureWorkspace,
   laserWorkspace,
-  __SLICE_PAGE__ ? slicePageWorkspace : sliceWorkspace,
+  SLICE_PAGE ? slicePageWorkspace : sliceWorkspace,
   circuitWorkspace,
   vectorWorkspace,
   imageWorkspace,
@@ -97,7 +99,7 @@ for (const w of workspaces) w.registerActions?.(actions);
 const downstream = new DownstreamRegistry();
 for (const w of workspaces) w.registerDownstream?.(downstream);
 // The workspaces DESIGN ▾ lists (listed-workspaces.ts); the rest stay built in, opened by their links.
-const everyWorkspace = new URLSearchParams(location.search).has(ALL_WORKSPACES_SWITCH);
+const everyWorkspace = new URLSearchParams(location.search).has(ALL_WORKSPACES_SWITCH) || previews().all;
 const listed = listedWorkspaces(workspaces, everyWorkspace);
 const workspaceTitle = (id: WorkspaceId) => workspaces.find((w) => w.id === id)?.title ?? id;
 
@@ -106,8 +108,10 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
 /** The home screen (home.config.mjs): the app opens on it over the last project; off in the shipped build until released. */
 declare const __HOME_SCREEN__: boolean;
+const HOME_SCREEN = __HOME_SCREEN__ || previews().all;
 /** The design tabs (tabs.config.mjs; also on with the home screen, which is built with them): off until released. */
 declare const __DESIGN_TABS__: boolean;
+const DESIGN_TABS = __DESIGN_TABS__ || previews().all;
 /** The account code's hooks once it has started (only with accounts on): My designs. */
 let accountHooks: import("./account.ts").AccountHooks | null = null;
 /**
@@ -369,7 +373,7 @@ const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer
 const markTab = workspaceSwitcher(
   $("workspaces"),
   listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
-  (id) => (id === "slice" && !__SLICE_PAGE__ ? sliceForPrinting() : show(id as WorkspaceId)),
+  (id) => (id === "slice" && !SLICE_PAGE ? sliceForPrinting() : show(id as WorkspaceId)),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
 /** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */
@@ -874,7 +878,7 @@ const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/
 const printLog = startPrintLog(document);
 const fileParts: FileMenuParts = {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
-  ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
+  ...(HOME_SCREEN ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
@@ -1125,7 +1129,7 @@ async function startNewProject(keepNow = false) {
   fileStatus("");
 }
 /** The design tabs (only when the build has them, tabs.config.mjs): one tab for each project open at once. */
-const tabs: ShellTabs | null = !__DESIGN_TABS__
+const tabs: ShellTabs | null = !DESIGN_TABS
   ? null
   : shellTabs(document, {
       after: $("topbar"),
@@ -1171,7 +1175,7 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
       })(),
     });
 /** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
-const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
+const home = !HOME_SCREEN ? null : homeScreen(document, {
   list: () => store.list(),
   openId: keptId,
   open: openStored,

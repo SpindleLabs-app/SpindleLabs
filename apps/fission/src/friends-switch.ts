@@ -3,6 +3,8 @@
 // the trip to the sign-in page and back); `?friends=off` forgets it. Off by default until the lawyer has checked the
 // sharing items (legal items 17, 18, 19, 21 and 29) Friends depends on.
 
+import { previews } from "@fission/core";
+
 export const FRIENDS_SWITCH = "friends";
 export const FRIENDS_TAB_KEY = "spindlelabs.friends.on";
 
@@ -12,8 +14,12 @@ interface Tab {
   removeItem(k: string): void;
 }
 
-/** Whether Friends is on: the address has the switch, or this tab had it and the address doesn't say off. */
-export function friendsSwitch(search: string, tab?: Tab): boolean {
+/** Whether Friends is on: the address has the switch, or this tab had it and the address doesn't say off; always with `preview` (?community or ?all). */
+export function friendsSwitch(search: string, tab?: Tab, preview = false): boolean {
+  return ownSwitch(search, tab) || preview;
+}
+
+function ownSwitch(search: string, tab?: Tab): boolean {
   const p = new URLSearchParams(search);
   const v = p.get(FRIENDS_SWITCH);
   try {
@@ -40,5 +46,6 @@ export function pageFriendsSwitch(): boolean {
   } catch {
     tab = undefined;
   }
-  return friendsSwitch(location.search, tab);
+  // `?community` and `?all` turn it on too (@fission/core preview.ts; the server lets only its testers turn Friends on).
+  return friendsSwitch(location.search, tab, previews().community);
 }
