@@ -28,6 +28,7 @@ export const entry = {
   body_hide: k.hb3mzd,
   body_boolean: k.rk7wq2,
   body_move: k.hq3vzt,
+  body_chamfer: k.pjftzm,
   body_measure: k.zt5kqw,
   body_count: k.urxw0w,
   slice_stl: k.uq4cun,

@@ -436,6 +436,7 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       return buildUnits(a[0] as BodySpec);
     case "body_view":
     case "body_move":
+    case "body_chamfer":
     case "body_stl":
     case "body_step":
       return sizeOf(a[0] as BodyHandle)?.mesh ?? 0;

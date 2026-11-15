@@ -16,7 +16,7 @@ import type { BodySpec, Feature, Plane } from "@fission/core";
 import { isFit, type Fit } from "@fission/print";
 import { NewerFormatError, XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, worldFrame, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
-import { isHeldDesignName } from "./design-edges.ts";
+import { isHeldDesignName, ruleFiveName } from "./design-edges.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
@@ -271,7 +271,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 23;
+  version: 24;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -579,8 +579,49 @@ export type CombineOperation = (typeof COMBINE_OPERATIONS)[number];
 /** A Combine's parameters, all in every Combine. */
 export const COMBINE_PARAMS = ["target", "tools", "operation", "keepTools"] as const;
 
-/** Whether an item works on bodies other items made (a Move, a Combine), depending on those items, rather than making one of its own. */
-export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f);
+/**
+ * A Chamfer (step 44a; Design data version 24): straight edges of one body
+ * made before it (`body`, by body id) cut back flat `distance` mm along
+ * both faces; with `second`, that far along the second face instead, or
+ * with `angle`, leaning that many degrees off the first face (never both);
+ * measured from the other face first when `flip`. Its
+ * `edges` are held by their design-wide names (rule 5, as a pin on a
+ * Combine's result holds one: design-edges.ts `heldEdgeName`), so they are
+ * found again however the body was made and whatever was edited before.
+ * The chamfered body keeps the body's id, as a Move's does; the new face of
+ * its k-th edge is `face:<the Chamfer>/chamfer:<k>` (counted from 1). It
+ * depends on the item that made its body, as a Move does, and makes no
+ * body of its own.
+ */
+export const isChamferItem = (f: Feature) => f.intent.type === "chamfer";
+
+/** A Chamfer's parameters in every Chamfer; at most one of `CHAMFER_SIZE_EXTRAS` may join them. */
+export const CHAMFER_PARAMS = ["body", "edges", "distance", "flip"] as const;
+
+/** A Chamfer's optional second size: `second` (two distances) or `angle` (a distance and an angle). */
+export const CHAMFER_SIZE_EXTRAS = ["second", "angle"] as const;
+
+/**
+ * A Chamfer's size in the kernel's own form (core's `ChamferSize`):
+ * `{ equal: d }` d back along both faces; `{ two: [d1, d2] }` d1 along the
+ * first face, d2 along the second; `{ angle: [d, degrees] }` d along the
+ * first face, leaning that many degrees off it. Millimetres and degrees.
+ */
+export type ChamferSizing = { equal: number } | { two: [number, number] } | { angle: [number, number] };
+
+/** The most a chamfer's distance can be (the kernel's model space, 1 km), in mm. */
+export const CHAMFER_MAX = 1_000_000;
+
+/** A Chamfer's body, held edge names, size and flip. */
+export function chamferOf(f: Feature): { body: string; edges: string[]; size: ChamferSizing; flip: boolean } {
+  const p = f.intent.parameters;
+  const d = p.distance as number;
+  const size: ChamferSizing = typeof p.second === "number" ? { two: [d, p.second] } : typeof p.angle === "number" ? { angle: [d, p.angle] } : { equal: d };
+  return { body: p.body as string, edges: [...(p.edges as string[])], size, flip: p.flip === true };
+}
+
+/** Whether an item works on bodies other items made (a Move, a Combine, a Chamfer), depending on those items, rather than making one of its own. */
+export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f) || isChamferItem(f);
 
 /**
  * An extrude of a sketch with an operation (Fusion's Join, Cut and
@@ -1559,6 +1600,54 @@ function checkDuplicate(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMa
   if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it copies (${maker})`);
 }
 
+/**
+ * Why a chamfer's size can't be, in words, or null (step 44a): `distance`
+ * above 0 and at most CHAMFER_MAX mm; `second`, when there, the same;
+ * `angle`, when there, strictly between 0° and 90°; never both.
+ */
+export function chamferSizeProblem(p: Readonly<Record<string, unknown>>): string | null {
+  const distance = (d: unknown) => isFiniteNumber(d) && d > 0 && d <= CHAMFER_MAX;
+  // Text quoted, so "2" (text) never reads as the 2 it is not.
+  const said = (v: unknown) => (typeof v === "string" ? JSON.stringify(v) : shown(v));
+  if (!distance(p.distance)) return `its distance ${said(p.distance)} is not above 0 and at most ${CHAMFER_MAX} mm`;
+  if (Object.hasOwn(p, "second") && Object.hasOwn(p, "angle")) return "it has both a second distance and an angle, which a chamfer never has together";
+  if (Object.hasOwn(p, "second") && !distance(p.second)) return `its second distance ${said(p.second)} is not above 0 and at most ${CHAMFER_MAX} mm`;
+  if (Object.hasOwn(p, "angle") && !(isFiniteNumber(p.angle) && p.angle > 0 && p.angle < 90)) return `its angle ${said(p.angle)} is not between 0 and 90 degrees`;
+  return null;
+}
+
+/**
+ * A Chamfer, checked (step 44a): its parameters exactly `CHAMFER_PARAMS`;
+ * its body one made before it (by body id, as a Move's; one deleted since
+ * is allowed, the rebuild fails the Chamfer naming it); one or more edges,
+ * each a held design-wide edge name (design-edges.ts), none twice; its
+ * distance and any second distance or angle (`chamferSizeProblem`); flip
+ * true or false; and `dependsOn` exactly the
+ * item that made its body.
+ */
+function checkChamfer(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design chamfer ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of Object.keys(p)) if (!(CHAMFER_PARAMS as readonly string[]).includes(key) && !(CHAMFER_SIZE_EXTRAS as readonly string[]).includes(key)) throw new Error(`${at} has a parameter ${JSON.stringify(key)} a chamfer doesn't have`);
+  const id: unknown = p.body;
+  const maker = typeof id === "string" ? bodyItem(id) : null;
+  const there = maker === null ? undefined : byId.get(maker);
+  const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
+  if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} chamfers ${shown(id)}, which is not a body made before it in the timeline`);
+  if (!Array.isArray(p.edges) || p.edges.length === 0) throw new Error(`${at} has no edges`);
+  notTooMany(p.edges.length, DESIGN_LIMITS.items, `${at} names`, "edges");
+  const once = new Set<unknown>();
+  for (const e of p.edges as unknown[]) {
+    if (typeof e !== "string" || ruleFiveName(e) === null) throw new Error(`${at}'s edge ${shown(e)} is not an edge's name`);
+    if (once.has(e)) throw new Error(`${at} names edge ${e} twice`);
+    once.add(e);
+  }
+  const problem = chamferSizeProblem(p);
+  if (problem !== null) throw new Error(`${at}'s size: ${problem}`);
+  if (typeof p.flip !== "boolean") throw new Error(`${at}'s flip ${typeof p.flip === "string" ? JSON.stringify(p.flip) : shown(p.flip)} is not true or false`);
+  if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it chamfers (${maker})`);
+}
+
 function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>, id: string): boolean {
   const maker = bodyItem(id);
   if (maker === null) return false;
@@ -1676,6 +1765,12 @@ function hasVersion21Fields(d: Record<string, unknown>): boolean {
 }
 
 /** Whether version 22 data has a Through all extrude (Ben 2026-11-14), which only version 23 holds. */
+/** Whether version 23 data has a Chamfer (step 44a), which only version 24 brought. */
+function hasVersion24Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "chamfer");
+}
+
 function hasVersion23Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
   return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "through"));
@@ -1876,7 +1971,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 23;
+export const DESIGN_VERSION = 24;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1958,10 +2053,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 23 (Ben 2026-11-14) lets a Cut or Intersect extrude go through all its bodies (`through`), which version 22
   // never held (a version 22 reader would stop it at the distance last typed); other version 22 data is read as it is.
   if (v22.version === 22 && hasVersion23Fields(v22)) throw new Error(`Design data says version ${shown(given)} but has a Through all extrude, which version 23 brought`);
-  const d = (v22.version === 22 ? { ...v22, version: 23 } : v22) as Partial<DesignDocument>;
+  const v23 = v22.version === 22 ? { ...v22, version: 23 } : v22;
+  // Version 24 (step 44a) brings the Chamfer, which no version 23 reader builds; other version 23 data is read as it is.
+  if (v23.version === 23 && hasVersion24Fields(v23)) throw new Error(`Design data says version ${shown(given)} but has a Chamfer, which version 24 brought`);
+  const d = (v23.version === 23 ? { ...v23, version: 24 } : v23) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 or 23)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 or 24)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -2130,8 +2228,11 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
   // A Combine's bodies and operation (step 35f1).
   for (const f of d.timeline.features) if (isCombineItem(f)) checkCombine(d, f, byId);
-  // A Duplicate's body (step 35e2).
-  for (const f of d.timeline.features) if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
+  // A Duplicate's body (step 35e2), and a Chamfer's body, edges and size (step 44a), in one pass over the timeline.
+  for (const f of d.timeline.features) {
+    if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
+    else if (isChamferItem(f)) checkChamfer(d, f, byId);
+  }
   // An extrude's operation and its bodies (Design data version 10).
   for (const f of d.timeline.features) if (isOperationExtrude(f)) checkOperation(d, f, byId);
   // Each dependency an id (after the Move's own check, which says what a move's should be).
