@@ -150,7 +150,7 @@ export function pairWords(aLabel: string, bLabel: string, r: PartsRelation): { w
   if (r.relation === "overlap") return { words: `${aLabel} and ${bLabel} overlap.`, mark: true };
   if (r.relation === "touch") return { words: `${aLabel} and ${bLabel} touch: their cuts would share a line.`, mark: false };
   if (r.meet) return { words: `${aLabel} and ${bLabel} touch or overlap: they are too close to tell which.`, mark: true };
-  return { words: `Couldn't check whether ${aLabel} and ${bLabel} overlap: ${r.why ?? "the kernel gave no answer"}.`, mark: false };
+  return { words: `Couldn't check whether ${aLabel} and ${bLabel} overlap: ${r.why ?? "no answer came back"}.`, mark: false };
 }
 
 /** The words under the bed: how many parts are on it, each one left off with why, and (given the bed) each one reaching past its edge and each pair that overlaps or touches. */
