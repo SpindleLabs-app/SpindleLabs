@@ -40,6 +40,8 @@ export function communityLibrary(): Library {
 /** What the Community page says until the library exists. */
 export const communityPage = {
   title: "Community",
+  /** Its rough window (the same words as @fission/ui's eta.ts). */
+  eta: "late 2027",
   summary: "Share what you make, and download what others share. Everything here is free: no paid models, no payments.",
   plans: [
     "Publish a project or a mesh with a free licence of your choice",

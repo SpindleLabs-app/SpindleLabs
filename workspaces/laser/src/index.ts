@@ -6,7 +6,7 @@
 // G-code; flat faces of bodies; sending to the machine (docs/progress/laser.md).
 
 import type { WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 import { laserShown } from "./flag.ts";
 import { mountLaserPage, readLaserProjectData } from "./page.ts";
 
@@ -35,6 +35,7 @@ export const laserWorkspace: WorkspacePlugin = {
   mount(ctx) {
     if (laserShown()) return mountLaserPage(ctx);
     showPlaceholder(ctx.properties, {
+      eta: workspaceEta("laser"),
       title: "LaserLab",
       summary: SUMMARY,
       plans: ["Cut, engrave and score layers with power and speed settings", "Flat faces and sketches taken straight from DesignLab, by reference (sheet-metal flat patterns later)", "Job preview with time estimate", "DXF and SVG import and export", "Machine control for common controllers"],
