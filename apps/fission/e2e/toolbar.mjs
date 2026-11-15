@@ -82,7 +82,7 @@ const toolbarProblems = (page) =>
     return out;
   });
 
-/** What is wrong with the coming tools in the open menus, in words: each must be off, say "Coming soon" at its right and in its tooltip what it will do. */
+/** What is wrong with the coming tools in the open menus, in words: each must be off, say their expected window ("Mid 2027") at its right and in its tooltip what it will do. */
 const comingProblems = (page) =>
   page.$$eval("[role=menu]:not([hidden]) [id^=coming-]", (els) =>
     els.flatMap((e) => {
@@ -90,8 +90,8 @@ const comingProblems = (page) =>
       const name = e.querySelector(".menu-button-name")?.textContent ?? "";
       if (e.getAttribute("aria-disabled") !== "true") out.push(`${e.id}: not off`);
       const note = e.querySelector(".menu-button-note")?.textContent ?? "";
-      if (note !== "Coming soon") out.push(`${e.id}: says "${note}" at its right`);
-      if (!e.title.startsWith(`${name} is coming soon: it will `)) out.push(`${e.id}: tooltip "${e.title}"`);
+      if (!/^(Early |Mid |Late )?20\d\d$/.test(note)) out.push(`${e.id}: says "${note}" at its right`);
+      if (!e.title.startsWith(`${name} is expected `) || !/^[^:]*: it will /.test(e.title)) out.push(`${e.id}: tooltip "${e.title}"`);
       return out;
     }),
   );
@@ -204,7 +204,7 @@ try {
           // Extrude's row shows its key, E, in a <kbd> after its name.
           ["create-menu-extrude", "ExtrudeE", "extrude"],
           // The tools still to come, greyed (coming-soon.ts; the next check).
-          ...["revolve", "hole", "pattern", "sweep", "loft"].map((id) => [`coming-${id}`, `${id[0].toUpperCase()}${id.slice(1)}Coming soon`, undefined]),
+          ...[["revolve", "Late 2027"], ["hole", "Late 2027"], ["pattern", "Late 2027"], ["sweep", "2028"], ["loft", "2028"]].map(([id, eta]) => [`coming-${id}`, `${id[0].toUpperCase()}${id.slice(1)}${eta}`, undefined]),
         ]);
         assert.equal(await page.textContent("#create-menu-extrude kbd.menu-button-key"), "E", "Extrude's key shown in its row");
         const menu = await rect(page, "#create-menu-menu");
@@ -232,7 +232,7 @@ try {
       }
     });
 
-    await check(`${at}: the tools still to come are greyed with "Coming soon", say what each will do, and choosing one does nothing`, async () => {
+    await check(`${at}: the tools still to come are greyed with their expected window, say what each will do, and choosing one does nothing`, async () => {
       const page = await fresh(width, tap);
       try {
         // Construct ▾ holds only tools to come: its button greyed (coming-soon.css), still opening to show them; Modify ▾ has Move (35e2b).
@@ -259,7 +259,7 @@ try {
         await until(page, () => !document.getElementById("modify-menu-menu").hidden, null, "Modify ▾ opens");
         assert.deepEqual(await comingProblems(page), []);
         const fillet = await page.$eval("#coming-fillet", (b) => [b.title, b.getAttribute("aria-disabled"), getComputedStyle(b).color, b.querySelector(".menu-button-note")?.textContent]);
-        assert.deepEqual(fillet, ["Fillet is coming soon: it will round the edges you pick.", "true", "rgb(154, 161, 172)", "Coming soon"]); // --text-dim, dark (#9aa1ac since the accessibility pass)
+        assert.deepEqual(fillet, ["Fillet is expected mid 2027: it will round the edges you pick.", "true", "rgb(154, 161, 172)", "Mid 2027"]); // --text-dim, dark (#9aa1ac since the accessibility pass)
         if (shots) await page.screenshot({ path: `${shots}/coming-soon-${width}.png`, clip: { x: 0, y: 0, width, height: width > 640 ? 520 : 667 } });
         // Choosing one does nothing: the list stays open, nothing opens, no undo step, nothing in the timeline.
         const before = [await page.textContent("#properties"), await page.getAttribute("#undo", "title"), await page.$$eval("#browser .tree-row", (rs) => rs.length)];

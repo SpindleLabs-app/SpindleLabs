@@ -67,7 +67,7 @@ try {
     assert.equal(await page.isVisible("#properties-toggle"), false, "no Properties pill");
     // The page's own words, under the top bar and reachable.
     const box = await page.locator("#properties .placeholder .coming-soon").boundingBox();
-    assert.ok(box && box.y > 40 && box.y < 667, `Coming soon on screen at ${box?.y}`);
+    assert.ok(box && box.y > 40 && box.y < 667, `The expected window on screen at ${box?.y}`);
     if (shots) await page.screenshot({ path: `${shots}/community-375.png` });
     await menu(page, "community");
     await until(page, () => document.body.dataset.activeWorkspace === "design", null, "back to Design");
