@@ -100,7 +100,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const heading = el("h2", "slice-print-heading", "Slice for printing");
   const printer = el("p", "slice-print-printer", "For a Bambu Lab P1S with a 0.4 mm nozzle and PLA. Every body shown is printed, placed in the middle of the plate.");
   // Placeholders never pretend to work: until a real test print passes (H3a), the dialog says so.
-  const untested = el("p", "slice-print-untested", "First version: these files haven't been test-printed yet, so open one in Bambu Studio or a G-code viewer to check it before printing it.");
+  const untested = el("p", "slice-print-untested", "First version: these files haven't been test-printed yet, so open one in your printer's slicer or a G-code viewer to check it before printing it.");
   // What the print leaves out (failed timeline items): filled each time the dialog opens, hidden when nothing.
   const missingNote = el("p", "slice-print-missing");
   missingNote.hidden = true;
@@ -144,7 +144,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     }
   })();
   const nozzle = choice("slice-print-nozzle", "Nozzle", NOZZLE_OPTIONS, rememberedNozzle(storage));
-  nozzle.wrap.title = "The nozzle on your P1S. Bambu Studio won't send a file made for the other kind (Standard is the one it comes with; High Flow is Bambu's faster hotend). Your choice is remembered.";
+  nozzle.wrap.title = "The nozzle on your P1S. The printer won't take a file made for the other kind (Standard is the one it comes with; High Flow is the faster hotend). Your choice is remembered.";
   // The warm-up loop: a tick box, on unless turned off here before (remembered like the nozzle).
   const warmUpWrap = document.createElement("label");
   warmUpWrap.className = "slice-print-choice slice-print-check";
