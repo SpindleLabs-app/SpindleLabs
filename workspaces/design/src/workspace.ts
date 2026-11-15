@@ -1386,6 +1386,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * plane, already away from its body, so the copies are only picked.
    */
   async function duplicateBodies(bodies?: readonly string[], mirror?: SketchPlane) {
+    // SL #760 item 5: an OK being checked goes first (it shuts the panels below), and what is selected is read after it,
+    // as when pressed slowly.
+    if (okChecks.size > 0) return afterOk(() => void duplicateBodies(bodies, mirror));
     const picked = bodies ?? pickedBodies(ctx.selection.items, lastScene);
     if (picked.length === 0) return;
     leaveExtrude();
@@ -4888,8 +4891,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!shown) return;
     const kind = panel.shapeChoice.value as ShapeKind;
     if (!kind) return;
-    leaveEdit(); // as a typed size below
-    void setPart({ op: "set_part", shape: kind });
+    // SL #760 item 5: an OK being checked goes first (leaveEdit would shut its panel and drop it).
+    afterOk(() => {
+      leaveEdit(); // as a typed size below
+      void setPart({ op: "set_part", shape: kind });
+    });
   });
   /**
    * A size typed in the Size boxes (or a Shape chosen) changes the design under an open Edit feature panel, whose boxes
@@ -4907,8 +4913,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     input.addEventListener("input", () => {
       if (!shown) return;
       if (editStart[i] === null && saved !== null) editStart[i] = saved.sizes[i];
-      sizeTyped();
-      void update(...sizeStep(i));
+      // SL #760 item 5: an OK being checked goes first (sizeTyped would shut its panel and drop it); the size typed is
+      // kept through the redraw its step brings and put back in the box, then taken as typed.
+      const typed = input.value;
+      afterOk(() => {
+        if (input.value !== typed) input.value = typed;
+        sizeTyped();
+        void update(...sizeStep(i));
+      });
     });
     // Left (or Enter): a refused size gives way to the one from before the edit. Blur too: Firefox gave no change for a
     // number box left empty after 0 and -5 (hunt 26h, CI's browsers job).
