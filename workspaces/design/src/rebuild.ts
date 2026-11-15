@@ -1552,10 +1552,8 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
     else if (b === undefined) gone.push({ body, said: `an earlier Combine or extrude used up ${what} or left no such piece`, failed: { status: "failed", cause: "failed-input", input: id, message: `${name} can't move ${body === bodyIdOf(id) ? label(id) : "a piece"}: an earlier Combine or extrude used it up or left no such piece` } });
     else from.push([body, b]);
   }
-  if (from.length === 0 && gone.length > 0) return gone[0].failed;
   const list = (names: readonly string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
   const words = (body: string) => (isPiece(body) ? `a piece of ${label(bodyItem(body)!)}` : label(bodyItem(body)!));
-  const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
   // New pieces split from a body it holds (or from such a piece), not numbered yet: made since the Move was, so moved with it.
   // Held whether or not that body is still here to move (SL #430): an earlier Combine using up the piece that kept the
   // body's id leaves the other pieces split from it, which the Move holds as it holds the whole body, as `followedDoc`
@@ -1571,6 +1569,10 @@ async function moveBodies(doc: DesignDocument, f: Feature, done: Record<string, 
         grew = true;
       }
   }
+  // With nothing left to move, not even a piece split from a body it holds, it fails naming the first body gone; with
+  // such a piece it moves that piece in this very build (SL #760 item 1), as it does once the file is opened again.
+  if (from.length === 0 && gone.length > 0) return gone[0].failed;
+  const missing = gone.length === 0 ? {} : { missing: { message: `${name} moves only ${list(from.map(([b]) => words(b)))}: ${list(gone.map((g) => g.said))}`, bodies: gone.map((g) => g.body) } };
   // Built only once every body is there, so a Move that fails builds nothing.
   // A Combine's result has no spec (35f1f2a): the kernel moves the body it keeps (body_move), and each face's frame is
   // carried on from where its input body's was, so a sketch on it goes where the face went. A refusal (out past model

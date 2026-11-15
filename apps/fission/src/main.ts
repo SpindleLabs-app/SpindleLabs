@@ -82,6 +82,7 @@ representations.registerImporter({
     // A browser that can't keep projects holds the design on screen nowhere else: Open asks before it replaces one
     // with changes (it was gone without a question, export hunt 2026-11-12, #644 item 2). A file that can't be read
     // is refused first, in its own words, so no one is asked about an Open that won't happen.
+    await okLanded();
     if (!canKeep && ctx.history.canUndo()) {
       projectFromJson(bytes, workspaces);
       if (!window.confirm(`Open "${name}" in place of your design? This browser can't keep projects, so the design on screen is saved nowhere: Cancel, then use Save to keep it as a file first.`)) return;
@@ -407,6 +408,10 @@ function showPage(page: Page) {
     showPlaceholder($("properties"), communityPage);
   }
   markTab(page);
+  // The Community page is all its words: at phone width they fill the view instead of waiting in the shut Properties
+  // sheet over Design's box (SL #522 item 4, styles/placeholder-page.css). Only Community: a workspace still marked
+  // "placeholder" (Laser, TestLab…) mounts a real page of its own, which the words' sheet would cover.
+  document.body.classList.toggle("placeholder-page", !workspace);
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
@@ -423,7 +428,11 @@ function showPage(page: Page) {
 }
 
 // Community pressed again closes it, back to the workspace it was opened from (like AI and Guide).
-$("community").addEventListener("click", () => show(current === "community" ? lastWorkspace : "community"));
+$("community").addEventListener("click", () => {
+  // At phone width the AI sheet would stay over the Community page (SL #522 item 5): Community has nothing for it to do.
+  if (current !== "community" && window.matchMedia("(max-width: 640px)").matches) setAssistant(false);
+  show(current === "community" ? lastWorkspace : "community");
+});
 
 // Split view (X3): Split (over the viewport, wide screens only) puts a
 // second workspace beside the first; the choice in its pane changes which;
@@ -625,6 +634,18 @@ if (everyWorkspace) {
     setMenu(false);
   });
 }
+// At phone width the AI panel is a sheet over the view, and Escape puts it away as it does every other sheet and menu
+// (SL #522 item 5, a phone with a keyboard), its own key: the shortcut table below never also hears it. Wider, the panel
+// sits beside the view and Escape stays the workspace's.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || $("assistant").hidden || !window.matchMedia("(max-width: 640px)").matches) return;
+  if (document.querySelector("dialog[open]")) return; // an open dialog (the first-send question) takes its own Escape
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  setAssistant(false);
+  const opener = $("assistant-toggle");
+  (opener.offsetParent !== null ? opener : $("menu-toggle")).focus(); // behind Menu at phone width
+});
 
 // Autosave (19c): the project is kept in this browser and saved a moment
 // after each change; the top bar says "Saving…", "Saved" or what went wrong.
@@ -808,6 +829,10 @@ async function save(asNew = false) {
     // Another project opened while this save was asking: the file holds the last project, so it is not kept as
     // this one's, or the next Save would write this project over it without asking (SL #644 item 5).
     if (result.status === "saved" && owner === fileOwner) {
+      // The steps that belonged to the file this project had now belong to the one just saved to: an Undo back to a
+      // design saved before a Save As must not bring the old file back, or the next Save writes over the copy left
+      // behind without asking and the new file misses the work (app-wide hunt 2026-11-14, R-3).
+      if (savedTo !== null || projectFile !== null) for (const [text, file] of filesOf) if (file.handle === savedTo && file.name === projectFile) filesOf.set(text, { handle: result.handle, name: result.name });
       savedTo = result.handle;
       projectFile = result.name;
       fileOf(projectToJson(ctx.project), { handle: savedTo, name: projectFile }); // an Undo back to here finds this file
@@ -853,6 +878,7 @@ const fileParts: FileMenuParts = {
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
+  ...(__ACCOUNTS__ && pageShareSwitch().on ? { publish: { id: "file-publish", label: "Publish to the library…", title: "Publish to the library: put a copy of this design in the public library, with a licence, for anyone to find (this feature is still being checked)", run: () => void accountHooks?.publish() } } : {}),
   versions: { id: "file-versions", label: "Earlier versions…", title: "Earlier versions: how this project was earlier, kept in this browser as you work, to restore (Undo takes it back)", run: () => void versions.show() },
   printLog: { id: "file-print-log", label: "Print log…", title: "Print log: the print files you saved from Slice for printing, to note how each one printed", run: () => printLog.show() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, key: fileKey("Mod+S"), run: () => void save() },
@@ -898,6 +924,14 @@ function replaceProject(project: Project) {
   ctx.history.reset(); // a new start: nothing from the old project to undo
   assistant.projectReplaced(); // an AI answer asked about the old project never reaches this one (tabs hunt E1)
   tabs?.landed();
+}
+/**
+ * An OK the kernel is still checking lands before another project takes the open one's place (Open, Projects in this
+ * browser, a shared link's copy), as the design tabs wait before a switch: opened at once, the step was dropped from the
+ * project left behind without a word (app-wide hunt 2026-11-14, S-1). A question waiting for the person is not waited on.
+ */
+async function okLanded() {
+  if (ctx.history.working()) await ctx.history.whenIdle();
 }
 /**
  * Replaces the open project with the one in `text`; throws, leaving the
@@ -992,6 +1026,7 @@ const inTime = <T>(asked: Promise<T>) =>
  */
 async function openStored(id: string, modified: Date | null) {
   await started;
+  await okLanded();
   // Its newest state when the store had no room for it (storage full), as start() opens it (real-use hunt B1).
   const kept = keptEntry(local, id);
   // Read before anything is replaced, so a store that never answers leaves the open project as it was (tabs hunt B4).
@@ -1528,6 +1563,7 @@ if (__ACCOUNTS__)
         picture: pictureOfView,
         openText: async (text) => {
           await started;
+          await okLanded();
           openProject(text, "");
         },
       })) ?? null;

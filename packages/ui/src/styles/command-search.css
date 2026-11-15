@@ -16,3 +16,7 @@
 .command-search .command-search-off { max-width: 55%; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .command-search .command-search-none { margin: 4px 10px; color: var(--text-dim); }
 .command-search .command-search-none[hidden] { display: none; }
+/* On a phone the list is four rows, not eight, so one tap never covers most of the view (the keyboard takes its share
+   too); a phone held sideways (under 500 px tall) gets a row and a half. */
+@media (max-width: 640px) { .command-search ul { max-height: calc(4 * 40px); } }
+@media (max-height: 500px) { .command-search ul { max-height: calc(1.5 * 40px); } }

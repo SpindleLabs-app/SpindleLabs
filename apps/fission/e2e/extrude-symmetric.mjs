@@ -230,6 +230,11 @@ try {
       if (shots) await page.screenshot({ path: `${shots}/symmetric-preview-${width}.png` });
       // The arrow stands on the plane, half the thickness long: dragged up, the distance is a whole number of mm, never negative.
       if (touch) await closePanels(page, true);
+      // Grabbed and let go on the same spot, nothing was dragged: still 6 (it became 12, then 24: app-wide hunt 2026-11-14, R-2).
+      if (!touch) {
+        await dragArrow(page, 0, touch);
+        assert.equal(await page.inputValue("#extrude-distance"), "6", "the arrow grabbed and let go leaves the distance");
+      }
       await dragArrow(page, 60, touch);
       await until(page, () => document.querySelector("#extrude-distance").value !== "6", null, "the distance changed by the drag", panelState);
       const dragged = Number(await page.inputValue("#extrude-distance"));

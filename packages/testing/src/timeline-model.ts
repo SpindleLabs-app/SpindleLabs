@@ -810,24 +810,31 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
     missing.push(id);
   }
   // Planted bug ("move-all-or-none"): one body missing fails the whole Move, as before #506, so the others drop back.
-  if (first !== null && (missing.length === item.bodies.length || faults.has("move-all-or-none"))) return first;
+  if (first !== null && faults.has("move-all-or-none")) return first;
   const there = item.bodies.filter((id) => !missing.includes(id));
   // SL #583 item 2: the pieces it holds, and each piece not yet seen of a Combine whose target it moves (split from it
   // since the Move was made: `takes`). A piece held that its Combine no longer makes is no failure while the Move moves
-  // that Combine's target, which holds it again.
+  // that Combine's target, which holds it again. A piece whose Combine was deleted or isn't built is missing like a body
+  // (SL #760 item 4: Design moves the rest with a warning).
   const pieces: [string, number][] = [];
   for (const key of item.pieces ?? []) {
     const c = key.slice(0, key.lastIndexOf("#"));
     const k = Number(key.slice(key.lastIndexOf("#") + 1));
     const r = done[c];
-    if (r === undefined) return { status: "failed", cause: "deleted-input", input: c };
-    if (r.status !== "built") return { status: "failed", cause: "failed-input", input: c };
-    if (r.pieces?.[k - 1] !== undefined) pieces.push([c, k]);
-    else {
-      const from = byId.get(c);
-      if (!(from?.kind === "combine" && item.bodies.includes(from.target))) return { status: "failed", cause: "failed-input", input: c };
+    const from = byId.get(c);
+    const failed: ItemResult | null =
+      r === undefined ? { status: "failed", cause: "deleted-input", input: c }
+      : r.status !== "built" ? { status: "failed", cause: "failed-input", input: c }
+      : r.pieces?.[k - 1] !== undefined || (from?.kind === "combine" && there.includes(from.target)) ? null
+      : { status: "failed", cause: "failed-input", input: c };
+    if (failed === null) {
+      if (r!.status === "built" && r!.pieces?.[k - 1] !== undefined) pieces.push([c, k]);
+      continue;
     }
+    first ??= failed;
+    missing.push(c);
   }
+  // SL #430, #760 item 1: taken whether or not the target is still there to move (an earlier Combine used it up).
   const takes: string[] = [];
   for (const [c, r] of Object.entries(done)) {
     const from = byId.get(c);
@@ -838,6 +845,8 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
         takes.push(pieceKey(c, k + 1));
       }
   }
+  // With nothing at all left to move, not even a piece taken, it fails naming the first missing.
+  if (first !== null && there.length === 0 && pieces.length === 0) return first;
   // 35f1f2a: a Combine's result moves like any body (Design asks the kernel's body_move), each face carrying its own motion.
   // Planted bug ("combine-move-refused"): a Combine's result can't be moved, as before 35f1f2a.
   if (faults.has("combine-move-refused") && there.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };

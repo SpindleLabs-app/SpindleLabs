@@ -18,7 +18,7 @@
 // (`dimensionLabels`).
 
 import { fitTag } from "@fission/print";
-import type { SketchXY } from "@fission/core";
+import { boxShown, type SketchXY, type Unit } from "@fission/core";
 import type { Sketch, SketchConstraint } from "./document.ts";
 import type { NewConstraint } from "./constraints.ts";
 import { shownValue } from "./typed-entry.ts";
@@ -312,10 +312,12 @@ export const FIT_LABEL = "fit:";
 /**
  * Each dimension's label (47e): where it sits and the value it shows ("12.5", "R 4", "⌀ 10"), by constraint id. A
  * circle tagged with a fit (FK2) shows its tag after its diameter ("⌀ 3 · M3 bolt"); one with no diameter dimension
- * gets a label of its own where its dimension would sit, by FIT_LABEL and its id, so a tag is never hidden.
+ * gets a label of its own where its dimension would sit, by FIT_LABEL and its id, so a tag is never hidden. The values
+ * are in `unit`, the unit chosen in Settings, as the size boxes show it (SL #519 item 1: in inches a 1 in line said "25.4").
  */
-export function dimensionLabels(sketch: Sketch, size: number): { id: string; at: SketchXY; text: string }[] {
+export function dimensionLabels(sketch: Sketch, size: number, unit: Unit = "mm"): { id: string; at: SketchXY; text: string }[] {
   const out: { id: string; at: SketchXY; text: string }[] = [];
+  const shown = (mm: number) => (unit === "mm" ? shownValue(mm) : boxShown(mm, unit));
   const tagOf = (circleId: string, d: number) => {
     const c = sketch.curves.find((q) => q.id === circleId);
     return c?.kind === "circle" && c.fit ? ` · ${fitTag(c.fit, d)}` : "";
@@ -328,12 +330,12 @@ export function dimensionLabels(sketch: Sketch, size: number): { id: string; at:
     const word = dimensionWord(sketch, c);
     const prefix = word === "Diameter" ? "⌀ " : word === "Radius" ? "R " : "";
     if (c.kind === "diameter") dimensioned.add(c.circle);
-    out.push({ id: c.id, at: d.label, text: `${prefix}${shownValue(c.value)}${c.kind === "diameter" ? tagOf(c.circle, c.value) : ""}` });
+    out.push({ id: c.id, at: d.label, text: `${prefix}${shown(c.value)}${c.kind === "diameter" ? tagOf(c.circle, c.value) : ""}` });
   }
   for (const c of sketch.curves) {
     if (c.kind !== "circle" || !c.fit || dimensioned.has(c.id)) continue;
     const d = dimensionLine(sketch, { kind: "diameter", circle: c.id, value: 2 * c.radius }, size);
-    if (d) out.push({ id: `${FIT_LABEL}${c.id}`, at: d.label, text: `⌀ ${shownValue(2 * c.radius)}${tagOf(c.id, 2 * c.radius)}` });
+    if (d) out.push({ id: `${FIT_LABEL}${c.id}`, at: d.label, text: `⌀ ${shown(2 * c.radius)}${tagOf(c.id, 2 * c.radius)}` });
   }
   return out;
 }
