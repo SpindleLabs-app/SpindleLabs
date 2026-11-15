@@ -230,6 +230,9 @@ try {
     const { context, page: a } = await fresh(1280);
     const b = await open(context, "24,000 mm³");
     await until(b, () => document.querySelector("#save-status").dataset.state === "saved", null, "B on the stored box");
+    // Tab B was opened after A, so B is the one in front. A person presses Save in the tab they are looking at: bring A forward
+    // first: a Save in a background tab is not something a person can do.
+    await a.bringToFront();
     const [download] = await Promise.all([a.waitForEvent("download"), a.click("#save")]);
     const file = JSON.parse(readFileSync(await download.path(), "utf8"));
     file.workspaces.design.timeline.features[0].intent.parameters.width = 70;
