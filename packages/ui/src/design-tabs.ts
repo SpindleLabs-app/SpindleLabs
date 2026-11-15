@@ -28,10 +28,11 @@ export const NO_TABS: TabsState = { tabs: [], active: null };
 
 /**
  * When the strip is the phone's one switcher button (styles/design-tabs.css uses this same query; a unit test holds the
- * two together): narrow screens, and also touch screens and short windows, so a phone held sideways (667 x 375) never
- * gets the wide row with its 33 px tabs and × beside each (tabs hunt E2).
+ * two together): narrow screens and short windows, so a phone held sideways (667 x 375) never gets the wide row with
+ * its 33 px tabs and × beside each (tabs hunt E2). A wide touch screen (a tablet, a touch laptop) gets the one skinny
+ * row like any other, its buttons 44 px tall (it used to get the phone's two-row list, 90 px for one design).
  */
-export const TABS_PHONE_QUERY = "(max-width: 640px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))), (max-height: 500px)";
+export const TABS_PHONE_QUERY = "(max-width: 640px), (max-height: 500px)";
 
 /** The tab's words for a name: an empty name reads "Untitled". */
 export const tabName = (name: string): string => (name.trim() === "" ? "Untitled" : name.trim());
@@ -131,6 +132,8 @@ export interface DesignTabsStrip {
    */
   count: HTMLElement;
   render(s: TabsState): void;
+  /** The design on screen has changes not stored yet: its tab shows a dot and says so (changes only ever wait in that tab). */
+  mark(unsaved: boolean): void;
 }
 
 /**
@@ -170,6 +173,7 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   menu.hidden = true;
   element.append(list, plus, menu);
   let shown: TabsState = NO_TABS;
+  let unsaved = false;
   const isOpen = () => !menu.hidden;
   // + New design is the list's first row, so it is in sight without scrolling however many tabs are open (tabs T3a).
   const newRow = (): HTMLElement => {
@@ -251,14 +255,19 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
     const chip = workspaceChip(t.workspace, titles);
     main.title = `${tabName(t.name)} (${chip.toLowerCase()})`;
     // Read as "Untitled, DesignLab": the name and chip ran together as "UntitledDESIGNLAB" (tabs hunt E6).
-    main.setAttribute("aria-label", tabLabel(t, titles));
+    main.setAttribute("aria-label", tabLabel(t, titles) + (on && unsaved ? NOT_STORED : ""));
+    if (on && unsaved) main.title += NOT_STORED;
     const name = doc.createElement("span");
     name.className = "design-tabs-name";
     name.textContent = shortName(t.name);
     const kind = doc.createElement("span");
     kind.className = "design-tabs-kind";
     kind.textContent = chip;
-    main.append(name, kind);
+    // A dot, shown by the stylesheet only on the tab on screen while its changes are not stored yet (`mark`).
+    const dot = doc.createElement("span");
+    dot.className = "design-tabs-dot";
+    dot.setAttribute("aria-hidden", "true");
+    main.append(name, dot, kind);
     main.addEventListener("click", () => {
       openMenu(false);
       if (t.key !== shown.active) parts.activate(t.key);
@@ -286,6 +295,19 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
   return {
     element,
     count: switcher,
+    mark(now) {
+      if (now === unsaved) return;
+      unsaved = now;
+      element.dataset.unsaved = String(now);
+      for (const main of element.querySelectorAll<HTMLElement>('.design-tabs-tab[data-active="true"] .design-tabs-main')) {
+        const key = main.closest<HTMLElement>(".design-tabs-tab")?.dataset.key;
+        const t = shown.tabs.find((x) => x.key === key);
+        if (!t) continue;
+        const chip = workspaceChip(t.workspace, parts.titles()).toLowerCase();
+        main.title = `${tabName(t.name)} (${chip})${now ? NOT_STORED : ""}`;
+        main.setAttribute("aria-label", tabLabel(t, parts.titles()) + (now ? NOT_STORED : ""));
+      }
+    },
     render(s) {
       shown = s;
       // One tab means nothing to switch between: Fusion shows its strip then too, and so do we, so "+" is always there.
@@ -311,6 +333,8 @@ export function designTabs(doc: Document, parts: DesignTabsParts): DesignTabsStr
     },
   };
 }
+
+const NOT_STORED = ", changes not stored yet";
 
 /** The phone's count button's words: "3 designs open, Bracket on screen: choose another" ("1 design" for one). Pure. */
 export function switcherLabel(s: TabsState): string {
