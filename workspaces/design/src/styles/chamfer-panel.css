@@ -1,0 +1,38 @@
+/* The Chamfer panel (step 44a-app2, chamfer-panel.ts): a card at the top of
+   the properties as Combine's is (the mode's bright blue edge, OK filled
+   bright blue). The picked edges' count, then the type and the size boxes,
+   Flip, the refusal and the buttons. At phone width it is the only thing in
+   the Properties sheet while open, in as few rows as fit, so the view stays
+   clear to tap edges. Colours are tokens only. */
+.chamfer-panel { border-left: 3px solid var(--look-accent, var(--accent)); padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.chamfer-panel h2 { margin: 0 0 6px; }
+.chamfer-panel .chamfer-panel-edges { margin: 0 0 6px; color: var(--look-accent-text, var(--accent-text)); overflow-wrap: anywhere; }
+.chamfer-panel .chamfer-panel-edges.chamfer-panel-empty { color: var(--text-8b95a3); }
+.chamfer-panel .chamfer-panel-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.chamfer-panel .chamfer-panel-row[hidden], .chamfer-panel .chamfer-panel-flip[hidden] { display: none; }
+.chamfer-panel .chamfer-panel-legend { font-size: 0.9em; color: var(--text-b9c3d1); }
+.chamfer-panel .chamfer-panel-row select, .chamfer-panel .chamfer-panel-row input { width: 9em; min-width: 0; padding: 4px 6px; background: var(--look-field, var(--page)); border: 1px solid var(--line); color: inherit; border-radius: var(--look-radius-s, 6px); }
+.chamfer-panel .chamfer-panel-flip { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+.chamfer-panel .chamfer-panel-flip input { flex: none; margin: 0; }
+.chamfer-panel .chamfer-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
+.chamfer-panel #chamfer-ok { background: var(--look-primary-fill, var(--accent-deep)); border-color: transparent; color: var(--look-on-accent, var(--on-accent)); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
+/* The shell's `#workspace button:hover` (theme.css) outranks the rule above, as it did Combine's OK (#504). */
+.chamfer-panel #chamfer-ok:hover:not(:disabled) { background: var(--look-primary-fill, var(--accent-deep)); }
+.chamfer-panel button:disabled { opacity: 0.45; }
+@media (max-width: 700px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))) {
+  .chamfer-panel button, .chamfer-panel select, .chamfer-panel input:not([type="checkbox"]), .chamfer-panel .chamfer-panel-flip { min-height: 44px; }
+  .chamfer-panel .chamfer-panel-flip input { width: 22px; height: 22px; }
+}
+@media (max-width: 640px) {
+  /* Alone in the phone's Properties sheet: the title and edge count, then the type and boxes two to a row, then the buttons. */
+  .chamfer-panel:not([hidden]) ~ * { display: none !important; }
+  .chamfer-panel:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-bottom: 6px; }
+  .chamfer-panel h2 { font-size: 1.05em; margin: 0; }
+  .chamfer-panel .chamfer-panel-edges { margin: 0; flex: 1 1 auto; }
+  .chamfer-panel .chamfer-panel-row { flex: 1 1 calc(50% - 4px); margin: 0; min-width: 0; }
+  .chamfer-panel .chamfer-panel-row select, .chamfer-panel .chamfer-panel-row input { width: 100%; }
+  .chamfer-panel .chamfer-panel-legend { font-size: 0.8em; white-space: nowrap; }
+  .chamfer-panel .chamfer-panel-flip { margin: 0; }
+  .chamfer-panel #chamfer-error { flex: 1 1 100%; margin: 0; }
+  .chamfer-panel .chamfer-panel-buttons { flex: 1 1 100%; margin: 0; }
+}
