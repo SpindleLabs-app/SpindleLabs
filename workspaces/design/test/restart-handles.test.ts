@@ -10,7 +10,7 @@
 // and E1b (a free on its way when the kernel traps).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { KernelClient, type BodyHandle, type BodySpec, type KernelRequest, type KernelResponse } from "@fission/core";
+import { KernelClient, UNKNOWN_BODY_WORDS, type BodyHandle, type BodySpec, type KernelRequest, type KernelResponse } from "@fission/core";
 import { BodyCache } from "../src/rebuild.ts";
 
 /** One worker: a kernel whose bodies count 1, 2, 3… and are refused once freed; `hold` keeps the frees' answers back. */
@@ -113,11 +113,11 @@ test("an old kernel's handle is refused for anything but a free, in the kernel's
   await assert.rejects(kernel.call("body_count"), /started again/);
   const fresh = StandInWorker.now();
   const fresh1 = await kernel.call("body_build", box(10)); // the fresh kernel's own 1
-  await assert.rejects(kernel.call("body_view", h), /not in the kernel/);
+  await assert.rejects(kernel.call("body_view", h), (e: Error) => e.message === UNKNOWN_BODY_WORDS);
   await kernel.call("body_free", h); // gone with its kernel: done
-  await assert.rejects(kernel.call("body_free", h), /not in the kernel/, "freed twice is refused, as the kernel refuses it");
+  await assert.rejects(kernel.call("body_free", h), (e: Error) => e.message === UNKNOWN_BODY_WORDS, "freed twice is refused, as the kernel refuses it");
   assert.deepEqual([...fresh.live], [1], "the fresh kernel's body 1 was never touched");
   assert.ok(await kernel.call("body_view", fresh1));
   // A handle never given out is refused without asking the kernel.
-  await assert.rejects(kernel.call("body_view", 999 as BodyHandle), /body 999 is not in the kernel/);
+  await assert.rejects(kernel.call("body_view", 999 as BodyHandle), (e: Error) => e.message === UNKNOWN_BODY_WORDS);
 });

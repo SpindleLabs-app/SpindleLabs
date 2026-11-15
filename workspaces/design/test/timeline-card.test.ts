@@ -94,7 +94,7 @@ test("why an item isn't built: suppressed, after the marker, greyed, failed, too
   assert.deepEqual(off(rolled, "feature-3"), { words: "After the rollback marker: not built yet", tone: "off" });
   assert.equal(off(rolled, "feature-1"), null, "the item before the marker builds");
   assert.deepEqual(off(doc, "feature-3", new Set(), new Set(["feature-3"])), { words: "Failed to build", tone: "bad" });
-  assert.deepEqual(off(doc, "feature-3", new Set(["feature-3"]), new Set(["feature-3"])), { words: "Failed: took the kernel too long", tone: "bad" });
+  assert.deepEqual(off(doc, "feature-3", new Set(["feature-3"]), new Set(["feature-3"])), { words: "Failed: this took too long to build", tone: "bad" });
   assert.deepEqual(off(doc, "feature-3", new Set(), new Set(), new Map([["feature-3", "it keeps its last shape"]])), { words: "Warning: it keeps its last shape", tone: "bad" });
 });
 
@@ -103,7 +103,7 @@ test("#505: a failed item's card says why in the rebuild's words", () => {
   const why = new Map([["feature-3", "Box 2 doesn't reach Body 1."]]);
   assert.deepEqual(facts(doc, "feature-3", new Set(), new Set(["feature-3"]), undefined, why).status, { words: "Failed: Box 2 doesn't reach Body 1.", tone: "bad" });
   // Took too long keeps its own words even when a reason is held.
-  assert.deepEqual(facts(doc, "feature-3", new Set(["feature-3"]), new Set(["feature-3"]), undefined, why).status, { words: "Failed: took the kernel too long", tone: "bad" });
+  assert.deepEqual(facts(doc, "feature-3", new Set(["feature-3"]), new Set(["feature-3"]), undefined, why).status, { words: "Failed: this took too long to build", tone: "bad" });
 });
 
 test("a sketch's content counted in words", () => {
