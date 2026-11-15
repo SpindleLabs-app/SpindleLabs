@@ -1,25 +1,27 @@
-tested commit 98d3372 on main, 2026-11-14 18:18 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43607784545)
+tested commit cf32d55 on main, 2026-11-15 18:52 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43727400642)
 UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | ConditionalExpression | at < 0 => false
 UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | EqualityOperator | at < 0 => at <= 0
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ConditionalExpression | entries[at].id === fenced.floor => true
-UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | LogicalOperator | entries[at + 1]?.id ?? -1 => entries[at + 1]?.id && -1
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | OptionalChaining | entries[at + 1]?.id => entries[at + 1].id
+UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | LogicalOperator | entries[at + 1]?.id ?? -1 => entries[at + 1]?.id && -1
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ArithmeticOperator | at + 1 => at - 1
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | UnaryOperator | -1 => +1
 UNEXPLAINED survivor at packages/core/src/model/history.ts:229: packages/core/src/model/history.ts | UpdateOperator | nextId++ => nextId--
 core: 20 survivors, all explained: false
 8 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-design: 70 survivors, all explained: true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1789: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+design: 71 survivors, all explained: false
+1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 storage: 94 survivors, all explained: true
 account: 26 survivors, all explained: true
 model: 52 survivors, all explained: true
 svg: 5 survivors, all explained: true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | !(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by)) => false
+UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) || Number.isFinite(by)
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => Number.isFinite(ax) && Number.isFinite(ay) || Number.isFinite(bx)
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => true
+UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) => Number.isFinite(ax) || Number.isFinite(ay)
 explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | ConditionalExpression | ![ax, ay, bx, by].every(Number.isFinite) => false
 explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | MethodExpression | [ax, ay, bx, by].every(Number.isFinite) => [ax, ay, bx, by].some(Number.isFinite)
