@@ -1,4 +1,0 @@
-/* The page never scrolls up and down (Ben, 2026-11-15: a scrollbar came back on the right). With touch-sized targets the
-   timeline's 40 px tap areas (a ::before reaching 10 px past each button) stuck 5 px below the window, so the page gained a
-   scrollbar. The workspace clips what reaches past its own bottom edge; the tap area stays whole inside it. Every rule starts with #workspace. */
-#workspace { overflow-y: clip; }
