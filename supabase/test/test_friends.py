@@ -36,6 +36,9 @@ class FriendsDatabase(unittest.TestCase):
             self.owner(f"insert into auth.users (id, email) values ('{uid}', '{uid[:2]}@example.com');")
         for uid, name in NAMES.items():
             self.assertEqual(self.call(uid, f"set_display_name('{name}')"), "saved")
+        # Friends opens with sharing (20261115120000_community_testers.sql): every test here runs with it open, as the
+        # other community tests do; Friends closed to people off the testers list is test_community_testers.py's.
+        self.owner("update share_switch set sharing_on = true;")
 
     # Helpers
 

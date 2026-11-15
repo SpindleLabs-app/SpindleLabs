@@ -5,6 +5,8 @@
 // before the "#" winning; slashes, spaces and capitals round it are forgiven,
 // as Design's `?combine` is. Without it, Laser is the placeholder it was.
 
+import { previews } from "@fission/core";
+
 /** sessionStorage's key for the flag. */
 export const LASER_KEY = "spindle-laser";
 
@@ -42,7 +44,8 @@ export function laserShown(): boolean {
     } catch {
       store = null;
     }
-    flag = readLaserFlag(globalThis.location?.search ?? "", store, globalThis.location?.hash ?? "");
+    // `?all` (@fission/core preview.ts) turns it on too.
+    flag = readLaserFlag(globalThis.location?.search ?? "", store, globalThis.location?.hash ?? "") || previews().all;
   }
   return flag;
 }

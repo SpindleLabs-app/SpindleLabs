@@ -12,6 +12,8 @@ import { repoFile } from "./repo-file.ts";
 const api = (s: FakeFriends, user: string | null) => friendsApi(s.as(user) as AuthClient);
 const DAY = 86_400_000;
 const sql = readFileSync(repoFile("supabase/migrations/20261113180000_friends.sql"), "utf8");
+// set_friends as it stands now: replaced last by the community testers migration (its "not-yet" while Friends isn't open).
+const testersSql = readFileSync(repoFile("supabase/migrations/20261115120000_community_testers.sql"), "utf8");
 
 function ok<T>(r: { kind: string; value?: T }): T {
   assert.equal(r.kind, "ok", JSON.stringify(r));
@@ -36,12 +38,12 @@ test("the limits, the alphabet and every answer are the migration's", () => {
   assert.ok(sql.includes(`alphabet text := '${CODE_ALPHABET}'`));
   assert.equal(new Set(CODE_ALPHABET).size, 32);
   assert.equal(/[ILOU]/.test(CODE_ALPHABET), false, "no I, L, O or U");
-  const answers = (fn: string) => {
-    const body = sql.slice(sql.indexOf(`create function public.${fn}(`));
+  const answers = (fn: string, from = sql, made = "create function") => {
+    const body = from.slice(from.indexOf(`${made} public.${fn}(`));
     return new Set([...body.slice(0, body.indexOf("end $$;")).matchAll(/return '([a-z-]+)';/g)].map((m) => m[1]));
   };
   assert.deepEqual(answers("send_friend_request"), new Set(ASK_ANSWERS));
-  assert.deepEqual(answers("set_friends"), new Set(TURN_ANSWERS));
+  assert.deepEqual(answers("set_friends", testersSql, "create or replace function"), new Set(TURN_ANSWERS));
   assert.deepEqual(answers("accept_friend_request"), new Set(ACCEPT_ANSWERS));
 });
 
@@ -94,6 +96,16 @@ test("Ada asks Bo by ID and Bo says yes: each sees only the other's display name
   assert.deepEqual(ok(await api(s, "ada").read()).friends.map((f) => f.name), ["Bo Builds"]);
   assert.deepEqual(ok(await api(s, "bo").read()).friends.map((f) => f.name), ["Ada M"]);
   assert.equal(ok(await api(s, "ada").ask(bo)), "already");
+});
+
+test("while Friends isn't open to this person (not on the testers list), turning on says so and makes no ID", async () => {
+  const s = fakeFriends();
+  people(s, ["ada", "Ada M"]);
+  s.closed = true;
+  assert.equal(ok(await api(s, "ada").turn(true)), "not-yet");
+  assert.equal(ok(await api(s, "ada").read()).on, false);
+  s.closed = false;
+  assert.equal(ok(await api(s, "ada").turn(true)), "on");
 });
 
 test("turning on needs a display name; turning off deletes the ID, friends and requests but keeps blocks", async () => {
@@ -172,6 +184,7 @@ test("each answer and refusal has its words, with the limits in them", () => {
   assert.match(askWords("too-many"), /20 profile IDs a day/);
   assert.match(askWords("full"), /200 friends and 20 requests/);
   assert.match(turnWords("no-name"), /display name/);
+  assert.match(turnWords("not-yet"), /isn't open yet/);
 });
 
 test("a service that is down, has no Friends yet, or a person signed out: said, never a crash", async () => {

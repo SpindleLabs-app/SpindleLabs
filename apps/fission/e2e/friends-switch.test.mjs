@@ -27,3 +27,12 @@ test("storage blocked: on only while the address has it", () => {
   assert.equal(friendsSwitch("?friends=off", broken), false);
   assert.equal(friendsSwitch("?friends", undefined), true);
 });
+
+test("?community and ?all (the preview flag passed in) turn Friends on, even over ?friends=off, and leave the tab's memory alone", () => {
+  const m = new Map();
+  const t = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k), m };
+  assert.equal(friendsSwitch("", t, true), true);
+  assert.equal(m.has(FRIENDS_TAB_KEY), false);
+  assert.equal(friendsSwitch("?friends=off", t, true), true);
+  assert.equal(friendsSwitch("", t, false), false);
+});
