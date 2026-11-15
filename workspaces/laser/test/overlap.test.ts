@@ -322,7 +322,7 @@ test(`boxes more than ${BOX_MARGIN} mm apart are apart without the kernel; at 0.
   assert.deepEqual(await partsRelation(dead, part(disc(100, 100, 5)), part(disc(89.9, 100, 5))), { relation: "apart" }); // boxes 0.1 apart
   assert.equal(dead.calls, 0);
   // Gap 0.9 × 0.002 = 0.0018: the dead kernel is asked, so the answer is unknown with its words; the real one says apart (0.0018 > 0.001).
-  assert.deepEqual(await partsRelation(dead, SQUARE, part(box(10 + 0.9 * BOX_MARGIN, 0, 10, 10))), { relation: "unknown", why: "the kernel can't cut the two parts out of one sheet: no kernel in this test" });
+  assert.deepEqual(await partsRelation(dead, SQUARE, part(box(10 + 0.9 * BOX_MARGIN, 0, 10, 10))), { relation: "unknown", why: "couldn't work out how the two parts sit on one sheet: no kernel in this test" });
   assert.ok(dead.calls > 0);
   assert.equal(await both(SQUARE, part(box(10 + 0.9 * BOX_MARGIN, 0, 10, 10))), "apart");
   // The margin is never under the kernel's own line: a pair 0.9 × CLEARANCE apart (a touch) is never waved through
@@ -343,7 +343,7 @@ test("an outline that is no part is unknown, with why in words", async () => {
   assert.match((await partsRelation(kernel, part(path([0, 0, NaN, 1, 2, 2])), SQUARE)).why ?? "", /not finite/);
   // A bow tie (its sides cross at (10,10)) is two triangles to the kernel, not one closed shape.
   const bow = await partsRelation(kernel, SQUARE, part(path([5, 5, 15, 15, 15, 5, 5, 15])));
-  assert.deepEqual(bow, { relation: "unknown", why: "the kernel does not read the second part as one closed shape with its holes: its curves make other regions" });
+  assert.deepEqual(bow, { relation: "unknown", why: "the second part isn't one closed shape with its holes: its curves make other regions" });
   assert.match((await partsRelation(kernel, part(path([5, 5, 15, 15, 15, 5, 5, 15])), SQUARE)).why ?? "", /the first part/);
   // A hole outside its part (the part itself is wrong, not the pair).
   const stray = await partsRelation(kernel, part(box(0, 0, 10, 10), box(8, 8, 5, 5)), part(box(9, 9, 3, 3)));
@@ -352,7 +352,7 @@ test("an outline that is no part is unknown, with why in words", async () => {
   // An arc flatter than the kernel's 1 km radius (bulge 1e-8 on a 10 mm chord): its refusal, in its words.
   const flat = await partsRelation(kernel, SQUARE, part(path([5, 5, 15, 5, 15, 15, 5, 15], [1e-8, 0, 0, 0])));
   assert.equal(flat.relation, "unknown");
-  assert.match(flat.why ?? "", /can't cut the two parts out of one sheet: .*radius/);
+  assert.match(flat.why ?? "", /couldn't work out how the two parts sit on one sheet: .*radius/);
   // Parts past the kernel's 2000 corners for one profile (two stars of 1000).
   const big = await partsRelation(kernel, part(star(0, 0, 1000, 40, 50)), part(star(75, 75, 1000, 40, 50)));
   assert.equal(big.relation, "unknown");
@@ -384,7 +384,7 @@ test("a kernel that fails or answers nonsense gives unknown, never a throw and n
   assert.match(doubted.why ?? "", /meet too closely for the kernel to tell a touch from an overlap \(the curves meet too closely near/);
   // A kernel that throws something that is no Error.
   const rude: KernelCalls = { call: (() => Promise.reject("boom")) as KernelCalls["call"] };
-  assert.deepEqual(await partsRelation(rude, SQUARE, crossing), { relation: "unknown", why: "the kernel can't cut the two parts out of one sheet: boom" });
+  assert.deepEqual(await partsRelation(rude, SQUARE, crossing), { relation: "unknown", why: "couldn't work out how the two parts sit on one sheet: boom" });
 });
 
 test("these tests can fail: with a kernel made to lie, the same pairs get the wrong word", async () => {
