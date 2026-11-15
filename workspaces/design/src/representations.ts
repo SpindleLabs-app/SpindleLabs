@@ -8,7 +8,7 @@
 
 import type { BodyFaces, BodyReference, BodySpec, FaceFound, FaceReference, KernelCalls, Outline, Plane, Producible, Producer, Project, RepresentationRegistry, SourceLookup } from "@fission/core";
 import { bodyFeatures, designBodies } from "./browser.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, makesPieces, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, kernelHeld, profileLabel, readDesignDocument, type DesignDocument } from "./document.ts";
 import { endSpec, endStls } from "./move-tool.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { outline } from "./profiles.ts";
@@ -45,8 +45,8 @@ export interface FeatureHandle extends Producible {
   body?: string;
 }
 
-/** Whether a design's bodies are handed over by body (35f1f2d): it holds an item that makes pieces. */
-const byBody = (document: DesignDocument) => document.timeline.features.some(makesPieces);
+/** Whether a design's bodies are handed over by body (35f1f2d): it holds an item that makes pieces, or a Chamfer (44a-app2). */
+const byBody = (document: DesignDocument) => document.timeline.features.some(kernelHeld);
 
 /**
  * Body `body` where the timeline ends it, from one rebuild on a body store

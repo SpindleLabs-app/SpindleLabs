@@ -9,7 +9,7 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle, StlFile } from "@fission/core";
-import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, makesPieces, MOVE_PARAMS, type DesignDocument, type SketchPlane } from "./document.ts";
+import { actsOnBodies, bodyIdOf, bodyItem, isDuplicateItem, isMoveItem, isOperationExtrude, kernelHeld, MOVE_PARAMS, type DesignDocument, type SketchPlane } from "./document.ts";
 import { mirrorOf } from "./duplicate.ts";
 import { featureSpec } from "./extrude.ts";
 import { factorOf, madeAfter, movedBodies, moveValues, type MoveBox, type MoveValues } from "./move.ts";
@@ -394,7 +394,7 @@ export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, feature
     const r = build.results[f.id];
     const body = r?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined;
     if (body === undefined) throw new Error(r?.status === "failed" ? r.message : `${itemName(f)} is not built`);
-    if (body.spec === null) throw new Error(`${itemName(f)}'s body is a Combine's result, which only the kernel holds: ask for its STL by body (endStls)`);
+    if (body.spec === null) throw new Error(`${itemName(f)}'s body is a Combine's or a Chamfer's result, which only the kernel holds: ask for its STL by body (endStls)`);
     specs.push(body.spec);
   }
   return specs;
@@ -410,7 +410,7 @@ export async function endSpecs(kernel: KernelCalls, doc: DesignDocument, feature
  */
 export async function endStls(kernel: KernelCalls, doc: DesignDocument, bodies: readonly { body: string; feature: Feature; name: string }[]): Promise<StlFile[]> {
   const files: StlFile[] = [];
-  if (!doc.timeline.features.some(makesPieces)) {
+  if (!doc.timeline.features.some(kernelHeld)) {
     // One rebuild for all the moved bodies, not one each (clumsy hunt 2026-11-04, endSpecs).
     const specs = await endSpecs(kernel, doc, bodies.map((b) => b.feature));
     for (const [i, b] of bodies.entries()) files.push(await kernel.call("export_stl", specs[i], b.name));

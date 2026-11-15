@@ -620,6 +620,9 @@ export function chamferOf(f: Feature): { body: string; edges: string[]; size: Ch
   return { body: p.body as string, edges: [...(p.edges as string[])], size, flip: p.flip === true };
 }
 
+/** Whether an item leaves a body that only the kernel holds, with no spec to build it from (a Combine's or operation extrude's pieces, a Chamfer's body): its files are asked of the kernel by body. */
+export const kernelHeld = (f: Feature) => makesPieces(f) || isChamferItem(f);
+
 /** Whether an item works on bodies other items made (a Move, a Combine, a Chamfer), depending on those items, rather than making one of its own. */
 export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f) || isChamferItem(f);
 
