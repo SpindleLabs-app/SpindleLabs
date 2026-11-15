@@ -62,3 +62,5 @@
 /* Words that sit straight on the picture get a plate of their own, so a line passing behind never takes their contrast
    (the browser check reads the worst pixel behind them). */
 .home-screen .home-links .home-link:not(#none), .home-screen .home-status:not(:empty) { justify-self: start; width: fit-content; max-width: 100%; padding: 2px 8px; margin-left: -8px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
+/* The message sits straight in the screen's grid, whose column is the whole window: kept to the 720 px column's left edge. */
+.home-screen .home-status:not(:empty) { max-width: min(736px, 100%); margin-left: calc(max(0px, (100% - 720px) / 2) - 8px); }

@@ -1,7 +1,9 @@
 // Browser check of the home screen's living background (packages/ui home-backdrop.ts), in a real Chromium, on the normal
 // build with `?all` (which turns the home screen on; E2E_DIST names another build). Without it there is no home screen and
 // no background.
-// - A first visit: the background moves (two pictures 600 ms apart differ), paints something, and turns the neutral cube.
+// - A first visit: the background moves (two pictures 600 ms apart differ), paints something, and turns the neutral cube,
+//   which builds up from the floor, has a ripple of light run through it, and has its top face pulled out and let back
+//   (the story's stages in order, within 30 s).
 // - With a project kept and reopened under the screen, the background turns that project's own edges within 3 s.
 // - The tab hidden: nothing is drawn (two pictures the same); shown again, it moves again.
 // - The screen closed: the background stops (mode off).
@@ -58,7 +60,7 @@ async function newPage({ width = 1280, scheme = "dark", reduce = false, cores = 
   const context = await browser.newContext({ viewport: { width, height: width > 700 ? 800 : 812 }, hasTouch: width < 700, isMobile: width < 700, colorScheme: scheme, reducedMotion: reduce ? "reduce" : "no-preference" });
   await context.addInitScript((n) => Object.defineProperty(navigator, "hardwareConcurrency", { get: () => n }), cores);
   const page = await context.newPage();
-  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("pageerror", (e) => errors.push(process.env.STACKS ? e.stack : e.message));
   await page.goto(url + (all ? "?all&test-hooks#design" : "#design"));
   return { context, page };
 }
@@ -121,7 +123,21 @@ await check("without ?all there is no home screen, so no background", async () =
     assert.ok((await picture(page)) !== a, "two pictures 600 ms apart differ");
     assert.ok((await painted(page)) > 200, "something is painted");
     assert.equal(await page.$eval("#home .home-backdrop", (c) => c.getAttribute("aria-hidden")), "true");
-    if (shots) await page.screenshot({ path: `${shots}/home-empty-1280.png` });
+    // The story: it builds up from the floor (half built 5.4 s in), a ripple runs through it (12 to 17.6 s), then the top
+    // face is pulled out (the cube's top, out by 0.24 of its size, 20.9 to 24.5 s) and let back (by 27.4 s).
+    const stage = () => document.querySelector("#home .home-backdrop").dataset.stage;
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.5", null, "half built", 12000);
+    assert.equal(await page.evaluate(stage), "building");
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple", 14000);
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.24", null, "the top face pulled out", 14000);
+    assert.equal(await page.evaluate(stage), "extrude");
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.00", null, "the top face back", 10000);
+    if (shots) {
+      await page.screenshot({ path: `${shots}/home-empty-1280.png` });
+      // The next story builds the next simple part (the L-bracket), part way up.
+      await until(page, () => document.querySelector("#home .home-backdrop").dataset.part === "1" && document.querySelector("#home .home-backdrop").dataset.build === "0.7", null, "the bracket building", 45000);
+      await page.screenshot({ path: `${shots}/home-empty-1280-build.png` });
+    }
     await context.close();
   });
 
@@ -156,8 +172,16 @@ await check("without ?all there is no home screen, so no background", async () =
           await page.evaluate((lines) => window.fissionTest.homeStandIn(lines), stlEdges(readFileSync(stl)));
           await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the STL's shape", 3000);
         }
-        await page.waitForTimeout(2200); // the pulse part way up
+        // Part way through building (the next story's, if this one's has gone by), then the ripple and the extrude.
+        await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.6" && document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "part built", 45000);
+        await page.screenshot({ path: `${shots}/home-${width}-${scheme}-build.png` });
+        await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple", 20000);
+        await page.waitForTimeout(1500);
         await page.screenshot({ path: `${shots}/home-${width}-${scheme}.png` });
+        if (scheme === "dark") {
+          await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.24", null, "the top face held pulled out", 20000);
+          await page.screenshot({ path: `${shots}/home-${width}-${scheme}-extrude.png` });
+        }
       }
       // The picture takes no press: the card's button works.
       await page.click("#home-carry-on");
