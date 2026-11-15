@@ -25,6 +25,8 @@ export function nwekzr(p0: number): any;
 
 export function p6rou1(p0: number): any;
 
+export function pjftzm(p0: number, p1: any, p2: any, p3: boolean): any;
+
 export function pprlx7(p0: number): any;
 
 export function q4m8zt(p0: string): string;
@@ -55,21 +57,22 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly at4a9p: (a: number, b: number) => number;
+    readonly at4a9p: (a: any) => number;
     readonly eds3ko: () => [number, number];
-    readonly f5l94l: (a: any, b: number, c: number) => [number, number, number];
+    readonly f5l94l: (a: any, b: any) => [number, number, number];
     readonly guf4qz: (a: any) => [number, number, number];
     readonly hb3mzd: (a: number) => [number, number];
     readonly hq3vzt: (a: number, b: any) => [number, number, number];
     readonly irk2fy: (a: number, b: number, c: number) => [number, number, number];
     readonly jg9yot: (a: any, b: any, c: any) => [number, number, number];
-    readonly jgu9kn: (a: number, b: number, c: number) => [number, number, number];
-    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: number, h: number, i: any, j: any, k: any, l: number) => [number, number, number];
+    readonly jgu9kn: (a: number, b: any) => [number, number, number];
+    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: any, h: any, i: any, j: any, k: number) => [number, number, number];
     readonly ld2gsx: (a: any, b: number) => [number, number, number];
     readonly nwekzr: (a: number) => [number, number, number];
     readonly p6rou1: (a: number) => [number, number, number];
+    readonly pjftzm: (a: number, b: any, c: any, d: number) => [number, number, number];
     readonly pprlx7: (a: number) => [number, number, number];
-    readonly q4m8zt: (a: number, b: number) => [number, number, number, number];
+    readonly q4m8zt: (a: any) => [number, number, number, number];
     readonly qmdw4c: () => [number, number];
     readonly qz3hmr: (a: number, b: number) => [number, number, number];
     readonly r7w2kx: (a: any, b: any, c: any) => [number, number, number];
