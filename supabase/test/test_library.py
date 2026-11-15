@@ -18,7 +18,7 @@ CY = "33333333-3333-4333-8333-333333333333"
 MIB = 1024 * 1024
 # library_limits()
 MAX_ENTRIES, MAX_BYTES, MAX_FILE, MAX_PICTURE, PER_DAY, MAX_TITLE, MAX_DESCRIPTION, MAX_TAGS, MAX_TAG = 50, 50 * MIB, 5 * MIB, 32768, 10, 100, 2000, 8, 24
-MAX_SEARCH = 200  # library_limits().max_search (20261113200000_library_limits.sql)
+MAX_SEARCH = 200  # library_limits().max_search (20261113220000_library_limits.sql)
 
 
 class LibraryDatabase(unittest.TestCase):
@@ -312,7 +312,7 @@ class LibraryDatabase(unittest.TestCase):
         self.owner(f"delete from auth.users where id = '{ADA}';")
         self.assertEqual(self.owner("select count(*) from library_entries;"), "0")
 
-    # Security hunt 2026-11-13 (bug-reports#4 B4, B6): fixed by 20261113200000_library_limits.sql.
+    # Security hunt 2026-11-13 (bug-reports#4 B4, B6): fixed by 20261113220000_library_limits.sql.
 
     def bucket_bytes(self, uid):
         return int(self.owner(f"select coalesce(sum((o.metadata->>'size')::bigint), 0) from storage.objects o join library_entries e on o.name = e.id::text || '.spindle' where e.user_id = '{uid}';"))

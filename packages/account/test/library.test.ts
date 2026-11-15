@@ -437,8 +437,8 @@ test("the limits, licences and answers match the migration", async () => {
     upload_minutes: LIBRARY_LIMITS.uploadMinutes,
     page: LIBRARY_LIMITS.page,
   });
-  // 20261113200000_library_limits.sql replaces library_limits() with max_search added, every other number the same.
-  const newer = readFileSync(repoFile("supabase/migrations/20261113200000_library_limits.sql"), "utf8");
+  // 20261113220000_library_limits.sql replaces library_limits() with max_search added, every other number the same.
+  const newer = readFileSync(repoFile("supabase/migrations/20261113220000_library_limits.sql"), "utf8");
   const lim2 = /jsonb_build_object\(([\s\S]*?)'licences', jsonb_build_array\(([^)]*)\)/.exec(newer);
   assert.ok(lim2, "the newer library_limits() found");
   assert.deepEqual(Object.fromEntries([...lim2[1]!.matchAll(/'([a-z_]+)', (\d+)/g)].map((m) => [m[1], Number(m[2])])), { ...nums, max_search: LIBRARY_LIMITS.maxSearch });

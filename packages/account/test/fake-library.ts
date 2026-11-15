@@ -128,7 +128,7 @@ export function fakeLibrary(seed = 1): FakeLibrary {
               return reply({ status: "bad" });
             closeStale(user as string);
             if (mine.filter((e) => e.state !== "off").length >= LIBRARY_LIMITS.maxEntries) return reply({ status: "full" });
-            // 20261113200000_library_limits.sql: files in the bucket plus the largest file for each entry still waiting.
+            // 20261113220000_library_limits.sql: files in the bucket plus the largest file for each entry still waiting.
             const waiting = mine.filter((e) => e.state === "uploading" && sizeOf(e) === null).length;
             if (bytesOf(user as string) + LIBRARY_LIMITS.maxFileBytes * waiting > LIBRARY_LIMITS.maxBytes) return reply({ status: "full" });
             const t = now();
