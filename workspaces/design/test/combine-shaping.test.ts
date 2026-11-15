@@ -62,10 +62,12 @@ test("#506 item 1: a drag past items that shaped nothing it works on is still al
   const moved = reorderItem(three, id, 0);
   assert.equal(moved.refused, undefined);
   assert.equal(place(moved.doc!, id), 0);
-  // Move 1 may go before Box 1: Box 1 shapes nothing (it is only made), and Move 1 is still after Box 2, which it is built from.
+  // Box 1 shapes nothing (it is only made), so the shaping rule has nothing against Box 1 going after Box 2. Since
+  // SL #760 item 2 the swap is refused for another reason: Combine 1 joins the two, and the joined body is the one made
+  // first (join-reorder.test.ts).
   const early = reorderItem(three, "feature-1", 1);
-  assert.equal(early.refused, undefined, early.message);
-  assert.ok(place(early.doc!, move) > place(early.doc!, "feature-2"));
+  assert.equal(early.refused, "join-order");
+  assert.equal(early.message, "Box 1 can't go after Box 2: Combine 1 joins their bodies, and the joined body is the one made first");
 });
 
 test("#506 item 1: a Move after a Move of the same body can't swap with it (Centre of bodies reads where the first left it)", () => {

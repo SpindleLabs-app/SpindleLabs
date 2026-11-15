@@ -115,7 +115,7 @@ export class ViewportView {
   private host: ViewHost;
   /** What a left-button drag does (SF3a): picked on the navigation bar. */
   private mode: NavMode = "orbit";
-  /** What a left drag does with no bar tool lit: orbit, or select (the Fusion-style mouse preset, U2d). */
+  /** What a left drag does with no bar tool lit: orbit, or select (the Shift to look mouse preset, U2d). */
   private home: "orbit" | "select" = "orbit";
   private bar: ReturnType<typeof navBar>;
   /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */

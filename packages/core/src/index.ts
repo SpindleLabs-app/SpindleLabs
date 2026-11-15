@@ -50,7 +50,7 @@ export { EXACTNESS, isExact, RepresentationRegistry, XY_PLANE } from "./model/re
 export type { Action, ActionOutcome, ActionTarget, Selected, SelectionKind } from "./model/actions.ts";
 export { ActionRegistry } from "./model/actions.ts";
 export type { LeftDrag, MousePreset, MousePresetInfo } from "./model/mouse.ts";
-export { leftDragOf, MOUSE_ATTRIBUTE, MOUSE_EVENT, MOUSE_PRESETS, readMousePreset } from "./model/mouse.ts";
+export { leftDragOf, LEGACY_SHIFT_TO_LOOK, MOUSE_ATTRIBUTE, MOUSE_EVENT, MOUSE_PRESETS, readMousePreset } from "./model/mouse.ts";
 export type { Unit } from "./model/units.ts";
 export { areaIn, boxShown, boxValue, commaWords, formatLength, fromMm, lengthLimitRefusal, MAX_LENGTH_MM, MIN_LENGTH_MM, MM_PER_INCH, parseLength, readDecimalText, readSizeText, readUnit, summaryInUnit, toMm, UNITS, volumeIn, wordsInUnit } from "./model/units.ts";
 export type { Chord, KeyPress, ShortcutClash, ShortcutEntry, ShortcutScope, ShortcutSource, ShortcutSpec } from "./model/shortcuts.ts";

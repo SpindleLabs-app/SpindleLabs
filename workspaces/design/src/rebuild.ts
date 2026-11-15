@@ -39,6 +39,7 @@ import { contactGroups, mergedOutline } from "./extrude-merge.ts";
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
+import { isThroughParams, throughDistance, throughWords, withDistance } from "./extrude-through.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
@@ -1045,6 +1046,8 @@ function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
     if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
+    // Through all (version 23): its length is the bodies' before it, known only in the loop.
+    if (isThroughParams(f.intent.parameters)) continue;
     const ask = isSketchExtrude(f)
       ? extrudeSpec(kernel, doc, f, index, on && originPlacement(on)).then((made) => ("status" in made ? undefined : cache.body(made.spec)))
       : Promise.resolve().then(() => cache.body(specOf(doc, f)));
@@ -1479,7 +1482,10 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
       if (item !== undefined && input?.status !== "built") return { status: "failed", cause: "failed-input", input: sketchId, message: `${item.provenance.self.label} is not built` };
       // A face sketch's placement is the rebuild's; an origin plane's, extrudeSpec's own.
       const placed = item !== undefined && isFaceSketch(item) && input?.status === "built" ? input.placement : undefined;
-      const spec = await extrudeSpec(kernel, doc, part, index, placed);
+      const asked = await extrudeSpec(kernel, doc, part, index, placed);
+      if ("status" in asked) return asked;
+      // Through all (version 23): as long as the bodies it works on reach now, worked out on every rebuild, never stored.
+      const spec = isThroughParams(f.intent.parameters) ? await throughNow(f, asked, bodies, cache) : asked;
       if ("status" in spec) return spec;
       // 35f1e: a sketch placed on a piece of its split face is not held, so its extrude's source is not lost.
       const lost = input?.status === "built" && input.plane?.cause !== "plane-split" ? input.plane : undefined;
@@ -1929,6 +1935,23 @@ function withOrigins(faces: readonly FaceNames[], h: BooleanResult["history"][nu
 /** Each piece the build made, by id, with the shown names of its faces as its item made them (hunt 11-06). */
 export function builtPieceFaces(build: Pick<TimelineBuild, "results">): Map<string, string[]> {
   return new Map(Object.values(build.results).flatMap((r) => (r.status === "built" && r.pieceFaces ? Object.entries(r.pieceFaces) : [])));
+}
+
+/**
+ * A Through all extrude's spec (version 23): its sketch's extrude `asked`
+ * (at the distance last typed) made as long as `throughDistance` says for
+ * the boxes round the bodies it picks as built so far. A body it picks that
+ * is not there (deleted, used up) counts for nothing here, and the boolean
+ * says so as for any extrude; with none there the spec is left as it is.
+ * Refused in words when the bodies all lie behind its sketch.
+ */
+async function throughNow(f: Feature, asked: ExtrudeSpec, bodies: Bodies, cache: BodyCache): Promise<ExtrudeSpec | Extract<FeatureResult, { status: "failed" }>> {
+  const picked = (extrudeOperation(f)?.bodies ?? []).map((id) => bodies[id]).filter((b) => b !== undefined);
+  if (picked.length === 0) return asked;
+  const boxes = await Promise.all(picked.map(async (b) => (await cache.view(b.handle)).bounds));
+  const d = throughDistance(asked.spec, boxes);
+  if (typeof d !== "number") return { status: "failed", cause: "error", message: throughWords(f.provenance.self.label, d) };
+  return { ...asked, spec: withDistance(asked.spec, d) };
 }
 
 /**

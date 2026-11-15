@@ -22,6 +22,7 @@ export const LIBRARY_LIMITS = {
   maxTag: 24,
   uploadMinutes: 60,
   page: 48,
+  maxSearch: 200,
 } as const;
 
 /** The licences a design can be published under, as SPDX ids, the default first. Must match the database's list. */
@@ -259,10 +260,11 @@ export function libraryApi(client: LibraryClient) {
 
     /**
      * A page of the library for anyone, newest first: `search` words (empty for all), one `tag` (null for all), the
-     * page after `after`. Null while sharing is off. A tag that can't exist finds nothing without asking.
+     * page after `after`. Null while sharing is off. A tag that can't exist, or search text over `maxSearch`
+     * characters, finds nothing without asking (the database answers the same).
      */
     async browse(search: string, tag: string | null, after: LibraryCursor | null = null): Promise<DataResult<BrowsePage | null>> {
-      if (tag !== null && !isTag(tag)) return ok({ cards: [], next: null });
+      if ((tag !== null && !isTag(tag)) || chars(search.trim()) > LIBRARY_LIMITS.maxSearch) return ok({ cards: [], next: null });
       const r = await client.asAnyone("POST", "rpc/browse_library", {
         p_search: search.trim(),
         p_tag: tag,

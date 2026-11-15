@@ -11,7 +11,7 @@
 // 33, once Vector (V1–V2) and Image (G1) work: a page is mostly their content.
 
 import type { WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 
 const summary = "Graphic design and layout: posters, social posts and slides, built from live-linked artwork, photos and renders.";
 
@@ -48,6 +48,7 @@ export const layoutWorkspace: WorkspacePlugin = {
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
+      eta: workspaceEta("layout"),
       title: "LayoutLab",
       summary,
       plans: [

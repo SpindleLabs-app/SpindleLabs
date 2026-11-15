@@ -1,5 +1,5 @@
 // Browser check of the mouse presets (U2d): Settings shows the Mouse choice with a table of what each button and key
-// does; with SpindleLabs's own preset a left drag turns the view (Orbit lit); with the Fusion-style one the left button
+// does; with SpindleLabs's own preset a left drag turns the view (Orbit lit); with the Shift to look one the left button
 // only picks (no bar tool lit), the middle button pans, Shift + middle orbits, the bar's Orbit gives the left button the
 // turn and pressing it again puts it away, Escape puts a lit tool away, and the choice survives a reload.
 // Run with `npm run e2e` (after `npm run build`). SHOTS=dir saves screenshots.
@@ -92,7 +92,7 @@ try {
     await page.click("#settings-open");
     await page.waitForSelector("#settings[open]");
     assert.equal(await page.getAttribute("#settings [data-mouse=spindle]", "aria-checked"), "true");
-    assert.equal(await page.getAttribute("#settings [data-mouse=fusion]", "aria-checked"), "false");
+    assert.equal(await page.getAttribute("#settings [data-mouse=shift-to-look]", "aria-checked"), "false");
     assert.equal(await page.locator("#settings .settings-mouse tr").count(), 8);
     assert.equal(await page.locator("#settings .settings-mouse tr").nth(1).locator("td").textContent(), "Turns the view (orbit), unless the bar's Pan or Zoom is lit");
     if (shots) await page.screenshot({ path: `${shots}/mouse-settings-1280.png` });
@@ -104,17 +104,17 @@ try {
     await page.context().close();
   });
 
-  await check("Fusion-style: the left button only picks, middle pans, Shift + middle orbits, Orbit and Escape, kept through a reload", async () => {
+  await check("Shift to look: the left button only picks, middle pans, Shift + middle orbits, Orbit and Escape, kept through a reload", async () => {
     const page = await fresh();
-    await choosePreset(page, "fusion");
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.mouse), "fusion");
+    await choosePreset(page, "shift-to-look");
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.mouse), "shift-to-look");
     assert.equal(await page.getAttribute("#viewport", "data-nav"), "select");
     for (const m of ["orbit", "pan", "zoom"]) assert.equal(await lit(page, m), "false", `${m} is not lit at rest`);
-    // The table in Settings is Fusion-style's.
+    // The table in Settings is Shift to look's.
     await closePanels(page, false);
     await page.click("#settings-open");
     await page.waitForSelector("#settings[open]");
-    assert.equal(await page.getAttribute("#settings [data-mouse=fusion]", "aria-checked"), "true");
+    assert.equal(await page.getAttribute("#settings [data-mouse=shift-to-look]", "aria-checked"), "true");
     assert.equal(await page.locator("#settings .settings-mouse tr").nth(1).locator("td").textContent(), "Nothing, unless the bar's Orbit, Pan or Zoom is lit");
     await page.click("#settings .close");
     await page.waitForFunction(() => !document.querySelector("#settings")?.hasAttribute("open"));
@@ -150,19 +150,19 @@ try {
     await page.keyboard.press("Escape");
     assert.equal(await page.getAttribute("#viewport", "data-nav"), "select", "Escape leaves Pan for the resting picker");
     assert.equal(await lit(page, "pan"), "false");
-    if (shots) await page.screenshot({ path: `${shots}/mouse-fusion-1280.png` });
+    if (shots) await page.screenshot({ path: `${shots}/mouse-shift-to-look-1280.png` });
     // Kept through a reload.
-    await page.waitForFunction(() => JSON.parse(localStorage.getItem("spindlelabs-settings") ?? "{}").mouse === "fusion");
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem("spindlelabs-settings") ?? "{}").mouse === "shift-to-look");
     await page.reload();
     await page.waitForFunction(() => document.getElementById("viewport")?.dataset.nav !== undefined);
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.mouse), "fusion");
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.mouse), "shift-to-look");
     assert.equal(await page.getAttribute("#viewport", "data-nav"), "select");
     await page.context().close();
   });
 
-  await check("a click still picks with the Fusion-style preset, and going back to SpindleLabs's own gives the left drag its turn at once", async () => {
+  await check("a click still picks with the Shift to look preset, and going back to SpindleLabs's own gives the left drag its turn at once", async () => {
     const page = await fresh();
-    await choosePreset(page, "fusion");
+    await choosePreset(page, "shift-to-look");
     const box = await page.locator("#viewport canvas").boundingBox();
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     assert.match(await page.evaluate(() => document.body.dataset.selection ?? ""), /^(body|face|edge)/, "a click picked what is under it");

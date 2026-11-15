@@ -1,5 +1,6 @@
 // @fission/ui: shared UI pieces and the theme (theme.css).
 export { formatQuantity } from "./format.ts";
+export { WORKSPACE_ETA, etaLabel, workspaceEta, type Eta } from "./eta.ts";
 export { showPlaceholder, type PlaceholderInfo } from "./placeholder.ts";
 export { downstreamChip, type ChipInfo, type ChipState } from "./downstream-chip.ts";
 export { changeNote, type ChangeNoteInfo, type NoteState } from "./change-note.ts";

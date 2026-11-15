@@ -17,14 +17,14 @@ const errors = [];
 // (The Bodies eye follows the same rule from the app hunt's pull request, #543, and its own check.)
 const TARGETS = ["#toolbar .toolbar-group-tool", "#toolbar .toolbar-group-name .menu-button-toggle", ".view-controls button.nav-button"];
 
-async function sizes(width, height, touch) {
-  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch });
+async function sizes(width, height, touch, b = browser, laptop = false) {
+  const context = await b.newContext({ viewport: { width, height }, hasTouch: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(url);
   await startWithBox(page, touch);
-  assert.equal(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), touch, `${width}: pointer coarse is ${touch}`);
+  assert.equal(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), touch || laptop, `${width}: pointer coarse is ${touch}`);
   // Open the Bodies folder so its eye is drawn.
   await page.evaluate(() => { for (const d of document.querySelectorAll("#browser details")) d.open = true; });
   const out = {};
@@ -51,6 +51,17 @@ try {
   // The control: a mouse at the same width keeps the mouse sizes, so the check sees the touch screen, not the width.
   const mouse = await sizes(1024, 768, false);
   assert.ok(mouse["#toolbar .toolbar-group-tool"].some(([, , h]) => h < 44 - 0.5), "with a mouse the toolbar's tools stay mouse-sized");
+  // A touch laptop (Ben, 2026-11-15): the touch screen is the primary pointer but a trackpad is there too, and the window is
+  // wide. It must not get the tablet's 44 px targets (the toolbar was 102 px, not 66); the same device in a 1024 px window still does.
+  if (process.env.E2E_BROWSER === undefined || process.env.E2E_BROWSER === "chromium") {
+    const laptop = await launch(["--blink-settings=primaryPointerType=2,availablePointerTypes=6,primaryHoverType=1,availableHoverTypes=3"]);
+    try {
+      const wide = await sizes(1920, 1000, false, laptop, true);
+      assert.ok(wide["#toolbar .toolbar-group-tool"].every(([, , h]) => h < 44 - 0.5), "a wide touch laptop keeps the mouse-sized toolbar");
+      const narrow = await sizes(1024, 768, false, laptop, true);
+      assert.ok(narrow["#toolbar .toolbar-group-tool"].every(([, , h]) => h >= 44 - 0.5), "the same device in a 1024 px window gets 44 px targets");
+    } finally { await laptop.close(); }
+  }
   assert.deepEqual(errors, [], "no page errors");
   console.log("PASS tablet targets: with touch at 768, 820 and 1024 px every toolbar, view bar and eye target is 44 px; a mouse keeps 36");
 } catch (e) {

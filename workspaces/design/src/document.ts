@@ -271,7 +271,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 22;
+  version: 23;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -1675,6 +1675,12 @@ function hasVersion21Fields(d: Record<string, unknown>): boolean {
   return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "symmetric"));
 }
 
+/** Whether version 22 data has a Through all extrude (Ben 2026-11-14), which only version 23 holds. */
+function hasVersion23Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && isRecord(f.intent.parameters) && Object.hasOwn(f.intent.parameters, "through"));
+}
+
 /** Whether version 21 data has a face sketch marked as drawn before version 22 (SL #707), which only version 22 marks. */
 function hasVersion22Fields(d: Record<string, unknown>): boolean {
   return (Array.isArray(d.sketches) ? d.sketches : []).some((s) => isRecord(s) && isRecord(s.face) && Object.hasOwn(s.face, "first"));
@@ -1870,7 +1876,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 22;
+export const DESIGN_VERSION = 23;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -1948,10 +1954,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 22 (SL #707): a face sketch's `body` is the frame of the input face its name names; one from before recorded
   // the first input's of the face it was drawn on, and is marked so (`first`, `migrateDesignV21`), carried as before.
   if (v21.version === 21 && hasVersion22Fields(v21)) throw new Error(`Design data says version ${shown(given)} but has a sketch marked as drawn before version 22, which only version 22 marks`);
-  const d = (v21.version === 21 ? migrateDesignV21(v21) : v21) as Partial<DesignDocument>;
+  const v22 = v21.version === 21 ? migrateDesignV21(v21) : v21;
+  // Version 23 (Ben 2026-11-14) lets a Cut or Intersect extrude go through all its bodies (`through`), which version 22
+  // never held (a version 22 reader would stop it at the distance last typed); other version 22 data is read as it is.
+  if (v22.version === 22 && hasVersion23Fields(v22)) throw new Error(`Design data says version ${shown(given)} but has a Through all extrude, which version 23 brought`);
+  const d = (v22.version === 22 ? { ...v22, version: 23 } : v22) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 or 22)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 or 23)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -2037,6 +2047,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
     // Symmetric (version 21): true or left out, and never with Flip, which a body going both ways can't have.
     if (Object.hasOwn(p, "symmetric") && p.symmetric !== true) throw new Error(`Design feature ${f.id}: symmetric must be true or left out, not ${shown(p.symmetric)}`);
     if (p.symmetric === true && Object.hasOwn(p, "flip")) throw new Error(`Design feature ${f.id} is symmetric and flipped: a symmetric extrude goes both ways, so it has no Flip`);
+    // Through all (version 23): true or left out, only on a Cut or Intersect, never symmetric.
+    if (Object.hasOwn(p, "through") && p.through !== true) throw new Error(`Design feature ${f.id}: through must be true or left out, not ${shown(p.through)}`);
+    if (p.through === true && p.operation !== "cut" && p.operation !== "intersect") throw new Error(`Design feature ${f.id} goes through all but is not a Cut or Intersect: only those have bodies to go through`);
+    if (p.through === true && p.symmetric === true) throw new Error(`Design feature ${f.id} goes through all and is symmetric: Through all goes one way from its sketch`);
     if (Object.hasOwn(p, "region")) checkRegion(p.region, f.id);
   }
   if (Object.hasOwn(d, "kept")) {
