@@ -34,6 +34,8 @@
 #       copies to stdout only the lines the kernel's ci scripts may print in
 #       public: RESULT, count, shards and missed lines; drops everything else
 #
+#   kernel_ci.sh fetch FOLDER OUT
+#       copies a folder of kernel-results into OUT (RESULTS_WRITE key)
 #   kernel_ci.sh keygen DIR | seal DIR OUT PUBLIC.pem | unseal IN OUT PRIVATE.pem
 #       a keyless job seals the files it made so only the keyed job opens
 #       them (seal.py: openssl hybrid encryption, safe extraction)
@@ -106,6 +108,18 @@ save)
   # Why, in words only: the push's own message can name private files.
   why=$(grep -oE 'GH001|GH013|exceeds|secrets|rejected|non-fast-forward|fetch first|lost|denied|403|timed out|Could not resolve|Internal Server Error|cannot lock ref' "$work/push" | sort -u | paste -sd, - || true)
   echo "could not save $job (${why:-no reason given})"; exit 1
+  ;;
+fetch)
+  # fetch FOLDER OUT: copies FOLDER of kernel-results (RESULTS_WRITE key) into
+  # OUT, printing nothing: the per-run private key a keyed job unseals with.
+  folder=$2 out=$3
+  [[ $folder =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ && $folder != *..* ]] || { echo "bad folder"; exit 1; }
+  work=$(mktemp -d)
+  git clone -q --depth 1 --filter=blob:none --sparse "${RESULTS_REPO:-https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git}" "$work/r" >/dev/null 2>&1 &&
+    git -C "$work/r" sparse-checkout set "$folder" >/dev/null 2>&1 &&
+    [ -d "$work/r/$folder" ] || { echo "could not fetch $folder"; exit 1; }
+  mkdir -p "$out" && cp -R "$work/r/$folder/." "$out/"
+  rm -rf "$work"
   ;;
 run)
   name=$2 dir=$3

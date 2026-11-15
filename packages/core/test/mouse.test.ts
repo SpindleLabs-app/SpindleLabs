@@ -6,7 +6,7 @@ import { leftDragOf, MOUSE_PRESETS, readMousePreset } from "../src/model/mouse.t
 // toward the pointer, the right button is kept for a menu, Escape puts a lit bar tool away).
 
 test("two presets, SpindleLabs's own first; they differ in what the left drag does and nothing else", () => {
-  assert.deepEqual(MOUSE_PRESETS.map((p) => [p.id, p.leftDrag]), [["spindle", "orbit"], ["fusion", "select"]]);
+  assert.deepEqual(MOUSE_PRESETS.map((p) => [p.id, p.leftDrag]), [["spindle", "orbit"], ["shift-to-look", "select"]]);
   const [spindle, fusion] = MOUSE_PRESETS;
   assert.equal(spindle.rows.length, fusion.rows.length);
   const same = spindle.rows.filter((r, i) => r.gesture === fusion.rows[i].gesture && r.does === fusion.rows[i].does);
@@ -23,9 +23,9 @@ test("every table names each button and key it uses, with a plain description", 
   }
 });
 
-test("stored values: only \"fusion\" is Fusion-style; anything else is SpindleLabs's own", () => {
-  for (const [raw, want] of [["fusion", "fusion"], ["spindle", "spindle"], ["Fusion", "spindle"], [undefined, "spindle"], [3, "spindle"], ["", "spindle"]] as const) assert.equal(readMousePreset(raw), want, String(raw));
-  assert.equal(leftDragOf("fusion"), "select");
+test("stored values: \"shift-to-look\" and its old id \"fusion\" are Shift to look; anything else is SpindleLabs's own", () => {
+  for (const [raw, want] of [["shift-to-look", "shift-to-look"], ["fusion", "shift-to-look"], ["spindle", "spindle"], ["Fusion", "spindle"], [undefined, "spindle"], [3, "spindle"], ["", "spindle"]] as const) assert.equal(readMousePreset(raw), want, String(raw));
+  assert.equal(leftDragOf("shift-to-look"), "select");
   assert.equal(leftDragOf("spindle"), "orbit");
 });
 

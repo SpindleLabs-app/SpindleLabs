@@ -30,7 +30,7 @@
    first, then the designs, every row 44 px, scrolling. Also for touch screens and short windows, so a phone held sideways
    gets it too (tabs hunt E2; the query is TABS_PHONE_QUERY in design-tabs.ts, kept the same by a unit test). The list is
    at most 40% of the window, 5.5 rows, and half the 3D view (--design-tabs-view-half, set as it opens; tabs hunt E3). */
-@media (max-width: 640px), (pointer: coarse), (max-height: 500px) {
+@media (max-width: 640px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))), (max-height: 500px) {
   .design-tabs:not(#none) { position: relative; min-height: 0; height: 0; border-bottom: none; }
   .design-tabs .design-tabs-list, .design-tabs .design-tabs-add:not(#none) { display: none; }
   .design-tabs .design-tabs-menu:not([hidden]) { display: block; position: absolute; top: 0; left: 0; right: 0; z-index: 30; max-height: min(40dvh, calc(5.5 * 44px), var(--design-tabs-view-half)); overflow-y: auto; background: var(--surface-raised); border-bottom: 1px solid var(--look-edge); box-shadow: var(--look-top-light); }

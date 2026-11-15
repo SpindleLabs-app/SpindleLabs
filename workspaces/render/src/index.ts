@@ -5,7 +5,7 @@
 // design change flows straight through. Work starts after CAD step 25 (editing the timeline and rebuilding).
 
 import type { BodyReference, WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 
 /** DRAFT: a saved render setup. Bodies are referenced, never copied. */
 export interface RenderScene {
@@ -30,6 +30,7 @@ export const renderWorkspace: WorkspacePlugin = {
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
+      eta: workspaceEta("render"),
       title: "RenderLab",
       summary: "Realistic images of your design, straight from the DesignLab timeline.",
       plans: ["Path-traced images of the bodies in the current design, updated when the design changes", "Materials from the shared library (the same ones DesignLab shows)", "Lighting, environments and saved cameras", "Scenes saved in the project file next to the design"],

@@ -245,7 +245,7 @@ Each pull request's entry in `changelog.d/` ends with a `public:` part: the `- `
 ## 0.32.74 (2026-10-31)
 
 - Slice for printing has a Nozzle choice (Standard or High Flow).
-- Bambu Studio shows the right print time for P1S files from SpindleLabs, and opens them without "Invalid configuration file".
+- The P1S shows the right print time for files from SpindleLabs, and opens them without "Invalid configuration file".
 
 ## 0.32.73 (2026-10-31)
 
@@ -270,7 +270,7 @@ Each pull request's entry in `changelog.d/` ends with a `public:` part: the `- `
 - A feature that takes too long is marked red with a Retry button, while the rest of the design is built.
 - Bodies that aren't on screen use much less memory.
 - Slow devices get as long as they need, and a stuck calculation is stopped sooner.
-- P1S print files open in Bambu Studio, and the Slice dialog fits a laptop screen.
+- P1S print files open in the printer's own software, and the Slice dialog fits a laptop screen.
 
 ## 0.32.69 (2026-10-30)
 

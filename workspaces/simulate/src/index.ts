@@ -8,7 +8,7 @@
 // mesher in the kernel (T3, T4), results in the shared view (T5).
 
 import type { WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 import { testlabShown } from "./flag.ts";
 import { mountTestLabPage } from "./page.ts";
 import { readTestLab } from "./study.ts";
@@ -36,6 +36,7 @@ export const simulateWorkspace: WorkspacePlugin = {
   mount(ctx) {
     if (testlabShown()) return mountTestLabPage(ctx);
     showPlaceholder(ctx.properties, {
+      eta: workspaceEta("simulate"),
       title: "TestLab",
       summary: SUMMARY,
       plans: ["Static stress, then thermal and modal studies", "Materials from the shared library (density, stiffness, strength)", "Loads and constraints placed on design faces by reference: they follow the face when the design changes", "Meshing from the exact geometry", "Results: stress, displacement and safety factor drawn in the shared viewport"],

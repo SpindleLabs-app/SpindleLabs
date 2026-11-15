@@ -31,7 +31,7 @@ export const NO_TABS: TabsState = { tabs: [], active: null };
  * two together): narrow screens, and also touch screens and short windows, so a phone held sideways (667 x 375) never
  * gets the wide row with its 33 px tabs and × beside each (tabs hunt E2).
  */
-export const TABS_PHONE_QUERY = "(max-width: 640px), (pointer: coarse), (max-height: 500px)";
+export const TABS_PHONE_QUERY = "(max-width: 640px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))), (max-height: 500px)";
 
 /** The tab's words for a name: an empty name reads "Untitled". */
 export const tabName = (name: string): string => (name.trim() === "" ? "Untitled" : name.trim());

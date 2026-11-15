@@ -159,7 +159,7 @@ async function check(name, fn) {
 }
 
 try {
-  await check("without ?combine there is no Combine: Modify ▾ shows it greyed as coming soon, and the panel never opens", async () => {
+  await check("without ?combine there is no Combine: Modify ▾ shows it greyed with its expected window, and the panel never opens", async () => {
     const page = await fresh(1280, 800, false, "");
     try {
       const ids = await modifyItems(page, false);

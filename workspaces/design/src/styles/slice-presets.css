@@ -37,7 +37,7 @@
   .slice-presets .slice-presets-pick button:not(#none), .slice-presets .slice-presets-editing button:not(#slice-presets-back) { flex: 1 1 0; }
 }
 /* The name's text 16 px on a phone or any touch screen: smaller makes iOS Safari zoom the page in as the box takes the focus (as rename-box.css). */
-@media (max-width: 640px), (pointer: coarse) {
+@media (max-width: 640px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))) {
   .slice-presets #slice-presets-name:not(#none) { font-size: 16px; }
 }
 /* A short laptop window: as tight as the dialog's own lists there (slice-print.css), all the lists one height. */
