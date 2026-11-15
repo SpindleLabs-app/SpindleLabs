@@ -19,6 +19,9 @@
 /* The shell's `#workspace button:hover` (theme.css) outranks the rule above, as it did Combine's OK (#504). */
 .chamfer-panel #chamfer-ok:hover:not(:disabled) { background: var(--look-primary-fill, var(--accent-deep)); }
 .chamfer-panel button:disabled { opacity: 0.45; }
+/* Edit feature's note on the edges and why there is no preview (44a-app3): quiet words under the count. */
+.chamfer-panel .chamfer-panel-note { margin: 0 0 6px; font-size: 0.85em; color: var(--text-8b95a3); }
+.chamfer-panel .chamfer-panel-note[hidden] { display: none; }
 @media (max-width: 700px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))) {
   .chamfer-panel button, .chamfer-panel select, .chamfer-panel input:not([type="checkbox"]), .chamfer-panel .chamfer-panel-flip { min-height: 44px; }
   .chamfer-panel .chamfer-panel-flip input { width: 22px; height: 22px; }
@@ -33,6 +36,6 @@
   .chamfer-panel .chamfer-panel-row select, .chamfer-panel .chamfer-panel-row input { width: 100%; }
   .chamfer-panel .chamfer-panel-legend { font-size: 0.8em; white-space: nowrap; }
   .chamfer-panel .chamfer-panel-flip { margin: 0; }
-  .chamfer-panel #chamfer-error { flex: 1 1 100%; margin: 0; }
+  .chamfer-panel #chamfer-error, .chamfer-panel .chamfer-panel-note { flex: 1 1 100%; margin: 0; }
   .chamfer-panel .chamfer-panel-buttons { flex: 1 1 100%; margin: 0; }
 }

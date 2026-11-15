@@ -106,6 +106,8 @@ export type FeatureResult =
       constraints?: { message: string };
       /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
       holds?: BodyHandle[];
+      /** A Chamfer's (44a-app3): the kernel's edges it cut on the body it holds, and the body it made, so Edit feature previews a new size on the same body. */
+      chamfered?: { edges: number[]; body: BodyHandle };
       /** A Move's (SL #583 item 2): the pieces it moved that it doesn't hold yet, new pieces of a body it holds; `followedDoc` adds them to it. */
       takes?: string[];
       /** A Combine's or an operation extrude's pieces (35f1) by id, each with the shown names of its faces as the item made them: what the data remembers a piece by when it is first numbered (hunt 11-06). */
@@ -1745,7 +1747,7 @@ async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, 
     ...(b.by !== undefined && { by: b.by }),
     ...(b.from !== undefined && { from: b.from }),
   };
-  return { status: "built", holds: [b.handle] };
+  return { status: "built", holds: [b.handle], chamfered: { edges, body: out.body } };
 }
 
 /** Combine's operations as the kernel names them. */

@@ -2,10 +2,10 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
+import { chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isChamferItem, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, setExtrudeThrough, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { throughDistance, throughWords } from "./extrude-through.ts";
@@ -26,7 +26,8 @@ import { combineShown } from "./combine-flag.ts";
 import { chamferShown } from "./chamfer-flag.ts";
 import { chamferPanel } from "./chamfer-panel.ts";
 import { chamferHintWords, heldNamesOf, NO_NAME, picksFrom, readChamferSize, togglePick as toggleEdge, type PickedEdge } from "./chamfer-tool.ts";
-import { CHAMFER_STEP, insertChamfer } from "./chamfer.ts";
+import { CHAMFER_STEP, changedChamfer, editableChamfer, EDIT_EDGES_NOTE, insertChamfer } from "./chamfer.ts";
+import { cutAt, editPreviewInput, pickableView, previewChamfer, previewedMesh } from "./chamfer-preview.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { noteRebuild, registerDesign } from "./representations.ts";
@@ -372,6 +373,8 @@ const isOpen = (n: { id: string; startsFolded?: boolean }) => folding.get(n.id) 
 const CHAMFER_TITLE = "Chamfer: cut straight edges back to a sloped flat face. Pick the edges of one body, type the size, then OK. A Chamfer in the timeline, at the marker.";
 /** Why a Combine in the file can't be edited while Combine is switched off (#507). */
 const COMBINE_OFF = "Combine is switched off, so this can't be edited.";
+/** The same for a Chamfer already in the file while Chamfer is switched off (44a-app3): it builds, its Edit is greyed. */
+const CHAMFER_OFF = "Chamfer is switched off, so this can't be edited.";
 /** How long the line over the view after a Combine's OK stays (ms): long enough to read two short sentences. */
 const COMBINE_DONE_MS = 8000;
 
@@ -923,6 +926,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         extrude: extruding !== null || extrudeBox.shown,
         edit: editBox.editing,
         combine: combineBox.shown ? { editing: combineBox.editing } : null,
+        chamfer: chamferBox.shown ? { editing: chamferBox.editing } : null,
         sketch: mode.kind === "pick" ? { kind: "pick" } : mode.kind === "edit" ? { kind: "edit", id: editingSketch?.id ?? null } : null,
       },
       (id) => {
@@ -940,7 +944,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const open = toolOpen();
     const words = openToolRefusal(open, verb);
     if (open === null || words === null) return false;
-    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true) }[open.tool];
+    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, chamfer: chamferBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true) }[open.tool];
     say(words);
     if (open.tool !== "sketch") ctx.properties.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a sketch's words show by the pointer
     return true;
@@ -1446,7 +1450,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
   /** #505: why each failed item failed, in the rebuild's words (its title, card, Properties and Edit panel). */
   let reasonsNow: ReadonlyMap<string, string> = new Map();
-  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] } }>> = {};
+  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[]; pieces?: { renumbered: readonly string[] }; chamfered?: { edges: readonly number[]; body: number } }>> = {};
   /** Each built body's handle in the kernel's store, by body id, from the last rebuild: Measure (35e2l2) asks the kernel about them. */
   let handlesNow: Readonly<Record<string, BodyHandle>> = {};
   /** Every body the last rebuild built, by body id (step 44a-app2: a Chamfer's picked edges are named over them, as its rebuild names them). */
@@ -1630,7 +1634,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A Body row's menu starts with Show only this body and Show all bodies (its eye is the row's Hide).
     const shows = row === undefined ? [] : showEntries(doc, row, failedNow).map((e) => ({ ...e, run: () => showFrom(e.action as "show-only" | "show-all", row) }));
     // Ben 2026-11-11 (#507): with Combine switched off, a Combine already in the file builds but can't be edited: Edit is greyed out, saying why.
-    const switchedOff = (e: MenuEntry): MenuEntry => (e.action === "edit" && isCombineItem(item) && !combineShown() ? { ...e, off: COMBINE_OFF } : e);
+    const switchedOff = (e: MenuEntry): MenuEntry => (e.action === "edit" && isCombineItem(item) && !combineShown() ? { ...e, off: COMBINE_OFF } : e.action === "edit" && isChamferItem(item) && !chamferShown() ? { ...e, off: CHAMFER_OFF } : e);
     const entries = [...shows, ...menuEntries(doc, id, editing).map(switchedOff).map((e) => ({ ...e, run: () => afterOk(() => void chooseEntry(menuHost, id, e.action, editingId()).catch((err) => panel.showError(err instanceof Error ? err.message : String(err)))) }))];
     menuAt = at;
     deleting.menu(itemName(item), at, entries);
@@ -1872,6 +1876,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.editing !== null && !doc.timeline.features.some((f) => f.id === moveBox.editing)) leaveMove();
     // And the Combine panel's Combine (35f1c).
     if (combineBox.editing !== null && !doc.timeline.features.some((f) => f.id === combineBox.editing)) leaveCombine();
+    // And the Chamfer panel's Chamfer (44a-app3).
+    if (chamferBox.editing !== null && !doc.timeline.features.some((f) => f.id === chamferBox.editing)) leaveChamfer();
     drawBrowser(doc);
     showOrigin(doc);
     showStart();
@@ -3055,7 +3061,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (editBox.editing !== null) return { name: "Edit feature", cancel: () => leaveEdit() };
     if (moveBox.shown && !moveAfterStep) return { name: moveBox.editing !== null ? "Edit feature" : MOVE_VERBS[moveBox.kind], cancel: () => leaveMove() };
     if (combineBox.shown) return { name: combineBox.editing !== null ? "Edit feature" : "Combine", cancel: () => leaveCombine() };
-    if (chamferBox.shown) return { name: "Chamfer", cancel: () => leaveChamfer() };
+    if (chamferBox.shown) return { name: chamferBox.editing !== null ? "Edit feature" : "Chamfer", cancel: () => leaveChamfer() };
     if (measureBox.shown) return { name: "Measure", cancel: () => measureBox.close() };
     return null;
   }
@@ -3789,10 +3795,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     offerCorners: (corners) => viewport.showCorners(corners), // corners to pick (35e2l3)
   });
   // Chamfer (step 44a-app2, behind ?chamfer and ?all): straight edges of one body picked one click at a time (the
-  // selection is the edges while it is open), the size typed, then OK records a Chamfer at the marker. Edit feature on a
-  // Chamfer, its timeline card and the timeline model's chamfers come with 44a-app3.
+  // selection is the edges while it is open), the size typed, then OK records a Chamfer at the marker. 44a-app3: Edit
+  // feature on a Chamfer (its type, sizes and Flip; its edges stay) and the live preview of the cut before OK.
   const chamferBox = chamferPanel(ctx.properties, {
-    changed: () => chamferBox.showError(""),
+    changed: () => (chamferBox.showError(""), void refreshChamferPreview()),
     ok: () => void holdAsked(finishChamfer()), // held like Combine's OK: an Undo pressed while the kernel checks waits (#503)
     cancel: () => (okChecks.clear(), leaveChamfer()),
   });
@@ -3809,7 +3815,58 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   viewport.element.append(chamferHint);
   function showChamferHint() {
     chamferHint.textContent = chamferHintWords(lastScene?.bodies.length ?? 0);
-    chamferHint.hidden = !(shown && chamferBox.shown && chamferPicks.length === 0);
+    chamferHint.hidden = !(shown && chamferBox.shown && chamferBox.editing === null && chamferPicks.length === 0);
+  }
+  /** The cut drawn before OK (44a-app3, chamfer-preview.ts): the body's id and its view as the kernel chamfers it at the size typed; null when none is drawn. */
+  let chamferDrawn: { body: string; view: BodyView; cuts: number[] } | null = null;
+  /** The kernel's chamfer for the preview, the latest ask only (a late answer to an older size never draws over a newer one); a refusal comes back as its words. */
+  const chamferAsk = latestOnly(async (handle: BodyHandle, edges: readonly number[], size: ChamferSize, flip: boolean, shownAs: BodyHandle): Promise<{ view: BodyView; cuts: number[] } | { why: string }> => {
+    try {
+      // Numbered as the body drawn now (`shownAs`), so the tool's clicks on the drawn preview pick that body's own edges.
+      return await bodies.using(async () => {
+        const [made, body] = await Promise.all([previewChamfer(kernel, handle, edges, size, flip), bodies.view(shownAs)]);
+        return pickableView(body, made.view, made.faces);
+      });
+    } catch (e) {
+      return { why: e instanceof Error ? e.message : String(e) };
+    }
+  });
+  /** The preview drawn as `next` (null: none), with the panel told the volume drawn or why there is none. */
+  function drawChamferPreview(next: { body: string; view: BodyView; cuts: number[] } | null, why = "") {
+    const had = chamferDrawn !== null;
+    chamferDrawn = next;
+    chamferBox.showPreview(next?.view.volume ?? null, why);
+    if ((had || next !== null) && shown && lastScene) showBodies(lastScene);
+  }
+  /**
+   * The preview asked again for the picks and the boxes as they are now: a new Chamfer chamfers the body its edges are
+   * on as last built; an edited one the body it was made from, with its edges as the rebuild found them, while no later
+   * item has changed that body (`editPreviewInput`). Sizes that don't read, no picks or a refusal draw none (OK says why).
+   */
+  async function refreshChamferPreview() {
+    if (!chamferBox.shown) return drawChamferPreview(null);
+    const typed = chamferBox.typed;
+    const read = readChamferSize(typed.kind, typed.first, typed.second);
+    let input: { body: string; handle: BodyHandle; edges: readonly number[]; shownAs: BodyHandle } | null = null;
+    let why = "";
+    const editing = chamferBox.editing;
+    if (editing !== null) {
+      const f = designDoc().timeline.features.find((x) => x.id === editing);
+      const body = f === undefined ? undefined : (f.intent.parameters.body as string);
+      const from = body === undefined ? null : editPreviewInput(resultsNow[editing], bodiesNow[body]?.handle);
+      if (from !== null && "why" in from) why = from.why;
+      else if (from !== null && body !== undefined) input = { body, ...from, shownAs: bodiesNow[body].handle };
+    } else if (chamferPicks.length > 0) {
+      const body = chamferPicks[0].body;
+      const handle = bodiesNow[body]?.handle;
+      if (handle !== undefined) input = { body, handle, edges: chamferPicks.map((p) => p.edge), shownAs: handle };
+    }
+    if (input === null || "why" in read) return drawChamferPreview(null, why);
+    const opened = chamferOpenings;
+    const got = await chamferAsk(input.handle, input.edges, read.size, typed.flip, input.shownAs);
+    if (!got.current || chamferOpenings !== opened || !chamferBox.shown) return;
+    if ("why" in got.value) return drawChamferPreview(null);
+    drawChamferPreview({ body: input.body, ...got.value });
   }
   /** A scene body's view by its body id, or null when it is not shown. */
   const shownView = (body: string) => lastScene?.bodies.find((b) => b.body === body)?.view ?? null;
@@ -3856,22 +3913,28 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function syncChamferPicks() {
     if (!chamferBox.shown) return;
+    if (chamferBox.editing !== null) return void refreshChamferPreview(); // its edges are its own: only its preview is drawn again on the bodies as built
     const { picks, refused } = picksFrom(selectedEdges(), shownView);
     chamferPicks = picks;
     if (refused !== null) chamferBox.showError(refused);
     chamferBox.setEdges(picks.length);
     showChamferHint();
     selectPicks(picks);
+    void refreshChamferPreview();
   }
   /** A click in the view while Chamfer is open: an edge is added or taken out (`togglePick`); a face says to pick edges. */
   function chamferClick(pick: Parameters<NonNullable<SharedViewport["onPick"]>>[0]) {
     const scene = lastScene;
     if (scene === null) return;
-    if (pick.edge == null) {
+    // An edited Chamfer keeps its edges (44a-app3): a click says so.
+    if (chamferBox.editing !== null) return void ((pick.edge != null || pick.face !== null) && chamferBox.showError(EDIT_EDGES_NOTE));
+    // A click on a previewed chamfer's face is a click on the edge it cut (the edge itself is cut away in the drawing).
+    const cut = pick.edge == null && pick.face !== null && chamferDrawn !== null ? cutAt(scene, chamferDrawn.body, chamferDrawn, pick.face) : null;
+    if (pick.edge == null && cut === null) {
       if (pick.face !== null) chamferBox.showError(CHAMFER_FACE);
       return;
     }
-    const hit = sceneHit(scene, "edge", pick.edge);
+    const hit = cut !== null ? { body: scene.bodies.findIndex((b) => b.body === chamferDrawn!.body), index: cut } : sceneHit(scene, "edge", pick.edge!);
     if (hit === null) return;
     const body = scene.bodies[hit.body];
     const next = toggleEdge(chamferPicks, { body: body.body, edge: hit.index }, body.view);
@@ -3881,14 +3944,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     chamferPicks = next.picks;
     chamferBox.setEdges(chamferPicks.length);
     showChamferHint();
+    void refreshChamferPreview();
   }
   /**
    * Modify ▾ Chamfer (with ?chamfer or ?all): out of any sketch or other
    * panel first; starts with the edges selected (those the tool takes, the
-   * first refusal said), the size at 1 mm.
+   * first refusal said), the size at 1 mm. Edit feature on a Chamfer
+   * (44a-app3, `id`): its type, sizes and Flip in the boxes, its edges as
+   * they are (the selection let go), its cut previewed at once.
    */
-  function startChamfer() {
-    if (okChecks.size > 0) return afterOk(() => startChamfer());
+  function startChamfer(id: string | null = null) {
+    if (okChecks.size > 0) return afterOk(() => startChamfer(id));
     leaveExplode(); // a tool works on the bodies where they are
     leaveExtrude();
     leaveEdit();
@@ -3896,14 +3962,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch();
     leaveCombine(); // which puts an open Chamfer and Measure away too
     chamferOpenings++;
-    const { picks, refused } = picksFrom(selectedEdges(), shownView);
-    chamferPicks = picks;
-    chamferBox.show(picks.length);
-    if (refused !== null) chamferBox.showError(refused);
+    if (id !== null) {
+      const edit = editableChamfer(designDoc(), id);
+      chamferPicks = [];
+      ctx.selection.clear();
+      chamferBox.show(edit.edges, edit);
+      if (failedNow.has(id)) chamferBox.showError(reasonsNow.get(id) ?? "");
+    } else {
+      const { picks, refused } = picksFrom(selectedEdges(), shownView);
+      chamferPicks = picks;
+      chamferBox.show(picks.length);
+      if (refused !== null) chamferBox.showError(refused);
+      selectPicks(picks);
+    }
     toolsChanged();
     fold?.reveal(); // the folded panel opens at it (U0b)
     showChamferHint();
-    selectPicks(picks);
+    void refreshChamferPreview();
   }
   /** The Chamfer panel put away; its edges let go. */
   function leaveChamfer() {
@@ -3911,6 +3986,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     chamferOpenings++;
     chamferBox.hide();
     chamferPicks = [];
+    drawChamferPreview(null); // the body drawn as it is again
     showChamferHint();
     toolsChanged();
     if (ctx.selection.items.length > 0) ctx.selection.clear();
@@ -3926,10 +4002,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * step, "Chamfer edges".
    */
   async function finishChamfer() {
-    if (!chamferBox.shown || !chamferBox.ready || chamferPicks.length === 0) return;
+    if (!chamferBox.shown || !chamferBox.ready || (chamferBox.editing === null && chamferPicks.length === 0)) return;
     const typed = chamferBox.typed;
     const read = readChamferSize(typed.kind, typed.first, typed.second);
     if ("why" in read) return chamferBox.showError(read.why);
+    if (chamferBox.editing !== null) return finishChamferEdit(chamferBox.editing, read.size, typed.flip);
     const opened = chamferOpenings;
     const asked = chamferAsked();
     const picks = [...chamferPicks];
@@ -3962,6 +4039,39 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (checked.refused !== null || next === null) return chamferBox.showError(checked.refused ?? NO_NAME);
     leaveChamfer();
     menuHost.record(CHAMFER_STEP, checked.numbered ?? next);
+  }
+  /**
+   * Edit feature's OK on Chamfer `id` (44a-app3): the item given the size and
+   * Flip typed (`changedChamfer`; nothing recorded when they are as they
+   * were), checked by building the design on the kernel (its refusal in its
+   * own words, the panel kept open) and recorded as one undo step, "Edit
+   * Chamfer 1".
+   */
+  async function finishChamferEdit(id: string, size: ChamferSizing, flip: boolean) {
+    const opened = chamferOpenings;
+    const asked = chamferAsked();
+    const before = designDoc();
+    let next: DesignDocument;
+    try {
+      next = changedChamfer(before, id, size, flip);
+    } catch (e) {
+      return chamferBox.showError(e instanceof Error ? e.message : String(e));
+    }
+    if (next === before) return leaveChamfer();
+    chamferBox.busy(true);
+    let checked: Checked;
+    try {
+      checked = await okCheck(onceMoreAfterRestart(() => checkedItem(kernel, next, id)));
+    } catch (e) {
+      checked = { refused: e instanceof Error ? e.message : String(e), misses: [] };
+    }
+    if (chamferOpenings !== opened) return;
+    chamferBox.busy(false);
+    if (designDoc() !== before) return chamferBox.showError(CHAMFER_CHANGED);
+    if (chamferAsked() !== asked) return chamferBox.showError(CHAMFER_PICKS_CHANGED);
+    if (checked.refused !== null) return chamferBox.showError(checked.refused);
+    leaveChamfer();
+    menuHost.record(editStep(before, id), checked.numbered ?? next);
   }
   /** Inspect ▾ Measure: every other tool put away first, and the selection let go (a click now picks for Measure). */
   function startMeasure() {
@@ -4211,6 +4321,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (isCombineItem(item) && !combineShown()) return panel.showActionNote(COMBINE_OFF, true);
     if (isMoveItem(item)) return startMove(id);
     if (isCombineItem(item)) return startCombine(id);
+    if (isChamferItem(item)) return chamferShown() ? startChamfer(id) : panel.showActionNote(CHAMFER_OFF, true);
     // Asked before any open tool is left (hunt 11-11, E2: a Copy, which has nothing to edit, shut an open Move and lost
     // what was typed in it before the refusal): an item with nothing to edit says why, in the menu's words, and nothing changes.
     const off = editOff(item);
@@ -4295,6 +4406,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * scene otherwise.
    */
   function editMesh(scene: Scene) {
+    // The Chamfer's cut before OK (44a-app3): its body drawn as the kernel chamfers it.
+    if (chamferDrawn !== null) return previewedMesh(scene, chamferDrawn.body, chamferDrawn.view);
     const hidden = editRegions === null ? null : bodyIdOf(editRegions.id);
     return hidden === null || !scene.bodies.some((b) => b.body === hidden) ? scene.mesh : joinBodies(scene.bodies.filter((b) => b.body !== hidden)).mesh;
   }
