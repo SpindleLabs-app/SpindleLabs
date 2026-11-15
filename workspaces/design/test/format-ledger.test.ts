@@ -56,7 +56,9 @@ export function propertyNames(source: string, name: string): string[] {
 // Design data version 22 (SL #707): a face sketch's `body` is the frame of the input face its name names (on a face a Join
 // merged from level faces, that input's); one drawn before recorded the merged face's first input's, and is marked
 // `first` as it is read, so it is carried as before; a version 21 reader would carry a new one by the wrong input.
-const LEDGER_VERSION = 22;
+// Design data version 23 (Ben 2026-11-14): a Cut or Intersect extrude may say `through: true` in its parameters (going
+// through every body it picks, its length worked out on each rebuild), which a version 22 reader would stop at its distance.
+const LEDGER_VERSION = 23;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },

@@ -14,6 +14,7 @@ import { wordsInUnit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
 import type { EditableFeature } from "./feature-edit.ts";
 import { EXTRUDE_OPERATION_WORDS, EXTRUDE_OPERATIONS, type BodyChoice, type ExtrudeOperation } from "./extrude-operation.ts";
+import { THROUGH_ONLY_CUT, THROUGH_TITLE, THROUGH_WORDS } from "./extrude-through.ts";
 import { followUnit, parameterRows, sizeBox, type SizeBox, type SizeKey } from "./properties.ts";
 
 export interface FeatureEditEvents {
@@ -41,6 +42,8 @@ export interface FeatureEditPanel {
   showBodies(list: readonly BodyChoice[], note: string, ready: boolean): void;
   /** The operation chosen now; null without an Operation row. */
   readonly operation: ExtrudeOperation | null;
+  /** Whether Through all is ticked (version 23; null without the tick box, on anything but an extrude of a sketch). */
+  readonly through: boolean | null;
   /** OK off while the kernel checks the sizes, so a second press can't record twice. */
   busy(on: boolean): void;
   hide(): void;
@@ -70,6 +73,10 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
   let flip: HTMLInputElement | null = null;
   /** An extrude of a sketch's Symmetric (53a1): half its distance each way; Flip is off while it is ticked. */
   let both: HTMLInputElement | null = null;
+  /** Its Through all (version 23): tickable only while the Operation row says Cut or Intersect. */
+  let through: HTMLInputElement | null = null;
+  /** Sets which boxes Through all leaves on: the distance and Symmetric are off while it is ticked. */
+  let throughNow: () => void = () => {};
   let region: HTMLElement | null = null;
   let select: HTMLSelectElement | null = null;
   let bodies: HTMLElement | null = null;
@@ -128,11 +135,40 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
         flipOff();
         ticked.addEventListener("change", () => {
           flipOff();
+          throughNow();
           on.sizes?.(typed(), flip?.checked, ticked.checked);
         });
         const row = el("label", "", "feature-edit-row feature-edit-symmetric");
         row.title = "Extrude half the distance each way from the sketch's plane: the distance is the whole thickness";
         row.append(ticked, " Symmetric");
+        labels.push(row);
+      }
+      through = null;
+      throughNow = () => {};
+      if (f.through !== undefined) {
+        const ticked = el("input", "edit-through");
+        through = ticked;
+        ticked.type = "checkbox";
+        ticked.checked = f.through;
+        const row = el("label", "", "feature-edit-row feature-edit-through extrude-through");
+        row.dataset.part = "row"; // hidden needs styles/extrude-through.css over feature-edit.css's display: block
+        const distance = inputs[0]?.[1].el;
+        const symmetric = both;
+        throughNow = () => {
+          // Without the Operation row (Combine hidden, or not filled in yet) it stays as saved, off to change.
+          const op = select?.value;
+          const cuts = op === "cut" || op === "intersect";
+          // Made a new body or a Join: nothing to go through, so it lets go.
+          if (op !== undefined && !cuts) ticked.checked = false;
+          ticked.disabled = !cuts || symmetric?.checked === true;
+          // Only where it can mean something: with the Operation row, or on an extrude saved through all.
+          row.hidden = op === undefined && !f.through;
+          row.title = cuts ? THROUGH_TITLE : THROUGH_ONLY_CUT;
+          if (distance) distance.disabled = ticked.checked;
+          if (symmetric) symmetric.disabled = ticked.checked;
+        };
+        ticked.addEventListener("change", () => throughNow());
+        row.append(ticked, ` ${THROUGH_WORDS}`);
         labels.push(row);
       }
       region = el("p", "edit-region", "feature-edit-region");
@@ -160,6 +196,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       // The Operation row's place (`showOperation` fills it): after the sizes and Flip, before the region's words.
       operationSlot = el("div", "", "feature-edit-operation");
       box.replaceChildren(title, ...labels, operationSlot, bodies, note, region, error, after, buttons);
+      throughNow();
       box.hidden = false;
       inputs[0]?.[1].el.focus();
       inputs[0]?.[1].el.select();
@@ -198,6 +235,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       s.value = operation;
       s.addEventListener("change", () => {
         list.hidden = words.hidden = s.value === "new";
+        throughNow();
         okNow();
         on.operation?.(s.value as ExtrudeOperation);
       });
@@ -206,6 +244,7 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       const row = el("label", "", "feature-edit-row");
       row.append("Operation ", s);
       operationSlot.replaceChildren(row);
+      throughNow();
       okNow();
     },
     showBodies(choices, words, ready) {
@@ -228,6 +267,9 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
     get operation() {
       return (select?.value as ExtrudeOperation | undefined) ?? null;
     },
+    get through() {
+      return through === null ? null : through.checked;
+    },
     busy(on) {
       checking = on;
       okNow();
@@ -238,7 +280,8 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
       // holding the panel as hovered, and then in memory once a new design replaces it (e2e/closed-panels.mjs).
       box.replaceChildren();
       box.hidden = true;
-      error = ok = flip = both = region = null;
+      error = ok = flip = both = through = region = null;
+      throughNow = () => {};
       select = null;
       bodies = note = operationSlot = null;
       inputs = [];
