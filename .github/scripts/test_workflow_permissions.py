@@ -63,7 +63,7 @@ ENVIRONMENTS = {
     ("kernel-ci.yml", "checks"): "kernel",
     ("kernel-ci.yml", "checks-report"): "kernel",
     ("kernel-ci.yml", "coverage"): "kernel",
-    ("kernel-ci.yml", "coverage-keys"): "kernel",
+    ("kernel-ci.yml", "keys"): "kernel",
     ("kernel-ci.yml", "coverage-save"): "kernel",
     ("kernel-ci.yml", "mutants-plan"): "kernel",
     ("kernel-ci.yml", "mutants-shard"): "kernel",

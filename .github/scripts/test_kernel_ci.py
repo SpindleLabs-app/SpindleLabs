@@ -158,6 +158,30 @@ class Save(unittest.TestCase):
         evil = subprocess.run(["bash", SCRIPT, "fetch", "../x", os.path.join(self.tmp.name, "y")], capture_output=True, text=True, env=env)
         self.assertNotEqual(evil.returncode, 0)
 
+    def test_save_sealed_opens_each_artifact_and_names_one_it_cannot(self):
+        keys = os.path.join(self.tmp.name, "keys")
+        subprocess.run(["bash", SCRIPT, "keygen", keys], check=True)
+        root = os.path.join(self.tmp.name, "downloaded")
+        for name in ("checks-rest", "mutants-plan"):
+            subprocess.run(["bash", SCRIPT, "seal", self.logs, os.path.join(root, "sealed-" + name), os.path.join(keys, "public.pem")], check=True)
+        # A third bundle, changed after sealing.
+        bad = os.path.join(root, "sealed-checks-solver")
+        subprocess.run(["bash", SCRIPT, "seal", self.logs, bad, os.path.join(keys, "public.pem")], check=True)
+        with open(os.path.join(bad, "data.enc"), "r+b") as f:
+            f.seek(5)
+            f.write(b"\x00\x01")
+        env = dict(os.environ, RESULTS_REPO=self.remote, RESULTS_PATH="ci/pr-3/abc/1-1", LABEL="pr-3", HEAD_SHA="abc", SAVE_WAIT_SCALE="0")
+        out = subprocess.run(["bash", SCRIPT, "save-sealed", root, os.path.join(keys, "private.pem"), os.path.join(self.tmp.name, "opened")],
+                             capture_output=True, text=True, env=env)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("saved checks-rest", out.stdout)
+        self.assertIn("saved mutants-plan", out.stdout)
+        self.assertIn("could not open checks-solver", out.stdout)
+        saved = self.saved()
+        self.assertIn("ci/pr-3/abc/1-1/checks-rest/tests.log", saved)
+        self.assertIn("ci/pr-3/abc/1-1/mutants-plan/tests.log", saved)
+        self.assertFalse([f for f in saved if "checks-solver" in f])
+
     def test_files_over_50_mb_stay_behind_and_are_counted(self):
         # 50 MiB + 1 byte is over the limit (find -size +50M counts whole
         # MiB: over 50 means at least 50 MiB + 1 byte); exactly 50 MiB is
@@ -741,7 +765,7 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
     split (SPLIT, which grows as each job is), the only secret such a job may name is KERNEL_SOURCE (read-only on the
     kernel, which the code can read anyway), and no job naming a writing key runs kernel code."""
 
-    SPLIT = {("kernel-ci.yml", "coverage")}
+    SPLIT = {("kernel-ci.yml", job) for job in ("coverage", "checks-plan", "checks", "mutants-plan", "mutants-shard")}
     WRITING = {"RESULTS_WRITE", "KERNEL_STATUS", "KERNEL_READ", "MERGE_QUEUE_TOKEN"}
     KERNEL = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel")
 
@@ -751,11 +775,11 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
             code = "\n".join(line for line in lines.split("\n") if not line.lstrip().startswith("#"))
             named = SecretsOnlyOnMain.secrets(code)
             runs_kernel = bool(self.KERNEL.search(code))
+            if name == "kernel-ci.yml" and runs_kernel and named & self.WRITING:
+                out.append(f"{name} {job}: runs kernel code beside {', '.join(sorted(named & self.WRITING))}")
             if (name, job) in self.SPLIT:
                 if not runs_kernel:
                     out.append(f"{name} {job}: listed as a kernel-code job but runs none")
-                if named & self.WRITING:
-                    out.append(f"{name} {job}: runs kernel code beside {', '.join(sorted(named & self.WRITING))}")
         return out
 
     def test_every_workflow(self):
@@ -764,6 +788,10 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
             with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, name)) as f:
                 found += self.problems(name, f.read())
         self.assertEqual(found, [])
+
+    def test_kernel_ci_no_longer_uses_the_old_all_in_one_key(self):
+        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "kernel-ci.yml")) as f:
+            self.assertNotIn("secrets.KERNEL_READ", f.read())
 
     def test_the_check_catches_a_writing_key_beside_kernel_code(self):
         job = "on: push\njobs:\n  coverage:\n    runs-on: x\n    steps:\n      - run: .github/scripts/kernel_ci.sh run a d k/ci/x.sh\n"
@@ -783,7 +811,8 @@ class LabelCheck(unittest.TestCase):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "workflows", "kernel-ci.yml")
         with open(path) as f:
             found = re.findall(r"\$LABEL =~ \^(\([^)]*\))\$", f.read())
-        self.assertEqual(len(found), 2, "both input checks")
+        # keys, checks-plan, checks and the three jobs that hold RESULTS_WRITE and KERNEL_STATUS
+        self.assertEqual(len(found), 6, "every job that uses the label has the input check")
         return found
 
     def test_accepted_and_refused(self):
