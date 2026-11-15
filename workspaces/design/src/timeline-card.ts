@@ -576,7 +576,13 @@ function placeCard(card: HTMLElement, anchor: HTMLElement) {
   const b = card.getBoundingClientRect();
   // Above the whole row, not just the item: at phone width the row is taller than its items.
   const row = anchor.closest(".timeline-bar")?.getBoundingClientRect();
-  let top = Math.min(r.top, row?.top ?? r.top) - CARD_GAP - b.height;
+  // A warning note over the row (a refused drop, a failed item's words) stays readable: the card goes above it, never over it.
+  let rowTop = Math.min(r.top, row?.top ?? r.top);
+  for (const n of anchor.ownerDocument.querySelectorAll(".timeline-reorder-note, .timeline-bar-note")) {
+    const nr = n.getBoundingClientRect();
+    if (nr.width > 0 && nr.height > 0 && nr.top < rowTop) rowTop = nr.top;
+  }
+  let top = rowTop - CARD_GAP - b.height;
   if (top < CARD_EDGE) top = r.bottom + CARD_GAP;
   const left = Math.min(Math.max(CARD_EDGE, r.left + r.width / 2 - b.width / 2), Math.max(CARD_EDGE, vw - CARD_EDGE - b.width));
   card.style.left = `${Math.round(left)}px`;
