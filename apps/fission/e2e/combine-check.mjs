@@ -38,6 +38,9 @@
 //    with Box 3's 1,000 and the new 40 × 30 × 20 box's 24,000: 46,000.
 // 6. A round tool (#677 item 1): Insert > Cylinder, then Combine cutting it
 //    from Box 1 is refused in the app's words, naming the round body.
+// 7. Modify > Duplicate pressed right after Combine's OK (#760 item 5): the
+//    Duplicate waits, so the Cut is made (21,000 + 1,000 = 22,000); the OK
+//    clears the selection, so nothing is copied, as when pressed slowly.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -260,6 +263,22 @@ try {
     await page.click("#combine-ok");
     await until(page, () => !document.getElementById("combine-error").hidden, null, "6: OK answered with words");
     assert.equal(await page.$eval("#combine-error", (e) => e.textContent), "Combine 1 can't be made: a tool body has a round face. Cut, Join and Intersect work on flat-sided shapes for now; round shapes are coming.");
+    await page.context().close();
+  }
+  // 7. Modify > Duplicate pressed right after Combine's OK.
+  {
+    const page = await fresh(design([[[40, 30, 20], null], [[40, 30, 20], [20, 15, 10]], [[10, 10, 10], [100, 0, 0]]]));
+    await combine(page, "Body 1", ["Body 2"], "cut", false, false);
+    await page.evaluate(() => {
+      document.getElementById("combine-ok").click();
+      document.getElementById("modify-menu").click();
+      document.getElementById("modify-menu-duplicate").click();
+    });
+    await until(page, () => document.getElementById("combine-panel").hidden, null, "7: the Combine panel shut");
+    await page.waitForTimeout(1500);
+    await rebuilt(page);
+    assert.deepEqual(await page.$$eval("#timeline li[data-item]", (l) => l.map((li) => li.textContent.trim().split("\n")[0]).slice(5)), ["6. Combine 1"], "7: the Combine is in the timeline, and nothing was copied");
+    assert.equal((await toolbarStl(page)).volume, 21000 + 1000, "7: the Cut was made");
     await page.context().close();
   }
   assert.deepEqual(errors, [], "no page errors");

@@ -974,7 +974,7 @@ try {
     assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false");
   });
 
-  await check("each placeholder workspace says what it will do and 'Coming soon', and keeps the viewport", async () => {
+  await check("each placeholder workspace says what it will do and 'Expected <when>', and keeps the viewport", async () => {
     // Back to a known body, then remember the camera's view of it.
     await chooseShape(page, "box");
     await page.fill("#width", "40");
@@ -988,7 +988,7 @@ try {
       await page.evaluate((hash) => (location.hash = hash), `#${id}`);
       await page.waitForFunction((want) => document.body.dataset.activeWorkspace === want, id);
       assert.equal(await page.textContent(".placeholder h2"), title);
-      assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
+      assert.match(await page.textContent(".placeholder .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
       assert.match(await page.textContent(".placeholder .starts-after"), /^Work starts after CAD step \d+/);
       assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), id);
       assert.equal(new URL(page.url()).hash, `#${id}`);
@@ -1657,7 +1657,7 @@ try {
     }
   });
 
-  await check("split view: Image beside Design by default; Design in the second pane with its own panels and camera, one selection; a placeholder there says Coming soon and draws no 3D view; Close split restores one view", async () => {
+  await check("split view: Image beside Design by default; Design in the second pane with its own panels and camera, one selection; a placeholder there says when it is expected and draws no 3D view; Close split restores one view", async () => {
     const wide = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     wide.on("pageerror", (e) => noteError(e.message));
     wide.on("console", (m) => {
@@ -1767,7 +1767,7 @@ try {
       await wide.selectOption("#split-choice", "slice");
       await wide.waitForFunction(() => document.body.dataset.split === "slice");
       assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "SliceLab");
-      assert.equal(await wide.textContent("#split-viewport .split-soon .coming-soon"), "Coming soon");
+      assert.match(await wide.textContent("#split-viewport .split-soon .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
       assert.equal(await wide.isVisible("#split-viewport .split-soon"), true);
       assert.equal(await wide.textContent("#split-properties .placeholder h2"), "SliceLab", "the workspace's own page, where the card comes from");
       assert.equal(await wide.isVisible("#split-properties"), false, "no second copy beside the card");
@@ -1824,7 +1824,7 @@ try {
     }
   });
 
-  await check("split view, every choice in the second pane: one toolbar row per pane and no empty band; placeholders say Coming soon and draw no 3D view; each check fails on the old layout", async () => {
+  await check("split view, every choice in the second pane: one toolbar row per pane and no empty band; placeholders say when they are expected and draw no 3D view; each check fails on the old layout", async () => {
     const wide = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     wide.on("pageerror", (e) => noteError(e.message));
     try {
@@ -1879,7 +1879,7 @@ try {
       async function checkNoView(id) {
         assert.equal(await wide.isVisible("#split-viewport .split-soon"), true, `${id}: the card shows`);
         assert.equal(await wide.textContent("#split-viewport .split-soon h2"), titles[id]);
-        assert.equal(await wide.textContent("#split-viewport .split-soon .coming-soon"), "Coming soon");
+        assert.match(await wide.textContent("#split-viewport .split-soon .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
         assert.equal(await wide.$eval("#split-viewport", (el) => el.dataset.drawing), "off", `${id}: the view is not drawing`);
         assert.equal(await wide.isVisible("#split-viewport > canvas"), false, `${id}: no canvas`);
         assert.equal(await wide.isVisible("#split-viewport > .view-controls"), false, `${id}: no view buttons`);

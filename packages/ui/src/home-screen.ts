@@ -1,5 +1,5 @@
 // The home screen (U6b): what the app can open on, over the project it has open. A "Carry on with …" card for the
-// project last worked on, New, Open file and Upload STL, a search by name, the projects kept in this browser with a
+// project last worked on, New and Open file (no Upload STL until STL files can really be opened), a search by name, the projects kept in this browser with a
 // workspace filter, and the guide. It is behind the shell's HOME_SCREEN switch (apps/fission/home.config.mjs), off
 // until released. The shell (apps/fission main.ts) does the opening, renaming, deleting and starting; this file is
 // the screen, its words, and the pure rules for search, filter and the card (tested by hand in test/home-screen.test.ts).
@@ -251,7 +251,6 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   actions.append(
     button("home-new", "New project", () => void act(() => parts.newProject(), true), "home-primary"),
     button("home-open-file", "Open file…", () => (hide(), parts.chooseFile())),
-    button("home-upload-stl", "Upload STL…", () => (hide(), parts.chooseFile())),
   );
   search.addEventListener("input", () => paintList());
   filter.addEventListener("change", () => paintList());

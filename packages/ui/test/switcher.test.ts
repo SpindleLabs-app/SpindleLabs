@@ -3,7 +3,7 @@
 // in a real DOM (happy-dom).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMING_SOON, switcherLabel, workspaceSwitcher, type SwitcherEntry } from "../src/switcher.ts";
+import { comingNote, switcherLabel, workspaceSwitcher, type SwitcherEntry } from "../src/switcher.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -42,10 +42,10 @@ test("one button in place of the tabs, named for the first workspace until marke
   const rows = items().map((b) => [b.id, b.dataset.workspace, b.querySelector(".menu-button-name")!.textContent, b.querySelector(".menu-button-note")?.textContent ?? null, "soon" in b.dataset, b.getAttribute("aria-current")]);
   assert.deepEqual(rows, [
     ["workspace-design", "design", "Design", null, false, "true"],
-    ["workspace-render", "render", "Render", COMING_SOON, true, null],
+    ["workspace-render", "render", "Render", "Late 2027", true, null],
     ["workspace-image", "image", "Image", null, false, null],
   ]);
-  assert.equal(items()[1].title, "Pictures of the part (coming soon)");
+  assert.equal(items()[1].title, "Pictures of the part (expected late 2027)");
   assert.equal(items()[2].title, "Edit pictures");
   assert.equal(items()[1].getAttribute("aria-disabled"), null, "a placeholder is still chosen: its page says what it will do");
   window.happyDOM.close();

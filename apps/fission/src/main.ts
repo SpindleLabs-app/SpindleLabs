@@ -11,15 +11,16 @@
 // each pane's viewport, for the workspace in that pane.
 /// <reference types="vite/client" />
 // First, before any module that starts work: a framed page stops here (audit S10).
+import { fileNotice } from "./file-notice.ts";
 import { pageShareSwitch } from "./share-switch.ts";
 import "./frame-guard.ts";
 import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../packages/print/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName, previews } from "@fission/core";
 import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, workspaceEta, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -42,6 +43,8 @@ import { laserWorkspace } from "@fission/laser";
 import { sliceWorkspace, slicePageWorkspace } from "@fission/slice";
 /** The Slice page (slice-page.config.mjs): off in the shipped build until it does everything Slice for printing does. */
 declare const __SLICE_PAGE__: boolean;
+// The build-time switches, also on for a tab opened with `?all` (@fission/core preview.ts): the shipped build carries their code.
+const SLICE_PAGE = __SLICE_PAGE__ || previews().all;
 import { circuitWorkspace } from "@fission/circuit";
 import { vectorWorkspace } from "@fission/vector";
 import { imageWorkspace } from "@fission/image";
@@ -54,7 +57,7 @@ const workspaces: WorkspacePlugin[] = [
   simulateWorkspace,
   manufactureWorkspace,
   laserWorkspace,
-  __SLICE_PAGE__ ? slicePageWorkspace : sliceWorkspace,
+  SLICE_PAGE ? slicePageWorkspace : sliceWorkspace,
   circuitWorkspace,
   vectorWorkspace,
   imageWorkspace,
@@ -97,7 +100,7 @@ for (const w of workspaces) w.registerActions?.(actions);
 const downstream = new DownstreamRegistry();
 for (const w of workspaces) w.registerDownstream?.(downstream);
 // The workspaces DESIGN ▾ lists (listed-workspaces.ts); the rest stay built in, opened by their links.
-const everyWorkspace = new URLSearchParams(location.search).has(ALL_WORKSPACES_SWITCH);
+const everyWorkspace = new URLSearchParams(location.search).has(ALL_WORKSPACES_SWITCH) || previews().all;
 const listed = listedWorkspaces(workspaces, everyWorkspace);
 const workspaceTitle = (id: WorkspaceId) => workspaces.find((w) => w.id === id)?.title ?? id;
 
@@ -106,8 +109,10 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 declare const __ACCOUNTS__: { url: string; anonKey: string } | null;
 /** The home screen (home.config.mjs): the app opens on it over the last project; off in the shipped build until released. */
 declare const __HOME_SCREEN__: boolean;
+const HOME_SCREEN = __HOME_SCREEN__ || previews().all;
 /** The design tabs (tabs.config.mjs; also on with the home screen, which is built with them): off until released. */
 declare const __DESIGN_TABS__: boolean;
+const DESIGN_TABS = __DESIGN_TABS__ || previews().all;
 /** The account code's hooks once it has started (only with accounts on): My designs. */
 let accountHooks: import("./account.ts").AccountHooks | null = null;
 /**
@@ -369,7 +374,7 @@ const SLICE_SUMMARY = "Slice for printing: slice the design and save the printer
 const markTab = workspaceSwitcher(
   $("workspaces"),
   listed.map((w) => (w.id === "slice" ? { id: w.id, title: w.title, summary: SLICE_SUMMARY, placeholder: false } : { id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
-  (id) => (id === "slice" && !__SLICE_PAGE__ ? sliceForPrinting() : show(id as WorkspaceId)),
+  (id) => (id === "slice" && !SLICE_PAGE ? sliceForPrinting() : show(id as WorkspaceId)),
   { community: "Community", ...Object.fromEntries(workspaces.map((w) => [w.id, w.title])) },
 );
 /** DESIGN ▾'s Slice: Design on screen, then its File ▾ > Slice for printing, or the reason there is nothing to slice. */
@@ -377,7 +382,7 @@ function sliceForPrinting() {
   if (current !== "design") show("design");
   const entry = pool.awake("main")?.view.fileEntries?.()?.exports?.find((e) => e.id === "file-slice-print");
   if (!entry) return;
-  if (entry.off) return fileStatus(entry.off);
+  if (entry.off) return passingStatus(entry.off);
   entry.run();
 }
 
@@ -532,7 +537,7 @@ function mountSplitPane(id: WorkspaceId) {
 /**
  * A workspace not built yet gets no 3D view in the second pane: the view
  * stops drawing (its camera kept for the next workspace there) and the
- * pane shows its name and "Coming soon" with what its page says it will
+ * pane shows its name and when it is expected with what its page says it will
  * do; a working workspace gets the view back.
  */
 function showSoon(workspace: WorkspacePlugin) {
@@ -547,7 +552,7 @@ function showSoon(workspace: WorkspacePlugin) {
   }
   const page = $("split-properties").querySelector(".placeholder");
   if (page) soon.replaceChildren(page.cloneNode(true));
-  else soon.innerHTML = `<div class="placeholder"><h2></h2><p class="coming-soon">Coming soon</p></div>`;
+  else soon.innerHTML = `<div class="placeholder"><h2></h2><p class="coming-soon">Expected ${workspaceEta(workspace.id)}</p></div>`;
   if (!page) soon.querySelector("h2")!.textContent = workspace.title;
 }
 /** Frames the second view at home once, the first time it shows in 3D at its settled size. */
@@ -724,6 +729,8 @@ function askBeforeLeaving(e: BeforeUnloadEvent) {
 }
 /** What the save mark says now: put back when an opened file is abandoned before it was kept (issue #247). */
 let shownStatus: AutosaveStatus = { state: "saved" };
+/** Tells the design tabs whether the project on screen has changes not stored yet (a dot on its tab); set once the tabs exist. */
+let markTabs: (() => void) | null = null;
 /** Marks that say "Saving…" only while an opened project is stored again as it is: no change of the person's is waiting (tabs hunt A5). */
 const storingAgain = new WeakSet<AutosaveStatus>();
 const saveStatus = (s: AutosaveStatus) => {
@@ -734,6 +741,7 @@ const saveStatus = (s: AutosaveStatus) => {
   el.title = el.textContent; // the words behind the mark at phone width
   if (s.state === "saved") accountHooks?.saved(); // My designs: kept in the account a few seconds later, when signed in
   askWhileUnsaved();
+  markTabs?.();
 };
 /** Listens for beforeunload only while something could be lost (a saved page with nothing held stays fit for the back/forward cache). */
 function askWhileUnsaved() {
@@ -792,7 +800,10 @@ function keepOnFirstChange() {
 // .spindle file (docs/project-format.md). Opening replaces the project
 // only once all of it has read cleanly; a refused file leaves the open
 // project as it was and says why.
-const fileStatus = (message: string) => ($("file-status").textContent = message);
+const notice = fileNotice({ show: (t) => void ($("file-status").textContent = t), read: () => $("file-status").textContent ?? "" }, { set: (f, ms) => setTimeout(f, ms), clear: (id) => clearTimeout(id as number) });
+const fileStatus = notice.sticky;
+/** A notice about something that just went wrong (a refused file, a failed undo): it goes by itself at the next change or new project, or after a while (src/file-notice.ts). */
+const passingStatus = notice.passing;
 $("file-dismiss").addEventListener("click", () => fileStatus(""));
 /** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
 let savedTo: FileHandle | null = null;
@@ -874,7 +885,7 @@ const fileKey = (keys: string) => chordLabel(parseChord(keys), /Mac|iPhone|iPad/
 const printLog = startPrintLog(document);
 const fileParts: FileMenuParts = {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, key: fileKey("Mod+O"), run: () => $("open-file").click() },
-  ...(__HOME_SCREEN__ ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
+  ...(HOME_SCREEN ? { home: { id: "file-home", label: "Home…", title: "Home: carry on with the last project, start a new one, or find another", run: () => void home?.show() } } : {}),
   projects: { id: "file-projects", label: "Projects in this browser…", title: "Projects in this browser: every project kept here, to open again or delete", run: () => void projects.show() },
   ...(__ACCOUNTS__ ? { myDesigns: { id: "file-my-designs", label: "My designs…", title: "My designs: the designs kept in your account, to open on any device you sign in on", run: () => void accountHooks?.showDesigns() } } : {}),
   ...(__ACCOUNTS__ && pageShareSwitch().on ? { share: { id: "file-share", label: "Share…", title: "Share: make a link to a frozen copy of this design that anyone can open (this feature is still being checked)", run: () => void accountHooks?.share() } } : {}),
@@ -914,6 +925,7 @@ function replaceProject(project: Project) {
   filesOf.clear(); // and nothing of the old project can be undone back to
   freshPending = false;
   fileOwner++;
+  notice.changed(); // a refused file's notice was about the old project
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -1125,7 +1137,7 @@ async function startNewProject(keepNow = false) {
   fileStatus("");
 }
 /** The design tabs (only when the build has them, tabs.config.mjs): one tab for each project open at once. */
-const tabs: ShellTabs | null = !__DESIGN_TABS__
+const tabs: ShellTabs | null = !DESIGN_TABS
   ? null
   : shellTabs(document, {
       after: $("topbar"),
@@ -1170,8 +1182,9 @@ const tabs: ShellTabs | null = !__DESIGN_TABS__
         }
       })(),
     });
+markTabs = () => tabs?.strip.mark(shownStatus.state !== "saved" && !storingAgain.has(shownStatus));
 /** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
-const home = !__HOME_SCREEN__ ? null : homeScreen(document, {
+const home = !HOME_SCREEN ? null : homeScreen(document, {
   list: () => store.list(),
   openId: keptId,
   open: openStored,
@@ -1282,12 +1295,12 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
     // A project-named file is read whole (it is size-capped) so it can be parsed; anything else, its start.
     heads = await Promise.all(files.map(async (f, i): Promise<FileHead> => (folders[i] ? { name: f.name, size: f.size, head: new Uint8Array(), folder: true } : { name: f.name, size: f.size, head: new Uint8Array(await readBytes(f, f.slice(0, headBytesFor(f.name, f.size)))) })));
   } catch (e) {
-    if (e instanceof Unreadable) return fileStatus(e.message);
+    if (e instanceof Unreadable) return passingStatus(e.message);
     throw e;
   }
   const route = routeFiles(representations, heads, (w) => listed.some((l) => l.id === w)); // an unlisted workspace's files are refused (listed-workspaces.ts)
   if (!route) return;
-  if (route.kind === "refused") return fileStatus(route.message);
+  if (route.kind === "refused") return passingStatus(route.message);
   const file = files[0];
   const target = route.importer.workspace;
   if (target && pool.showing("main") !== target && pool.showing("split") !== target) {
@@ -1297,8 +1310,8 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
   try {
     await route.importer.open(file.name, new Uint8Array(await readBytes(file, file)));
   } catch (e) {
-    if (e instanceof Unreadable) return fileStatus(e.message);
-    return fileStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
+    if (e instanceof Unreadable) return passingStatus(e.message);
+    return passingStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
   }
   const into = route.importer.workspace;
   if (!into) return; // the shell itself (a project) has already shown it, and said what it says (openProject)
@@ -1619,7 +1632,7 @@ function undoRedoNow(which: "undo" | "redo") {
   try {
     ctx.history[which]();
   } catch (e) {
-    return fileStatus(`Couldn't ${which}: ${e instanceof Error ? e.message : String(e)}`);
+    return passingStatus(`Couldn't ${which}: ${e instanceof Error ? e.message : String(e)}`);
   }
   ctx.history.amend(); // defaults the remounted workspaces filled in
 }
@@ -1672,6 +1685,7 @@ for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id));
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
+ctx.history.onChange(notice.changed); // a passing notice goes at the next change
 refreshUndoRedo = showUndoRedo;
 ctx.history.onBusy(showUndoRedo);
 showUndoRedo();
@@ -1694,13 +1708,13 @@ function jumpHistory(step: number) {
   const now = () => {
     const tool = openTool();
     // Going back would close the tool and lose what is typed in it (issue #520): it waits until the tool closes.
-    if (tool) return fileStatus(`Finish or cancel ${tool.name} first (OK or Cancel), then go back in History.`);
+    if (tool) return passingStatus(`Finish or cancel ${tool.name} first (OK or Cancel), then go back in History.`);
     const target = ctx.history.steps()[step];
     try {
       // Refused while a sketch is open, for a step from before it (its own steps only, issue #520).
-      if (ctx.history.jumpTo(step) === null && target !== undefined && target.state !== "current") return fileStatus("While a sketch is open, History goes back only through the sketch's own steps: Finish Sketch first.");
+      if (ctx.history.jumpTo(step) === null && target !== undefined && target.state !== "current") return passingStatus("While a sketch is open, History goes back only through the sketch's own steps: Finish Sketch first.");
     } catch (e) {
-      return fileStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
+      return passingStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
     }
     ctx.history.amend(); // defaults the remounted workspaces filled in
   };

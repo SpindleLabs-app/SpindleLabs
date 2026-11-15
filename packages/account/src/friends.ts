@@ -17,7 +17,7 @@ export const ASK_ANSWERS = ["sent", "friends", "waiting", "already", "self", "no
 export type AskAnswer = (typeof ASK_ANSWERS)[number];
 
 /** What set_friends answers. */
-export const TURN_ANSWERS = ["on", "off", "no-name", "held"] as const;
+export const TURN_ANSWERS = ["on", "off", "no-name", "held", "not-yet"] as const;
 export type TurnAnswer = (typeof TURN_ANSWERS)[number];
 
 /** What accept_friend_request answers. */
@@ -158,6 +158,7 @@ export function askWords(answer: AskAnswer): string {
 
 /** Each refusal to turn Friends on, in plain words. */
 export function turnWords(answer: Exclude<TurnAnswer, "on" | "off">): string {
+  if (answer === "not-yet") return "Friends isn't open yet: it opens with sharing, once its checks are done.";
   return answer === "no-name"
     ? "Friends needs a display name, because that's what people see when you ask them. Pick one above first."
     : "Your account is on hold, so Friends can't be turned on right now.";

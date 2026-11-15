@@ -33,3 +33,11 @@ test("storage that refuses changes nothing but the memory", () => {
   assert.deepEqual(shareSwitch("?share", broken), { on: true, id: null });
   assert.deepEqual(shareSwitch("", broken), { on: false, id: null });
 });
+
+test("?community and ?all (the preview flag passed in) turn sharing on without remembering ?share; a link is still named only by ?share=<id>", () => {
+  const t = tab();
+  assert.deepEqual(shareSwitch("?community", t, true), { on: true, id: null });
+  assert.equal(t.items.has(SHARE_TAB_KEY), false, "the preview switch keeps its own memory");
+  assert.deepEqual(shareSwitch("?community", t, false), { on: false, id: null }, "the flag, not the word, decides");
+  assert.deepEqual(shareSwitch("?share=" + ID, tab(), true), { on: true, id: ID });
+});

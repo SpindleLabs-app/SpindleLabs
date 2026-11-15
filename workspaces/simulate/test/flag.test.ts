@@ -34,3 +34,19 @@ test("a store that throws counts as empty and the address alone decides", () => 
   assert.equal(readTestLabFlag("?testlab", bad), true);
   assert.equal(readTestLabFlag("", bad), false);
 });
+
+test("?all (@fission/core preview.ts) turns it on too; without it the address alone decides", async () => {
+  const { setPreviews } = await import("@fission/core");
+  const { testlabShown, setTestLabShown } = await import("../src/flag.ts");
+  try {
+    setPreviews({ all: true, community: true });
+    setTestLabShown(null);
+    assert.equal(testlabShown(), true); // no address here (node), so only ?all can have turned it on
+    setPreviews({ all: false, community: true }); // ?community alone is not this switch
+    setTestLabShown(null);
+    assert.equal(testlabShown(), false);
+  } finally {
+    setPreviews(null);
+    setTestLabShown(null);
+  }
+});

@@ -145,6 +145,19 @@ class Save(unittest.TestCase):
     def saved(self):
         return subprocess.run(["git", "-C", self.remote, "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True, check=True).stdout.split()
 
+    def test_fetch_gives_back_a_saved_folder_and_refuses_a_missing_one(self):
+        self.assertEqual(self.save().returncode, 0)
+        env = dict(os.environ, RESULTS_REPO=self.remote)
+        out = os.path.join(self.tmp.name, "got")
+        ok = subprocess.run(["bash", SCRIPT, "fetch", "ci/pr-3/abc/1-1/checks", out], capture_output=True, text=True, env=env)
+        self.assertEqual((ok.returncode, ok.stdout), (0, ""))
+        with open(os.path.join(out, "tests.log")) as f:
+            self.assertEqual(f.read(), "all passed\n")
+        bad = subprocess.run(["bash", SCRIPT, "fetch", "ci/none", os.path.join(self.tmp.name, "x")], capture_output=True, text=True, env=env)
+        self.assertNotEqual(bad.returncode, 0)
+        evil = subprocess.run(["bash", SCRIPT, "fetch", "../x", os.path.join(self.tmp.name, "y")], capture_output=True, text=True, env=env)
+        self.assertNotEqual(evil.returncode, 0)
+
     def test_files_over_50_mb_stay_behind_and_are_counted(self):
         # 50 MiB + 1 byte is over the limit (find -size +50M counts whole
         # MiB: over 50 means at least 50 MiB + 1 byte); exactly 50 MiB is
@@ -476,7 +489,7 @@ class SecretsOnlyOnMain(unittest.TestCase):
     which is why the keys are step-scoped and the environments main-only."""
 
     WORKFLOWS = NoNoisyKernelCheckout.WORKFLOWS
-    NEEDS = {"KERNEL_READ": "kernel", "RESULTS_WRITE": "kernel", "MERGE_QUEUE_TOKEN": "merge"}
+    NEEDS = {"KERNEL_READ": "kernel", "KERNEL_SOURCE": "kernel", "KERNEL_STATUS": "kernel", "RESULTS_WRITE": "kernel", "MERGE_QUEUE_TOKEN": "merge"}
     # Secrets that are no key: GitHub's own per-run token.
     PLAIN = {"GITHUB_TOKEN"}
     SECRET = re.compile(r"""secrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([^'"]+)['"]\s*\])""")
@@ -721,6 +734,44 @@ class NoKeyBesideKernelCode(unittest.TestCase):
         # The same key beside a step that only saves is fine; and the later keyless step too.
         save = "      - env:\n          R: ${{ secrets.RESULTS_WRITE }}\n        run: .github/scripts/kernel_ci.sh save a out\n"
         self.assertEqual(self.problems("w", wf(save + good)), [])
+
+
+class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
+    """Security hunt H3: a job that runs the kernel's code holds no key that can write anything. For the jobs already
+    split (SPLIT, which grows as each job is), the only secret such a job may name is KERNEL_SOURCE (read-only on the
+    kernel, which the code can read anyway), and no job naming a writing key runs kernel code."""
+
+    SPLIT = {("kernel-ci.yml", "coverage")}
+    WRITING = {"RESULTS_WRITE", "KERNEL_STATUS", "KERNEL_READ", "MERGE_QUEUE_TOKEN"}
+    KERNEL = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel")
+
+    def problems(self, name, text):
+        out = []
+        for job, lines in jobs(text).items():
+            code = "\n".join(line for line in lines.split("\n") if not line.lstrip().startswith("#"))
+            named = SecretsOnlyOnMain.secrets(code)
+            runs_kernel = bool(self.KERNEL.search(code))
+            if (name, job) in self.SPLIT:
+                if not runs_kernel:
+                    out.append(f"{name} {job}: listed as a kernel-code job but runs none")
+                if named & self.WRITING:
+                    out.append(f"{name} {job}: runs kernel code beside {', '.join(sorted(named & self.WRITING))}")
+        return out
+
+    def test_every_workflow(self):
+        found = []
+        for name in sorted(os.listdir(SecretsOnlyOnMain.WORKFLOWS)):
+            with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, name)) as f:
+                found += self.problems(name, f.read())
+        self.assertEqual(found, [])
+
+    def test_the_check_catches_a_writing_key_beside_kernel_code(self):
+        job = "on: push\njobs:\n  coverage:\n    runs-on: x\n    steps:\n      - run: .github/scripts/kernel_ci.sh run a d k/ci/x.sh\n"
+        self.assertEqual(self.problems("kernel-ci.yml", job), [])
+        bad = job + "      - env:\n          K: ${{ secrets.RESULTS_WRITE }}\n"
+        self.assertEqual(self.problems("kernel-ci.yml", bad), ["kernel-ci.yml coverage: runs kernel code beside RESULTS_WRITE"])
+        ok = job + "      - env:\n          K: ${{ secrets.KERNEL_SOURCE }}\n"
+        self.assertEqual(self.problems("kernel-ci.yml", ok), [])
 
 
 class LabelCheck(unittest.TestCase):

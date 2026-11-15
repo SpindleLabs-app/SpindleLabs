@@ -5,6 +5,8 @@
 // before the "#" winning; slashes, spaces and capitals round it are forgiven,
 // as Design's `?combine` is. Without it, the workspace is the Simulate placeholder it was.
 
+import { previews } from "@fission/core";
+
 /** sessionStorage's key for the flag. */
 export const TESTLAB_KEY = "spindle-testlab";
 
@@ -42,7 +44,8 @@ export function testlabShown(): boolean {
     } catch {
       store = null;
     }
-    flag = readTestLabFlag(globalThis.location?.search ?? "", store, globalThis.location?.hash ?? "");
+    // `?all` (@fission/core preview.ts) turns it on too.
+    flag = readTestLabFlag(globalThis.location?.search ?? "", store, globalThis.location?.hash ?? "") || previews().all;
   }
   return flag;
 }

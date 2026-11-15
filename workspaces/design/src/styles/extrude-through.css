@@ -1,0 +1,10 @@
+/* Through all (version 23, extrude-panel.ts and feature-edit-panel.ts), each part marked by `data-part`: the Extrude
+   panel's button, lit while on, as Symmetric is (`:not(#none)` outweighs the workspace's own button rule, which has an id
+   in it; a 44 px target on a touch screen, Ben's rule 2026-11-11); its words where the distance box was; Edit feature's
+   row, hidden over feature-edit.css's display: block. */
+.extrude-through[data-part="button"]:not(#none):not(#none)[aria-pressed="true"] { background: var(--fill-23384f); border-color: var(--look-accent, var(--accent)); color: var(--look-accent-text, var(--accent-text)); }
+.extrude-through[data-part="words"] { font-style: italic; }
+.extrude-through[hidden]:not(#none) { display: none; }
+@media (hover: none), (pointer: coarse), (max-width: 700px) {
+  .extrude-through[data-part="button"]:not(#none):not(#none) { min-height: 44px; }
+}

@@ -9,6 +9,8 @@
 // later takes effect on the next load. Without it, Modify ▾ shows Combine
 // greyed as coming soon (coming-soon.ts), as before.
 
+import { previews } from "@fission/core";
+
 /** sessionStorage's key for the flag. */
 export const COMBINE_KEY = "spindle-combine";
 
@@ -59,7 +61,8 @@ export function combineShown(): boolean {
     } catch {
       store = null;
     }
-    flag = readCombineFlag(globalThis.location?.search ?? "", store, globalThis.location?.hash ?? "");
+    // `?all` (@fission/core preview.ts) turns it on too.
+    flag = readCombineFlag(globalThis.location?.search ?? "", store, globalThis.location?.hash ?? "") || previews().all;
   }
   return flag;
 }

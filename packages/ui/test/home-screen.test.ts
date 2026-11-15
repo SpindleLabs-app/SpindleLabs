@@ -87,7 +87,7 @@ test("the screen shows the card, the list and the filter; search and filter narr
   assert.match(q("#home-status").textContent!, /No project matches/);
 });
 
-test("the card on the open project just goes back; New, Open file, Upload STL and the guide each do their one thing", async () => {
+test("the card on the open project just goes back; New, Open file and the guide each do their one thing", async () => {
   const s = setup();
   await s.home.show();
   await s.click("#home-carry-on");
@@ -100,10 +100,11 @@ test("the card on the open project just goes back; New, Open file, Upload STL an
   await s.home.show();
   await s.click("#home-open-file");
   await s.home.show();
-  await s.click("#home-upload-stl");
   await s.home.show();
+  // Upload STL is not offered: STL files can't be opened yet, and a button that opens the file picker only to refuse the file would pretend.
+  assert.equal(s.doc.querySelector("#home-upload-stl"), null);
   await s.click("#home-guide");
-  assert.deepEqual(s.calls, ["new", "choose", "choose", "guide"]);
+  assert.deepEqual(s.calls, ["new", "choose", "guide"]);
 });
 
 test("Open on another project opens it and closes the screen; a refusal says why and stays", async () => {

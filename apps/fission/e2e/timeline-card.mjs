@@ -177,6 +177,46 @@ await check("1280 px: the keyboard's focus shows the card; an item after the rol
   }
 });
 
+// Ben, 2026-11-15: after a refused drop the card covered the red warning note, and with touch-sized targets the page grew a scrollbar.
+await check("1280 px: the card stays above a refused drop's warning, and the page does not scroll", async () => {
+  const { page, context } = await open(1280, "dark", false);
+  try {
+    const ex = await page.locator('li[data-item="feature-13"]').boundingBox();
+    const sk = await page.locator('li[data-item="sketch-2"]').boundingBox();
+    await page.mouse.move(ex.x + ex.width / 2, ex.y + ex.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sk.x + 2, sk.y + ex.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await page.mouse.move(ex.x + ex.width / 2, ex.y + ex.height / 2, { steps: 4 });
+    await page.waitForFunction(() => document.getElementById("timeline-card") && !document.getElementById("timeline-card").hidden);
+    const o = await page.evaluate(() => {
+      const card = document.getElementById("timeline-card").getBoundingClientRect();
+      const note = document.querySelector(".timeline-reorder-note, .timeline-bar-note")?.getBoundingClientRect();
+      return { cardBottom: card.bottom, noteTop: note?.top ?? null };
+    });
+    assert.ok(o.noteTop !== null, "the warning note shows");
+    assert.ok(o.cardBottom <= o.noteTop, `the card (bottom ${o.cardBottom}) stays above the note (top ${o.noteTop})`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight), 0, "the page does not scroll");
+  } finally {
+    await context.close();
+  }
+});
+
+await check("touch-sized layout, 1367 × 700 at 1.4×: the page does not scroll", async () => {
+  const context = await browser.newContext({ viewport: { width: 1367, height: 700 }, deviceScaleFactor: 1.4, hasTouch: true, colorScheme: "dark" });
+  const page = await context.newPage();
+  try {
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    await page.goto(url);
+    await page.setInputFiles("#open-file", { name: "timeline-card.spindle", mimeType: "application/octet-stream", buffer: design });
+    await page.waitForFunction((n) => document.querySelectorAll("#timeline li[data-item]").length === n, ITEMS.length, { timeout: 15000 });
+    assert.equal(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight), 0, "the page does not scroll");
+  } finally {
+    await context.close();
+  }
+});
+
 await browser.close();
 server.httpServer.close();
 if (errors.length) {

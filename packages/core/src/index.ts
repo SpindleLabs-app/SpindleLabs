@@ -1,6 +1,8 @@
 // @fission/core: the shared document model and the bridge to the kernel.
-export { isTrap, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
+export { isTrap, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_TOOK_TOO_LONG, UNKNOWN_BODY_WORDS, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
 export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Loop, MeasureFacts, MeasureGap, Measured, MeasurePick, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegion, SketchRegions, SliceProgress, SliceStage, SolidPlace, SolidProblem, SolidProblemKind, SolidReport, SolidVerdict, StlFile } from "./kernel/kernel-types.ts";
+// The ?all and ?community preview switches (preview.ts).
+export { PREVIEW_ALL, PREVIEW_ALL_KEY, PREVIEW_COMMUNITY, PREVIEW_COMMUNITY_KEY, previews, readPreviews, setPreviews, type Previews } from "./preview.ts";
 // DRAFT model interfaces (see each file).
 export type { Material, MaterialLibrary, Mechanical, Source } from "./model/material.ts";
 export { materialLibrary, mechanicalProblems, weakerWay, printedStiffness, STARTER_MATERIALS, PSI } from "./model/material.ts";
@@ -48,7 +50,7 @@ export { EXACTNESS, isExact, RepresentationRegistry, XY_PLANE } from "./model/re
 export type { Action, ActionOutcome, ActionTarget, Selected, SelectionKind } from "./model/actions.ts";
 export { ActionRegistry } from "./model/actions.ts";
 export type { LeftDrag, MousePreset, MousePresetInfo } from "./model/mouse.ts";
-export { leftDragOf, MOUSE_ATTRIBUTE, MOUSE_EVENT, MOUSE_PRESETS, readMousePreset } from "./model/mouse.ts";
+export { leftDragOf, LEGACY_SHIFT_TO_LOOK, MOUSE_ATTRIBUTE, MOUSE_EVENT, MOUSE_PRESETS, readMousePreset } from "./model/mouse.ts";
 export type { Unit } from "./model/units.ts";
 export { areaIn, boxShown, boxValue, commaWords, formatLength, fromMm, lengthLimitRefusal, MAX_LENGTH_MM, MIN_LENGTH_MM, MM_PER_INCH, parseLength, readDecimalText, readSizeText, readUnit, summaryInUnit, toMm, UNITS, volumeIn, wordsInUnit } from "./model/units.ts";
 export type { Chord, KeyPress, ShortcutClash, ShortcutEntry, ShortcutScope, ShortcutSource, ShortcutSpec } from "./model/shortcuts.ts";

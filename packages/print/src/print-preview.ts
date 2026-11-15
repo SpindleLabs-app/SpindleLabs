@@ -227,7 +227,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   try {
     view = makeView(host, p);
   } catch (e) {
-    host.textContent = `The 3D preview needs WebGL, which this browser didn't give: ${e instanceof Error ? e.message : String(e)}`;
+    host.textContent = "The 3D preview needs WebGL (your browser's 3D drawing), and this browser didn't turn it on. Try another browser, or switch on hardware acceleration in its settings.";
     host.classList.add("print-preview-bad");
   }
   let time = p.seconds;
