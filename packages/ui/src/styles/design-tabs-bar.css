@@ -6,7 +6,7 @@
    pixel over the bar's bottom line (margin -1 px), so the bar stays 44 px. ":not(#none)" lifts a rule over the base
    layout's "#topbar button". */
 .design-tabs-bar .design-tabs-switch { display: none; }
-@media (max-width: 640px), (pointer: coarse), (max-height: 500px) {
+@media (max-width: 640px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))), (max-height: 500px) {
   .design-tabs-bar .design-tabs-switch:not(#none):not([hidden]) { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; margin: 0 0 -1px; padding: 0; background: none; border: none; color: var(--text-body); font: inherit; cursor: pointer; }
   .design-tabs-bar .design-tabs-switch .design-tabs-count { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 22px; height: 22px; padding: 0 3px; font-size: 12px; font-weight: 600; line-height: 1; border: 2px solid currentColor; border-radius: 6px; }
   .design-tabs-bar .design-tabs-switch[aria-expanded="true"] .design-tabs-count { color: var(--accent); }
