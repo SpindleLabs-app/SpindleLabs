@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, UNKNOWN_BODY_WORDS, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -208,7 +208,7 @@ test("a worker that throws while it starts says what it threw, for this call and
   withFakeWorker(async (client, worker) => {
     const waiting = client.call("kernel_version");
     assert.equal(worker.fail("SyntaxError: unexpected token"), true);
-    const words = /The geometry kernel stopped \(kernel worker crashed: SyntaxError: unexpected token\)\. Reload the page to try again\.$/;
+    const words = /The geometry kernel stopped unexpectedly\. Reload the page to try again\.$/;
     await assert.rejects(waiting, words);
     await assert.rejects(client.call("body_count"), words);
     // An empty message is no message: the same words as a worker that didn't load.
@@ -689,7 +689,7 @@ test("body_boolean with the app's handles: the kernel's numbers sent, the result
     await hidden;
     // An unknown input is refused before anything is sent.
     const sent = worker.posted.length;
-    await assert.rejects(client.call("body_boolean", 1, [9], "subtract"), (e: KernelError) => e.kind === "unknown-body" && /body 9 /.test(e.message));
+    await assert.rejects(client.call("body_boolean", 1, [9], "subtract"), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
     assert.equal(worker.posted.length, sent);
   }));
 
@@ -734,8 +734,8 @@ test("body_measure with the app's handles: the kernel's numbers sent for each pi
     await one;
     // An unknown body, first or second, is refused in the kernel's words before anything is sent.
     const sent = worker.posted.length;
-    await assert.rejects(client.call("body_measure", { body: 9, face: 0 }, null), (e: KernelError) => e.kind === "unknown-body" && /body 9 /.test(e.message));
-    await assert.rejects(client.call("body_measure", { body: 1, face: 0 }, { body: 8 }), (e: KernelError) => e.kind === "unknown-body" && /body 8 /.test(e.message));
+    await assert.rejects(client.call("body_measure", { body: 9, face: 0 }, null), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
+    await assert.rejects(client.call("body_measure", { body: 1, face: 0 }, { body: 8 }), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
     assert.equal(worker.posted.length, sent);
   }));
 
@@ -766,7 +766,7 @@ test("body_move refuses a body the kernel doesn't hold before sending anything",
   withFakeWorker(async (client, worker) => {
     worker.ready(1);
     const sent = worker.posted.length;
-    await assert.rejects(client.call("body_move", 7, [{ move: [1, 0, 0] }]), (e: KernelError) => e.kind === "unknown-body" && /body 7 /.test(e.message));
+    await assert.rejects(client.call("body_move", 7, [{ move: [1, 0, 0] }]), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
     assert.equal(worker.posted.length, sent);
   }));
 
