@@ -34,6 +34,8 @@
 #       copies to stdout only the lines the kernel's ci scripts may print in
 #       public: RESULT, count, shards and missed lines; drops everything else
 #
+#   kernel_ci.sh save-sealed ROOT PRIVATE.pem OUT
+#       opens every downloaded sealed-NAME artifact and saves it as NAME
 #   kernel_ci.sh fetch FOLDER OUT
 #       copies a folder of kernel-results into OUT (RESULTS_WRITE key)
 #   kernel_ci.sh keygen DIR | seal DIR OUT PUBLIC.pem | unseal IN OUT PRIVATE.pem
@@ -120,6 +122,24 @@ fetch)
     [ -d "$work/r/$folder" ] || { echo "could not fetch $folder"; exit 1; }
   mkdir -p "$out" && cp -R "$work/r/$folder/." "$out/"
   rm -rf "$work"
+  ;;
+save-sealed)
+  # save-sealed ROOT PRIVATE.pem OUT: every ROOT/sealed-NAME folder (a
+  # downloaded artifact) is opened into OUT/NAME and saved to kernel-results
+  # as NAME. One that cannot be opened (changed, unsafe) is named, in words,
+  # and makes the exit code 1 after the others are done.
+  root=$2 key=$3 out=$4 bad=0
+  for d in "$root"/sealed-*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d"); name=${name#sealed-}
+    [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || { echo "skipped a folder with an odd name"; bad=1; continue; }
+    if python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" unseal "$d" "$out/$name" "$key" 2>/dev/null; then
+      "${BASH_SOURCE[0]}" save "$name" "$out/$name" || bad=1
+    else
+      echo "could not open $name"; bad=1
+    fi
+  done
+  exit $bad
   ;;
 run)
   name=$2 dir=$3
