@@ -10,7 +10,7 @@
 // assemblies and joints at 78–79).
 
 import type { FaceReference, WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 
 const summary =
   "Electronics: schematics, board layout, routing and design-rule checks, designed together with the enclosure in DesignLab.";
@@ -43,6 +43,7 @@ export const circuitWorkspace: WorkspacePlugin = {
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
+      eta: workspaceEta("circuit"),
       title: "PCBLab",
       summary,
       plans: [

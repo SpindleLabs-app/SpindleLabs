@@ -321,9 +321,9 @@ try {
         assert.deepEqual(await page.$$eval("#workspace-menu-menu [aria-current=true]", (bs) => bs.map((b) => b.dataset.workspace)), ["image"], "the one on screen marked");
         await page.mouse.click(width / 2, width > 640 ? 800 - 60 : 200); // high in the view on a phone, above the menu's sheet
         assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false", "a press outside closes it");
-        // A placeholder is chosen as before: its page says Coming soon.
+        // A placeholder is chosen as before: its page says when it is expected.
         await switchTo(page, "laser", tap);
-        assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
+        assert.match(await page.textContent(".placeholder .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
         assert.equal(await label(), "LaserLab ▾");
         await switchTo(page, "design", tap);
         await until(page, () => document.body.dataset.activeWorkspace === "design", null, "Design again");

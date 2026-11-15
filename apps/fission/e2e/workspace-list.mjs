@@ -2,7 +2,7 @@
 // everything from that list except design and slice. everything else can
 // still silently exist but shouldnt be on the public app"; and Slice showed
 // greyed as "Coming soon" although slicing works). DESIGN ▾ lists Design and
-// Slice only, neither greyed nor "Coming soon"; Slice opens Slice for
+// Slice only, neither greyed nor marked with a date; Slice opens Slice for
 // printing on the design (with a box: its dialog; on an empty design: the
 // reason why there is nothing to slice, in the file message line). There is
 // no Split, as there is no second workspace to put beside Design. The other
@@ -68,7 +68,7 @@ try {
   ]) {
     const press = (page, sel) => (touch ? page.tap(sel) : page.click(sel));
 
-    await check(`${width} px: DESIGN ▾ lists Design and Slice only, neither greyed nor "Coming soon"; no Split`, async () => {
+    await check(`${width} px: DESIGN ▾ lists Design and Slice only, neither greyed nor marked with a date; no Split`, async () => {
       const page = await fresh(width, touch);
       await page.locator("#start-hint").waitFor();
       assert.deepEqual(await rows(page, touch), [
@@ -163,18 +163,18 @@ try {
   await check("?all-workspaces (developers) lists all ten as before, with Split; Slice still opens Slice for printing", async () => {
     const page = await fresh(1280, false, "?all-workspaces#design");
     await page.locator("#start-hint").waitFor();
-    const soon = "Coming soon";
+    const late = "Late 2027", later = "2028";
     assert.deepEqual(await rows(page, false), [
       ["design", "DesignLab", "", false],
-      ["render", "RenderLab", soon, true],
-      ["simulate", "TestLab", soon, true],
-      ["manufacture", "CNCLab", soon, true],
-      ["laser", "LaserLab", soon, true],
+      ["render", "RenderLab", late, true],
+      ["simulate", "TestLab", later, true],
+      ["manufacture", "CNCLab", later, true],
+      ["laser", "LaserLab", late, true],
       ["slice", "SliceLab", "", false],
-      ["circuit", "PCBLab", soon, true],
-      ["vector", "VectorLab", soon, true],
+      ["circuit", "PCBLab", later, true],
+      ["vector", "VectorLab", late, true],
       ["image", "ImageLab", "", false],
-      ["layout", "LayoutLab", soon, true],
+      ["layout", "LayoutLab", later, true],
     ]);
     assert.equal(await page.isVisible("#split-toggle"), true);
     await page.context().close();
