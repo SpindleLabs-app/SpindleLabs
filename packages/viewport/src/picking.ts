@@ -120,9 +120,14 @@ export interface SegmentNear {
 export function segmentsNear(screen: ArrayLike<number>, p: { x: number; y: number }, radius = EDGE_PICK_PX): SegmentNear[] {
   const near: SegmentNear[] = [];
   for (let s = 0; 4 * s + 3 < screen.length; s++) {
-    const [ax, ay, bx, by] = [screen[4 * s], screen[4 * s + 1], screen[4 * s + 2], screen[4 * s + 3]];
-    if (![ax, ay, bx, by].every(Number.isFinite)) continue;
-    const [dx, dy] = [bx - ax, by - ay];
+    // Read one by one, not as a small array per segment: this runs over every edge of every body on each hover.
+    const ax = screen[4 * s];
+    const ay = screen[4 * s + 1];
+    const bx = screen[4 * s + 2];
+    const by = screen[4 * s + 3];
+    if (!(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by))) continue;
+    const dx = bx - ax;
+    const dy = by - ay;
     const len2 = dx * dx + dy * dy;
     // Closest point on the segment: project p onto the line, clamp to the ends.
     const t = len2 > 0 ? Math.min(1, Math.max(0, ((p.x - ax) * dx + (p.y - ay) * dy) / len2)) : 0;

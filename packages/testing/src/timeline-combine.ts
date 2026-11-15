@@ -213,7 +213,7 @@ export function combineBodies(target: ModelBody, tool: ModelBody, c: { id: strin
   const piece = `${bodyName(c.id)}/piece:`;
   const made = (id: string): ModelBody => {
     const d = r.bodies.find((x) => x.id === id)!;
-    const body = toModel(d.volume, d.faces, d.edges, (f) => (targetMotion ? target.motion : motionFrom(f, [target, tool])));
+    const body = toModel(d.volume, d.faces, d.edges, (f) => (targetMotion ? target.motion : motionFrom(f, [target, tool])), targetMotion ? undefined : (f) => mergedMotions(f, [target, tool]));
     kinds.set(body, { steps, body: id });
     return body;
   };
@@ -225,13 +225,15 @@ export function combineBodies(target: ModelBody, tool: ModelBody, c: { id: strin
 }
 
 /** A body of the naming model's world in the timeline model's terms: faces by their names (the shown one first, rule 4), edges by their two faces (rule 5, named in `tagDesign`). */
-function toModel(volume: number, faces: readonly DescribedFace[], edges: readonly { length: number; centroid: readonly number[]; between: readonly [number, number] }[], motionOf: (f: DescribedFace) => Motion2 | undefined): ModelBody {
+function toModel(volume: number, faces: readonly DescribedFace[], edges: readonly { length: number; centroid: readonly number[]; between: readonly [number, number] }[], motionOf: (f: DescribedFace) => Motion2 | undefined, alsoMotionOf?: (f: DescribedFace) => ModelFace["alsoMotion"]): ModelBody {
   const out: ModelFace[] = faces.map((f) => {
     const [shown, ...rest] = f.names.map(parseName);
     const motion = motionOf(f);
+    const others = alsoMotionOf?.(f);
     const face: ModelFace = {
       name: shown,
       ...(rest.length > 0 && { also: rest }),
+      ...(others && { alsoMotion: others }),
       area: f.area,
       centroid: [...f.centroid] as unknown as Vec3,
       ...(f.facing === "-z" && { down: true as const }),
@@ -248,8 +250,45 @@ function toModel(volume: number, faces: readonly DescribedFace[], edges: readonl
   };
 }
 
-/** Where the Moves had put the body face `f` of `b` came from (35e2h, 35f1e2): a combined body's per face, a plain body's its own. */
-export const faceMotion = (b: ModelBody, f: ModelFace): Motion2 | undefined => (b.combined ? f.motion : b.motion);
+/**
+ * Where the Moves had put the body face `f` of `b` came from (35e2h, 35f1e2): a combined body's per face, a plain body's
+ * its own. With `name` (SL #430, Design's rule from SL #707): on a face merged from level input faces, the input face
+ * carrying that name (`alsoMotion`).
+ */
+export const faceMotion = (b: ModelBody, f: ModelFace, name?: FaceName): Motion2 | undefined => {
+  if (!b.combined) return b.motion;
+  const other = name === undefined ? undefined : f.alsoMotion?.[plainKey(name)];
+  return other !== undefined ? other.motion : f.motion;
+};
+
+/**
+ * SL #430 (Design's rule from SL #707): for a result face lying on two or more level input faces (merged by this Combine,
+ * rule 4), each of its other names' input face's motion (`ModelFace.alsoMotion`): the input face (target first) carrying
+ * the name whose region holds the middle of one of the result face's rectangles, when that is not the face its shown
+ * name lies on. Undefined for a face lying on one input face (a name it carried from before is carried by that face's
+ * motion, as Design takes a merged face's first input's frame through a later boolean; so is each input face here).
+ */
+function mergedMotions(f: DescribedFace, inputs: readonly ModelBody[]): ModelFace["alsoMotion"] {
+  if (f.names.length < 2) return undefined;
+  const mids = f.rects.map((r) => r[0].map((x, i) => (x + r[1][i]) / 2));
+  const under = (key: string): { b: ModelBody; g: ModelFace } | undefined => {
+    for (const b of inputs)
+      for (const g of b.faces) if ([g.name, ...(g.also ?? [])].some((n) => plainKey(n) === key) && mids.some((m) => faceHolds(g, m))) return { b, g };
+    return undefined;
+  };
+  const first = under(plainKey(parseName(f.names[0])));
+  const out: Record<string, { motion?: Motion2 }> = {};
+  for (const n of f.names.slice(1).map(parseName)) {
+    const key = plainKey(n);
+    const at = under(key);
+    if (at === undefined || at.g === first?.g) continue;
+    // That input face's own motion: Design keeps a merged face's other inputs for one boolean only (its frame then is
+    // its first input's), so a name it carried from an earlier merge is carried as that face is.
+    const motion = faceMotion(at.b, at.g);
+    out[key] = motion ? { motion: { a: motion.a, t: [motion.t[0], motion.t[1]] } } : {};
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 /**
  * The motion of the input face a result face lies on (35f1e2): the first

@@ -15,6 +15,7 @@ import { fitId, isFit, type Fit } from "@fission/print";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
 import { counted, curvePoints, insertAt, insertItem, hasOwnFaces, heldByBody, isSketchItem, pinnable, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { sketchRoom } from "./sketch-room.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
 import { followingPoints, keptConstraints, withoutCurveConstraints } from "./constraints.ts";
@@ -70,7 +71,11 @@ function sketchIn(doc: DesignDocument, id: string): Sketch {
   return s;
 }
 
-const withSketch = (doc: DesignDocument, sketch: Sketch): DesignDocument => ({ ...doc, sketches: doc.sketches.map((s) => (s.id === sketch.id ? sketch : s)) });
+/** `doc` with `sketch` in place of its sketch of that id; an edit that would make it hold more than the reader opens is refused (`sketchRoom`, #641 item 2). */
+function withSketch(doc: DesignDocument, sketch: Sketch): DesignDocument {
+  sketchRoom(doc, sketch);
+  return { ...doc, sketches: doc.sketches.map((s) => (s.id === sketch.id ? sketch : s)) };
+}
 
 /**
  * What an outline reference names in `doc` (25c1): a ready-made profile,

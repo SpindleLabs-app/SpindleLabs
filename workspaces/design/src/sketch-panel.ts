@@ -4,12 +4,16 @@
 // Finish sketch and Extrude (step 21d). The workspace drives it; the panel
 // only shows what it is given and reports clicks. Styles: src/styles/sketch.css.
 
+import { wordsInUnit } from "@fission/core";
+import { currentUnit } from "@fission/ui";
 import { ORIGIN_PLANES, type ToolKind } from "./sketch-tool.ts";
 import type { SketchPlane } from "./document.ts";
+import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
 
 export interface SketchPanelEvents {
   pickPlane(id: SketchPlane): void;
   cancel(): void;
+  /** The grid size typed, as millimetres (a bare number in the unit chosen in Settings); text that is no number as typed. */
   grid(typed: string): void;
   /** Snap to grid ticked (true) or unticked. */
   gridSnap(on: boolean): void;
@@ -57,9 +61,9 @@ export interface SketchPanel {
   showTool(kind: ToolKind): void;
   /** What the sketch holds and whether it makes a closed outline, or why not. */
   showStatus(text: string): void;
-  /** A message under the panel's buttons (so it never moves them mid-click): a grid the kernel refused, or a point it could not place; while a plane is picked, why a face can't be sketched on. Empty hides it. */
+  /** A message under the panel's buttons (so it never moves them mid-click): a grid the kernel refused, or a point it could not place; while a plane is picked, why a face can't be sketched on. Empty hides it. Its lengths, written in mm, are said in the unit chosen in Settings (SL #519). */
   showError(message: string): void;
-  /** Puts `grid` (as typed) back in the grid box: the last size taken, after a refused one. */
+  /** Puts `grid` (millimetres as typed) back in the grid box, shown in the unit chosen: the last size taken, after a refused one. */
   showGrid(grid: string): void;
   hide(): void;
 }
@@ -89,7 +93,10 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
   let status: HTMLElement | null = null;
   let gridError: HTMLElement | null = null;
   let help: HTMLElement | null = null;
-  let gridBox: HTMLInputElement | null = null;
+  let gridBox: SizeBox | null = null;
+  // SL #519 item 2: the Grid box shows the unit chosen in Settings and follows a change, as the size boxes do. Held here,
+  // since the page holds it only weakly (followUnit); false once the panel is put away.
+  let unitWatch: (() => boolean) | null = null;
   const showTool = (kind: ToolKind) => {
     if (help) help.textContent = TOOL_HELP[kind];
   };
@@ -110,18 +117,29 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
         refused,
         button("Cancel", "sketch-cancel", () => on.cancel()),
       );
-      status = help = gridBox = null;
+      status = help = gridBox = unitWatch = null;
       gridError = refused;
       box.hidden = false;
     },
     showTool,
     showEditing(name, grid, gridSnap, tool) {
       const input = el("input", { id: "sketch-grid" });
-      Object.assign(input, { type: "number", step: "any", min: "0", value: grid });
-      input.addEventListener("change", () => on.grid(input.value));
-      gridBox = input;
+      Object.assign(input, { type: "number", step: "any", min: "0" });
+      const field = sizeBox(input, () => currentUnit(document));
+      field.value = grid;
+      field.addEventListener("change", () => on.grid(field.value));
+      gridBox = field;
+      const unit = el("span", { className: "sketch-grid-unit", textContent: ` ${currentUnit(document)}` });
       const label = el("label", { className: "sketch-grid" });
-      label.append("Grid ", input, " mm");
+      label.append("Grid ", input, unit);
+      const watch = () => {
+        if (unitWatch !== watch || gridBox !== field) return false;
+        field.reshow();
+        unit.textContent = ` ${currentUnit(document)}`;
+        return true;
+      };
+      unitWatch = watch;
+      followUnit(document, watch);
       const snapBox = el("input", { id: "sketch-grid-snap" });
       Object.assign(snapBox, { type: "checkbox", checked: gridSnap });
       snapBox.addEventListener("change", () => on.gridSnap(snapBox.checked));
@@ -159,7 +177,7 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
     },
     showError(message) {
       if (!gridError) return;
-      gridError.textContent = message;
+      gridError.textContent = wordsInUnit(message, currentUnit(document));
       gridError.hidden = message === "";
     },
     hide() {
@@ -167,7 +185,7 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
       // holding the panel as hovered, and then in memory once a new design replaces it (e2e/closed-panels.mjs).
       box.replaceChildren();
       box.hidden = true;
-      status = gridError = help = gridBox = null;
+      status = gridError = help = gridBox = unitWatch = null;
     },
   };
 }

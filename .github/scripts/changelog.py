@@ -14,8 +14,17 @@ ever touch the same file:
 
 The first line says what the change does to the version:
 - `fix`: the bug-fix number goes up by one (0.32.21 -> 0.32.22);
-- `step N`: the first piece of CAD step N: the version becomes 0.N.0, unless
-  step N (or a later one) has already started, when it changes nothing;
+- `step N`: the first piece of CAD step N: the middle number goes up by one
+  and the bug-fix number starts again at 0 (0.89.72 -> 0.90.0), whatever N
+  is. The middle number counts the steps started; it is not the step's own
+  number. It was, until 14 Nov 2026: the version became 0.N.0, so step 89
+  (history kept across a reload, done early as a quick win while the main
+  line was at step 35) made the app jump from 0.35.53 to 0.89.0, and every
+  main-line step below 89 after it would have changed nothing. The steps
+  already merged under that rule keep it (LEGACY_STEPS), so no number that
+  has been shown ever changes, and versions never go backwards. CI refuses a
+  `step N` for a step already started (STARTED_STEPS, or another fragment on
+  main naming it): its later pieces are `none` or `fix`;
 - `none`: everything else (integration, AI, UI, tests, CI, docs); the entry
   is listed under the version main already has.
 Then a blank line and the entry itself, one or more "- " lines in plain words.
@@ -84,6 +93,25 @@ WHATS_NEW = "WHATS_NEW.md"
 PUBLIC_RE = re.compile(r"public:( none)?")
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9._-]*\.md")
 BUMP_RE = re.compile(r"fix|none|step (0|[1-9]\d*)")
+
+# The `step N` fragments merged while `step N` still made the version 0.N.0
+# (the rule until 14 Nov 2026), by name: they keep that rule, so the numbers
+# they gave (0.35.0, 0.89.0, and nothing for 53, 66 and 77 below 89) never
+# change. Every other `step N` adds one to the middle number. A name here
+# stays harmless after a fold deletes its fragment.
+LEGACY_STEPS = frozenset({
+    "ujfinf-boolean-names.md",  # step 35: 0.32.x -> 0.35.0
+    "oubx5f-kept-history.md",   # step 89: 0.35.53 -> 0.89.0, the jump
+    "p357ph-3mf-obj.md",        # step 77: below 89, changed nothing
+    "gig53r-symmetric.md",      # step 53: changed nothing
+    "gig53r-body-mass.md",      # step 66: changed nothing
+})
+
+# The CAD steps the app's changelog had started by 14 Nov 2026: every step up
+# to 36 (the old rule counted them all as started by 0.35) and the four done
+# early. A new `step N` naming one of these is refused by `pr`, as is one
+# naming a step another fragment on main already started: a step starts once.
+STARTED_STEPS = frozenset(range(0, 37)) | {53, 66, 77, 89}
 
 # The changelog is public; the geometry kernel is private. A public entry
 # says WHAT changed for the user, never HOW the kernel does it. These are the
@@ -240,16 +268,25 @@ def add_entry(section, text):
     return Section(section.version, section.date, raw)
 
 
-def next_version(current, bump):
+def next_version(current, bump, legacy=False):
     """The version after `current` for this bump, or None when it doesn't
-    change (none, or a step already started)."""
+    change (none). A step adds one to the middle number; a legacy step (one
+    in LEGACY_STEPS) keeps the old rule: 0.N.0, or nothing when step N or a
+    later one had started."""
     big, step, fix = current
     if bump == "fix":
         return (big, step, fix + 1)
     if bump == "none":
         return None
-    n = bump[1]
-    return (big, n, 0) if n > step else None
+    if legacy:
+        n = bump[1]
+        return (big, n, 0) if n > step else None
+    return (big, step + 1, 0)
+
+
+def bumped(current, f):
+    """next_version for fragment `f`, the legacy rule by its name."""
+    return next_version(current, f.bump, f.name in LEGACY_STEPS)
 
 
 def number(sections, fragments):
@@ -260,7 +297,7 @@ def number(sections, fragments):
     for f in fragments:
         if not out:
             raise ValueError("CHANGELOG.md has no version heading to count on from")
-        v = next_version(out[0].version, f.bump)
+        v = bumped(out[0].version, f)
         if v is None:
             out[0] = add_entry(out[0], f.text)
         else:
@@ -283,7 +320,7 @@ def versions_of(sections, fragments):
         raise ValueError("CHANGELOG.md has no version heading to count on from")
     current, out = sections[0].version, []
     for f in fragments:
-        current = next_version(current, f.bump) or current
+        current = bumped(current, f) or current
         out.append((f, current))
     return out
 
@@ -525,18 +562,42 @@ def whats_new_problems(status, deleted, folded, base_file, head_file, head_chang
     return []
 
 
-def check_pr(diff, base_file, head_file):
+def started_problem(p, f, base_steps):
+    """The problem when added fragment `f` (at path p) starts a step that has
+    already started, else None. base_steps: {step: fragment name} of the
+    `step N` fragments on the base."""
+    if not isinstance(f.bump, tuple):
+        return None
+    n = f.bump[1]
+    if n in STARTED_STEPS or n in base_steps:
+        where = f"{FRAGMENTS}/{base_steps[n]}" if n in base_steps else "an earlier pull request"
+        return (f"{p}: step {n} has already started ({where}), and a step starts once: write 'none' (or 'fix' "
+                "for a bug fix) for its later pieces, so the version's middle number counts each step once")
+    return None
+
+
+def check_pr(diff, base_file, head_file, base_fragments=()):
     """What a pull request did to the changelog files. diff: (status, path)
     pairs from git diff --name-status --no-renames BASE HEAD; base_file(path)
-    and head_file(path): a file's text on the base and on the head."""
+    and head_file(path): a file's text on the base and on the head;
+    base_fragments: the paths of the fragments on the base."""
     problems = []
     status = dict((path, s) for s, path in diff)
     fragment = [p for p in status if p.startswith(FRAGMENTS + "/") and p.endswith(".md")]
     added = [p for p in fragment if status[p] == "A"]
     deleted = [p for p in fragment if status[p] == "D"]
+    base_steps = {}
+    for p in base_fragments:
+        if p.endswith(".md") and p not in added:
+            g, _ = parse_fragment(p.split("/", 1)[1], base_file(p))
+            if g is not None and isinstance(g.bump, tuple):
+                base_steps.setdefault(g.bump[1], g.name)
     for p in added:
         problems += leaks(p, head_file(p))
         f, _ = parse_fragment(p.split("/", 1)[1], head_file(p))
+        started = started_problem(p, f, base_steps) if f is not None else None
+        if started:
+            problems.append(started)
         if f is not None and f.public is None:
             problems.append(f"{p}: end it with its public part for What's new, after a blank line: 'public:' and "
                             "the '- ' lines a person using SpindleLabs would notice, or 'public: none' when they "
@@ -594,7 +655,11 @@ def main(argv):
             root = root_dir(argv, 4)
             out = git(root, "diff", "--name-status", "--no-renames", base, head)
             diff = [tuple(line.split("\t", 1)) for line in out.splitlines() if line]
-            problems = check_pr(diff, lambda p: git(root, "show", f"{base}:{p}"), lambda p: git(root, "show", f"{head}:{p}"))
+            listed = git(root, "ls-tree", "--name-only", f"{base}:{FRAGMENTS}") if git(
+                root, "ls-tree", "--name-only", base, "--", FRAGMENTS).strip() else ""
+            base_fragments = [f"{FRAGMENTS}/{n}" for n in listed.splitlines() if n]
+            problems = check_pr(diff, lambda p: git(root, "show", f"{base}:{p}"), lambda p: git(root, "show", f"{head}:{p}"),
+                                base_fragments)
             for p in problems:
                 print(p)
             if not problems:

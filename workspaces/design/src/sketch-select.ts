@@ -111,6 +111,17 @@ export function pickCurve(picked: readonly string[], hit: string | null, shift: 
   return picked.includes(hit) ? picked.filter((id) => id !== hit) : [...picked, hit];
 }
 
+/**
+ * The picks after a click on a dimension's label with Select (SL #524 item 4: only the thin dimension line could be
+ * picked, so a click on its number did nothing and Delete deleted nothing): the dimension `id` picked as a click on its
+ * mark picks it (`pickCurve`, Shift adding). A label that is no constraint of the sketch (a fit tag's own, FIT_LABEL)
+ * changes nothing.
+ */
+export function labelPicks(sketch: Sketch | undefined, picked: readonly string[], id: string, shift: boolean): string[] | null {
+  if (!sketch?.constraints.some((c) => c.id === id)) return null;
+  return pickCurve(stillPicked(sketch, picked), id, shift);
+}
+
 /** The picks the sketch still holds (an undo may have taken one out), in their order. */
 export function stillPicked(sketch: Sketch | undefined, picked: readonly string[]): string[] {
   if (!sketch) return [];

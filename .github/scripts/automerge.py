@@ -127,6 +127,25 @@ def newest(check_runs):
                     and order(c) < gates.get((c.get("app", {}).get("slug"), c["name"].split(" (")[0]), ("", 0)))]
 
 
+def own_checks(check_runs, suite_ids):
+    """Only the checks of this pull request's own CI run. Check runs belong to a
+    commit, not to a pull request: a stranger's fork pull request whose head is
+    the same commit gets a run of ci.yml on it too, and its checks (a `draft
+    run` marker, a run still going) would hold this pull request out of
+    merging for as long as they liked. A GitHub Actions check counts only if
+    its check suite is one of `suite_ids` (the pull_request runs of this
+    repository's own branch, own_suites); no known suite means none count.
+    Another app's checks all stay: they only ever count against."""
+    return [c for c in check_runs
+            if c.get("app", {}).get("slug") != "github-actions" or (c.get("check_suite") or {}).get("id") in suite_ids]
+
+
+def own_suites(runs, repo, branch):
+    """The check suites of the pull_request workflow runs (the /actions/runs answer for a head) that came from `branch` of `repo` itself."""
+    return {r["check_suite_id"] for r in runs.get("workflow_runs", [])
+            if r.get("head_branch") == branch and (r.get("head_repository") or {}).get("full_name") == repo}
+
+
 def order(check):
     """Newer checks start later; a check not started yet is the newest, and ids grow."""
     return (check.get("started_at") or "9999", check.get("id") or 0)
@@ -465,8 +484,11 @@ def gather(gh):
         pr["mergeable"] = gh.call("GET", f"/pulls/{pr['number']}")["mergeable"]
         pr["up_to_date"] = contains(gh, pr["head_sha"], MAIN)
         runs = gh.call("GET", f"/commits/{pr['head_sha']}/check-runs?filter=latest&per_page=100")
-        pr["ci"] = ci_state(runs["check_runs"])
-        pr["green"] = ci_state(runs["check_runs"], quick_ok=True) == "success"
+        suites = own_suites(gh.call("GET", f"/actions/runs?head_sha={pr['head_sha']}&event=pull_request&per_page=100"),
+                            raw["base"]["repo"]["full_name"], head["ref"])
+        mine = own_checks(runs["check_runs"], suites)
+        pr["ci"] = ci_state(mine)
+        pr["green"] = ci_state(mine, quick_ok=True) == "success"
         pr["base_in_main"] = False
         if pr["base_ref"] != MAIN and pr["base_ref"].startswith(PREFIX):
             try:

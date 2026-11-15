@@ -78,7 +78,9 @@ try {
     assert.equal(await page.evaluate(() => window.__themeSetBeforeBody), true, "the theme was set while the page was still in its head");
     assert.equal(await page.getAttribute('meta[name="theme-color"]', "content"), "#e6eaf1");
     assert.ok((await luminanceAt(page, 640, 120)) > 0.6, "the sky is pale");
-    assert.ok((await luminanceAt(page, 600, 20)) > 0.6, "the top bar is pale");
+    // The bar's own paint, 3 px below its top edge: at y 20 the middle now holds the project's name, whose dark letters a
+    // single-pixel sample can land on (UI audit 2026-11-12, choice A).
+    assert.ok((await luminanceAt(page, 600, 3)) > 0.6, "the top bar is pale");
     if (shots) await page.screenshot({ path: `${shots}/theme-light-1280.png` });
     await page.context().close();
   });

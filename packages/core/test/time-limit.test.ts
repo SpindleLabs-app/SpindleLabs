@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MAX_MEETING_POINTS, MOST_PAIRS, regionsUnits, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CORNER, UNITS_PER_MEETING, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, supportUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MAX_MEETING_POINTS, MOST_PAIRS, regionsUnits, sketchUnits, solveUnits, UNITS_PER_ARC_CUBED, UNITS_PER_CHECKED_TRIANGLE, UNITS_PER_CORNER, UNITS_PER_MEETING, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -296,4 +296,21 @@ test("a sketch solve's units grow with its arcs cubed", () => {
   assert.equal(solveUnits(JSON.stringify({ points: [[0, 0], [1, 1]], constraints: [["horizontal", 0, 1]] })), 0);
   assert.equal(callUnits("solve_sketch", [arcs(10)] as never, () => undefined), solveUnits(arcs(10)));
   assert.equal(callUnits("solve_sketch", [7] as never, () => undefined), 0);
+});
+
+test("Export STL's solid check is priced by its triangles, so its limit follows the device, worked by hand", () => {
+  assert.equal(UNITS_PER_CHECKED_TRIANGLE, 0.3);
+  // The 249.5 mm comb of 499 teeth exports 7,988 triangles: 7,988 × 0.3 = 2,396.4 units (only the header's count is read).
+  const comb = stl([], 7988);
+  assert.ok(Math.abs(callUnits("check_solid", [comb], () => undefined) - 2396.4) < 1e-9);
+  // On a device whose calibration takes 1.5 ms a unit: 2,396.4 × 1.5 × 4 = 14,378.4 ms, past the 10 s floor; on one
+  // three times slower, three times that, 43,135.2 ms. At the old thousandth of a unit both were the floor.
+  assert.ok(Math.abs(limitMs(2396.4, 1.5) - 14_378.4) < 1e-6);
+  assert.ok(Math.abs(limitMs(2396.4, 4.5) - 43_135.2) < 1e-6);
+  assert.equal(limitMs(7988 * 1e-3, 1.5), LIMIT_FLOOR_MS);
+  // A box's 12 triangles: 3.6 units, 3.6 × 1.5 × 4 = 21.6 ms, so the floor.
+  assert.ok(Math.abs(callUnits("check_solid", [boxStl(10, 10, 10)], () => undefined) - 3.6) < 1e-9);
+  assert.equal(limitMs(3.6, 1.5), LIMIT_FLOOR_MS);
+  // A file too short to hold a count has no triangles to check.
+  assert.equal(callUnits("check_solid", [new Uint8Array(83)], () => undefined), 0);
 });

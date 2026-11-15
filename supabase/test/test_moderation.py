@@ -277,12 +277,12 @@ class ModerationDatabase(unittest.TestCase):
         link = self.share(BO)["id"]
         self.server(f"select decide_share('{link}', 'take-down', 'SecretModerator', 'note text');")
         self.server(f"select hold_account('{BO}', null, 'Shared a weapon part.', false, 'SecretModerator', '');")
-        data = json.loads(self.as_user(BO, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", BO)[1])
         self.assertEqual(data["account_hold"]["reason"], "Shared a weapon part.")
         self.assertEqual([m["action"] for m in data["moderation"]], ["take-down", "hold"])
         self.assertNotIn("SecretModerator", json.dumps(data))
         self.assertNotIn("note text", json.dumps(data))
-        other = json.loads(self.as_user(ADA, "select my_data();")[1])
+        other = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual((other["account_hold"], other["moderation"]), (None, []))
 
     def test_the_record_outlives_the_account(self):

@@ -8,7 +8,7 @@
 // height is the Slice for printing preset picked last (0.2 mm without one).
 // Nothing is saved in the design: it is a view of it.
 
-import type { AnalysisOverlay, OverlayPlace } from "@fission/core";
+import { areaIn, fromMm, type AnalysisOverlay, type OverlayPlace, type Unit } from "@fission/core";
 import { printCheck, P1S_RULES, PRESET_PICKED_KEY, presetSettingsOf, readPresets, type CheckMesh, type PrintCheck, type PrintRules } from "@fission/print";
 
 /** Where the on/off choice is kept (this browser only). */
@@ -59,16 +59,23 @@ export function printRulesIn(storage: Pick<Storage, "getItem"> | null): PrintRul
   return typeof h === "number" && h > 0 && h < 1 ? { ...P1S_RULES, layerHeight: h } : P1S_RULES;
 }
 
-const mm = (x: number, places = 1) => `${Number(x.toFixed(places))} mm`;
-const mm2 = (x: number) => `${Math.round(x).toLocaleString("en-GB")} mm²`;
+/**
+ * The words' lengths and areas in the unit chosen in Settings (issue #519): millimetres to `places` decimals, inches to
+ * 3 significant figures (a 0.3 mm wall is 0.0118 in, a 14.2 mm bridge 0.559 in); the nozzle keeps its trade name, 0.4 mm.
+ */
+const lengthWords = (unit: Unit) => (x: number, places = 1) => (unit === "in" ? `${Number(fromMm(x, unit).toPrecision(3))} in` : `${Number(x.toFixed(places))} mm`);
+const areaWords = (unit: Unit) => (x: number) => (unit === "in" ? `${Number(areaIn(x, unit).toPrecision(3)).toLocaleString("en-GB", { maximumFractionDigits: 12 })} in²` : `${Math.round(x).toLocaleString("en-GB")} mm²`);
 /** A sampled area (within about 2 %): two significant figures from 100 mm² up, said to be about. */
-const aboutMm2 = (x: number) => (x < 100 ? mm2(x) : `about ${Number(x.toPrecision(2)).toLocaleString("en-GB")} mm²`);
+const aboutWords = (unit: Unit) => (x: number) => (x < 100 ? areaWords(unit)(x) : `about ${Number(areaIn(x, unit).toPrecision(2)).toLocaleString("en-GB", { maximumFractionDigits: 12 })} ${unit}²`);
 
 /**
  * The overlays for a check's findings (only those found), each with its number in its legend line and what to do
  * about it in its detail; one calm line when nothing was found, and one saying so when the part was too big to check.
  */
-export function printCheckOverlays(found: PrintCheck, rules: PrintRules): AnalysisOverlay[] {
+export function printCheckOverlays(found: PrintCheck, rules: PrintRules, unit: Unit = "mm"): AnalysisOverlay[] {
+  const mm = lengthWords(unit);
+  const mm2 = areaWords(unit);
+  const aboutMm2 = aboutWords(unit);
   if (found.skipped) return [{ id: PRINT_CHECK_IDS.clear, label: "Print check: too detailed to check live", detail: "The bodies have more triangles than the check reads while you model. Slice for printing still checks them.", marks: [] }];
   const out: AnalysisOverlay[] = [];
   if (found.supports.length > 0)
@@ -114,9 +121,9 @@ export function printCheckOverlays(found: PrintCheck, rules: PrintRules): Analys
 }
 
 /** The check of the bodies shown (their display meshes in the joined order) and its overlays. */
-export function checkShown(meshes: readonly CheckMesh[], rules: PrintRules): { found: PrintCheck; overlays: AnalysisOverlay[] } {
+export function checkShown(meshes: readonly CheckMesh[], rules: PrintRules, unit: Unit = "mm"): { found: PrintCheck; overlays: AnalysisOverlay[] } {
   const found = printCheck(meshes, rules);
-  return { found, overlays: printCheckOverlays(found, rules) };
+  return { found, overlays: printCheckOverlays(found, rules, unit) };
 }
 
 /** What the check found, in a line read by the browser test: "supports 2 thin 0 sag 0 weakest 0". */

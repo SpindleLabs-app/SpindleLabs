@@ -162,8 +162,8 @@ class DesignVersionsDatabase(unittest.TestCase):
         did = self.history(ADA, [("'secret A'", at(0)), ("'B'", at(20))])
         self.assertEqual(self.kept(BO, did), [])
         self.assertEqual(self.as_user(BO, f"select get_design_version('{did}', '{at(0)}') is null;"), (True, "t"))
-        self.assertNotIn("secret A", self.as_user(BO, "select my_data()::text;")[1])
-        self.assertIn("secret A", self.as_user(ADA, "select my_data()::text;")[1])
+        self.assertNotIn("secret A", self.as_role("postgres", "select my_data()::text;", BO)[1])
+        self.assertIn("secret A", self.as_role("postgres", "select my_data()::text;", ADA)[1])
 
     def test_the_table_and_the_part_are_closed_to_the_browser(self):
         self.history(ADA, [("'A'", at(0)), ("'B'", at(20))])
@@ -194,9 +194,9 @@ class DesignVersionsDatabase(unittest.TestCase):
 
     def test_download_my_data_holds_every_version_whole(self):
         did = self.history(ADA, [("'{\"v\":1}'", at(0)), ("'{\"v\":2}'", at(20))])
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual([(v["design_id"], v["file"]) for v in data["design_versions"]], [(did, '{"v":1}')])
-        self.assertEqual(json.loads(self.as_user(BO, "select my_data();")[1])["design_versions"], [])
+        self.assertEqual(json.loads(self.as_role("postgres", "select my_data();", BO)[1])["design_versions"], [])
 
 
 if __name__ == "__main__":

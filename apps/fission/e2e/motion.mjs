@@ -22,7 +22,7 @@ try {
     const page = await context.newPage();
     await page.goto(url);
     await page.waitForSelector(TOOL + ":visible");
-    const sel = `${TOOL}:visible:not([aria-disabled="true"]):not(:disabled)`;
+    const sel = `${TOOL}:not(#command-search-button):visible:not([aria-disabled="true"]):not(:disabled)`;
     const fast = await duration(page, sel);
     if (!reduced) {
       // --motion-fast is 110 ms = 0.11 s

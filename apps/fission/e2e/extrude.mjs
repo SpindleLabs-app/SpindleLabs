@@ -71,7 +71,8 @@ function screenPoint(box, [px, py, pz], view) {
 }
 
 const data = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
-const undoTitle = (page) => page.evaluate(() => document.getElementById("undo").title);
+// What Undo says of the project's steps: with a tool open its title says it cancels the tool (issue #520).
+const undoTitle = (page) => page.evaluate(() => document.getElementById("undo").dataset.projectStep);
 const until = (page, fn, arg, what) =>
   page.waitForFunction(fn, arg, { timeout: 5000 }).catch(async () => assert.fail(`${what}: timed out`));
 /** Waits until the edited sketch shows these points (the kernel snaps each click first). */

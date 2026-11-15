@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { areaIn, boxShown, boxValue, formatLength, fromMm, MM_PER_INCH, parseLength, readUnit, toMm, volumeIn, wordsInUnit } from "../src/model/units.ts";
+import { areaIn, boxShown, boxValue, commaWords, formatLength, fromMm, MM_PER_INCH, parseLength, readDecimalText, readSizeText, readUnit, toMm, volumeIn, wordsInUnit } from "../src/model/units.ts";
 
 test("hand-worked: an inch is exactly 25.4 mm, both ways", () => {
   assert.equal(MM_PER_INCH, 25.4);
@@ -118,4 +118,35 @@ test("summaryInUnit: millimetres give the text back as it was, and nothing but t
   assert.equal(summaryInUnit("Sketch 5 mm on the XY plane", "in"), "Sketch 5 mm on the XY plane");
   assert.equal(summaryInUnit("Extrude Washer 5 mm by 25.4 mm", "in"), "Extrude Washer 5 mm by 1 in");
   assert.equal(summaryInUnit("Combine Box 1 and Box 2", "in"), "Combine Box 1 and Box 2");
+});
+
+// Issue #518: a size box reads a unit after the number and a decimal comma itself, or refuses the text; nothing is dropped.
+test("hand-worked: readSizeText reads mm, cm, m, in and \" after a number, with or without a space", () => {
+  assert.deepEqual(readSizeText("2.5 cm", "mm"), { mm: 25 }); // 1 cm = 10 mm: 2.5 × 10 = 25
+  assert.deepEqual(readSizeText("1in", "mm"), { mm: 25.4 }); // 1 in = 25.4 mm exactly
+  assert.deepEqual(readSizeText("1 inch", "mm"), { mm: 25.4 });
+  assert.deepEqual(readSizeText("2 inches", "mm"), { mm: 50.8 }); // 2 × 25.4
+  assert.deepEqual(readSizeText('0.5"', "mm"), { mm: 12.7 }); // half of 25.4
+  assert.deepEqual(readSizeText("0.04 m", "mm"), { mm: 40 }); // 1 m = 1000 mm: 0.04 × 1000 = 40
+  assert.deepEqual(readSizeText("25.4mm", "in"), { mm: 25.4 }, "mm in an inch box is still mm");
+  assert.deepEqual(readSizeText("1", "in"), { mm: 25.4 }, "a bare number is in the box's unit");
+  assert.deepEqual(readSizeText(" 12 ", "mm"), { mm: 12 });
+  assert.deepEqual(readSizeText("1e3", "mm"), { mm: 1000 });
+  assert.deepEqual(readSizeText("0.3 cm", "mm"), { mm: 3 }, "rounded to 12 digits: 0.3 × 10 is 3.0000000000000004 in floating point");
+});
+
+test("hand-worked: a decimal comma is a point, a comma that could separate thousands is refused", () => {
+  assert.deepEqual(readDecimalText("1,5"), { value: 1.5 });
+  assert.deepEqual(readDecimalText(",5"), { value: 0.5 });
+  assert.deepEqual(readDecimalText("-2,25"), { value: -2.25 });
+  assert.deepEqual(readDecimalText("0,500"), { value: 0.5 }, "a leading 0 is never a thousands group");
+  assert.deepEqual(readDecimalText("1234,567"), { value: 1234.567 }, "four digits before the comma are no thousands group");
+  assert.deepEqual(readDecimalText("1,2345"), { value: 1.2345 }, "four digits after it are no group either");
+  for (const t of ["1,000", "12,345", "999,999", "1,000,000", "1.000,5", "1,000.5"]) assert.deepEqual(readDecimalText(t), { why: "comma" }, t);
+  assert.deepEqual(readDecimalText("1,"), { value: 1 }, "half typed, as 1. is");
+  for (const t of ["", ",", "abc", "0x10", "Infinity", "1e999", "1..2", "1,5,"]) assert.equal("why" in readDecimalText(t), true, t);
+  assert.deepEqual(readSizeText("1,000 mm", "mm"), { why: "comma" });
+  assert.deepEqual(readSizeText("2.5 cx", "mm"), { why: "unreadable" }, "another word is refused, never dropped");
+  assert.deepEqual(readSizeText("2.5 mm mm", "mm"), { why: "unreadable" });
+  assert.match(commaWords(" 1,000 "), /^"1,000" could mean thousands or a decimal/);
 });

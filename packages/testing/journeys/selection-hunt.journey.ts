@@ -107,7 +107,7 @@ test("size boxes: limits at 0.9x/1.1x", async () => {
   await insert(a, "box");
   const cases: [string, boolean][] = [["0.0009", false], ["0.0011", true], ["900000", true], ["1100000", false], ["2000000", false], ["", false], ["0", false], ["-5", false], ["abc", false], ["1e-4", false], ["Infinity", false], ["0.0001", false]];
   for (const [v, ok] of cases) {
-    await type(a, "width", "40");
+    await type(a, "width", "40", true); // 40 left (committed): a refused size goes back to the size from before its edit (issue #518)
     const before = a.doc();
     await type(a, "width", v);
     const took = a.doc() !== before;

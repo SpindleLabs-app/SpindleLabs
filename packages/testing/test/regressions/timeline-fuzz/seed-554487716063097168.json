@@ -1,0 +1,2053 @@
+{
+ "seed": "554487716063097168",
+ "check": "the rebuild differs from the model",
+ "issue": "SpindleLabs-app/SpindleLabs#430",
+ "what": "A sketch on a box's top that a later-inserted Combine merges with a copy's level top (an Intersect keeping its tools), the copy turned differently by Moves since. Design carries the sketch by the Moves of the box's own top (SL #707); the model carried it by the merged face's first input, the copy's, so the two disagreed by a quarter turn after a marker move. Found by fuzzing seed 8907002656214478127's round (session 554487716063097168); shrunk from 352 steps to 266 (not 1-minimal).",
+ "steps": [
+  {
+   "op": "hold-ref",
+   "pick": 0.6887598452242082
+  },
+  {
+   "op": "marker",
+   "pick": 0.8535272787593813
+  },
+  {
+   "op": "add-preset",
+   "kind": "cylinder",
+   "sizes": [
+    28,
+    28
+   ]
+  },
+  {
+   "op": "reorder",
+   "pick": 0.31471476405262633,
+   "to": 0.37900386748849557
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.713135901237146
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.6538744375276866
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.3198852939404242
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.028993158595655433,
+   "distance": 33
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -41,
+      -2
+     ],
+     [
+      -35,
+      -15
+     ],
+     [
+      -31,
+      -27
+     ],
+     [
+      -5,
+      -9
+     ]
+    ]
+   }
+  },
+  {
+   "op": "set-size",
+   "pick": 0.38915321387975066,
+   "value": 29
+  },
+  {
+   "op": "set-size",
+   "pick": 0.6449692058790886,
+   "value": 28
+  },
+  {
+   "op": "add-move",
+   "pick": 0.855369747704617,
+   "other": null,
+   "shift": [
+    -34,
+    -22,
+    0
+   ],
+   "turnZ": 336,
+   "pivot": [
+    11,
+    7
+   ]
+  },
+  {
+   "op": "suppress",
+   "pick": 0.4512791096854677
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.08317092019381922,
+   "distance": 20
+  },
+  {
+   "op": "delete-item",
+   "pick": 0.13257523164391272
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.7093938786009237,
+   "distance": 3
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.7943964509167353,
+   "distance": 12
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    13,
+    3,
+    5
+   ]
+  },
+  {
+   "op": "marker",
+   "pick": 0.8352778947187564
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      25,
+      -36
+     ],
+     [
+      -13,
+      -29
+     ],
+     [
+      -17,
+      -9
+     ],
+     [
+      -14,
+      20
+     ],
+     [
+      -8,
+      6
+     ]
+    ]
+   }
+  },
+  {
+   "op": "reorder",
+   "pick": 0.396340347862871,
+   "to": 0.8009419555179553
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.05132426422407399,
+   "to": [
+    -60,
+    -30
+   ]
+  },
+  {
+   "op": "suppress",
+   "pick": 0.7760238764549885
+  },
+  {
+   "op": "marker",
+   "pick": 0.4842043488895855
+  },
+  {
+   "op": "save-open"
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.4028051949774276,
+   "to": [
+    -31,
+    -51
+   ]
+  },
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    40
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.9482526840961096,
+   "shape": {
+    "kind": "slot",
+    "at": [
+     3,
+     17
+    ],
+    "length": 35,
+    "radius": 2
+   }
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.6347938262903569,
+   "operation": "join"
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.2800427942471905,
+   "distance": 17
+  },
+  {
+   "op": "add-move",
+   "pick": 0.8521680642768583,
+   "other": 0.94515050391538,
+   "shift": [
+    -5,
+    7,
+    -32
+   ],
+   "turnZ": 287,
+   "pivot": [
+    22,
+    7
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.16349189148727072,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      37,
+      -36
+     ],
+     [
+      -15,
+      -23
+     ],
+     [
+      -9,
+      15
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-combine",
+   "target": 0.04515148552701198,
+   "tool": 0.2924054145155093,
+   "operation": "join",
+   "keep": false
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.3344662678929018
+  },
+  {
+   "op": "add-move",
+   "pick": 0.7242562735894924,
+   "other": 0.7820755198999648,
+   "shift": [
+    -35,
+    0,
+    -10
+   ],
+   "turnZ": 270,
+   "pivot": [
+    23,
+    -20
+   ]
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "suppress",
+   "pick": 0.38701433039622113
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.18272265792561737,
+   "distance": 1
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.5073218779459643
+  },
+  {
+   "op": "set-size",
+   "pick": 0.25116055030624174,
+   "value": 60
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.06950588008707093
+  },
+  {
+   "op": "add-move",
+   "pick": 0.2395047523084285,
+   "other": null,
+   "shift": [
+    18,
+    0,
+    37
+   ],
+   "turnZ": 0,
+   "pivot": [
+    28,
+    -13
+   ]
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.14533417778863555,
+   "to": [
+    -20,
+    46
+   ]
+  },
+  {
+   "op": "reorder",
+   "pick": 0.3836960550008647,
+   "to": 0.9038888092282099
+  },
+  {
+   "op": "set-move",
+   "pick": 0.9654325919941635,
+   "shift": [
+    0,
+    -22,
+    0
+   ],
+   "turnZ": 180,
+   "pivot": [
+    22,
+    24
+   ],
+   "swap": 0.8962977759824904
+  },
+  {
+   "op": "marker",
+   "pick": 0.45538010652071714
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.36494640353040486,
+   "to": [
+    26,
+    47
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.1150190450339239,
+   "tool": 0.9933196518130362,
+   "operation": "cut",
+   "keep": true
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "set-size",
+   "pick": 0.16689495463316917,
+   "value": 33
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.5653175732628426
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.8555045221607436
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.5437840225783243,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      6,
+      -3
+     ],
+     [
+      -8,
+      9
+     ],
+     [
+      -34,
+      18
+     ]
+    ]
+   }
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.868813706506876,
+   "operation": "join"
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.9180338695997734
+  },
+  {
+   "op": "add-move",
+   "pick": 0.31535445890742997,
+   "other": 0.118455125702002,
+   "shift": [
+    18,
+    0,
+    -21
+   ],
+   "turnZ": 270,
+   "pivot": [
+    8,
+    13
+   ]
+  },
+  {
+   "op": "marker",
+   "pick": 0.5822327809122518
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    48
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.4881793436376848,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      4,
+      12
+     ],
+     [
+      -2,
+      -5
+     ],
+     [
+      -12,
+      -11
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-combine",
+   "target": 0.9954084657521903,
+   "tool": 0.06952730738691759,
+   "operation": "cut",
+   "keep": false
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.4646188645607613
+  },
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    48
+   ]
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.17020953170807307
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.13801318222645897
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.18300310739675885
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.6868095321270029
+  },
+  {
+   "op": "suppress",
+   "pick": 0.6015422203067735
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.6265103051702471
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.9888076284294043
+  },
+  {
+   "op": "add-move",
+   "pick": 0.7641377147413575,
+   "other": 0.07067820260765378,
+   "shift": [
+    0,
+    0,
+    0
+   ],
+   "turnZ": 0,
+   "pivot": [
+    2,
+    -18
+   ]
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.592196853697573,
+   "to": [
+    -56,
+    49
+   ]
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.5411751658113739
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.38800886592047545,
+   "distance": 47
+  },
+  {
+   "op": "reorder",
+   "pick": 0.402152811535476,
+   "to": 0.027744348890823334
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.8219066205384077,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -49,
+      13
+     ],
+     [
+      -22,
+      26
+     ],
+     [
+      10,
+      25
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.14815728590787436,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      19,
+      3
+     ],
+     [
+      -9,
+      3
+     ],
+     [
+      -20,
+      -1
+     ]
+    ]
+   }
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.15196271511047343
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.8030863599076646,
+   "to": [
+    -21,
+    38
+   ]
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -5,
+      -11
+     ],
+     [
+      -18,
+      -1
+     ],
+     [
+      17,
+      23
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.1540722822448234,
+   "distance": 1
+  },
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    58
+   ]
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.9711109381101566,
+   "to": [
+    -44,
+    -53
+   ]
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.1606600381316089
+  },
+  {
+   "op": "marker",
+   "pick": 0.27594186495701234
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.9043755616813235,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -1,
+      40
+     ],
+     [
+      -28,
+      28
+     ],
+     [
+      23,
+      4
+     ],
+     [
+      31,
+      3
+     ]
+    ]
+   }
+  },
+  {
+   "op": "marker",
+   "pick": 0.8026942738334559
+  },
+  {
+   "op": "reorder",
+   "pick": 0.4621437430205726,
+   "to": 0.9505439655427439
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.8728735754594904,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -35,
+      35
+     ],
+     [
+      -35,
+      10
+     ],
+     [
+      -50,
+      -9
+     ],
+     [
+      -21,
+      -2
+     ],
+     [
+      -18,
+      -17
+     ],
+     [
+      -14,
+      -19
+     ]
+    ]
+   }
+  },
+  {
+   "op": "save-open"
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.6564047751660061,
+   "to": [
+    -59,
+    -35
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.10453001209416934,
+   "tool": 0.9810365310049906,
+   "operation": "join",
+   "keep": false
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.8192670734811546
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.6545442145611687,
+   "to": [
+    -15,
+    -44
+   ]
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.4091166722189319
+  },
+  {
+   "op": "suppress",
+   "pick": 0.19573456873825068
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.08418505430494982,
+   "to": [
+    14,
+    -30
+   ]
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "suppress",
+   "pick": 0.5898024014239778
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.8465798752980952,
+   "distance": 9
+  },
+  {
+   "op": "set-size",
+   "pick": 0.962887599667419,
+   "value": 29
+  },
+  {
+   "op": "marker",
+   "pick": 0.08612162990166239
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.5364490804010613
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.3211346660847473,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      29,
+      14
+     ],
+     [
+      -4,
+      27
+     ],
+     [
+      52,
+      -6
+     ]
+    ]
+   }
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.3415223278012498,
+   "shape": {
+    "kind": "slot",
+    "at": [
+     -26,
+     21
+    ],
+    "length": 34,
+    "radius": 20
+   }
+  },
+  {
+   "op": "add-move",
+   "pick": 0.3875610800406126,
+   "other": 0.02305150336825701,
+   "shift": [
+    -26,
+    0,
+    0
+   ],
+   "turnZ": 180,
+   "pivot": [
+    -2,
+    -27
+   ]
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.18573006995427888
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.5260643124264518,
+   "distance": 13
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -13,
+      -23
+     ],
+     [
+      -28,
+      -15
+     ],
+     [
+      -38,
+      -14
+     ],
+     [
+      -22,
+      12
+     ],
+     [
+      8,
+      -3
+     ],
+     [
+      8,
+      -7
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.5653838484394461,
+   "distance": 13
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.030569740180266147
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.23986272141216047,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -16,
+     -28
+    ],
+    "radius": 12
+   }
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.8014856358838918
+  },
+  {
+   "op": "add-move",
+   "pick": 0.3002111881589459,
+   "other": null,
+   "shift": [
+    -19,
+    0,
+    -33
+   ],
+   "turnZ": 0,
+   "pivot": [
+    21,
+    -14
+   ]
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.9512536076407472,
+   "to": [
+    -42,
+    -53
+   ]
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.13293814738617316,
+   "distance": 16
+  },
+  {
+   "op": "set-size",
+   "pick": 0.16947145532748376,
+   "value": 3
+  },
+  {
+   "op": "set-size",
+   "pick": 0.5501238249230014,
+   "value": 46
+  },
+  {
+   "op": "save-open"
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.3948657506408042,
+   "to": [
+    2,
+    18
+   ]
+  },
+  {
+   "op": "set-size",
+   "pick": 0.33159806919356705,
+   "value": 8
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "reorder",
+   "pick": 0.3808745533506157,
+   "to": 0.842789125879687
+  },
+  {
+   "op": "reorder",
+   "pick": 0.9870494679847078,
+   "to": 0.6417541042966654
+  },
+  {
+   "op": "add-move",
+   "pick": 0.37028572433402307,
+   "other": null,
+   "shift": [
+    0,
+    0,
+    1
+   ],
+   "turnZ": 180,
+   "pivot": [
+    23,
+    -11
+   ]
+  },
+  {
+   "op": "set-move",
+   "pick": 0.8091377072863689,
+   "shift": [
+    -25,
+    0,
+    -12
+   ],
+   "turnZ": 270,
+   "pivot": [
+    12,
+    -20
+   ],
+   "swap": 0.42741312185910685
+  },
+  {
+   "op": "add-combine",
+   "target": 0.05153782802296436,
+   "tool": 0.12713742015382234,
+   "operation": "cut",
+   "keep": false
+  },
+  {
+   "op": "add-move",
+   "pick": 0.4486095133460043,
+   "other": 0.4581278983328224,
+   "shift": [
+    0,
+    31,
+    0
+   ],
+   "turnZ": 0,
+   "pivot": [
+    -13,
+    -13
+   ]
+  },
+  {
+   "op": "set-move",
+   "pick": 0.45060873103898247,
+   "shift": [
+    40,
+    -30,
+    0
+   ],
+   "turnZ": 90,
+   "pivot": [
+    30,
+    -6
+   ],
+   "swap": null
+  },
+  {
+   "op": "marker",
+   "pick": 0.8867830655006617
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.9247825668414575
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.6825867313123721
+  },
+  {
+   "op": "add-combine",
+   "target": 0.7877994806053492,
+   "tool": 0.19155007949248115,
+   "operation": "join",
+   "keep": true
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.6957537917489444,
+   "operation": "join"
+  },
+  {
+   "op": "marker",
+   "pick": 0.6386448119788801
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      32,
+      -23
+     ],
+     [
+      12,
+      -31
+     ],
+     [
+      -6,
+      -25
+     ],
+     [
+      -17,
+      -20
+     ],
+     [
+      -7,
+      -12
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.9654211922443292,
+   "distance": 46
+  },
+  {
+   "op": "set-move",
+   "pick": 0.9729147172250013,
+   "shift": [
+    -1,
+    0,
+    24
+   ],
+   "turnZ": 0,
+   "pivot": [
+    -27,
+    12
+   ],
+   "swap": 0.9187441516750039
+  },
+  {
+   "op": "reorder",
+   "pick": 0.46656842881081617,
+   "to": 0.9407297528642266
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.12950168536330642
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.5198086017949798
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.22558720571375346,
+   "distance": 20
+  },
+  {
+   "op": "marker",
+   "pick": 0.21028332210622624
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.7244068849044496,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      12,
+      22
+     ],
+     [
+      1,
+      5
+     ],
+     [
+      -20,
+      1
+     ],
+     [
+      -28,
+      -41
+     ],
+     [
+      -8,
+      -24
+     ]
+    ]
+   }
+  },
+  {
+   "op": "set-size",
+   "pick": 0.7652884699210261,
+   "value": 25
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    10,
+    18,
+    46
+   ]
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.44444917672197604,
+   "distance": 39
+  },
+  {
+   "op": "reorder",
+   "pick": 0.41504069927571086,
+   "to": 0.5827642804711689
+  },
+  {
+   "op": "marker",
+   "pick": 0.5133861497529869
+  },
+  {
+   "op": "suppress",
+   "pick": 0.5455946839208327
+  },
+  {
+   "op": "set-move",
+   "pick": 0.4183252514804884,
+   "shift": [
+    8,
+    0,
+    0
+   ],
+   "turnZ": 270,
+   "pivot": [
+    -5,
+    28
+   ],
+   "swap": null
+  },
+  {
+   "op": "suppress",
+   "pick": 0.8245981133968731
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.14945624398542
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.053440412247067526,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      17,
+      -47
+     ],
+     [
+      -2,
+      -14
+     ],
+     [
+      -13,
+      2
+     ],
+     [
+      -10,
+      7
+     ]
+    ]
+   }
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.78528978991406
+  },
+  {
+   "op": "set-size",
+   "pick": 0.4432146785576805,
+   "value": 53
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.10274137185190613
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.14096841776832747,
+   "operation": "join"
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      9,
+      13
+     ],
+     [
+      2,
+      28
+     ],
+     [
+      -15,
+      24
+     ],
+     [
+      -10,
+      -4
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-move",
+   "pick": 0.3352128994966481,
+   "other": null,
+   "shift": [
+    30,
+    38,
+    18
+   ],
+   "turnZ": 270,
+   "pivot": [
+    -29,
+    11
+   ]
+  },
+  {
+   "op": "suppress",
+   "pick": 0.7195735372244307
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.7480852743341696,
+   "to": [
+    -40,
+    23
+   ]
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "slot",
+    "at": [
+     14,
+     10
+    ],
+    "length": 29,
+    "radius": 17
+   }
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -27,
+      20
+     ],
+     [
+      -13,
+      -23
+     ],
+     [
+      -12,
+      -24
+     ],
+     [
+      -1,
+      -9
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "slot",
+    "at": [
+     -36,
+     13
+    ],
+    "length": 1,
+    "radius": 16
+   }
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "set-move",
+   "pick": 0.17256451995487532,
+   "shift": [
+    0,
+    0,
+    4
+   ],
+   "turnZ": 192,
+   "pivot": [
+    17,
+    26
+   ],
+   "swap": null
+  },
+  {
+   "op": "set-size",
+   "pick": 0.13746646396183304,
+   "value": 17
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.193500345675353,
+   "to": [
+    -48,
+    -34
+   ]
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.23185090506192696,
+   "to": [
+    2,
+    8
+   ]
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "set-move",
+   "pick": 0.005716085412873828,
+   "shift": [
+    16,
+    0,
+    38
+   ],
+   "turnZ": 355,
+   "pivot": [
+    -10,
+    0
+   ],
+   "swap": null
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.5168029467290791,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -23,
+      -14
+     ],
+     [
+      -24,
+      -11
+     ],
+     [
+      -29,
+      -6
+     ],
+     [
+      -53,
+      0
+     ],
+     [
+      -8,
+      36
+     ],
+     [
+      -12,
+      12
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-preset",
+   "kind": "sphere",
+   "sizes": [
+    57
+   ]
+  },
+  {
+   "op": "reorder",
+   "pick": 0.403493905960149,
+   "to": 0.7169613158254108
+  },
+  {
+   "op": "save-open"
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.4788486455053309
+  },
+  {
+   "op": "marker",
+   "pick": 0.43359108894786635
+  },
+  {
+   "op": "add-combine",
+   "target": 0.19677231540639872,
+   "tool": 0.9462522553335301,
+   "operation": "join",
+   "keep": false
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.1649605517652134,
+   "distance": 15
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.4396129678061914
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -15,
+     12
+    ],
+    "radius": 30
+   }
+  },
+  {
+   "op": "add-combine",
+   "target": 0.08192761553740546,
+   "tool": 0.579594746842349,
+   "operation": "join",
+   "keep": true
+  },
+  {
+   "op": "marker",
+   "pick": 0.8668986175495238
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.7581701125587013,
+   "to": [
+    -28,
+    -37
+   ]
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.8866526761534678,
+   "to": [
+    -58,
+    22
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.11475860932448256,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     -19,
+     35
+    ],
+    "radius": 27
+   }
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.28819067920517494
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -14,
+      46
+     ],
+     [
+      -21,
+      46
+     ],
+     [
+      -34,
+      17
+     ],
+     [
+      -3,
+      8
+     ],
+     [
+      -2,
+      11
+     ],
+     [
+      27,
+      17
+     ]
+    ]
+   }
+  },
+  {
+   "op": "set-size",
+   "pick": 0.7884324000032047,
+   "value": 44
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.40064605893332905,
+   "operation": "intersect"
+  },
+  {
+   "op": "set-size",
+   "pick": 0.12310371973693168,
+   "value": 57
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.5663257054168754,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      21,
+      -28
+     ],
+     [
+      -20,
+      -43
+     ],
+     [
+      -22,
+      -45
+     ],
+     [
+      35,
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "op": "marker",
+   "pick": 0.3331238908970836
+  },
+  {
+   "op": "suppress",
+   "pick": 0.8483652384429783
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.21564576679257141
+  },
+  {
+   "op": "suppress",
+   "pick": 0.3996756924663398
+  },
+  {
+   "op": "reorder",
+   "pick": 0.2536709712341838,
+   "to": 0.0483756457162402
+  },
+  {
+   "op": "reorder",
+   "pick": 0.1118295482763586,
+   "to": 0.8004345957557314
+  },
+  {
+   "op": "move-corner",
+   "pick": 0.9144226985669813,
+   "to": [
+    45,
+    -37
+   ]
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.0747518687089761,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      25,
+      22
+     ],
+     [
+      34,
+      3
+     ],
+     [
+      27,
+      14
+     ]
+    ]
+   }
+  },
+  {
+   "op": "suppress",
+   "pick": 0.5087614726456459
+  },
+  {
+   "op": "delete-curve",
+   "pick": 0.575917856719948
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.4457703730821887,
+   "operation": "intersect"
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "set-size",
+   "pick": 0.12396161773422942,
+   "value": 18
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.7292046340596177,
+   "distance": 46
+  },
+  {
+   "op": "reorder",
+   "pick": 0.5797886147167989,
+   "to": 0.18764085605619518
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.3626044609131398,
+   "distance": 38
+  },
+  {
+   "op": "delete-item",
+   "pick": 0.619262490290494
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.6875870857063299,
+   "distance": 31
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.10635392857372139
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.08762391849328832
+  },
+  {
+   "op": "marker",
+   "pick": 0.7447270925806331
+  },
+  {
+   "op": "add-move",
+   "pick": 0.38003174025807407,
+   "other": 0.377902283812382,
+   "shift": [
+    0,
+    0,
+    -30
+   ],
+   "turnZ": 90,
+   "pivot": [
+    20,
+    20
+   ]
+  },
+  {
+   "op": "add-combine",
+   "target": 0.48401581621402845,
+   "tool": 0.2335997336114345,
+   "operation": "intersect",
+   "keep": true
+  },
+  {
+   "op": "set-size",
+   "pick": 0.27493184431629103,
+   "value": 20
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.9158382309409637
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.032084249491564965,
+   "distance": 4
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      20,
+      -2
+     ],
+     [
+      5,
+      3
+     ],
+     [
+      -24,
+      -20
+     ],
+     [
+      -14,
+      -30
+     ],
+     [
+      -19,
+      -46
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-move",
+   "pick": 0.11233913507154836,
+   "other": null,
+   "shift": [
+    -8,
+    -14,
+    -18
+   ],
+   "turnZ": 0,
+   "pivot": [
+    -2,
+    -30
+   ]
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.8205513989058747,
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      37,
+      29
+     ],
+     [
+      20,
+      44
+     ],
+     [
+      -2,
+      19
+     ],
+     [
+      12,
+      0
+     ],
+     [
+      30,
+      7
+     ]
+    ]
+   }
+  },
+  {
+   "op": "set-combine",
+   "pick": 0.21403109142258547,
+   "operation": "intersect"
+  },
+  {
+   "op": "set-size",
+   "pick": 0.3007861930492697,
+   "value": 43
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "set-size",
+   "pick": 0.07761119546991258,
+   "value": 17
+  },
+  {
+   "op": "add-extrude",
+   "pick": 0.7821579639513192,
+   "distance": 47
+  },
+  {
+   "op": "set-size",
+   "pick": 0.5330848009916831,
+   "value": 13
+  },
+  {
+   "op": "reorder",
+   "pick": 0.9909509344404853,
+   "to": 0.4556536826613796
+  },
+  {
+   "op": "reorder",
+   "pick": 0.559621761112351,
+   "to": 0.9401431041340688
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.17939962179685498
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    7,
+    47,
+    48
+   ]
+  },
+  {
+   "op": "add-move",
+   "pick": 0.694820747252581,
+   "other": null,
+   "shift": [
+    0,
+    0,
+    0
+   ],
+   "turnZ": 180,
+   "pivot": [
+    19,
+    -26
+   ]
+  },
+  {
+   "op": "suppress",
+   "pick": 0.09380886949061507
+  },
+  {
+   "op": "set-size",
+   "pick": 0.5017968442754214,
+   "value": 55
+  },
+  {
+   "op": "add-combine",
+   "target": 0.49840757670550206,
+   "tool": 0.7227642707924867,
+   "operation": "cut",
+   "keep": false
+  },
+  {
+   "op": "set-move",
+   "pick": 0.8752956560853642,
+   "shift": [
+    0,
+    0,
+    26
+   ],
+   "turnZ": 0,
+   "pivot": [
+    -4,
+    -22
+   ],
+   "swap": 0.6258869682560926
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.156813097079056
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.9742859726227783
+  },
+  {
+   "op": "delete-item",
+   "pick": 0.5545332025015551
+  },
+  {
+   "op": "redraw-curve",
+   "pick": 0.16571781928683582
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "set-move",
+   "pick": 0.480924295744376,
+   "shift": [
+    -9,
+    0,
+    3
+   ],
+   "turnZ": 0,
+   "pivot": [
+    22,
+    6
+   ],
+   "swap": null
+  },
+  {
+   "op": "set-size",
+   "pick": 0.4618382769576834,
+   "value": 52
+  },
+  {
+   "op": "save-open"
+  },
+  {
+   "op": "hold-ref",
+   "pick": 0.5626411641338313
+  },
+  {
+   "op": "add-move",
+   "pick": 0.5208136396437666,
+   "other": 0.09418281560392505,
+   "shift": [
+    -12,
+    21,
+    0
+   ],
+   "turnZ": 0,
+   "pivot": [
+    -30,
+    28
+   ]
+  },
+  {
+   "op": "redo"
+  },
+  {
+   "op": "marker",
+   "pick": 0.9545845138604262
+  }
+ ]
+}

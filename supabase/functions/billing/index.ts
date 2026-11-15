@@ -29,6 +29,8 @@ export const STRIPE_VERSION = "2024-06-20";
 export const SIGNATURE_TOLERANCE_S = 300;
 /** Stripe's subscription statuses that keep Pro (the database maps them the same way). */
 export const PRO_STATUSES = ["active", "trialing", "past_due"];
+/** Stripe's statuses of a subscription that was never paid: the first try's card was never confirmed. */
+export const NEVER_PAID_STATUSES = ["incomplete", "incomplete_expired"];
 
 const enc = new TextEncoder();
 
@@ -143,6 +145,10 @@ export function billing(deps: Deps) {
     const made = await stripe("POST", "customers", { email: who.email, "metadata[user_id]": who.id });
     if (typeof made?.id !== "string") return null;
     const kept = await rpc("link_stripe_customer", { p_user: who.id, p_customer: made.id });
+    // Two checkouts at once each made a customer and the other's was linked: this one is deleted at Stripe, so no
+    // customer carrying the person's email is left there with no account pointing at it (deleting the account
+    // deletes only the linked one).
+    if (typeof kept === "string" && kept !== made.id) await stripe("DELETE", `customers/${encodeURIComponent(made.id)}`);
     return typeof kept === "string" ? kept : null;
   }
 
@@ -157,9 +163,14 @@ export function billing(deps: Deps) {
     const customer = await customerFor(who);
     if (!customer) return reply(req, 502, { error: "unavailable" });
     // Never a second subscription: someone already paying manages it in the portal instead.
-    const current = await stripe("GET", `subscriptions?customer=${encodeURIComponent(customer)}&status=all&limit=10`);
+    const current = await stripe("GET", `subscriptions?customer=${encodeURIComponent(customer)}&status=all&limit=100`);
     if (!Array.isArray(current?.data)) return reply(req, 502, { error: "unavailable" });
-    if (current.data.some((s: { status?: unknown }) => typeof s?.status === "string" && PRO_STATUSES.includes(s.status))) return reply(req, 409, { error: "already-pro" });
+    const statuses: unknown[] = current.data.map((s: { status?: unknown }) => s?.status);
+    if (statuses.some((s) => typeof s === "string" && PRO_STATUSES.includes(s))) return reply(req, 409, { error: "already-pro" });
+    // The first-year coupon only while this customer never had a subscription that got past its first payment (one
+    // ended, cancelled or paid monthly counts; a first try whose card was never confirmed doesn't). More than a page
+    // of subscriptions counts as having had one.
+    const firstYear = current.has_more !== true && statuses.every((s) => typeof s === "string" && NEVER_PAID_STATUSES.includes(s));
     const back = returnAddress(body?.returnTo, origins);
     const form: Record<string, string> = {
       mode: "subscription",
@@ -172,7 +183,7 @@ export function billing(deps: Deps) {
       cancel_url: `${back}?checkout=cancelled`,
     };
     // Yearly: US$36 off the first year only (US$54, then US$90 a year).
-    if (yearly) form["discounts[0][coupon]"] = env.STRIPE_COUPON_FIRST_YEAR!;
+    if (yearly && firstYear) form["discounts[0][coupon]"] = env.STRIPE_COUPON_FIRST_YEAR!;
     const session = await stripe("POST", "checkout/sessions", form);
     return typeof session?.url === "string" && session.url.startsWith("https://checkout.stripe.com/")
       ? reply(req, 200, { url: session.url })
@@ -212,13 +223,25 @@ export function billing(deps: Deps) {
     return done === undefined ? reply(req, 502, { error: "unavailable" }) : reply(req, 200, { deleted: true });
   }
 
-  /** Reads the subscription back from Stripe (never trusting the event's copy, which may be stale or out of order) and sets the plan. */
+  /**
+   * Reads the subscription back from Stripe (never trusting the event's copy, which may be stale or out of order),
+   * then sets the plan from all of its customer's subscriptions, not this one alone: a customer with one that keeps
+   * Pro stays Pro (the one ending last), whatever a dead one's late event says (an abandoned first try expiring a
+   * day after a second checkout was paid).
+   */
   async function sync(subscriptionId: string): Promise<boolean> {
     const sub = await stripe("GET", `subscriptions/${encodeURIComponent(subscriptionId)}`);
     if (!sub || typeof sub.id !== "string" || typeof sub.customer !== "string" || typeof sub.status !== "string") return false;
     if (sub.livemode === true && !liveAllowed) return true; // never acted on while in test mode
-    const end = typeof sub.current_period_end === "number" ? new Date(sub.current_period_end * 1000).toISOString() : null;
-    const known = await rpc("set_plan_from_stripe", { p_customer: sub.customer, p_subscription: sub.id, p_status: sub.status, p_renews_at: end, p_cancels: sub.cancel_at_period_end === true });
+    const all = await stripe("GET", `subscriptions?customer=${encodeURIComponent(sub.customer)}&status=all&limit=100`);
+    if (!Array.isArray(all?.data)) return false;
+    type Sub = { id: string; status: string; current_period_end?: unknown; cancel_at_period_end?: unknown; livemode?: unknown };
+    const pro = (all.data as Sub[])
+      .filter((s) => typeof s?.id === "string" && typeof s.status === "string" && PRO_STATUSES.includes(s.status) && (s.livemode !== true || liveAllowed))
+      .sort((a, b) => (typeof b.current_period_end === "number" ? b.current_period_end : 0) - (typeof a.current_period_end === "number" ? a.current_period_end : 0));
+    const best: Sub = pro[0] ?? (sub as Sub);
+    const end = typeof best.current_period_end === "number" ? new Date(best.current_period_end * 1000).toISOString() : null;
+    const known = await rpc("set_plan_from_stripe", { p_customer: sub.customer, p_subscription: best.id, p_status: best.status, p_renews_at: end, p_cancels: best.cancel_at_period_end === true });
     if (known === undefined) return false;
     // A subscription whose person no longer has an account: end it so it is never charged again.
     if (known === false && PRO_STATUSES.includes(sub.status)) return (await stripe("DELETE", `subscriptions/${encodeURIComponent(sub.id)}`)) !== null;

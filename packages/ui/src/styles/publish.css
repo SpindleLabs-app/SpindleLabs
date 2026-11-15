@@ -1,0 +1,9 @@
+/* The library's dialogs (publish.ts, community C3c): the Publish form and My library, on the sharing dialogs' card and
+   look (share.css); these are only their own bits. Colours are tokens only (theme.css). */
+.publish .publish-form { display: grid; gap: var(--look-space-2); }
+.publish .publish-form[hidden] { display: none; }
+.publish .publish-label { font-size: 13px; font-weight: 600; margin-top: var(--look-space-1); }
+.publish .share-picture[hidden] { display: none; }
+.publish .share-status.bad:empty { display: none; }
+.publish .share-button:not(#none):disabled { opacity: 0.5; cursor: not-allowed; }
+.publish .publish-thumb { width: 48px; height: 32px; object-fit: cover; flex: none; border-radius: var(--look-radius-s); background: var(--look-field); border: 1px solid var(--look-edge); }

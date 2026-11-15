@@ -215,6 +215,13 @@ export interface ModelFace {
   down?: true;
   /** A combined body's face (35f1e2): where the Moves had put the input body it came from (left out: not moved); read with `faceMotion`. */
   motion?: Motion2;
+  /**
+   * SL #430 (Design's rule from SL #707): on a face a Combine merged from level faces of its inputs, where the Moves had
+   * put the input face carrying each of the other names (`also`, by `plainKey`; `motion` left out: not moved), so a
+   * sketch named after it is carried by that input's Moves; a name not listed is carried by `motion`. Read with
+   * `faceMotion`; dropped by a copy, as Design's copy drops the merged face's origins.
+   */
+  alsoMotion?: Record<string, { motion?: Motion2 }>;
 }
 
 /**
@@ -803,24 +810,31 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
     missing.push(id);
   }
   // Planted bug ("move-all-or-none"): one body missing fails the whole Move, as before #506, so the others drop back.
-  if (first !== null && (missing.length === item.bodies.length || faults.has("move-all-or-none"))) return first;
+  if (first !== null && faults.has("move-all-or-none")) return first;
   const there = item.bodies.filter((id) => !missing.includes(id));
   // SL #583 item 2: the pieces it holds, and each piece not yet seen of a Combine whose target it moves (split from it
   // since the Move was made: `takes`). A piece held that its Combine no longer makes is no failure while the Move moves
-  // that Combine's target, which holds it again.
+  // that Combine's target, which holds it again. A piece whose Combine was deleted or isn't built is missing like a body
+  // (SL #760 item 4: Design moves the rest with a warning).
   const pieces: [string, number][] = [];
   for (const key of item.pieces ?? []) {
     const c = key.slice(0, key.lastIndexOf("#"));
     const k = Number(key.slice(key.lastIndexOf("#") + 1));
     const r = done[c];
-    if (r === undefined) return { status: "failed", cause: "deleted-input", input: c };
-    if (r.status !== "built") return { status: "failed", cause: "failed-input", input: c };
-    if (r.pieces?.[k - 1] !== undefined) pieces.push([c, k]);
-    else {
-      const from = byId.get(c);
-      if (!(from?.kind === "combine" && item.bodies.includes(from.target))) return { status: "failed", cause: "failed-input", input: c };
+    const from = byId.get(c);
+    const failed: ItemResult | null =
+      r === undefined ? { status: "failed", cause: "deleted-input", input: c }
+      : r.status !== "built" ? { status: "failed", cause: "failed-input", input: c }
+      : r.pieces?.[k - 1] !== undefined || (from?.kind === "combine" && there.includes(from.target)) ? null
+      : { status: "failed", cause: "failed-input", input: c };
+    if (failed === null) {
+      if (r!.status === "built" && r!.pieces?.[k - 1] !== undefined) pieces.push([c, k]);
+      continue;
     }
+    first ??= failed;
+    missing.push(c);
   }
+  // SL #430, #760 item 1: taken whether or not the target is still there to move (an earlier Combine used it up).
   const takes: string[] = [];
   for (const [c, r] of Object.entries(done)) {
     const from = byId.get(c);
@@ -831,6 +845,8 @@ function moveBodies(item: MoveItem, byId: Map<string, ModelItem>, seen: Readonly
         takes.push(pieceKey(c, k + 1));
       }
   }
+  // With nothing at all left to move, not even a piece taken, it fails naming the first missing.
+  if (first !== null && there.length === 0 && pieces.length === 0) return first;
   // 35f1f2a: a Combine's result moves like any body (Design asks the kernel's body_move), each face carrying its own motion.
   // Planted bug ("combine-move-refused"): a Combine's result can't be moved, as before 35f1f2a.
   if (faults.has("combine-move-refused") && there.some((id) => (done[id] as { body: ModelBody }).body.combined)) return { status: "failed", cause: "error" };
@@ -897,7 +913,8 @@ function copyBody(item: DuplicateItem, done: Record<string, ItemResult>, faults:
     faces: r.body.faces.map((f) => {
       const seen = new Set<string>();
       const [shown, ...rest] = [f.name, ...(f.also ?? [])].flatMap(names).filter((n) => !seen.has(faceKey({ ...n, tag: undefined })) && !!seen.add(faceKey({ ...n, tag: undefined })));
-      return { ...f, name: shown, ...(rest.length > 0 ? { also: rest } : {}) };
+      const { alsoMotion: _, ...plain } = f;
+      return { ...plain, name: shown, ...(rest.length > 0 ? { also: rest } : {}) };
     }),
     edges: r.body.edges.map((e) => ({ ...e, name: { ...e.name, feature: owner ?? e.name.feature, faces: [name(e.name.faces[0]), name(e.name.faces[1])] } })),
   };
@@ -975,7 +992,8 @@ function moved(body: ModelBody, m: MoveItem, faults: ReadonlySet<ModelFault>): M
   const edges = body.edges.map((e) => ({ ...e, centroid: at(e.centroid) }));
   // 35f1f2a: a combined body's faces each carry the motion of the body they came from (35f1e2), each followed by this one.
   // Planted bug ("combine-move-frames-kept"): a combined body's faces keep the motions they had, as if never moved.
-  if (body.combined) return sameKind(body, { ...body, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid), ...(faults.has("combine-move-frames-kept") ? {} : { motion: then(f.motion) }) })), edges });
+  const thenAlso = (m: ModelFace["alsoMotion"]) => (m === undefined ? {} : { alsoMotion: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { motion: then(v.motion) }])) });
+  if (body.combined) return sameKind(body, { ...body, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid), ...(faults.has("combine-move-frames-kept") ? {} : { motion: then(f.motion), ...thenAlso(f.alsoMotion) }) })), edges });
   return sameKind(body, { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges, motion: then(body.motion) });
 }
 
@@ -1019,7 +1037,8 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
   if (found !== null && "body" in found) {
     const body = bodies[found.body];
     // 35e2h: carried along the face by what its body's Moves did since it was drawn. Planted bug ("sketch-not-carried"): only its height follows.
-    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(faceMotion(body, body.faces[found.face]), item.on.motion);
+    // SL #430 (Design's rule from SL #707): on a face merged from level faces, by the Moves of the input face its name names.
+    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(faceMotion(body, body.faces[found.face], ref), item.on.motion);
     // 35f1e2 (seed 137 on the next kernel): on a face a Combine turned to look down (a cut's roof carrying a tool's top)
     // the sketch still faces up, the side it was drawn on (rule 8, naming-model.ts `frameNow`: the normal stays on the
     // drawn normal's side; every face the sessions draw on looks up). 35f1e had it facing down, against rule 8.

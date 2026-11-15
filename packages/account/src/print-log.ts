@@ -96,8 +96,8 @@ export function savePrintsAnswerFrom(v: unknown): SavePrintsAnswer | "invalid" |
   return saved && older && full ? { status: "done", saved, older, full } : null;
 }
 
-/** A print as the account takes it. */
-export const wirePrint = (p: AccountPrint) => ({ id: p.id, made_at: p.madeAt, name: p.name, settings: p.settings, grams: p.grams, minutes: p.minutes, result: p.result, problem: p.problem, note: p.note, updated_at: p.updatedAt });
+/** A print as save_prints takes it; grams to at most three decimals, as the account keeps them. */
+export const wirePrint = (p: AccountPrint) => ({ id: p.id, made_at: p.madeAt, name: p.name, settings: p.settings, grams: p.grams === null ? null : Math.round(p.grams * 1000) / 1000, minutes: p.minutes, result: p.result, problem: p.problem, note: p.note, updated_at: p.updatedAt });
 
 export function printLogApi(client: Pick<AuthClient, "asPerson">) {
   return {

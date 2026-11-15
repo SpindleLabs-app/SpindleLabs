@@ -230,13 +230,16 @@ try {
     await a.page.locator("#friends .friends-question").getByRole("button", { name: "Block", exact: true }).click();
     await noteIs(a.page, /^Blocked\.$/, "blocked");
     assert.match(await text(a.page), /Blocked \(1\).*Cy3D/);
-    assert.equal(f.answer(CY, "rpc/send_friend_request", { p_code: f.codes.get(ADA) }), "sent", "Cy is never told");
+    // Cy is never told: Cy's request still waits on Cy's side, as after a decline (security hunt 2026-11-13 B1).
+    assert.equal(f.answer(CY, "rpc/my_friends", {}).i_asked.length, 1);
+    assert.equal(f.answer(CY, "rpc/send_friend_request", { p_code: f.codes.get(ADA) }), "waiting", "Cy is never told");
     await openFriends(a.page);
     assert.match(await text(a.page), /Nobody is asking right now/);
     await inRow(a.page, "Cy3D", "Unblock");
     await noteIs(a.page, /Unblocked/, "unblocked");
     assert.equal(f.blocks.length, 0);
-    assert.match(await text(a.page), /Nobody is asking right now/, "a request sent while blocked never shows");
+    assert.match(await text(a.page), /Nobody is asking right now/, "a request from before or during the block never shows");
+    assert.equal(f.answer(CY, "rpc/my_friends", {}).i_asked.length, 1, "and unblocking changes nothing Cy sees");
   });
 
   await check("Remove asks first, then Bo is gone from both lists", async () => {

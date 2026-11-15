@@ -136,6 +136,21 @@ async function device(svc, { width = 1280, phone = false, loose = false } = {}) 
   const page = await context.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => m.type() === "error" && !/Failed to load resource/.test(m.text()) && errors.push(m.text()));
+  // What the dialogs did, for a failure's message: each open and close, by id, with the time since the page loaded.
+  const loads = [];
+  page.on("load", () => loads.push(page.url()));
+  await page.addInitScript(() => {
+    const seen = (globalThis.__dialogs = []);
+    document.addEventListener("toggle", (e) => e.target instanceof HTMLDialogElement && seen.push(`${Math.round(performance.now())} ${e.target.id} ${e.newState}`), true);
+    // Every call that opens or closes one, too: toggle events queued in one go are merged into one.
+    for (const name of ["showModal", "show", "close"]) {
+      const real = HTMLDialogElement.prototype[name];
+      HTMLDialogElement.prototype[name] = function (...args) {
+        seen.push(`${Math.round(performance.now())} ${this.id} ${name}()`);
+        return real.apply(this, args);
+      };
+    }
+  });
   if (loose)
     // A print made here before anyone signed in, as the app keeps it (owner null).
     await page.addInitScript((id) => {
@@ -145,7 +160,7 @@ async function device(svc, { width = 1280, phone = false, loose = false } = {}) 
     }, LOOSE);
   await page.goto(URL_);
   await page.waitForSelector("#account-open", { state: "attached" });
-  return { page, context, press: (sel) => (phone ? page.tap(sel) : page.click(sel)), phone };
+  return { page, context, press: (sel) => (phone ? page.tap(sel) : page.click(sel)), phone, loads };
 }
 const until = (page, fn, arg, what, timeout = 25000) => page.waitForFunction(fn, arg, { timeout }).catch(() => assert.fail(`${what}: timed out`));
 async function untilNode(fn, what, timeout = 25000) {
@@ -289,8 +304,24 @@ try {
     await signIn(p);
     await openLog(p);
     await until(p.page, () => document.getElementById("print-log-keep")?.disabled === false, undefined, "box ready");
-    const row = await p.page.$eval("#print-log-account label", (e) => e.getBoundingClientRect().toJSON());
-    assert.ok(row.height >= 44, `the box's row is ${row.height} px tall`);
+    // The row and, for a failure's message, everything around it measured in the same moment: each box from the row up
+    // to the page (display and size), whether the log is open, the window, and what the dialogs did; then the row again
+    // a frame later, to tell a passing state from a lasting one.
+    const seen = await p.page.evaluate(async () => {
+      const label = document.querySelector("#print-log-account label");
+      const row = label.getBoundingClientRect().toJSON();
+      const up = [];
+      for (let e = label; e; e = e.parentElement) {
+        const r = e.getBoundingClientRect();
+        up.push(`${e.id || e.className || e.tagName} ${getComputedStyle(e).display} ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+      const at = { t: Math.round(performance.now()), up, connected: label.isConnected, open: document.getElementById("print-log")?.open, shown: [...document.querySelectorAll("dialog[open], :popover-open")].map((e) => e.id || e.className), window: `${innerWidth}x${innerHeight} ${document.visibilityState}` };
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      const again = document.querySelector("#print-log-account label");
+      return { row, at, later: { same: again === label, height: again?.getBoundingClientRect().height, dialogs: globalThis.__dialogs } };
+    });
+    const { row } = seen;
+    assert.ok(row.height >= 44, `the box's row is ${row.height} px tall (${JSON.stringify({ ...seen, loads: p.loads })})`);
     assert.ok(row.right <= 375, `the row ends at ${row.right} px`);
     const claim = await p.page.$eval("#print-log-claim", (e) => e.getBoundingClientRect().toJSON());
     assert.ok(claim.height >= 44 && claim.right <= 375, `Keep these: ${JSON.stringify(claim)}`);

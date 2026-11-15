@@ -188,8 +188,13 @@ try {
     await openPanel(page, "properties", true);
     await page.tap("#extrude-several");
     assert.equal(await page.getAttribute("#extrude-several", "aria-pressed"), "true");
-    const box = await page.locator("#extrude-several").boundingBox();
-    assert.ok(box.height >= 44, `Pick several is ${box.height} px tall, at least 44 to tap`);
+    // The target is the button as laid out. A press sinks it to 94 % and eases back over 110 ms (styles/motion.css), so
+    // its drawn box read 41.4, 42.5 and 44.0 px on a loaded machine (2026-11-13): that motion is held here at its
+    // deepest so the check never depends on when it is measured.
+    await page.addStyleTag({ content: "#extrude-several { transform: scale(0.94) !important; transition: none !important; }" });
+    const tall = await page.$eval("#extrude-several", (b) => b.offsetHeight);
+    assert.ok(tall >= 44, `Pick several is ${tall} px tall, at least 44 to tap`);
+    await page.addStyleTag({ content: "#extrude-several { transform: none !important; }" });
     await at(page, [25, 5], { tap: true });
     await at(page, [35, 5], { tap: true });
     await openPanel(page, "properties", true);

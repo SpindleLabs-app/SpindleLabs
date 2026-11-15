@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { AuthClient } from "../src/auth.ts";
-import { accountLogFrom, accountPrintFrom, PRINT_LOG_ACCOUNT_LIMITS, PRINT_LOG_SEEN_PREFIX, printLogApi, printLogSync, readSeen, savePrintsAnswerFrom, type PrintLogReport } from "../src/print-log.ts";
+import { accountLogFrom, accountPrintFrom, PRINT_LOG_ACCOUNT_LIMITS, PRINT_LOG_SEEN_PREFIX, printLogApi, printLogSync, readSeen, savePrintsAnswerFrom, wirePrint, type PrintLogReport } from "../src/print-log.ts";
 import { memoryStore } from "./fake-service.ts";
 import { fakePrintLogAccount, type FakePrintLogAccount } from "./fake-print-log.ts";
 import { repoFile } from "./repo-file.ts";
@@ -271,6 +271,25 @@ test("offline, not offered, off or signed out: nothing here changes", async () =
   assert.deepEqual(await a.round(), { kind: "signed-out" });
   assert.equal(a.prints().length, 1);
   assert.equal(a.store.getItem(PRINT_LOG_SEEN_PREFIX + "ada"), null);
+});
+
+test("grams go to the account with at most three decimals, as it keeps them (security hunt 2026-11-13 A2)", () => {
+  const p = { id: "00000000-0000-4000-8000-000000000001", madeAt: "2026-11-13T02:00:00.000Z", name: "Box", settings: "", grams: 12.34567, minutes: 80, result: "waiting" as const, problem: null, note: "", updatedAt: "2026-11-13T02:00:00.000Z" };
+  // Worked by hand: 12.34567 g to the nearest milligram is 12.346; 0.1 + 0.2 (0.30000000000000004 in binary) is 0.3.
+  assert.equal(wirePrint(p).grams, 12.346);
+  assert.equal(JSON.stringify(wirePrint({ ...p, grams: 0.1 + 0.2 }).grams), "0.3");
+  assert.equal(wirePrint({ ...p, grams: 12.5 }).grams, 12.5);
+  assert.equal(wirePrint({ ...p, grams: null }).grams, null);
+  // The fake refuses four decimals as the database does; the rounding is what lets a print kept here with more in.
+  const acc = fakePrintLogAccount();
+  const raw = acc.as("ada") as AuthClient;
+  const api = printLogApi(raw);
+  return raw.asPerson("POST", "rpc/save_prints", { p_prints: [{ ...wirePrint(p), grams: 12.3456 }] }).then(async (four) => {
+    assert.deepEqual(four, { kind: "ok", body: { status: "invalid" } });
+    const sent = await api.save([{ ...p, grams: 12.3456 }]);
+    assert.equal(sent.kind === "ok" && typeof sent.value === "object" && sent.value.status, "done");
+    assert.equal(acc.rows.get("ada")!.get(p.id)!.grams, 12.346);
+  });
 });
 
 test("the account's answers are checked", async () => {

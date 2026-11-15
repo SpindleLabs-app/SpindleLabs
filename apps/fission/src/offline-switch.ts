@@ -1,8 +1,10 @@
 // The ?offline switch (Ben, 2026-11-13: his school's web filter sometimes blocks the site, so he wants the app kept on
 // his laptop). Offline mode is off for everyone until it is released (offline.config.mjs), but a person can turn it on
-// for their own browser: `?offline` (or `?offline=on`) once, and this browser keeps the app for offline use from then on,
-// remembered in localStorage (so an installed app, which opens without the switch in its address, keeps it too);
-// `?offline=off` turns it off again and offline.ts removes what was kept. Kept apart from offline.ts so it is tested
+// for their own browser: `?offline` (or `?offline=on`) asks, and once they press Keep this browser keeps the app for
+// offline use from then on, remembered in localStorage (so an installed app, which opens without the switch in its
+// address, keeps it too); `?offline=off` asks to stop, and Remove forgets it and offline.ts removes what was kept.
+// The address alone never changes anything (security hunt 2026-11-13 G2: another site's link or pop-up switched it on
+// for good): only a press in the app does, which another site can't make. Kept apart from offline.ts so it is tested
 // without a browser.
 
 export const OFFLINE_SWITCH = "offline";
@@ -14,28 +16,56 @@ interface Store {
   removeItem(k: string): void;
 }
 
-/** Whether this browser keeps the app for offline use: the address's switch (remembered in `store`), else what was remembered. */
-export function offlineChosen(search: string, store?: Store): boolean {
-  const p = new URLSearchParams(search);
-  const value = p.has(OFFLINE_SWITCH) ? (p.get(OFFLINE_SWITCH) ?? "").toLowerCase() : null;
-  const here = value === null ? null : value !== "off";
+/** What the page asks: whether to keep the app for offline use, whether to stop, or nothing. */
+export type OfflineAsk = "keep" | "remove" | null;
+
+function remembered(store?: Store): boolean {
   try {
-    if (here === true) store?.setItem(OFFLINE_KEY, "on");
-    else if (here === false) store?.removeItem(OFFLINE_KEY);
-    else return store?.getItem(OFFLINE_KEY) === "on";
+    return store?.getItem(OFFLINE_KEY) === "on";
   } catch {
-    // Storage blocked: the switch then lasts only as long as the address has it.
+    return false; // storage blocked: nothing can be remembered
   }
-  return here === true;
 }
 
-/** The same, read from this page. */
-export function pageOfflineChosen(): boolean {
-  let store: Store | undefined;
+/** Whether this browser keeps the app for offline use (only what a press remembered), and what the address asks. Writes nothing. */
+export function offlineSwitch(search: string, store?: Store): { chosen: boolean; ask: OfflineAsk } {
+  const p = new URLSearchParams(search);
+  const chosen = remembered(store);
+  if (!p.has(OFFLINE_SWITCH)) return { chosen, ask: null };
+  const on = (p.get(OFFLINE_SWITCH) ?? "").toLowerCase() !== "off";
+  return { chosen, ask: on === chosen ? null : on ? "keep" : "remove" };
+}
+
+/** The person pressed Keep: remember it. False when this browser can't remember it (storage blocked). */
+export function keepOffline(store?: Store): boolean {
   try {
-    store = window.localStorage;
+    if (!store) return false;
+    store.setItem(OFFLINE_KEY, "on");
+    return store.getItem(OFFLINE_KEY) === "on";
   } catch {
-    store = undefined;
+    return false;
   }
-  return offlineChosen(location.search, store);
+}
+
+/** The person pressed Remove: forget it. */
+export function forgetOffline(store?: Store): void {
+  try {
+    store?.removeItem(OFFLINE_KEY);
+  } catch {
+    // storage blocked: nothing was remembered
+  }
+}
+
+/** This page's local storage, or undefined where it is blocked. */
+export function pageStore(): Store | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The same as offlineSwitch, read from this page. */
+export function pageOfflineSwitch() {
+  return offlineSwitch(location.search, pageStore());
 }
