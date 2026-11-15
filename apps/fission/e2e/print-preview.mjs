@@ -107,7 +107,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
   const at = `${width} px${tap ? ", taps" : ""}`;
   await check(`${at}: Preview shows the box's print in 3D, layer by layer, and plays its time-lapse`, async () => {
     const page = await fresh(width, tap);
-    const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+    const press = (sel, timeout) => (tap ? page.tap(sel, { timeout }) : page.click(sel, { timeout }));
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
@@ -179,7 +179,10 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.waitForFunction((b) => Number(document.getElementById("print-preview-scrub").value) > b, before, { timeout: 15000 }).catch(() => {});
       const after = Number(await page.inputValue("#print-preview-scrub"));
       assert.ok(after > before, `the time-lapse moved on: ${before} -> ${after}`);
-      await press("#print-preview-play");
+      // While it plays, a browser drawing without a graphics card takes about a second a frame (twice that on a busy
+      // runner) and a click waits on about ten of them: measured 9 s at 1 s a frame, 20 s at 2.2 s, so the 30 s default
+      // ran out on a slow run (1 run in 3 on main). The button itself is steady; only the wait gets room.
+      await press("#print-preview-play", 120000);
       assert.equal(await page.textContent("#print-preview-play"), "Play");
       await page.waitForTimeout(150);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-playing.png` });

@@ -42,9 +42,11 @@ export interface FaceNames {
    * lies on, first origin first, with that face's names and its input body's view as the boolean saw it, so a click on
    * the merged face can name the input face under it (face-pick.ts `clickedName`). `frame` is the face's frame then
    * (rebuild.ts `BuiltBody.frames`; absent: the world's), so a later Move's motion can be taken off the click first.
-   * Dropped by a copy (built-body.ts `copiedNames`), which then names the face by its first name as before.
+   * Dropped by a copy (built-body.ts `copiedNames`), which then names the face by its first name as before. Each
+   * origin's `frame` is its input face's frame then (built-body.ts `frameOfFace`; absent: not moved), so a sketch
+   * named after an origin that is not the first is carried by that input's Moves (SL #707).
    */
-  origins?: readonly { names: readonly string[]; view: BodyView; face: number }[];
+  origins?: readonly { names: readonly string[]; view: BodyView; face: number; frame?: Plane & { size?: number } }[];
   frame?: Plane;
 }
 
@@ -471,6 +473,8 @@ export interface FaceNameReference {
   name: string;
   tag?: readonly string[];
   origin?: readonly [number, number, number];
+  /** The reference's origin as it would lie on face `index` of body `body` now (SL #707 item 2: a sketch's own middle carried by that piece's Moves since it was drawn); in place of `origin` when given. */
+  originOn?: (body: number, index: number) => readonly number[];
 }
 
 /** What a reference finds on the design's bodies: a face or edge by body and kernel index; two or more, never guessed between; or none. */
@@ -543,7 +547,8 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
   const want = ref.tag === undefined ? undefined : [...ref.tag].sort().join(","); // tags are kept sorted (tagAmong); one written in another order is the same set
   if (pieces.length === 1) {
     const [one] = pieces;
-    const same = want === undefined || names.tagFor(one.body, one.index, ref.name).join(",") === want || ref.origin === undefined || faceHolds(bodies[one.body].view, one.index, ref.origin);
+    const at = ref.originOn?.(one.body, one.index) ?? ref.origin;
+    const same = want === undefined || names.tagFor(one.body, one.index, ref.name).join(",") === want || at === undefined || faceHolds(bodies[one.body].view, one.index, at);
     return { ...one, warning: same ? null : "whole" };
   }
   if (want !== undefined) {
@@ -552,8 +557,11 @@ export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames
     if (match.length > 1) return { ambiguous: match.length };
     return { ...match[0], warning: null };
   }
-  const origin = ref.origin;
-  const holding = origin === undefined ? [] : pieces.filter((p) => faceHolds(bodies[p.body].view, p.index, origin));
+  const originOf = (p: { body: number; index: number }) => ref.originOn?.(p.body, p.index) ?? ref.origin;
+  const holding = pieces.filter((p) => {
+    const at = originOf(p);
+    return at !== undefined && faceHolds(bodies[p.body].view, p.index, at);
+  });
   if (holding.length === 1) return { ...holding[0], warning: "split" };
   const area = (p: { body: number; index: number }) => bodies[p.body].view.face_areas[p.index];
   const largest = Math.max(...pieces.map(area));

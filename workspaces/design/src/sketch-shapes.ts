@@ -28,6 +28,7 @@
 
 import type { SketchArc, SketchXY } from "@fission/core";
 import { counted, type DesignDocument, type Sketch, type SketchConstraint, type SketchCurve, type SketchLineCurve } from "./document.ts";
+import { sketchRoom } from "./sketch-room.ts";
 import { arcThere, MIN_CHORD } from "./centre-arc.ts";
 import { drawArc, drawCircle, drawLine, drawPoint, pointAt, pointNear, type LineEnd } from "./sketch.ts";
 import { followingPoints } from "./constraints.ts";
@@ -335,7 +336,9 @@ export function levelled(doc: DesignDocument, sketchId: string, pairs: readonly 
     nextId = counted(nextId + 1);
   }
   if (added.length === 0) return doc;
-  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, constraints: [...s.constraints, ...added] } : s)) };
+  const levelled = { ...sketch, constraints: [...sketch.constraints, ...added] };
+  sketchRoom(doc, levelled); // no more than the reader opens (#641 item 2)
+  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? levelled : s)) };
 }
 
 const sketchOf = (doc: DesignDocument, id: string): Sketch => {

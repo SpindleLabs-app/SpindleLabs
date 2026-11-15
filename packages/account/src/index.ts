@@ -16,7 +16,7 @@ export {
 export { type AccountUser, type Session } from "./session.ts";
 export { FAILURE_WORDS, type FinishFailure } from "./words.ts";
 export { type FileReply, FILE_MS, type PersonReply, type StorageBody, type StorageReply } from "./auth.ts";
-export { accountData, type AccountData, type DataResult, PENDING_EMAIL_KEY, type Plan, SEEN_EMAIL_KEY } from "./data.ts";
+export { accountData, type AccountData, type DataResult, type DataWait, PENDING_EMAIL_KEY, type Plan, SEEN_EMAIL_KEY } from "./data.ts";
 export { myNameFrom, NAME_ANSWERS, NAME_LIMITS, nameDate, nameWords, type MyName, type NameAnswer, type NamesApi, namesApi } from "./names.ts";
 export { LIKE_ANSWERS, LIKE_LIMITS, LIKE_WORDS, type LikeAnswer, type LikesApi, likesApi, UNLIKE_ANSWERS, type UnlikeAnswer } from "./likes.ts";
 export { isReportKind, isShareId, type OpenedShare, REPORT_KINDS, type ReportAnswer, type ReportKind, SHARE_LIMITS, type ShareAnswer, type ShareRow, type SharesApi, sharesApi } from "./shares.ts";

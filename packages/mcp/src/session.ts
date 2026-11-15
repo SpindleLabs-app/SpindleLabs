@@ -28,7 +28,10 @@ export interface Files {
   exists(path: string): boolean;
   size(path: string): number;
   read(path: string): Uint8Array;
-  write(path: string, bytes: Uint8Array): void;
+  /** Writes the whole file; with `overwrite` false it must fail when anything is at `path`. */
+  write(path: string, bytes: Uint8Array, overwrite: boolean): void;
+  /** Whether the tools may read and write `path` (an absolute path); left out, they may anywhere (tests). */
+  allowed?(path: string): boolean;
 }
 
 /** The densest material a mass is worked out for, in g/cm³ (osmium is 22.6). */
@@ -164,7 +167,7 @@ export class Session implements ToolHost {
       const read = await readAny(readFile(this.files, path));
       project = projectFromJson(read.history, [{ id: "design", readData: readDesignDocument }]);
     } catch (e) {
-      throw new Refusal(`can't open ${path}: ${e instanceof Error ? e.message : String(e)}`);
+      throw new Refusal(`can't open ${path}: ${fileWords(e instanceof Error ? e.message : String(e))}`);
     }
     const design = (project.workspaces.design as DesignDocument | undefined) ?? freshDesign();
     await this.replace(project, design);
@@ -203,14 +206,14 @@ export class Session implements ToolHost {
         name: f.provenance.self.label,
         kind: f.intent.type,
         state,
-        ...(r?.status === "failed" && { why: r.message }),
+        ...(r?.status === "failed" && { why: fileWords(r.message) }),
         ...(r?.status === "greyed" && { why: `built on ${r.by}, which is suppressed` }),
         ...(r?.status === "built" && r.warning && { warning: "its sketch is lost, so it keeps its last shape" }),
       };
     });
     const marker = o.design.timeline.marker;
     return {
-      project: o.project.name,
+      project: fileWords(o.project.name),
       units: o.project.units.length,
       marker: marker === undefined ? "end" : marker === "start" ? "start" : (o.design.timeline.features.find((f) => f.id === marker)?.provenance.self.label ?? marker),
       timeline,
@@ -257,7 +260,7 @@ export class Session implements ToolHost {
     const stls = await endStls(this.kernel, o.design, chosen.map((b) => ({ body: b.body, feature: b.feature, name: b.name })));
     const bytes = joinStl(stls.map((s) => s.bytes), o.project.name);
     const check: SolidReport = await this.kernel.call("check_solid", bytes);
-    writeFile(this.files, path, bytes);
+    writeFile(this.files, path, bytes, overwrite);
     return {
       ok: true,
       data: {
@@ -277,7 +280,7 @@ export class Session implements ToolHost {
     writablePath(path, ".spindle", overwrite, this.files);
     const text = projectToJson({ ...o.project, workspaces: { ...o.project.workspaces, design: o.design } });
     const bytes = new TextEncoder().encode(text);
-    writeFile(this.files, path, bytes);
+    writeFile(this.files, path, bytes, overwrite);
     return { ok: true, data: { path, bytes: bytes.length } };
   }
 
@@ -297,7 +300,7 @@ export class Session implements ToolHost {
     const broke = design.timeline.features.filter((f) => build.results[f.id]?.status === "failed" && (before.has(f.id) || !(f.id in o.build.results)));
     if (broke.length > 0) {
       o.build = await rebuildTimeline(o.design, this.cache, this.kernel);
-      const words = broke.map((f) => `${f.provenance.self.label}: ${(build.results[f.id] as { message: string }).message}`).join("; ");
+      const words = broke.map((f) => `${f.provenance.self.label}: ${fileWords((build.results[f.id] as { message: string }).message)}`).join("; ");
       throw new Refusal(`${op} refused, nothing changed: ${words}`);
     }
     this.open = { ...o, design, build };
@@ -305,18 +308,45 @@ export class Session implements ToolHost {
   }
 }
 
+/** The most characters of a file's own words (its name, an item's reason) one answer carries. */
+export const FILE_WORDS = 300;
+
+/**
+ * A file's own words as an answer carries them: one line (every run of new
+ * lines, tabs and spaces one space) of at most FILE_WORDS characters. The
+ * answer is read by an AI client, and a design from someone else may hold
+ * anything in its name or descriptions: it gets to state a short fact,
+ * never to hand the client a page of text.
+ */
+export function fileWords(text: string): string {
+  const chars = [...text.replace(/[\s\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim()];
+  return chars.length > FILE_WORDS ? chars.slice(0, FILE_WORDS).join("") + "…" : chars.join("");
+}
+
 /** A refusal in words: the tool's answer, never a crash. */
 class Refusal extends Error {}
 
 function readablePath(path: string, files: Files): void {
   if (!isAbsolute(path)) throw new Refusal(`give an absolute path, not ${JSON.stringify(path)}`);
+  insideFolders(path, files);
   if (!files.exists(path)) throw new Refusal(`there is no file ${path}`);
 }
 
 function writablePath(path: string, ending: string, overwrite: boolean, files: Files): void {
   if (!isAbsolute(path)) throw new Refusal(`give an absolute path, not ${JSON.stringify(path)}`);
   if (!path.toLowerCase().endsWith(ending)) throw new Refusal(`the file's name must end in ${ending}`);
+  insideFolders(path, files);
   if (files.exists(path) && !overwrite) throw new Refusal(`${path} is already there: pass overwrite true to replace it`);
+}
+
+/**
+ * Refuses a path outside the folders the server was started with, in the
+ * same words whether anything is there or not: a design from someone else
+ * can ask the AI client for anything, and the tools must neither touch nor
+ * tell about the rest of the disk.
+ */
+function insideFolders(path: string, files: Files): void {
+  if (files.allowed && !files.allowed(path)) throw new Refusal(`${path} is outside the folders this server may use (it is started with --folder <folder> for each one)`);
 }
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -329,9 +359,9 @@ function readFile(files: Files, path: string): Uint8Array {
   }
 }
 
-function writeFile(files: Files, path: string, bytes: Uint8Array): void {
+function writeFile(files: Files, path: string, bytes: Uint8Array, overwrite: boolean): void {
   try {
-    files.write(path, bytes);
+    files.write(path, bytes, overwrite);
   } catch (e) {
     throw new Refusal(`can't write ${path}: ${reason(e)}`);
   }

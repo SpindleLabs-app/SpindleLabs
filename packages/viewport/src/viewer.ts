@@ -3,11 +3,13 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, triangleColours, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { NO_HIGHLIGHT, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, CORNER_PICK_PX, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
+import { firstHit } from "./ray-pick.ts";
+import { copyChanged, edgeColourArray, faceColourArray } from "./body-colours.ts";
 import { isDoublePick, type ViewClick } from "./double-pick.ts";
 import { faceFraming, lookAtFraming, partFraming, pieceCount, pointsInPlane, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
@@ -23,7 +25,7 @@ import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
 import { SketchLabels, type PlacedLabel } from "./sketch-labels.ts";
 import { BUILD_AREA_COLOURS, GROUND_GRID, SKETCH_COLOURS, onViewTheme } from "./view-theme.ts";
-import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
+import { EDGE_WIDTH_PX } from "./highlight.ts";
 
 // The kernel is Z-up (like most CAD); Three.js defaults to Y-up.
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -829,7 +831,7 @@ export class ViewportView {
   private profileAt(clientX: number, clientY: number): string | null {
     if (this.image || !this.aim(clientX, clientY)) return null;
     const faceMesh = this.host.faceMesh();
-    const [hit] = faceMesh ? this.raycaster.intersectObject(faceMesh, false) : [];
+    const hit = faceMesh ? firstHit(faceMesh, this.raycaster) : null;
     const { origin, direction } = this.raycaster.ray;
     return this.host.extrude.profileAt(origin.toArray(), direction.toArray(), hit ? hit.distance : null);
   }
@@ -924,9 +926,9 @@ export class ViewportView {
     if (!ndc) return null;
     this.raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), this.camera);
     // Nearest hit first; for indexed geometry faceIndex is the triangle number.
-    const [hit] = this.raycaster.intersectObject(faceMesh, false);
+    const hit = firstHit(faceMesh, this.raycaster);
     const face = faceOfTriangle(mesh.triangle_faces, hit?.faceIndex);
-    return face === null || hit === undefined ? null : { face, point: [hit.point.x, hit.point.y, hit.point.z] };
+    return face === null || hit === null ? null : { face, point: hit.point };
   }
 
   /** While planes are offered (26d): the plane or the face a click there picks (picking.ts planeOrFace), any face, offered or not, so a curved one can be refused in words. */
@@ -955,7 +957,7 @@ export class ViewportView {
       const towards = new THREE.Vector3(c[0], c[1], c[2]).sub(this.camera.position);
       const distance = towards.length();
       this.raycaster.set(this.camera.position, towards.normalize());
-      const [hit] = this.raycaster.intersectObject(faceMesh, false);
+      const hit = firstHit(faceMesh, this.raycaster);
       if (unhidden(distance, hit ? hit.distance : null)) return i;
     }
     return null;
@@ -973,25 +975,46 @@ export class ViewportView {
     if (rect.width === 0 || rect.height === 0) return null;
     const lines = mesh.edge_lines;
     const point = (i: number) => new THREE.Vector3(lines[3 * i], lines[3 * i + 1], lines[3 * i + 2]);
-    // Every segment end on screen; NaN for ends outside the camera's depth range.
-    const screen = new Float64Array((lines.length / 3) * 2);
-    for (let i = 0; i < lines.length / 3; i++) {
-      const v = point(i).project(this.camera);
-      const drawable = v.z >= -1 && v.z <= 1;
-      const at = ndcToClient(v, rect);
-      screen[2 * i] = drawable ? at.x : NaN;
-      screen[2 * i + 1] = drawable ? at.y : NaN;
-    }
+    const screen = this.edgeScreen(lines, rect);
     for (const { segment, t } of segmentsNear(screen, { x: clientX, y: clientY })) {
       // The edge's point nearest the pointer, and the first face towards it.
       const target = point(2 * segment).lerp(point(2 * segment + 1), t);
       const towards = target.clone().sub(this.camera.position);
       const distance = towards.length();
       this.raycaster.set(this.camera.position, towards.normalize());
-      const [hit] = this.raycaster.intersectObject(faceMesh, false);
+      const hit = firstHit(faceMesh, this.raycaster);
       if (unhidden(distance, hit ? hit.distance : null)) return edgeOfSegment(mesh.edge_line_edges, segment);
     }
     return null;
+  }
+
+  /** The last edge ends worked out on screen (edgeAt), and what for: the lines, the camera's two matrices and the canvas's place. */
+  private edgeScreenFor: { lines: ArrayLike<number>; camera: Float64Array; rect: readonly number[]; screen: Float64Array } | null = null;
+
+  /**
+   * Every edge-line end on screen (client pixels), x then y; NaN for ends
+   * outside the camera's depth range. The same numbers as projecting each
+   * end afresh: worked out again only when the lines, the camera or the
+   * canvas's place changed, so a hover with the camera still projects none.
+   */
+  private edgeScreen(lines: ArrayLike<number>, rect: DOMRect): Float64Array {
+    const key = new Float64Array(32);
+    key.set(this.camera.matrixWorldInverse.elements, 0);
+    key.set(this.camera.projectionMatrix.elements, 16);
+    const place = [rect.left, rect.top, rect.width, rect.height];
+    const was = this.edgeScreenFor;
+    if (was && was.lines === lines && was.rect.every((v, i) => v === place[i]) && was.camera.every((v, i) => v === key[i])) return was.screen;
+    const screen = new Float64Array((lines.length / 3) * 2);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < lines.length / 3; i++) {
+      v.set(lines[3 * i], lines[3 * i + 1], lines[3 * i + 2]).project(this.camera);
+      const drawable = v.z >= -1 && v.z <= 1;
+      const at = ndcToClient(v, rect);
+      screen[2 * i] = drawable ? at.x : NaN;
+      screen[2 * i + 1] = drawable ? at.y : NaN;
+    }
+    this.edgeScreenFor = { lines, camera: key, rect: place, screen };
+    return screen;
   }
 
   /** Frames the current body from the home view (or the image from above while this view shows one); returns what it framed (null if none). */
@@ -1259,6 +1282,13 @@ const LOST_SKETCH_ORDER = 0.5;
  */
 export const releaseLost = (e: PointerEvent) => e.pointerType !== "touch" && e.buttons === 0;
 
+/** A kept Float32Array of `length` under `key` (paint's working arrays), made again only when the length changes. */
+function scratchOf(kept: Map<string, Float32Array>, key: string, length: number): Float32Array {
+  let a = kept.get(key);
+  if (!a || a.length !== length) kept.set(key, (a = new Float32Array(length)));
+  return a;
+}
+
 function clearGroup(group: THREE.Group) {
   for (const o of group.children) {
     if (o instanceof THREE.Mesh || o instanceof THREE.Line || o instanceof THREE.Points) {
@@ -1282,6 +1312,8 @@ export class Viewer implements SharedViewport {
   private faces: THREE.BufferGeometry | null = null;
   private faceMesh: THREE.Mesh | null = null;
   private edges: LineSegmentsGeometry | null = null;
+  /** paint's working colour arrays, kept between paints (body-colours.ts). */
+  private paintScratch = new Map<string, Float32Array>();
   private picker: ((pick: ViewportPick) => void) | null = null;
   private menuHandler: ((pick: ViewportPick, at: { x: number; y: number }) => boolean) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
@@ -1990,28 +2022,32 @@ export class Viewer implements SharedViewport {
     if (points + lines > 0) this.element.dataset.overlayPlaces = `points ${points} lines ${lines}`; // read by the e2e test
     else delete this.element.dataset.overlayPlaces;
     if (!this.mesh || !this.faces) return;
-    // Vertices belong to one face each (the kernel's display mesh), so per-vertex colour is per-face colour.
-    // Vertex colours are linear; THREE.Color converts from sRGB.
-    // Tints are mixed in sRGB, like the colours are chosen.
-    const linear = (c: Rgb) => new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace).toArray();
-    const perTriangle = triangleColours(this.mesh.triangle_faces, overlays);
-    const mixes = faceMixes(this.mesh.triangle_faces, this.highlight, this.hover.face);
-    const colours = new Float32Array(this.mesh.positions.length).fill(0);
-    for (let i = 0; i < colours.length / 3; i++) colours.set(linear(BASE_COLOUR), 3 * i);
-    perTriangle.forEach((c, t) => {
-      if (!c && mixes[t] === 0) return;
-      const colour = linear(tint(c ?? BASE_COLOUR, SELECTION_COLOUR, mixes[t]));
-      for (let k = 0; k < 3; k++) colours.set(colour, 3 * this.mesh!.indices[3 * t + k]);
-    });
-    this.faces.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+    // The colours are worked out into arrays kept between paints (body-colours.ts) and only the run that changed is
+    // sent to the GPU: a hover on a big design used to allocate a colour per vertex and upload every vertex again.
+    const faces = this.faces;
+    // A run alone only with one renderer: each view's renderer uploads by itself and three.js forgets the runs after
+    // the first upload, so with two views (split) a second renderer could miss a run; it gets the whole array then.
+    const ranged = this.views.length === 1;
+    const nextFaces = faceColourArray(this.mesh, overlays, this.highlight, this.hover.face, scratchOf(this.paintScratch, "faces", this.mesh.positions.length));
+    const colour = faces.getAttribute("color") as THREE.BufferAttribute | undefined;
+    if (colour && colour.array.length === nextFaces.length && colour.array instanceof Float32Array) {
+      const changed = copyChanged(colour.array, nextFaces);
+      if (changed) {
+        if (ranged) colour.addUpdateRange(changed.start, changed.count);
+        colour.needsUpdate = true;
+      }
+    } else faces.setAttribute("color", new THREE.BufferAttribute(nextFaces.slice(), 3));
     if (!this.edges) return;
-    const lineColours = new Float32Array(this.mesh.edge_lines.length);
-    segmentColours(this.mesh.edge_line_edges, this.highlight, this.hover.edge).forEach((c, s) => {
-      const colour = linear(c);
-      lineColours.set(colour, 6 * s);
-      lineColours.set(colour, 6 * s + 3);
-    });
-    this.edges.setColors(lineColours);
+    const nextEdges = edgeColourArray(this.mesh.edge_line_edges, this.highlight, this.hover.edge, scratchOf(this.paintScratch, "edges", this.mesh.edge_lines.length));
+    const start = this.edges.getAttribute("instanceColorStart") as THREE.InterleavedBufferAttribute | undefined;
+    const buffer = start?.data;
+    if (buffer && buffer.array.length === nextEdges.length && buffer.array instanceof Float32Array) {
+      const changed = copyChanged(buffer.array, nextEdges);
+      if (changed) {
+        if (ranged) buffer.addUpdateRange(changed.start, changed.count);
+        buffer.needsUpdate = true;
+      }
+    } else this.edges.setColors(nextEdges.slice());
   }
 
   /** Sphere around the current body's bounding box (radius 0 if none). */

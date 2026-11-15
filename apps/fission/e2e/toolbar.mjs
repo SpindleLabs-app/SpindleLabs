@@ -123,11 +123,11 @@ try {
   for (const [width, tap] of [[1280, false], [375, true]]) {
     const at = `${width} px${tap ? ", taps" : ""}`;
 
-    await check(`${at}: every toolbar button an icon drawn on the grid, its words its name and tooltip; the groups in Fusion's order, Create ▾, Modify ▾, Construct ▾, Inspect ▾, Insert ▾, Export`, async () => {
+    await check(`${at}: every toolbar button an icon drawn on the grid, its words its name and tooltip; the groups in Fusion's order, Search, Create ▾, Modify ▾, Construct ▾, Inspect ▾, Insert ▾, Export`, async () => {
       const page = await fresh(width, tap);
       try {
         assert.deepEqual(await toolbarProblems(page), []);
-        assert.deepEqual(await groupNames(page), ["Create ▾", "Modify ▾", "Construct ▾", "Inspect ▾", "Insert ▾", "Export"]);
+        assert.deepEqual(await groupNames(page), ["Search", "Create ▾", "Modify ▾", "Construct ▾", "Inspect ▾", "Insert ▾", "Export"]);
         // Hand-worked, from icons.ts: the sketch icon's line runs M4 20 V15 L15 4 20 9 9 20 Z, so x and y both from 4 to 20:
         // a 16 × 16 box at (4, 4); the export icon's (M4 15 V20 H20 V15, M12 14 V3, the arrow head) x 4 to 20, y 3 to 20.
         const box = (sel) => page.$eval(`${sel} > svg.icon path:last-child`, (p) => {
@@ -405,7 +405,7 @@ try {
         await page.keyboard.press("Escape");
         await press(page, "#finish-sketch", tap);
         await until(page, () => document.getElementById("create-sketch").checkVisibility(), null, "back to modelling");
-        assert.deepEqual(await groupNames(page), ["Create ▾", "Modify ▾", "Construct ▾", "Inspect ▾", "Insert ▾", "Export"], "the modelling groups back");
+        assert.deepEqual(await groupNames(page), ["Search", "Create ▾", "Modify ▾", "Construct ▾", "Inspect ▾", "Insert ▾", "Export"], "the modelling groups back");
       } finally {
         await page.context().close();
       }

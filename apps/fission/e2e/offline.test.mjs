@@ -307,6 +307,27 @@ test("anything else: the network first, then any of our caches when it fails or 
   await assert.rejects(fromAnywhere(request, "assets/kernel-A.wasm", env(server, fakeCaches())), /Failed to fetch/);
 });
 
+test("a build file asked for under many addresses is kept once, under its own address (security hunt 2026-11-13, G1)", async () => {
+  const files = { "index.html": ["<p>", "text/html"], "assets/lib-1.js": [LIB, JS] };
+  const B = build(files, ["assets/lib-1.js"]);
+  const caches = fakeCaches();
+  const server = fakeServer(files);
+  const kept = [];
+  const env = { fetch: server.fetch, caches, current: B.current, build: B, keep: (p) => kept.push(p) };
+  // Another site can open the chunk's address with any ?query it likes, as often as it likes.
+  for (const [query, mode] of [["?n=1", "navigate"], ["?n=2", "navigate"], ["?n=3", "cors"], ["", "cors"], ["#x", "navigate"]]) {
+    const r = await fromAnywhere({ url: url("assets/lib-1.js") + query, mode }, "assets/lib-1.js", env);
+    assert.equal(await r.text(), LIB, query);
+    await Promise.all(kept);
+  }
+  // One copy, under the file's own address: 5 requests of a 6 MB chunk must not be 30 MB.
+  assert.deepEqual(await caches.urls(B.current), [url("assets/lib-1.js")]);
+  assert.equal(caches.puts.length, 1, "kept once, not written again each time");
+  // And that one copy answers a request with a query when the network is gone.
+  server.offline = true;
+  assert.equal(await (await fromAnywhere({ url: url("assets/lib-1.js") + "?n=9", mode: "cors" }, "assets/lib-1.js", env)).text(), LIB);
+});
+
 test("an on-demand chunk is kept only when it is really this build's file: never a portal's page, another build's file or a changed one", async () => {
   const files = { "index.html": ["<p>", "text/html"], "assets/lib-1.js": [LIB, JS] };
   const B = build(files, ["assets/lib-1.js"]);

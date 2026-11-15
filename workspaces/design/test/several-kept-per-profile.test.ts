@@ -65,7 +65,7 @@ test("hand-worked upgrade: version 18's shared key (the first profile's sketch) 
   const doc = readDesignDocument(file);
   // B is `more`'s first (k = 1), of the first profile's sketch, so it read "feature-18": it gets "feature-18/profile:1",
   // the same 8 points and 8 curves; A keeps "feature-18" as it was.
-  assert.equal(doc.version, 21);
+  assert.equal(doc.version, 22);
   assert.deepEqual(doc.kept, { "feature-18": file.kept["feature-18"], "feature-18/profile:1": file.kept["feature-18"] });
   // Builds as it did: A from the sketch, the trapezium (0,0) (10,0) (20,10) (0,10), area (10 + 20) / 2 x 10 = 150,
   // x 1 mm = 150; B from its shape, 10 x 10 x 1 = 100.
@@ -107,7 +107,7 @@ test("hand-worked upgrade: version 18's \"<extrude>/<sketch>\" key becomes a cop
 
 test("the reader takes a profile's own key and refuses any other after the slash, saying so", () => {
   const doc = readDesignDocument(v18("v18-other-sketch-kept"));
-  assert.equal(DESIGN_VERSION, 21);
+  assert.equal(DESIGN_VERSION, 22);
   const shape = doc.kept!["feature-27/profile:1"];
   const withKey = (key: string) => JSON.parse(JSON.stringify({ ...doc, kept: { [key]: shape } }));
   // The two profiles after the first, and the first's own (the extrude's id), open.

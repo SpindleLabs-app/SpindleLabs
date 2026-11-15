@@ -138,7 +138,8 @@ async function drawn(page, layout) {
 }
 
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
-const undoTitle = (page) => page.evaluate(() => document.getElementById("undo").title);
+// What Undo says of the project's steps: with a tool open its title says it cancels the tool (issue #520).
+const undoTitle = (page) => page.evaluate(() => document.getElementById("undo").dataset.projectStep);
 const undoIs = (page, step) => until(page, (w) => document.getElementById("undo").title === w, `Undo ${step} (Ctrl+Z)`, `the undo step "${step}"`);
 
 /** The bar's items: id and flags, with the marker as "|" where it stands. */
@@ -1044,7 +1045,7 @@ try {
         await openPanel(page, "properties", tap); // phone: the Edit feature panel is in the Properties sheet (U5)
         await until(page, (w) => document.getElementById("feature-edit")?.hidden === false && document.getElementById("feature-edit-title")?.textContent === w, `Edit ${id}`, "the Edit feature panel");
       };
-      const boxes = () => page.$$eval("#feature-edit input[type=number]", (is) => is.map((i) => [i.id, i.value]));
+      const boxes = () => page.$$eval("#feature-edit input[inputmode=decimal]", (is) => is.map((i) => [i.id, i.value]));
       const panelClosed = () => until(page, () => document.getElementById("feature-edit")?.hidden === true, null, "the panel closed");
       /** Body `n`'s numbers, selected from its Bodies row, then the selection cleared. */
       const bodyPanel = async (n) => {
@@ -1195,7 +1196,8 @@ try {
       } else await item.dblclick();
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "Sketch 1 open");
       await status("4 lines, a closed outline.");
-      assert.equal(await undoTitle(page), lastStep, "opening records nothing");
+      // Inside the sketch Undo covers only its own steps (issue #520), so with nothing recorded since it opened there is none.
+      assert.equal(await undoTitle(page), "Nothing to undo", "opening records nothing");
       assert.equal(await page.isVisible("#finish-sketch"), true);
 
       // 2. A line across the square (upright through its middle, from 2 mm below it to 2 mm above it; upward, so the typed-length

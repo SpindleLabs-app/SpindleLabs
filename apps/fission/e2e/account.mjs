@@ -59,7 +59,7 @@ const browser = await launch();
 
 /** The fake account service: Supabase's four auth requests, checked as the real one checks them. */
 function fakeService() {
-  const svc = { calls: [], designCalls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [] };
+  const svc = { calls: [], designCalls: [], codes: new Map(), live: new Set(), mode: "up", authorize: "approve", n: 0, loggedOut: [], fullName: "Ada Maker", profile: { email_opt_in: false }, tokens: new Set(), profileHeld: Promise.resolve(), plan: { plan: "free", renews_at: null, cancels_at_period_end: false }, billingFn: true, checkouts: [], downloads: 0 };
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "apikey, authorization, content-type, prefer", "access-control-allow-methods": "POST, GET, PATCH, OPTIONS" };
   const json = (route, status, body) => route.fulfill({ status, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify(body) });
   svc.handle = async (route) => {
@@ -101,7 +101,11 @@ function fakeService() {
         return route.fulfill({ status: 204, headers: cors });
       }
       if (req.method() === "GET" && what === "plans") return json(route, 200, [svc.plan]);
-      if (req.method() === "POST" && what === "rpc/my_data") return json(route, 200, { account: { email: "ada@example.com" }, profile: svc.profile, plan: { plan: "free" } });
+      // Download my data, once a minute at most (security hunt 2026-11-13 A1): the second call in a check waits.
+      if (req.method() === "POST" && what === "rpc/download_my_data") {
+        if (svc.downloads++ > 0) return json(route, 200, { status: "wait", retry_at: "2026-11-13T10:01:00+00:00" });
+        return json(route, 200, { account: { email: "ada@example.com" }, profile: svc.profile, plan: { plan: "free" }, data_downloads: [] });
+      }
       if (req.method() === "POST" && what === "rpc/delete_my_account") {
         svc.profile = undefined;
         svc.live.clear();
@@ -382,6 +386,12 @@ try {
     assert.equal(download.suggestedFilename(), "spindlelabs-account.json");
     const saved = JSON.parse(readFileSync(await download.path(), "utf8"));
     assert.equal(saved.account.email, "ada@example.com");
+    // Again at once: the service says to wait, and the dialog says until when (nothing downloaded).
+    let again = false;
+    page.once("download", () => (again = true));
+    await page.click("text=Download my data");
+    await page.waitForFunction(() => /You downloaded your data a moment ago\. You can download it again from \S/.test(document.getElementById("account")?.textContent ?? ""));
+    assert.equal(again, false, "no second file");
     await page.click("#account .account-danger");
     assert.equal(await page.locator("#account-title").textContent(), "Delete your account?");
     if (shots) await page.screenshot({ path: `${shots}/account-delete-1280.png` });

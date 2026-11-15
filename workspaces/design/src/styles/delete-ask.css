@@ -25,6 +25,7 @@
 .delete-ask .delete-ask-box .delete-ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .delete-ask .delete-ask-box #delete-ask-confirm:not(#none) { background: var(--fill-6b2328); border-color: var(--line-e0656d); font-weight: 600; }
 .delete-ask .delete-ask-box #delete-ask-confirm:not(#none):hover { background: var(--fill-82292f); }
-@media (max-width: 640px) {
+/* A finger's 44 × 44 px on a phone and on any touch screen (issue #522: sideways phones and tablets had mouse-sized ones). */
+@media (max-width: 640px), (pointer: coarse) {
   .delete-ask.delete-ask-row > .delete-ask-more:not(#none), .delete-ask .delete-ask-menu button:not(#none), .delete-ask .delete-ask-box button:not(#none) { min-height: 44px; min-width: 44px; }
 }

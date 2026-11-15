@@ -33,7 +33,8 @@
 // changed later (`changeDimension`), solved again the same way.
 
 import type { KernelCalls } from "@fission/core";
-import { constraintPoints, counted, curvePoints, DIMENSION_LIMITS, idNumber, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
+import { constraintPoints, counted, curvePoints, DIMENSION_LIMITS, idNumber, MAX_SKETCH_CONSTRAINTS, type DesignDocument, type Sketch, type SketchConstraint } from "./document.ts";
+import { constraintsFull, sketchRoom } from "./sketch-room.ts";
 import { madePoints } from "./projection.ts";
 
 /** The smallest feature the kernel builds (the kernel's MIN_FEATURE, mm): no constraint may shrink a line or an arc below it. */
@@ -242,6 +243,8 @@ export async function addConstraint(kernel: KernelCalls, doc: DesignDocument, sk
   if (!sketch) throw new Error(`there is no sketch ${sketchId} in the design`);
   const problem = namingProblem(sketch, c);
   if (problem !== null) return { refused: problem, fighting: [] };
+  // A sketch at the reader's limit takes no more (#641 item 2), said before the solver is asked.
+  if (sketch.constraints.length >= MAX_SKETCH_CONSTRAINTS) return { refused: constraintsFull(), fighting: [] };
   const id = `constraint-${doc.nextId}`;
   const made: SketchConstraint = { id, ...c };
   const trial: Sketch = { ...sketch, constraints: [...sketch.constraints, made] };
@@ -387,7 +390,9 @@ export function squaredRectangle(doc: DesignDocument, sketchId: string, sides: r
     nextId = counted(nextId + 1);
   }
   if (added.length === 0) return doc;
-  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, constraints: [...s.constraints, ...added] } : s)) };
+  const squared = { ...sketch, constraints: [...sketch.constraints, ...added] };
+  sketchRoom(doc, squared); // no more than the reader opens (#641 item 2)
+  return { ...doc, nextId, sketches: doc.sketches.map((s) => (s === sketch ? squared : s)) };
 }
 
 /** The points a line picked gives a horizontal or vertical constraint: its start, held, then its end. */
