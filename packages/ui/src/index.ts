@@ -24,6 +24,7 @@ export { keepTypingVisible, takesTyping, typingHidden } from "./keep-typing-visi
 export { askName, GCODE_KIND, PNG_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
 export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELETON_DELAY_MS, SKELETON_FADE_MS, type HeldSkeleton, type SkeletonShape } from "./skeleton.ts";
 export { carryOnRow, filterRows, HOME_NO_MATCH, HOME_NO_PROJECTS, homeRows, homeScreen, usedAt, workspacesIn, type HomeParts, type HomeProject, type HomeRow, type HomeScreen } from "./home-screen.ts";
+export { fitShape, homeBackdrop, lowEnd, makeTraces, NEUTRAL_SHAPE, project as projectPoint, pulse, traceStart, type Backdrop } from "./home-backdrop.ts";
 export { NO_PROJECTS, PROJECTS_NOTE, PROJECTS_TITLE, deleteQuestion, projectList, projectRows, savedWhen, type KeptProject, type ProjectList, type ProjectListParts, type ProjectListRow } from "./project-list.ts";
 export { designRows, KEEPING_OFF_NOTE, MY_DESIGNS_NOTE, MY_DESIGNS_TITLE, myDesigns, NO_DESIGNS, othersWords, removeQuestion, sizeWords, spaceWords, tagOf, type AccountDesign, type DesignRowWords, type MyDesigns, type MyDesignsParts } from "./my-designs.ts";
 export { amountWords, NO_PRINTS, PRINT_NOT_KEPT, PRINT_LOG_NOTE, PRINT_LOG_TITLE, printLogDialog, removePrintQuestion, RESULT_WORDS, type PrintLogDialog, type PrintLogParts, type PrintLogResult, type PrintLogRow } from "./print-log.ts";

@@ -5,6 +5,7 @@
 // the screen, its words, and the pure rules for search, filter and the card (tested by hand in test/home-screen.test.ts).
 // Styles: src/styles/home-screen.css.
 import { savedWhen } from "./project-list.ts";
+import { homeBackdrop } from "./home-backdrop.ts";
 
 /** What the screen needs of a kept project (@fission/storage ProjectSummary). */
 export interface HomeProject {
@@ -74,6 +75,12 @@ export interface HomeParts {
   chooseFile(): void;
   showGuide(): void;
   workspaceTitle(id: string): string;
+  /**
+   * The open project's edges as pairs of x y z points, for the turning picture behind the screen. Asked about once a second
+   * while the screen is up, only when the "Carry on with" project is the open one (the others are not loaded). Null: a
+   * neutral shape.
+   */
+  outline?(): ArrayLike<number> | null;
   now?: () => Date;
 }
 
@@ -82,6 +89,11 @@ export interface HomeScreen {
   hide(): void;
   readonly shown: boolean;
   readonly element: HTMLElement;
+  /**
+   * For browser checks only (the shell's `?test-hooks`): turns these edges behind the screen in place of the open
+   * project's, for a design the app can't open yet (an STL); null goes back to the project's.
+   */
+  showStandIn(lines: ArrayLike<number> | null): void;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -114,11 +126,23 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   const links = el("p", { className: "home-links" });
   links.append(button("home-guide", "How SpindleLabs works (the guide)", () => (hide(), parts.showGuide()), "home-link"));
   const close = button("home-close", "Back to my project", () => hide(), "home-close");
-  root.append(el("div", { className: "home-head" }), title, card, actions, find, status, items, links);
+  const backdropCanvas = el("canvas", { className: "home-backdrop" });
+  backdropCanvas.setAttribute("aria-hidden", "true");
+  const scrim = el("div", { className: "home-scrim" });
+  scrim.setAttribute("aria-hidden", "true");
+  const backdrop = homeBackdrop(backdropCanvas, { win: doc.defaultView as Window & typeof globalThis, doc, room: () => links.getBoundingClientRect().bottom });
+  root.append(backdropCanvas, scrim, el("div", { className: "home-head" }), title, card, actions, find, status, items, links);
   root.querySelector(".home-head")!.append(close);
   doc.body.append(root);
 
   let rows: HomeRow[] = [];
+  /** Edges a browser check shows in place of the open project's (`showStandIn`), else null. */
+  let standIn: ArrayLike<number> | null = null;
+  /** The turning picture: the open project's body when it is the one to carry on with (asked again as it reopens). */
+  const picture = () => {
+    const carry = carryOnRow(rows);
+    return standIn ?? (carry !== null && carry.id === parts.openId() ? (parts.outline?.() ?? null) : null);
+  };
   let kept: HomeProject[] = [];
   let ticket = 0;
   let busy = false;
@@ -147,6 +171,7 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   function paintList() {
     const shown = filterRows(rows, search.value, filter.value === "" ? null : filter.value);
     items.replaceChildren(...shown.map(rowFor));
+    backdrop.redraw();
     if (!status.classList.contains("bad")) say(rows.length === 0 ? HOME_NO_PROJECTS : shown.length === 0 ? HOME_NO_MATCH : "");
   }
 
@@ -178,6 +203,7 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
     paintCard();
     paintFilter();
     paintList();
+    backdrop.setSource(picture);
   }
 
   function rowFor(r: HomeRow): HTMLLIElement {
@@ -253,6 +279,7 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
     button("home-open-file", "Open file…", () => (hide(), parts.chooseFile())),
     button("home-upload-stl", "Upload STL…", () => (hide(), parts.chooseFile())),
   );
+  root.addEventListener("scroll", () => backdrop.redraw(), { passive: true });
   search.addEventListener("input", () => paintList());
   filter.addEventListener("change", () => paintList());
   // The app's shortcuts listen on the document: keys typed here stay here. Escape goes back to the project.
@@ -273,6 +300,7 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   function hide() {
     ticket++; // a list still being read is not put in a hidden screen
     root.hidden = true;
+    backdrop.stop();
     release();
   }
   return {
@@ -283,11 +311,16 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
       for (const e of inerted) e.setAttribute("inert", "");
       root.hidden = false;
       search.value = "";
+      backdrop.start();
       (root.querySelector<HTMLButtonElement>("#home-carry-on") ?? root.querySelector<HTMLButtonElement>("#home-new"))?.focus();
       await fill();
       (root.querySelector<HTMLButtonElement>("#home-carry-on") ?? root.querySelector<HTMLButtonElement>("#home-new"))?.focus();
     },
     hide,
+    showStandIn(lines) {
+      standIn = lines;
+      backdrop.setSource(picture);
+    },
     get shown() {
       return !root.hidden;
     },
