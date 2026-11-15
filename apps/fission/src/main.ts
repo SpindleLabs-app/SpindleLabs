@@ -11,6 +11,7 @@
 // each pane's viewport, for the workspace in that pane.
 /// <reference types="vite/client" />
 // First, before any module that starts work: a framed page stops here (audit S10).
+import { fileNotice } from "./file-notice.ts";
 import { pageShareSwitch } from "./share-switch.ts";
 import "./frame-guard.ts";
 import "@fission/ui/theme.css";
@@ -381,7 +382,7 @@ function sliceForPrinting() {
   if (current !== "design") show("design");
   const entry = pool.awake("main")?.view.fileEntries?.()?.exports?.find((e) => e.id === "file-slice-print");
   if (!entry) return;
-  if (entry.off) return fileStatus(entry.off);
+  if (entry.off) return passingStatus(entry.off);
   entry.run();
 }
 
@@ -799,7 +800,10 @@ function keepOnFirstChange() {
 // .spindle file (docs/project-format.md). Opening replaces the project
 // only once all of it has read cleanly; a refused file leaves the open
 // project as it was and says why.
-const fileStatus = (message: string) => ($("file-status").textContent = message);
+const notice = fileNotice({ show: (t) => void ($("file-status").textContent = t), read: () => $("file-status").textContent ?? "" }, { set: (f, ms) => setTimeout(f, ms), clear: (id) => clearTimeout(id as number) });
+const fileStatus = notice.sticky;
+/** A notice about something that just went wrong (a refused file, a failed undo): it goes by itself at the next change or new project, or after a while (src/file-notice.ts). */
+const passingStatus = notice.passing;
 $("file-dismiss").addEventListener("click", () => fileStatus(""));
 /** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
 let savedTo: FileHandle | null = null;
@@ -921,6 +925,7 @@ function replaceProject(project: Project) {
   filesOf.clear(); // and nothing of the old project can be undone back to
   freshPending = false;
   fileOwner++;
+  notice.changed(); // a refused file's notice was about the old project
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -1290,12 +1295,12 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
     // A project-named file is read whole (it is size-capped) so it can be parsed; anything else, its start.
     heads = await Promise.all(files.map(async (f, i): Promise<FileHead> => (folders[i] ? { name: f.name, size: f.size, head: new Uint8Array(), folder: true } : { name: f.name, size: f.size, head: new Uint8Array(await readBytes(f, f.slice(0, headBytesFor(f.name, f.size)))) })));
   } catch (e) {
-    if (e instanceof Unreadable) return fileStatus(e.message);
+    if (e instanceof Unreadable) return passingStatus(e.message);
     throw e;
   }
   const route = routeFiles(representations, heads, (w) => listed.some((l) => l.id === w)); // an unlisted workspace's files are refused (listed-workspaces.ts)
   if (!route) return;
-  if (route.kind === "refused") return fileStatus(route.message);
+  if (route.kind === "refused") return passingStatus(route.message);
   const file = files[0];
   const target = route.importer.workspace;
   if (target && pool.showing("main") !== target && pool.showing("split") !== target) {
@@ -1305,8 +1310,8 @@ async function receive(files: File[], folders: readonly boolean[] = []) {
   try {
     await route.importer.open(file.name, new Uint8Array(await readBytes(file, file)));
   } catch (e) {
-    if (e instanceof Unreadable) return fileStatus(e.message);
-    return fileStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
+    if (e instanceof Unreadable) return passingStatus(e.message);
+    return passingStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
   }
   const into = route.importer.workspace;
   if (!into) return; // the shell itself (a project) has already shown it, and said what it says (openProject)
@@ -1627,7 +1632,7 @@ function undoRedoNow(which: "undo" | "redo") {
   try {
     ctx.history[which]();
   } catch (e) {
-    return fileStatus(`Couldn't ${which}: ${e instanceof Error ? e.message : String(e)}`);
+    return passingStatus(`Couldn't ${which}: ${e instanceof Error ? e.message : String(e)}`);
   }
   ctx.history.amend(); // defaults the remounted workspaces filled in
 }
@@ -1680,6 +1685,7 @@ for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id));
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
+ctx.history.onChange(notice.changed); // a passing notice goes at the next change
 refreshUndoRedo = showUndoRedo;
 ctx.history.onBusy(showUndoRedo);
 showUndoRedo();
@@ -1702,13 +1708,13 @@ function jumpHistory(step: number) {
   const now = () => {
     const tool = openTool();
     // Going back would close the tool and lose what is typed in it (issue #520): it waits until the tool closes.
-    if (tool) return fileStatus(`Finish or cancel ${tool.name} first (OK or Cancel), then go back in History.`);
+    if (tool) return passingStatus(`Finish or cancel ${tool.name} first (OK or Cancel), then go back in History.`);
     const target = ctx.history.steps()[step];
     try {
       // Refused while a sketch is open, for a step from before it (its own steps only, issue #520).
-      if (ctx.history.jumpTo(step) === null && target !== undefined && target.state !== "current") return fileStatus("While a sketch is open, History goes back only through the sketch's own steps: Finish Sketch first.");
+      if (ctx.history.jumpTo(step) === null && target !== undefined && target.state !== "current") return passingStatus("While a sketch is open, History goes back only through the sketch's own steps: Finish Sketch first.");
     } catch (e) {
-      return fileStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
+      return passingStatus(`Couldn't go back: ${e instanceof Error ? e.message : String(e)}`);
     }
     ctx.history.amend(); // defaults the remounted workspaces filled in
   };

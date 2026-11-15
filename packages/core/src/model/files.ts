@@ -247,5 +247,5 @@ export function routeFiles(registry: RepresentationRegistry, files: readonly Fil
   const info = formatInfo(found.format);
   if (info.planned.workspaces.length === 0) return { kind: "refused", message: `Couldn't open ${name}: nothing here opens ${info.many}.` };
   const who = andList(info.planned.workspaces.filter(listed).map(workspaceName));
-  return { kind: "refused", message: `Couldn't open ${name}: SpindleLabs can't open ${info.many} yet.${who ? ` ${who} will take them as ${info.planned.as}.` : ""}` };
+  return { kind: "refused", message: `Couldn't open ${name}: SpindleLabs can't open ${info.many} yet.${who ? ` Opening them is planned for ${who}, as ${info.planned.as}.` : ""}` };
 }
