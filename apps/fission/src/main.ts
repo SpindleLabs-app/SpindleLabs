@@ -730,6 +730,8 @@ function askBeforeLeaving(e: BeforeUnloadEvent) {
 }
 /** What the save mark says now: put back when an opened file is abandoned before it was kept (issue #247). */
 let shownStatus: AutosaveStatus = { state: "saved" };
+/** Tells the design tabs whether the project on screen has changes not stored yet (a dot on its tab); set once the tabs exist. */
+let markTabs: (() => void) | null = null;
 /** Marks that say "Saving…" only while an opened project is stored again as it is: no change of the person's is waiting (tabs hunt A5). */
 const storingAgain = new WeakSet<AutosaveStatus>();
 const saveStatus = (s: AutosaveStatus) => {
@@ -740,6 +742,7 @@ const saveStatus = (s: AutosaveStatus) => {
   el.title = el.textContent; // the words behind the mark at phone width
   if (s.state === "saved") accountHooks?.saved(); // My designs: kept in the account a few seconds later, when signed in
   askWhileUnsaved();
+  markTabs?.();
 };
 /** Listens for beforeunload only while something could be lost (a saved page with nothing held stays fit for the back/forward cache). */
 function askWhileUnsaved() {
@@ -1176,6 +1179,7 @@ const tabs: ShellTabs | null = !DESIGN_TABS
         }
       })(),
     });
+markTabs = () => tabs?.strip.mark(shownStatus.state !== "saved" && !storingAgain.has(shownStatus));
 /** The home screen (U6b, only when the build has it): over the open project, which stays open under it. */
 const home = !HOME_SCREEN ? null : homeScreen(document, {
   list: () => store.list(),

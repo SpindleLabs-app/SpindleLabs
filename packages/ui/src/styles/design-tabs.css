@@ -1,7 +1,7 @@
 /* The design tabs (design-tabs.ts): a strip under the top bar, as Fusion's document tabs. Colours are tokens only
    (theme.css); ":not(#none)" lifts a rule over the base layout's button rules. Each tab: name, then a chip saying which
    workspace it is for, then ×. */
-.design-tabs { display: flex; align-items: stretch; flex-shrink: 0; min-height: 36px; background: var(--surface); border-bottom: 1px solid var(--look-edge); }
+.design-tabs { display: flex; align-items: stretch; flex-shrink: 0; min-height: 34px; background: var(--surface); border-bottom: 1px solid var(--look-edge); }
 .design-tabs[hidden] { display: none; }
 .design-tabs .design-tabs-list { display: flex; align-items: stretch; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .design-tabs .design-tabs-list::-webkit-scrollbar { display: none; }
@@ -10,27 +10,35 @@
 .design-tabs .design-tabs-tab button:not(#none) { background: none; border: none; color: inherit; font: inherit; cursor: pointer; }
 .design-tabs .design-tabs-tab .design-tabs-main:not(#none) { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 4px 0 12px; font-size: 13px; }
 .design-tabs .design-tabs-tab .design-tabs-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.design-tabs .design-tabs-tab .design-tabs-dot { display: none; flex-shrink: 0; width: 7px; height: 7px; margin-left: -2px; border-radius: 50%; background: var(--accent); }
+.design-tabs[data-unsaved="true"] .design-tabs-tab[data-active="true"] .design-tabs-dot { display: block; }
 .design-tabs .design-tabs-tab .design-tabs-kind { flex-shrink: 0; font-size: 10px; letter-spacing: 0.05em; padding: 1px 6px; color: var(--text-dim); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
 .design-tabs .design-tabs-tab[data-active="true"] .design-tabs-kind { color: var(--text-body); border-color: var(--accent); }
 .design-tabs .design-tabs-tab .design-tabs-close:not(#none) { min-width: 28px; font-size: 16px; line-height: 1; }
 .design-tabs .design-tabs-tab .design-tabs-close:hover, .design-tabs .design-tabs-add:hover { color: var(--text-body); background: var(--look-field); }
-.design-tabs .design-tabs-add:not(#none) { flex-shrink: 0; min-width: 36px; background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer; }
+.design-tabs .design-tabs-add:not(#none) { flex-shrink: 0; min-width: 34px; background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer; }
 .design-tabs .design-tabs-add:disabled { opacity: 0.4; cursor: default; }
 .design-tabs .design-tabs-ask { max-width: min(360px, 90vw); padding: var(--look-space-4); color: var(--text-body); background: var(--surface-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); }
 .design-tabs .design-tabs-ask::backdrop { background: var(--fill-5-8-14-06); }
 .design-tabs .design-tabs-ask p { margin: 0 0 var(--look-space-3); overflow-wrap: anywhere; }
 .design-tabs .design-tabs-ask-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--look-space-2); }
 .design-tabs .design-tabs-ask button { min-height: var(--look-target); padding: 0 var(--look-space-3); font: inherit; color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
+/* Touch screens wide enough for the strip: still one row, its tabs, × and + 44 px tall (the tap size). */
+@media (pointer: coarse) {
+  .design-tabs:not(#none) { min-height: 44px; }
+  .design-tabs .design-tabs-tab .design-tabs-close:not(#none) { min-width: 44px; }
+  .design-tabs .design-tabs-add:not(#none) { min-width: 44px; }
+}
 /* The phone's list: hidden on wide screens. The count button that opens it is in the top bar (styles/design-tabs-bar.css). */
 .design-tabs .design-tabs-menu { display: none; }
 /* Half the 3D view's height, set on the list as it opens (design-tabs.ts); no cap until then. */
 .design-tabs .design-tabs-menu { --design-tabs-view-half: 100dvh; }
 /* Phones (tabs T3a): no tabs row. The strip under the top bar takes no height (the 3D view is as tall as with the tabs
    switched off) and only holds the list the top bar's count button opens, which drops under the top bar: + New design
-   first, then the designs, every row 44 px, scrolling. Also for touch screens and short windows, so a phone held sideways
-   gets it too (tabs hunt E2; the query is TABS_PHONE_QUERY in design-tabs.ts, kept the same by a unit test). The list is
+   first, then the designs, every row 44 px, scrolling. Also for short windows, so a phone held sideways
+   gets it too (tabs hunt E2; wide touch screens keep the strip, one 44 px row; the query is TABS_PHONE_QUERY in design-tabs.ts, kept the same by a unit test). The list is
    at most 40% of the window, 5.5 rows, and half the 3D view (--design-tabs-view-half, set as it opens; tabs hunt E3). */
-@media (max-width: 640px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))), (max-height: 500px) {
+@media (max-width: 640px), (max-height: 500px) {
   .design-tabs:not(#none) { position: relative; min-height: 0; height: 0; border-bottom: none; }
   .design-tabs .design-tabs-list, .design-tabs .design-tabs-add:not(#none) { display: none; }
   .design-tabs .design-tabs-menu:not([hidden]) { display: block; position: absolute; top: 0; left: 0; right: 0; z-index: 30; max-height: min(40dvh, calc(5.5 * 44px), var(--design-tabs-view-half)); overflow-y: auto; background: var(--surface-raised); border-bottom: 1px solid var(--look-edge); box-shadow: var(--look-top-light); }
