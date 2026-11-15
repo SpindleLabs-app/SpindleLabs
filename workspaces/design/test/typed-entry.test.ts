@@ -145,8 +145,21 @@ test("the boxes each tool shows, its anchor, and the live values", () => {
   assert.equal(angleOf([1, 1], [1, 1]), 0);
   assert.deepEqual(liveValues([5, 5], [2, 9], { kind: "rectangle", sketch: s.id, corner: [5, 5] }), { width: 3, height: 4 });
   assert.equal(shownValue(12.34567), "12.346");
-  assert.equal(shownValue(-0.0001), "0");
+  assert.equal(shownValue(-0.000001), "0");
   assert.equal(shownValue(1e6), "1000000");
+});
+
+test("a size under 0.01 mm shows to 10 nm, so a line a few µm long reads as drawn (Ben, 2026-11-14)", () => {
+  // From (0, 0) to (0.00053, 0.00126): length √(0.00053² + 0.00126²) = √(2.809e-7 + 1.5876e-6) = √1.8685e-6
+  // ≈ 0.0013669 mm, which to 10 nm (5 decimals) is 0.00137; to 3 decimals it read 0.001, as every line from 0.5 to 1.5 µm did.
+  const live = liveValues([0, 0], [0.00053, 0.00126], { kind: "line", sketch: "s", from: [0, 0] });
+  assert.equal(shownValue(live.length!), "0.00137");
+  // At 0.9× and 1.1× of the 0.01 mm switch: 0.009 → 5 decimals, 0.011 → 3.
+  assert.equal(shownValue(0.0091234), "0.00912");
+  assert.equal(shownValue(0.0111234), "0.011");
+  // Under 10 nm rounds to 0 either sign; the smallest feature, 0.001, stays 0.001.
+  assert.equal(shownValue(-0.0000049), "0");
+  assert.equal(shownValue(0.001), "0.001");
 });
 
 /** Places each point where the locks put it with the pointer at `p`, as the workspace's Enter does. */
