@@ -133,3 +133,33 @@ test("the flag: ?chamfer on and remembered, =off forgets, after the # too, typed
   assert.equal(readChamferFlag("?chamfer", throws), true);
   assert.equal(readChamferFlag("", throws), false);
 });
+
+test("44a-app3: Edit feature on a Chamfer opens with its type, sizes and Flip, its edges as they are, and a new one opens fresh after it", () => {
+  const { panel, $, shownRows } = setup();
+  panel.show(3, { id: "feature-4", name: "Chamfer 2", edges: 3, size: { two: [2, 3.5] }, flip: true });
+  assert.equal(panel.editing, "feature-4");
+  assert.equal($("chamfer-title").textContent, "Edit Chamfer 2");
+  assert.equal($("chamfer-edges").textContent, "3 edges");
+  assert.equal($("chamfer-edit-note").hidden, false);
+  assert.deepEqual(shownRows(), ["chamfer-second-row", "chamfer-flip-row"]);
+  assert.deepEqual(panel.typed, { kind: "two", first: "2", second: "3.5", flip: true });
+  assert.equal(panel.ready, true);
+  // The preview's volume as drawn, and why there is none.
+  panel.showPreview(955);
+  assert.equal($("chamfer-panel").dataset.previewVolume, "955.000");
+  panel.showPreview(null, "No preview: an item after this Chamfer changes the body, so the result shows after OK.");
+  assert.equal($("chamfer-panel").dataset.previewVolume, "");
+  assert.equal($("chamfer-preview-why").hidden, false);
+  panel.hide();
+  assert.equal(panel.editing, null);
+  assert.equal($("chamfer-preview-why").hidden, true);
+  // An angle chamfer: the angle box, not the second distance.
+  panel.show(1, { id: "feature-5", name: "Chamfer 3", edges: 1, size: { angle: [2, 30] }, flip: false });
+  assert.deepEqual(panel.typed, { kind: "angle", first: "2", second: "30", flip: false });
+  // A new one after: the defaults, the plain title, no note.
+  panel.show(0);
+  assert.equal(panel.editing, null);
+  assert.equal($("chamfer-title").textContent, "Chamfer");
+  assert.equal($("chamfer-edit-note").hidden, true);
+  assert.deepEqual(panel.typed, { kind: "equal", first: "1", second: "1", flip: false });
+});

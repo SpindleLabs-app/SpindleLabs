@@ -94,6 +94,10 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
     // Mirror body (35e2) is a Duplicate across a plane.
     kind = mirrorOf(f) === undefined ? "Duplicate" : "Mirror body";
     details = [summary, "A new body, following its source's sizes"];
+  } else if (type === "chamfer") {
+    // "1 edge of Box 1, 2 mm": its summary without the verb the kind says (44a-app3).
+    kind = "Chamfer";
+    details = [summary.replace(/^Chamfer /, "")];
   } else if (type === "combine") {
     const op = p.operation;
     kind = op === "cut" ? "Combine: cut" : op === "join" ? "Combine: join" : op === "intersect" ? "Combine: intersect" : "Combine";
@@ -405,6 +409,9 @@ export function ownBodies(scene: Scene, f: Feature): Set<number> {
   if (f.intent.type === "move") {
     const ids = Array.isArray(f.intent.parameters.bodies) ? (f.intent.parameters.bodies as string[]) : f.dependsOn.map(bodyIdOf);
     wanted = (b) => ids.includes(b.body);
+  } else if (f.intent.type === "chamfer") {
+    // A Chamfer's own body is the one it cuts back (44a-app3), made by another item.
+    wanted = (b) => b.body === f.intent.parameters.body;
   } else if (f.intent.type === "sketch") return own;
   scene.bodies.forEach((b, i) => wanted(b) && own.add(i));
   return own;

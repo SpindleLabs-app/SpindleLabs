@@ -7,7 +7,7 @@
 // them again after edits before it, whatever made the body.
 
 import type { Feature } from "@fission/core";
-import { bodyItem, CHAMFER_MAX, chamferSizeProblem, counted, freshName, insertAt, insertItem, isChamferItem, isPiece, makesBody, makesPieces, numberedWhenBuilt, shown, takenNames, type ChamferSizing, type DesignDocument } from "./document.ts";
+import { bodyItem, CHAMFER_MAX, chamferOf, chamferSizeProblem, counted, freshName, insertAt, insertItem, isChamferItem, isPiece, makesBody, makesPieces, numberedWhenBuilt, shown, takenNames, type ChamferSizing, type DesignDocument } from "./document.ts";
 import { ruleFiveName } from "./design-edges.ts";
 
 /** The undo step a new Chamfer is recorded as. */
@@ -65,3 +65,51 @@ export function insertChamfer(doc: DesignDocument, body: string, edges: readonly
 }
 
 export { CHAMFER_MAX };
+
+/** What Edit feature on a Chamfer opens with (44a-app3): its name, how many edges it holds, its size and Flip. */
+export interface EditableChamfer {
+  id: string;
+  name: string;
+  edges: number;
+  size: ChamferSizing;
+  flip: boolean;
+}
+
+/** Item `id`'s Chamfer as the panel opens it; refused in words when it is no Chamfer. */
+export function editableChamfer(doc: DesignDocument, id: string): EditableChamfer {
+  const f = doc.timeline.features.find((x) => x.id === id);
+  if (f === undefined || !isChamferItem(f)) throw new Error(`${shown(id)} is not a Chamfer in the timeline`);
+  const c = chamferOf(f);
+  return { id, name: f.provenance.self.label, edges: c.edges.length, size: c.size, flip: c.flip };
+}
+
+/** The words over an edited Chamfer's edge count: its edges stay as picked (picking them again with the timeline rolled back is 44a-app4). */
+export const EDIT_EDGES_NOTE = "Its edges stay as they were picked: to chamfer other edges, make another Chamfer.";
+
+/**
+ * The design with Chamfer `id` given `size` and `flip` (Edit feature,
+ * 44a-app3): the same item, keeping its id, place, body, edges, name and
+ * flags; its summary said again. Flip means nothing for an equal chamfer
+ * and is kept off there. The document itself comes back when nothing
+ * changes, so nothing is recorded. Refused in words for a size the data
+ * can't hold, as `insertChamfer` refuses it.
+ */
+export function changedChamfer(doc: DesignDocument, id: string, size: ChamferSizing, flip: boolean): DesignDocument {
+  const at = doc.timeline.features.findIndex((x) => x.id === id);
+  const f = doc.timeline.features[at];
+  if (f === undefined || !isChamferItem(f)) throw new Error(`${shown(id)} is not a Chamfer in the timeline`);
+  if (typeof flip !== "boolean") throw new Error(`Flip must be true or false, not ${shown(flip)}`);
+  const params = sizeParams(size);
+  const problem = chamferSizeProblem(params);
+  if (problem !== null) throw new Error(`The chamfer's size can't be used: ${problem}`);
+  const now = chamferOf(f);
+  const flipped = "equal" in size ? false : flip;
+  if (JSON.stringify(now.size) === JSON.stringify(size) && now.flip === flipped) return doc;
+  const rest = Object.fromEntries(Object.entries(f.intent.parameters).filter(([k]) => !["distance", "second", "angle", "flip"].includes(k)));
+  const maker = f.provenance.from[0]?.label ?? f.dependsOn[0];
+  const what = isPiece(now.body) ? `a piece of ${maker}` : maker;
+  const changed: Feature = { ...f, intent: { ...f.intent, parameters: { ...rest, ...params, flip: flipped }, summary: chamferSummary(what, now.edges.length, size, flipped) } };
+  const features = [...doc.timeline.features];
+  features[at] = changed;
+  return { ...doc, timeline: { ...doc.timeline, features } };
+}

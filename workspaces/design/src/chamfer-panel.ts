@@ -13,6 +13,7 @@
 import { wordsInUnit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
 import { CHAMFER_KINDS, DEFAULT_ANGLE, DEFAULT_CHAMFER, edgesWords, KIND_WORDS, type ChamferKind } from "./chamfer-tool.ts";
+import { EDIT_EDGES_NOTE, type EditableChamfer } from "./chamfer.ts";
 import { typesStraightAway } from "./extrude-panel.ts";
 import { sizeBox } from "./properties.ts";
 
@@ -32,8 +33,12 @@ export interface ChamferTyped {
 }
 
 export interface ChamferPanel {
-  /** Opens a new Chamfer with `edges` picked, its boxes at the defaults. */
-  show(edges: number): void;
+  /** Opens a new Chamfer with `edges` picked, its boxes at the defaults; or Edit feature on a Chamfer (44a-app3), its boxes holding its size and Flip, its edges as they are. */
+  show(edges: number, edit?: EditableChamfer): void;
+  /** The Chamfer being edited (its id), or null for a new one. */
+  readonly editing: string | null;
+  /** The live preview's state (44a-app3): the volume drawn (read by the e2e test), or null with why there is none ("" says nothing). */
+  showPreview(volume: number | null, why?: string): void;
   /** The number of edges picked, as the picks change. */
   setEdges(count: number): void;
   readonly typed: ChamferTyped;
@@ -95,6 +100,10 @@ export function chamferPanel(slot: HTMLElement, on: ChamferEvents): ChamferPanel
   const flipRow = el("label", "chamfer-flip-row", "chamfer-panel-flip");
   flipRow.title = FLIP_TITLE;
   flipRow.append(flip, document.createTextNode(" Flip"));
+  const note = el("p", "chamfer-edit-note", "chamfer-panel-note", EDIT_EDGES_NOTE);
+  note.hidden = true;
+  const previewWhy = el("p", "chamfer-preview-why", "chamfer-panel-note");
+  previewWhy.hidden = true;
   const error = el("p", "chamfer-error", "bad");
   error.hidden = true;
   error.setAttribute("role", "alert");
@@ -107,9 +116,10 @@ export function chamferPanel(slot: HTMLElement, on: ChamferEvents): ChamferPanel
   cancel.addEventListener("click", () => on.cancel());
   const buttons = el("div", "", "chamfer-panel-buttons");
   buttons.append(ok, cancel);
-  box.append(title, edges, kindRow, firstRow, secondRow, angleRow, flipRow, error, buttons);
+  box.append(title, edges, note, kindRow, firstRow, secondRow, angleRow, flipRow, previewWhy, error, buttons);
 
   let open = false;
+  let editing: string | null = null;
   let count = 0;
   const showKind = () => {
     const k = kind.value as ChamferKind;
@@ -133,13 +143,19 @@ export function chamferPanel(slot: HTMLElement, on: ChamferEvents): ChamferPanel
     if (e.key === "Escape") on.cancel();
   });
   return {
-    show(n) {
+    show(n, edit) {
       open = true;
-      kind.value = "equal";
-      first.value = String(DEFAULT_CHAMFER);
-      second.value = String(DEFAULT_CHAMFER);
-      angle.value = String(DEFAULT_ANGLE);
-      flip.checked = false;
+      editing = edit?.id ?? null;
+      const size = edit?.size;
+      kind.value = size === undefined || "equal" in size ? "equal" : "two" in size ? "two" : "angle";
+      first.value = String(size === undefined ? DEFAULT_CHAMFER : "equal" in size ? size.equal : "two" in size ? size.two[0] : size.angle[0]);
+      second.value = String(size !== undefined && "two" in size ? size.two[1] : DEFAULT_CHAMFER);
+      angle.value = String(size !== undefined && "angle" in size ? size.angle[1] : DEFAULT_ANGLE);
+      flip.checked = edit?.flip === true && kind.value !== "equal";
+      title.textContent = edit === undefined ? "Chamfer" : `Edit ${edit.name}`;
+      note.hidden = edit === undefined;
+      box.dataset.editing = editing ?? "";
+      this.showPreview(null);
       error.hidden = true;
       delete ok.dataset.busy;
       showKind();
@@ -175,8 +191,18 @@ export function chamferPanel(slot: HTMLElement, on: ChamferEvents): ChamferPanel
     get ready() {
       return !ok.disabled;
     },
+    get editing() {
+      return editing;
+    },
+    showPreview(volume, why = "") {
+      box.dataset.previewVolume = volume === null ? "" : volume.toFixed(3);
+      previewWhy.textContent = why;
+      previewWhy.hidden = why === "";
+    },
     hide() {
       open = false;
+      editing = null;
+      this.showPreview(null);
       box.hidden = true;
       error.hidden = true;
       if (box.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();

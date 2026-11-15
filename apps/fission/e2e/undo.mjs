@@ -231,6 +231,8 @@ try {
       await page.keyboard.type("0");
       await page.keyboard.press("Enter");
       await lines(1);
+      // WebKit can count the line before Undo's label catches up: wait for the label, then read it.
+      await page.waitForFunction(() => /^Undo Draw line/.test(document.querySelector("#undo")?.getAttribute("title") ?? ""), null, { timeout: 5000 });
       assert.match(await page.getAttribute("#undo", "title"), /^Undo Draw line/);
       assert.match(await page.evaluate(() => document.activeElement?.id ?? ""), /^typed-/, "the keys stay in the typed boxes for the next line");
       await page.keyboard.press("Control+z");

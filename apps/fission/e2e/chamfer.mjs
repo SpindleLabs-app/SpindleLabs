@@ -10,7 +10,9 @@
 // 40 · d · d / 2, so d = 2 leaves 24,000 − 80 = 23,920 mm³ and d = 3 leaves
 // 24,000 − 180 = 23,820 mm³, the box's bounds unchanged. 1280 px with a
 // mouse and 375 px with taps. Screenshots go to E2E_SHOTS when set. Run with
-// `npm run e2e` (after `npm run build`).
+// `npm run e2e` (after `npm run build`). 44a-app3 adds the cut previewed
+// before OK (the panel notes the volume drawn) and Edit feature on a Chamfer
+// from its bar item, at both widths.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
@@ -103,6 +105,8 @@ const chamfered = (d) => 24000 - (40 * d * d) / 2;
 // The middles of the top front edge (y = 0, z = 20) and the top right edge (x = 40, z = 20), which meet at (40, 0, 20).
 const TOP_FRONT = [20, 0, 20];
 const TOP_RIGHT = [40, 15, 20];
+// The middle of the bottom front edge (y = 0, z = 0), which meets neither.
+const BOTTOM_FRONT = [20, 0, 0];
 const CORNER_WORDS = "That edge meets an edge already picked at a corner";
 
 async function fresh(width, height, tap, query) {
@@ -132,6 +136,9 @@ async function modifyItems(page, tap) {
 const opened = (page) => until(page, () => document.getElementById("chamfer-panel")?.hidden === false, null, "the Chamfer panel open");
 const closed = (page) => until(page, () => document.getElementById("chamfer-panel")?.hidden === true, null, "the Chamfer panel closed");
 const edgesSay = (page, want) => until(page, (w) => document.getElementById("chamfer-edges")?.textContent === w, want, `the panel says ${want}`);
+/** The volume the Chamfer's preview draws (44a-app3), as the panel notes it: "" when none is drawn. */
+const drawnVolume = (page) => page.$eval("#chamfer-panel", (p) => p.dataset.previewVolume ?? "");
+const previewSays = (page, volume) => until(page, (w) => (document.getElementById("chamfer-panel")?.dataset.previewVolume ?? "") === w, volume === null ? "" : volume.toFixed(3), `the preview draws ${volume ?? "nothing"}`);
 const items = (page, n) => until(page, (k) => document.querySelectorAll("#timeline li[data-item]").length === k, n, `${n} timeline items`);
 
 let failed = 0;
@@ -258,6 +265,119 @@ try {
       await page.tap("#float-cancel");
       await closed(page);
       await items(page, 2);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  await check("1280 px (44a-app3): the cut previewed before OK (23,920 mm³ at 2, 23,820 at 3), the bar's chamfer icon, then Edit feature on it: Escape keeps it, 3 typed and Enter makes it 23,820 mm³ as one undo step", async () => {
+    const page = await fresh(1280, 800, false, "&chamfer");
+    try {
+      await press(page, "#modify-menu", false);
+      await press(page, "#modify-menu-chamfer", false);
+      await opened(page);
+      assert.equal(await drawnVolume(page), "", "nothing drawn with no edge");
+      await at(page, TOP_FRONT);
+      await edgesSay(page, "1 edge");
+      // Picked at 1 mm: 24,000 − 40 · 1 · 1 / 2 = 23,980 drawn before OK, the box round the drawing still 40 × 30 × 20.
+      await previewSays(page, chamfered(1));
+      await page.locator("#chamfer-distance").fill("2");
+      await previewSays(page, chamfered(2));
+      assert.equal(await page.$eval("#viewport", (v) => v.dataset.drawnBox), "0.000 0.000 0.000 40.000 30.000 20.000");
+      // Picking goes on over the drawn preview: the bottom front edge (y = 0, z = 0) is added, 24,000 − 2 · 80 = 23,840; then a
+      // click on its chamfer's face as drawn, (20, 1, 1) halfway across the 2 mm cut, takes it out again (the edge itself is cut away).
+      await at(page, BOTTOM_FRONT);
+      await edgesSay(page, "2 edges");
+      await previewSays(page, 24000 - 2 * ((40 * 2 * 2) / 2));
+      if (shots) await page.screenshot({ path: `${shots}/chamfer-1280-preview.png` });
+      await at(page, [20, 1, 1]);
+      await edgesSay(page, "1 edge");
+      await previewSays(page, chamfered(2));
+      // Too big for the 20 mm front face: nothing drawn, and OK says the kernel's words.
+      await page.locator("#chamfer-distance").fill("25");
+      await previewSays(page, null);
+      await page.locator("#chamfer-distance").fill("2");
+      await previewSays(page, chamfered(2));
+      // Enter records it.
+      await page.keyboard.press("Enter");
+      await closed(page);
+      await rebuilt(page);
+      await items(page, 2);
+      assert.equal(await page.$eval('#timeline [data-item="feature-2"]', (li) => li.dataset.icon), "chamfer");
+      // Edit feature from its bar item's menu.
+      const edit = async () => {
+        await closePanels(page, false);
+        await page.click('#timeline [data-item="feature-2"]', { button: "right" });
+        await until(page, () => document.getElementById("row-menu")?.open, null, "Chamfer 1's menu");
+        assert.equal(await page.$eval("#row-menu-edit", (b) => b.disabled), false, "Edit feature is on");
+        await page.click("#row-menu-edit");
+        await opened(page);
+      };
+      await edit();
+      assert.equal(await page.textContent("#chamfer-title"), "Edit Chamfer 1");
+      await edgesSay(page, "1 edge");
+      assert.equal(await page.$eval("#chamfer-edit-note", (n) => n.hidden), false);
+      assert.equal(await page.$eval("#chamfer-distance", (b) => b.value), "2");
+      await previewSays(page, chamfered(2));
+      await page.locator("#chamfer-distance").fill("3");
+      await previewSays(page, chamfered(3));
+      // Escape: nothing changes, the body drawn as it is.
+      await page.keyboard.press("Escape");
+      await closed(page);
+      near(await stl(page, false), chamfered(2), BOUNDS, "Escape changed nothing");
+      await edit();
+      await page.locator("#chamfer-distance").fill("3");
+      await previewSays(page, chamfered(3));
+      if (shots) await page.screenshot({ path: `${shots}/chamfer-1280-edit.png` });
+      await page.keyboard.press("Enter");
+      await closed(page);
+      await rebuilt(page);
+      await items(page, 2);
+      near(await stl(page, false), chamfered(3), BOUNDS, "edited to 3 mm");
+      await until(page, () => /^Undo Edit Chamfer 1/.test(document.getElementById("undo")?.getAttribute("title") ?? ""), null, "Undo names the edit");
+      if (shots) await page.screenshot({ path: `${shots}/chamfer-1280-edited.png` });
+      await press(page, "#undo", false);
+      await rebuilt(page);
+      near(await stl(page, false), chamfered(2), BOUNDS, "the edit undone in one step");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  await check("375 px, taps (44a-app3): Edit feature from the bar item's ⋯, the preview at 4 mm (23,680 mm³), the bar's Finish Chamfer records it", async () => {
+    const page = await fresh(375, 667, true, "&chamfer");
+    try {
+      await closePanels(page, true);
+      await press(page, "#modify-menu", true);
+      await press(page, "#modify-menu-chamfer", true);
+      await opened(page);
+      await at(page, TOP_FRONT, true);
+      await edgesSay(page, "1 edge");
+      await previewSays(page, chamfered(1));
+      await page.tap("#float-finish");
+      await closed(page);
+      await rebuilt(page);
+      await items(page, 2);
+      near(await stl(page, true), chamfered(1), BOUNDS, "chamfered 1 mm");
+      await closePanels(page, true);
+      await page.locator('#timeline [data-item="feature-2"]').tap();
+      await page.tap('#timeline [data-more="feature-2"]');
+      await until(page, () => document.getElementById("row-menu")?.open, null, "Chamfer 1's menu");
+      await page.tap("#row-menu-edit");
+      await opened(page);
+      assert.equal(await page.textContent("#chamfer-title"), "Edit Chamfer 1");
+      await page.waitForTimeout(300);
+      if ((await page.getAttribute("#properties-toggle", "aria-expanded")) !== "true") await page.tap("#properties-toggle");
+      await page.locator("#chamfer-distance").tap();
+      await page.locator("#chamfer-distance").fill("4");
+      // 24,000 − 40 · 4 · 4 / 2 = 23,680.
+      await previewSays(page, chamfered(4));
+      if (shots) await page.screenshot({ path: `${shots}/chamfer-375-edit.png` });
+      await page.tap("#float-finish");
+      await closed(page);
+      await rebuilt(page);
+      near(await stl(page, true), chamfered(4), BOUNDS, "edited to 4 mm");
+      if (shots) await page.screenshot({ path: `${shots}/chamfer-375-edited.png` });
     } finally {
       await page.context().close();
     }

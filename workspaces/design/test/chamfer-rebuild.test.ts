@@ -251,7 +251,7 @@ test("the reader refuses each break of a Chamfer, and version 23 data holding on
   assert.equal(readDesignDocument({ ...JSON.parse(JSON.stringify(d0)), version: 23 }).version, 24);
 });
 
-test("the rest of Design reads a Chamfer it can't edit yet: the AI's timeline line, the change notes' name, Edit feature off with why", async () => {
+test("the rest of Design reads a Chamfer: the AI's timeline line, the change notes' name, Edit feature on (44a-app3 opens the Chamfer panel on it)", async () => {
   const { designAIView } = await import("../src/ai-view.ts");
   const { itemCalled } = await import("../src/graph.ts");
   const { editOff } = await import("../src/timeline-bar.ts");
@@ -260,7 +260,7 @@ test("the rest of Design reads a Chamfer it can't edit yet: the AI's timeline li
   const { doc, id } = insertChamfer(d0, body, [edge], { equal: 2 });
   const f = doc.timeline.features.find((x) => x.id === id)!;
   assert.equal(itemCalled(f), "Chamfer 1");
-  assert.equal(editOff(f), "Chamfer 1 has nothing to edit");
+  assert.equal(editOff(f), null);
   const view = designAIView(doc, new Set(), { width: 10, depth: 10, height: 10 });
   assert.match(JSON.stringify(view), /2\. Chamfer 1 edge of Box 1, 2 mm\. A chamfer: builds no body; the body it chamfers is the result from here on\./);
 });
