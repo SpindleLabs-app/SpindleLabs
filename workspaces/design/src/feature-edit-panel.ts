@@ -150,7 +150,8 @@ export function featureEditPanel(slot: HTMLElement, on: FeatureEditEvents): Feat
         through = ticked;
         ticked.type = "checkbox";
         ticked.checked = f.through;
-        const row = el("label", "", "feature-edit-row feature-edit-through");
+        const row = el("label", "", "feature-edit-row feature-edit-through extrude-through");
+        row.dataset.part = "row"; // hidden needs styles/extrude-through.css over feature-edit.css's display: block
         const distance = inputs[0]?.[1].el;
         const symmetric = both;
         throughNow = () => {

@@ -188,8 +188,10 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       const cuts = () => select !== null && (select.value === "cut" || select.value === "intersect");
       const through = el("button", "extrude-through", "extrude-through", THROUGH_WORDS);
       through.type = "button";
+      through.dataset.part = "button"; // styles/extrude-through.css: every selector starts with .extrude-through
       through.setAttribute("aria-pressed", "false");
-      const throughWords = el("span", "extrude-through-words", "extrude-through-words", "through every body ticked");
+      const throughWords = el("span", "extrude-through-words", "extrude-through", "through every body ticked");
+      throughWords.dataset.part = "words";
       throughWords.hidden = true;
       const setThrough = (pressed: boolean) => {
         through.setAttribute("aria-pressed", String(pressed));
