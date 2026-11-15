@@ -729,7 +729,7 @@ export function readSvg(text: string): Read {
       else if ((root.attrs.preserveAspectRatio ?? "").includes("slice")) sx = sy = Math.max(fx, fy);
       else sx = sy = Math.min(fx, fy);
     }
-    if (inPixels) notes.push(illustrator ? "The SVG gives its size in pixels; read at 72 to the inch, as Illustrator writes them." : "The SVG gives its size in pixels; read at 96 to the inch (the web's, and Inkscape's). If it looks the wrong size, save it with millimetres.");
+    if (inPixels) notes.push(illustrator ? "The SVG gives its size in pixels; read at 72 to the inch, as the drawing program that made it writes them." : "The SVG gives its size in pixels; read at 96 to the inch (the web's). If it looks the wrong size, save it with millimetres.");
     const rules: Rule[] = [];
     collectRules(root, rules);
     const index = indexRules(rules);

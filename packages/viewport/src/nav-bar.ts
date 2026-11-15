@@ -65,7 +65,7 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
   /** Puts the highlight on `shown`'s button: where it sits in the group, as laid out now. */
   const place = () => {
     const b = modeButtons.get(shown as BarNavMode);
-    slider.hidden = b === undefined; // no tool lit (the Fusion-style preset at rest): no highlight
+    slider.hidden = b === undefined; // no tool lit (the Shift to look preset at rest): no highlight
     if (!b || !b.offsetWidth) return; // not laid out (asleep, hidden): placed when it is
     const x = b.offsetLeft, w = b.offsetWidth;
     // Where it is drawn now (mid-slide included), so a press during a slide carries on from there.
