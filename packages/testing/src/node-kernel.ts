@@ -45,6 +45,7 @@ export function nodeKernel(): KernelCalls {
     body_hide: (body) => entry.body_hide(body),
     body_boolean: (target, tools, op) => entry.body_boolean(target, tools, op),
     body_move: (body, moves) => entry.body_move(body, moves),
+    body_chamfer: (body, edges, size, flip) => entry.body_chamfer(body, edges, size, flip),
     body_count: () => entry.body_count(),
     body_measure: (first, second) => entry.body_measure(first, second),
     slice_stl: (stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip),

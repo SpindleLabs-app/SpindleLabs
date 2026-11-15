@@ -93,3 +93,16 @@ export function withHeldEdges(own: BodyNames, names: DesignNames, at: number): B
   const { ends: _, ...rest } = own;
   return { ...rest, edges: heldEdgeNames(names, at), shared: { faces: own.shared.faces, edges: new Map() } };
 }
+
+/**
+ * A held edge name's edge on the design now, by body and edge index there
+ * (step 44a: a Chamfer's edges), read as `edgeNow` reads it; or why not.
+ */
+export function heldEdgeAt(held: string, names: DesignNames): { body: number; edge: number } | { cause: "point-lost" | "point-ambiguous" } {
+  const rule5 = ruleFiveName(held);
+  if (rule5 === null) return { cause: "point-lost" };
+  const found: NameFound = resolveEdgeName(names, rule5);
+  if ("ambiguous" in found) return { cause: "point-ambiguous" };
+  if ("lost" in found) return { cause: "point-lost" };
+  return names.edges[found.body]?.[found.index]?.name == null ? { cause: "point-ambiguous" } : { body: found.body, edge: found.index };
+}

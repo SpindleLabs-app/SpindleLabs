@@ -36,15 +36,15 @@
 
 import { extrudeSketches, hasMoreProfiles, moreProfiles, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 import { contactGroups, mergedOutline } from "./extrude-merge.ts";
-import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type ChamferResult, type ChamferSize, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, isChamferItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { isThroughParams, throughDistance, throughWords, withDistance } from "./extrude-through.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PinNow, type PointWarning } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
 import { combineNames, designNames, resolveFaceName, shownFaces, type DesignNames, type FaceNames, type NamedBody } from "./boolean-names.ts";
-import { DESIGN_EDGE, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
+import { DESIGN_EDGE, heldEdgeAt, isHeldDesignName, pinNameNow, withHeldEdges } from "./design-edges.ts";
 import { copiedNames, frameOfFace, framesOfResult, namedBody, namedFrame, namesOfBody, reversedOfResult } from "./built-body.ts";
 import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
@@ -274,6 +274,8 @@ export class BodyCache {
   private keys = new Map<BodyHandle, string>();
   /** Each boolean's answer by its inputs (`boolean`); its bodies are kept in `bodies` like built ones. */
   private booleans = new Map<string, BooleanResult>();
+  /** Each body_chamfer's answer by its input, edges, size and flip (`chamfered`, step 44a): the body given and the answer, kept in `bodies` like built ones. */
+  private chamfers = new Map<string, { from: BodyHandle; to: ChamferResult }>();
   /** Each body_move's answer by its input and moves (`moved`, 35f1f2a): the body it moved and the one it made, kept in `bodies` like built ones. */
   private moves = new Map<string, { from: BodyHandle; to: BodyHandle }>();
   /**
@@ -419,6 +421,29 @@ export class BodyCache {
   }
 
   /**
+   * `body_chamfer(handle, edges, size, flip)` once for the same body, edges,
+   * size and flip (step 44a): the chamfered body is kept like built ones,
+   * freed by `keepOnly` when no rebuild holds it. Asked again once either
+   * body is gone. A refusal is not kept.
+   */
+  async chamfered(handle: BodyHandle, edges: readonly number[], size: ChamferSize, flip: boolean): Promise<ChamferResult> {
+    if (this.closed) throw new Error(CLOSED);
+    const key = JSON.stringify(["chamfered", handle, edges, size, flip]);
+    const hit = this.chamfers.get(key);
+    if (hit && this.keys.has(hit.from) && this.keys.has(hit.to.body)) return hit.to;
+    return this.once(key, async () => {
+      const to = await this.kernel.call("body_chamfer", handle, [...edges], size, flip);
+      if (this.closed) {
+        void this.kernel.call("body_free", to.body).catch(() => {});
+        throw new Error(CLOSED);
+      }
+      this.keep(key, to.body);
+      this.chamfers.set(key, { from: handle, to });
+      return to;
+    });
+  }
+
+  /**
    * What a boolean step's names (`NamedStep`) are worked out from, but the meshes, as one string: the item, the
    * operation, each input's body id, handle, place in made order, kept id, frames and turned faces, and what its
    * names come from (a Combine's result's kept names, by identity; else its item and curves: the handle stands for
@@ -531,6 +556,7 @@ export class BodyCache {
     for (const [key, r] of this.booleans) if (!r.bodies.some((h) => this.keys.has(h))) this.booleans.delete(key);
     // A move whose input or answer is gone is forgotten (its answer, if still kept, is freed with the next keepOnly that drops it).
     for (const [key, m] of this.moves) if (!this.keys.has(m.from) || !this.keys.has(m.to)) this.moves.delete(key);
+    for (const [key, c] of this.chamfers) if (!this.keys.has(c.from) || !this.keys.has(c.to.body)) this.chamfers.delete(key);
   }
 
   /**
@@ -571,6 +597,7 @@ export class BodyCache {
     this.booleans.clear();
     this.namings = new WeakMap();
     this.moves.clear();
+    this.chamfers.clear();
     this.unfreed = [];
     this.wanted = new Set();
   }
@@ -1463,6 +1490,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isMoveItem(f)) return await moveBodies(doc, f, done, bodies, cache);
     if (isCombineItem(f)) return await combineRun(doc, f, done, bodies, cache);
     if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
+    if (isChamferItem(f)) return await chamferRun(doc, f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
       // Save-load hunt B4: failed in words as a size the kernel refuses is, never built (a negative one came out mirrored).
       const refused = profileSizeRefused(doc, f);
@@ -1652,6 +1680,72 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
   const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane)]);
   bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };
   return { status: "built", bodies: [id] };
+}
+
+/**
+ * A Chamfer's result (step 44a): greyed while the item that made its body
+ * is suppressed or greyed (Q3); failed naming it when it was deleted or
+ * isn't built, or when an earlier Combine or extrude used the body up;
+ * failed in words when one of its edges is no longer found, or found twice,
+ * by its name across the design (design-edges.ts `heldEdgeAt`, over every
+ * body built so far as the screen names them), or is on another body now;
+ * else the kernel's chamfer of those edges (its refusal in its own words,
+ * no body changed). The chamfered body is held under the body's own id in
+ * place of the body as it was, as a Move's is, with no spec (only the
+ * kernel's store holds it): each face kept from the body keeps the names,
+ * frame and turn it had there, and the new face of the k-th edge listed is
+ * `face:<the Chamfer>/chamfer:<k>`, counted from 1, made after every name
+ * before it. The Chamfer holds the body as it was (`holds`).
+ */
+async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
+  const [maker] = f.dependsOn;
+  const r = done[maker];
+  if (r?.status === "suppressed") return { status: "greyed", by: maker };
+  if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  const label = f.provenance.self.label;
+  const name = f.provenance.from.find((x) => x.id === maker)?.label ?? maker;
+  const c = chamferOf(f);
+  const what = isPiece(c.body) ? `a piece of ${name}` : name;
+  if (r === undefined) return { status: "failed", cause: "deleted-input", input: maker, message: `${name} was deleted, so ${label} has nothing to chamfer` };
+  if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${name} is not built, so ${label} can't chamfer it` };
+  const b = bodies[c.body];
+  if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't chamfer ${what}: an earlier Combine or extrude used it up or left no such piece` };
+  // The edges by their design-wide names, over every body built so far, as the screen names them (pins do the same).
+  const ids = Object.keys(bodies);
+  const list = await Promise.all(ids.map((k) => namedOf(k, bodies[k], cache, 0)));
+  const names = designNames(list);
+  const on = ids.indexOf(c.body);
+  const edges: number[] = [];
+  for (const [k, held] of c.edges.entries()) {
+    const now = heldEdgeAt(held, names);
+    const nth = c.edges.length === 1 ? "its edge" : `its edge ${k + 1}`;
+    if ("cause" in now) return { status: "failed", cause: "error", message: now.cause === "point-lost" ? `${label} can't find ${nth} on ${what} any more: an edit before it changed or removed that edge` : `${label} can't tell which edge of ${what} is ${nth} any more: an edit before it made two edges alike` };
+    if (now.body !== on) return { status: "failed", cause: "error", message: `${label}'s ${nth.slice(4)} is no longer on ${what}: an edit before it moved that edge onto another body` };
+    edges.push(now.edge);
+  }
+  const out = await cache.chamfered(b.handle, edges, c.size, c.flip);
+  const input = list[on];
+  const place = doc.timeline.features.findIndex((x) => x.id === f.id);
+  const made = new Map(input.made);
+  const faces = out.faces.map((from) => {
+    if (from.from === "face") return input.faces[from.face];
+    const fresh = `face:${encodeURIComponent(f.id)}/chamfer:${edges.indexOf(from.edge) + 1}`;
+    made.set(fresh, [place, edges.indexOf(from.edge)]);
+    return { names: [fresh] };
+  });
+  const frames = out.faces.map((from) => (from.from === "face" ? frameOfFace(b, from.face) : null));
+  const reversed = b.reversed === undefined ? undefined : out.faces.map((from) => from.from === "face" && b.reversed![from.face] === true);
+  bodies[c.body] = {
+    feature: b.feature,
+    handle: out.body,
+    spec: null,
+    named: { faces, made },
+    ...(frames.some((x) => x !== null) && { frames }),
+    ...(reversed && { reversed }),
+    ...(b.by !== undefined && { by: b.by }),
+    ...(b.from !== undefined && { from: b.from }),
+  };
+  return { status: "built", holds: [b.handle] };
 }
 
 /** Combine's operations as the kernel names them. */

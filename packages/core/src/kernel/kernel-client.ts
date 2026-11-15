@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -41,6 +41,13 @@ export interface KernelOps {
    * one given left as it was. Refused as a moved spec's moves are.
    */
   body_move: { args: [body: BodyHandle, moves: Motion[]]; result: BodyHandle };
+  /**
+   * The kept body `body` with each of `edges` (its BodyView's edge indices)
+   * chamfered at `size`; `flip` measures from the other face first (step
+   * 44a): a new kept body, the one given left as it was. A refusal keeps
+   * nothing; its words name the edge or the size.
+   */
+  body_chamfer: { args: [body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean]; result: ChamferResult };
   /** Measures one pick, or two (step 35e2l): their facts, the least distance with its two points, the angle and centre to centre. */
   body_measure: { args: [first: MeasurePick, second: MeasurePick | null]; result: Measured };
   /** How many bodies the kernel keeps: tests check what they build they free. */
@@ -473,6 +480,7 @@ export class KernelClient implements KernelCalls {
       });
     }
     if (op === "body_move") return this.move(...(args as KernelOps["body_move"]["args"]), units) as Promise<KernelOps[K]["result"]>;
+    if (op === "body_chamfer") return this.chamfer(...(args as KernelOps["body_chamfer"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     if (op === "body_boolean") return this.boolean(...(args as KernelOps["body_boolean"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     // Measure's picks name bodies by the app's handles: each sent as the kernel's number (35e2l2).
     if (op === "body_measure") {
@@ -557,6 +565,25 @@ export class KernelClient implements KernelCalls {
         if (size) this.sizes.set(handle, size);
       } else this.retired.add(handle);
       return handle;
+    });
+  }
+
+  /**
+   * body_chamfer with the app's handles (step 44a): the body's kernel number
+   * sent, the chamfered body given a handle of its own, sized by its faces.
+   */
+  private chamfer(body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean, units: number): Promise<ChamferResult> {
+    const held = this.bodies.get(body);
+    if (!held) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
+    const worker = this.worker;
+    return this.send("body_chamfer", [held.body, edges, size, flip], units).then((reply) => {
+      const { body: kept, faces } = reply as ChamferResult;
+      const handle = this.nextBody++;
+      if (worker === this.worker) {
+        this.bodies.set(handle, { worker, body: kept });
+        this.sizes.set(handle, facesSize(faces.length));
+      } else this.retired.add(handle);
+      return { body: handle, faces };
     });
   }
 
