@@ -415,7 +415,12 @@ await check("without ?all there is no home screen, so no background", async () =
       assert.equal(await mode(page), "still");
       assert.deepEqual(await home(), { shown: true, folded: true });
       await press("#home-motion");
-      // The same icon brings it back.
+      // The same icon brings it back, there to read and press at once (it fades in, but never waits hidden: CI read the
+      // title hidden just after the press while it faded hidden both ways).
+      assert.equal(await page.evaluate(() => (document.getElementById("home-fold").click(), getComputedStyle(document.getElementById("home-title")).visibility)), "visible", "back at once");
+      assert.deepEqual(await home(), { shown: true, folded: false });
+      await press("#home-fold");
+      await page.waitForTimeout(400);
       await press("#home-fold");
       assert.deepEqual(await home(), { shown: true, folded: false });
       assert.equal(await page.$eval("#home-title", (e) => getComputedStyle(e).visibility), "visible");
