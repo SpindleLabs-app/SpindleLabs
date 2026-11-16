@@ -121,6 +121,9 @@ export const ICONS = {
   // Pausing and playing a moving picture (the home screen's background).
   pause: [tone("M7 5H10V19H7ZM14 5H17V19H14Z"), line("M7 5H10V19H7ZM14 5H17V19H14Z")],
   play: [tone("M7 4.5 19 12 7 19.5Z"), line("M7 4.5 19 12 7 19.5Z")],
+  // Folding the home screen away to watch the background, and bringing it back: two arrowheads pointing in to a line, and out from it.
+  fold: [tone("M7 4 12 9 17 4ZM7 20 12 15 17 20Z"), line("M7 4 12 9 17 4ZM7 20 12 15 17 20ZM4 12H20")],
+  unfold: [tone("M7 9 12 4 17 9ZM7 15 12 20 17 15Z"), line("M7 9 12 4 17 9ZM7 15 12 20 17 15ZM4 12H20")],
 } satisfies Record<string, readonly IconPart[]>;
 
 export type IconName = keyof typeof ICONS;

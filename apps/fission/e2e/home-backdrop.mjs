@@ -18,6 +18,9 @@
 // - It never takes a press: the card's button under the picture still works; the words keep their contrast (the title, the
 //   guide link and Pause the background against the worst pixel behind them, 4.5 : 1 or more).
 // - At 375 px: nothing runs off the side.
+// - Fold (Ben, 2026-11-16): the screen fades away but for Pause and Fold, which stay put; the design glides to the middle;
+//   Tab reaches only the icons; Pause still works; the same icon, a press on the picture or Escape brings it back; 1280 px
+//   with a mouse and 375 px with taps.
 // Screenshots (SHOTS=<dir>) at 1280 and 375 px in both themes; STL=<file> opens that STL as the project shown (its
 // triangles painted, its sharp edges drawn).
 import assert from "node:assert/strict";
@@ -126,6 +129,30 @@ function stlEdges(buffer) {
 }
 
 /** Keeps a project (the box) and reloads, so the screen opens over it. */
+/**
+ * The words (or icon) of element `id` against the brightest pixel behind them, read from a screenshot with them made
+ * invisible: 4.5 : 1 or more.
+ */
+async function readable(page, id) {
+  const box = await page.locator(`#${id}`).boundingBox();
+  const colour = await page.$eval(`#${id}`, (e) => getComputedStyle(e).color);
+  await page.$eval(`#${id}`, (e) => (e.style.color = "transparent"));
+  const ground = decodePng(await page.screenshot({ clip: box, animations: "disabled" }));
+  await page.$eval(`#${id}`, (e) => (e.style.color = ""));
+  const lum = ([r, g, b]) => [r, g, b].map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const text = lum(colour.match(/[\d.]+/g).map(Number));
+  let worst = Infinity;
+  let where = -1;
+  for (let i = 0; i < ground.data.length; i += 4) {
+    const l = lum([ground.data[i], ground.data[i + 1], ground.data[i + 2]]);
+    const [hi, lo] = text > l ? [text, l] : [l, text];
+    const ratio = (hi + 0.05) / (lo + 0.05);
+    if (ratio < worst) (worst = ratio), (where = i);
+  }
+  const spot = `(${box.x + ((where / 4) % ground.width) / (ground.width / box.width)}, ${box.y + Math.floor(where / 4 / ground.width) / (ground.height / box.height)}) rgb ${[...ground.data.slice(where, where + 3)]}`;
+  assert.ok(worst >= 4.5, `${id} contrast ${worst.toFixed(2)} : 1 at its worst pixel, ${spot}`);
+}
+
 async function withProject(page, tap = false) {
   await homeShown(page);
   await page.click("#home-close");
@@ -197,25 +224,7 @@ await check("without ?all there is no home screen, so no background", async () =
       assert.equal(await page.evaluate(() => document.getElementById("home").scrollWidth <= window.innerWidth), true);
       // The words straight on the picture (the title, the guide link) against the brightest pixel behind them, read from a
       // screenshot with the words made invisible: 4.5 : 1 or more.
-      for (const id of ["home-title", "home-guide", "home-motion"]) {
-        const box = await page.locator(`#${id}`).boundingBox();
-        const colour = await page.$eval(`#${id}`, (e) => getComputedStyle(e).color);
-        await page.$eval(`#${id}`, (e) => (e.style.color = "transparent"));
-        const ground = decodePng(await page.screenshot({ clip: box, animations: "disabled" }));
-        await page.$eval(`#${id}`, (e) => (e.style.color = ""));
-        const lum = ([r, g, b]) => [r, g, b].map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
-        const text = lum(colour.match(/[\d.]+/g).map(Number));
-        let worst = Infinity;
-        let where = -1;
-        for (let i = 0; i < ground.data.length; i += 4) {
-          const l = lum([ground.data[i], ground.data[i + 1], ground.data[i + 2]]);
-          const [hi, lo] = text > l ? [text, l] : [l, text];
-          const ratio = (hi + 0.05) / (lo + 0.05);
-          if (ratio < worst) (worst = ratio), (where = i);
-        }
-        const spot = `(${box.x + ((where / 4) % ground.width) / (ground.width / box.width)}, ${box.y + Math.floor(where / 4 / ground.width) / (ground.height / box.height)}) rgb ${[...ground.data.slice(where, where + 3)]}`;
-        assert.ok(worst >= 4.5, `${id} contrast ${worst.toFixed(2)} : 1 at its worst pixel, ${spot}`);
-      }
+      for (const id of ["home-title", "home-guide", "home-motion", "home-fold"]) await readable(page, id);
       if (shots) {
         if (stl) {
           await page.evaluate(({ lines, surface }) => window.fissionTest.homeStandIn(lines, surface), stlSolid(readFileSync(stl)));
@@ -359,6 +368,74 @@ await check("without ?all there is no home screen, so no background", async () =
     assert.ok((await picture(page)) !== a, "moving again");
     await context.close();
   });
+
+  for (const width of [1280, 375]) {
+    await check(`${width} px: Fold puts the screen away to watch the picture, the design gliding to the middle and the icons staying put; the same icon, Escape or a press brings it back`, async () => {
+      const tap = width < 700;
+      const press = (selector) => (tap ? page.tap(selector) : page.click(selector));
+      const { context, page } = await newPage({ width });
+      await withProject(page, tap);
+      const home = () => page.$eval("#home", (h) => ({ shown: !h.hidden, folded: h.classList.contains("home-folded") }));
+      const place = () => page.$eval("#home .home-backdrop", (c) => c.dataset.place.split(" ").map(Number));
+      const icons = () => Promise.all(["#home-motion", "#home-fold"].map((s) => page.locator(s).boundingBox()));
+      await page.waitForTimeout(1500); // settled in its place under the list
+      const [, cyBefore, scaleBefore] = await place();
+      const before = await icons();
+      const title = await page.locator("#home-title").boundingBox();
+      await press("#home-fold");
+      assert.deepEqual(await home(), { shown: true, folded: true });
+      await page.waitForTimeout(400); // the fade (0.3 s)
+      // Everything but the picture and the two icons hidden: not seen, not pressed, not reached by Tab.
+      for (const id of ["home-title", "home-card", "home-new", "home-search", "home-items", "home-guide", "home-close"]) {
+        assert.equal(await page.$eval(`#${id}`, (e) => getComputedStyle(e).visibility), "hidden", `${id} hidden`);
+      }
+      assert.equal(await page.$eval("#home .home-scrim", (e) => getComputedStyle(e).opacity), "0", "the scrim gone");
+      assert.deepEqual(await icons(), before, "Pause and Fold stay where they were");
+      assert.equal(await page.$eval("#home-fold", (b) => b.getAttribute("aria-label")), "Bring the screen back");
+      assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.id, { x: title.x + title.width / 2, y: title.y + title.height / 2 }), "home", "the title's place takes no press of its own");
+      if (!tap) {
+        for (let k = 0; k < 3; k++) {
+          await page.keyboard.press("Tab");
+          const at = await page.evaluate(() => `${document.activeElement?.tagName} ${document.activeElement?.id}`);
+          // (After the last icon Tab leaves the page for the browser's own controls, as it does unfolded: BODY.)
+          assert.ok(["BUTTON home-motion", "BUTTON home-fold", "BODY "].includes(at), `Tab reaches only the icons: ${at}`);
+        }
+      }
+      // The design glides to the window's middle, a little bigger (placeShape with the whole window as its room).
+      await page.waitForTimeout(2500);
+      const [, cyAfter, scaleAfter] = await place();
+      assert.ok(cyAfter < cyBefore && scaleAfter > scaleBefore, `glided up and grew: ${cyBefore} ${scaleBefore} to ${cyAfter} ${scaleAfter}`);
+      // The icons still readable with no scrim behind them (read with no focus ring or hover on them, as everywhere here).
+      await page.evaluate(() => document.activeElement?.blur());
+      if (!tap) await page.mouse.move(2, 2);
+      for (const id of ["home-motion", "home-fold"]) await readable(page, id);
+      if (shots) await page.screenshot({ path: `${shots}/home-folded-${width}.png` });
+      // Pause while folded: paused, still folded.
+      await press("#home-motion");
+      assert.equal(await mode(page), "still");
+      assert.deepEqual(await home(), { shown: true, folded: true });
+      await press("#home-motion");
+      // The same icon brings it back.
+      await press("#home-fold");
+      assert.deepEqual(await home(), { shown: true, folded: false });
+      assert.equal(await page.$eval("#home-title", (e) => getComputedStyle(e).visibility), "visible");
+      // A press on the picture brings it back (the card's Carry on is under it unfolded, so this is not a press on it).
+      await press("#home-fold");
+      if (tap) await page.touchscreen.tap(width / 2, 760);
+      else await page.mouse.click(width / 2, 760);
+      assert.deepEqual(await home(), { shown: true, folded: false });
+      // Escape brings it back without leaving the screen; then Escape leaves as before.
+      if (!tap) {
+        await page.click("#home-fold");
+        await page.keyboard.press("Escape");
+        assert.deepEqual(await home(), { shown: true, folded: false });
+        assert.equal(await page.evaluate(() => document.activeElement?.id), "home-fold");
+        await page.keyboard.press("Escape");
+        await until(page, () => document.getElementById("home").hidden, null, "the home screen going");
+      }
+      await context.close();
+    });
+  }
 
   await check("a 2-core machine: the lightest moving picture, not a still one (Ben's laptop)", async () => {
     const { context, page } = await newPage({ cores: 2 });

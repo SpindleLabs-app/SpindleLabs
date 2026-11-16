@@ -80,3 +80,11 @@
 @media (max-width: 640px) {
   .home-screen .home-icon:not(#none) { width: var(--look-target-touch); min-height: var(--look-target-touch); }
 }
+/* Folded (home-screen.ts, Ben 2026-11-16): everything but the picture and the Pause and fold icons fades away, the icons
+   staying where they were (hidden things keep their room), so the same press brings the screen back. Hidden, never just
+   see-through: no press, Tab or screen reader finds them. */
+.home-screen > :not(.home-backdrop):not(.home-links), .home-screen .home-links > :not(#home-motion):not(#home-fold) { transition: opacity 0.3s ease-out, visibility 0.3s; }
+.home-screen.home-folded > :not(.home-backdrop):not(.home-links), .home-screen.home-folded .home-links > :not(#home-motion):not(#home-fold) { opacity: 0; visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .home-screen > :not(.home-backdrop):not(.home-links), .home-screen .home-links > :not(#home-motion):not(#home-fold) { transition: none; }
+}

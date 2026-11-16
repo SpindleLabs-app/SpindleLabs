@@ -5,7 +5,7 @@
 // real DOM (happy-dom) with a stand-in drawing context. The real app in Chromium: apps/fission/e2e/home-backdrop.mjs.
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { homeScreen, type HomeParts } from "../src/home-screen.ts";
+import { FOLD_WORDS, homeScreen, type HomeParts } from "../src/home-screen.ts";
 import { fillSettings, MOTION_ROWS } from "../src/settings.ts";
 import { SLOW_MS, SLOW_WINDOW, WARM_FRAMES, type MotionChoice } from "../src/home-backdrop.ts";
 
@@ -63,6 +63,7 @@ async function screen(opts: { reduce?: boolean; stored?: unknown; canvas?: boole
   const pause = q<HTMLButtonElement>("#home-motion");
   const guide = q<HTMLButtonElement>("#home-guide");
   const tip = q<HTMLElement>("#home-motion-tip");
+  const fold = q<HTMLButtonElement>("#home-fold");
   /** What a button is called (its accessible name: icons only on the screen). */
   const name = (b: HTMLElement) => b.getAttribute("aria-label");
   const frames = (n: number) => {
@@ -71,7 +72,7 @@ async function screen(opts: { reduce?: boolean; stored?: unknown; canvas?: boole
       frame(clock);
     }
   };
-  return { home, canvas, pause, guide, tip, kept, name, doc, frames, q };
+  return { home, canvas, pause, guide, tip, fold, kept, name, doc, frames, q };
 }
 
 test("small icons under the list: the guide as a book and Pause the background beside it, each named for screen readers and the tooltip", async () => {
@@ -85,7 +86,7 @@ test("small icons under the list: the guide as a book and Pause the background b
     assert.equal(s.name(b), name);
     assert.equal(b.title, name);
   }
-  assert.deepEqual([...s.q(".home-links").children].map((c) => c.id), ["home-guide", "home-motion", "home-motion-tip"]);
+  assert.deepEqual([...s.q(".home-links").children].map((c) => c.id), ["home-guide", "home-motion", "home-fold", "home-motion-tip"]);
   assert.equal(s.doc.querySelector("#home-full-motion"), null); // full and gentle motion are Settings' choices
   assert.equal(s.tip.hidden, true); // nothing slow: no suggestion
   s.home.hide();
@@ -176,8 +177,72 @@ test("where the picture can't be drawn (no 2D canvas) there is nothing to pause:
   assert.equal(s.canvas.dataset.backdrop, "off");
   assert.equal(s.pause.hidden, true);
   assert.equal(s.tip.hidden, true);
+  assert.equal(s.fold.hidden, true); // nothing to watch
   assert.equal(s.guide.hidden, false);
   s.home.hide();
+});
+
+test("Fold: the screen folds away to watch the picture, the icons staying; the same icon, Escape or a press elsewhere brings it back", async () => {
+  const s = await screen();
+  const root = s.home.element;
+  const folded = () => root.classList.contains("home-folded");
+  // Beside Pause, an icon only, named for screen readers and the tooltip.
+  assert.equal(s.fold.hidden, false);
+  assert.equal(s.fold.textContent, "");
+  assert.equal(s.fold.querySelector("svg")?.dataset.icon, "fold");
+  assert.equal(s.name(s.fold), FOLD_WORDS.fold);
+  assert.equal(s.fold.title, FOLD_WORDS.fold);
+  assert.equal(folded(), false);
+  // Folded: its icon and name say what the next press does; the screen is still up (only its parts fade, home-screen.css).
+  s.fold.click();
+  assert.equal(folded(), true);
+  assert.equal(s.fold.querySelector("svg")?.dataset.icon, "unfold");
+  assert.equal(s.name(s.fold), FOLD_WORDS.unfold);
+  assert.equal(s.home.shown, true);
+  // Pause while folded pauses and stays folded (a press on a button is that button's).
+  s.pause.click();
+  assert.equal(s.canvas.dataset.backdrop, "still");
+  assert.equal(folded(), true);
+  // The same icon brings it back.
+  s.fold.click();
+  assert.equal(folded(), false);
+  assert.equal(s.name(s.fold), FOLD_WORDS.fold);
+  // Escape brings it back without leaving the screen, the focus on the fold icon; unfolded, Escape leaves as before.
+  const escape = () => s.fold.dispatchEvent(new (s.doc.defaultView as unknown as typeof globalThis).KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  s.fold.click();
+  escape();
+  assert.equal(folded(), false);
+  assert.equal(s.home.shown, true);
+  assert.equal(s.doc.activeElement, s.fold);
+  // A press anywhere else (the picture takes none, so it lands on the screen) brings it back too.
+  s.fold.click();
+  root.click();
+  assert.equal(folded(), false);
+  assert.equal(s.home.shown, true);
+  // Unfolded, a press on the screen does nothing.
+  root.click();
+  assert.equal(folded(), false);
+  // A real press lands on the icon's drawing, which the press itself swaps for the other icon: still the button's press
+  // (the browser check found folding undone at once: the swapped-out drawing no longer sat in a button). Pause's too.
+  const pressIcon = (b: HTMLElement) => b.querySelector("svg path")!.dispatchEvent(new (s.doc.defaultView as unknown as typeof globalThis).MouseEvent("click", { bubbles: true }));
+  pressIcon(s.fold);
+  assert.equal(folded(), true);
+  pressIcon(s.pause);
+  assert.equal(s.canvas.dataset.backdrop, "live");
+  assert.equal(folded(), true);
+  pressIcon(s.fold);
+  assert.equal(folded(), false);
+  // Left folded, the screen opens unfolded next time.
+  s.fold.click();
+  escape(); // back
+  escape(); // and away
+  assert.equal(s.home.shown, false);
+  s.fold.click();
+  await s.home.show();
+  assert.equal(folded(), false);
+  s.fold.click();
+  s.home.hide();
+  assert.equal(folded(), false);
 });
 
 test("Settings > General: Home screen background, Auto, Full, Gentle or Still, the chosen one's sentence under it", () => {
