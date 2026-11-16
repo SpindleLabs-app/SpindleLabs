@@ -298,11 +298,8 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const settings = document.createElement("details");
   settings.className = "slice-print-settings";
   const settingsSummary = document.createElement("summary");
-  settingsSummary.className = "slice-print-settings-summary";
   const settingsName = el("span", "", "Printer settings");
-  settingsName.className = "slice-print-settings-name";
   const settingsWords = el("span", "slice-print-settings-words");
-  settingsWords.className = "slice-print-settings-words";
   settingsSummary.append(settingsName, settingsWords);
   choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap);
   settings.append(settingsSummary, choices6, fitsRow);
@@ -315,7 +312,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     }
   });
   const perPrint = document.createElement("div");
-  perPrint.className = "slice-print-choices slice-print-per-print";
+  perPrint.className = "slice-print-choices";
   perPrint.append(supports.wrap, warmUpWrap, gripWrap);
 
   const say = (text: string, bad: boolean) => {

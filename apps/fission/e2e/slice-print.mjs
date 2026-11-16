@@ -308,7 +308,7 @@ for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [128
         // Supports, the two ticks and the buttons. Opened, the dialog may scroll, and each control can be reached.
         const folded = ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill"];
         assert.deepEqual((await hidden()).filter((id) => !folded.includes(id)), [], "all on screen without scrolling");
-        await page.click(".slice-print-settings-summary");
+        await page.click(".slice-print-settings summary");
         // No list squashed to fit (the old dialog shrank Supports' list until its words were cut): all six the same height.
         const heights = await page.$$eval("#slice-print-dialog select:not(#slice-presets-list)", (ss) => ss.map((s) => Math.round(s.getBoundingClientRect().height)));
         assert.ok(heights.every((h) => Math.abs(h - heights[0]) <= 1), `list heights ${heights}`);

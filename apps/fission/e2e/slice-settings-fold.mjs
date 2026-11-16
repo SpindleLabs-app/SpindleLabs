@@ -41,7 +41,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await open();
       // Folded by default: the one line says the settings; the lists are hidden; Supports and the ticks are not.
       assert.equal(await page.$eval(".slice-print-settings", (d) => d.open), false);
-      assert.equal(await page.textContent(".slice-print-settings-words"), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill");
+      assert.equal(await page.textContent("#slice-print-settings-words"), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill");
       for (const id of ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill"]) assert.equal(await visible(`#${id}`), false, `${id} folded away`);
       for (const id of ["slice-print-supports", "slice-print-warm-up", "slice-print-grip"]) assert.equal(await visible(`#${id}`), true, `${id} stays in view`);
       if (shots) await page.screenshot({ path: `${shots}/fold-${width}-closed.png` });
@@ -53,18 +53,18 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await press("#slice-print-warm-up");
       await press("#slice-print-grip");
       assert.deepEqual(await page.$$eval("#slice-presets-list option", (os) => os.map((o) => o.textContent)), ["No preset", "home P1S"]);
-      await press(".slice-print-settings-summary");
+      await press(".slice-print-settings summary");
       assert.equal(await page.$eval(".slice-print-settings", (d) => d.open), true);
       assert.equal(await visible("#slice-print-quality"), true);
       await page.selectOption("#slice-print-walls", "3");
       assert.deepEqual(await page.$$eval("#slice-presets-list option", (os) => os.map((o) => o.textContent)), ["No preset", "home P1S (changed)"]);
       if (shots) await page.screenshot({ path: `${shots}/fold-${width}-open.png` });
       // Closed again, the line follows the change.
-      await press(".slice-print-settings-summary");
-      assert.equal(await page.textContent(".slice-print-settings-words"), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 3 walls · 15 % infill");
+      await press(".slice-print-settings summary");
+      assert.equal(await page.textContent("#slice-print-settings-words"), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 3 walls · 15 % infill");
       assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.settings-open")), "closed");
       // Open it, reload: it opens open.
-      await press(".slice-print-settings-summary");
+      await press(".slice-print-settings summary");
       await page.waitForFunction(() => localStorage.getItem("spindlelabs.slice.settings-open") === "open");
       await page.reload();
       await startWithBox(page, tap);

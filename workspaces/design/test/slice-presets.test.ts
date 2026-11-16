@@ -509,7 +509,7 @@ test("the printer settings fold into one section: closed by default with a line 
   const section = () => window.document.querySelector(".slice-print-settings") as unknown as HTMLDetailsElement;
   assert.equal(section().open, false);
   // By hand: file "Bambu Lab P1S (.gcode.3mf)" loses its bracket, plate and nozzle labels as listed, quality's bracket gives "0.2 mm layers".
-  const words = () => window.document.querySelector(".slice-print-settings-words")!.textContent;
+  const words = () => window.document.querySelector("#slice-print-settings-words")!.textContent;
   assert.equal(words(), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill");
   t.set("slice-print-walls", "1");
   t.set("slice-print-infill", "100");
