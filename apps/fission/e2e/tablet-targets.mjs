@@ -62,6 +62,12 @@ try {
       assert.ok(narrow["#toolbar .toolbar-group-tool"].every(([, , h]) => h >= 44 - 0.5), "the same device in a 1024 px window gets 44 px targets");
     } finally { await laptop.close(); }
   }
+  // Ben's own laptop (2026-11-16): the touch screen is the primary pointer and the browser does NOT report a fine pointer
+  // (any-pointer: fine is false), so the 2026-11-15 rule never fired. A coarse window of 1200 px or more is a laptop's.
+  for (const [width, height] of [[1280, 653], [1920, 980]]) {
+    const bare = await sizes(width, height, true);
+    assert.ok(bare["#toolbar .toolbar-group-tool"].length > 0 && bare["#toolbar .toolbar-group-tool"].every(([, , h]) => h < 44 - 0.5), `touch only at ${width} px keeps the mouse-sized toolbar`);
+  }
   assert.deepEqual(errors, [], "no page errors");
   console.log("PASS tablet targets: with touch at 768, 820 and 1024 px every toolbar, view bar and eye target is 44 px; a mouse keeps 36");
 } catch (e) {

@@ -36,7 +36,7 @@
 .assistant button[id="ai-accept"]:disabled:not(#none) { opacity: 0.45; box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { .assistant .ai-progress-fill { transition: none; } }
 /* Its boxes' text 16 px on a phone or any touch screen: smaller makes iOS Safari zoom the page in on a tap (phone hunt 11-01). */
-@media (max-width: 640px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))) {
+@media (max-width: 640px), ((pointer: coarse) and (max-width: 1199px)) {
   .assistant textarea, .assistant input:not([type="checkbox"], [type="radio"], [type="range"]), .assistant select { font-size: 16px; }
 }
 /* Try again after an answer that didn't come (AI8a, AI8c): a finger-sized target on a phone. */

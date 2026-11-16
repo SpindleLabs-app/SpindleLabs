@@ -24,7 +24,7 @@
 .design-tabs .design-tabs-ask-row { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--look-space-2); }
 .design-tabs .design-tabs-ask button { min-height: var(--look-target); padding: 0 var(--look-space-3); font: inherit; color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 /* Touch screens wide enough for the strip: still one row, its tabs, × and + 44 px tall (the tap size). */
-@media (pointer: coarse) {
+@media (pointer: coarse) and (max-width: 1199px) {
   .design-tabs:not(#none) { min-height: 44px; }
   .design-tabs .design-tabs-tab .design-tabs-close:not(#none) { min-width: 44px; }
   .design-tabs .design-tabs-add:not(#none) { min-width: 44px; }

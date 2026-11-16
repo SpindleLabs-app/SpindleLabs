@@ -71,7 +71,7 @@
 .guide .guide-hint[data-shown] { opacity: 1; transform: translate(-50%, 0); }
 .guide .guide-hint kbd { font: 600 12px/1 ui-monospace, Menlo, monospace; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line-white-05); border-bottom-width: 2px; }
 .guide .guide-hint-touch { display: none; }
-@media (hover: none) and ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))) {
+@media (hover: none) and ((pointer: coarse) and (max-width: 1199px)) {
   .guide .guide-hint-keys { display: none; }
   .guide .guide-hint-touch { display: inline; }
 }

@@ -227,7 +227,7 @@ test("tabs hunt E2: the stylesheet shows the phone switcher by the very query th
   const css = readFileSync(new URL("../src/styles/design-tabs.css", import.meta.url), "utf8");
   const queries = [...css.matchAll(/@media\s*([^{]+)\{/g)].map((m) => m[1].trim());
   // The first is the strip's own 44 px tap size on touch screens wide enough for it; the phone query decides strip or list.
-  assert.deepEqual(queries, ["(pointer: coarse)", TABS_PHONE_QUERY]);
+  assert.deepEqual(queries, ["(pointer: coarse) and (max-width: 1199px)", TABS_PHONE_QUERY]);
   // The top bar's count button (T3a) shows by the same query; the two after it only make room in the bar on the
   // narrowest phones, both inside 640 px, so the phone query alone decides button or strip.
   const bar = readFileSync(new URL("../src/styles/design-tabs-bar.css", import.meta.url), "utf8");
