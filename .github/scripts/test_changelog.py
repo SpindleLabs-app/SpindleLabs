@@ -90,10 +90,10 @@ class NextVersion(unittest.TestCase):
         # The step's own number never moves the version by more than one: the
         # middle number counts steps started. Step 89 done early from 0.35.53
         # is 0.36.0, not 0.89.0 (the jump this rule ends), and the main line's
-        # step 37 from 0.89.72 is 0.90.0, not "nothing" (37 < 89).
+        # step 37 from 0.39.39 is 0.40.0, not "nothing" (37 < 89).
         self.assertEqual(nv((0, 35, 53), ("step", 89)), (0, 36, 0))
-        self.assertEqual(nv((0, 89, 72), ("step", 37)), (0, 90, 0))
-        self.assertEqual(nv((0, 89, 72), ("step", 0)), (0, 90, 0))
+        self.assertEqual(nv((0, 39, 39), ("step", 37)), (0, 40, 0))
+        self.assertEqual(nv((0, 39, 39), ("step", 0)), (0, 40, 0))
         self.assertIsNone(nv((0, 32, 21), "none"))
 
     def test_legacy_rule_kept(self):
@@ -104,33 +104,36 @@ class NextVersion(unittest.TestCase):
         self.assertEqual(nv((0, 35, 53), ("step", 89), legacy=True), (0, 89, 0))
         self.assertIsNone(nv((0, 89, 5), ("step", 77), legacy=True))
         self.assertIsNone(nv((0, 89, 5), ("step", 89), legacy=True))
-        self.assertEqual(changelog.bumped((0, 35, 53), frag("oubx5f-kept-history.md", ("step", 89))), (0, 89, 0))
+        self.assertEqual(changelog.bumped((0, 32, 31), frag("ujfinf-boolean-names.md", ("step", 35))), (0, 35, 0))
+        # Renumbered on 16 Nov 2026: step 89's fragment follows the new rule.
+        self.assertEqual(changelog.bumped((0, 35, 53), frag("oubx5f-kept-history.md", ("step", 89))), (0, 36, 0))
         self.assertEqual(changelog.bumped((0, 35, 53), frag("other.md", ("step", 89))), (0, 36, 0))
 
     def test_main_history_replayed(self):
-        # The app's own history, by hand (`changelog.py show`, 14 Nov 2026):
-        # 0.35.53, then step 89 (kept history, legacy) made 0.89.0; a fix
-        # 0.89.1; step 77 (3MF and OBJ, legacy) nothing; a fix 0.89.2; step
-        # 53 (symmetric, legacy) and step 66 (mass, legacy) nothing. From
-        # then on: step 37 makes 0.90.0, a fix 0.90.1, step 38 0.91.0. The
-        # numbers already shown stay exactly as they were and none goes back.
+        # The app's own history, by hand, as renumbered on 16 Nov 2026: from
+        # 0.35.53, step 89 (kept history) makes 0.36.0; a fix 0.36.1; step 77
+        # (3MF and OBJ) 0.37.0; a fix 0.37.1; step 53 (symmetric) 0.38.0;
+        # step 66 (mass) 0.39.0. Then step 37 makes 0.40.0, a fix 0.40.1,
+        # step 38 0.41.0. Never 0.89, and never a jump of more than one.
         start = "# Changelog\n\n## 0.35.53 (2026-11-09)\n\n- Start.\n"
         order = [frag("oubx5f-kept-history.md", ("step", 89)), frag("a.md", "fix"),
                  frag("p357ph-3mf-obj.md", ("step", 77)), frag("b.md", "fix"),
                  frag("gig53r-symmetric.md", ("step", 53)), frag("gig53r-body-mass.md", ("step", 66)),
                  frag("c.md", ("step", 37)), frag("d.md", "fix"), frag("e.md", ("step", 38))]
         versions = [v for _, v in changelog.versions_of(parse_changelog(start)[1], order)]
-        self.assertEqual(versions, [(0, 89, 0), (0, 89, 1), (0, 89, 1), (0, 89, 2), (0, 89, 2), (0, 89, 2),
-                                    (0, 90, 0), (0, 90, 1), (0, 91, 0)])
+        self.assertEqual(versions, [(0, 36, 0), (0, 36, 1), (0, 37, 0), (0, 37, 1), (0, 38, 0), (0, 39, 0),
+                                    (0, 40, 0), (0, 40, 1), (0, 41, 0)])
 
-    def test_legacy_names_are_the_merged_step_fragments(self):
-        # Every step fragment still on main is a legacy one (all merged before
-        # the rule changed); a new one there would mean the list is stale or a
-        # pull request added itself to it.
+    def test_no_step_started_twice_on_main(self):
+        # The step fragments on main each start a different step, and none
+        # but the legacy one starts a step below 37 (all started by 0.35): a
+        # repeat would count one step twice.
         fragments, _ = changelog.read_fragments(ROOT)
-        steps = {n for n, f in fragments.items() if isinstance(f.bump, tuple)}
-        for name in steps - changelog.LEGACY_STEPS:
-            self.assertNotIn(fragments[name].bump[1], changelog.STARTED_STEPS, name)
+        steps = [f.bump[1] for f in fragments.values() if isinstance(f.bump, tuple)]
+        self.assertEqual(len(steps), len(set(steps)), steps)
+        for name, f in fragments.items():
+            if isinstance(f.bump, tuple) and name not in changelog.LEGACY_STEPS:
+                self.assertGreaterEqual(f.bump[1], 37, name)
 
 
 class Number(unittest.TestCase):

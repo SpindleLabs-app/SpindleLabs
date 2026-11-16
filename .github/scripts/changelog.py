@@ -15,16 +15,22 @@ ever touch the same file:
 The first line says what the change does to the version:
 - `fix`: the bug-fix number goes up by one (0.32.21 -> 0.32.22);
 - `step N`: the first piece of CAD step N: the middle number goes up by one
-  and the bug-fix number starts again at 0 (0.89.72 -> 0.90.0), whatever N
+  and the bug-fix number starts again at 0 (0.39.39 -> 0.40.0), whatever N
   is. The middle number counts the steps started; it is not the step's own
   number. It was, until 14 Nov 2026: the version became 0.N.0, so step 89
   (history kept across a reload, done early as a quick win while the main
   line was at step 35) made the app jump from 0.35.53 to 0.89.0, and every
-  main-line step below 89 after it would have changed nothing. The steps
-  already merged under that rule keep it (LEGACY_STEPS), so no number that
-  has been shown ever changes, and versions never go backwards. CI refuses a
-  `step N` for a step already started (STARTED_STEPS, or another fragment on
-  main naming it): its later pieces are `none` or `fix`;
+  main-line step below 89 after it would have changed nothing. On 16 Nov 2026
+  (the owner's call) the entries from then on were renumbered once under the
+  new rule: steps 89, 77, 53 and 66 each added one, so 0.89.0 to 0.89.94,
+  shown from 11 to 16 Nov, became 0.36.0 to 0.39.39 (an old bug report's
+  0.89.N is found by its date and `changelog.py show`). The version is only
+  shown (Settings > About, bug reports): the offline copy updates when the
+  build changes, never by comparing numbers, so the one step back is safe.
+  Only step 35, which set 0.35.0 the old way, keeps the old rule
+  (LEGACY_STEPS). CI refuses a `step N` for a step already started
+  (STARTED_STEPS, or another fragment on main naming it): its later pieces
+  are `none` or `fix`;
 - `none`: everything else (integration, AI, UI, tests, CI, docs); the entry
   is listed under the version main already has.
 Then a blank line and the entry itself, one or more "- " lines in plain words.
@@ -94,17 +100,14 @@ PUBLIC_RE = re.compile(r"public:( none)?")
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9._-]*\.md")
 BUMP_RE = re.compile(r"fix|none|step (0|[1-9]\d*)")
 
-# The `step N` fragments merged while `step N` still made the version 0.N.0
-# (the rule until 14 Nov 2026), by name: they keep that rule, so the numbers
-# they gave (0.35.0, 0.89.0, and nothing for 53, 66 and 77 below 89) never
-# change. Every other `step N` adds one to the middle number. A name here
-# stays harmless after a fold deletes its fragment.
+# The `step N` fragments that keep the old rule (0.N.0, the rule until 14
+# Nov 2026), by name: only step 35, whose 0.35.0 was right under either rule
+# in spirit and is long shown. Steps 89, 77, 53 and 66 were renumbered under
+# the new rule on 16 Nov 2026 (the docstring says how). Every other
+# `step N` adds one to the middle number. A name here stays harmless after a
+# fold deletes its fragment.
 LEGACY_STEPS = frozenset({
     "ujfinf-boolean-names.md",  # step 35: 0.32.x -> 0.35.0
-    "oubx5f-kept-history.md",   # step 89: 0.35.53 -> 0.89.0, the jump
-    "p357ph-3mf-obj.md",        # step 77: below 89, changed nothing
-    "gig53r-symmetric.md",      # step 53: changed nothing
-    "gig53r-body-mass.md",      # step 66: changed nothing
 })
 
 # The CAD steps the app's changelog had started by 14 Nov 2026: every step up
