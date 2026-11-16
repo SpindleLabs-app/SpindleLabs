@@ -6,7 +6,7 @@
 // Styles: src/styles/home-screen.css.
 import { savedWhen } from "./project-list.ts";
 import { homeBackdrop, motionChoiceOf, type MotionChoice, type Surface } from "./home-backdrop.ts";
-import { withIcon } from "./icons.ts";
+import { iconSvg, type IconName } from "./icons.ts";
 
 /** What the screen needs of a kept project (@fission/storage ProjectSummary). */
 export interface HomeProject {
@@ -91,7 +91,7 @@ export interface HomeParts {
   shown?(): Promise<void>;
   /**
    * Where the picture's motion choice is kept (the browser's settings, shared with Settings > General): read each time the
-   * screen shows, written on Pause, Play, Full motion and Gentle motion. Left out: it follows the computer each time.
+   * screen shows, written on Pause, Play and the suggested gentle motion. Left out: it follows the computer each time.
    */
   motion?: { read(): unknown; keep(choice: MotionChoice): void };
   now?: () => Date;
@@ -139,13 +139,34 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   const items = el("ul", { id: "home-items", className: "home-items" });
   const find = el("div", { className: "home-find" });
   find.append(search, filter);
-  const links = el("p", { className: "home-links" });
-  // The picture's own controls, beside it (WCAG 2.2.2: anything moving for more than 5 seconds can be paused): Pause or
-  // Play, and on a computer set to show less motion (or with Gentle chosen) the full story or the gentle one.
-  const motionButton = button("home-motion", "", () => pressMotion(), "home-link home-motion");
-  const fullButton = button("home-full-motion", "", () => pressFull(), "home-link home-full-motion");
-  motionButton.hidden = fullButton.hidden = true;
-  links.append(button("home-guide", "How SpindleLabs works (the guide)", () => (hide(), parts.showGuide()), "home-link"), motionButton, fullButton);
+  const links = el("div", { className: "home-links" });
+  /** Shows icon `icon` alone on `b`, `name` its name for screen readers and its tooltip. */
+  const setIcon = (b: HTMLButtonElement, icon: IconName, name: string) => {
+    if (b.dataset.icon === icon && b.getAttribute("aria-label") === name) return;
+    b.replaceChildren(iconSvg(doc, icon, 20));
+    b.dataset.icon = icon;
+    b.setAttribute("aria-label", name);
+    b.title = name;
+  };
+  const iconButton = (id: string, icon: IconName, name: string, run: () => void) => {
+    const b = button(id, "", run, "home-icon");
+    setIcon(b, icon, name);
+    return b;
+  };
+  // Small icons under the list (Ben, 2026-11-16: smaller): the guide as a book, and the picture's Pause or Play beside it
+  // (WCAG 2.2.2: anything moving for more than 5 seconds can be paused). Full and gentle motion are Settings' choices; gentle
+  // motion is suggested here only where drawing the picture has been too slow.
+  const guide = iconButton("home-guide", "guide", "How SpindleLabs works (the guide)", () => (hide(), parts.showGuide()));
+  const motionButton = iconButton("home-motion", "pause", "Pause the background", () => pressMotion());
+  const tip = el("span", { id: "home-motion-tip", className: "home-motion-tip" });
+  tip.setAttribute("role", "status");
+  tip.append(
+    el("span", { textContent: "The background is slowing this computer down." }),
+    button("home-gentle", "Use gentle motion", () => useGentle(), "home-link"),
+    button("home-gentle-no", "Not now", () => ((tipDismissed = true), paintMotion()), "home-link"),
+  );
+  motionButton.hidden = tip.hidden = true;
+  links.append(guide, motionButton, tip);
   const close = button("home-close", "Back to my project", () => hide(), "home-close");
   const backdropCanvas = el("canvas", { className: "home-backdrop" });
   backdropCanvas.setAttribute("aria-hidden", "true");
@@ -156,20 +177,18 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   const backdrop = homeBackdrop(backdropCanvas, { win, doc, room: () => links.getBoundingClientRect().bottom, waits: true, changed: () => paintMotion() });
   /** The motion it had before it was paused, so Play brings that back. */
   let beforePause: MotionChoice = "system";
-  /** Whether the picture is up and moving gently now. */
-  const movingGently = () => backdrop.mode === "live" && backdropCanvas.dataset.motion === "gentle";
+  /** Not now was pressed on the gentle motion suggestion (until the page closes). */
+  let tipDismissed = false;
   /** The controls follow the picture: shown once it is (never while it waits or where it can't be drawn), saying what a press does. */
   function paintMotion() {
     const up = backdropCanvas.dataset.ready === "yes" && backdrop.mode !== "off";
     const moving = backdrop.mode === "live";
     motionButton.hidden = !up;
-    const words = moving ? "Pause the background" : "Play the background";
-    if (motionButton.textContent !== words) {
-      motionButton.replaceChildren(words);
-      withIcon(motionButton, moving ? "pause" : "play", 16);
-    }
-    fullButton.hidden = !(up && moving && (backdrop.lessMotion || movingGently()));
-    fullButton.textContent = movingGently() ? "Full motion" : "Gentle motion";
+    setIcon(motionButton, moving ? "pause" : "play", moving ? "Pause the background" : "Play the background");
+    // Gentle motion is suggested only where drawing the picture has been too slow, and never when it is already what
+    // the person wants (chosen, or asked for by the computer) or paused.
+    const gentleWanted = backdrop.choice === "gentle" || (backdrop.choice === "system" && backdrop.lessMotion);
+    tip.hidden = !(up && backdrop.slowed && !tipDismissed && !gentleWanted && backdrop.choice !== "still");
   }
   const keep = () => {
     try {
@@ -188,10 +207,9 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
     }
     keep();
   }
-  function pressFull() {
-    // Gently now: the full story, even on a computer set to show less motion (Ben, 2026-11-16). Full now: gently again,
-    // following the computer when it asks for less motion.
-    backdrop.choose(movingGently() ? "full" : backdrop.lessMotion ? "system" : "gentle");
+  /** The suggestion taken: gentle motion, lighter to draw, kept moving however slow (and kept as the choice). */
+  function useGentle() {
+    backdrop.choose("gentle");
     keep();
   }
   root.append(backdropCanvas, scrim, el("div", { className: "home-head" }), title, card, actions, find, status, items, links);
