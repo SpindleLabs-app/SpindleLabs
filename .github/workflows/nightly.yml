@@ -313,7 +313,7 @@ jobs:
           python-version: "3.12"
       - name: Check out the kernel's oracle (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           SPARSE: prototypes/oracle
         run: .github/scripts/kernel_ci.sh checkout k main
       - name: Golden models' STEP files read by OpenCascade

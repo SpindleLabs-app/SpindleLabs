@@ -791,11 +791,14 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
     kernel, which the code can read anyway), and no job naming a writing key runs kernel code."""
 
     SPLIT = {("kernel-ci.yml", job) for job in ("coverage", "checks-plan", "checks", "mutants-plan", "mutants-shard")} | {
-        ("kernel-nightly.yml", job) for job in ("test", "test-second-leg", "mutants")}
+        ("kernel-nightly.yml", job) for job in ("test", "test-second-leg", "mutants")} | {
+        ("kernel-fuzz.yml", "stl"), ("kernel-fuzz.yml", "kernel"),
+        # The oracle (the kernel's prototypes/oracle) judging the app's own sessions and golden models.
+        ("fuzz.yml", "sessions-oracle"), ("nightly.yml", "golden-step")}
     # The workflows whose every job is split: none of them holds a writing key beside kernel code.
     DONE = {name for name, _ in SPLIT}
     WRITING = {"RESULTS_WRITE", "KERNEL_STATUS", "KERNEL_READ", "MERGE_QUEUE_TOKEN"}
-    KERNEL = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel")
+    KERNEL = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel|\bk/prototypes/")
 
     def problems(self, name, text):
         out = []
@@ -831,6 +834,39 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
                            "          PUBLIC: ${{ needs.plan.outputs.public }}\n          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}\n", 1)
         self.assertNotEqual(bad, text)
         self.assertEqual(self.problems("kernel-nightly.yml", bad), ["kernel-nightly.yml test: runs kernel code beside RESULTS_WRITE"])
+
+    def test_the_check_catches_a_writing_key_in_a_fuzzing_leg(self):
+        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "kernel-fuzz.yml")) as f:
+            text = f.read()
+        self.assertEqual(self.problems("kernel-fuzz.yml", text), [])
+        # Put back what the legs held before the split: the save step's key, in each leg.
+        bad = text.replace("          PUBLIC: ${{ needs.plan.outputs.public }}\n",
+                           "          PUBLIC: ${{ needs.plan.outputs.public }}\n          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}\n")
+        self.assertNotEqual(bad, text)
+        self.assertEqual(self.problems("kernel-fuzz.yml", bad), [
+            "kernel-fuzz.yml stl: runs kernel code beside RESULTS_WRITE",
+            "kernel-fuzz.yml kernel: runs kernel code beside RESULTS_WRITE"])
+
+    def test_the_check_counts_the_oracle_as_kernel_code(self):
+        # The app's own workflows run the kernel's oracle (prototypes/oracle): the old all-in-one key back beside it is caught.
+        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "fuzz.yml")) as f:
+            text = f.read()
+        self.assertEqual(self.problems("fuzz.yml", text), [])
+        bad = text.replace("KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}", "KERNEL_READ: ${{ secrets.KERNEL_READ }}", 1)
+        self.assertNotEqual(bad, text)
+        self.assertEqual(self.problems("fuzz.yml", bad), ["fuzz.yml sessions-oracle: runs kernel code beside KERNEL_READ"])
+
+    def test_no_workflow_uses_the_old_all_in_one_key(self):
+        # KERNEL_READ (kernel read + commit statuses) is retired: KERNEL_SOURCE and KERNEL_STATUS replaced it (H3).
+        # A secret name can be spelled secrets.X or secrets['X'].
+        old = re.compile(r"secrets\s*(?:\.\s*KERNEL_READ\b|\[\s*['\"]KERNEL_READ['\"]\s*\])")
+        for name in sorted(os.listdir(SecretsOnlyOnMain.WORKFLOWS)):
+            with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, name)) as f:
+                self.assertIsNone(old.search(f.read()), name)
+        for spelled in ("${{ secrets.KERNEL_READ }}", "${{ secrets['KERNEL_READ'] }}", '${{ secrets [ "KERNEL_READ" ] }}'):
+            self.assertIsNotNone(old.search(spelled), spelled)
+        self.assertIsNone(old.search("KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}"))
+        self.assertIsNone(old.search("${{ secrets.KERNEL_READER }}"))
 
     def test_the_check_catches_a_writing_key_beside_kernel_code(self):
         job = "on: push\njobs:\n  coverage:\n    runs-on: x\n    steps:\n      - run: .github/scripts/kernel_ci.sh run a d k/ci/x.sh\n"
