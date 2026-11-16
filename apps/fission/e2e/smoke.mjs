@@ -480,10 +480,11 @@ try {
     await page.keyboard.press("Escape");
     await page.mouse.click(fitted.x, fitted.y);
     assert.equal(await selection(), "face:feature-1/top", "picking works in the fitted view");
-    // Nothing selected: Fit frames the whole body from home, as fit() does.
+    // Nothing selected: Fit frames the whole body from the angle it already has (the top view here), and Home turns back to home's.
     await page.keyboard.press("Escape");
     await clickView("top");
     await clickView("fit");
+    await clickView("home");
     await pickAt(HOME, [20, 15, 20], "face:feature-1/top");
     await pickAt(HOME, [20, 0, 10], "face:feature-1/front");
   });

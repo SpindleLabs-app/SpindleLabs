@@ -110,7 +110,7 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
   }
 
   const frame = group();
-  const fit = button("Fit", "Fit: frame the selection, or the whole body when nothing is selected", "fit");
+  const fit = button("Fit", "Fit all: keep the viewing angle, zoom to show the selection (or everything)", "fit");
   fit.dataset.view = "fit";
   fit.addEventListener("click", () => actions.fit());
   const look = button("Look at", "Look at: straight onto the sketch's plane (open a sketch first)", "look-at");
@@ -120,7 +120,7 @@ export function navBar(actions: NavBarActions, signal?: AbortSignal): { element:
   frame.append(fit, look);
 
   const views = group();
-  const home = button("Home", "Home: three-quarter view of the whole body", "home");
+  const home = button("Home", "Home view: turn back to the three-quarter angle and show everything", "home");
   home.dataset.view = "home";
   home.addEventListener("click", () => actions.view("home"));
   views.append(home);
