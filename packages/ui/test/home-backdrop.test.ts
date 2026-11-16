@@ -1,7 +1,8 @@
 // The home screen's living background (home-backdrop.ts): the pure parts worked out by hand, then the canvas in a DOM.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pushWords, extentOf, EXTRUDE_IN, EXTRUDE_OUT, extrudeAmount, hslOf, linksOf, placeShape, shadesOf, SPARK_SPEED, stepSpark, topFace, fitShape, flash, FLASH_AT, floorOf, FRAME_MS, homeBackdrop, lowEnd, luminance, makeTraces, MAX_ALPHA, NEUTRAL_SHAPE, project, rgbOf, depthCue, seeded, sizeWords, growthAt, growthLife, grownPath, GROW_SPEED, GROW_HOLD, GROW_FADE, makeMotes, moteAt, MOTE_LOW, MOTE_HIGH, NEUTRAL_SHAPES, prismEdges, STORY_SECONDS, storyPhase, buildAt, BUILD_END, UNBUILD_AT, rippleAt, RIPPLE_REACH, glowOf, cornerOf, sphereGap, reachOf, CAMERA, dolly, DOLLY, DOLLY_SECONDS, ABOVE, BELOW } from "../src/home-backdrop.ts";
+import { clipUnder, faceFrame, faceMix, facesViewer, fitSurface, groupFaces, LIGHT, NEUTRAL_SURFACES, Occluder, OCCLUDE_BIAS, prismSurface, surfaceVolume, toneOf, triangulate, visibleRuns, type Surface } from "../src/home-backdrop.ts";
+import { pushWords, extentOf, EXTRUDE_IN, EXTRUDE_OUT, extrudeAmount, hslOf, linksOf, placeShape, shadesOf, SPARK_SPEED, stepSpark, topFace, fitShape, flash, FLASH_AT, floorOf, FRAME_MS, homeBackdrop, lowEnd, luminance, makeTraces, MAX_ALPHA, NEUTRAL_SHAPE, project, rgbOf, depthCue, seeded, sizeWords, growthAt, growthLife, grownPath, GROW_SPEED, GROW_HOLD, GROW_FADE, makeMotes, moteAt, MOTE_LOW, MOTE_HIGH, NEUTRAL_SHAPES, prismEdges, QUALITY, WARM_FRAMES, SLOW_WINDOW, median, STORY_SECONDS, storyPhase, buildAt, BUILD_END, UNBUILD_AT, rippleAt, RIPPLE_REACH, glowOf, cornerOf, sphereGap, reachOf, CAMERA, dolly, DOLLY, DOLLY_SECONDS, ABOVE, BELOW } from "../src/home-backdrop.ts";
 
 const near = (a: number, b: number, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
 
@@ -60,6 +61,15 @@ test("hand-worked projection: yaw 90° turns (1,0,0) to (0,1,0); that is straigh
   const q = project(1, 0, 0.5, 0, 0, 4);
   near(q.x, 1);
   near(q.y, -0.5);
+  // Seen from straight above (pitch 90°): up = y, depth = −z, so a higher point is nearer and drawn bigger. (1, 0, 2) with
+  // camera 4: depth −2, k = 4/(4 − 2) = 2, screen (2, 0). (0, 1, 0): up 1, depth 0, screen (0, −1): the far side is up.
+  const top = project(1, 0, 2, 0, Math.PI / 2, 4);
+  near(top.x, 2);
+  near(top.y, 0);
+  near(top.depth, -2);
+  const far = project(0, 1, 0, 0, Math.PI / 2, 4);
+  near(far.x, 0);
+  near(far.y, -1);
 });
 
 test("hand-worked: the glow of a built line: the fresh layers under the plane, the ripple's band, the breathing", () => {
@@ -171,7 +181,7 @@ test("low-end rule: 2 cores or fewer, 2 GB or less, or data saving; unknown is f
   near(FRAME_MS, 33.333, 0.001);
 });
 
-test("the backdrop with a drawing context: live draws and runs, reduced motion draws once, a hidden tab and stop draw nothing", () => {
+test("the backdrop with a drawing context: live draws and runs, reduced motion draws once, a 2-core computer moves lightly, a hidden tab and stop draw nothing", () => {
   const calls = { stroke: 0, raf: 0, cancel: 0 };
   const ctx = new Proxy({}, { get: (_t, k) => (k === "stroke" ? () => void calls.stroke++ : String(k).startsWith("create") ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
   function build(reduce: boolean, hidden = false, cores = 8) {
@@ -219,9 +229,11 @@ test("the backdrop with a drawing context: live draws and runs, reduced motion d
   assert.ok(once > 0);
   still.tick(1000);
   assert.equal(calls.stroke, once); // no loop
+  // A 2-core computer moves too, on the lightest version (Ben, 2026-11-16: a still picture on his laptop read as broken).
   const weak = build(false, false, 2);
   weak.backdrop.start();
-  assert.equal(weak.backdrop.mode, "still");
+  assert.equal(weak.backdrop.mode, "live");
+  assert.equal(weak.canvas.dataset.quality, "2");
 
   calls.raf = 0;
   const hidden = build(false, true);
@@ -248,6 +260,92 @@ test("regression: a frame stamped just before the picture started (seconds a lit
   assert.doesNotThrow(() => frame!(990)); // 10 ms before the start
   assert.equal(canvas.dataset.part, "0");
   b.stop();
+});
+
+/** A backdrop on a fake canvas whose every drawing takes `cost(frame)` milliseconds (read on the clock the backdrop measures with). */
+function timed(cost: (frame: number) => number, opts: { cores?: number; reduce?: boolean } = {}) {
+  let clock = 0;
+  let drawn = 0;
+  let frame: ((t: number) => void) | null = null;
+  const ctx = new Proxy({}, { get: (_t, k) => (k === "clearRect" ? () => void (clock += cost(drawn++)) : String(k).startsWith("create") ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
+  const canvas = { dataset: {} as Record<string, string>, width: 0, height: 0, getContext: () => ctx, getBoundingClientRect: () => ({ width: 800, height: 600 }) } as unknown as HTMLCanvasElement;
+  const win = {
+    innerWidth: 800, innerHeight: 600, devicePixelRatio: 2, navigator: { hardwareConcurrency: opts.cores ?? 8 },
+    matchMedia: () => ({ matches: opts.reduce ?? false, addEventListener: () => {}, removeEventListener: () => {} }),
+    getComputedStyle: () => ({ getPropertyValue: () => "#4da3ff" }),
+    requestAnimationFrame: (f: (t: number) => void) => ((frame = f), 1), cancelAnimationFrame: () => {},
+    addEventListener: () => {}, removeEventListener: () => {}, performance: { now: () => clock }, setTimeout: () => 0, clearTimeout: () => {},
+  } as unknown as Window & typeof globalThis;
+  const doc = { hidden: false, documentElement: { dataset: {} }, addEventListener: () => {}, removeEventListener: () => {} } as unknown as Document;
+  const backdrop = homeBackdrop(canvas, { win, doc });
+  backdrop.start();
+  /** Runs `n` frames, each 60 ms after the last on the clock (past any frame gap). */
+  const run = (n: number) => {
+    for (let k = 0; k < n && frame; k++) {
+      clock += 60;
+      frame(clock);
+    }
+  };
+  return { canvas, backdrop, run };
+}
+
+test("regression: a slow first few frames (the computer warming up) never stop the motion", () => {
+  // Ben's laptop showed only the still picture. The first frames cost far more than the rest (sprites made, code warmed,
+  // the graphics set up): 300 ms then 8 ms frames averaged (300 + 23 × 8) / 24 = 20.2 ms over the first 24, past the 14 ms
+  // limit, so one slow start stopped the picture for good.
+  const t = timed((k) => (k === 0 ? 300 : k < 4 ? 60 : 8));
+  t.run(200);
+  assert.equal(t.backdrop.mode, "live");
+  assert.equal(t.canvas.dataset.quality, "0"); // and at its richest: 8 ms is well inside the limit
+  t.backdrop.stop();
+});
+
+test("frames that stay slow step the picture down to lighter versions before it is ever stopped, and say why", () => {
+  // 20 ms every frame, past SLOW_MS (14): the richest version, then the lighter, then the lightest, then a still picture.
+  const t = timed(() => 20);
+  assert.equal(t.canvas.dataset.quality, "0");
+  t.run(WARM_FRAMES + SLOW_WINDOW);
+  assert.equal(t.canvas.dataset.quality, "1");
+  assert.equal(t.backdrop.mode, "live");
+  t.run(WARM_FRAMES + SLOW_WINDOW);
+  assert.equal(t.canvas.dataset.quality, "2");
+  t.run(WARM_FRAMES + SLOW_WINDOW);
+  assert.equal(t.backdrop.mode, "still");
+  assert.equal(t.canvas.dataset.still, "slow");
+  t.backdrop.stop();
+  // 10 ms a frame is inside the limit: it stays at its richest however long it runs.
+  const fine = timed(() => 10);
+  fine.run(5 * (WARM_FRAMES + SLOW_WINDOW));
+  assert.equal(fine.canvas.dataset.quality, "0");
+  assert.equal(fine.backdrop.mode, "live");
+  // One frame in three slow (a busy page now and then) is not a slow computer: the middle frame's cost decides.
+  const bursty = timed((k) => (k % 3 === 0 ? 40 : 6));
+  bursty.run(5 * (WARM_FRAMES + SLOW_WINDOW));
+  assert.equal(bursty.canvas.dataset.quality, "0");
+  fine.backdrop.stop();
+  bursty.backdrop.stop();
+});
+
+test("a 2-core computer gets the lightest moving picture, not a still one; reduced motion is still, and says so", () => {
+  const two = timed(() => 5, { cores: 2 });
+  assert.equal(two.backdrop.mode, "live");
+  assert.equal(two.canvas.dataset.quality, String(QUALITY.length - 1));
+  assert.equal(two.canvas.width, 800); // the lightest draws at 1 pixel a CSS pixel
+  two.run(100);
+  assert.equal(two.backdrop.mode, "live");
+  two.backdrop.stop();
+  const calm = timed(() => 5, { reduce: true });
+  assert.equal(calm.backdrop.mode, "still");
+  assert.equal(calm.canvas.dataset.still, "reduced-motion");
+  calm.backdrop.stop();
+  // The levels get lighter in every way, and the lightest still moves at 20 frames a second or more.
+  for (let k = 1; k < QUALITY.length; k++) {
+    assert.ok(QUALITY[k].ratio <= QUALITY[k - 1].ratio && QUALITY[k].motes <= QUALITY[k - 1].motes && QUALITY[k].lines <= QUALITY[k - 1].lines && QUALITY[k].fps <= QUALITY[k - 1].fps);
+  }
+  assert.ok(QUALITY[QUALITY.length - 1].fps >= 20);
+  // The middle of a list: the middle one, or the mean of the two middle ones.
+  near(median([5, 1, 3]), 3);
+  near(median([4, 1, 3, 2]), 2.5);
 });
 
 test("the backdrop survives a DOM with no canvas support", () => {
@@ -351,17 +449,22 @@ test("hand-worked: where a ripple's sphere meets an edge, and the corner it star
 });
 
 test("hand-worked: how far the picture reaches above and below its middle", () => {
-  // Pitch 30° (sin 0.5, cos √3/2), CAMERA 7. A point on the up axis at height 1 is drawn 7 · (√3/2) / (7 + 0.5) = 0.80829 up
-  // whichever way it turns; a point on the ground 1 from the axis reaches 7 · 0.5 / (7 − √3/2) = 0.57059 up (turned
-  // nearest) and 7 · 0.5 / (7 + √3/2) = 0.44495 down (turned away).
+  // Seen from above at pitch 30° (sin 0.5, cos √3/2), CAMERA 7: a point turned to depth ry is raised ry · 0.5 on the screen
+  // and pushed ry · √3/2 away. A point on the up axis at height 1 is raised √3/2 and comes 0.5 nearer, so it is drawn
+  // 7 · (√3/2) / (7 − 0.5) = 0.93264 up whichever way it turns; a point on the ground 1 from the axis reaches
+  // 7 · 0.5 / (7 + √3/2) = 0.44495 up (turned away: the far side rises) and 7 · 0.5 / (7 − √3/2) = 0.57059 down (turned
+  // nearest, and nearer is bigger).
   assert.equal(CAMERA, 7);
   const c = Math.sqrt(3) / 2;
   const one = reachOf([{ z: 0, rho: 1 }], [Math.PI / 6]);
-  near(one.above, 3.5 / (7 - c), 1e-12);
-  near(one.below, 3.5 / (7 + c), 1e-12);
+  near(one.above, 3.5 / (7 + c), 1e-12);
+  near(one.below, 3.5 / (7 - c), 1e-12);
+  near(one.above, 0.444952, 1e-6);
+  near(one.below, 0.570592, 1e-6);
   const both = reachOf([{ z: 0, rho: 1 }, { z: 1, rho: 0 }], [Math.PI / 6]);
-  near(both.above, (7 * c) / 7.5, 1e-12);
-  near(both.below, 3.5 / (7 + c), 1e-12);
+  near(both.above, (7 * c) / 6.5, 1e-12);
+  near(both.above, 0.932643, 1e-6);
+  near(both.below, 3.5 / (7 - c), 1e-12);
   // Nothing measured: the neutral cube's.
   assert.deepEqual(reachOf([]), { above: ABOVE, below: BELOW });
   // The same as projecting the point round a full turn (a different path to the same numbers): never past the reach, and close to it.
@@ -512,4 +615,267 @@ test("hand-worked: the extrude handle's distance", () => {
   // In by 0.14: 4.298 mm, shown −4.3; in inches 4.298 / 25.4 = 0.169, shown 0.2.
   assert.equal(pushWords(-0.14 * 30.7, "mm"), "−4.3 mm");
   assert.equal(pushWords(-0.14 * 30.7, "in"), "−0.2 in");
+});
+
+test("hand-worked: a polygon cut into triangles, each counter-clockwise, either way round", () => {
+  // The unit square 0 1 2 3: corner 0's ear (3, 0, 1) turns left and holds no other corner, so it is cut off first,
+  // leaving 1 2 3.
+  assert.deepEqual(triangulate([[0, 0], [1, 0], [1, 1], [0, 1]]), [[3, 0, 1], [1, 2, 3]]);
+  // The L-bracket's profile: 2.2 × 0.5 plus 0.5 × 1.3, area 1.1 + 0.65 = 1.75, in 6 − 2 = 4 triangles; given clockwise too.
+  const l: [number, number][] = [[0, 0], [2.2, 0], [2.2, 0.5], [0.5, 0.5], [0.5, 1.8], [0, 1.8]];
+  for (const poly of [l, [...l].reverse()]) {
+    const tris = triangulate(poly);
+    assert.equal(tris.length, 4);
+    let area = 0;
+    for (const [a, b, c] of tris) {
+      const cross = (poly[b][0] - poly[a][0]) * (poly[c][1] - poly[a][1]) - (poly[b][1] - poly[a][1]) * (poly[c][0] - poly[a][0]);
+      assert.ok(cross > 0, "counter-clockwise");
+      area += cross / 2;
+    }
+    near(area, 1.75, 1e-12);
+  }
+  // A figure of eight is not simple: it stops instead of looping, and never throws.
+  assert.doesNotThrow(() => triangulate([[0, 0], [1, 1], [1, 0], [0, 1]]));
+});
+
+/** The sum of every triangle's area times its normal: nought for a closed surface, whichever way its faces are cut. */
+function areaVector(s: Surface): number[] {
+  const p = s.positions;
+  const sum = [0, 0, 0];
+  for (let t = 0; t < s.indices.length; t += 3) {
+    const [a, b, c] = [s.indices[t] * 3, s.indices[t + 1] * 3, s.indices[t + 2] * 3];
+    const u = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]];
+    const v = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]];
+    sum[0] += (u[1] * v[2] - u[2] * v[1]) / 2;
+    sum[1] += (u[2] * v[0] - u[0] * v[2]) / 2;
+    sum[2] += (u[0] * v[1] - u[1] * v[0]) / 2;
+  }
+  return sum;
+}
+
+test("hand-worked: the simple parts' surfaces are closed, wound outwards, and hold their volumes", () => {
+  // The cube: 2 × 2 × 2 = 8. The L-bracket: its profile's area 1.75 × 1.4 deep = 2.45. The hex nut: a hexagon of corner
+  // radius 1.15 has area (3√3/2) · 1.15² = 3.43596, the 16-sided hole of radius 0.55 has 8 · 0.55² · sin 22.5° = 0.92609,
+  // so (3.43596 − 0.92609) × 0.7 tall = 1.75690. The stepped block: 2.4 × 1.8 × 0.6 + 1.2 × 1.8 × 0.7 = 2.592 + 1.512 = 4.104.
+  const hex = ((3 * Math.sqrt(3)) / 2) * 1.15 ** 2;
+  const hole = 8 * 0.55 ** 2 * Math.sin(Math.PI / 8);
+  const want = [8, 2.45, (hex - hole) * 0.7, 4.104];
+  near((hex - hole) * 0.7, 1.7569, 1e-5);
+  assert.equal(NEUTRAL_SURFACES.length, 4);
+  NEUTRAL_SURFACES.forEach((s, k) => {
+    near(surfaceVolume(s), want[k], 1e-9);
+    // Closed and every face outwards: the area vector is nought, so moving the part changes nothing (a face turned the
+    // wrong way would make it depend on where the part is).
+    for (const v of areaVector(s)) near(v, 0, 1e-9);
+    const moved = { positions: Array.from(s.positions, (v, i) => v + [3, -5, 7][i % 3]), indices: s.indices };
+    near(surfaceVolume(moved), want[k], 1e-9);
+  });
+  // A face turned the wrong way is caught: the cube with one triangle turned over is no longer 8, nor the same when moved.
+  const cube = prismSurface([[-1, -1], [1, -1], [1, 1], [-1, 1]], -1, 1);
+  const flipped = Array.from(cube.indices);
+  [flipped[1], flipped[2]] = [flipped[2], flipped[1]];
+  const bad = { positions: cube.positions, indices: flipped };
+  assert.ok(Math.abs(areaVector(bad)[1]) > 1); // the front wall's half, 2 in area, now counted the other way
+  // The cube's top (z = 1) faces up: every triangle there has a normal with z > 0.
+  for (let t = 0; t < cube.indices.length; t += 3) {
+    const [a, b, c] = [cube.indices[t] * 3, cube.indices[t + 1] * 3, cube.indices[t + 2] * 3];
+    const p = cube.positions;
+    if (p[a + 2] !== 1 || p[b + 2] !== 1 || p[c + 2] !== 1) continue;
+    assert.ok((p[b] - p[a]) * (p[c + 1] - p[a + 1]) - (p[b + 1] - p[a + 1]) * (p[c] - p[a]) > 0);
+  }
+});
+
+test("hand-worked: faces are moved and scaled exactly as the lines are, and bad ones are refused", () => {
+  // The lines' box is x 0..10, z 0..4: middle (5, 0, 2), half-size 5 (as fitShape). A triangle (0,0,0) (10,0,0) (10,0,4)
+  // goes to (−1, 0, −0.4) (1, 0, −0.4) (1, 0, 0.4).
+  const lines = [0, 0, 0, 10, 0, 4];
+  const tri = { positions: [0, 0, 0, 10, 0, 0, 10, 0, 4], indices: [0, 1, 2] };
+  const fit = fitSurface(tri, lines)!;
+  assert.deepEqual([...fit.positions].map((v) => Math.round(v * 1e6) / 1e6), [-1, 0, -0.4, 1, 0, -0.4, 1, 0, 0.4]);
+  assert.deepEqual([...fit.indices], [0, 1, 2]);
+  assert.equal(fitSurface(null, lines), null);
+  assert.equal(fitSurface(tri, null), null); // nothing to fit to
+  assert.equal(fitSurface({ positions: tri.positions, indices: [0, 1, 3] }, lines), null); // a corner past the last
+  assert.equal(fitSurface({ positions: tri.positions, indices: [0, 1, -1] }, lines), null);
+  assert.equal(fitSurface({ positions: tri.positions, indices: [0, 1, 1.5] }, lines), null);
+  assert.equal(fitSurface({ positions: [0, 0, NaN, 10, 0, 0, 10, 0, 4], indices: [0, 1, 2] }, lines), null);
+  assert.equal(fitSurface({ positions: tri.positions, indices: [] }, lines), null);
+  const many = { positions: tri.positions, indices: Array.from({ length: 3 * 11 }, (_, i) => i % 3) };
+  assert.equal(fitSurface(many, lines, 10), null); // 11 triangles past a cap of 10
+  assert.ok(fitSurface(many, lines, 11));
+});
+
+test("hand-worked: a face cut at the build plane keeps the part under it", () => {
+  // The triangle (0,0,0) (2,0,0) (0,0,2) under z = 1: both bottom corners kept, the side from (2,0,0) to (0,0,2) crosses
+  // half-way at (1,0,1), and the side back to (0,0,0) at (0,0,1): a 4-sided piece.
+  assert.deepEqual(clipUnder([[0, 0, 0], [2, 0, 0], [0, 0, 2]], 1), [[0, 0, 0], [2, 0, 0], [1, 0, 1], [0, 0, 1]]);
+  assert.deepEqual(clipUnder([[0, 0, 2], [1, 0, 2], [0, 1, 3]], 1), []); // all over the plane: nothing
+  assert.deepEqual(clipUnder([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 1), [[0, 0, 0], [1, 0, 0], [0, 1, 0]]); // all under: the same
+});
+
+test("hand-worked: a face hides what is behind it, read as the camera sees depth, with a bias for lines on the face", () => {
+  // A right triangle (0,0) (100,0) (0,100) at depth 1 everywhere hides (10, 10) at depth 2 but not at depth 1 (a line on it).
+  const flat = new Occluder(0, 0, 10, 20, 20);
+  flat.add(0, 0, 1, 100, 0, 1, 0, 100, 1);
+  assert.equal(flat.hides(10, 10, 2), true);
+  assert.equal(flat.hides(10, 10, 1), false);
+  assert.equal(flat.hides(90, 90, 5), false); // outside the triangle
+  assert.equal(flat.hides(-5, 10, 5), false); // off the grid
+  assert.equal(flat.hides(95, 2, 5), true); // a far cell of the same triangle
+  // The bias, OCCLUDE_BIAS, at 0.9× (shown) and 1.1× (hidden) behind the face.
+  assert.equal(flat.hides(10, 10, 1 + 0.9 * OCCLUDE_BIAS), false);
+  assert.equal(flat.hides(10, 10, 1 + 1.1 * OCCLUDE_BIAS), true);
+  // Depth 0 at (0,0) and (0,100), 1 at (100,0), camera 7: half-way across, (50, 25), the camera sees 1/(7 + d) change
+  // evenly, so 1/(7 + d) = (1/7 + 1/8)/2 = 15/112 and d = 112/15 − 7 = 7/15 = 0.46667 (not 0.5).
+  const tilted = new Occluder(0, 0, 10, 20, 20, 7);
+  tilted.add(0, 0, 0, 100, 0, 1, 0, 100, 0);
+  near(tilted.depthAt(50, 25), 7 / 15, 1e-12);
+  assert.equal(tilted.hides(50, 25, 7 / 15 + 0.9 * OCCLUDE_BIAS), false);
+  assert.equal(tilted.hides(50, 25, 7 / 15 + 1.1 * OCCLUDE_BIAS), true);
+  assert.equal(tilted.hides(50, 25, 0.5 + 0.9 * OCCLUDE_BIAS), true); // read straight across the screen this would show
+  assert.equal(flat.depthAt(90, 90), Infinity);
+});
+
+test("hand-worked: the parts of a line a face hides, and the parts it leaves", () => {
+  // The square (0,0)..(100,100) at depth 1. A line at y = 50 from x = −100 to 200 at depth 2, asked every 10 px: 30 steps,
+  // sample k at x = −100 + 10k, hidden for k = 10..20 (x 0..100), the changes half-way between samples: 9.5/30 and 20.5/30.
+  const occ = new Occluder(0, 0, 10, 11, 11); // cells to x = 110, so the square's right edge is in the grid
+  occ.add(0, 0, 1, 100, 0, 1, 100, 100, 1);
+  occ.add(0, 0, 1, 100, 100, 1, 0, 100, 1);
+  const runs = visibleRuns(-100, 50, 2, 200, 50, 2, occ, 10);
+  assert.equal(runs.length, 3);
+  assert.deepEqual(runs.map((r) => r[2]), [true, false, true]);
+  near(runs[0][0], 0);
+  near(runs[0][1], 9.5 / 30);
+  near(runs[1][1], 20.5 / 30);
+  near(runs[2][1], 1);
+  // In front of the square (depth 0.5): shown all along.
+  assert.deepEqual(visibleRuns(-100, 50, 0.5, 200, 50, 0.5, occ, 10), [[0, 1, true]]);
+  // A long line is asked at most 33 times.
+  let asked = 0;
+  const counting = { hides: () => (asked++, false) } as unknown as Occluder;
+  visibleRuns(0, 0, 0, 5000, 0, 0, counting, 8);
+  assert.equal(asked, 33);
+});
+
+test("hand-worked: flat faces, how lit they are, and which way they face", () => {
+  // The cube's 12 triangles are 6 flat faces of 2, their normals the six axis directions.
+  const cube = NEUTRAL_SURFACES[0];
+  const g = groupFaces(cube.positions, cube.indices);
+  assert.equal(g.tris.length, 6);
+  for (const tris of g.tris) assert.equal(tris.length, 2);
+  const normals = g.normals.map((n) => n.map((v) => Math.round(v)).join(",")).sort();
+  assert.deepEqual(normals, ["-1,0,0", "0,-1,0", "0,0,-1", "0,0,1", "0,1,0", "1,0,0"]);
+  for (const d of g.offsets) near(d, 1); // every face 1 from the middle
+  // A triangle with no area is left out.
+  assert.equal(groupFaces([0, 0, 0, 1, 0, 0, 2, 0, 0], [0, 1, 2]).tris.length, 0);
+  // The light is (−0.48, 0.8, −0.36) as the camera sees it (right, up, away): length 0.2304 + 0.64 + 0.1296 = 1.
+  near(Math.hypot(...LIGHT), 1);
+  // Level camera, no turn: the top faces up (0.8), the front faces the camera (0.36), the left side faces left (0.48),
+  // the back and right get none.
+  near(toneOf([0, 0, 1], 0, 0), 0.8);
+  near(toneOf([0, -1, 0], 0, 0), 0.36);
+  near(toneOf([-1, 0, 0], 0, 0), 0.48);
+  near(toneOf([0, 1, 0], 0, 0), 0);
+  near(toneOf([1, 0, 0], 0, 0), 0);
+  // Tipped 0.5: the top turns towards the camera: 0.8 cos 0.5 + 0.36 sin 0.5 = 0.70206 + 0.17259 = 0.87466.
+  near(toneOf([0, 0, 1], 0, 0.5), 0.8 * Math.cos(0.5) + 0.36 * Math.sin(0.5));
+  near(toneOf([0, 0, 1], 0, 0.5), 0.87466, 1e-5);
+  // On the canvas (y down), corners (0,0) (0,10) (10,0) run clockwise: (0)(0 − 0) − (10)(10) = −100 < 0, facing the viewer.
+  assert.equal(facesViewer(0, 0, 0, 10, 10, 0), true);
+  assert.equal(facesViewer(0, 0, 10, 0, 0, 10), false);
+  // The face colour's mix of the accent: lit faces glow more on a dark page and stay whiter on a light one.
+  near(faceMix(1, true, true), 0.31);
+  near(faceMix(0, true, true), 0.09);
+  near(faceMix(1, true, false), 0.05);
+  near(faceMix(0, true, false), 0.23);
+  assert.ok(faceMix(0.5, false, true) < faceMix(0, true, true)); // the inside is darker than any outside face
+});
+
+test("hand-worked: one frame of the cube's faces: what is painted, in what order, and what it hides", () => {
+  // Seen from the front, tipped 0.5 (yaw 0): only the front (y = −1) and the top face the camera (the sides are seen from
+  // inside the cube's width, so they turn away). The top's middle (0, 0, 1) is at depth −sin 0.5 = −0.479, the front's
+  // (0, −1, 0) at −cos 0.5 = −0.878: the top is farther, so it is painted first.
+  const cube = NEUTRAL_SURFACES[0];
+  const g = groupFaces(cube.positions, cube.indices);
+  const at = (x: number, y: number, z: number) => {
+    const p = project(x, y, z, 0, 0.5);
+    return { x: 100 * p.x, y: 100 * p.y, depth: p.depth };
+  };
+  const one = faceFrame(g, cube.positions, cube.indices, at, null, false);
+  assert.equal(one.front, 2);
+  assert.equal(one.paint.length, 2);
+  assert.deepEqual(one.paint.map((f) => g.normals[f.group].map((v) => Math.round(v)).join(",")), ["0,0,1", "0,-1,0"]);
+  near(one.paint[0].depth, -Math.sin(0.5), 1e-9);
+  near(one.paint[1].depth, -Math.cos(0.5), 1e-9);
+  assert.equal(one.whole, null);
+  // The back bottom edge's middle (0, 1, −1) is behind the front face: hidden. The back top edge's middle (0, 1, 1) is on
+  // the top face's edge: shown.
+  const back = at(0, 1, -1);
+  const rim = at(0, 1, 1);
+  assert.equal(one.occ.hides(back.x, back.y, back.depth), true);
+  assert.equal(one.occ.hides(rim.x, rim.y, rim.depth), false);
+  // Half built (the plane at z = 0): the top is not built, the front is cut to its lower half, and with the inside shown
+  // the back, the bottom and both sides are painted as inside (facing away), the back first. Behind the open top the back
+  // bottom edge shows; the whole design's faces (for the ghosts) still hide it.
+  const half = faceFrame(g, cube.positions, cube.indices, at, 0, true);
+  assert.equal(half.front, 1);
+  assert.equal(half.paint.filter((f) => !f.front).length, 4);
+  const front = half.paint.find((f) => f.front)!;
+  assert.equal(front.polys.length, 2);
+  assert.equal(half.occ.hides(back.x, back.y, back.depth), false);
+  assert.equal(half.whole!.hides(back.x, back.y, back.depth), true);
+  for (let k = 1; k < half.paint.length; k++) assert.ok(half.paint[k - 1].depth >= half.paint[k].depth, "farthest first");
+});
+
+test("waiting for the screen: nothing drawn until revealed, then placed for good and the story starts with the build", () => {
+  let strokes = 0;
+  let fills = 0;
+  let frame: ((t: number) => void) | null = null;
+  let clock = 5000;
+  const ctx = new Proxy({}, { get: (_t, k) => (k === "stroke" ? () => void strokes++ : k === "fill" ? () => void fills++ : String(k).startsWith("create") ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
+  const canvas = { dataset: {} as Record<string, string>, width: 0, height: 0, getContext: () => ctx, getBoundingClientRect: () => ({ width: 800, height: 600 }) } as unknown as HTMLCanvasElement;
+  const win = {
+    innerWidth: 800, innerHeight: 600, devicePixelRatio: 1, navigator: { hardwareConcurrency: 8 },
+    matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    getComputedStyle: () => ({ getPropertyValue: (n: string) => (n === "--surface" ? "#161d2a" : "#4da3ff") }),
+    requestAnimationFrame: (f: (t: number) => void) => ((frame = f), 1), cancelAnimationFrame: () => (frame = null),
+    addEventListener: () => {}, removeEventListener: () => {}, performance: { now: () => clock }, setTimeout: () => 0, clearTimeout: () => {},
+  } as unknown as Window & typeof globalThis;
+  const doc = { hidden: false, documentElement: { dataset: {} }, addEventListener: () => {}, removeEventListener: () => {} } as unknown as Document;
+  let room = 100;
+  const b = homeBackdrop(canvas, { win, doc, waits: true, room: () => room });
+  b.start();
+  assert.equal(b.mode, "live");
+  assert.equal(canvas.dataset.ready, undefined);
+  assert.equal(frame, null); // no loop while waiting
+  b.redraw();
+  assert.equal(strokes + fills, 0);
+  // The list grew while waiting (the room moved from 100 to 400 px): nothing was drawn at the old place.
+  room = 400;
+  // The cube, with its 12 triangles, arrives just before the reveal.
+  const box = NEUTRAL_SURFACES[0];
+  b.setSource(() => NEUTRAL_SHAPES[0], () => box);
+  assert.equal(strokes + fills, 0);
+  b.reveal();
+  assert.equal(canvas.dataset.ready, "yes");
+  assert.equal(canvas.dataset.faces, "6"); // the cube's six flat faces are painted
+  clock += 40;
+  frame!(clock);
+  assert.ok(strokes > 0);
+  assert.equal(canvas.dataset.stage, "building"); // the story starts at the start: the build
+  assert.equal(canvas.dataset.build, "0.0");
+  b.stop();
+  assert.equal(canvas.dataset.ready, undefined); // shown again only once revealed again
+  // Without faces (a design that gives only lines) nothing is painted solid.
+  b.start();
+  b.setSource(() => [0, 0, 0, 10, 0, 4, 10, 0, 4, 0, 5, 4]);
+  b.reveal();
+  assert.equal(canvas.dataset.faces, "0");
+  b.stop();
+  // Without `waits` it is ready at once, as before.
+  const plain = homeBackdrop(canvas, { win, doc });
+  plain.start();
+  assert.equal(canvas.dataset.ready, "yes");
+  plain.stop();
 });

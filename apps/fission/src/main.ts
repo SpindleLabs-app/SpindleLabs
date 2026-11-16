@@ -310,7 +310,7 @@ if (__TEST_HOOKS__ && new URLSearchParams(location.search).has("test-hooks"))
       // the page shows the step before until it lands, so the monkey waits on it before reading the bar (issue #650).
       historyBusy: () => ctx.history.working(), // held work running by itself, not a question waiting on the person (SL #397)
       // The home screen's turning picture shows these edges instead of the open project's (e2e/home-backdrop.mjs, STL=).
-      homeStandIn: (lines: number[] | null) => home?.showStandIn(lines),
+      homeStandIn: (lines: number[] | null, surface?: { positions: number[]; indices: number[] } | null) => home?.showStandIn(lines, surface),
     },
   });
 
@@ -1206,6 +1206,8 @@ const home = !HOME_SCREEN ? null : homeScreen(document, {
   showGuide: () => $("guide-open").click(),
   workspaceTitle,
   outline: () => viewer.outline(),
+  surface: () => viewer.surface(),
+  shown: () => shownOnScreen(), // the picture waits for the reopened project's body, so it never jumps to it
 });
 
 // While a project opens (the last one reopened, or a file), the top bar

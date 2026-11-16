@@ -50,17 +50,24 @@
    caught by a press, never read out. The scrim keeps the words readable over the lines: the title, the status and the guide
    link sit straight on it (the card and the rows have their own solid backgrounds). Colours are tokens only. */
 .home-screen > .home-backdrop, .home-screen > .home-scrim { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; z-index: -1; pointer-events: none; }
-.home-screen > .home-backdrop { display: block; }
+/* Unseen until it is ready (the list painted and the design here), then faded in already in place: it never shows at one
+   size and jumps to another. */
+.home-screen > .home-backdrop { display: block; opacity: 0; transition: opacity 0.9s ease-out; }
+.home-screen > .home-backdrop[data-ready] { opacity: 1; }
 .home-screen > .home-scrim { background: radial-gradient(ellipse 50% 32% at 50% 12%, color-mix(in srgb, var(--surface) 70%, transparent), transparent 100%); }
 .home-screen > .home-backdrop[data-backdrop="off"] { display: none; }
 /* Cards float above the picture, a little see-through, so the design turning behind them shows faintly through. */
 .home-screen .home-card, .home-screen .home-row { background: color-mix(in srgb, var(--surface-raised) 86%, transparent); box-shadow: var(--look-shadow-1); }
 .home-screen .home-card { box-shadow: var(--look-shadow-2), 0 0 0 1px color-mix(in srgb, var(--look-accent) 35%, transparent), 0 0 28px color-mix(in srgb, var(--look-accent) 18%, transparent); }
 @media (prefers-reduced-motion: reduce) {
-  .home-screen > .home-backdrop { opacity: 0.8; }
+  .home-screen > .home-backdrop { transition: none; }
+  .home-screen > .home-backdrop[data-ready] { opacity: 0.8; }
 }
 /* Words that sit straight on the picture get a plate of their own, so a line passing behind never takes their contrast
    (the browser check reads the worst pixel behind them). */
 .home-screen .home-links .home-link:not(#none), .home-screen .home-status:not(:empty) { justify-self: start; width: fit-content; max-width: 100%; padding: 2px 8px; margin-left: -8px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
 /* The message sits straight in the screen's grid, whose column is the whole window: kept to the 720 px column's left edge. */
 .home-screen .home-status:not(:empty) { max-width: min(736px, 100%); margin-left: calc(max(0px, (100% - 720px) / 2) - 8px); }
+/* The title too: a plate just round its words at the column's left edge (on a phone the scrim is narrow, and a point of
+   light on a line behind the title's right end took its contrast). */
+.home-screen .home-title { justify-self: start; width: fit-content; max-width: min(736px, 100%); padding: 0 8px; margin-left: calc(max(0px, (100% - 720px) / 2) - 8px); background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }

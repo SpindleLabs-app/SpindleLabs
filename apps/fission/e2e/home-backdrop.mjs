@@ -4,15 +4,18 @@
 // - A first visit: the background moves (two pictures 600 ms apart differ), paints something, and turns the neutral cube,
 //   which builds up from the floor, has a ripple of light run through it, and has its top face pulled out and let back
 //   (the story's stages in order, within 30 s).
-// - With a project kept and reopened under the screen, the background turns that project's own edges within 3 s.
+// - With a project kept and reopened under the screen, the background turns that project's own shape, painted solid (its
+//   faces, the lines behind them hidden), and is unseen until it is ready: from the first frame it shows that shape at
+//   the one place and size it keeps (Ben, 2026-11-16: it showed bigger and shrank a second later).
 // - The tab hidden: nothing is drawn (two pictures the same); shown again, it moves again.
 // - The screen closed: the background stops (mode off).
-// - Reduced motion: one still picture (mode still, two pictures the same), still with the project's shape.
-// - A weak machine (2 cores): the still picture too.
+// - Reduced motion: one still picture (mode still, two pictures the same), still with the project's shape, saying why.
+// - A weak machine (2 cores): the lightest moving picture, at 1 pixel a CSS pixel. A computer slowed 4 times: still moving.
 // - It never takes a press: the card's button under the picture still works; the words keep their contrast (the title's
 //   colour against the scrim at its place, 4.5 : 1 or more).
 // - At 375 px: nothing runs off the side.
-// Screenshots (SHOTS=<dir>) at 1280 and 375 px in both themes; STL=<file> opens that STL as the project shown.
+// Screenshots (SHOTS=<dir>) at 1280 and 375 px in both themes; STL=<file> opens that STL as the project shown (its
+// triangles painted, its sharp edges drawn).
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -43,6 +46,8 @@ async function check(name, fn) {
 }
 const until = (page, fn, arg, what, timeout = 15000) => page.waitForFunction(fn, arg, { timeout }).catch(() => assert.fail(`${what}: timed out`));
 const homeShown = (page) => until(page, () => { const h = document.getElementById("home"); return h && !h.hidden && document.querySelectorAll("#home-items .home-row, #home-status:not(:empty)").length > 0; }, null, "the home screen");
+/** Waits for the picture to be marked ready (the list painted, the design here). */
+const ready = (page) => until(page, () => document.querySelector("#home .home-backdrop")?.dataset.ready === "yes", null, "the picture ready", 8000);
 const mode = (page) => page.$eval("#home .home-backdrop", (c) => c.dataset.backdrop);
 const shape = (page) => page.$eval("#home .home-backdrop", (c) => c.dataset.shape ?? "");
 const picture = (page) => page.$eval("#home .home-backdrop", (c) => c.toDataURL());
@@ -59,6 +64,20 @@ const painted = (page) =>
 async function newPage({ width = 1280, scheme = "dark", reduce = false, cores = 8, all = true } = {}) {
   const context = await browser.newContext({ viewport: { width, height: width > 700 ? 800 : 812 }, hasTouch: width < 700, isMobile: width < 700, colorScheme: scheme, reducedMotion: reduce ? "reduce" : "no-preference" });
   await context.addInitScript((n) => Object.defineProperty(navigator, "hardwareConcurrency", { get: () => n }), cores);
+  // Every change of the picture's place, shape and readiness, as it happens (the jump check reads them).
+  await context.addInitScript(() => {
+    window.__picture = [];
+    const watch = () =>
+      new MutationObserver((changes) => {
+        for (const c of changes) {
+          const el = c.target;
+          if (!el.classList?.contains("home-backdrop")) continue;
+          window.__picture.push({ at: performance.now(), what: c.attributeName, ready: el.dataset.ready ?? null, place: el.dataset.place ?? null, shape: el.dataset.shape ?? null, opacity: getComputedStyle(el).opacity });
+        }
+      }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["data-place", "data-ready", "data-shape"] });
+    if (document.documentElement) watch();
+    else document.addEventListener("DOMContentLoaded", watch);
+  });
   const page = await context.newPage();
   page.on("pageerror", (e) => errors.push(process.env.STACKS ? e.stack : e.message));
   await page.goto(url + (all ? "?all&test-hooks#design" : "#design"));
@@ -66,10 +85,17 @@ async function newPage({ width = 1280, scheme = "dark", reduce = false, cores = 
 }
 
 /**
- * The edges of a binary STL's solid as pairs of x y z points: every triangle side whose two triangles don't lie in one
- * plane (normals more than 1° apart) or that has only one. The app can't open STL yet, so a screenshot run with STL=
- * shows that design through the test hook in place of the box's (the box is still kept and checked first).
+ * A binary STL's solid for the picture: its edges as pairs of x y z points (every triangle side whose two triangles don't
+ * lie in one plane, normals more than 1° apart, or that has only one) and its triangles (`positions`, `indices`). The app
+ * can't open STL yet, so a screenshot run with STL= shows that design through the test hook in place of the box's (the
+ * box is still kept and checked first).
  */
+function stlSolid(buffer) {
+  const count = buffer.readUInt32LE(80);
+  const positions = [];
+  for (let i = 0; i < count; i++) for (let k = 0; k < 3; k++) for (let j = 0; j < 3; j++) positions.push(buffer.readFloatLE(84 + 50 * i + 12 + 12 * k + 4 * j));
+  return { lines: stlEdges(buffer), surface: { positions, indices: Array.from({ length: count * 3 }, (_, i) => i) } };
+}
 function stlEdges(buffer) {
   const count = buffer.readUInt32LE(80);
   const sides = new Map();
@@ -104,6 +130,7 @@ async function withProject(page, tap = false) {
   await page.waitForTimeout(400);
   await page.reload();
   await homeShown(page);
+  await ready(page);
 }
 
 await check("without ?all there is no home screen, so no background", async () => {
@@ -116,8 +143,11 @@ await check("without ?all there is no home screen, so no background", async () =
   await check("a first visit: the background moves, paints, and turns the neutral cube", async () => {
     const { context, page } = await newPage();
     await homeShown(page);
+    await ready(page);
     assert.equal(await mode(page), "live");
     assert.equal(await shape(page), "neutral");
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.faces), "6", "the cube's six faces painted");
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.hides === "yes", null, "the cube's back lines hidden behind its faces", 12000);
     const a = await picture(page);
     await page.waitForTimeout(600);
     assert.ok((await picture(page)) !== a, "two pictures 600 ms apart differ");
@@ -145,7 +175,19 @@ await check("without ?all there is no home screen, so no background", async () =
     await check(`${width} px ${scheme}: the project's own shape turns behind the screen, and the screen still works over it`, async () => {
       const { context, page } = await newPage({ width, scheme });
       await withProject(page, width < 700);
-      await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
+      // From its first frame (marked ready) it is the project's shape, at one place and size, kept for the next 3 s.
+      assert.match(await shape(page), /^project \d+$/);
+      assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.faces), "6", "the box's six faces painted");
+      await page.waitForTimeout(3000);
+      const seen = await page.evaluate(() => window.__picture);
+      const first = seen.findIndex((e) => e.ready === "yes");
+      assert.ok(first >= 0, "marked ready");
+      assert.ok(seen.slice(0, first).every((e) => e.place === null), "nothing drawn before it was ready");
+      assert.ok(seen.slice(0, first).every((e) => e.opacity === "0"), "unseen before it was ready");
+      const after = seen.slice(first).filter((e) => e.place !== null);
+      assert.ok(after.length > 0, "drawn once ready");
+      assert.ok(after.every((e) => e.place === after[0].place), `one place and size: ${[...new Set(after.map((e) => e.place))].join(" then ")}`);
+      assert.ok(seen.slice(first).every((e) => /^project \d+$/.test(e.shape ?? "")), "the project's shape from the first frame");
       assert.equal(await mode(page), "live");
       // Nothing runs off the side.
       assert.equal(await page.evaluate(() => document.getElementById("home").scrollWidth <= window.innerWidth), true);
@@ -160,16 +202,19 @@ await check("without ?all there is no home screen, so no background", async () =
         const lum = ([r, g, b]) => [r, g, b].map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
         const text = lum(colour.match(/[\d.]+/g).map(Number));
         let worst = Infinity;
+        let where = -1;
         for (let i = 0; i < ground.data.length; i += 4) {
           const l = lum([ground.data[i], ground.data[i + 1], ground.data[i + 2]]);
           const [hi, lo] = text > l ? [text, l] : [l, text];
-          worst = Math.min(worst, (hi + 0.05) / (lo + 0.05));
+          const ratio = (hi + 0.05) / (lo + 0.05);
+          if (ratio < worst) (worst = ratio), (where = i);
         }
-        assert.ok(worst >= 4.5, `${id} contrast ${worst.toFixed(2)} : 1 at its worst pixel`);
+        const spot = `(${box.x + ((where / 4) % ground.width) / (ground.width / box.width)}, ${box.y + Math.floor(where / 4 / ground.width) / (ground.height / box.height)}) rgb ${[...ground.data.slice(where, where + 3)]}`;
+        assert.ok(worst >= 4.5, `${id} contrast ${worst.toFixed(2)} : 1 at its worst pixel, ${spot}`);
       }
       if (shots) {
         if (stl) {
-          await page.evaluate((lines) => window.fissionTest.homeStandIn(lines), stlEdges(readFileSync(stl)));
+          await page.evaluate(({ lines, surface }) => window.fissionTest.homeStandIn(lines, surface), stlSolid(readFileSync(stl)));
           await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the STL's shape", 3000);
         }
         // Part way through building (the next story's, if this one's has gone by), then the ripple and the extrude.
@@ -194,6 +239,7 @@ await check("without ?all there is no home screen, so no background", async () =
   await check("a hidden tab draws nothing, and moves again once shown", async () => {
     const { context, page } = await newPage();
     await homeShown(page);
+    await ready(page);
     await page.evaluate(() => {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       document.dispatchEvent(new Event("visibilitychange"));
@@ -210,20 +256,48 @@ await check("without ?all there is no home screen, so no background", async () =
     await context.close();
   });
 
-  for (const [what, opts] of [["reduced motion", { reduce: true }], ["a 2-core machine", { cores: 2 }]]) {
-    await check(`${what}: one still picture, with the project's shape`, async () => {
-      const { context, page } = await newPage(opts);
-      await withProject(page);
-      await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
-      assert.equal(await mode(page), "still");
-      const a = await picture(page);
-      await page.waitForTimeout(700);
-      assert.ok((await picture(page)) === a, "no motion");
-      assert.ok((await painted(page)) > 200, "the still picture is painted");
-      if (shots && opts.reduce) await page.screenshot({ path: `${shots}/home-still-1280.png` });
-      await context.close();
-    });
-  }
+  await check("reduced motion: one still picture, with the project's shape, saying why", async () => {
+    const { context, page } = await newPage({ reduce: true });
+    await withProject(page);
+    await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
+    assert.equal(await mode(page), "still");
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.still), "reduced-motion");
+    const a = await picture(page);
+    await page.waitForTimeout(700);
+    assert.ok((await picture(page)) === a, "no motion");
+    assert.ok((await painted(page)) > 200, "the still picture is painted");
+    if (shots) await page.screenshot({ path: `${shots}/home-still-1280.png` });
+    await context.close();
+  });
+
+  await check("a 2-core machine: the lightest moving picture, not a still one (Ben's laptop)", async () => {
+    const { context, page } = await newPage({ cores: 2 });
+    await withProject(page);
+    await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
+    assert.equal(await mode(page), "live");
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.quality), "2");
+    const a = await picture(page);
+    await page.waitForTimeout(600);
+    assert.ok((await picture(page)) !== a, "it moves");
+    // Drawn at 1 pixel a CSS pixel: the canvas is the window's width.
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.width), 1280);
+    await context.close();
+  });
+
+  await check("a computer slowed 4 times: still moving after the warm-up and a timed window", async () => {
+    const { context, page } = await newPage();
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    await withProject(page);
+    await page.waitForTimeout(6000); // the warm-up frames and a timed window or two at 30 a second
+    const state = await page.$eval("#home .home-backdrop", (c) => ({ mode: c.dataset.backdrop, quality: c.dataset.quality, cost: c.dataset.cost }));
+    console.log(`  (slowed 4×: ${JSON.stringify(state)})`);
+    assert.equal(state.mode, "live");
+    const a = await picture(page);
+    await page.waitForTimeout(600);
+    assert.ok((await picture(page)) !== a, "it moves");
+    await context.close();
+  });
 }
 
 await browser.close();
