@@ -154,7 +154,7 @@ test("the menu, the bar and the card: Edit feature on, the chamfer icon, the car
 test("an export waits for an open Chamfer, new or edited, in words naming it", () => {
   const none = { move: null, extrude: false, edit: null, combine: null, sketch: null };
   const name = (x: string) => (x === "feature-2" ? "Chamfer 1" : x);
-  assert.equal(openToolRefusal(openTool({ ...none, chamfer: { editing: null } }, name), "Export STL"), "Chamfer is still open: press OK or Cancel first, then Export STL. Export STL saves the design as it is recorded, not what an open tool shows.");
+  assert.equal(openToolRefusal(openTool({ ...none, chamfer: { editing: null } }, name), "Export STL"), "Chamfer is still open: press OK or Cancel first, then Export STL.");
   assert.equal(openTool({ ...none, chamfer: { editing: "feature-2" } }, name)?.name, "Edit Chamfer 1");
   assert.equal(openTool({ ...none, chamfer: null }, name), null);
 });
