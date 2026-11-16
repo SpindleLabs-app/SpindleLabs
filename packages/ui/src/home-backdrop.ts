@@ -259,6 +259,114 @@ export function clipUnder(poly: readonly (readonly number[])[], z: number): numb
 }
 
 /**
+ * Where a body's triangles cross the level `z`: the slice a printer lays down there, as segments x0 y0 x1 y1 (all at
+ * `z`). A corner exactly on the level counts as over it, so a face lying in the level gives nothing, and a side that
+ * only touches the level gives no segment. Pure.
+ */
+export function sectionAt(positions: ArrayLike<number>, indices: ArrayLike<number>, z: number): number[] {
+  const out: number[] = [];
+  const cut = (a: number, b: number) => {
+    const t = (z - positions[a * 3 + 2]) / (positions[b * 3 + 2] - positions[a * 3 + 2]);
+    return [positions[a * 3] + (positions[b * 3] - positions[a * 3]) * t, positions[a * 3 + 1] + (positions[b * 3 + 1] - positions[a * 3 + 1]) * t];
+  };
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const v = [indices[i], indices[i + 1], indices[i + 2]];
+    const under = v.map((k) => positions[k * 3 + 2] < z);
+    const n = under.filter(Boolean).length;
+    if (n === 0 || n === 3) continue;
+    // The lone corner (alone on its side of the level) and the two sides leaving it, each crossing the level once.
+    const lone = under.findIndex((u) => (n === 1 ? u : !u));
+    const a = v[lone];
+    const p = cut(a, v[(lone + 1) % 3]);
+    const q = cut(a, v[(lone + 2) % 3]);
+    if (Math.hypot(q[0] - p[0], q[1] - p[1]) > 1e-9) out.push(p[0], p[1], q[0], q[1]);
+  }
+  return out;
+}
+
+/**
+ * Segments (x0 y0 x1 y1 each, in any order and either way round) joined end to end into paths (x y x y …), ends meeting
+ * within `tol`; a closed loop ends where it started. Each segment is used once. Pure.
+ */
+export function chainLoops(segs: readonly number[], tol = 1e-6): number[][] {
+  const n = Math.floor(segs.length / 4);
+  const used = new Uint8Array(n);
+  const near = (x: number, y: number, k: number, end: 0 | 1) => Math.abs(segs[k * 4 + end * 2] - x) <= tol && Math.abs(segs[k * 4 + end * 2 + 1] - y) <= tol;
+  const paths: number[][] = [];
+  for (let s = 0; s < n; s++) {
+    if (used[s]) continue;
+    used[s] = 1;
+    const path = [segs[s * 4], segs[s * 4 + 1], segs[s * 4 + 2], segs[s * 4 + 3]];
+    for (;;) {
+      const x = path[path.length - 2];
+      const y = path[path.length - 1];
+      let next = -1;
+      let flip = false;
+      for (let k = 0; k < n && next < 0; k++) {
+        if (used[k]) continue;
+        if (near(x, y, k, 0)) next = k;
+        else if (near(x, y, k, 1)) (next = k), (flip = true);
+      }
+      if (next < 0) break;
+      used[next] = 1;
+      path.push(segs[next * 4 + (flip ? 0 : 2)], segs[next * 4 + (flip ? 1 : 3)]);
+    }
+    paths.push(path);
+  }
+  return paths;
+}
+
+/** How long a path (x y x y …) is. Pure. */
+export function pathLength(path: readonly number[]): number {
+  let total = 0;
+  for (let j = 2; j < path.length; j += 2) total += Math.hypot(path[j] - path[j - 2], path[j + 1] - path[j - 1]);
+  return total;
+}
+
+/** The point `d` along a path (x y x y …), going round again past its end; null for a path of no length. Pure. */
+export function alongPath(path: readonly number[], d: number): { x: number; y: number } | null {
+  const total = pathLength(path);
+  if (!(total > 0)) return null;
+  let left = ((d % total) + total) % total;
+  for (let j = 2; j < path.length; j += 2) {
+    const dx = path[j] - path[j - 2];
+    const dy = path[j + 1] - path[j - 1];
+    const len = Math.hypot(dx, dy);
+    if (left <= len && len > 0) return { x: path[j - 2] + (dx * left) / len, y: path[j - 1] + (dy * left) / len };
+    left -= len;
+  }
+  return { x: path[path.length - 2], y: path[path.length - 1] };
+}
+
+/** How fast the nozzle's point runs round the slice, shape radii a second, and how long its bright trail is. */
+export const NOZZLE_SPEED = 2.4;
+export const NOZZLE_TRAIL = 0.5;
+/** A slice with more segments than this is drawn without the nozzle (joining it into loops would cost too much a frame). */
+export const MAX_SLICE_SEGMENTS = 600;
+/** Under a simple part shown when there is no project. */
+export const SAMPLE_WORDS = "Sample part";
+/** A printer's usual layer height, mm: the build's caption counts layers of it. */
+export const LAYER_MM = 0.2;
+/** How many layer lines show on the walls while the design builds (a picture of layers, not every real one). */
+export const LAYER_LINES = 18;
+
+/**
+ * The words under the design for what it is doing now: the layer being printed while it builds ("Printing preview ·
+ * layer 62 of 100", counted in LAYER_MM layers of `heightMm`, or without numbers for a part of no size), the face being
+ * pulled while it is extruded ("Extrude top face · +4.8 mm"), and nothing at rest, in a ripple or while it sinks. Pure.
+ */
+export function storyWords(stage: string, built: number, heightMm: number | null, pushMm: number | null, unit: Unit): string {
+  if (stage === "building") {
+    if (heightMm === null || !(heightMm > 0)) return "Printing preview";
+    const layers = Math.max(1, Math.round(heightMm / LAYER_MM));
+    const layer = Math.max(1, Math.min(layers, Math.ceil(built * layers - 1e-9)));
+    return `Printing preview · layer ${layer} of ${layers}`;
+  }
+  if (stage === "extrude") return pushMm === null ? "Extrude top face" : `Extrude top face · ${pushWords(pushMm, unit)}`;
+  return "";
+}
+
+/**
  * The faces nearest the viewer, on the screen, for telling which parts of the lines they hide: each triangle (screen x, y
  * and depth at its corners) is filed in the cells of a grid its box touches, so a point asks only its own cell's. Depths
  * are read across a triangle the way a camera sees them: 1 / (camera + depth) changes evenly across the screen, depth
@@ -1345,8 +1453,12 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     links = linksOf(shape);
     top = topFace(shape);
     topFacts();
+    // The layers a printer would lay down, worked out once: LAYER_LINES levels spread up the body, each its slice.
+    layers3 = faces ? Array.from({ length: LAYER_LINES }, (_, k) => ({ z: floorZ + ((k + 0.5) / LAYER_LINES) * (ceilZ - floorZ), segs: sectionAt(faces!.positions, faces!.indices, floorZ + ((k + 0.5) / LAYER_LINES) * (ceilZ - floorZ)) })) : [];
     seedSparks();
   }
+  /** The body's slices at LAYER_LINES levels (fitted units), for the layer lines while it builds. */
+  let layers3: { z: number; segs: number[] }[] = [];
   function watching() {
     watch = 0;
     if (!running) return;
@@ -1640,7 +1752,8 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.strokeStyle = ink;
       ctx.fillStyle = ink;
     }
-    if (building && built > 1e-6) {
+    if (building && built > 1e-6 && !(faces && groups.tris.length > 0)) {
+      // A shape with lines only (no faces to slice): the plane shown as a glowing level ring with a soft disc.
       const edge = Math.min(1, built / 0.05, (1 - built) / 0.05); // fades in off the floor and out at the top
       const mid = at(0, 0, planeZ);
       const disc = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.25 * scale);
@@ -1676,6 +1789,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     // ripple crosses an edge.
     const buckets: number[][] = Array.from({ length: BUCKETS }, () => []);
     const moving: number[] = [];
+    const was: number[] = []; // where the extruded face started: drawn dashed, as a CAD preview keeps the profile
     const ghosts: number[] = []; // not built yet: drawn faint and dashed, like hidden lines on a drawing
     const beads: number[] = []; // x, y, cue, kind (0 the plane, 1 the ripple)
     const step = quality().halo ? 8 : 12; // how often a line is asked whether a face hides it, in pixels
@@ -1704,6 +1818,9 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       const b = at(shape[i + 3], shape[i + 4], bz);
       if (extruding && Math.abs(az - topZ) < 1e-3 && Math.abs(bz - topZ) < 1e-3) {
         seen(occ, a, b, toMoving);
+        const a0 = atRaw(shape[i], shape[i + 1], az);
+        const b0 = atRaw(shape[i + 3], shape[i + 4], bz);
+        was.push(a0.x, a0.y, b0.x, b0.y);
         continue;
       }
       const height = ((az + bz) / 2 - floorZ) / span;
@@ -1759,6 +1876,75 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       strokeList(ghosts, GHOST * ghostFade, 1);
       ctx.setLineDash?.([]);
     }
+    // Printing: the walls built so far carry faint layer lines, and the slice being laid down now glows, with the
+    // nozzle's point of light running round it and a short bright trail of fresh line behind it. The lines fade away
+    // once it is whole, so the print becomes the CAD body (and come back as it sinks).
+    const turnNow = storyPhase(seconds);
+    const layerShow = calm ? 0 : turnNow < BUILD_END ? 1 : turnNow < BUILD_END + 0.04 ? 1 - smooth((turnNow - BUILD_END) / 0.04) : turnNow >= UNBUILD_AT ? 1 : 0;
+    if (layerShow > 0 && faces && groups.tris.length > 0) {
+      const layerLines: number[] = [];
+      const keepLayer = (ax: number, ay: number, bx: number, by: number) => layerLines.push(ax, ay, bx, by);
+      for (const layer of layers3) {
+        if (layer.z > planeZ - 1e-6) break;
+        for (let j = 0; j < layer.segs.length; j += 4) seen(occ, at(layer.segs[j], layer.segs[j + 1], layer.z), at(layer.segs[j + 2], layer.segs[j + 3], layer.z), keepLayer);
+      }
+      ctx.strokeStyle = blues[3];
+      if (layerLines.length > 0) strokeList(layerLines, 0.13 * layerShow * fade, 1);
+      if (building && built > 1e-6) {
+        const edge = Math.min(1, built / 0.04, (1 - built) / 0.04); // in off the floor, out at the top
+        const slice = sectionAt(faces.positions, faces.indices, planeZ);
+        const now: number[] = [];
+        for (let j = 0; j < slice.length; j += 4) seen(occ, at(slice[j], slice[j + 1], planeZ), at(slice[j + 2], slice[j + 3], planeZ), (ax, ay, bx, by) => now.push(ax, ay, bx, by));
+        if (now.length > 0) strokeList(now, MAX_ALPHA * 0.9 * edge, 1.4);
+        const sliced = String(now.length / 4); // how many pieces of the slice are drawn (the browser check reads it)
+        if (canvas.dataset.slice !== sliced) canvas.dataset.slice = sliced;
+        const loops = slice.length / 4 <= MAX_SLICE_SEGMENTS ? chainLoops(slice, 1e-5) : [];
+        const lengths = loops.map(pathLength);
+        const total = lengths.reduce((a, b) => a + b, 0);
+        if (total > 0) {
+          // Which loop the nozzle is on now, and how far round it: it prints each loop of the slice in turn.
+          const where = (d: number) => {
+            let left = ((d % total) + total) % total;
+            for (let k = 0; k < loops.length; k++) {
+              if (left <= lengths[k]) return { loop: k, d: left };
+              left -= lengths[k];
+            }
+            return { loop: loops.length - 1, d: lengths[loops.length - 1] };
+          };
+          const travel = seconds * NOZZLE_SPEED;
+          const head = where(travel);
+          const trail: { x: number; y: number; depth: number }[] = [];
+          for (let k = 0; k <= 12; k++) {
+            const back = head.d - (k / 12) * NOZZLE_TRAIL;
+            if (back < 0) break; // the trail starts where this loop starts
+            const p = alongPath(loops[head.loop], back);
+            if (p) trail.push(at(p.x, p.y, planeZ));
+          }
+          ctx.lineWidth = 2;
+          for (let k = 1; k < trail.length; k++) {
+            ctx.globalAlpha = MAX_ALPHA * (1 - k / trail.length) * edge;
+            ctx.beginPath();
+            ctx.moveTo(trail[k - 1].x, trail[k - 1].y);
+            ctx.lineTo(trail[k].x, trail[k].y);
+            ctx.stroke();
+          }
+          const tip = trail[0];
+          if (tip && !occ?.hides(tip.x, tip.y, tip.depth)) {
+            ctx.fillStyle = blues[3];
+            ctx.globalAlpha = 0.95 * edge;
+            ctx.beginPath();
+            ctx.arc(tip.x, tip.y, 2.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.24 * edge;
+            ctx.beginPath();
+            ctx.arc(tip.x, tip.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+      ctx.strokeStyle = ink;
+      ctx.fillStyle = ink;
+    }
     // Points of light where the build plane (the lightest blue) or the ripple (the cyan blue) crosses an edge.
     for (let j = 0; j < beads.length; j += 4) {
       const [x, y, cue, kind] = [beads[j], beads[j + 1], beads[j + 2], beads[j + 3]];
@@ -1780,6 +1966,9 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       const k = pushK;
       ctx.strokeStyle = blues[3];
       strokeList(moving, 0.35 + 0.35 * k, 1.4);
+      ctx.setLineDash?.([4, 4]);
+      strokeList(was, 0.3 * k, 1);
+      ctx.setLineDash?.([]);
       const foot = atRaw(topMid[0], topMid[1], topZ + push);
       const tip = atRaw(topMid[0], topMid[1], topZ + push + 0.22); // the handle rides with the face, pointing out
       const tipY = tip.y;
@@ -1794,15 +1983,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.moveTo(tip.x - ux * 6 - uy * 3.5, tipY - uy * 6 + ux * 3.5);
       ctx.lineTo(tip.x, tipY);
       ctx.lineTo(tip.x - ux * 6 + uy * 3.5, tipY - uy * 6 - ux * 3.5);
-      ctx.stroke();
-      if (size3) {
-        ctx.fillStyle = blues[3];
-        ctx.globalAlpha = 0.6 * k;
-        ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "middle";
-        ctx.fillText(pushWords(push * (Math.max(...size3) / 2), currentUnit(doc)), tip.x + 8, tipY);
-      }
+      ctx.stroke(); // its distance is in the words under the design, where the list never covers it
       ctx.strokeStyle = ink;
       ctx.fillStyle = ink;
     }
@@ -1853,6 +2034,27 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillText(sizeWords(size3, currentUnit(doc)), cx, ringFoot + 12);
+    } else if (!project3) {
+      // No project: say this is a sample, so nobody takes it for their own design.
+      ctx.globalAlpha = 0.42 * fade;
+      ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(SAMPLE_WORDS, cx, ringFoot + 12);
+    }
+    // What it is doing now, in words under its size (Ben, 2026-11-16: obvious what you are looking at).
+    const unit = currentUnit(doc);
+    const doing = storyWords(stage, built, size3 ? size3[2] : null, size3 ? push * (Math.max(...size3) / 2) : null, unit);
+    const doingY = ringFoot + (size3 || !project3 ? 28 : 12);
+    if (canvas.dataset.words !== doing) canvas.dataset.words = doing; // what the browser check reads
+    if (doing && !STILL_WORDS[stillWhy()]) {
+      ctx.fillStyle = blues[3];
+      ctx.globalAlpha = 0.8 * (stage === "extrude" ? pushK : Math.min(1, built / 0.03, (1 - built) / 0.03)) * fade;
+      ctx.font = "500 12px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(doing, cx, doingY);
+      ctx.fillStyle = ink;
     }
     // A still picture says why in small words under it, so it is never mistaken for a broken one.
     const why = stillWhy();
@@ -1861,7 +2063,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillText(STILL_WORDS[why], cx, Math.min(h - 18, ringFoot + (size3 ? 30 : 12)));
+      ctx.fillText(STILL_WORDS[why], cx, Math.min(h - 18, ringFoot + (size3 || !project3 ? 30 : 12)));
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";

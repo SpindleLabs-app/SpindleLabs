@@ -189,9 +189,15 @@ await check("without ?all there is no home screen, so no background", async () =
     const stage = () => document.querySelector("#home .home-backdrop").dataset.stage;
     await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.5", null, "half built", 12000);
     assert.equal(await page.evaluate(stage), "building");
+    // Printed: the slice laid down now is drawn (the cube's four walls cut, so 4 or more pieces), and the words under it
+    // say so, with no layer numbers for a sample part, which is named as one (round 10).
+    const words = () => document.querySelector("#home .home-backdrop").dataset.words;
+    assert.equal(await page.evaluate(words), "Printing preview");
+    assert.ok(Number(await page.$eval("#home .home-backdrop", (c) => c.dataset.slice)) >= 4, "the slice drawn");
     await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple", 14000);
     await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.24", null, "the top face pulled out", 14000);
     assert.equal(await page.evaluate(stage), "extrude");
+    assert.equal(await page.evaluate(words), "Extrude top face");
     await until(page, () => document.querySelector("#home .home-backdrop").dataset.extrude === "0.00", null, "the top face back", 10000);
     if (shots) {
       await page.screenshot({ path: `${shots}/home-empty-1280.png` });
@@ -220,6 +226,8 @@ await check("without ?all there is no home screen, so no background", async () =
       assert.ok(after.every((e) => e.place === after[0].place), `one place and size: ${[...new Set(after.map((e) => e.place))].join(" then ")}`);
       assert.ok(seen.slice(first).every((e) => /^project \d+$/.test(e.shape ?? "")), "the project's shape from the first frame");
       assert.equal(await mode(page), "live");
+      // The words under the design while it prints: the box is 20 mm tall, so 100 layers of 0.2 mm (round 10).
+      if (!stl) await until(page, () => /^Printing preview · layer \d+ of 100$/.test(document.querySelector("#home .home-backdrop").dataset.words ?? ""), null, "the layer words", 45000);
       // Nothing runs off the side.
       assert.equal(await page.evaluate(() => document.getElementById("home").scrollWidth <= window.innerWidth), true);
       // The words straight on the picture (the title, the guide link) against the brightest pixel behind them, read from a
