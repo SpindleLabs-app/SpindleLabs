@@ -638,7 +638,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!(await exportReady(`Export ${format.name}`))) return;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
-    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
+    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true, true);
     void runAction(format.action, bodies, hiddenStlNote(doc!, failedNow).replace(/\bSTL\b/g, format.name));
   });
   // A Cut or Join whose tools change nothing asks before OK records it (Ben, 11 Nov).
@@ -905,6 +905,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showSelection(highlightOf(items, lastScene));
     lightRows(ctx.browser, doc, failedNow, items);
     fold?.update({ selected: items.length > 0 });
+    panel.clearPassingNote();
     panel.showSelection(selectionRows(items, lastScene, doc));
     // The Feature and Body sections describe the selected feature (else the part), with the browser's number for its body.
     const focus = panelFocus(items, lastScene, doc);
@@ -945,7 +946,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const open = toolOpen();
     const words = openToolRefusal(open, verb);
     if (open === null || words === null) return false;
-    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, chamfer: chamferBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true) }[open.tool];
+    const say = { move: moveBox.showError, extrude: extrudeBox.showError, edit: editBox.showError, combine: combineBox.showError, chamfer: chamferBox.showError, sketch: sketchBox.showError, pick: (w: string) => panel.showActionNote(w, true, true) }[open.tool];
     say(words);
     if (open.tool !== "sketch") ctx.properties.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a sketch's words show by the pointer
     return true;
@@ -970,7 +971,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   async function exportReady(verb: string): Promise<boolean> {
     if (exportWaits(verb)) return false;
     if (await builtNow()) return !exportWaits(verb); // a tool opened while it waited
-    if (shown) panel.showActionNote(stillRebuilding(verb), true);
+    if (shown) panel.showActionNote(stillRebuilding(verb), true, true);
     return false;
   }
 
@@ -988,7 +989,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       solidCard.show(outcome.solid, (outcome as DesignOutcome).notes);
       solidFor = ctx.project.workspaces.design as DesignDocument | undefined;
     }
-    if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad);
+    if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad, !outcome.bad);
   }
 
   // The body is built from the part's feature intent (document.ts); an extrude of a sketch asks the kernel for the outline (extrude.ts).
@@ -1213,7 +1214,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!(await exportReady("Export STL"))) return;
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
     const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
-    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
+    if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true, true);
     // Hidden bodies are left out, as in Fusion; the note says which (beginner play-test 2026-10-28).
     return runAction(DOWNLOAD_STL, bodies, hiddenStlNote(doc!, failedNow));
   }
@@ -3046,6 +3047,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /** A tool's panel opened or closed: the shell's Undo and Redo say what they would do now (`openTool`), once this change is done. */
   function toolsChanged() {
+    panel.clearPassingNote(); // a refusal naming a tool that has closed (or another opened) no longer applies
     queueMicrotask(() => {
       if (!putAway) ctx.toolChanged?.();
     });
@@ -4370,10 +4372,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function openEdit(id: string) {
     if (okChecks.size > 0) return afterOk(() => openEdit(id));
     const item = designDoc().timeline.features.find((f) => f.id === id)!;
-    if (isCombineItem(item) && !combineShown()) return panel.showActionNote(COMBINE_OFF, true);
+    if (isCombineItem(item) && !combineShown()) return panel.showActionNote(COMBINE_OFF, true, true);
     if (isMoveItem(item)) return startMove(id);
     if (isCombineItem(item)) return startCombine(id);
-    if (isChamferItem(item)) return chamferShown() ? startChamfer(id) : panel.showActionNote(CHAMFER_OFF, true);
+    if (isChamferItem(item)) return chamferShown() ? startChamfer(id) : panel.showActionNote(CHAMFER_OFF, true, true);
     // Asked before any open tool is left (hunt 11-11, E2: a Copy, which has nothing to edit, shut an open Move and lost
     // what was typed in it before the refusal): an item with nothing to edit says why, in the menu's words, and nothing changes.
     const off = editOff(item);

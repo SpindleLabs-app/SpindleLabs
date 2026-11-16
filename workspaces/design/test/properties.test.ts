@@ -134,6 +134,35 @@ test("the action note shows a warning in red and clears", () => {
   assert.equal($("action-note").className, "");
 });
 
+test("a passing note (a refusal) goes away after 20 s or when the tool it names closes; a sticky warning stays", () => {
+  const { p, $ } = panel();
+  const real = globalThis.setTimeout;
+  const timers: { f: () => void; ms: number }[] = [];
+  (globalThis as { setTimeout: unknown }).setTimeout = ((f: () => void, ms: number) => (timers.push({ f, ms }), timers.length)) as unknown;
+  try {
+    p.showActionNote("Sketch is still open", true, true);
+    assert.equal($("action-note").textContent, "Sketch is still open");
+    assert.equal(timers.at(-1)!.ms, 20_000);
+    p.clearPassingNote(); // the sketch was cancelled
+    assert.equal($("action-note").textContent, "");
+    assert.equal($("action-note").className, "");
+    p.showActionNote("Sketch is still open", true, true);
+    timers.at(-1)!.f(); // 20 s later
+    assert.equal($("action-note").textContent, "");
+    p.showActionNote("Too big for an accurate STL", true); // a warning the person must read
+    p.clearPassingNote();
+    assert.equal($("action-note").textContent, "Too big for an accurate STL", "a sticky note is not a passing one");
+    // An old timer must not wipe a newer note.
+    p.showActionNote("first", true, true);
+    const old = timers.at(-1)!;
+    p.showActionNote("second", false);
+    old.f();
+    assert.equal($("action-note").textContent, "second");
+  } finally {
+    (globalThis as { setTimeout: unknown }).setTimeout = real;
+  }
+});
+
 test("the selection's verbs are buttons that run their action; none hides the row", () => {
   const { p, $ } = panel();
   assert.equal($("selection-actions").hidden, true);

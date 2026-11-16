@@ -54,7 +54,7 @@ export function openTool(open: ToolsOpen, name: (id: string) => string): OpenToo
 /** What `verb` (Export STL, Slice for printing) says while `tool` is open, or null to go ahead. */
 export function openToolRefusal(tool: OpenTool | null, verb: string): string | null {
   if (tool === null) return null;
-  return `${tool.name} is still open: ${tool.finish} first, then ${verb}. ${verb} saves the design as it is recorded, not what an open tool shows.`;
+  return `${tool.name} is still open: ${tool.finish} first, then ${verb}.`;
 }
 
 /** What `verb` says when the design is not built as it is now (a rebuild failed to end, or the design was replaced meanwhile): nothing is saved (SL #675 item 1). */
