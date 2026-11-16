@@ -5,7 +5,7 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { NO_HIGHLIGHT, worstSeverity, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, CORNER_PICK_PX, edgeOfSegment, faceOfTriangle, HOLD_MS, isClick, ndcToClient, nearestWithin, planeOrFace, pointsNear, segmentsNear, SKETCH_GRAB_PX, unhidden } from "./picking.ts";
-import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
+import { fitDistance, keepAngleBasis, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { firstHit } from "./ray-pick.ts";
@@ -158,7 +158,7 @@ export class ViewportView {
         this.panTouchOnly = false; // a mode picked on the bar is the mouse's too
         this.setMode(mode === this.mode && this.home === "select" ? "select" : mode);
       },
-      fit: () => this.fitSelection() ?? this.fit(),
+      fit: () => this.fitSelection() ?? this.fitKeepAngle(),
       lookAt: () => {
         const plane = this.host.sketchPlane();
         if (plane) this.lookAt(plane, this.host.sketchSide());
@@ -1040,6 +1040,22 @@ export class ViewportView {
   /** Frames the current body from the home view (or the image from above while this view shows one); returns what it framed (null if none). */
   fit(): Framing | null {
     return this.setView("home");
+  }
+
+  /**
+   * Fit with nothing selected: frames the whole body (and sketches) from the direction this view already looks from,
+   * so only the pan and zoom change; Home (fit) is the one that turns the camera. While this view shows an image it
+   * frames the image like every view. Returns what it framed (null if none).
+   */
+  fitKeepAngle(): Framing | null {
+    if (this.image) return this.frameImage();
+    const framing = this.host.fitFraming();
+    if (!(framing.radius > 0)) return null;
+    const towardCamera = this.camera.position.clone().sub(this.controls.target);
+    const { position, target } = keepAngleBasis(towardCamera.toArray(), framing, this.camera.fov, this.camera.aspect);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    this.place(position, target, up.toArray());
+    return framing;
   }
 
   /** Turns this view's camera to a standard view, framing the current body; while this view shows an image every view frames it from above. Returns what it framed (null if none). */

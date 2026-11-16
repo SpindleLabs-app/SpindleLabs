@@ -332,11 +332,22 @@ await check("Fit and Home after zooming in; Look at turns on in a sketch and loo
     await settle(page);
     await page.click("[data-view=fit]");
     await settle(page);
-    closeTo((await camera(page)).position, home.position, 1e-6, "Fit with nothing selected frames the body from home");
-    await page.mouse.wheel(0, 300);
+    closeTo((await camera(page)).position, home.position, 1e-6, "Fit with nothing selected frames the body from the angle it already had (here home's)");
+    // Orbit away from home: Fit must keep the new angle (only zoom and pan change); Home must turn back to home's.
+    await drag(page, [box.x + box.width / 2, box.y + 300], [60, -30], "middle", ["Shift"]);
+    await settle(page);
+    const turned = await camera(page);
+    const dirOf = (c) => { const o = sub(c.position, c.target); const n = Math.hypot(...o); return o.map((v) => v / n); };
+    assert.ok(Math.hypot(...sub(dirOf(turned), dirOf(home))) > 0.1, "the orbit turned the view");
+    await page.mouse.move(box.x + 100, box.y + 100);
+    await page.mouse.wheel(0, -600);
+    await settle(page);
+    await page.click("[data-view=fit]");
+    await settle(page);
+    closeTo(dirOf(await camera(page)), dirOf(turned), 1e-6, "Fit keeps the viewing angle after an orbit");
     await page.click("[data-view=home]");
     await settle(page);
-    closeTo((await camera(page)).position, home.position, 1e-6, "Home");
+    closeTo((await camera(page)).position, home.position, 1e-6, "Home turns back to the home view");
 
     await page.click("#create-sketch");
     await pickPlane(page, "XY", false);
