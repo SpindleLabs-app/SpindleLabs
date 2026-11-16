@@ -1,0 +1,18 @@
+/* Slice for printing: the printer's settings folded into one section (slice-print.ts). Closed it is one line of words
+   (the file, plate, nozzle, quality, walls and infill); open it holds the lists and the printer fits. Supports, the
+   warm-up loop and Better grip sit under it, always in view, as they are per print. */
+.slice-print .slice-print-settings { margin: 0 0 12px; border: 1px solid var(--line); border-radius: var(--look-radius-s); background: var(--look-field); }
+.slice-print .slice-print-settings-summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; padding: 8px 12px; min-height: var(--look-target); box-sizing: border-box; cursor: pointer; list-style: none; font-size: 0.9em; }
+.slice-print .slice-print-settings-summary::-webkit-details-marker { display: none; }
+.slice-print .slice-print-settings-summary::before { content: "▸"; color: var(--text-8b95a3); flex: none; width: 1em; }
+.slice-print .slice-print-settings[open] > .slice-print-settings-summary::before { content: "▾"; }
+.slice-print .slice-print-settings-summary:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--shade-74-168-255-035); border-radius: var(--look-radius-s); }
+.slice-print .slice-print-settings-name { font-weight: 600; color: var(--text); }
+.slice-print .slice-print-settings-words { flex: 1 1 14em; min-width: 0; color: var(--text-soft); }
+.slice-print .slice-print-settings[open] .slice-print-settings-words { display: none; }
+.slice-print .slice-print-settings > .slice-print-choices { margin: 0; padding: 4px 12px 10px; }
+.slice-print .slice-print-settings > .slice-print-fits { margin: 0; padding: 0 12px 10px; }
+.slice-print .slice-print-per-print { margin: 0 0 12px; }
+@media (max-width: 640px) {
+  .slice-print .slice-print-settings-summary { min-height: 44px; }
+}

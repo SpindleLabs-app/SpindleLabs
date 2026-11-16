@@ -37,10 +37,11 @@ async function check(name, fn) {
   }
 }
 
-async function fresh(width, tap, height = tap ? 667 : 800) {
+async function fresh(width, tap, height = tap ? 667 : 800, settingsOpen = true) {
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: tap, isMobile: tap, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  await page.addInitScript((o) => localStorage.setItem("spindlelabs.slice.settings-open", o ? "open" : "closed"), settingsOpen); // they start closed; most checks use them
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -287,7 +288,7 @@ for (const [width, height, tap] of [[1280, 800, false], [1280, 470, false], [375
 // every choice can be scrolled to inside the dialog.
 for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [1280, 470, false], [375, 667, true], [393, 852, true]]) {
   await check(`${width} × ${height}${tap ? ", taps" : ""}: every choice of Slice for printing can be reached, the buttons always on screen`, async () => {
-    const page = await fresh(width, tap, height);
+    const page = await fresh(width, tap, height, tap);
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
@@ -302,12 +303,24 @@ for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [128
           });
         }, ids);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-fit-${width}x${height}.png` });
-      // No list squashed to fit (the old dialog shrank Supports' list until its words were cut): all six the same height.
-      const heights = await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => Math.round(s.getBoundingClientRect().height)));
-      assert.ok(heights.every((h) => Math.abs(h - heights[0]) <= 1), `list heights ${heights}`);
       if (!tap) {
-        assert.deepEqual(await hidden(), [], "all on screen without scrolling");
+        // With the printer settings folded (the default) everything else is on screen without scrolling: the presets,
+        // Supports, the two ticks and the buttons. Opened, the dialog may scroll, and each control can be reached.
+        const folded = ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill"];
+        assert.deepEqual((await hidden()).filter((id) => !folded.includes(id)), [], "all on screen without scrolling");
+        await page.click(".slice-print-settings-summary");
+        // No list squashed to fit (the old dialog shrank Supports' list until its words were cut): all six the same height.
+        const heights = await page.$$eval("#slice-print-dialog select:not(#slice-presets-list)", (ss) => ss.map((s) => Math.round(s.getBoundingClientRect().height)));
+        assert.ok(heights.every((h) => Math.abs(h - heights[0]) <= 1), `list heights ${heights}`);
+        for (const id of ids.slice(0, -3)) {
+          await page.$eval(`#${id}`, (e) => e.scrollIntoView({ block: "nearest" }));
+          const out = await hidden();
+          assert.ok(!out.includes(id), `${id} reachable: ${out}`);
+          assert.ok(!["slice-print-close", "slice-print-preview", "slice-print-go"].some((b) => out.includes(b)), `buttons in view: ${out}`);
+        }
       } else {
+        const heights = await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => Math.round(s.getBoundingClientRect().height)));
+        assert.ok(heights.every((h) => Math.abs(h - heights[0]) <= 1), `list heights ${heights}`);
         // The buttons are always in view; each choice comes into view when the dialog scrolls to it.
         for (const id of ids.slice(0, -3)) {
           await page.$eval(`#${id}`, (e) => e.scrollIntoView({ block: "nearest" }));

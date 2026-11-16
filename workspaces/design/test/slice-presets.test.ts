@@ -5,11 +5,11 @@
 // opening on the preset picked last. The Chromium check is apps/fission/e2e/slice-presets.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { byName, GRIP_KEY, NAME_MAX, nameProblem, NOZZLE_KEY, PRINT_DEFAULTS, FILE_DEFAULTS, presetSettingsOf, PRESET_PICKED_KEY, PRESETS_KEY, PRESETS_MAX, readPresets, sameSettings, WARM_UP_KEY, writePresets, type FileChoices, type PresetSettings, type PrintChoices, type PrintPreset } from "@fission/print";
+import { byName, SETTINGS_OPEN_KEY, GRIP_KEY, NAME_MAX, nameProblem, NOZZLE_KEY, PRINT_DEFAULTS, FILE_DEFAULTS, presetSettingsOf, PRESET_PICKED_KEY, PRESETS_KEY, PRESETS_MAX, readPresets, sameSettings, WARM_UP_KEY, writePresets, type FileChoices, type PresetSettings, type PrintChoices, type PrintPreset } from "@fission/print";
 import { slicePrint } from "../src/slice-print.ts";
 
-const DEFAULTS: PresetSettings = { ...PRINT_DEFAULTS, ...FILE_DEFAULTS };
-const WORK: PresetSettings = { layerHeight: 0.16, walls: 3, infill: 40, supports: "tree", warmUp: false, betterGrip: true, format: "p1s", plate: "smooth", nozzle: "high-flow" };
+const DEFAULTS: PresetSettings = { layerHeight: PRINT_DEFAULTS.layerHeight, walls: PRINT_DEFAULTS.walls, infill: PRINT_DEFAULTS.infill, ...FILE_DEFAULTS };
+const WORK: PresetSettings = { layerHeight: 0.16, walls: 3, infill: 40, format: "p1s", plate: "smooth", nozzle: "high-flow" };
 
 /** A Storage-like map, optionally refusing writes. */
 function memory(initial: Record<string, string> = {}, full = false) {
@@ -79,13 +79,13 @@ test("stored settings are checked choice by choice: each one broken in turn is r
     ["walls", 7],
     ["walls", 0],
     ["infill", 30],
-    ["supports", "on"],
-    ["warmUp", "true"],
-    ["betterGrip", 1],
     ["format", "stl"],
     ["plate", "glass"],
     ["nozzle", "hardened"],
   ];
+  // Presets saved before 2026-11-16 hold supports, the warm-up loop and Better grip: read, and the three dropped (they are per print).
+  assert.deepEqual(presetSettingsOf({ ...WORK, supports: "tree", warmUp: false, betterGrip: true }), WORK);
+  assert.deepEqual(presetSettingsOf({ ...WORK, supports: "bogus", warmUp: "x", betterGrip: 1 }), WORK, "nothing about them can refuse a preset");
   for (const [k, v] of breaks) assert.equal(presetSettingsOf({ ...DEFAULTS, [k]: v }), null, `${k} = ${JSON.stringify(v)}`);
   for (const k of Object.keys(DEFAULTS)) {
     const missing: Record<string, unknown> = { ...DEFAULTS };
@@ -151,6 +151,9 @@ function dialog(window: InstanceType<typeof Window>) {
     layerHeight: $<HTMLSelectElement>("slice-print-quality").value,
     walls: $<HTMLSelectElement>("slice-print-walls").value,
     infill: $<HTMLSelectElement>("slice-print-infill").value,
+  });
+  /** The per-print choices: not part of any preset. */
+  const perPrint = () => ({
     supports: $<HTMLSelectElement>("slice-print-supports").value,
     warmUp: $<HTMLInputElement>("slice-print-warm-up").checked,
     betterGrip: $<HTMLInputElement>("slice-print-grip").checked,
@@ -158,11 +161,11 @@ function dialog(window: InstanceType<typeof Window>) {
   const list = () => [...$<HTMLSelectElement>("slice-presets-list").options].map((o) => o.textContent);
   const visible = () => ["pick", "editing", "naming", "asking"].filter((m) => !(doc.querySelector(`.slice-presets-${m}`) as HTMLElement).hidden);
   const status = () => $("slice-print-status").textContent;
-  return { d, $, set, tick, key, shown, list, visible, status, asked, settle: () => new Promise((r) => setTimeout(r, 0)) };
+  return { d, $, set, tick, key, shown, perPrint, list, visible, status, asked, settle: () => new Promise((r) => setTimeout(r, 0)) };
 }
 
 /** Settings as the dialog shows them (its selects hold text). */
-const asShown = (s: PresetSettings) => ({ format: s.format, plate: s.plate, nozzle: s.nozzle, layerHeight: String(s.layerHeight), walls: String(s.walls), infill: String(s.infill), supports: s.supports, warmUp: s.warmUp, betterGrip: s.betterGrip });
+const asShown = (s: PresetSettings) => ({ format: s.format, plate: s.plate, nozzle: s.nozzle, layerHeight: String(s.layerHeight), walls: String(s.walls), infill: String(s.infill) });
 
 test("the dialog: save the settings as a preset, pick it, see it marked changed, update, rename and delete it; a reload opens on it", async () => {
   const window = new Window();
@@ -210,17 +213,20 @@ test("the dialog: save the settings as a preset, pick it, see it marked changed,
   assert.deepEqual(t.list(), ["No preset", "home P1S", "work P2S"]);
   const work = stored().presets.find((p) => p.name === "work P2S")!;
   assert.deepEqual(work.settings, WORK);
-  // Picking home puts every one of its settings back, and the remembered nozzle, warm-up and grip follow.
+  // Picking home puts every one of its settings back, and the remembered nozzle follows. Supports, warm-up loop and
+  // Better grip are per print: they stay as they were set (tree, off, on) and are no part of the preset.
   t.set("slice-presets-list", home.id);
   assert.deepEqual(t.shown(), asShown(DEFAULTS));
+  assert.deepEqual(t.perPrint(), { supports: "tree", warmUp: false, betterGrip: true });
   assert.equal(storage.getItem(NOZZLE_KEY), "standard");
-  assert.equal(storage.getItem(WARM_UP_KEY), "on");
-  assert.equal(storage.getItem(GRIP_KEY), "off");
+  assert.equal(storage.getItem(WARM_UP_KEY), "off");
+  assert.equal(storage.getItem(GRIP_KEY), "on");
+  assert.deepEqual(Object.keys(stored().presets[0].settings).sort(), ["format", "infill", "layerHeight", "nozzle", "plate", "walls"], "a preset holds the printer's settings only");
   assert.equal(storage.getItem(PRESET_PICKED_KEY), home.id);
   // And a slice uses them.
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked.at(-1), { c: PRINT_DEFAULTS, f: FILE_DEFAULTS });
+  assert.deepEqual(t.asked.at(-1), { c: { ...PRINT_DEFAULTS, supports: "tree", warmUp: false, betterGrip: true }, f: FILE_DEFAULTS });
   // Picking work puts its settings in, the plate and nozzle with it.
   t.set("slice-presets-list", work.id);
   assert.deepEqual(t.shown(), asShown(WORK));
@@ -446,4 +452,78 @@ test("a store a newer app wrote while this dialog is open is never overwritten, 
     assert.equal(storage.getItem(PRESETS_KEY), newer);
   }
   await window.happyDOM.close();
+});
+
+test("per-print choices (Ben, 2026-11-16): Supports, Warm-up loop and Better grip never mark a preset changed and are never saved in one", () => {
+  const window = new Window();
+  window.localStorage.clear();
+  const storage = window.localStorage as unknown as Storage;
+  const t = dialog(window);
+  t.d.ask();
+  t.$("slice-presets-save-as").click();
+  t.$<HTMLInputElement>("slice-presets-name").value = "home P1S";
+  t.$("slice-presets-name-ok").click();
+  assert.deepEqual(t.list(), ["No preset", "home P1S"]);
+  const before = storage.getItem(PRESETS_KEY);
+  // Each of the three changed: still no "(changed)", Update stays off, the store is untouched.
+  t.set("slice-print-supports", "tree");
+  t.tick("slice-print-warm-up", false);
+  t.tick("slice-print-grip", true);
+  assert.deepEqual(t.list(), ["No preset", "home P1S"]);
+  t.$("slice-presets-edit").click();
+  assert.equal(t.$<HTMLButtonElement>("slice-presets-update").disabled, true);
+  assert.equal(storage.getItem(PRESETS_KEY), before);
+  // A printer setting still marks it (the check can fail): quality changed.
+  t.$("slice-presets-back").click();
+  t.set("slice-print-quality", "0.28");
+  assert.deepEqual(t.list(), ["No preset", "home P1S (changed)"]);
+});
+
+test("presets saved before the change (holding supports, warm-up loop and Better grip) still show; the three are ignored, the rest kept", () => {
+  const old = { id: "o1", name: "old P1S", printer: "bambu-p1s", settings: { ...WORK, supports: "tree", warmUp: false, betterGrip: true }, updatedAt: 7 };
+  const window = new Window();
+  window.localStorage.clear();
+  window.localStorage.setItem(PRESETS_KEY, JSON.stringify({ version: 1, presets: [old] }));
+  window.localStorage.setItem(PRESET_PICKED_KEY, "o1");
+  const t = dialog(window);
+  t.d.ask();
+  // It shows, picked, matching (not "changed") although the dialog's supports differ from the old preset's; the printer's settings went in.
+  assert.deepEqual(t.list(), ["No preset", "old P1S"]);
+  assert.deepEqual(t.shown(), asShown(WORK));
+  assert.deepEqual(t.perPrint(), { supports: "off", warmUp: true, betterGrip: false }, "the old preset's three are not put in");
+  // Renamed: written back without the three, everything else as it was.
+  t.$("slice-presets-edit").click();
+  t.$("slice-presets-rename").click();
+  t.$<HTMLInputElement>("slice-presets-name").value = "kept";
+  t.$("slice-presets-name-ok").click();
+  const now = JSON.parse(window.localStorage.getItem(PRESETS_KEY)!);
+  assert.equal(now.version, 1);
+  assert.deepEqual(now.presets.map((p: PrintPreset) => ({ ...p, updatedAt: 0 })), [{ id: "o1", name: "kept", printer: "bambu-p1s", settings: WORK, updatedAt: 0 }]);
+});
+
+test("the printer settings fold into one section: closed by default with a line of words, the choice remembered across a reload", () => {
+  const window = new Window();
+  window.localStorage.clear();
+  let t = dialog(window);
+  t.d.ask();
+  const section = () => window.document.querySelector(".slice-print-settings") as unknown as HTMLDetailsElement;
+  assert.equal(section().open, false);
+  // By hand: file "Bambu Lab P1S (.gcode.3mf)" loses its bracket, plate and nozzle labels as listed, quality's bracket gives "0.2 mm layers".
+  const words = () => window.document.querySelector(".slice-print-settings-words")!.textContent;
+  assert.equal(words(), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill");
+  t.set("slice-print-walls", "1");
+  t.set("slice-print-infill", "100");
+  assert.equal(words(), "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 1 wall · 100 % infill");
+  t.set("slice-print-format", "gcode");
+  assert.equal(words(), "Plain G-code · 0.2 mm layers · 1 wall · 100 % infill");
+  // Supports, warm-up loop and Better grip are outside the section; every printer setting is inside.
+  for (const id of ["slice-print-supports", "slice-print-warm-up", "slice-print-grip"]) assert.equal(section().contains(t.$(id)), false, id);
+  for (const id of ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-fits-open"]) assert.equal(section().contains(t.$(id)), true, id);
+  // Opened: remembered, and the next dialog on the same storage opens open.
+  section().open = true;
+  section().dispatchEvent(new window.Event("toggle") as unknown as Event);
+  assert.equal(window.localStorage.getItem(SETTINGS_OPEN_KEY), "open");
+  t = dialog(window);
+  t.d.ask();
+  assert.equal(section().open, true);
 });
