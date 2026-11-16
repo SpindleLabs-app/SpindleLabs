@@ -4,7 +4,8 @@
 // it and a face pulled out and back, then sinks away to be built again (with no project, a different simple part each
 // time). Drawn on one 2D canvas, behind the screen's words (aria-hidden, no pointer), kept light on purpose: at most 30
 // frames a second, at most about 1,500 segments, the pixel ratio capped at 1.5, nothing at all while the tab is hidden
-// or the screen is closed. Under prefers-reduced-motion, on a weak machine (`lowEnd`) or once a frame proves slow it
+// or the screen is closed. A computer that draws too slowly steps down to lighter versions (`QUALITY`; a weak one,
+// `lowEnd`, starts on the lightest). Under prefers-reduced-motion, or once even the lightest proves too slow, it
 // draws one still picture instead. The pure parts are tested by hand in test/home-backdrop.test.ts. Styles: the end of
 // src/styles/home-screen.css.
 import { formatLength, fromMm, type Unit } from "@fission/core";
@@ -52,6 +53,469 @@ export const NEUTRAL_SHAPES: readonly (readonly number[])[] = [
   [...prismEdges([[0, 0], [2.4, 0], [2.4, 1.8], [0, 1.8]], 0, 0.6), ...prismEdges([[0, 0], [1.2, 0], [1.2, 1.8], [0, 1.8]], 0.6, 1.3)],
 ];
 
+/** A body's surface: corner points (x y z) and triangles (three corner numbers each, counter-clockwise seen from outside). */
+export interface Surface {
+  positions: ArrayLike<number>;
+  indices: ArrayLike<number>;
+}
+
+/** Twice the signed area of a polygon (corners x, y in order): positive when they run counter-clockwise. Pure. */
+const area2 = (poly: readonly (readonly [number, number])[]) => poly.reduce((a, [x, y], i) => a + x * poly[(i + 1) % poly.length][1] - poly[(i + 1) % poly.length][0] * y, 0);
+
+/**
+ * Triangles filling a simple polygon (its corners in order, either way round), as corner numbers, each counter-clockwise:
+ * ear clipping (a corner whose triangle turns left and holds no other corner is cut off, until three are left). Pure.
+ */
+export function triangulate(poly: readonly (readonly [number, number])[]): [number, number, number][] {
+  const order = poly.map((_, i) => i);
+  if (area2(poly) < 0) order.reverse();
+  const out: [number, number, number][] = [];
+  const cross = (a: number, b: number, c: number) => (poly[b][0] - poly[a][0]) * (poly[c][1] - poly[a][1]) - (poly[b][1] - poly[a][1]) * (poly[c][0] - poly[a][0]);
+  const inside = (p: number, a: number, b: number, c: number) => cross(a, b, p) >= 0 && cross(b, c, p) >= 0 && cross(c, a, p) >= 0;
+  for (let guard = 0; order.length > 3 && guard < 10000; guard++) {
+    let cut = false;
+    for (let i = 0; i < order.length; i++) {
+      const [a, b, c] = [order[(i + order.length - 1) % order.length], order[i], order[(i + 1) % order.length]];
+      if (cross(a, b, c) <= 0) continue; // a reflex corner: not an ear
+      if (order.some((p) => p !== a && p !== b && p !== c && inside(p, a, b, c))) continue;
+      out.push([a, b, c]);
+      order.splice(i, 1);
+      cut = true;
+      break;
+    }
+    if (!cut) break; // not simple: what is left is not filled
+  }
+  if (order.length === 3) out.push([order[0], order[1], order[2]]);
+  return out;
+}
+
+/** Where a ray from the origin at `angle` leaves a polygon around the origin (the nearest crossing of its sides). Pure. */
+function rayOut(poly: readonly (readonly [number, number])[], angle: number): [number, number] {
+  const [dx, dy] = [Math.cos(angle), Math.sin(angle)];
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, ay] = poly[i];
+    const [bx, by] = poly[(i + 1) % poly.length];
+    const ex = bx - ax;
+    const ey = by - ay;
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = (ax * ey - ay * ex) / den; // along the ray
+    const u = (ax * dy - ay * dx) / den; // along the side
+    if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.min(best, t);
+  }
+  return [dx * best, dy * best];
+}
+
+/**
+ * The surface of a straight prism: the polygon `profile` (x, y) from height `z0` to `z1`, its caps and walls wound
+ * outwards. With `hole`, a round hole of that radius (16 sides) through the middle: the caps become rings (between the
+ * profile and the hole, at every corner of either) and the hole's wall faces in. Pure.
+ */
+export function prismSurface(profile: readonly (readonly [number, number])[], z0: number, z1: number, hole = 0): Surface {
+  const ccw = area2(profile) < 0 ? [...profile].reverse() : [...profile];
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const point = (x: number, y: number, z: number) => (positions.push(x, y, z), positions.length / 3 - 1);
+  const tri = (a: number, b: number, c: number) => indices.push(a, b, c);
+  const wall = (poly: readonly (readonly [number, number])[], outward: boolean) => {
+    for (let i = 0; i < poly.length; i++) {
+      const [ax, ay] = poly[i];
+      const [bx, by] = poly[(i + 1) % poly.length];
+      const [a0, b0, a1, b1] = [point(ax, ay, z0), point(bx, by, z0), point(ax, ay, z1), point(bx, by, z1)];
+      if (outward) (tri(a0, b0, b1), tri(a0, b1, a1));
+      else (tri(a0, b1, b0), tri(a0, a1, b1));
+    }
+  };
+  wall(ccw, true);
+  if (hole > 0) {
+    const ring = polygon(16, hole);
+    wall(ring, false);
+    const corner = (x: number, y: number) => (Math.atan2(y, x) + Math.PI * 2) % (Math.PI * 2);
+    const angles = [...new Set([...ccw, ...ring].map(([x, y]) => Math.round(corner(x, y) * 1e9) / 1e9))].sort((a, b) => a - b);
+    for (let i = 0; i < angles.length; i++) {
+      const [a, b] = [angles[i], angles[(i + 1) % angles.length] + (i + 1 === angles.length ? Math.PI * 2 : 0)];
+      const [oa, ob] = [rayOut(ccw, a), rayOut(ccw, b)];
+      const [ia, ib] = [rayOut(ring, a), rayOut(ring, b)];
+      // Each sector of the ring: up at the top (counter-clockwise from above), down at the bottom.
+      const top = [point(oa[0], oa[1], z1), point(ob[0], ob[1], z1), point(ib[0], ib[1], z1), point(ia[0], ia[1], z1)];
+      const bottom = [point(oa[0], oa[1], z0), point(ob[0], ob[1], z0), point(ib[0], ib[1], z0), point(ia[0], ia[1], z0)];
+      tri(top[0], top[1], top[2]);
+      tri(top[0], top[2], top[3]);
+      tri(bottom[0], bottom[2], bottom[1]);
+      tri(bottom[0], bottom[3], bottom[2]);
+    }
+  } else {
+    const top = ccw.map(([x, y]) => point(x, y, z1));
+    const bottom = ccw.map(([x, y]) => point(x, y, z0));
+    for (const [a, b, c] of triangulate(ccw)) {
+      tri(top[a], top[b], top[c]);
+      tri(bottom[a], bottom[c], bottom[b]);
+    }
+  }
+  return { positions, indices };
+}
+
+/** Two surfaces as one. Pure. */
+export function joinSurfaces(a: Surface, b: Surface): Surface {
+  const shift = a.positions.length / 3;
+  return { positions: [...Array.from(a.positions), ...Array.from(b.positions)], indices: [...Array.from(a.indices), ...Array.from(b.indices, (i) => i + shift)] };
+}
+
+/** The volume a closed surface holds (positive when wound outwards): the sum over triangles of a · (b × c) / 6. Pure. */
+export function surfaceVolume(s: Surface): number {
+  let v = 0;
+  const p = s.positions;
+  for (let t = 0; t + 2 < s.indices.length; t += 3) {
+    const [a, b, c] = [s.indices[t] * 3, s.indices[t + 1] * 3, s.indices[t + 2] * 3];
+    v += p[a] * (p[b + 1] * p[c + 2] - p[b + 2] * p[c + 1]) - p[a + 1] * (p[b] * p[c + 2] - p[b + 2] * p[c]) + p[a + 2] * (p[b] * p[c + 1] - p[b + 1] * p[c]);
+  }
+  return v / 6;
+}
+
+/** The simple parts' surfaces, in NEUTRAL_SHAPES' order. */
+export const NEUTRAL_SURFACES: readonly Surface[] = [
+  prismSurface([[-1, -1], [1, -1], [1, 1], [-1, 1]], -1, 1),
+  (() => {
+    const s = prismSurface([[0, 0], [2.2, 0], [2.2, 0.5], [0.5, 0.5], [0.5, 1.8], [0, 1.8]], 0, 1.4);
+    const p = Array.from(s.positions);
+    for (let i = 0; i < p.length; i += 3) [p[i + 1], p[i + 2]] = [p[i + 2], p[i + 1]]; // stand it up: y ↔ z, a mirror,
+    const idx = Array.from(s.indices);
+    for (let t = 0; t < idx.length; t += 3) [idx[t + 1], idx[t + 2]] = [idx[t + 2], idx[t + 1]]; // so every triangle turns over
+    return { positions: p, indices: idx };
+  })(),
+  prismSurface(polygon(6, 1.15), 0, 0.7, 0.55),
+  joinSurfaces(prismSurface([[0, 0], [2.4, 0], [2.4, 1.8], [0, 1.8]], 0, 0.6), prismSurface([[0, 0], [1.2, 0], [1.2, 1.8], [0, 1.8]], 0.6, 1.3)),
+];
+
+/** The most triangles shaded; a bigger body is drawn as lines only. */
+export const MAX_TRIANGLES = 4000;
+
+/**
+ * A surface moved and scaled exactly as `fitShape` moves and scales `lines` (so the two stay together), as numbers ready
+ * to draw. Null when there are no lines to fit to, a corner number is out of range, a number is not finite, or there
+ * are more than `max` triangles. Pure.
+ */
+export function fitSurface(surface: Surface | null | undefined, lines: ArrayLike<number> | null | undefined, max = MAX_TRIANGLES): { positions: Float32Array; indices: Uint32Array } | null {
+  const box = boxOf(lines);
+  if (!surface || !box) return null;
+  const count = Math.floor(surface.positions.length / 3);
+  const tris = Math.floor(surface.indices.length / 3);
+  if (tris === 0 || tris > max) return null;
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count * 3; i++) {
+    const v = surface.positions[i];
+    if (!Number.isFinite(v)) return null;
+    positions[i] = (v - box.mid[i % 3]) / box.radius;
+  }
+  const indices = new Uint32Array(tris * 3);
+  for (let i = 0; i < tris * 3; i++) {
+    const n = surface.indices[i];
+    if (!Number.isInteger(n) || n < 0 || n >= count) return null;
+    indices[i] = n;
+  }
+  return { positions, indices };
+}
+
+/** The middle and half-size (the largest of the three) of the box round some lines; null when nothing can be fitted. Pure. */
+function boxOf(lines: ArrayLike<number> | null | undefined): { mid: number[]; radius: number } | null {
+  if (!lines) return null;
+  const count = Math.floor(lines.length / 6);
+  if (count === 0) return null;
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < count * 6; i++) {
+    const v = lines[i];
+    if (!Number.isFinite(v)) return null;
+    lo[i % 3] = Math.min(lo[i % 3], v);
+    hi[i % 3] = Math.max(hi[i % 3], v);
+  }
+  const mid = lo.map((l, k) => (l + hi[k]) / 2);
+  const radius = Math.max(...lo.map((l, k) => Math.max(hi[k] - mid[k], mid[k] - l)));
+  return radius > 0 ? { mid, radius } : null;
+}
+
+/**
+ * The part of a flat polygon (corners x y z) at or under the level `z`: each side is kept, cut where it crosses, or left
+ * out (one plane's Sutherland–Hodgman step). Fewer than 3 corners: nothing under. Pure.
+ */
+export function clipUnder(poly: readonly (readonly number[])[], z: number): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const aIn = a[2] <= z;
+    const bIn = b[2] <= z;
+    if (aIn) out.push([...a]);
+    if (aIn !== bIn) {
+      const t = (z - a[2]) / (b[2] - a[2]);
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z]);
+    }
+  }
+  return out.length >= 3 ? out : [];
+}
+
+/**
+ * The faces nearest the viewer, on the screen, for telling which parts of the lines they hide: each triangle (screen x, y
+ * and depth at its corners) is filed in the cells of a grid its box touches, so a point asks only its own cell's. Depths
+ * are read across a triangle the way a camera sees them: 1 / (camera + depth) changes evenly across the screen, depth
+ * itself does not (half-way across the screen between depths 0 and 1 is 7/15 with the camera at 7, not 1/2).
+ */
+export class Occluder {
+  private readonly cells: number[][];
+  private readonly tris: number[] = [];
+  private readonly x0: number;
+  private readonly y0: number;
+  private readonly cell: number;
+  private readonly cols: number;
+  private readonly rows: number;
+  private readonly camera: number;
+  /** A grid of `cols` × `rows` square cells `cell` pixels wide, its top left corner at (x0, y0), for a camera `camera` away. */
+  constructor(x0: number, y0: number, cell: number, cols: number, rows: number, camera = CAMERA) {
+    this.x0 = x0;
+    this.y0 = y0;
+    this.cell = cell > 0 ? cell : 1;
+    this.cols = Math.max(1, Math.floor(cols));
+    this.rows = Math.max(1, Math.floor(rows));
+    this.camera = camera;
+    this.cells = Array.from({ length: this.cols * this.rows }, () => []);
+  }
+  /** How many triangles were added. */
+  get size(): number {
+    return this.tris.length / 9;
+  }
+  /** A triangle facing the viewer: its corners on the screen with their depths. */
+  add(ax: number, ay: number, ad: number, bx: number, by: number, bd: number, cx: number, cy: number, cd: number) {
+    const t = this.tris.length / 9;
+    const cam = this.camera;
+    this.tris.push(ax, ay, 1 / (cam + ad), bx, by, 1 / (cam + bd), cx, cy, 1 / (cam + cd));
+    const c0 = Math.max(0, Math.floor((Math.min(ax, bx, cx) - this.x0) / this.cell));
+    const c1 = Math.min(this.cols - 1, Math.floor((Math.max(ax, bx, cx) - this.x0) / this.cell));
+    const r0 = Math.max(0, Math.floor((Math.min(ay, by, cy) - this.y0) / this.cell));
+    const r1 = Math.min(this.rows - 1, Math.floor((Math.max(ay, by, cy) - this.y0) / this.cell));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) this.cells[r * this.cols + c].push(t);
+  }
+  /** The depth of the nearest face covering the screen point (x, y), or Infinity where none does. */
+  depthAt(x: number, y: number): number {
+    const c = Math.floor((x - this.x0) / this.cell);
+    const r = Math.floor((y - this.y0) / this.cell);
+    if (!(c >= 0 && r >= 0 && c < this.cols && r < this.rows)) return Infinity;
+    const T = this.tris;
+    let nearest = 0; // the most 1 / (camera + depth) seen: nearer is more
+    for (const t of this.cells[r * this.cols + c]) {
+      const k = t * 9;
+      const ax = T[k], ay = T[k + 1], aw = T[k + 2], bx = T[k + 3], by = T[k + 4], bw = T[k + 5], cx = T[k + 6], cy = T[k + 7], cw = T[k + 8];
+      const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+      if (Math.abs(den) < 1e-12) continue;
+      const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / den;
+      const v = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / den;
+      const w = 1 - u - v;
+      if (u < -1e-6 || v < -1e-6 || w < -1e-6) continue;
+      nearest = Math.max(nearest, u * aw + v * bw + w * cw);
+    }
+    return nearest > 0 ? 1 / nearest - this.camera : Infinity;
+  }
+  /** Whether a face covers the screen point (x, y) nearer the viewer than `depth` less `bias` (a line on a face is not hidden by it). */
+  hides(x: number, y: number, depth: number, bias = OCCLUDE_BIAS): boolean {
+    return this.depthAt(x, y) < depth - bias;
+  }
+}
+/** How much nearer (shape radii) a face must be than a point on a line to hide it: a line on the face's own edge shows. */
+export const OCCLUDE_BIAS = 0.03;
+
+/**
+ * The parts of the screen segment a–b (depths ad, bd) the faces leave showing and the parts they hide: sampled every
+ * `step` pixels (2 to 33 samples), as runs [from, to, shown] along it (0..1), the changes half-way between samples. The
+ * depth along it is read as the camera sees it (as in `Occluder`). Pure given the occluder.
+ */
+export function visibleRuns(ax: number, ay: number, ad: number, bx: number, by: number, bd: number, occ: Occluder, step = 8, camera = CAMERA): [number, number, boolean][] {
+  const n = Math.max(1, Math.min(32, Math.ceil(Math.hypot(bx - ax, by - ay) / step)));
+  const runs: [number, number, boolean][] = [];
+  const aw = 1 / (camera + ad);
+  const bw = 1 / (camera + bd);
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    const shown = !occ.hides(ax + (bx - ax) * t, ay + (by - ay) * t, 1 / (aw + (bw - aw) * t) - camera);
+    const from = k === 0 ? 0 : (k - 0.5) / n;
+    const last = runs[runs.length - 1];
+    if (last && last[2] === shown) last[1] = k === n ? 1 : (k + 0.5) / n;
+    else {
+      if (last) last[1] = from;
+      runs.push([from, k === n ? 1 : (k + 0.5) / n, shown]);
+    }
+  }
+  return runs;
+}
+
+/** A surface's triangles gathered into flat faces (triangles on one plane), worked out once for each shape. */
+export interface FaceGroups {
+  /** Each flat face's triangles, as numbers of triangles in the surface's indices. */
+  tris: number[][];
+  /** Each flat face's outward normal, of length 1, in the shape's own frame. */
+  normals: [number, number, number][];
+  /** Each flat face's distance from the origin along its normal. */
+  offsets: number[];
+}
+
+/**
+ * The flat faces of a surface: triangles whose normals and planes agree to 1/1000 of the shape's size are one face, so a
+ * face is painted in one piece (no seams across it) and sorted as one. Triangles with no area are left out. Pure.
+ */
+export function groupFaces(positions: ArrayLike<number>, indices: ArrayLike<number>): FaceGroups {
+  const out: FaceGroups = { tris: [], normals: [], offsets: [] };
+  const byPlane = new Map<string, number>();
+  const p = positions;
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    const a = indices[t] * 3;
+    const b = indices[t + 1] * 3;
+    const c = indices[t + 2] * 3;
+    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+    const vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (!(len > 1e-12)) continue; // no area (or a number that is not one)
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    const d = nx * p[a] + ny * p[a + 1] + nz * p[a + 2];
+    const key = `${Math.round(nx * 1000)},${Math.round(ny * 1000)},${Math.round(nz * 1000)},${Math.round(d * 1000)}`;
+    let g = byPlane.get(key);
+    if (g === undefined) {
+      g = out.tris.length;
+      byPlane.set(key, g);
+      out.tris.push([]);
+      out.normals.push([nx, ny, nz]);
+      out.offsets.push(d);
+    }
+    out.tris[g].push(t / 3);
+  }
+  return out;
+}
+
+/** Where the light comes from, as seen by the camera (right, up, away): above, to the left and a little in front. Length 1. */
+export const LIGHT: readonly [number, number, number] = [-0.48, 0.8, -0.36];
+
+/**
+ * How lit a face is, 0 (turned from the light) to 1 (facing it): its normal turned as `project` turns a point, against
+ * LIGHT. The light stays with the camera, so the faces brighten and darken as the design turns. Pure.
+ */
+export function toneOf([x, y, z]: readonly number[], yaw: number, pitch = PITCH): number {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const rx = x * c - y * s;
+  const ry = x * s + y * c;
+  const up = z * Math.cos(pitch) + ry * Math.sin(pitch);
+  const away = ry * Math.cos(pitch) - z * Math.sin(pitch);
+  return Math.max(0, Math.min(1, rx * LIGHT[0] + up * LIGHT[1] + away * LIGHT[2]));
+}
+
+/** Whether a triangle on the screen (canvas y down) faces the viewer: a surface wound counter-clockwise from outside shows clockwise. Pure. */
+export const facesViewer = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number): boolean => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0;
+
+/** One flat face to paint: its number in the groups, whether it faces the viewer, its pieces on the screen (x y pairs) and its depth. */
+export interface FacePaint {
+  group: number;
+  front: boolean;
+  polys: number[][];
+  depth: number;
+}
+
+/**
+ * One frame's faces: every vertex put on the screen through `at`, the faces facing the viewer (and, with `backs`, the
+ * inside of those facing away) cut at the build plane `plane` (null: whole), listed farthest first for painting over each
+ * other, and an `Occluder` of the faces facing the viewer for hiding the lines behind them. Pure given `at`.
+ */
+export function faceFrame(
+  groups: FaceGroups,
+  positions: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  at: (x: number, y: number, z: number) => { x: number; y: number; depth: number },
+  plane: number | null,
+  backs: boolean,
+): { paint: FacePaint[]; occ: Occluder; whole: Occluder | null; front: number } {
+  const n = Math.floor(positions.length / 3);
+  const sx = new Float64Array(n);
+  const sy = new Float64Array(n);
+  const sd = new Float64Array(n);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const q = at(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+    sx[i] = q.x;
+    sy[i] = q.y;
+    sd[i] = q.depth;
+    if (q.x < x0) x0 = q.x;
+    if (q.x > x1) x1 = q.x;
+    if (q.y < y0) y0 = q.y;
+    if (q.y > y1) y1 = q.y;
+  }
+  if (!(x1 >= x0 && y1 >= y0)) (x0 = 0), (y0 = 0), (x1 = 1), (y1 = 1);
+  // Cells of 12 px or more, at most about 1,600 of them.
+  const cell = Math.max(12, Math.sqrt(((x1 - x0 + 1) * (y1 - y0 + 1)) / 1600));
+  const grid = () => new Occluder(x0, y0, cell, Math.ceil((x1 - x0 + 1) / cell), Math.ceil((y1 - y0 + 1) / cell));
+  const occ = grid();
+  // While the plane cuts the faces, the whole design's faces too, for the ghosts of what is still to be built.
+  const whole = plane === null ? null : grid();
+  const paint: FacePaint[] = [];
+  let front = 0;
+  for (let g = 0; g < groups.tris.length; g++) {
+    const sides: [FacePaint | null, FacePaint | null] = [null, null]; // facing away, facing the viewer
+    let depths = 0;
+    let counted = 0;
+    for (const t of groups.tris[g]) {
+      const ia = indices[t * 3], ib = indices[t * 3 + 1], ic = indices[t * 3 + 2];
+      if (!(ia < n && ib < n && ic < n)) continue;
+      const facing = facesViewer(sx[ia], sy[ia], sx[ib], sy[ib], sx[ic], sy[ic]);
+      if (facing && whole) whole.add(sx[ia], sy[ia], sd[ia], sx[ib], sy[ib], sd[ib], sx[ic], sy[ic], sd[ic]);
+      if (!facing && !backs) continue;
+      const za = positions[ia * 3 + 2], zb = positions[ib * 3 + 2], zc = positions[ic * 3 + 2];
+      let poly: number[];
+      let polyDepths: number[];
+      if (plane === null || Math.max(za, zb, zc) <= plane) {
+        poly = [sx[ia], sy[ia], sx[ib], sy[ib], sx[ic], sy[ic]];
+        polyDepths = [sd[ia], sd[ib], sd[ic]];
+      } else if (Math.min(za, zb, zc) >= plane) continue; // not built yet
+      else {
+        const cut = clipUnder([[positions[ia * 3], positions[ia * 3 + 1], za], [positions[ib * 3], positions[ib * 3 + 1], zb], [positions[ic * 3], positions[ic * 3 + 1], zc]], plane);
+        if (cut.length < 3) continue;
+        poly = [];
+        polyDepths = [];
+        for (const [x, y, z] of cut) {
+          const q = at(x, y, z);
+          poly.push(q.x, q.y);
+          polyDepths.push(q.depth);
+        }
+      }
+      const side = (sides[facing ? 1 : 0] ??= { group: g, front: facing, polys: [], depth: 0 });
+      side.polys.push(poly);
+      for (const d of polyDepths) depths += d / polyDepths.length;
+      counted += 1;
+      if (facing) for (let k = 2; k < polyDepths.length; k++) occ.add(poly[0], poly[1], polyDepths[0], poly[k * 2 - 2], poly[k * 2 - 1], polyDepths[k - 1], poly[k * 2], poly[k * 2 + 1], polyDepths[k]);
+    }
+    if (counted === 0) continue;
+    for (const side of sides) {
+      if (!side) continue;
+      side.depth = depths / counted;
+      paint.push(side);
+      if (side.front) front += 1;
+    }
+  }
+  paint.sort((a, b) => b.depth - a.depth);
+  return { paint, occ, whole, front };
+}
+
+/**
+ * How much of the accent is mixed into the page's colour for a face, by how lit it is (`tone`, 0..1): on a dark page a lit
+ * face glows more blue, on a light one it stays nearly white and the shaded side takes the blue; the inside of a design
+ * being built (a face turned away, seen through the open top) is the darkest. Pure.
+ */
+export function faceMix(tone: number, front: boolean, glow: boolean): number {
+  const t = Math.max(0, Math.min(1, tone));
+  if (!front) return glow ? 0.02 : 0.3;
+  return glow ? 0.09 + 0.22 * t : 0.05 + 0.18 * (1 - t);
+}
+
 export const MAX_SEGMENTS = 1500;
 export const FRAME_MS = 1000 / 30;
 export const MAX_ALPHA = 0.5; // the brightest a line gets: words on top stay readable
@@ -68,24 +532,13 @@ export const CAMERA = 7; // far enough to read as a CAD part, near enough for de
  * point the same.
  */
 export function fitShape(lines: ArrayLike<number> | null | undefined, max = MAX_SEGMENTS): Float32Array | null {
-  if (!lines) return null;
+  const box = boxOf(lines);
+  if (!box || !lines) return null;
   const count = Math.floor(lines.length / 6);
-  if (count === 0) return null;
-  const lo = [Infinity, Infinity, Infinity];
-  const hi = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < count * 6; i++) {
-    const v = lines[i];
-    if (!Number.isFinite(v)) return null;
-    lo[i % 3] = Math.min(lo[i % 3], v);
-    hi[i % 3] = Math.max(hi[i % 3], v);
-  }
-  const mid = lo.map((l, k) => (l + hi[k]) / 2);
-  const radius = Math.max(...lo.map((l, k) => Math.max(hi[k] - mid[k], mid[k] - l)));
-  if (!(radius > 0)) return null;
   const step = Math.max(1, Math.ceil(count / max));
   const kept = Math.ceil(count / step);
   const out = new Float32Array(kept * 6);
-  for (let n = 0; n < kept; n++) for (let j = 0; j < 6; j++) out[n * 6 + j] = (lines[n * step * 6 + j] - mid[j % 3]) / radius;
+  for (let n = 0; n < kept; n++) for (let j = 0; j < 6; j++) out[n * 6 + j] = (lines[n * step * 6 + j] - box.mid[j % 3]) / box.radius;
   return out;
 }
 
@@ -107,8 +560,10 @@ export function project(x: number, y: number, z: number, yaw: number, pitch = PI
   const ry = x * s + y * c; // the depth axis before tipping
   const cp = Math.cos(pitch);
   const sp = Math.sin(pitch);
-  const up = z * cp - ry * sp;
-  const depth = z * sp + ry * cp;
+  // Seen from above and in front: the camera is tipped `pitch` above the level, so a higher point comes nearer it and
+  // the far side rises on the screen.
+  const up = z * cp + ry * sp;
+  const depth = ry * cp - z * sp;
   const k = camera / (camera + depth);
   return { x: rx * k, y: -up * k, depth, height: z };
 }
@@ -303,10 +758,10 @@ export interface Reach {
 
 /**
  * How far points reach above and below the picture's middle whichever way the shape has turned, at each of `pitches`.
- * Each point is given by its height `z` and its distance `rho` from the up axis. Turned so it comes nearest (its depth
- * −rho·cos p), a point is drawn highest: up = CAMERA·(z·cos p + rho·sin p) / (CAMERA + z·sin p − rho·cos p); turned
- * away, lowest: CAMERA·(z·cos p − rho·sin p) / (CAMERA + z·sin p + rho·cos p). (Up falls steadily as the point turns
- * from nearest to farthest, so these two are the ends.) Pure.
+ * Each point is given by its height `z` and its distance `rho` from the up axis. Turned to the far side (its depth
+ * rho·cos p − z·sin p), a point is drawn highest: up = CAMERA·(z·cos p + rho·sin p) / (CAMERA + rho·cos p − z·sin p);
+ * turned nearest, lowest: CAMERA·(z·cos p − rho·sin p) / (CAMERA − rho·cos p − z·sin p). (Up rises steadily as the point
+ * turns from nearest to farthest while CAMERA·sin p is more than z, so these two are the ends.) Pure.
  */
 export function reachOf(points: readonly { z: number; rho: number }[], pitches: readonly number[] = [PITCH - SWAY, PITCH, PITCH + SWAY]): Reach {
   let above = -Infinity;
@@ -315,8 +770,8 @@ export function reachOf(points: readonly { z: number; rho: number }[], pitches: 
     const c = Math.cos(p);
     const s = Math.sin(p);
     for (const { z, rho } of points) {
-      above = Math.max(above, (CAMERA * (z * c + rho * s)) / (CAMERA + z * s - rho * c));
-      below = Math.max(below, -(CAMERA * (z * c - rho * s)) / (CAMERA + z * s + rho * c));
+      above = Math.max(above, (CAMERA * (z * c + rho * s)) / (CAMERA + rho * c - z * s));
+      below = Math.max(below, -(CAMERA * (z * c - rho * s)) / (CAMERA - rho * c - z * s));
     }
   }
   return Number.isFinite(above) && Number.isFinite(below) ? { above, below } : { above: ABOVE, below: BELOW };
@@ -623,16 +1078,45 @@ export interface Machine {
   saveData?: boolean;
 }
 
-/** A machine too weak for the moving picture: 2 cores or fewer, 2 GB or less, or data saving on. Unknown counts as fine. Pure. */
+/**
+ * A machine that starts on the lightest moving picture: 2 cores or fewer, 2 GB or less, or data saving on. Unknown counts
+ * as fine. Pure.
+ */
 export function lowEnd(m: Machine): boolean {
   return (m.cores !== undefined && m.cores <= 2) || (m.memory !== undefined && m.memory <= 2) || m.saveData === true;
 }
 
-/** Frames this slow (milliseconds of drawing, averaged over SLOW_WINDOW frames) end the motion. */
+/**
+ * The moving picture's versions, richest first. A computer that draws too slowly steps down to the next (fewer pixels,
+ * motes and circuit lines, no soft halos, fewer frames a second) before the picture is ever stopped.
+ */
+export const QUALITY: readonly { ratio: number; motes: number; lines: number; fps: number; halo: boolean }[] = [
+  { ratio: 1.5, motes: 1, lines: 1, fps: 30, halo: true },
+  { ratio: 1, motes: 0.5, lines: 0.6, fps: 30, halo: true },
+  { ratio: 1, motes: 0.25, lines: 0.4, fps: 20, halo: false },
+];
+
+/** Frames drawn after a start before any is timed: the first draws make sprites, warm the code and set up the graphics. */
+export const WARM_FRAMES = 20;
+/** Frames timed together; when the middle one of them took longer than SLOW_MS to draw, the picture steps down a version. */
+export const SLOW_WINDOW = 30;
 export const SLOW_MS = 14;
-export const SLOW_WINDOW = 24;
-/** The moment the still picture shows: the pulse part way up, the shape turned a little. */
-export const STILL_AT = 9.5;
+/** The moment the still picture shows: the design whole, a ripple of light part way through it. */
+export const STILL_AT = 14.4;
+
+/** The middle of a list of numbers (the mean of the two middle ones for an even count); 0 for none. Pure. */
+export function median(xs: readonly number[]): number {
+  if (xs.length === 0) return 0;
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Why the picture is still, said in small words under it. */
+export const STILL_WORDS: Record<string, string> = {
+  "reduced-motion": "Still picture: this computer is set to show less motion",
+  slow: "Still picture: moving it was slowing this computer down",
+};
 
 export interface Backdrop {
   /** Starts drawing (the screen is up): the moving picture, or one still one. */
@@ -644,7 +1128,12 @@ export interface Backdrop {
    * second while drawing (a project still reopening under the screen shows its body when it arrives); a new array is
    * fitted again, the same one is not.
    */
-  setSource(source: () => ArrayLike<number> | null): void;
+  setSource(source: () => ArrayLike<number> | null, faces?: () => Surface | null): void;
+  /**
+   * With `waits` (the home screen): the list is painted and the design is here (or will not come), so the picture is shown,
+   * placed and sized for good from its first frame, its story starting with the build. Before this nothing is drawn.
+   */
+  reveal(): void;
   /** The words moved (the list scrolled or changed): a still picture is drawn again in the room left (a moving one follows by itself). */
   redraw(): void;
   readonly mode: "live" | "still" | "off";
@@ -655,6 +1144,8 @@ interface Env {
   doc: Document;
   /** Where the screen's words end, in CSS pixels from the window's top (the picture sits in the room below). */
   room?: () => number;
+  /** Draw nothing until `reveal()` (the home screen: so the picture never shows at one size and moves to another). */
+  waits?: boolean;
 }
 
 /** Draws on `canvas`; harmless where there is no 2D context (a test DOM). */
@@ -668,7 +1159,13 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     }
   })();
   const neutrals = NEUTRAL_SHAPES.map((lines) => fitShape(lines) as Float32Array);
+  const neutralFaces = NEUTRAL_SURFACES.map((s, k) => fitSurface(s, NEUTRAL_SHAPES[k]));
   const neutral = neutrals[0];
+  /** The shape's faces, fitted with its lines, and gathered into flat faces; null: lines only, seen through. */
+  let faces: { positions: Float32Array; indices: Uint32Array } | null = neutralFaces[0];
+  let groups: FaceGroups = faces ? groupFaces(faces.positions, faces.indices) : { tris: [], normals: [], offsets: [] };
+  /** Which flat faces lie on the top face (lit as it is pulled out). */
+  let topGroups: boolean[] = [];
   /** Which simple part is shown (with no project), one a story. */
   let part = 0;
   let shape = neutral;
@@ -715,6 +1212,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     if (top.length > 0) points.push({ z: topZ + EXTRUDE_OUT + 0.22, rho: Math.hypot(topMid[0], topMid[1]) });
     points.push({ z: floorZ - 0.08, rho: 1.25 }, { z: ceilZ, rho: 1.25 });
     reach = reachOf(points);
+    topGroups = groups.normals.map((n, g) => top.length > 0 && n[2] > 0.999 && Math.abs(groups.offsets[g] - topZ) < 1e-3);
   }
   topFacts();
   let sparks: Spark[] = [];
@@ -730,30 +1228,40 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
   }
   seedSparks();
   let source: () => ArrayLike<number> | null = () => null;
+  let faceSource: () => Surface | null = () => null;
   let from: ArrayLike<number> | null | undefined; // undefined: not read yet
+  let fromFaces: Surface | null | undefined;
   let watch = 0;
   /** Reads the source; true when the shape changed. */
   function reshape(): boolean {
     let lines: ArrayLike<number> | null = null;
+    let surface: Surface | null = null;
     try {
       lines = source();
+      surface = lines ? faceSource() : null;
     } catch {
       lines = null; // a picture is never worth a broken screen
+      surface = null;
     }
-    if (lines === from) return false;
+    if (lines === from && surface === fromFaces) return false;
     from = lines;
+    fromFaces = surface;
     const fitted = fitShape(lines);
     project3 = fitted;
     size3 = fitted ? extentOf(lines) : null;
-    use(fitted ?? neutrals[part % neutrals.length]);
+    const k = part % neutrals.length;
+    use(fitted ?? neutrals[k], fitted ? fitSurface(surface, lines) : neutralFaces[k]);
     canvas.dataset.shape = fitted ? `project ${fitted.length / 6}` : "neutral"; // what the browser check reads
+    canvas.dataset.faces = String(groups.tris.length); // flat faces painted (0: lines only)
     return true;
   }
   /** The project's fitted edges, or null when there is none (the simple parts are shown in turn). */
   let project3: Float32Array | null = null;
-  /** Shows `next` from here on: the facts about it worked out once. */
-  function use(next: Float32Array) {
+  /** Shows `next` (with its faces, or none) from here on: the facts about it worked out once. */
+  function use(next: Float32Array, nextFaces: { positions: Float32Array; indices: Uint32Array } | null) {
     shape = next;
+    faces = nextFaces;
+    groups = faces ? groupFaces(faces.positions, faces.indices) : { tris: [], normals: [], offsets: [] };
     links = linksOf(shape);
     top = topFace(shape);
     topFacts();
@@ -762,7 +1270,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
   function watching() {
     watch = 0;
     if (!running) return;
-    if (reshape() && !live()) draw(STILL_AT);
+    if (reshape() && !live() && shown && !doc.hidden) draw(STILL_AT);
     watch = win.setTimeout(watching, 1000);
   }
   /** Circuit lines growing, held and fading, each slot reborn with a new line once its life ends (staggered). */
@@ -805,34 +1313,46 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
   let h = 0;
   let timer = 0;
   let running = false;
-  let slow = false;
   let lastFrame = 0;
   let t0 = 0;
+  /** Where the story had got to when it last stopped (a resize, a hidden tab or a step down carries on from there). */
+  let story = 0;
   const costs: number[] = [];
+  let drawn = 0;
   const motion = win.matchMedia?.("(prefers-reduced-motion: reduce)");
   const nav = win.navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
   const weak = lowEnd({ cores: nav.hardwareConcurrency, memory: nav.deviceMemory, saveData: nav.connection?.saveData });
-  const live = () => !(motion?.matches ?? false) && !weak && !slow;
+  /** Which version of the moving picture (QUALITY); QUALITY.length once even the lightest proved too slow. */
+  let level = weak ? QUALITY.length - 1 : 0;
+  const quality = () => QUALITY[Math.min(level, QUALITY.length - 1)];
+  const reduced = () => motion?.matches ?? false;
+  const live = () => !reduced() && level < QUALITY.length;
+  /** Why the picture is still, or "" while it moves. */
+  const stillWhy = () => (reduced() ? "reduced-motion" : level >= QUALITY.length ? "slow" : "");
   const set = (mode: string) => (canvas.dataset.backdrop = mode);
   set("off");
+  /** Whether the picture may be drawn: at once, or (with `waits`) once `reveal` says the screen and the design are ready. */
+  const waits = env.waits ?? false;
+  let shown = !waits;
 
   const colour = () => win.getComputedStyle(doc.documentElement).getPropertyValue("--look-accent").trim() || "#4da3ff";
 
   function size() {
     const rect = canvas.getBoundingClientRect();
-    const ratio = Math.min(win.devicePixelRatio || 1, weak || slow ? 1 : 1.5);
+    const q = quality();
+    const ratio = Math.min(win.devicePixelRatio || 1, q.ratio);
     w = Math.max(1, Math.round(rect.width || win.innerWidth || 1));
     h = Math.max(1, Math.round(rect.height || win.innerHeight || 1));
     canvas.width = Math.round(w * ratio);
     canvas.height = Math.round(h * ratio);
     ctx?.setTransform(ratio, 0, 0, ratio, 0, 0);
-    slots = Math.max(8, Math.min(24, Math.round((w * h) / 52000)));
+    slots = Math.max(4, Math.round(Math.max(8, Math.min(24, Math.round((w * h) / 52000))) * q.lines));
     grown.clear();
-    motes = makeMotes(3, w < 640 ? 60 : 110);
+    motes = makeMotes(3, Math.round((w < 640 ? 60 : 110) * q.motes));
   }
 
-  /** Whether the page is light (its surface bright): glows add light on a dark page, and would wash out a light one. */
-  const lightPage = () => luminance(win.getComputedStyle(doc.documentElement).getPropertyValue("--surface").trim()) > 0.5;
+  /** The page's colour (faces are mixed from it). */
+  const pageColour = () => win.getComputedStyle(doc.documentElement).getPropertyValue("--surface").trim();
 
   function draw(seconds: number) {
     if (!ctx) return;
@@ -843,12 +1363,14 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
 
       if (next !== part) {
         part = next;
-        use(neutrals[part]);
+        use(neutrals[part], neutralFaces[part]);
       }
       if (canvas.dataset.part !== String(part)) canvas.dataset.part = String(part); // which part: the tests read it
     }
     const ink = colour();
-    const glow = !lightPage();
+    const page = pageColour();
+    // Whether the page is light (its surface bright): glows add light on a dark page, and would wash out a light one.
+    const glow = !(luminance(page) > 0.5);
     const rgb = rgbOf(ink) ?? [77, 163, 255];
     const blues = shadesOf(rgb, !glow);
     ctx.clearRect(0, 0, w, h);
@@ -906,6 +1428,8 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     // Eased towards where it should be, so a list that grows or scrolls moves the picture smoothly (a still picture jumps).
     place = place === null || !live() ? want : { cx: want.cx, cy: place.cy + (want.cy - place.cy) * 0.12, scale: place.scale + (want.scale - place.scale) * 0.12 };
     const { cx, cy } = place;
+    const placed3 = `${Math.round(cx)} ${Math.round(cy)} ${Math.round(place.scale)}`; // where and how big (the browser check reads it)
+    if (canvas.dataset.place !== placed3) canvas.dataset.place = placed3;
     const scale = place.scale * dolly(seconds); // the camera drifts back a little and in again, slowly
     const yaw = (seconds / TURN_SECONDS) * Math.PI * 2 + 0.6;
     const pitch = PITCH + SWAY * Math.sin((seconds / 37) * Math.PI * 2); // the camera rises and sinks a little, slowly
@@ -976,11 +1500,45 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     ctx.globalAlpha = 0.12;
     ctx.stroke();
     // The build plane: while the design is building (or sinking back), a glowing level ring with a soft disc rises through
-    // it from the floor; the edges under it are built, the ones over it wait as ghosts.
+    // it from the floor; the edges and faces under it are built, the edges over it wait as ghosts.
     const built = buildAt(seconds);
     const span = Math.max(1e-6, ceilZ - floorZ);
     const planeZ = floorZ + built * span;
     const building = built < 1 - 1e-6;
+    // The faces, solid and shaded by a light that stays with the camera, so the design reads as a body and its back is
+    // hidden; while it builds, cut at the plane, with the inside seen through the open top. Painted farthest first.
+    let occ: Occluder | null = null;
+    let ghostOcc: Occluder | null = null;
+    const extruding = Math.abs(push) > 0.002;
+    const pushK = extruding ? Math.min(1, Math.abs(push) / Math.abs(push > 0 ? EXTRUDE_OUT : EXTRUDE_IN)) : 0;
+    if (faces && groups.tris.length > 0) {
+      const pass = faceFrame(groups, faces.positions, faces.indices, at, building ? planeZ : null, building);
+      occ = pass.occ;
+      ghostOcc = pass.whole;
+      const base3 = rgbOf(page) ?? (glow ? [22, 29, 42] : [245, 247, 250]);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 0.75; // the same colour round each face closes the hairline seams between faces
+      for (const f of pass.paint) {
+        let amount = faceMix(toneOf(groups.normals[f.group], yaw, pitch), f.front, glow) + 0.08 * lift;
+        if (topGroups[f.group] && f.front) amount += 0.16 * pushK; // the face being pulled out lights up
+        const mix = base3.map((v, k) => Math.round(v + (rgb[k] - v) * Math.min(1, amount)));
+        const fill = `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`;
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = fill;
+        ctx.beginPath();
+        for (const poly of f.polys) {
+          ctx.moveTo(poly[0], poly[1]);
+          for (let j = 2; j < poly.length; j += 2) ctx.lineTo(poly[j], poly[j + 1]);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = glow ? "lighter" : "source-over";
+      ctx.strokeStyle = ink;
+      ctx.fillStyle = ink;
+    }
     if (building && built > 1e-6) {
       const edge = Math.min(1, built / 0.05, (1 - built) / 0.05); // fades in off the floor and out at the top
       const mid = at(0, 0, planeZ);
@@ -1019,7 +1577,21 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     const moving: number[] = [];
     const ghosts: number[] = []; // not built yet: drawn faint and dashed, like hidden lines on a drawing
     const beads: number[] = []; // x, y, cue, kind (0 the plane, 1 the ripple)
-    const extruding = Math.abs(push) > 0.002;
+    const step = quality().halo ? 8 : 12; // how often a line is asked whether a face hides it, in pixels
+    let hid = false;
+    /** The parts of the screen segment a–b no face hides, each passed to `keep` (all of it when there are no faces). */
+    const seen = (by: Occluder | null, a: { x: number; y: number; depth: number }, b: { x: number; y: number; depth: number }, keep: (ax: number, ay: number, bx: number, by: number) => void) => {
+      if (!by) return keep(a.x, a.y, b.x, b.y);
+      for (const [f, t, shown] of visibleRuns(a.x, a.y, a.depth, b.x, b.y, b.depth, by, step)) {
+        if (!shown) {
+          hid = true;
+          continue;
+        }
+        keep(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+      }
+    };
+    const toMoving = (ax: number, ay: number, bx: number, by: number) => moving.push(ax, ay, bx, by);
+    const toGhosts = (ax: number, ay: number, bx: number, by: number) => ghosts.push(ax, ay, bx, by);
     const brightness = (glowing: number, depth: number) =>
       Math.min(MAX_ALPHA, (BASE_ALPHA + (MAX_ALPHA - BASE_ALPHA) * Math.min(1, 0.75 * glowing + 0.4 * lift)) * depthCue(depth));
     const put = (alpha: number, ax: number, ay: number, bx: number, by: number) =>
@@ -1030,7 +1602,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       const a = at(shape[i], shape[i + 1], az);
       const b = at(shape[i + 3], shape[i + 4], bz);
       if (extruding && Math.abs(az - topZ) < 1e-3 && Math.abs(bz - topZ) < 1e-3) {
-        moving.push(a.x, a.y, b.x, b.y);
+        seen(occ, a, b, toMoving);
         continue;
       }
       const height = ((az + bz) / 2 - floorZ) / span;
@@ -1041,22 +1613,23 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
         if (crossing.cross !== null && (!building || az + crossing.cross * (bz - az) <= planeZ)) {
           const t = crossing.cross;
           const p = at(shape[i] + t * (shape[i + 3] - shape[i]), shape[i + 1] + t * (shape[i + 4] - shape[i + 1]), az + t * (bz - az));
-          beads.push(p.x, p.y, depthCue(p.depth), 1);
+          if (!occ?.hides(p.x, p.y, p.depth)) beads.push(p.x, p.y, depthCue(p.depth), 1);
         }
       }
       const alpha = brightness(glowOf(seconds, height, gap), (a.depth + b.depth) / 2);
       const lo = Math.min(az, bz);
       const hi = Math.max(az, bz);
-      if (!building || hi <= planeZ) put(alpha, a.x, a.y, b.x, b.y);
-      else if (lo >= planeZ) ghosts.push(a.x, a.y, b.x, b.y);
+      const toBucket = (ax: number, ay: number, bx: number, by: number) => put(alpha, ax, ay, bx, by);
+      if (!building || hi <= planeZ) seen(occ, a, b, toBucket);
+      else if (lo >= planeZ) seen(ghostOcc, a, b, toGhosts);
       else {
         // Crossed by the plane: built up to it, a ghost above, and a point of light where it crosses.
         const t = (planeZ - az) / (bz - az);
         const m = at(shape[i] + t * (shape[i + 3] - shape[i]), shape[i + 1] + t * (shape[i + 4] - shape[i + 1]), planeZ);
         const [under, over] = az < bz ? [a, b] : [b, a];
-        put(alpha, under.x, under.y, m.x, m.y);
-        ghosts.push(m.x, m.y, over.x, over.y);
-        beads.push(m.x, m.y, depthCue(m.depth), 0);
+        seen(occ, under, m, toBucket);
+        seen(ghostOcc, m, over, toGhosts);
+        if (!occ?.hides(m.x, m.y, m.depth)) beads.push(m.x, m.y, depthCue(m.depth), 0);
       }
     }
     const strokeList = (list: number[], alpha: number, width: number) => {
@@ -1065,7 +1638,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
         ctx.moveTo(list[j], list[j + 1]);
         ctx.lineTo(list[j + 2], list[j + 3]);
       }
-      if (glow) {
+      if (glow && quality().halo) {
         ctx.globalAlpha = alpha * 0.16; // the soft halo
         ctx.lineWidth = width + 3;
         ctx.stroke();
@@ -1075,6 +1648,8 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.stroke();
     };
     for (let k = 0; k < BUCKETS; k++) if (buckets[k].length > 0) strokeList(buckets[k], (k / (BUCKETS - 1)) * MAX_ALPHA, 1.2);
+    const hides = hid ? "yes" : "no"; // whether faces hid any line this frame (the browser check reads it)
+    if (canvas.dataset.hides !== hides) canvas.dataset.hides = hides;
     // Ghosts fade in as a story starts and out as it ends, so the part can change unseen between stories.
     const turn = storyPhase(seconds);
     const ghostFade = Math.min(1, turn / 0.03, (1 - turn) / 0.03);
@@ -1101,7 +1676,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     ctx.fillStyle = ink;
     if (moving.length > 0) {
       // The face being extruded, lit in the lightest blue, fading in and out with the move; its handle and distance beside it.
-      const k = Math.min(1, Math.abs(push) / Math.abs(push > 0 ? EXTRUDE_OUT : EXTRUDE_IN));
+      const k = pushK;
       ctx.strokeStyle = blues[3];
       strokeList(moving, 0.35 + 0.35 * k, 1.4);
       const foot = atRaw(topMid[0], topMid[1], topZ + push);
@@ -1141,6 +1716,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       const length = Math.hypot(bx - ax, by - ay, bz - az) || 1e-6;
       const along = (t: number) => at(ax + (bx - ax) * t, ay + (by - ay) * t, az + (bz - az) * t);
       const head = along(p.t);
+      if (occ?.hides(head.x, head.y, head.depth)) continue; // running behind the body: out of sight
       const tail = along(Math.max(0, p.t - 0.35 / length));
       const colour = blues[p.shade % blues.length];
       const cue = depthCue(head.depth) * sparkShow; // sparks run only once the design is built
@@ -1177,6 +1753,15 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.textBaseline = "top";
       ctx.fillText(sizeWords(size3, currentUnit(doc)), cx, ringFoot + 12);
     }
+    // A still picture says why in small words under it, so it is never mistaken for a broken one.
+    const why = stillWhy();
+    if (why) {
+      ctx.globalAlpha = 0.5;
+      ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(STILL_WORDS[why], cx, Math.min(h - 18, ringFoot + (size3 ? 30 : 12)));
+    }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
   }
@@ -1201,18 +1786,23 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     timer = 0;
     if (!running) return;
     timer = win.requestAnimationFrame(frame);
-    if (now - lastFrame < FRAME_MS - 1) return; // at most 30 a second
+    if (now - lastFrame < 1000 / quality().fps - 1) return; // at most 30 a second (20 on the lightest)
     lastFrame = now;
     const begun = win.performance.now();
-    draw(Math.max(0, (now - t0) / 1000)); // a frame can be stamped a moment before the start
-    costs.push(win.performance.now() - begun);
-    if (costs.length >= SLOW_WINDOW) {
-      const mean = costs.reduce((a, b) => a + b, 0) / costs.length;
-      costs.length = 0;
-      if (mean > SLOW_MS) {
-        slow = true; // too slow: one still picture from here on
-        settle();
-      }
+    story = Math.max(0, (now - t0) / 1000); // a frame can be stamped a moment before the start
+    draw(story);
+    const cost = win.performance.now() - begun;
+    // The first frames after a start are not timed; then the middle of each SLOW_WINDOW decides (a few slow frames on a
+    // busy page are not a slow computer).
+    if (++drawn <= WARM_FRAMES) return;
+    costs.push(cost);
+    if (costs.length < SLOW_WINDOW) return;
+    const typical = median(costs);
+    costs.length = 0;
+    canvas.dataset.cost = typical.toFixed(1); // milliseconds a frame takes to draw, for a check (and anyone curious)
+    if (typical > SLOW_MS) {
+      level += 1; // a lighter version, or a still picture once the lightest is too slow
+      settle();
     }
   }
 
@@ -1222,13 +1812,20 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     timer = 0;
     if (!running || !ctx) return set("off"); // closed, or nothing to draw on (a test DOM): no loop at all
     size();
+    costs.length = 0;
+    drawn = 0;
+    const why = stillWhy();
+    if (why) canvas.dataset.still = why;
+    else delete canvas.dataset.still;
+    canvas.dataset.quality = String(Math.min(level, QUALITY.length - 1)); // what the tests read
+    if (!shown) return set(live() ? "live" : "still"); // waiting for `reveal`: nothing drawn yet, no loop
     if (live() && !doc.hidden) {
       set("live");
-      t0 = win.performance.now();
+      t0 = win.performance.now() - story * 1000; // the story carries on where it was
       timer = win.requestAnimationFrame(frame);
     } else {
       set(live() ? "live" : "still"); // a hidden tab keeps its mode, drawing nothing
-      draw(live() ? 0 : STILL_AT);
+      if (!doc.hidden) draw(live() ? story : STILL_AT);
     }
   }
 
@@ -1242,6 +1839,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       win.addEventListener("resize", onResize);
       motion?.addEventListener?.("change", onVisible);
       reshape();
+      if (shown) canvas.dataset.ready = "yes";
       settle();
       if (ctx) watch = win.setTimeout(watching, 1000); // nothing to draw on (a test DOM): nothing to watch for
     },
@@ -1255,14 +1853,28 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       timer = 0;
       watch = 0;
       set("off");
+      if (waits) {
+        shown = false; // shown again only once revealed again
+        delete canvas.dataset.ready;
+      }
     },
-    setSource(next) {
+    setSource(next, nextFaces) {
       source = next;
+      faceSource = nextFaces ?? (() => null);
       from = undefined; // read it again even if it gives the same array
-      if (reshape() && running && !live()) draw(STILL_AT);
+      if (reshape() && running && !live() && shown && !doc.hidden) draw(STILL_AT);
+    },
+    reveal() {
+      if (shown || !running) return;
+      shown = true;
+      reshape();
+      place = null; // placed where it belongs from the first frame, never eased in from somewhere else
+      story = 0; // the story starts with the build
+      canvas.dataset.ready = "yes"; // the page fades the picture in (home-screen.css)
+      settle();
     },
     redraw() {
-      if (running && ctx && !live() && !doc.hidden) draw(STILL_AT);
+      if (running && ctx && !live() && !doc.hidden && shown) draw(STILL_AT);
     },
     get mode() {
       return canvas.dataset.backdrop as "live" | "still" | "off";

@@ -1483,19 +1483,32 @@ export class Viewer implements SharedViewport {
     return this.views[0];
   }
 
-  /** Another view of the same scene, filling `container`, with its own camera; it starts at the home view of the current body. */
-  /** The main view's renderer counts and how many objects the scene holds (the soak test's leak check). */
   /** The body on show as edge lines (pairs of x y z points), for the home screen's turning picture; null with no body. */
   outline(): ArrayLike<number> | null {
     return this.mesh ? this.mesh.edge_lines : null;
   }
 
+  /**
+   * The body on show as triangles (corner points x y z, three corner numbers a triangle, counter-clockwise seen from
+   * outside), for the home screen's turning picture to paint solid; null with no body. The same array each time until the
+   * body changes.
+   */
+  surface(): { positions: ArrayLike<number>; indices: ArrayLike<number> } | null {
+    const mesh = this.mesh;
+    if (!mesh) return null;
+    if (this.surfaceOf?.mesh !== mesh) this.surfaceOf = { mesh, surface: { positions: mesh.positions, indices: mesh.indices } };
+    return this.surfaceOf.surface;
+  }
+  private surfaceOf: { mesh: DisplayMesh; surface: { positions: ArrayLike<number>; indices: ArrayLike<number> } } | null = null;
+
+  /** The main view's renderer counts and how many objects the scene holds (the soak test's leak check). */
   memoryCounts(): { geometries: number; textures: number; programs: number; objects: number } {
     let objects = 0;
     this.scene.traverse(() => objects++);
     return { ...this.views[0].gpuCounts(), objects };
   }
 
+  /** Another view of the same scene, filling `container`, with its own camera; it starts at the home view of the current body. */
   addView(container: HTMLElement): ViewportView {
     if (this.views.some((v) => v.element === container)) throw new Error("That element already shows a view");
     const view = new ViewportView(this.host, container);

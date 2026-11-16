@@ -5,7 +5,7 @@
 // the screen, its words, and the pure rules for search, filter and the card (tested by hand in test/home-screen.test.ts).
 // Styles: src/styles/home-screen.css.
 import { savedWhen } from "./project-list.ts";
-import { homeBackdrop } from "./home-backdrop.ts";
+import { homeBackdrop, type Surface } from "./home-backdrop.ts";
 
 /** What the screen needs of a kept project (@fission/storage ProjectSummary). */
 export interface HomeProject {
@@ -81,8 +81,18 @@ export interface HomeParts {
    * neutral shape.
    */
   outline?(): ArrayLike<number> | null;
+  /** The open project's triangles, for painting the picture solid (asked with `outline`). Null or left out: lines only. */
+  surface?(): Surface | null;
+  /**
+   * Settles once the open project is shown (built and drawn, or found to have no body): the picture waits for it, at most
+   * SHAPE_WAIT_MS, so it never shows the simple parts and then jumps to the design. Left out: no wait.
+   */
+  shown?(): Promise<void>;
   now?: () => Date;
 }
+
+/** The longest the picture waits for the open project before it shows the simple parts (the design follows when it comes). */
+export const SHAPE_WAIT_MS = 4000;
 
 export interface HomeScreen {
   show(): Promise<void>;
@@ -93,7 +103,7 @@ export interface HomeScreen {
    * For browser checks only (the shell's `?test-hooks`): turns these edges behind the screen in place of the open
    * project's, for a design the app can't open yet (an STL); null goes back to the project's.
    */
-  showStandIn(lines: ArrayLike<number> | null): void;
+  showStandIn(lines: ArrayLike<number> | null, surface?: Surface | null): void;
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -130,19 +140,36 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   backdropCanvas.setAttribute("aria-hidden", "true");
   const scrim = el("div", { className: "home-scrim" });
   scrim.setAttribute("aria-hidden", "true");
-  const backdrop = homeBackdrop(backdropCanvas, { win: doc.defaultView as Window & typeof globalThis, doc, room: () => links.getBoundingClientRect().bottom });
+  const win = doc.defaultView as Window & typeof globalThis;
+  // It waits (draws nothing) until the list is painted and the design is here, then fades in already in place.
+  const backdrop = homeBackdrop(backdropCanvas, { win, doc, room: () => links.getBoundingClientRect().bottom, waits: true });
   root.append(backdropCanvas, scrim, el("div", { className: "home-head" }), title, card, actions, find, status, items, links);
   root.querySelector(".home-head")!.append(close);
   doc.body.append(root);
 
   let rows: HomeRow[] = [];
-  /** Edges a browser check shows in place of the open project's (`showStandIn`), else null. */
+  /** Edges (and triangles) a browser check shows in place of the open project's (`showStandIn`), else null. */
   let standIn: ArrayLike<number> | null = null;
-  /** The turning picture: the open project's body when it is the one to carry on with (asked again as it reopens). */
-  const picture = () => {
+  let standInFaces: Surface | null = null;
+  /** Whether the card's project is the open one, whose body the picture shows. */
+  const carryingOpen = () => {
     const carry = carryOnRow(rows);
-    return standIn ?? (carry !== null && carry.id === parts.openId() ? (parts.outline?.() ?? null) : null);
+    return carry !== null && carry.id === parts.openId();
   };
+  /** The turning picture: the open project's body when it is the one to carry on with (asked again as it reopens). */
+  const picture = () => standIn ?? (carryingOpen() ? (parts.outline?.() ?? null) : null);
+  const pictureFaces = () => (standIn ? standInFaces : carryingOpen() ? (parts.surface?.() ?? null) : null);
+  /** Shows the picture once the list is painted and the open project's body is here (or has not come in SHAPE_WAIT_MS). */
+  async function reveal(mine: number) {
+    if (standIn === null && carryingOpen() && parts.shown) {
+      let wait = 0;
+      await Promise.race([parts.shown().catch(() => {}), new Promise<void>((done) => (wait = win.setTimeout(done, SHAPE_WAIT_MS)))]);
+      win.clearTimeout(wait);
+    }
+    if (mine !== ticket) return; // hidden, or filled again since
+    backdrop.setSource(picture, pictureFaces);
+    backdrop.reveal();
+  }
   let kept: HomeProject[] = [];
   let ticket = 0;
   let busy = false;
@@ -195,7 +222,9 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
       paintCard();
       paintFilter();
       items.replaceChildren();
-      return say(`The projects in this browser can't be listed (${message(e)}). Open file still works.`, true);
+      say(`The projects in this browser can't be listed (${message(e)}). Open file still works.`, true);
+      void reveal(mine);
+      return;
     }
     if (mine !== ticket) return;
     kept = list;
@@ -203,7 +232,7 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
     paintCard();
     paintFilter();
     paintList();
-    backdrop.setSource(picture);
+    void reveal(mine); // not waited for: the screen is ready to use at once
   }
 
   function rowFor(r: HomeRow): HTMLLIElement {
@@ -316,9 +345,10 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
       (root.querySelector<HTMLButtonElement>("#home-carry-on") ?? root.querySelector<HTMLButtonElement>("#home-new"))?.focus();
     },
     hide,
-    showStandIn(lines) {
+    showStandIn(lines, surface = null) {
       standIn = lines;
-      backdrop.setSource(picture);
+      standInFaces = lines ? surface : null;
+      backdrop.setSource(picture, pictureFaces);
     },
     get shown() {
       return !root.hidden;
