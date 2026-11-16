@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clipUnder, faceFrame, faceMix, facesViewer, fitSurface, groupFaces, LIGHT, NEUTRAL_SURFACES, Occluder, OCCLUDE_BIAS, prismSurface, surfaceVolume, toneOf, triangulate, visibleRuns, type Surface } from "../src/home-backdrop.ts";
 import { pushWords, extentOf, EXTRUDE_IN, EXTRUDE_OUT, extrudeAmount, hslOf, linksOf, placeShape, shadesOf, SPARK_SPEED, stepSpark, topFace, fitShape, flash, FLASH_AT, floorOf, FRAME_MS, homeBackdrop, lowEnd, luminance, makeTraces, MAX_ALPHA, NEUTRAL_SHAPE, project, rgbOf, depthCue, seeded, sizeWords, growthAt, growthLife, grownPath, GROW_SPEED, GROW_HOLD, GROW_FADE, makeMotes, moteAt, MOTE_LOW, MOTE_HIGH, NEUTRAL_SHAPES, prismEdges, QUALITY, WARM_FRAMES, SLOW_WINDOW, median, STORY_SECONDS, storyPhase, buildAt, BUILD_END, UNBUILD_AT, rippleAt, RIPPLE_REACH, glowOf, cornerOf, sphereGap, reachOf, CAMERA, dolly, DOLLY, DOLLY_SECONDS, ABOVE, BELOW } from "../src/home-backdrop.ts";
+import { gentleGrowthAt, GENTLE_FADE_IN, GENTLE_TURN, GENTLE_DRIFT, TURN_SECONDS, partFade, PART_FADE, pauseAt, STILL_AT, motionChoiceOf, MOTION_CHOICES, type MotionChoice } from "../src/home-backdrop.ts";
 
 const near = (a: number, b: number, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
 
@@ -181,7 +182,7 @@ test("low-end rule: 2 cores or fewer, 2 GB or less, or data saving; unknown is f
   near(FRAME_MS, 33.333, 0.001);
 });
 
-test("the backdrop with a drawing context: live draws and runs, reduced motion draws once, a 2-core computer moves lightly, a hidden tab and stop draw nothing", () => {
+test("the backdrop with a drawing context: live draws and runs, reduced motion runs gently, Still draws once, a 2-core computer moves lightly, a hidden tab and stop draw nothing", () => {
   const calls = { stroke: 0, raf: 0, cancel: 0 };
   const ctx = new Proxy({}, { get: (_t, k) => (k === "stroke" ? () => void calls.stroke++ : String(k).startsWith("create") ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
   function build(reduce: boolean, hidden = false, cores = 8) {
@@ -221,10 +222,22 @@ test("the backdrop with a drawing context: live draws and runs, reduced motion d
   live.backdrop.stop();
   assert.equal(live.backdrop.mode, "off");
 
+  // Reduced motion: it runs, gently (Ben, 2026-11-16: a still picture with Windows' animations off read as broken).
+  calls.raf = 0;
+  const calm = build(true);
+  calm.backdrop.start();
+  assert.equal(calm.backdrop.mode, "live");
+  assert.equal(calm.canvas.dataset.motion, "gentle");
+  assert.ok(calls.raf > 0);
+  calm.backdrop.stop();
+  // Still, as chosen: drawn once, no loop.
   calls.stroke = 0;
   const still = build(true);
+  still.backdrop.choose("still");
   still.backdrop.start();
   assert.equal(still.backdrop.mode, "still");
+  assert.equal(still.canvas.dataset.still, "paused");
+  assert.equal(still.canvas.dataset.motion, undefined);
   const once = calls.stroke;
   assert.ok(once > 0);
   still.tick(1000);
@@ -263,7 +276,7 @@ test("regression: a frame stamped just before the picture started (seconds a lit
 });
 
 /** A backdrop on a fake canvas whose every drawing takes `cost(frame)` milliseconds (read on the clock the backdrop measures with). */
-function timed(cost: (frame: number) => number, opts: { cores?: number; reduce?: boolean } = {}) {
+function timed(cost: (frame: number) => number, opts: { cores?: number; reduce?: boolean; choice?: MotionChoice; changed?: () => void } = {}) {
   let clock = 0;
   let drawn = 0;
   let frame: ((t: number) => void) | null = null;
@@ -273,20 +286,23 @@ function timed(cost: (frame: number) => number, opts: { cores?: number; reduce?:
     innerWidth: 800, innerHeight: 600, devicePixelRatio: 2, navigator: { hardwareConcurrency: opts.cores ?? 8 },
     matchMedia: () => ({ matches: opts.reduce ?? false, addEventListener: () => {}, removeEventListener: () => {} }),
     getComputedStyle: () => ({ getPropertyValue: () => "#4da3ff" }),
-    requestAnimationFrame: (f: (t: number) => void) => ((frame = f), 1), cancelAnimationFrame: () => {},
+    // A cancelled frame never comes (as in a browser), so a still picture's loop really stops.
+    requestAnimationFrame: (f: (t: number) => void) => ((frame = f), 1), cancelAnimationFrame: () => void (frame = null),
     addEventListener: () => {}, removeEventListener: () => {}, performance: { now: () => clock }, setTimeout: () => 0, clearTimeout: () => {},
   } as unknown as Window & typeof globalThis;
   const doc = { hidden: false, documentElement: { dataset: {} }, addEventListener: () => {}, removeEventListener: () => {} } as unknown as Document;
-  const backdrop = homeBackdrop(canvas, { win, doc });
+  const backdrop = homeBackdrop(canvas, { win, doc, changed: opts.changed });
+  if (opts.choice) backdrop.choose(opts.choice);
   backdrop.start();
-  /** Runs `n` frames, each 60 ms after the last on the clock (past any frame gap). */
-  const run = (n: number) => {
+  /** Runs `n` frames, each 60 ms after the last on the clock (past any frame gap); `each` sees the canvas after each. */
+  const run = (n: number, each?: (data: Record<string, string>) => void) => {
     for (let k = 0; k < n && frame; k++) {
       clock += 60;
       frame(clock);
+      each?.(canvas.dataset as Record<string, string>);
     }
   };
-  return { canvas, backdrop, run };
+  return { canvas, backdrop, run, draws: () => drawn };
 }
 
 test("regression: a slow first few frames (the computer warming up) never stop the motion", () => {
@@ -326,7 +342,7 @@ test("frames that stay slow step the picture down to lighter versions before it 
   bursty.backdrop.stop();
 });
 
-test("a 2-core computer gets the lightest moving picture, not a still one; reduced motion is still, and says so", () => {
+test("a 2-core computer gets the lightest moving picture, not a still one; reduced motion moves gently", () => {
   const two = timed(() => 5, { cores: 2 });
   assert.equal(two.backdrop.mode, "live");
   assert.equal(two.canvas.dataset.quality, String(QUALITY.length - 1));
@@ -335,8 +351,9 @@ test("a 2-core computer gets the lightest moving picture, not a still one; reduc
   assert.equal(two.backdrop.mode, "live");
   two.backdrop.stop();
   const calm = timed(() => 5, { reduce: true });
-  assert.equal(calm.backdrop.mode, "still");
-  assert.equal(calm.canvas.dataset.still, "reduced-motion");
+  assert.equal(calm.backdrop.mode, "live");
+  assert.equal(calm.canvas.dataset.motion, "gentle");
+  assert.equal(calm.canvas.dataset.still, undefined);
   calm.backdrop.stop();
   // The levels get lighter in every way, and the lightest still moves at 20 frames a second or more.
   for (let k = 1; k < QUALITY.length; k++) {
@@ -357,7 +374,7 @@ test("the backdrop survives a DOM with no canvas support", () => {
   assert.equal(b.mode, "off");
 });
 
-test("a body that arrives after the screen opened replaces the neutral cube within a second (reduced motion: drawn again)", () => {
+test("a body that arrives after the screen opened replaces the neutral cube within a second (a still picture: drawn again)", () => {
   let strokes = 0;
   const ctx = new Proxy({}, { get: (_t, k) => (k === "stroke" ? () => void strokes++ : String(k).startsWith("create") ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
   let tick: (() => void) | null = null;
@@ -373,6 +390,7 @@ test("a body that arrives after the screen opened replaces the neutral cube with
   const b = homeBackdrop(canvas, { win, doc });
   let body: number[] | null = null;
   b.setSource(() => body);
+  b.choose("still");
   b.start();
   assert.equal(canvas.dataset.shape, "neutral");
   assert.ok(strokes > 0);
@@ -878,4 +896,150 @@ test("waiting for the screen: nothing drawn until revealed, then placed for good
   plain.start();
   assert.equal(canvas.dataset.ready, "yes");
   plain.stop();
+});
+
+test("regression: under reduced motion the picture moves gently, never still: no build, flash, ripple or extrude in a whole story", () => {
+  // Ben, 2026-11-16: with Windows' animation effects off (prefers-reduced-motion: reduce) the home screen showed only a
+  // still picture, which read as broken. It now moves gently: drawn frame after frame, always built (data-build 1.0),
+  // only ever at rest (never building, sinking or a ripple), the top face never pulled (data-extrude 0.00).
+  const seen = { stage: new Set<string>(), build: new Set<string>(), extrude: new Set<string>() };
+  const calm = timed(() => 5, { reduce: true });
+  const frames = Math.ceil((STORY_SECONDS * 1000) / 65) + 20; // 65 ms a frame on the fake clock (60 apart, 5 to draw)
+  calm.run(frames, (d) => (seen.stage.add(d.stage), seen.build.add(d.build), seen.extrude.add(d.extrude)));
+  assert.equal(calm.backdrop.mode, "live");
+  assert.equal(calm.canvas.dataset.motion, "gentle");
+  assert.equal(calm.draws(), frames); // every frame drawn: it moves
+  assert.deepEqual([...seen.stage], ["rest"]);
+  assert.deepEqual([...seen.build], ["1.0"]);
+  assert.deepEqual([...seen.extrude], ["0.00"]);
+  calm.backdrop.stop();
+  // The control: the same story with no reduced motion goes through every stage, so the check above can fail.
+  const full = timed(() => 5);
+  const stages = new Set<string>();
+  full.run(frames, (d) => stages.add(d.stage));
+  assert.equal(full.canvas.dataset.motion, "full");
+  for (const s of ["building", "ripple", "extrude", "sinking"]) assert.ok(stages.has(s), s);
+  full.backdrop.stop();
+});
+
+test("hand-worked: moving gently, a circuit line is whole at once and only fades; a simple part fades at the story's turn; the slower turn", () => {
+  // A 92 px line takes 92 / 46 = 2 s to grow, so it lives 2 + 5 + 3 = 10 s (growthLife). Gently it is whole from the start
+  // (92 px), half faded in at 1 s (1 / GENTLE_FADE_IN, 2 s), whole from 2 s, held to 2 + 5 = 7 s, half gone at 8.5 s
+  // (1 − 1.5 / 3), and gone at 10 s: the same life.
+  assert.equal(GENTLE_FADE_IN, 2);
+  near(growthLife(92), 10);
+  assert.deepEqual(gentleGrowthAt(0, 92), { grown: 92, alpha: 0 });
+  near(gentleGrowthAt(1, 92).alpha, 0.5);
+  assert.equal(gentleGrowthAt(1, 92).grown, 92);
+  near(growthAt(1, 92).grown, 46); // growing, only 46 px at 1 s
+  near(gentleGrowthAt(2, 92).alpha, 1);
+  near(gentleGrowthAt(7, 92).alpha, 1);
+  near(gentleGrowthAt(8.5, 92).alpha, 0.5);
+  near(gentleGrowthAt(10, 92).alpha, 0);
+  near(gentleGrowthAt(12, 92).alpha, 0);
+  // A simple part: PART_FADE is 0.05 of a 36 s story, 1.8 s. At the turn nothing shows; 0.9 s in, smoothstep(0.5) = 0.5;
+  // whole from 1.8 s; 0.36 s before the end (0.01 of the story) smoothstep(0.2) = 0.04 × 2.6 = 0.104.
+  near(PART_FADE * STORY_SECONDS, 1.8);
+  near(partFade(0), 0);
+  near(partFade(0.9), 0.5);
+  near(partFade(1.8), 1);
+  near(partFade(18), 1);
+  near(partFade(STORY_SECONDS - 0.36), 0.104, 1e-9);
+  near(partFade(STORY_SECONDS + 0.9), 0.5); // every story the same
+  // The turn: 360° / 60 s = 6° a second gently, against 360° / 40 s = 9°; the motes at half their speed.
+  near(360 / GENTLE_TURN, 6);
+  near(360 / TURN_SECONDS, 9);
+  near(GENTLE_DRIFT, 0.5);
+});
+
+test("hand-worked: a paused picture keeps the moment on the screen, unless the design hardly shows in it", () => {
+  // Gently, with the simple parts: 0.9 s into a story the part is half faded in (above), so STILL_AT; at 10 s it shows.
+  near(pauseAt(0.9, true, false), STILL_AT);
+  near(pauseAt(10, true, false), 10);
+  // Gently with a project: never built or faded, so always that moment.
+  near(pauseAt(0.9, true, true), 0.9);
+  // The full story: 1 s in, buildAt = smoothstep(1 / 10.8 = 0.0926) = 0.0926² × (3 − 0.185) = 0.024, under a quarter: STILL_AT.
+  // 5.4 s in, half built: kept. 33 s in, sinking: 1 − smoothstep((0.9167 − 0.9) / 0.1 = 0.167) = 1 − 0.074 = 0.926: kept.
+  // 35.9 s in: 1 − smoothstep(0.972) = 0.002: STILL_AT.
+  near(buildAt(1), 0.024, 0.001);
+  near(pauseAt(1, false, false), STILL_AT);
+  near(pauseAt(5.4, false, false), 5.4);
+  near(buildAt(33), 0.926, 0.001);
+  near(pauseAt(33, false, false), 33);
+  near(pauseAt(35.9, false, false), STILL_AT);
+  // STILL_AT itself shows the design whole either way.
+  near(buildAt(STILL_AT), 1);
+  near(partFade(STILL_AT), 1);
+});
+
+test("the person's choice: Still keeps the moment; Full moves fully even under reduced motion; Gentle anywhere; a chosen motion never stops for a slow computer", () => {
+  // Still while moving keeps that moment: 333 frames of 65 ms is 21.64 s, 0.601 of the story, the top face held pulled
+  // out (0.58 to 0.68): the still picture shows it pulled out (STILL_AT, 14.4 s, would be a ripple).
+  const t = timed(() => 5);
+  t.run(333);
+  assert.equal(t.canvas.dataset.extrude, "0.24");
+  const n = t.draws();
+  t.backdrop.choose("still");
+  assert.equal(t.backdrop.mode, "still");
+  assert.equal(t.canvas.dataset.still, "paused");
+  assert.equal(t.draws(), n + 1); // drawn once, at that moment
+  assert.equal(t.canvas.dataset.stage, "extrude");
+  assert.equal(t.canvas.dataset.extrude, "0.24");
+  t.run(30);
+  assert.equal(t.draws(), n + 1); // no loop
+  // Moving again carries the story on from there: 5 frames later still in the hold (it ends at 24.48 s).
+  t.backdrop.choose("full");
+  t.run(5);
+  assert.equal(t.backdrop.mode, "live");
+  assert.equal(t.draws(), n + 6);
+  assert.equal(t.canvas.dataset.extrude, "0.24");
+  t.backdrop.stop();
+  // Full on a computer set to show less motion: the whole story (Ben, 2026-11-16).
+  const fullCalm = timed(() => 5, { reduce: true, choice: "full" });
+  assert.equal(fullCalm.canvas.dataset.motion, "full");
+  const stages = new Set<string>();
+  fullCalm.run(400, (d) => stages.add(d.stage)); // 26 s: built, a ripple, the top face pulled out
+  for (const s of ["building", "ripple", "extrude"]) assert.ok(stages.has(s), s);
+  fullCalm.backdrop.stop();
+  // Gentle on a computer that asks for nothing: only at rest.
+  const g = timed(() => 5, { choice: "gentle" });
+  assert.equal(g.canvas.dataset.motion, "gentle");
+  const rest = new Set<string>();
+  g.run(400, (d) => rest.add(d.stage));
+  assert.deepEqual([...rest], ["rest"]);
+  g.backdrop.stop();
+  // Following the computer, 20 ms frames step down and then stop, saying why; Full then moves it on the lightest, for good.
+  const slow = timed(() => 20);
+  slow.run(3 * (WARM_FRAMES + SLOW_WINDOW));
+  assert.equal(slow.backdrop.mode, "still");
+  assert.equal(slow.canvas.dataset.still, "slow");
+  slow.backdrop.choose("full");
+  assert.equal(slow.backdrop.mode, "live");
+  assert.equal(slow.canvas.dataset.quality, String(QUALITY.length - 1));
+  slow.run(4 * (WARM_FRAMES + SLOW_WINDOW));
+  assert.equal(slow.backdrop.mode, "live");
+  slow.backdrop.stop();
+  // Gentle chosen is a chosen motion too: never stopped.
+  const slowGentle = timed(() => 20, { choice: "gentle" });
+  slowGentle.run(5 * (WARM_FRAMES + SLOW_WINDOW));
+  assert.equal(slowGentle.backdrop.mode, "live");
+  slowGentle.backdrop.stop();
+});
+
+test("the screen is told after every change of what is drawn, once a choice changes, and the kept choice is read back safely", () => {
+  let told = 0;
+  const c = timed(() => 5, { changed: () => void told++ });
+  const atStart = told;
+  assert.ok(atStart >= 1); // started
+  c.backdrop.choose("still");
+  assert.equal(told, atStart + 1);
+  c.backdrop.choose("still"); // the same choice: nothing to do
+  assert.equal(told, atStart + 1);
+  c.backdrop.stop();
+  assert.equal(told, atStart + 2);
+  assert.equal(c.backdrop.mode, "off");
+  // What a store gives back: one of the four, else following the computer.
+  assert.deepEqual(MOTION_CHOICES, ["system", "full", "gentle", "still"]);
+  for (const m of MOTION_CHOICES) assert.equal(motionChoiceOf(m), m);
+  for (const bad of [null, undefined, "", "Full", "pause", 3, {}]) assert.equal(motionChoiceOf(bad), "system");
 });

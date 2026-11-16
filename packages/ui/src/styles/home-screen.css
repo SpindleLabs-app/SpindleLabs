@@ -29,7 +29,10 @@
 .home-screen .home-chip { font-size: 11px; padding: 1px 8px; color: var(--text-dim); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
 .home-screen .home-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--look-space-2); }
 .home-screen .home-row-question { flex-basis: 100%; font-size: 13px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
-.home-screen .home-links { margin: 0; }
+.home-screen .home-links { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-2) var(--look-space-4); }
+/* The picture's own controls beside the guide link (home-screen.ts paintMotion): Pause or Play with its icon, and Full or Gentle motion. */
+.home-screen .home-motion:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
+.home-screen .home-links [hidden]:not(#none) { display: none; }
 .home-screen .home-button:not(#none) { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 .home-screen .home-button:not(#none):hover { border-color: var(--look-accent); color: var(--look-accent-text); }
 .home-screen .home-primary:not(#none) { border-color: var(--look-accent); }
