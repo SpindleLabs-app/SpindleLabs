@@ -163,3 +163,28 @@ test("44a-app3: Edit feature on a Chamfer opens with its type, sizes and Flip, i
   assert.equal($("chamfer-edit-note").hidden, true);
   assert.deepEqual(panel.typed, { kind: "equal", first: "1", second: "1", flip: false });
 });
+
+test("the arrow's drag (Ben 2026-11-16): setFirst puts the dragged mm in the Distance box, which glows while held; a refused preview says the kernel's words in red, a plain note does not", () => {
+  const { panel, $ } = setup();
+  panel.show(1);
+  panel.setFirst(2.3);
+  assert.equal(panel.typed.first, "2.3");
+  assert.equal($<HTMLInputElement>("chamfer-distance").value, "2.3");
+  panel.dragging(true);
+  assert.equal($("chamfer-distance").classList.contains("chamfer-panel-dragged"), true);
+  panel.dragging(false);
+  assert.equal($("chamfer-distance").classList.contains("chamfer-panel-dragged"), false);
+  // Refused: the words shown, red (class "bad"), and the panel marked for the browser check.
+  panel.showPreview(null, "This edge is an inside corner", true);
+  assert.equal($("chamfer-preview-why").hidden, false);
+  assert.equal($("chamfer-preview-why").textContent, "This edge is an inside corner");
+  assert.equal($("chamfer-preview-why").classList.contains("bad"), true);
+  assert.equal($("chamfer-panel").dataset.previewRefused, "true");
+  // A plain note (an edited Chamfer whose body a later item changes) is quiet; a drawn preview clears both.
+  panel.showPreview(null, "No preview: later items", false);
+  assert.equal($("chamfer-preview-why").classList.contains("bad"), false);
+  assert.equal($("chamfer-panel").dataset.previewRefused, "false");
+  panel.showPreview(980);
+  assert.equal($("chamfer-preview-why").hidden, true);
+  assert.equal($("chamfer-panel").dataset.previewVolume, "980.000");
+});

@@ -418,7 +418,11 @@ export type KernelInput =
   | { input: "sketch" }
   | { input: "line"; index: number }
   | { input: "arc"; index: number }
-  | { input: "circle"; index: number };
+  | { input: "circle"; index: number }
+  /** A vertex, edge or face of a body the call was given (`body` 0 the first, a boolean's target; 1 its tool), by kernel index: Chamfer's refusals name the edge they are about. */
+  | { input: "vertex"; body: number; vertex: number }
+  | { input: "edge"; body: number; edge: number }
+  | { input: "face"; body: number; face: number };
 
 /** A failed kernel call in plain data, as it crosses from the worker. */
 export interface KernelFailure {

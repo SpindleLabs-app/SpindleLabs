@@ -2,10 +2,10 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
+import { KernelError, chordLabel, parseChord, summaryInUnit, wordsInUnit, latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type AnalysisOverlay, type BodyHandle, type BodySpec, type ChamferSize, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, type HistoryStep, withWorkspaceDocument } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, isChamferItem, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, combineBodies, EYE_FOLDERS, CHAMFER_MAX, isChamferItem, isCombineItem, extrudeOperation, insertAt, isHidden, isMoveItem, isOperationExtrude, isPiece, isSketchExtrude, numberPieces, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, ownShape, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type ChamferSizing, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { alreadyPicked, arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureBuild, featureSpec, previewSpec, setExtrudeDistance, setExtrudeOperation, setExtrudeSymmetric, setExtrudeThrough, signedDistance, symmetricDrag, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { throughDistance, throughWords } from "./extrude-through.ts";
@@ -28,6 +28,7 @@ import { chamferPanel } from "./chamfer-panel.ts";
 import { chamferHintWords, heldNamesOf, NO_NAME, picksFrom, readChamferSize, togglePick as toggleEdge, type PickedEdge } from "./chamfer-tool.ts";
 import { CHAMFER_STEP, changedChamfer, editableChamfer, EDIT_EDGES_NOTE, insertChamfer } from "./chamfer.ts";
 import { cutAt, editPreviewInput, pickableView, previewChamfer, previewedMesh } from "./chamfer-preview.ts";
+import { chamferArrow, refusedEdges, snapChamfer, wedgeMesh } from "./chamfer-arrow.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { noteRebuild, registerDesign } from "./representations.ts";
@@ -3220,6 +3221,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // The pointer while Extrude is shown (UX1b): a click on an offered outline chooses it (one on
   // none keeps the choice, as Fusion does); the arrow dragged sets the distance in whole mm.
   const onExtrudePointer: SharedViewport["onExtrudePointer"] = (pointer) => {
+    // Chamfer's arrow (Ben, 2026-11-16): its drag sets the distance; its clicks pick edges through onPick.
+    if (chamferBox.shown && chamferShowing) return void (pointer.kind === "drag" && chamferDrag(pointer.distance, pointer.done));
     if (!extruding) {
       if (editRegions !== null && pointer.kind === "pick" && pointer.profile !== null) pickEditRegion(pointer.profile);
       return;
@@ -3820,22 +3823,60 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** The cut drawn before OK (44a-app3, chamfer-preview.ts): the body's id and its view as the kernel chamfers it at the size typed; null when none is drawn. */
   let chamferDrawn: { body: string; view: BodyView; cuts: number[] } | null = null;
   /** The kernel's chamfer for the preview, the latest ask only (a late answer to an older size never draws over a newer one); a refusal comes back as its words. */
-  const chamferAsk = latestOnly(async (handle: BodyHandle, edges: readonly number[], size: ChamferSize, flip: boolean, shownAs: BodyHandle): Promise<{ view: BodyView; cuts: number[] } | { why: string }> => {
+  const chamferAsk = latestOnly(async (handle: BodyHandle, edges: readonly number[], size: ChamferSize, flip: boolean, shownAs: BodyHandle): Promise<{ view: BodyView; cuts: number[]; from: BodyView } | { why: string; edges: number[]; from: BodyView | null }> => {
+    // The body chamfered, as it is before the cut: the arrow stands on it and a refusal's red wedge is drawn on it.
+    const from = await bodies.using(() => bodies.view(handle)).catch(() => null);
     try {
       // Numbered as the body drawn now (`shownAs`), so the tool's clicks on the drawn preview pick that body's own edges.
       return await bodies.using(async () => {
         const [made, body] = await Promise.all([previewChamfer(kernel, handle, edges, size, flip), bodies.view(shownAs)]);
-        return pickableView(body, made.view, made.faces);
+        return { ...pickableView(body, made.view, made.faces), from: from ?? body };
       });
     } catch (e) {
-      return { why: e instanceof Error ? e.message : String(e) };
+      // The edges it names (Chamfer's refusals name the edge they are about), else every edge asked.
+      return { why: e instanceof Error ? e.message : String(e), edges: refusedEdges(e instanceof KernelError ? e.inputs : [], edges), from };
     }
   });
+  /**
+   * What Chamfer shows in the view besides the body (Ben, 2026-11-16): the arrow on the last edge
+   * (`chamfer-arrow.ts`, dragged to set the distance; Extrude's arrow, with clicks still picking edges) and,
+   * when the kernel refuses, the wedge it would cut off each edge it names, in see-through red. Null: none.
+   */
+  let chamferShow: { from: BodyView; edge: number; flip: boolean; size: ChamferSize; refused: number[] | null } | null = null;
+  let chamferShowing = false;
+  function showChamferView() {
+    const c = shown && chamferBox.shown ? chamferShow : null;
+    const d1 = c === null ? 0 : "equal" in c.size ? c.size.equal : "two" in c.size ? c.size.two[0] : c.size.angle[0];
+    const arrow = c === null ? null : chamferArrow(c.from, c.edge, c.flip, d1);
+    const wedge = c === null || c.refused === null ? null : wedgeMesh(c.from, c.refused, c.size, c.flip);
+    if (arrow === null && wedge === null) {
+      if (chamferShowing) viewport.showExtrude(null);
+      chamferShowing = false;
+      return;
+    }
+    chamferShowing = true;
+    viewport.showExtrude({ profiles: [], chosen: null, preview: wedge, arrow, cut: true, pickBodies: true });
+  }
+  /** The arrow dragged (`onExtrudePointer`): the first distance snapped to 0.1 mm, put in the box, previewed live. */
+  let chamferDragMoved = false;
+  function chamferDrag(distance: number, done: boolean) {
+    chamferBox.dragging(!done);
+    // A press on the arrow let go where it was is a click (the view picks under it): the typed size stays as typed.
+    const moved = chamferDragMoved || !done;
+    chamferDragMoved = !done;
+    if (!moved) return;
+    const d = snapChamfer(distance, CHAMFER_MAX);
+    const typed = chamferBox.typed;
+    if (Number(typed.first) === d) return;
+    chamferBox.setFirst(d);
+    chamferBox.showError("");
+    void refreshChamferPreview();
+  }
   /** The preview drawn as `next` (null: none), with the panel told the volume drawn or why there is none. */
-  function drawChamferPreview(next: { body: string; view: BodyView; cuts: number[] } | null, why = "") {
+  function drawChamferPreview(next: { body: string; view: BodyView; cuts: number[] } | null, why = "", refused = false) {
     const had = chamferDrawn !== null;
     chamferDrawn = next;
-    chamferBox.showPreview(next?.view.volume ?? null, why);
+    chamferBox.showPreview(next?.view.volume ?? null, why, refused);
     if ((had || next !== null) && shown && lastScene) showBodies(lastScene);
   }
   /**
@@ -3861,12 +3902,21 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const handle = bodiesNow[body]?.handle;
       if (handle !== undefined) input = { body, handle, edges: chamferPicks.map((p) => p.edge), shownAs: handle };
     }
-    if (input === null || "why" in read) return drawChamferPreview(null, why);
+    if (input === null || "why" in read) {
+      // The arrow stays where it was while a box holds no size (half typed); with no edges there is none.
+      if (input === null) chamferShow = null;
+      showChamferView();
+      return drawChamferPreview(null, why);
+    }
     const opened = chamferOpenings;
     const got = await chamferAsk(input.handle, input.edges, read.size, typed.flip, input.shownAs);
     if (!got.current || chamferOpenings !== opened || !chamferBox.shown) return;
-    if ("why" in got.value) return drawChamferPreview(null);
-    drawChamferPreview({ body: input.body, ...got.value });
+    const v = got.value;
+    const last = input.edges[input.edges.length - 1];
+    chamferShow = v.from === null ? null : { from: v.from, edge: last, flip: typed.flip, size: read.size, refused: "why" in v ? v.edges : null };
+    showChamferView();
+    if ("why" in v) return drawChamferPreview(null, v.why, true);
+    drawChamferPreview({ body: input.body, view: v.view, cuts: v.cuts });
   }
   /** A scene body's view by its body id, or null when it is not shown. */
   const shownView = (body: string) => lastScene?.bodies.find((b) => b.body === body)?.view ?? null;
@@ -3986,6 +4036,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     chamferOpenings++;
     chamferBox.hide();
     chamferPicks = [];
+    chamferShow = null;
+    showChamferView(); // the arrow and any red wedge put away
     drawChamferPreview(null); // the body drawn as it is again
     showChamferHint();
     toolsChanged();
