@@ -39,3 +39,6 @@
   .chamfer-panel #chamfer-error, .chamfer-panel .chamfer-panel-note { flex: 1 1 100%; margin: 0; }
   .chamfer-panel .chamfer-panel-buttons { flex: 1 1 100%; margin: 0; }
 }
+/* The Distance box glows while the arrow in the view is dragged; the preview's refusal is red, as the wedge in the view is (Ben 2026-11-16). */
+.chamfer-panel #chamfer-distance.chamfer-panel-dragged { border-color: var(--look-accent, var(--accent)); box-shadow: 0 0 0 2px var(--look-accent, var(--accent)); }
+.chamfer-panel .chamfer-panel-note.bad { color: var(--danger); font-size: 0.9em; }

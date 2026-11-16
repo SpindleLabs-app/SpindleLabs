@@ -238,6 +238,12 @@ export interface ExtrudeShow {
   arrow: ExtrudeArrow | null;
   /** The preview is a Cut (Extrude's Operation): drawn red, as Fusion draws what a cut takes away. */
   cut?: boolean;
+  /**
+   * Only the arrow (and the preview) are Extrude's: clicks, hovers and the
+   * menu pick on the bodies as usual, and only a drag of the arrow goes to
+   * onExtrudePointer (Chamfer's distance arrow, which picks edges meanwhile).
+   */
+  pickBodies?: boolean;
 }
 
 /**

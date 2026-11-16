@@ -37,8 +37,11 @@ export interface ChamferPanel {
   show(edges: number, edit?: EditableChamfer): void;
   /** The Chamfer being edited (its id), or null for a new one. */
   readonly editing: string | null;
-  /** The live preview's state (44a-app3): the volume drawn (read by the e2e test), or null with why there is none ("" says nothing). */
-  showPreview(volume: number | null, why?: string): void;
+  /** The live preview's state (44a-app3): the volume drawn (read by the e2e test), or null with why there is none ("" says nothing); `refused` says it in red as the kernel's refusal of the size and edges now (the red wedge in the view). */
+  showPreview(volume: number | null, why?: string, refused?: boolean): void;
+  /** The first distance set by the arrow's drag (mm), shown in Settings' unit; the box glows while the arrow is held (`dragging`). */
+  setFirst(mm: number): void;
+  dragging(on: boolean): void;
   /** The number of edges picked, as the picks change. */
   setEdges(count: number): void;
   readonly typed: ChamferTyped;
@@ -194,10 +197,18 @@ export function chamferPanel(slot: HTMLElement, on: ChamferEvents): ChamferPanel
     get editing() {
       return editing;
     },
-    showPreview(volume, why = "") {
+    showPreview(volume, why = "", refused = false) {
       box.dataset.previewVolume = volume === null ? "" : volume.toFixed(3);
-      previewWhy.textContent = why;
+      box.dataset.previewRefused = String(refused);
+      previewWhy.textContent = refused ? wordsInUnit(why, currentUnit(document)) : why;
+      previewWhy.classList.toggle("bad", refused);
       previewWhy.hidden = why === "";
+    },
+    setFirst(mm) {
+      first.value = String(mm);
+    },
+    dragging(on) {
+      firstInput.classList.toggle("chamfer-panel-dragged", on);
     },
     hide() {
       open = false;

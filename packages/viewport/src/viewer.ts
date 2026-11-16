@@ -119,7 +119,7 @@ export class ViewportView {
   private home: "orbit" | "select" = "orbit";
   private bar: ReturnType<typeof navBar>;
   /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */
-  private arrowDrag: { id: number; offset: number; last: number } | null = null;
+  private arrowDrag: { id: number; offset: number; last: number; at: { x: number; y: number } } | null = null;
   /**
    * A Move handle while it is held (35e2c): the pointer, the handle, its
    * centre at the press, where along the arrow (mm) or round the ring
@@ -206,7 +206,7 @@ export class ViewportView {
       hold = null;
     };
     const menuAt = (x: number, y: number): boolean => {
-      if (!this.host.picking() || this.host.extruding() || this.host.sketchPlane() || this.host.offeredFaces()) return false;
+      if (!this.host.picking() || this.extrudePicks() || this.host.sketchPlane() || this.host.offeredFaces()) return false;
       const edge = this.edgeAt(x, y);
       return this.host.menu({ face: edge === null ? this.faceAt(x, y) : null, edge, shift: false }, { x, y });
     };
@@ -247,8 +247,8 @@ export class ViewportView {
       endHold();
       if (held) return void ((held = false), (heldUp = true));
       if (!start || start.id !== e.pointerId || !isClick(start, { x: e.clientX, y: e.clientY })) return;
-      // Extrude (UX1b): a click picks the closed outline under the pointer, or none.
-      if (this.host.extruding()) {
+      // Extrude (UX1b): a click picks the closed outline under the pointer, or none (a click on Chamfer's arrow's picks bodies).
+      if (this.extrudePicks()) {
         const profile = this.profileAt(e.clientX, e.clientY);
         // Ctrl, Cmd or Shift held adds or takes away a profile (several extruded at once), as Fusion's Ctrl-click.
         const add = e.ctrlKey || e.metaKey || e.shiftKey;
@@ -259,14 +259,7 @@ export class ViewportView {
       if (plane) return this.host.sketchPointer({ kind: "click", ...this.pointerOn(e.clientX, e.clientY, plane), ...this.sketchPick(e.clientX, e.clientY), ...(e.shiftKey ? { shift: true as const } : {}), ...(e.pointerType === "touch" ? { touch: true as const } : {}) });
       // Picking where a sketch goes: the face under the pointer, else the nearest offered plane, never an edge (26d).
       if (this.host.offeredFaces()) return this.host.pick({ ...this.planeTarget(e.clientX, e.clientY), edge: null, shift: e.shiftKey });
-      const touch = e.pointerType === "touch";
-      const corner = this.cornerAt(e.clientX, e.clientY, touch);
-      const edge = corner === null ? this.edgeAt(e.clientX, e.clientY) : null;
-      // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
-      const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch, shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
-      const double = isDoublePick(this.lastClick, click);
-      this.lastClick = double ? null : click;
-      this.host.pick({ face: edge === null && corner === null ? this.faceAt(e.clientX, e.clientY) : null, edge, ...(corner !== null ? { vertex: corner } : {}), shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
+      this.pickBody(e);
     });
     // Hover: what a click would pick, looked up at most once a frame, never while a button is held.
     let pointer: { x: number; y: number } | null = null;
@@ -283,7 +276,14 @@ export class ViewportView {
           this.host.setMoveHot(handle);
           if (handle) return this.host.setHover(null, null);
         }
-        if (this.host.extruding()) {
+        // Chamfer's arrow (`pickBodies`): the arrow under the pointer lights alone; elsewhere the body's hover goes on as usual.
+        if (this.host.extruding() && !this.extrudePicks()) {
+          if (this.arrowDrag) return;
+          const hot = pointer ? this.onArrow(pointer.x, pointer.y, "mouse") : false;
+          this.host.setExtrudeHover(null, hot);
+          if (hot) return this.host.setHover(null, null);
+        }
+        if (this.extrudePicks()) {
           if (this.arrowDrag) return; // the arrow stays lit while it is held
           // Only what a click would pick lights: an outline, and the arrow under the pointer.
           this.host.setHover(null, null);
@@ -537,6 +537,18 @@ export class ViewportView {
     canvas.addEventListener("pointercancel", end);
   }
 
+  /** A click on the bodies (not in Extrude, a sketch or a plane prompt): the corner, edge or face under it, a double-click said. */
+  private pickBody(e: PointerEvent) {
+    const touch = e.pointerType === "touch";
+    const corner = this.cornerAt(e.clientX, e.clientY, touch);
+    const edge = corner === null ? this.edgeAt(e.clientX, e.clientY) : null;
+    // The second of a double-click or double-tap (double-pick.ts) says so; the next click starts afresh.
+    const click = { x: e.clientX, y: e.clientY, at: e.timeStamp, touch, shift: e.shiftKey, view: [...this.camera.position.toArray(), ...this.camera.quaternion.toArray()] };
+    const double = isDoublePick(this.lastClick, click);
+    this.lastClick = double ? null : click;
+    this.host.pick({ face: edge === null && corner === null ? this.faceAt(e.clientX, e.clientY) : null, edge, ...(corner !== null ? { vertex: corner } : {}), shift: e.shiftKey, ...(double ? { double: true as const } : {}) });
+  }
+
   /**
    * Dragging Extrude's arrow (UX1b): a press within ARROW_GRAB_PX of it
    * (more room for a finger) grabs it, whatever the navigation mode, and
@@ -558,7 +570,7 @@ export class ViewportView {
       e.stopImmediatePropagation();
       if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
       canvas.setPointerCapture(e.pointerId);
-      this.arrowDrag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance };
+      this.arrowDrag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance, at: { x: e.clientX, y: e.clientY } };
       this.host.setExtrudeHover(null, true);
     }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointermove", (e) => {
@@ -577,6 +589,9 @@ export class ViewportView {
       // Read by the e2e tests: once a drag's end is counted, every move it made has been heard.
       this.element.dataset.arrowDrags = String(Number(this.element.dataset.arrowDrags ?? 0) + 1);
       this.host.extrudePointer({ kind: "drag", distance: drag.last, done: true });
+      // Chamfer's arrow (`pickBodies`) stands over the body: a press on it that never moved is a click on what is under it
+      // (an edge picked, or a previewed chamfer's face taken out), as it would be with no arrow there.
+      if (this.host.extrude.state?.pickBodies === true && this.host.picking() && isClick(drag.at, { x: e.clientX, y: e.clientY }) && e.type === "pointerup") this.pickBody(e);
     };
     canvas.addEventListener("pointerup", end);
     canvas.addEventListener("pointercancel", end);
@@ -775,6 +790,11 @@ export class ViewportView {
     if ((this.element.dataset.moveHandles ?? "") === said) return;
     if (said) this.element.dataset.moveHandles = said;
     else delete this.element.dataset.moveHandles;
+  }
+
+  /** Whether clicks and hovers go to Extrude's outlines: Extrude shown, and not only its arrow (`ExtrudeShow.pickBodies`, Chamfer's). */
+  private extrudePicks(): boolean {
+    return this.host.extruding() && this.host.extrude.state?.pickBodies !== true;
   }
 
   /** How long Extrude's arrow is in this view, in mm: ARROW_PX on screen where its foot is. */
