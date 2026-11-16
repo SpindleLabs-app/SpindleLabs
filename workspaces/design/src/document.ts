@@ -672,8 +672,15 @@ export const numberedWhenBuilt = (bodyId: string, item: Feature | undefined): bo
 /** Whether an item makes a body of its own: anything but a sketch, a Move, a Combine or an extrude with an operation (a Duplicate's copy is its own body). */
 export const makesBody = (f: Feature) => !isSketchItem(f) && !actsOnBodies(f) && !isOperationExtrude(f);
 
-/** Whether an item's own faces can be named in the design (sketched on, pinned to, projected): one that makes a body, or an extrude with an operation (its faces carried onto the bodies it joined or cut). */
-export const hasOwnFaces = (f: Feature) => makesBody(f) || isOperationExtrude(f);
+/** Whether an item's own faces can be named in the design (pinned to, projected): one that makes a body, or an extrude with an operation (its faces carried onto the bodies it joined or cut). */
+const namesOwnBodyFaces = (f: Feature) => makesBody(f) || isOperationExtrude(f);
+
+/**
+ * Whether a sketch can go on a face named after this item: one whose own faces are named (`namesOwnBodyFaces`), or
+ * (Ben 2026-11-16) a Chamfer, whose new faces are `face:<the Chamfer>/chamfer:<k>` on the body it cut (rebuild.ts
+ * `chamferRun`), found again by that name across the design as any face is.
+ */
+export const hasOwnFaces = (f: Feature) => namesOwnBodyFaces(f) || isChamferItem(f);
 
 /**
  * A Duplicate (step 35e2): a copy of one body made before it (its `body`,
@@ -1253,7 +1260,7 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
  * on.
  */
 /** Whether a pin or projection named `name` can be on item `item`'s body: one with its own faces, or (35f1f2b, version 15) a Combine, by a name its result gives (design-edges.ts). */
-export const pinnable = (item: Feature, name: string): boolean => hasOwnFaces(item) || (isCombineItem(item) && isHeldDesignName(name));
+export const pinnable = (item: Feature, name: string): boolean => namesOwnBodyFaces(item) || (isCombineItem(item) && isHeldDesignName(name));
 
 /** Whether an item's body can be a Combine's result whose edges pins hold by their design names (35f1f2b): a Combine, (35f1f2c) a Duplicate of one, or (Combine hunt 2) an extrude that joins, cuts or intersects, by which snapping to a body it changed names it; or (SL #611, broken-solids hunt D5) an extrude of several profiles, whose bodies are a join's result. */
 const holdsDesignNames = (item: Feature): boolean => isCombineItem(item) || isDuplicateItem(item) || makesPieces(item);
