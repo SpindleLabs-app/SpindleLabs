@@ -182,6 +182,31 @@ class Save(unittest.TestCase):
         self.assertIn("ci/pr-3/abc/1-1/mutants-plan/tests.log", saved)
         self.assertFalse([f for f in saved if "checks-solver" in f])
 
+    def test_open_sealed_opens_each_artifact_saves_nothing_and_names_one_it_cannot(self):
+        keys = os.path.join(self.tmp.name, "keys")
+        subprocess.run(["bash", SCRIPT, "keygen", keys], check=True)
+        root = os.path.join(self.tmp.name, "downloaded")
+        for name in ("endless-a-0", "mutants-1"):
+            subprocess.run(["bash", SCRIPT, "seal", self.logs, os.path.join(root, "sealed-" + name), os.path.join(keys, "public.pem")], check=True)
+        bad = os.path.join(root, "sealed-endless-b-3")
+        subprocess.run(["bash", SCRIPT, "seal", self.logs, bad, os.path.join(keys, "public.pem")], check=True)
+        with open(os.path.join(bad, "data.enc"), "r+b") as f:
+            f.seek(5)
+            f.write(b"\x00\x01")
+        opened = os.path.join(self.tmp.name, "opened")
+        env = dict(os.environ, RESULTS_REPO=self.remote, SAVE_WAIT_SCALE="0")
+        out = subprocess.run(["bash", SCRIPT, "open-sealed", root, os.path.join(keys, "private.pem"), opened], capture_output=True, text=True, env=env)
+        self.assertEqual(out.returncode, 1)
+        self.assertEqual(sorted(out.stdout.split("\n")), ["", "could not open endless-b-3", "opened endless-a-0", "opened mutants-1"])
+        with open(os.path.join(opened, "endless-a-0", "tests.log")) as f:
+            self.assertEqual(f.read(), "all passed\n")
+        self.assertFalse(os.path.exists(os.path.join(opened, "endless-b-3", "tests.log")))
+        self.assertEqual(self.saved(), ["README"])
+        # Then one save of them all lands as runs/<run>/<name>/.
+        env = dict(env, RESULTS_PATH="runs")
+        self.assertEqual(subprocess.run(["bash", SCRIPT, "save", "9-1", opened], capture_output=True, text=True, env=env).returncode, 0)
+        self.assertIn("runs/9-1/mutants-1/tests.log", self.saved())
+
     def test_files_over_50_mb_stay_behind_and_are_counted(self):
         # 50 MiB + 1 byte is over the limit (find -size +50M counts whole
         # MiB: over 50 means at least 50 MiB + 1 byte); exactly 50 MiB is
@@ -765,7 +790,10 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
     split (SPLIT, which grows as each job is), the only secret such a job may name is KERNEL_SOURCE (read-only on the
     kernel, which the code can read anyway), and no job naming a writing key runs kernel code."""
 
-    SPLIT = {("kernel-ci.yml", job) for job in ("coverage", "checks-plan", "checks", "mutants-plan", "mutants-shard")}
+    SPLIT = {("kernel-ci.yml", job) for job in ("coverage", "checks-plan", "checks", "mutants-plan", "mutants-shard")} | {
+        ("kernel-nightly.yml", job) for job in ("test", "test-second-leg", "mutants")}
+    # The workflows whose every job is split: none of them holds a writing key beside kernel code.
+    DONE = {name for name, _ in SPLIT}
     WRITING = {"RESULTS_WRITE", "KERNEL_STATUS", "KERNEL_READ", "MERGE_QUEUE_TOKEN"}
     KERNEL = re.compile(r"kernel_ci\.sh run\b|\bk/ci/|\bk/kernel/|cd k/kernel")
 
@@ -775,7 +803,7 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
             code = "\n".join(line for line in lines.split("\n") if not line.lstrip().startswith("#"))
             named = SecretsOnlyOnMain.secrets(code)
             runs_kernel = bool(self.KERNEL.search(code))
-            if name == "kernel-ci.yml" and runs_kernel and named & self.WRITING:
+            if name in self.DONE and runs_kernel and named & self.WRITING:
                 out.append(f"{name} {job}: runs kernel code beside {', '.join(sorted(named & self.WRITING))}")
             if (name, job) in self.SPLIT:
                 if not runs_kernel:
@@ -789,9 +817,20 @@ class SplitJobsHoldOnlyTheReadKey(unittest.TestCase):
                 found += self.problems(name, f.read())
         self.assertEqual(found, [])
 
-    def test_kernel_ci_no_longer_uses_the_old_all_in_one_key(self):
-        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "kernel-ci.yml")) as f:
-            self.assertNotIn("secrets.KERNEL_READ", f.read())
+    def test_split_workflows_no_longer_use_the_old_all_in_one_key(self):
+        for name in sorted(self.DONE):
+            with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, name)) as f:
+                self.assertNotIn("secrets.KERNEL_READ", f.read(), name)
+
+    def test_the_check_catches_a_writing_key_in_a_nightly_test_leg(self):
+        with open(os.path.join(SecretsOnlyOnMain.WORKFLOWS, "kernel-nightly.yml")) as f:
+            text = f.read()
+        self.assertEqual(self.problems("kernel-nightly.yml", text), [])
+        # Put back what the leg held before the split: the save step's key.
+        bad = text.replace("          PUBLIC: ${{ needs.plan.outputs.public }}\n",
+                           "          PUBLIC: ${{ needs.plan.outputs.public }}\n          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}\n", 1)
+        self.assertNotEqual(bad, text)
+        self.assertEqual(self.problems("kernel-nightly.yml", bad), ["kernel-nightly.yml test: runs kernel code beside RESULTS_WRITE"])
 
     def test_the_check_catches_a_writing_key_beside_kernel_code(self):
         job = "on: push\njobs:\n  coverage:\n    runs-on: x\n    steps:\n      - run: .github/scripts/kernel_ci.sh run a d k/ci/x.sh\n"

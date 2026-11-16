@@ -16,6 +16,11 @@ other file, each in path order.
       test, runs the unmutated lib tests once, then tests units J, J+N,
       J+2N... of them until the deadline, each into DIR/units/<k>/. All its
       output names kernel files: run it through kernel_ci.sh run only.
+  mutant_rotation.py run ... --done FILE (instead of --state)
+      the same from done's hand-over: the cycle and its done units' ids hashed
+  mutant_rotation.py done --state FILE --salt S
+      prints that hand-over as one JSON line (kernel-nightly.yml's plan job,
+      which holds the key to kernel-results and runs no kernel code)
   mutant_rotation.py record --dir DIR --in IN --commit C --branch B --run-url U
       in the test-results checkout DIR: folds the jobs' folders IN/mutants-*/
       into mutants/rotation.json, rewrites mutants/missed.txt (every survivor,
@@ -34,6 +39,7 @@ exit 0, 2 or 3); one cut off by the deadline is tried again next run.
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -106,6 +112,30 @@ def pending(units, state):
     return cycle, left
 
 
+def hashed(uid, salt):
+    """A unit's id as the keyless mutants jobs get it: 16 hex digits of
+    sha256(salt + id), so the hand-over names no kernel file."""
+    return hashlib.sha256((salt + uid).encode()).hexdigest()[:16]
+
+
+def done_of(state, salt):
+    """What a mutants job needs of the state, and nothing more (security hunt
+    H3: the state lives in kernel-results, which the jobs that run the kernel's
+    code hold no key for): the cycle and its done units' hashed ids."""
+    cycle = state.get("cycle", 1)
+    ids = sorted(hashed(k, salt) for k, v in state.get("units", {}).items() if v.get("cycle") == cycle)
+    return {"cycle": cycle, "salt": salt, "done": ids}
+
+
+def pending_hashed(units, done):
+    """pending() from done_of()'s hand-over instead of the whole state."""
+    cycle, salt, ids = done.get("cycle", 1), done.get("salt", ""), set(done.get("done", []))
+    left = [u for u in units if hashed(unit_id(u), salt) not in ids]
+    if not left:
+        return cycle + 1, list(units)
+    return cycle, left
+
+
 def share(units, job, jobs):
     """Job `job` of `jobs` takes every jobs-th unit from its own index, so
     each job starts on the cycle's next units and all of them are busy."""
@@ -154,7 +184,10 @@ def run(args):
     listing = json.loads(subprocess.run(["cargo", "mutants", "--list", "--json"], check=True, capture_output=True, text=True).stdout)
     first = first_prefixes(read(".cargo/mutants-first.txt")) if os.path.exists(".cargo/mutants-first.txt") else []
     units = units_of(counts_of(listing), first)
-    cycle, left = pending(units, load_state(args.state))
+    if args.done is not None:
+        cycle, left = pending_hashed(units, load_state(args.done))
+    else:
+        cycle, left = pending(units, load_state(args.state))
     mine = share(left, args.job, args.jobs)
     with open(os.path.join(out, "plan.txt"), "w") as f:
         f.write(f"cycle {cycle}\nunits {len(units)}\nmutants {len(listing)}\nleft {len(left)}\n")
@@ -339,7 +372,9 @@ def main(argv=None):
     r.add_argument("--job", type=int, required=True)
     r.add_argument("--jobs", type=int, required=True)
     r.add_argument("--deadline", type=float, required=True)
-    r.add_argument("--state", required=True)
+    which = r.add_mutually_exclusive_group(required=True)
+    which.add_argument("--state")
+    which.add_argument("--done", help="done's hand-over (JSON) instead of the state")
     r.add_argument("--out", required=True)
     r.add_argument("--scratch", default=os.environ.get("RUNNER_TEMP", "/tmp"))
     r.add_argument("--parallel", type=int, default=4)
@@ -350,7 +385,13 @@ def main(argv=None):
     c.add_argument("--branch", default="main")
     c.add_argument("--run-url", default="")
     c.add_argument("--when", default="")
+    d = sub.add_parser("done")
+    d.add_argument("--state", required=True)
+    d.add_argument("--salt", required=True)
     a = p.parse_args(argv)
+    if a.cmd == "done":
+        print(json.dumps(done_of(load_state(a.state), a.salt), separators=(",", ":")))
+        return 0
     return run(a) if a.cmd == "run" else record(a)
 
 
