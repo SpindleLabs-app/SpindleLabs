@@ -5,7 +5,8 @@
 // the screen, its words, and the pure rules for search, filter and the card (tested by hand in test/home-screen.test.ts).
 // Styles: src/styles/home-screen.css.
 import { savedWhen } from "./project-list.ts";
-import { homeBackdrop, type Surface } from "./home-backdrop.ts";
+import { homeBackdrop, motionChoiceOf, type MotionChoice, type Surface } from "./home-backdrop.ts";
+import { withIcon } from "./icons.ts";
 
 /** What the screen needs of a kept project (@fission/storage ProjectSummary). */
 export interface HomeProject {
@@ -88,6 +89,11 @@ export interface HomeParts {
    * SHAPE_WAIT_MS, so it never shows the simple parts and then jumps to the design. Left out: no wait.
    */
   shown?(): Promise<void>;
+  /**
+   * Where the picture's motion choice is kept (the browser's settings, shared with Settings > General): read each time the
+   * screen shows, written on Pause, Play, Full motion and Gentle motion. Left out: it follows the computer each time.
+   */
+  motion?: { read(): unknown; keep(choice: MotionChoice): void };
   now?: () => Date;
 }
 
@@ -134,7 +140,12 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   const find = el("div", { className: "home-find" });
   find.append(search, filter);
   const links = el("p", { className: "home-links" });
-  links.append(button("home-guide", "How SpindleLabs works (the guide)", () => (hide(), parts.showGuide()), "home-link"));
+  // The picture's own controls, beside it (WCAG 2.2.2: anything moving for more than 5 seconds can be paused): Pause or
+  // Play, and on a computer set to show less motion (or with Gentle chosen) the full story or the gentle one.
+  const motionButton = button("home-motion", "", () => pressMotion(), "home-link home-motion");
+  const fullButton = button("home-full-motion", "", () => pressFull(), "home-link home-full-motion");
+  motionButton.hidden = fullButton.hidden = true;
+  links.append(button("home-guide", "How SpindleLabs works (the guide)", () => (hide(), parts.showGuide()), "home-link"), motionButton, fullButton);
   const close = button("home-close", "Back to my project", () => hide(), "home-close");
   const backdropCanvas = el("canvas", { className: "home-backdrop" });
   backdropCanvas.setAttribute("aria-hidden", "true");
@@ -142,7 +153,47 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   scrim.setAttribute("aria-hidden", "true");
   const win = doc.defaultView as Window & typeof globalThis;
   // It waits (draws nothing) until the list is painted and the design is here, then fades in already in place.
-  const backdrop = homeBackdrop(backdropCanvas, { win, doc, room: () => links.getBoundingClientRect().bottom, waits: true });
+  const backdrop = homeBackdrop(backdropCanvas, { win, doc, room: () => links.getBoundingClientRect().bottom, waits: true, changed: () => paintMotion() });
+  /** The motion it had before it was paused, so Play brings that back. */
+  let beforePause: MotionChoice = "system";
+  /** Whether the picture is up and moving gently now. */
+  const movingGently = () => backdrop.mode === "live" && backdropCanvas.dataset.motion === "gentle";
+  /** The controls follow the picture: shown once it is (never while it waits or where it can't be drawn), saying what a press does. */
+  function paintMotion() {
+    const up = backdropCanvas.dataset.ready === "yes" && backdrop.mode !== "off";
+    const moving = backdrop.mode === "live";
+    motionButton.hidden = !up;
+    const words = moving ? "Pause the background" : "Play the background";
+    if (motionButton.textContent !== words) {
+      motionButton.replaceChildren(words);
+      withIcon(motionButton, moving ? "pause" : "play", 16);
+    }
+    fullButton.hidden = !(up && moving && (backdrop.lessMotion || movingGently()));
+    fullButton.textContent = movingGently() ? "Full motion" : "Gentle motion";
+  }
+  const keep = () => {
+    try {
+      parts.motion?.keep(backdrop.choice);
+    } catch {
+      // not kept (storage refused): it still holds until the page closes
+    }
+  };
+  function pressMotion() {
+    if (backdrop.mode === "live") {
+      beforePause = backdrop.choice === "still" ? beforePause : backdrop.choice;
+      backdrop.choose("still");
+    } else {
+      // Moving again as it moved before; following the computer, as it asks (and kept moving, even where it was too slow).
+      backdrop.choose(beforePause === "full" || beforePause === "gentle" ? beforePause : backdrop.lessMotion ? "gentle" : "full");
+    }
+    keep();
+  }
+  function pressFull() {
+    // Gently now: the full story, even on a computer set to show less motion (Ben, 2026-11-16). Full now: gently again,
+    // following the computer when it asks for less motion.
+    backdrop.choose(movingGently() ? "full" : backdrop.lessMotion ? "system" : "gentle");
+    keep();
+  }
   root.append(backdropCanvas, scrim, el("div", { className: "home-head" }), title, card, actions, find, status, items, links);
   root.querySelector(".home-head")!.append(close);
   doc.body.append(root);
@@ -339,6 +390,14 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
       for (const e of inerted) e.setAttribute("inert", "");
       root.hidden = false;
       search.value = "";
+      let stored: unknown = null;
+      try {
+        stored = parts.motion?.read();
+      } catch {
+        // can't be read: it follows the computer
+      }
+      backdrop.choose(motionChoiceOf(stored)); // chosen in Settings, or by a press here last time
+      beforePause = "system";
       backdrop.start();
       (root.querySelector<HTMLButtonElement>("#home-carry-on") ?? root.querySelector<HTMLButtonElement>("#home-new"))?.focus();
       await fill();

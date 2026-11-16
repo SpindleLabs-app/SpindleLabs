@@ -20,7 +20,7 @@ import "@fission/ui/theme.css";
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../packages/print/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { type FileFormat, ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SavedHistory, type GeometryReference, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName, previews } from "@fission/core";
 import { ProjectGone, shellTabs, type ShellTabs } from "./design-tabs.ts";
-import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, workspaceEta, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox } from "@fission/ui";
+import { historyPanel, baseNameOf, startDesignDefaults, readGridSize, readGridSnap, bugReportDialog, bugReportEndpoint, changeNote, fileMenu, fileSections, shellCommands, type FileMenuParts, holdSkeleton, keepTypingVisible, PROJECT_KIND, repeatGuard, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, parseWhatsNew, whatsNewList, whatsNewNote, defaultSplit, showPlaceholder, workspaceEta, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SETTINGS_KEY, SettingsStore, startTheme, startUnits, readUnitChoice, startMouse, readMouseChoice, startTooltips, readThemeChoice, applyCustom, readCustom, withIcon, workspaceSwitcher, homeScreen, projectNameBox, HOME_MOTION_KEY, motionChoiceOf, type MotionChoice } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { bringForward, forget, MAX_PROJECT_NAME, rename as renameKept, keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -1208,6 +1208,8 @@ const home = !HOME_SCREEN ? null : homeScreen(document, {
   outline: () => viewer.outline(),
   surface: () => viewer.surface(),
   shown: () => shownOnScreen(), // the picture waits for the reopened project's body, so it never jumps to it
+  // How the picture moves, shared with Settings > General (this computer's choice: never sent with the account's settings).
+  motion: { read: () => settings().get(HOME_MOTION_KEY, "system"), keep: (choice) => settings().set(HOME_MOTION_KEY, choice) },
 });
 
 // While a project opens (the last one reopened, or a file), the top bar
@@ -1501,7 +1503,7 @@ function backFromWhatsNew() {
   document.getElementById("settings-whats-new")?.focus();
 }
 function fillSettingsNow(backToSettings: () => void) {
-  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), onWhatsNew: () => showWhatsNew(backFromWhatsNew), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings });
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: () => showShortcuts(backToSettings), onWhatsNew: () => showWhatsNew(backFromWhatsNew), theme: readThemeChoice(settings()), onTheme: chooseTheme, custom: readCustom(settings()), onCustom: (c) => applyCustom(document, settings(), c).notes, unit: readUnitChoice(settings()), onUnit: chooseUnit, onReportBug: () => bugReport.show(), mouse: readMouseChoice(settings()), onMouse: chooseMouse, grid: readGridSize(settings()), onGrid: designDefaults.setGrid, snap: readGridSnap(settings()), onSnap: designDefaults.setSnap, onAiSettings: showAiSettings, ...(home ? { motion: motionChoiceOf(settings().get(HOME_MOTION_KEY, "system")), onMotion: (choice: MotionChoice) => settings().set(HOME_MOTION_KEY, choice) } : {}) });
 }
 // Report a bug (Ben, 2026-11-04, easier 2026-11-11; @fission/ui bug-report.ts): from Settings > About, one optional
 // box and the open design attached (ticked by default), sent to the report service when there is one, else a filled-in

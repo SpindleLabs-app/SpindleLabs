@@ -117,6 +117,9 @@ export const ICONS = {
   dimension: [tone("M9 4H15V8H9Z"), line("M4 10V20M20 10V20M4 15H20M7 12.5 4 15 7 17.5M17 12.5 20 15 17 17.5")],
   // The menus' own mark.
   chevron: [line("M7 10 12 15 17 10")],
+  // Pausing and playing a moving picture (the home screen's background).
+  pause: [tone("M7 5H10V19H7ZM14 5H17V19H14Z"), line("M7 5H10V19H7ZM14 5H17V19H14Z")],
+  play: [tone("M7 4.5 19 12 7 19.5Z"), line("M7 4.5 19 12 7 19.5Z")],
 } satisfies Record<string, readonly IconPart[]>;
 
 export type IconName = keyof typeof ICONS;

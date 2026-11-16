@@ -5,8 +5,11 @@
 // time). Drawn on one 2D canvas, behind the screen's words (aria-hidden, no pointer), kept light on purpose: at most 30
 // frames a second, at most about 1,500 segments, the pixel ratio capped at 1.5, nothing at all while the tab is hidden
 // or the screen is closed. A computer that draws too slowly steps down to lighter versions (`QUALITY`; a weak one,
-// `lowEnd`, starts on the lightest). Under prefers-reduced-motion, or once even the lightest proves too slow, it
-// draws one still picture instead. The pure parts are tested by hand in test/home-backdrop.test.ts. Styles: the end of
+// `lowEnd`, starts on the lightest). Under prefers-reduced-motion it moves gently instead (Ben, 2026-11-16: with Windows'
+// animations off a still picture read as broken): the design built and turning slowly, circuit lines and the simple parts
+// fading softly in and out, the motes drifting slower and never large in front; no build, flash, ripple, extrude, spark,
+// camera sway or drift in and out. Paused by the screen's button (`choose`), or once even the lightest proves too slow,
+// it draws one still picture. The pure parts are tested by hand in test/home-backdrop.test.ts. Styles: the end of
 // src/styles/home-screen.css.
 import { formatLength, fromMm, type Unit } from "@fission/core";
 import { currentUnit } from "./unit-choice.ts";
@@ -620,9 +623,10 @@ export function rippleAt(seconds: number): { which: number; radius: number } | n
  * the ripple's front (Infinity with none): a faint base; while building, a bright band just under the plane (the fresh
  * layers, about 0.12 of the height deep); a band about 0.3 wide where the ripple is; and a slow breathing. Pure.
  */
-export function glowOf(seconds: number, height: number, gap: number): number {
+export function glowOf(seconds: number, height: number, gap: number, gentle = false): number {
   const built = buildAt(seconds);
-  const fresh = storyPhase(seconds) < BUILD_END && height <= built ? Math.exp(-(((built - height) / 0.12) ** 2)) : 0;
+  // Moving gently (reduced motion) nothing builds, so there are no fresh layers: only the base and the breathing.
+  const fresh = !gentle && storyPhase(seconds) < BUILD_END && height <= built ? Math.exp(-(((built - height) / 0.12) ** 2)) : 0;
   const wave = Number.isFinite(gap) ? Math.exp(-((gap / 0.3) ** 2)) : 0;
   const breath = 0.9 + 0.1 * Math.sin(seconds * 0.9);
   return Math.min(1, (0.32 + 0.68 * Math.max(fresh, wave)) * breath);
@@ -872,6 +876,34 @@ export function extrudeAmount(seconds: number): number {
   return k * (story === 0 ? EXTRUDE_OUT : EXTRUDE_IN);
 }
 
+/**
+ * Moving gently (reduced motion): seconds a turn of the turntable (6° a second, against TURN_SECONDS' 9°), and how fast
+ * the motes drift as a share of their normal speed.
+ */
+export const GENTLE_TURN = 60;
+export const GENTLE_DRIFT = 0.5;
+/** Moving gently, the share of a story at either end over which a simple part fades out, and the next one in. */
+export const PART_FADE = 0.05;
+
+/**
+ * How much of a simple part shows at `seconds` when moving gently (it is never built, so it fades instead): 0 at a
+ * story's turn, eased up to 1 over PART_FADE of the story, and back down to 0 over the story's last PART_FADE. Pure.
+ */
+export function partFade(seconds: number): number {
+  const p = storyPhase(seconds);
+  return smooth(Math.min(p, 1 - p) / PART_FADE);
+}
+
+/**
+ * The moment a paused picture keeps, when it is paused at `seconds`: that one, as on the screen, unless the design hardly
+ * shows in it (`gentle` with the simple parts: one fading at the story's turn; otherwise: under a quarter built), then
+ * STILL_AT, the design whole. With `project` and `gentle` the design always shows (it is never built or faded). Pure.
+ */
+export function pauseAt(seconds: number, gentle: boolean, project: boolean): number {
+  const shows = gentle ? project || partFade(seconds) >= 1 : buildAt(seconds) >= 0.25;
+  return shows ? seconds : STILL_AT;
+}
+
 /** Hue (0..360), saturation and lightness (0..1) of a red, green, blue (0..255). Pure. */
 export function hslOf([r, g, b]: readonly number[]): [number, number, number] {
   const [R, G, B] = [r / 255, g / 255, b / 255];
@@ -1013,6 +1045,21 @@ export function growthAt(age: number, length: number): { grown: number; alpha: n
   return { grown, alpha: fadeIn * fadeOut };
 }
 
+/** Moving gently, the seconds a circuit line takes to fade in whole. */
+export const GENTLE_FADE_IN = 2;
+
+/**
+ * A circuit line `age` seconds after it began, moving gently (reduced motion): there all at once (`grown` its whole
+ * `length`, so no bright tip runs along it), fading in over GENTLE_FADE_IN, held, and fading out as `growthAt`'s does, in the
+ * same life (`growthLife`): the time it would have spent growing it is held whole instead. Pure.
+ */
+export function gentleGrowthAt(age: number, length: number): { grown: number; alpha: number } {
+  const fadeIn = Math.min(1, Math.max(0, age / GENTLE_FADE_IN));
+  const held = length / GROW_SPEED + GROW_HOLD;
+  const fadeOut = age <= held ? 1 : Math.max(0, 1 - (age - held) / GROW_FADE);
+  return { grown: length, alpha: fadeIn * fadeOut };
+}
+
 /** The first `length` pixels of a polyline (its points relative to its start), the last piece cut part way. Pure. */
 export function grownPath(points: readonly { x: number; y: number }[], length: number): { x: number; y: number }[] {
   if (points.length === 0) return [];
@@ -1112,11 +1159,26 @@ export function median(xs: readonly number[]): number {
   return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/** Why the picture is still, said in small words under it. */
+/**
+ * Why the picture is still, said in small words under it, so it is never mistaken for a broken one. Paused by its button
+ * says nothing: the button beside it says Play.
+ */
 export const STILL_WORDS: Record<string, string> = {
-  "reduced-motion": "Still picture: this computer is set to show less motion",
   slow: "Still picture: moving it was slowing this computer down",
 };
+
+/**
+ * How the picture moves, as the person chose (Settings > General, or the screen's Pause, Play and Full motion): following
+ * the computer (the full story, or gently when it asks for less motion; stopped if it slows the computer down), the full
+ * story or gently whatever the computer asks (either kept moving, on the lightest version if it must, however slow), or
+ * still. Ben, 2026-11-16: full motion even on a computer set to show less motion, as an option.
+ */
+export type MotionChoice = "system" | "full" | "gentle" | "still";
+export const MOTION_CHOICES: readonly MotionChoice[] = ["system", "full", "gentle", "still"];
+/** Where the shell keeps the choice in the browser's settings (SettingsStore), for Settings and the home screen alike. */
+export const HOME_MOTION_KEY = "home-motion";
+/** A kept choice read back: one of MOTION_CHOICES, else (nothing kept, or damaged) "system". Pure. */
+export const motionChoiceOf = (kept: unknown): MotionChoice => (MOTION_CHOICES.includes(kept as MotionChoice) ? (kept as MotionChoice) : "system");
 
 export interface Backdrop {
   /** Starts drawing (the screen is up): the moving picture, or one still one. */
@@ -1136,6 +1198,15 @@ export interface Backdrop {
   reveal(): void;
   /** The words moved (the list scrolled or changed): a still picture is drawn again in the room left (a moving one follows by itself). */
   redraw(): void;
+  /**
+   * How it moves from now on. "still" while moving keeps the moment on the screen (`pauseAt`); moving again carries the
+   * story on from there, and a chosen motion ("full", "gentle") on a computer it was slowing moves on the lightest version
+   * instead of stopping.
+   */
+  choose(choice: MotionChoice): void;
+  readonly choice: MotionChoice;
+  /** Whether the computer asks for less motion (prefers-reduced-motion). */
+  readonly lessMotion: boolean;
   readonly mode: "live" | "still" | "off";
 }
 
@@ -1146,6 +1217,8 @@ interface Env {
   room?: () => number;
   /** Draw nothing until `reveal()` (the home screen: so the picture never shows at one size and moves to another). */
   waits?: boolean;
+  /** Told after every change of what is drawn (moving, still, off, ready), so the screen's Pause and Play button follows. */
+  changed?: () => void;
 }
 
 /** Draws on `canvas`; harmless where there is no 2D context (a test DOM). */
@@ -1270,7 +1343,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
   function watching() {
     watch = 0;
     if (!running) return;
-    if (reshape() && !live() && shown && !doc.hidden) draw(STILL_AT);
+    if (reshape() && !live() && shown && !doc.hidden) draw(stillAt);
     watch = win.setTimeout(watching, 1000);
   }
   /** Circuit lines growing, held and fading, each slot reborn with a new line once its life ends (staggered). */
@@ -1325,10 +1398,20 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
   /** Which version of the moving picture (QUALITY); QUALITY.length once even the lightest proved too slow. */
   let level = weak ? QUALITY.length - 1 : 0;
   const quality = () => QUALITY[Math.min(level, QUALITY.length - 1)];
+  /** Whether the computer asks for less motion. */
   const reduced = () => motion?.matches ?? false;
-  const live = () => !reduced() && level < QUALITY.length;
+  /** How the person chose it should move. */
+  let choice: MotionChoice = "system";
+  /** Whether it moves gently: chosen, or following a computer that asks for less motion. */
+  const gentle = () => choice === "gentle" || (choice === "system" && reduced());
+  const live = () => choice !== "still" && level < QUALITY.length;
   /** Why the picture is still, or "" while it moves. */
-  const stillWhy = () => (reduced() ? "reduced-motion" : level >= QUALITY.length ? "slow" : "");
+  const stillWhy = () => (choice === "still" ? "paused" : level >= QUALITY.length ? "slow" : "");
+  /** The moment a still picture shows: STILL_AT, or the one on the screen when it was paused. */
+  let stillAt = STILL_AT;
+  /** What the turn adds to its angle (radians) since its speed last changed, and whether that speed was the gentle one. */
+  let turnOffset = 0;
+  let turnCalm = false;
   const set = (mode: string) => (canvas.dataset.backdrop = mode);
   set("off");
   /** Whether the picture may be drawn: at once, or (with `waits`) once `reveal` says the screen and the design are ready. */
@@ -1356,6 +1439,13 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
 
   function draw(seconds: number) {
     if (!ctx) return;
+    // Moving gently (reduced motion): the design built and turning slowly, soft fades only (see the file's top).
+    const calm = gentle();
+    if (calm !== turnCalm) {
+      // The turning speed changed (gentle on or off): the turn goes on from the angle it had, never jumping.
+      turnOffset += seconds * Math.PI * 2 * (1 / (turnCalm ? GENTLE_TURN : TURN_SECONDS) - 1 / (calm ? GENTLE_TURN : TURN_SECONDS));
+      turnCalm = calm;
+    }
     // With no project, a different simple part each story, changed at the story's turn while the last has sunk away.
     if (!project3) {
       const n = neutrals.length;
@@ -1393,7 +1483,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
         life += 1;
         line = lineFor(k, life);
       }
-      const { grown: length, alpha } = growthAt(age, line.reach);
+      const { grown: length, alpha } = (calm ? gentleGrowthAt : growthAt)(age, line.reach); // gently: whole, fading in
       if (alpha <= 0) continue;
       const { x: ox, y: oy } = line;
       // The main line and its branches, each grown as far as the growth has reached along it.
@@ -1430,11 +1520,11 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     const { cx, cy } = place;
     const placed3 = `${Math.round(cx)} ${Math.round(cy)} ${Math.round(place.scale)}`; // where and how big (the browser check reads it)
     if (canvas.dataset.place !== placed3) canvas.dataset.place = placed3;
-    const scale = place.scale * dolly(seconds); // the camera drifts back a little and in again, slowly
-    const yaw = (seconds / TURN_SECONDS) * Math.PI * 2 + 0.6;
-    const pitch = PITCH + SWAY * Math.sin((seconds / 37) * Math.PI * 2); // the camera rises and sinks a little, slowly
+    const scale = place.scale * (calm ? 1 : dolly(seconds)); // the camera drifts back a little and in again, slowly
+    const yaw = (seconds / (calm ? GENTLE_TURN : TURN_SECONDS)) * Math.PI * 2 + 0.6 + turnOffset;
+    const pitch = PITCH + (calm ? 0 : SWAY * Math.sin((seconds / 37) * Math.PI * 2)); // the camera rises and sinks a little, slowly
     // Now and then the body's top face is extruded out or in: every point on it moves, so its side edges stretch.
-    const push = top.length > 0 ? extrudeAmount(seconds) : 0;
+    const push = top.length > 0 && !calm ? extrudeAmount(seconds) : 0;
     const pushed = push.toFixed(2);
     if (canvas.dataset.extrude !== pushed) canvas.dataset.extrude = pushed; // what the browser check waits on
     const lifted = (z: number) => (top.length > 0 && Math.abs(z - topZ) < 1e-3 ? z + push : z);
@@ -1443,20 +1533,22 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       return { x: cx + p.x * scale, y: cy + p.y * scale, depth: p.depth };
     };
     const at = (x: number, y: number, z: number) => atRaw(x, y, lifted(z));
-    const lift = flash(seconds);
+    const lift = calm ? 0 : flash(seconds);
+    // Moving gently a simple part is never built, so it fades out at the story's turn and the next one fades in.
+    const fade = calm && !project3 ? partFade(seconds) : 1;
     const floor = floorOf(shape) - 0.08;
     // Motes of dust floating up round the shape, sharp in the middle distance, soft and large when near, dim when far:
     // the far half now, behind everything, the near half after the shape.
     const images = spritesFor(blues);
     const placed = motes.map((m) => {
-      const p = moteAt(m, seconds);
+      const p = moteAt(m, calm ? seconds * GENTLE_DRIFT : seconds);
       return { ...atRaw(p.x, p.y, p.z), show: p.show, shade: m.shade };
     });
     const drawMote = (m: { x: number; y: number; depth: number; show: number; shade: number }) => {
       // depth −2.8 (nearest) .. +2.8 (farthest): out of focus grows with distance from the shape's middle (0).
       const blur = Math.min(1, Math.abs(m.depth) / 2.4);
       const near = m.depth < 0;
-      const r = (1.1 + blur * (near ? 7 : 2.5)) * Math.max(0.6, scale / 160);
+      const r = (1.1 + blur * (near && !calm ? 7 : 2.5)) * Math.max(0.6, scale / 160); // gently: never large in front
       const a = m.show * (near ? 0.5 - 0.32 * blur : 0.42 - 0.3 * blur) * (glow ? 1 : 0.55); // on a light page dots read as dust
       if (a <= 0.005) return;
       ctx.globalAlpha = a;
@@ -1501,7 +1593,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     ctx.stroke();
     // The build plane: while the design is building (or sinking back), a glowing level ring with a soft disc rises through
     // it from the floor; the edges and faces under it are built, the edges over it wait as ghosts.
-    const built = buildAt(seconds);
+    const built = calm ? 1 : buildAt(seconds);
     const span = Math.max(1e-6, ceilZ - floorZ);
     const planeZ = floorZ + built * span;
     const building = built < 1 - 1e-6;
@@ -1517,7 +1609,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ghostOcc = pass.whole;
       const base3 = rgbOf(page) ?? (glow ? [22, 29, 42] : [245, 247, 250]);
       ctx.globalCompositeOperation = "source-over";
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = fade;
       ctx.lineWidth = 0.75; // the same colour round each face closes the hairline seams between faces
       for (const f of pass.paint) {
         let amount = faceMix(toneOf(groups.normals[f.group], yaw, pitch), f.front, glow) + 0.08 * lift;
@@ -1562,7 +1654,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.fillStyle = ink;
     }
     // The ripple going now, from its corner.
-    const wave = rippleAt(seconds);
+    const wave = calm ? null : rippleAt(seconds);
     const from3 = wave ? corners[wave.which % corners.length] : null;
     // What the browser check waits on: the story's stage and how much is built (one decimal).
     const stage = building ? (storyPhase(seconds) < BUILD_END ? "building" : "sinking") : wave ? "ripple" : Math.abs(push) > 0.002 ? "extrude" : "rest";
@@ -1616,7 +1708,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
           if (!occ?.hides(p.x, p.y, p.depth)) beads.push(p.x, p.y, depthCue(p.depth), 1);
         }
       }
-      const alpha = brightness(glowOf(seconds, height, gap), (a.depth + b.depth) / 2);
+      const alpha = brightness(glowOf(seconds, height, gap, calm), (a.depth + b.depth) / 2);
       const lo = Math.min(az, bz);
       const hi = Math.max(az, bz);
       const toBucket = (ax: number, ay: number, bx: number, by: number) => put(alpha, ax, ay, bx, by);
@@ -1647,7 +1739,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.lineWidth = width;
       ctx.stroke();
     };
-    for (let k = 0; k < BUCKETS; k++) if (buckets[k].length > 0) strokeList(buckets[k], (k / (BUCKETS - 1)) * MAX_ALPHA, 1.2);
+    for (let k = 0; k < BUCKETS; k++) if (buckets[k].length > 0) strokeList(buckets[k], (k / (BUCKETS - 1)) * MAX_ALPHA * fade, 1.2);
     const hides = hid ? "yes" : "no"; // whether faces hid any line this frame (the browser check reads it)
     if (canvas.dataset.hides !== hides) canvas.dataset.hides = hides;
     // Ghosts fade in as a story starts and out as it ends, so the part can change unseen between stories.
@@ -1705,12 +1797,12 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       ctx.strokeStyle = ink;
       ctx.fillStyle = ink;
     }
-    // A few sparks of light running calmly along the edges, each in its own blue, with a fading tail.
+    // A few sparks of light running calmly along the edges, each in its own blue, with a fading tail (none moving gently).
     const sparkShow = smooth((built - 0.85) / 0.15);
     const dt = Math.min(0.1, Math.max(0, seconds - sparkClock));
     sparkClock = seconds;
-    sparks = sparks.map((p) => stepSpark(p, dt, shape, links, sparkRnd));
-    for (const p of sparks) {
+    if (!calm) sparks = sparks.map((p) => stepSpark(p, dt, shape, links, sparkRnd));
+    for (const p of calm ? [] : sparks) {
       const i = p.seg * 6;
       const [ax, ay, az, bx, by, bz] = p.from === 0 ? [0, 1, 2, 3, 4, 5].map((k) => shape[i + k]) : [3, 4, 5, 0, 1, 2].map((k) => shape[i + k]);
       const length = Math.hypot(bx - ax, by - ay, bz - az) || 1e-6;
@@ -1755,7 +1847,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     }
     // A still picture says why in small words under it, so it is never mistaken for a broken one.
     const why = stillWhy();
-    if (why) {
+    if (STILL_WORDS[why]) {
       ctx.globalAlpha = 0.5;
       ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
       ctx.textAlign = "center";
@@ -1800,14 +1892,20 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     const typical = median(costs);
     costs.length = 0;
     canvas.dataset.cost = typical.toFixed(1); // milliseconds a frame takes to draw, for a check (and anyone curious)
-    if (typical > SLOW_MS) {
+    // A motion the person chose keeps moving on the lightest version however slow (they chose it over a still picture).
+    if (typical > SLOW_MS && !(choice !== "system" && level >= QUALITY.length - 1)) {
       level += 1; // a lighter version, or a still picture once the lightest is too slow
+      if (level >= QUALITY.length) stillAt = STILL_AT;
       settle();
     }
   }
 
-  /** Runs, or paints the still picture, as the machine and the tab allow now. */
+  /** Runs, or paints the still picture, as the machine, the tab and the person's choice allow now; then tells the screen. */
   function settle() {
+    settleNow();
+    env.changed?.();
+  }
+  function settleNow() {
     if (timer) win.cancelAnimationFrame(timer);
     timer = 0;
     if (!running || !ctx) return set("off"); // closed, or nothing to draw on (a test DOM): no loop at all
@@ -1817,6 +1915,8 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     const why = stillWhy();
     if (why) canvas.dataset.still = why;
     else delete canvas.dataset.still;
+    if (live()) canvas.dataset.motion = gentle() ? "gentle" : "full"; // how it moves (the tests read it)
+    else delete canvas.dataset.motion;
     canvas.dataset.quality = String(Math.min(level, QUALITY.length - 1)); // what the tests read
     if (!shown) return set(live() ? "live" : "still"); // waiting for `reveal`: nothing drawn yet, no loop
     if (live() && !doc.hidden) {
@@ -1825,7 +1925,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       timer = win.requestAnimationFrame(frame);
     } else {
       set(live() ? "live" : "still"); // a hidden tab keeps its mode, drawing nothing
-      if (!doc.hidden) draw(live() ? story : STILL_AT);
+      if (!doc.hidden) draw(live() ? story : stillAt);
     }
   }
 
@@ -1857,12 +1957,13 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
         shown = false; // shown again only once revealed again
         delete canvas.dataset.ready;
       }
+      env.changed?.();
     },
     setSource(next, nextFaces) {
       source = next;
       faceSource = nextFaces ?? (() => null);
       from = undefined; // read it again even if it gives the same array
-      if (reshape() && running && !live() && shown && !doc.hidden) draw(STILL_AT);
+      if (reshape() && running && !live() && shown && !doc.hidden) draw(stillAt);
     },
     reveal() {
       if (shown || !running) return;
@@ -1870,11 +1971,28 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
       reshape();
       place = null; // placed where it belongs from the first frame, never eased in from somewhere else
       story = 0; // the story starts with the build
+      stillAt = STILL_AT;
+      turnOffset = 0;
+      turnCalm = gentle();
       canvas.dataset.ready = "yes"; // the page fades the picture in (home-screen.css)
       settle();
     },
     redraw() {
-      if (running && ctx && !live() && !doc.hidden && shown) draw(STILL_AT);
+      if (running && ctx && !live() && !doc.hidden && shown) draw(stillAt);
+    },
+    choose(next) {
+      if (next === choice) return;
+      // Paused while moving: the moment on the screen is kept (unless the design hardly shows in it).
+      if (next === "still" && live() && shown) stillAt = pauseAt(story, gentle(), project3 !== null);
+      choice = next;
+      if (next === "full" || next === "gentle") level = Math.min(level, QUALITY.length - 1); // stopped as too slow: the lightest, moving
+      settle();
+    },
+    get choice() {
+      return choice;
+    },
+    get lessMotion() {
+      return reduced();
     },
     get mode() {
       return canvas.dataset.backdrop as "live" | "still" | "off";

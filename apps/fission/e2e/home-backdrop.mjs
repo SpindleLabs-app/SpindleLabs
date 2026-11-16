@@ -9,10 +9,12 @@
 //   the one place and size it keeps (Ben, 2026-11-16: it showed bigger and shrank a second later).
 // - The tab hidden: nothing is drawn (two pictures the same); shown again, it moves again.
 // - The screen closed: the background stops (mode off).
-// - Reduced motion: one still picture (mode still, two pictures the same), still with the project's shape, saying why.
+// - Reduced motion: it moves gently (two pictures apart differ), always built and at rest for 13 s (never a build, ripple or
+//   pulled face); Full motion beside it gives the whole story, remembered over a reload; Pause keeps one still picture
+//   (remembered too); Settings > General's Auto brings the gentle one back (Ben, 2026-11-16: Windows' animations off).
 // - A weak machine (2 cores): the lightest moving picture, at 1 pixel a CSS pixel. A computer slowed 4 times: still moving.
-// - It never takes a press: the card's button under the picture still works; the words keep their contrast (the title's
-//   colour against the scrim at its place, 4.5 : 1 or more).
+// - It never takes a press: the card's button under the picture still works; the words keep their contrast (the title, the
+//   guide link and Pause the background against the worst pixel behind them, 4.5 : 1 or more).
 // - At 375 px: nothing runs off the side.
 // Screenshots (SHOTS=<dir>) at 1280 and 375 px in both themes; STL=<file> opens that STL as the project shown (its
 // triangles painted, its sharp edges drawn).
@@ -22,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
-import { startWithBox } from "./start.mjs";
+import { chooseFile, startWithBox } from "./start.mjs";
 
 const DIST = process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : fileURLToPath(new URL("../dist/", import.meta.url));
 if (!existsSync(DIST + "index.html")) throw new Error("build the app first (npm run build)");
@@ -193,7 +195,7 @@ await check("without ?all there is no home screen, so no background", async () =
       assert.equal(await page.evaluate(() => document.getElementById("home").scrollWidth <= window.innerWidth), true);
       // The words straight on the picture (the title, the guide link) against the brightest pixel behind them, read from a
       // screenshot with the words made invisible: 4.5 : 1 or more.
-      for (const id of ["home-title", "home-guide"]) {
+      for (const id of ["home-title", "home-guide", "home-motion"]) {
         const box = await page.locator(`#${id}`).boundingBox();
         const colour = await page.$eval(`#${id}`, (e) => getComputedStyle(e).color);
         await page.$eval(`#${id}`, (e) => (e.style.color = "transparent"));
@@ -256,17 +258,82 @@ await check("without ?all there is no home screen, so no background", async () =
     await context.close();
   });
 
-  await check("reduced motion: one still picture, with the project's shape, saying why", async () => {
+  await check("reduced motion: it moves gently; Full motion gives the whole story and Pause a still picture, both remembered; Settings' Auto brings it back", async () => {
     const { context, page } = await newPage({ reduce: true });
     await withProject(page);
     await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
-    assert.equal(await mode(page), "still");
-    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.still), "reduced-motion");
+    const data = (key) => page.$eval("#home .home-backdrop", (c, k) => c.dataset[k] ?? "", key);
+    const words = (id) => page.$eval(`#${id}`, (b) => (b.hidden ? "(hidden)" : b.textContent.trim()));
+    assert.equal(await mode(page), "live");
+    assert.equal(await data("motion"), "gentle");
+    assert.equal(await data("still"), "", "no still picture");
     const a = await picture(page);
     await page.waitForTimeout(700);
-    assert.ok((await picture(page)) === a, "no motion");
-    assert.ok((await painted(page)) > 200, "the still picture is painted");
-    if (shots) await page.screenshot({ path: `${shots}/home-still-1280.png` });
+    assert.ok((await picture(page)) !== a, "two pictures 700 ms apart differ: it moves");
+    assert.ok((await painted(page)) > 200, "painted");
+    assert.equal(await words("home-motion"), "Pause the background");
+    assert.equal(await words("home-full-motion"), "Full motion");
+    // 13 s: past where the full story builds (to 10.8 s) and its first ripple starts (11.9 s). Gently: built and at rest.
+    const seen = await page.evaluate(
+      () =>
+        new Promise((done) => {
+          const c = document.querySelector("#home .home-backdrop");
+          const states = new Set();
+          const tick = setInterval(() => states.add(`${c.dataset.stage} ${c.dataset.build} ${c.dataset.extrude}`), 100);
+          setTimeout(() => (clearInterval(tick), done([...states])), 13000);
+        }),
+    );
+    assert.deepEqual(seen, ["rest 1.0 0.00"], "only ever built and at rest");
+    if (shots) await page.screenshot({ path: `${shots}/home-gentle-1280.png` });
+    // Full motion: the whole story, even with less motion asked for (Ben, 2026-11-16), and remembered.
+    await page.click("#home-full-motion");
+    assert.equal(await data("motion"), "full");
+    assert.equal(await words("home-full-motion"), "Gentle motion");
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple in the full story", 12000);
+    await page.reload();
+    await homeShown(page);
+    await ready(page);
+    assert.equal(await data("motion"), "full", "Full motion remembered");
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "the full story building", 3000);
+    // Pause: one still picture, the button saying Play, remembered too.
+    await page.click("#home-motion");
+    assert.equal(await mode(page), "still");
+    assert.equal(await data("still"), "paused");
+    assert.equal(await words("home-motion"), "Play the background");
+    const b = await picture(page);
+    await page.waitForTimeout(700);
+    assert.ok((await picture(page)) === b, "paused: the same picture");
+    await page.reload();
+    await homeShown(page);
+    await ready(page);
+    assert.equal(await mode(page), "still", "paused remembered");
+    // Settings > General > Home screen background > Auto: gentle again, as the computer asks.
+    await page.click("#home-close");
+    await page.click("#settings-open");
+    assert.equal(await page.$eval('#settings [data-motion="still"]', (r) => r.getAttribute("aria-checked")), "true");
+    await page.click('#settings [data-motion="system"]');
+    await page.click("#settings .close");
+    await chooseFile(page, "file-home");
+    await homeShown(page);
+    await ready(page);
+    assert.equal(await mode(page), "live");
+    assert.equal(await data("motion"), "gentle");
+    await context.close();
+  });
+
+  await check("full motion: Pause keeps one still picture, Play moves the whole story again", async () => {
+    const { context, page } = await newPage();
+    await homeShown(page);
+    await ready(page);
+    assert.equal(await page.$eval("#home-full-motion", (b) => b.hidden), true, "no Gentle or Full link: the computer asks for nothing");
+    await page.click("#home-motion");
+    assert.equal(await mode(page), "still");
+    await page.click("#home-motion");
+    assert.equal(await mode(page), "live");
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.motion), "full");
+    const a = await picture(page);
+    await page.waitForTimeout(600);
+    assert.ok((await picture(page)) !== a, "moving again");
     await context.close();
   });
 
