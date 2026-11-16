@@ -36,6 +36,8 @@
 #
 #   kernel_ci.sh save-sealed ROOT PRIVATE.pem OUT
 #       opens every downloaded sealed-NAME artifact and saves it as NAME
+#   kernel_ci.sh open-sealed ROOT PRIVATE.pem OUT
+#       the same, opening each into OUT/NAME without saving it
 #   kernel_ci.sh fetch FOLDER OUT
 #       copies a folder of kernel-results into OUT (RESULTS_WRITE key)
 #   kernel_ci.sh keygen DIR | seal DIR OUT PUBLIC.pem | unseal IN OUT PRIVATE.pem
@@ -135,6 +137,23 @@ save-sealed)
     [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || { echo "skipped a folder with an odd name"; bad=1; continue; }
     if python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" unseal "$d" "$out/$name" "$key" 2>/dev/null; then
       "${BASH_SOURCE[0]}" save "$name" "$out/$name" || bad=1
+    else
+      echo "could not open $name"; bad=1
+    fi
+  done
+  exit $bad
+  ;;
+open-sealed)
+  # open-sealed ROOT PRIVATE.pem OUT: as save-sealed, but only opens each
+  # ROOT/sealed-NAME into OUT/NAME, so the caller saves them all in one push
+  # (random testing's and fuzzing's collect jobs: twenty folders a run).
+  root=$2 key=$3 out=$4 bad=0
+  for d in "$root"/sealed-*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d"); name=${name#sealed-}
+    [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || { echo "skipped a folder with an odd name"; bad=1; continue; }
+    if python3 "$(dirname "${BASH_SOURCE[0]}")/seal.py" unseal "$d" "$out/$name" "$key" 2>/dev/null; then
+      echo "opened $name"
     else
       echo "could not open $name"; bad=1
     fi
