@@ -1,17 +1,41 @@
-tested commit cf32d55 on main, 2026-11-15 18:52 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43727400642)
+tested commit 901478c on main, 2026-11-16 18:17 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43891741372)
 UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | ConditionalExpression | at < 0 => false
 UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | EqualityOperator | at < 0 => at <= 0
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ConditionalExpression | entries[at].id === fenced.floor => true
-UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | OptionalChaining | entries[at + 1]?.id => entries[at + 1].id
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | LogicalOperator | entries[at + 1]?.id ?? -1 => entries[at + 1]?.id && -1
+UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | OptionalChaining | entries[at + 1]?.id => entries[at + 1].id
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ArithmeticOperator | at + 1 => at - 1
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | UnaryOperator | -1 => +1
 UNEXPLAINED survivor at packages/core/src/model/history.ts:229: packages/core/src/model/history.ts | UpdateOperator | nextId++ => nextId--
 core: 20 survivors, all explained: false
 8 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1789: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-design: 71 survivors, all explained: false
-1 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1825: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1894: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1643: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1663: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1619: workspaces/design/src/document.ts | EqualityOperator | d <= CHAMFER_MAX => d < CHAMFER_MAX
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1621: workspaces/design/src/document.ts | ConditionalExpression | typeof v === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | ConditionalExpression | isFiniteNumber(p.angle) && p.angle > 0 => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | LogicalOperator | isFiniteNumber(p.angle) && p.angle > 0 => isFiniteNumber(p.angle) || p.angle > 0
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | ConditionalExpression | p.angle > 0 => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/design/src/document.ts | EqualityOperator | p.angle > 0 => p.angle >= 0
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null && there === undefined && ID_SHAPE.test(maker) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | EqualityOperator | maker !== null => maker === null
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at => there === undefined && there.at >= byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | "edges" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1651: workspaces/design/src/document.ts | ConditionalExpression | typeof e !== "string" => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1657: workspaces/design/src/document.ts | ConditionalExpression | typeof p.flip === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | LogicalOperator | f.dependsOn.length !== 1 || f.dependsOn[0] !== maker => f.dependsOn.length !== 1 && f.dependsOn[0] !== maker
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn.length !== 1 => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[0] !== maker => false
+design: 95 survivors, all explained: false
+25 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 storage: 94 survivors, all explained: true
 account: 26 survivors, all explained: true
 model: 52 survivors, all explained: true
@@ -19,9 +43,9 @@ svg: 5 survivors, all explained: true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | !(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by)) => false
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) || Number.isFinite(by)
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => Number.isFinite(ax) && Number.isFinite(ay) || Number.isFinite(bx)
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) => true
+UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => Number.isFinite(ax) && Number.isFinite(ay) || Number.isFinite(bx)
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) => Number.isFinite(ax) || Number.isFinite(ay)
 explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | ConditionalExpression | ![ax, ay, bx, by].every(Number.isFinite) => false
 explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | MethodExpression | [ax, ay, bx, by].every(Number.isFinite) => [ax, ay, bx, by].some(Number.isFinite)
