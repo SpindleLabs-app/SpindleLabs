@@ -91,7 +91,8 @@ export const ICONS = {
   undo: [line("M9 5 4 10 9 15M4 10H14.5A5.5 5.5 0 0 1 14.5 21H11")],
   redo: [line("M15 5 20 10 15 15M20 10H9.5A5.5 5.5 0 0 0 9.5 21H13")],
   settings: [tone("M9 12A3 3 0 1 0 15 12A3 3 0 1 0 9 12Z"), line("M12 3V5.5M12 18.5V21M3 12H5.5M18.5 12H21M5.6 5.6 7.4 7.4M16.6 16.6 18.4 18.4M5.6 18.4 7.4 16.6M16.6 7.4 18.4 5.6M6.5 12A5.5 5.5 0 1 0 17.5 12A5.5 5.5 0 1 0 6.5 12Z")],
-  guide: [tone("M4 5H11V19H4Z"), line("M4 5H11V19H4ZM13 5H20V19H13ZM11 19H13")],
+  // An open book (the guide), its pages curving down to the spine: the left page in the second tone.
+  guide: [tone("M12 7C10 5.5 7 5 3 5.5V18.5C7 18 10 18.5 12 20Z"), line("M12 7C10 5.5 7 5 3 5.5V18.5C7 18 10 18.5 12 20C14 18.5 17 18 21 18.5V5.5C17 5 14 5.5 12 7ZM12 7V20")],
   ai: [tone("M10 4 11.75 9.25 17 11 11.75 12.75 10 18 8.25 12.75 3 11 8.25 9.25Z"), line("M10 4 11.75 9.25 17 11 11.75 12.75 10 18 8.25 12.75 3 11 8.25 9.25ZM18 3V7M16 5H20")],
   // One person: the account button (optional sign-in).
   account: [tone("M6 20A6 6 0 0 1 18 20Z"), line("M9 8A3 3 0 1 0 15 8A3 3 0 1 0 9 8ZM6 20A6 6 0 0 1 18 20")],

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clipUnder, faceFrame, faceMix, facesViewer, fitSurface, groupFaces, LIGHT, NEUTRAL_SURFACES, Occluder, OCCLUDE_BIAS, prismSurface, surfaceVolume, toneOf, triangulate, visibleRuns, type Surface } from "../src/home-backdrop.ts";
 import { pushWords, extentOf, EXTRUDE_IN, EXTRUDE_OUT, extrudeAmount, hslOf, linksOf, placeShape, shadesOf, SPARK_SPEED, stepSpark, topFace, fitShape, flash, FLASH_AT, floorOf, FRAME_MS, homeBackdrop, lowEnd, luminance, makeTraces, MAX_ALPHA, NEUTRAL_SHAPE, project, rgbOf, depthCue, seeded, sizeWords, growthAt, growthLife, grownPath, GROW_SPEED, GROW_HOLD, GROW_FADE, makeMotes, moteAt, MOTE_LOW, MOTE_HIGH, NEUTRAL_SHAPES, prismEdges, QUALITY, WARM_FRAMES, SLOW_WINDOW, median, STORY_SECONDS, storyPhase, buildAt, BUILD_END, UNBUILD_AT, rippleAt, RIPPLE_REACH, glowOf, cornerOf, sphereGap, reachOf, CAMERA, dolly, DOLLY, DOLLY_SECONDS, ABOVE, BELOW } from "../src/home-backdrop.ts";
-import { gentleGrowthAt, GENTLE_FADE_IN, GENTLE_TURN, GENTLE_DRIFT, TURN_SECONDS, partFade, PART_FADE, pauseAt, STILL_AT, motionChoiceOf, MOTION_CHOICES, type MotionChoice } from "../src/home-backdrop.ts";
+import { GENTLE_FPS, gentleGrowthAt, GENTLE_FADE_IN, GENTLE_TURN, GENTLE_DRIFT, TURN_SECONDS, partFade, PART_FADE, pauseAt, STILL_AT, motionChoiceOf, MOTION_CHOICES, type MotionChoice } from "../src/home-backdrop.ts";
 
 const near = (a: number, b: number, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
 
@@ -294,10 +294,10 @@ function timed(cost: (frame: number) => number, opts: { cores?: number; reduce?:
   const backdrop = homeBackdrop(canvas, { win, doc, changed: opts.changed });
   if (opts.choice) backdrop.choose(opts.choice);
   backdrop.start();
-  /** Runs `n` frames, each 60 ms after the last on the clock (past any frame gap); `each` sees the canvas after each. */
-  const run = (n: number, each?: (data: Record<string, string>) => void) => {
+  /** Runs `n` frames, each `gap` ms after the last on the clock (60: past any frame gap); `each` sees the canvas after each. */
+  const run = (n: number, each?: (data: Record<string, string>) => void, gap = 60) => {
     for (let k = 0; k < n && frame; k++) {
-      clock += 60;
+      clock += gap;
       frame(clock);
       each?.(canvas.dataset as Record<string, string>);
     }
@@ -1042,4 +1042,36 @@ test("the screen is told after every change of what is drawn, once a choice chan
   assert.deepEqual(MOTION_CHOICES, ["system", "full", "gentle", "still"]);
   for (const m of MOTION_CHOICES) assert.equal(motionChoiceOf(m), m);
   for (const bad of [null, undefined, "", "Full", "pause", 3, {}]) assert.equal(motionChoiceOf(bad), "system");
+});
+
+test("moving gently draws at most GENTLE_FPS (20) frames a second against the full picture's 30, so it is the lighter one to suggest", () => {
+  // Frames come 34 ms apart (plus the 5 ms each drawing takes). The full picture waits 1000 / 30 − 1 = 32.3 ms between
+  // drawings, so it draws all 100. Gently it waits 1000 / 20 − 1 = 49 ms: the first (34 ms in) waits, the next (68) is
+  // drawn, the one after (39 ms on) waits, the next (73 ms on) is drawn: every other one, 50 of 100.
+  assert.equal(GENTLE_FPS, 20);
+  const full = timed(() => 5);
+  full.run(100, undefined, 34);
+  assert.equal(full.draws(), 100);
+  full.backdrop.stop();
+  const calm = timed(() => 5, { reduce: true });
+  calm.run(100, undefined, 34);
+  assert.equal(calm.draws(), 50);
+  calm.backdrop.stop();
+});
+
+test("slowed: set once a timed window was too slow (the screen then suggests gentle motion), never by a quick computer", () => {
+  const quick = timed(() => 5);
+  quick.run(3 * (WARM_FRAMES + SLOW_WINDOW));
+  assert.equal(quick.backdrop.slowed, false);
+  quick.backdrop.stop();
+  const slow = timed(() => 20);
+  slow.run(WARM_FRAMES + SLOW_WINDOW - 1);
+  assert.equal(slow.backdrop.slowed, false); // the warm-up and a window one frame short: not judged yet
+  slow.run(1);
+  assert.equal(slow.backdrop.slowed, true);
+  slow.backdrop.stop();
+  // A 2-core computer starts on the lightest version without being measured: not slowed.
+  const weak = timed(() => 5, { cores: 2 });
+  assert.equal(weak.backdrop.slowed, false);
+  weak.backdrop.stop();
 });

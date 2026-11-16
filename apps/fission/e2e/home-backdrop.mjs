@@ -10,8 +10,10 @@
 // - The tab hidden: nothing is drawn (two pictures the same); shown again, it moves again.
 // - The screen closed: the background stops (mode off).
 // - Reduced motion: it moves gently (two pictures apart differ), always built and at rest for 13 s (never a build, ripple or
-//   pulled face); Full motion beside it gives the whole story, remembered over a reload; Pause keeps one still picture
-//   (remembered too); Settings > General's Auto brings the gentle one back (Ben, 2026-11-16: Windows' animations off).
+//   pulled face); Pause (an icon beside the guide's book) keeps one still picture, remembered over a reload; Settings >
+//   General's Full gives the whole story, and Auto the gentle one again (Ben, 2026-11-16: Windows' animations off).
+// - Gentle motion suggested only once the picture was too slow (the computer slowed 40 times after it showed), taken and
+//   kept; never on a quick one.
 // - A weak machine (2 cores): the lightest moving picture, at 1 pixel a CSS pixel. A computer slowed 4 times: still moving.
 // - It never takes a press: the card's button under the picture still works; the words keep their contrast (the title, the
 //   guide link and Pause the background against the worst pixel behind them, 4.5 : 1 or more).
@@ -258,12 +260,12 @@ await check("without ?all there is no home screen, so no background", async () =
     await context.close();
   });
 
-  await check("reduced motion: it moves gently; Full motion gives the whole story and Pause a still picture, both remembered; Settings' Auto brings it back", async () => {
+  await check("reduced motion: it moves gently; Pause gives a still picture, remembered; Settings' Full gives the whole story and Auto the gentle one", async () => {
     const { context, page } = await newPage({ reduce: true });
     await withProject(page);
     await until(page, () => /^project \d+$/.test(document.querySelector("#home .home-backdrop")?.dataset.shape ?? ""), null, "the project's shape", 3000);
     const data = (key) => page.$eval("#home .home-backdrop", (c, k) => c.dataset[k] ?? "", key);
-    const words = (id) => page.$eval(`#${id}`, (b) => (b.hidden ? "(hidden)" : b.textContent.trim()));
+    const named = (id) => page.$eval(`#${id}`, (b) => (b.hidden ? "(hidden)" : b.getAttribute("aria-label")));
     assert.equal(await mode(page), "live");
     assert.equal(await data("motion"), "gentle");
     assert.equal(await data("still"), "", "no still picture");
@@ -271,8 +273,10 @@ await check("without ?all there is no home screen, so no background", async () =
     await page.waitForTimeout(700);
     assert.ok((await picture(page)) !== a, "two pictures 700 ms apart differ: it moves");
     assert.ok((await painted(page)) > 200, "painted");
-    assert.equal(await words("home-motion"), "Pause the background");
-    assert.equal(await words("home-full-motion"), "Full motion");
+    assert.equal(await named("home-motion"), "Pause the background");
+    assert.equal(await named("home-guide"), "How SpindleLabs works (the guide)");
+    assert.equal(await page.$("#home-full-motion"), null, "full and gentle motion are Settings' choices");
+    assert.equal(await page.$eval("#home-motion-tip", (t) => t.hidden), true, "nothing slow: no suggestion");
     // 13 s: past where the full story builds (to 10.8 s) and its first ripple starts (11.9 s). Gently: built and at rest.
     const seen = await page.evaluate(
       () =>
@@ -285,21 +289,11 @@ await check("without ?all there is no home screen, so no background", async () =
     );
     assert.deepEqual(seen, ["rest 1.0 0.00"], "only ever built and at rest");
     if (shots) await page.screenshot({ path: `${shots}/home-gentle-1280.png` });
-    // Full motion: the whole story, even with less motion asked for (Ben, 2026-11-16), and remembered.
-    await page.click("#home-full-motion");
-    assert.equal(await data("motion"), "full");
-    assert.equal(await words("home-full-motion"), "Gentle motion");
-    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "ripple", null, "a ripple in the full story", 12000);
-    await page.reload();
-    await homeShown(page);
-    await ready(page);
-    assert.equal(await data("motion"), "full", "Full motion remembered");
-    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "the full story building", 3000);
-    // Pause: one still picture, the button saying Play, remembered too.
+    // Pause: one still picture, the icon saying Play, remembered over a reload.
     await page.click("#home-motion");
     assert.equal(await mode(page), "still");
     assert.equal(await data("still"), "paused");
-    assert.equal(await words("home-motion"), "Play the background");
+    assert.equal(await named("home-motion"), "Play the background");
     const b = await picture(page);
     await page.waitForTimeout(700);
     assert.ok((await picture(page)) === b, "paused: the same picture");
@@ -307,17 +301,46 @@ await check("without ?all there is no home screen, so no background", async () =
     await homeShown(page);
     await ready(page);
     assert.equal(await mode(page), "still", "paused remembered");
-    // Settings > General > Home screen background > Auto: gentle again, as the computer asks.
-    await page.click("#home-close");
-    await page.click("#settings-open");
-    assert.equal(await page.$eval('#settings [data-motion="still"]', (r) => r.getAttribute("aria-checked")), "true");
-    await page.click('#settings [data-motion="system"]');
-    await page.click("#settings .close");
-    await chooseFile(page, "file-home");
+    // Settings > General > Home screen background > Full: the whole story, even with less motion asked for (Ben, 2026-11-16).
+    const pick = async (choice) => {
+      await page.click("#home-close");
+      await page.click("#settings-open");
+      await page.click(`#settings [data-motion="${choice}"]`);
+      await page.click("#settings .close");
+      await chooseFile(page, "file-home");
+      await homeShown(page);
+      await ready(page);
+    };
+    await pick("full");
+    assert.equal(await mode(page), "live");
+    assert.equal(await data("motion"), "full");
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.stage === "building", null, "the full story building", 3000);
+    await until(page, () => document.querySelector("#home .home-backdrop").dataset.build === "0.5", null, "half built", 8000);
+    // Auto: gentle again, as the computer asks.
+    await pick("system");
+    assert.equal(await data("motion"), "gentle");
+    await context.close();
+  });
+
+  await check("gentle motion suggested only once the picture was too slow here: taken, it moves gently and is kept", async () => {
+    const { context, page } = await newPage();
     await homeShown(page);
     await ready(page);
-    assert.equal(await mode(page), "live");
-    assert.equal(await data("motion"), "gentle");
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 40 });
+    await until(page, () => document.querySelector("#home-motion-tip")?.hidden === false, null, "the suggestion (slowed 40 times)", 30000);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    const state = await page.$eval("#home .home-backdrop", (c) => ({ quality: c.dataset.quality, cost: c.dataset.cost }));
+    console.log(`  (slowed 40×: ${JSON.stringify(state)})`);
+    assert.match(await page.$eval("#home-motion-tip", (t) => t.textContent), /slowing this computer down/);
+    if (shots) await page.screenshot({ path: `${shots}/home-suggest-1280.png` });
+    await page.click("#home-gentle");
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.motion), "gentle");
+    assert.equal(await page.$eval("#home-motion-tip", (t) => t.hidden), true);
+    await page.reload();
+    await homeShown(page);
+    await ready(page);
+    assert.equal(await page.$eval("#home .home-backdrop", (c) => c.dataset.motion), "gentle", "kept over a reload");
     await context.close();
   });
 
@@ -325,7 +348,7 @@ await check("without ?all there is no home screen, so no background", async () =
     const { context, page } = await newPage();
     await homeShown(page);
     await ready(page);
-    assert.equal(await page.$eval("#home-full-motion", (b) => b.hidden), true, "no Gentle or Full link: the computer asks for nothing");
+    assert.equal(await page.$eval("#home-motion-tip", (t) => t.hidden), true, "a quick computer: no suggestion");
     await page.click("#home-motion");
     assert.equal(await mode(page), "still");
     await page.click("#home-motion");
