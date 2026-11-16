@@ -29,10 +29,7 @@
 .home-screen .home-chip { font-size: 11px; padding: 1px 8px; color: var(--text-dim); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
 .home-screen .home-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--look-space-2); }
 .home-screen .home-row-question { flex-basis: 100%; font-size: 13px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
-.home-screen .home-links { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-2) var(--look-space-4); }
-/* The picture's own controls beside the guide link (home-screen.ts paintMotion): Pause or Play with its icon, and Full or Gentle motion. */
-.home-screen .home-motion:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
-.home-screen .home-links [hidden]:not(#none) { display: none; }
+.home-screen .home-links { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-2); }
 .home-screen .home-button:not(#none) { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 .home-screen .home-button:not(#none):hover { border-color: var(--look-accent); color: var(--look-accent-text); }
 .home-screen .home-primary:not(#none) { border-color: var(--look-accent); }
@@ -68,9 +65,18 @@
 }
 /* Words that sit straight on the picture get a plate of their own, so a line passing behind never takes their contrast
    (the browser check reads the worst pixel behind them). */
-.home-screen .home-links .home-link:not(#none), .home-screen .home-status:not(:empty) { justify-self: start; width: fit-content; max-width: 100%; padding: 2px 8px; margin-left: -8px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
+.home-screen .home-status:not(:empty) { justify-self: start; width: fit-content; max-width: 100%; padding: 2px 8px; margin-left: -8px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
 /* The message sits straight in the screen's grid, whose column is the whole window: kept to the 720 px column's left edge. */
 .home-screen .home-status:not(:empty) { max-width: min(736px, 100%); margin-left: calc(max(0px, (100% - 720px) / 2) - 8px); }
 /* The title too: a plate just round its words at the column's left edge (on a phone the scrim is narrow, and a point of
    light on a line behind the title's right end took its contrast). */
 .home-screen .home-title { justify-self: start; width: fit-content; max-width: min(736px, 100%); padding: 0 8px; margin-left: calc(max(0px, (100% - 720px) / 2) - 8px); background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
+/* Under the list (home-screen.ts): the guide's book and the picture's Pause or Play, small square icon buttons, and the
+   gentle motion suggestion where the picture was slowing the computer down, on a plate of its own. */
+.home-screen .home-icon:not(#none) { display: inline-flex; align-items: center; justify-content: center; width: var(--look-target); min-height: var(--look-target); padding: 0; }
+.home-screen .home-motion-tip { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px var(--look-space-3); padding: 2px 8px; font-size: 13px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
+.home-screen .home-motion-tip .home-link:not(#none) { font-size: inherit; }
+.home-screen .home-links [hidden]:not(#none) { display: none; }
+@media (max-width: 640px) {
+  .home-screen .home-icon:not(#none) { width: var(--look-target-touch); min-height: var(--look-target-touch); }
+}

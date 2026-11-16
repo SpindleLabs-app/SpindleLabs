@@ -882,6 +882,11 @@ export function extrudeAmount(seconds: number): number {
  */
 export const GENTLE_TURN = 60;
 export const GENTLE_DRIFT = 0.5;
+/**
+ * Moving gently, the most frames a second (a slow turn needs fewer: 6° a second is 0.3° a frame at 20), so it draws a third
+ * fewer than the full picture's 30 and is the lighter one to suggest on a computer it slows down.
+ */
+export const GENTLE_FPS = 20;
 /** Moving gently, the share of a story at either end over which a simple part fades out, and the next one in. */
 export const PART_FADE = 0.05;
 
@@ -1207,6 +1212,8 @@ export interface Backdrop {
   readonly choice: MotionChoice;
   /** Whether the computer asks for less motion (prefers-reduced-motion). */
   readonly lessMotion: boolean;
+  /** Whether drawing it has been too slow on this computer (a timed window over SLOW_MS): the screen suggests gentle motion. */
+  readonly slowed: boolean;
   readonly mode: "live" | "still" | "off";
 }
 
@@ -1409,6 +1416,8 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
   const stillWhy = () => (choice === "still" ? "paused" : level >= QUALITY.length ? "slow" : "");
   /** The moment a still picture shows: STILL_AT, or the one on the screen when it was paused. */
   let stillAt = STILL_AT;
+  /** Whether a timed window of frames has been too slow on this computer (`slowed`). */
+  let slowed = false;
   /** What the turn adds to its angle (radians) since its speed last changed, and whether that speed was the gentle one. */
   let turnOffset = 0;
   let turnCalm = false;
@@ -1878,7 +1887,8 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     timer = 0;
     if (!running) return;
     timer = win.requestAnimationFrame(frame);
-    if (now - lastFrame < 1000 / quality().fps - 1) return; // at most 30 a second (20 on the lightest)
+    const fps = gentle() ? Math.min(GENTLE_FPS, quality().fps) : quality().fps;
+    if (now - lastFrame < 1000 / fps - 1) return; // at most 30 a second (20 on the lightest, and moving gently)
     lastFrame = now;
     const begun = win.performance.now();
     story = Math.max(0, (now - t0) / 1000); // a frame can be stamped a moment before the start
@@ -1893,6 +1903,7 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     costs.length = 0;
     canvas.dataset.cost = typical.toFixed(1); // milliseconds a frame takes to draw, for a check (and anyone curious)
     // A motion the person chose keeps moving on the lightest version however slow (they chose it over a still picture).
+    if (typical > SLOW_MS) slowed = true; // the screen may suggest gentle motion
     if (typical > SLOW_MS && !(choice !== "system" && level >= QUALITY.length - 1)) {
       level += 1; // a lighter version, or a still picture once the lightest is too slow
       if (level >= QUALITY.length) stillAt = STILL_AT;
@@ -1993,6 +2004,9 @@ export function homeBackdrop(canvas: HTMLCanvasElement, env: Env = { win: window
     },
     get lessMotion() {
       return reduced();
+    },
+    get slowed() {
+      return slowed;
     },
     get mode() {
       return canvas.dataset.backdrop as "live" | "still" | "off";
