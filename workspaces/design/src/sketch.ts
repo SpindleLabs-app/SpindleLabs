@@ -109,6 +109,12 @@ export function addSketch(doc: DesignDocument, plane: SketchPlane = "XY"): { doc
   return newSketch(doc, (n) => `Sketch ${n} on the ${plane} plane`, { plane }, []);
 }
 
+/** What `addFaceSketch` says when a face's name and the item handed with it disagree. */
+export const MISMATCHED_FACE = "That face's name doesn't match the item it is on, so a sketch on it could not follow it: pick another face or a plane.";
+
+/** What `addFaceSketch` says when the face's item is no longer in the design. */
+export const FACE_ITEM_GONE = "The face picked belongs to an item that is no longer in the design: pick another face or a plane.";
+
 /**
  * A new empty sketch on a flat face of the body `face.feature` built (step
  * 26c), put in at the marker like `addSketch`: its plane the face's name
@@ -118,9 +124,11 @@ export function addSketch(doc: DesignDocument, plane: SketchPlane = "XY"): { doc
  * before it.
  */
 export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string; reversed?: boolean }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
-  if (!isFacePlane(face.plane) || faceFeature(face.plane) !== face.feature) throw new Error(`${shown(face.plane)} is not a face of ${shown(face.feature)}`);
+  // Every refusal here can reach the panel (face-pick.ts hands the click's face over), so each names items, never ids.
+  if (!isFacePlane(face.plane) || faceFeature(face.plane) !== face.feature) throw new Error(MISMATCHED_FACE);
   const on = doc.timeline.features.find((f) => f.id === face.feature);
-  if (!on || !hasOwnFaces(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
+  if (!on) throw new Error(FACE_ITEM_GONE);
+  if (!hasOwnFaces(on)) throw new Error(`${on.provenance.self.label} has no faces of its own to sketch on: pick a face of a body, or a plane.`);
   if (doc.timeline.features.indexOf(on) >= insertAt(doc)) throw new Error(`${on.provenance.self.label} comes after the rollback marker, so a sketch put in at the marker can't be on it`);
   const frame = squared(drawn.plane);
   if (frame === null || (drawn.side !== 1 && drawn.side !== -1)) throw new Error("a sketch on a face needs a frame and a side of 1 or -1");
