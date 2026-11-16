@@ -41,7 +41,7 @@
 /* A touch screen of any width (a phone held sideways is 641 px and up and
    keeps the desktop layout): the Properties boxes' text is 16 px there too,
    so iOS Safari never zooms the page in on a tap (phone hunt 11-01). */
-@media ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))) {
+@media ((pointer: coarse) and (max-width: 1199px)) {
   .phone-sheet #properties :is(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea):not(#none) { font-size: 16px; }
 }
 /* Two fingers on the toolbar or the timeline never zoom the whole page (it

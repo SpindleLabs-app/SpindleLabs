@@ -22,7 +22,7 @@
 /* Edit feature's note on the edges and why there is no preview (44a-app3): quiet words under the count. */
 .chamfer-panel .chamfer-panel-note { margin: 0 0 6px; font-size: 0.85em; color: var(--text-8b95a3); }
 .chamfer-panel .chamfer-panel-note[hidden] { display: none; }
-@media (max-width: 700px), ((pointer: coarse) and (not ((any-pointer: fine) and (min-width: 1200px)))) {
+@media (max-width: 700px), ((pointer: coarse) and (max-width: 1199px)) {
   .chamfer-panel button, .chamfer-panel select, .chamfer-panel input:not([type="checkbox"]), .chamfer-panel .chamfer-panel-flip { min-height: 44px; }
   .chamfer-panel .chamfer-panel-flip input { width: 22px; height: 22px; }
 }
