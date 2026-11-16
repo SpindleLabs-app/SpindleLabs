@@ -375,12 +375,13 @@ test("a printer preset picked puts every setting in (the selects, ticks, file, p
   assert.ok(list, "the presets bar is on the page");
   list.value = "p-1";
   list.dispatchEvent(new Ev("change"));
-  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.12, walls: 4, infill: 40, supports: "tree", warmUp: false, betterGrip: true });
+  // Supports, the warm-up loop and Better grip are per print (Ben, 2026-11-16): the preset's old three are not put in.
+  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.12, walls: 4, infill: 40 });
   assert.deepEqual(panel.file(), { format: "p1s", plate: "smooth", nozzle: "high-flow" });
   const selects = choiceSelects(doc);
   assert.equal(selects[1].selectedOptions[0].textContent, "4", "the Walls box shows 4");
-  assert.equal((doc.querySelector("#slice-page-grip") as unknown as HTMLInputElement).checked, true);
-  assert.equal((doc.querySelector("#slice-page-warm-up") as unknown as HTMLInputElement).checked, false);
+  assert.equal((doc.querySelector("#slice-page-grip") as unknown as HTMLInputElement).checked, false);
+  assert.equal((doc.querySelector("#slice-page-warm-up") as unknown as HTMLInputElement).checked, true);
   assert.equal(stored.get("spindlelabs.slice.nozzle"), "high-flow", "remembered as if picked");
   assert.match(doc.querySelector(".slice-page-fits-words")?.textContent ?? "", /High Flow/, "the fits line follows the nozzle");
 });

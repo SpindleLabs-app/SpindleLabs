@@ -297,17 +297,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   const applyPreset = (v: Parameters<typeof presetSettingsOf>[0] & object) => {
     const x = presetSettingsOf(v);
     if (!x) return;
-    choices = { ...choices, layerHeight: x.layerHeight, walls: x.walls, infill: x.infill, supports: x.supports, warmUp: x.warmUp, betterGrip: x.betterGrip };
+    choices = { ...choices, layerHeight: x.layerHeight, walls: x.walls, infill: x.infill }; // supports, warm-up loop and Better grip are per print: a preset leaves them
     format = x.format;
     plate = x.plate;
     nozzle = x.nozzle;
-    for (const [key, value] of [[WARM_UP_KEY, x.warmUp], [GRIP_KEY, x.betterGrip]] as const) {
-      try {
-        (parts.storage as Storage | null)?.setItem?.(key, value ? "on" : "off"); // remembered as if ticked here
-      } catch {
-        // storage blocked: the choice still holds for this page
-      }
-    }
     try {
       (parts.storage as Storage | null)?.setItem?.(NOZZLE_KEY, x.nozzle);
     } catch {
@@ -319,7 +312,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     showCost(null);
   };
   const presets = presetBar(doc, parts.storage as Storage | null, {
-    current: () => ({ ...choices, format, plate, nozzle }),
+    current: () => ({ layerHeight: choices.layerHeight, walls: choices.walls, infill: choices.infill, format, plate, nozzle }),
     apply: (settings) => applyPreset(settings),
     say: (text) => (status.textContent = text),
     settingsOf: presetSettingsOf,

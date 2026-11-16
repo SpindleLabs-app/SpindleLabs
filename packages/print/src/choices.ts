@@ -110,6 +110,25 @@ export function rememberedBetterGrip(storage: Pick<Storage, "getItem"> | null): 
   }
 }
 
+/** Where the dialog keeps whether its printer settings are open (this browser only); closed unless opened. */
+export const SETTINGS_OPEN_KEY = "spindlelabs.slice.settings-open";
+
+/** Whether the printer settings were left open; closed when nothing was kept, the value isn't ours, or storage is blocked. */
+export function rememberedSettingsOpen(storage: Pick<Storage, "getItem"> | null): boolean {
+  try {
+    return storage?.getItem(SETTINGS_OPEN_KEY) === "open";
+  } catch {
+    return false;
+  }
+}
+
+/** The printer settings in one line, for the closed section: "Bambu Lab P1S · Textured PEI plate · 0.4 mm Standard · 0.2 mm layers · 2 walls · 15 % infill". */
+export function settingsLine(s: PresetSettings): string {
+  const name = (options: readonly { label: string; value: unknown }[], v: unknown) => options.find((o) => o.value === v)?.label ?? String(v);
+  const file = s.format === "p1s" ? [name(FORMAT_OPTIONS, s.format).replace(/ \(.*\)$/, ""), name(PLATE_OPTIONS, s.plate), name(NOZZLE_OPTIONS, s.nozzle)] : ["Plain G-code"];
+  return [...file, name(QUALITY_OPTIONS, s.layerHeight).replace(/^.*\((.*)\)$/, "$1"), `${s.walls} ${s.walls === 1 ? "wall" : "walls"}`, `${s.infill} % infill`].join(" · ");
+}
+
 /**
  * Stored settings (a preset's, slice-presets.ts) checked choice by choice against the dialog's own lists, or null when
  * any is missing or one the dialog doesn't offer: a preset never puts a value in that the dialog couldn't show.
@@ -119,9 +138,9 @@ export function presetSettingsOf(raw: unknown): PresetSettings | null {
   const r = raw as Record<string, unknown>;
   const listed = <T>(options: readonly { value: T }[], v: unknown): v is T => options.some((o) => o.value === v);
   const among = <T>(values: readonly T[], v: unknown): v is T => values.includes(v as T);
-  const { layerHeight, walls, infill, supports, warmUp, betterGrip, format, plate, nozzle } = r;
-  if (!listed(QUALITY_OPTIONS, layerHeight) || !among(WALL_OPTIONS, walls) || !among(INFILL_OPTIONS, infill) || !listed(SUPPORT_OPTIONS, supports)) return null;
-  if (typeof warmUp !== "boolean" || typeof betterGrip !== "boolean") return null;
+  // Supports, warm-up loop and Better grip may be there (presets saved before 2026-11-16 hold them) and are ignored: they are per print.
+  const { layerHeight, walls, infill, format, plate, nozzle } = r;
+  if (!listed(QUALITY_OPTIONS, layerHeight) || !among(WALL_OPTIONS, walls) || !among(INFILL_OPTIONS, infill)) return null;
   if (!listed(FORMAT_OPTIONS, format) || !listed(PLATE_OPTIONS, plate) || !listed(NOZZLE_OPTIONS, nozzle)) return null;
-  return { layerHeight, walls, infill, supports, warmUp, betterGrip, format, plate, nozzle };
+  return { layerHeight, walls, infill, format, plate, nozzle };
 }

@@ -9,8 +9,13 @@
 
 import type { FileChoices, PrintChoices } from "./choices.ts";
 
-/** Everything a preset holds: the beginner's choices and the file's. */
-export type PresetSettings = PrintChoices & FileChoices;
+/**
+ * Everything a preset holds: the printer's settings (quality, walls, infill) and the file's (kind, plate, nozzle).
+ * Supports, the warm-up loop and Better grip are per print, not per printer (Ben, 2026-11-16), so a preset holds none
+ * of them: picking one leaves them as they are, and changing them never marks it changed. Presets saved before that
+ * still hold them; they are ignored on reading and left out the next time the preset is written.
+ */
+export type PresetSettings = Pick<PrintChoices, "layerHeight" | "walls" | "infill"> & FileChoices;
 
 /** The printers a preset can be for: the P1S only, until the all-printers slicer adds profiles. */
 export type PrinterId = "bambu-p1s";
