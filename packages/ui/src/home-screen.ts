@@ -100,6 +100,9 @@ export interface HomeParts {
 /** The longest the picture waits for the open project before it shows the simple parts (the design follows when it comes). */
 export const SHAPE_WAIT_MS = 4000;
 
+/** The fold icon's names (for screen readers and its tooltip): folding the screen away, and bringing it back. */
+export const FOLD_WORDS = { fold: "Fold the screen away to watch the background", unfold: "Bring the screen back" } as const;
+
 export interface HomeScreen {
   show(): Promise<void>;
   hide(): void;
@@ -165,16 +168,30 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
     button("home-gentle", "Use gentle motion", () => useGentle(), "home-link"),
     button("home-gentle-no", "Not now", () => ((tipDismissed = true), paintMotion()), "home-link"),
   );
-  motionButton.hidden = tip.hidden = true;
-  links.append(guide, motionButton, tip);
+  // Fold (Ben, 2026-11-16: "a little fold button for the UI next to the pause and book so if you want you can observe the
+  // background"): everything but the picture and the icons fades away, the icons staying where they were; the same icon,
+  // Escape or a press anywhere else brings it back.
+  const foldButton = iconButton("home-fold", "fold", FOLD_WORDS.fold, () => setFolded(!folded));
+  motionButton.hidden = foldButton.hidden = tip.hidden = true;
+  links.append(guide, motionButton, foldButton, tip);
   const close = button("home-close", "Back to my project", () => hide(), "home-close");
   const backdropCanvas = el("canvas", { className: "home-backdrop" });
   backdropCanvas.setAttribute("aria-hidden", "true");
   const scrim = el("div", { className: "home-scrim" });
   scrim.setAttribute("aria-hidden", "true");
   const win = doc.defaultView as Window & typeof globalThis;
-  // It waits (draws nothing) until the list is painted and the design is here, then fades in already in place.
-  const backdrop = homeBackdrop(backdropCanvas, { win, doc, room: () => links.getBoundingClientRect().bottom, waits: true, changed: () => paintMotion() });
+  /** The screen folded away, the picture alone with the icons. */
+  let folded = false;
+  // It waits (draws nothing) until the list is painted and the design is here, then fades in already in place. Folded, the
+  // whole window is its room, so the design glides to the middle.
+  const backdrop = homeBackdrop(backdropCanvas, { win, doc, room: () => (folded ? 0 : links.getBoundingClientRect().bottom), waits: true, changed: () => paintMotion() });
+  function setFolded(next: boolean) {
+    if (next === folded) return;
+    folded = next;
+    root.classList.toggle("home-folded", folded);
+    setIcon(foldButton, folded ? "unfold" : "fold", folded ? FOLD_WORDS.unfold : FOLD_WORDS.fold);
+    backdrop.redraw(); // a still picture is drawn again in its new room (a moving one glides there)
+  }
   /** The motion it had before it was paused, so Play brings that back. */
   let beforePause: MotionChoice = "system";
   /** Not now was pressed on the gentle motion suggestion (until the page closes). */
@@ -183,7 +200,8 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   function paintMotion() {
     const up = backdropCanvas.dataset.ready === "yes" && backdrop.mode !== "off";
     const moving = backdrop.mode === "live";
-    motionButton.hidden = !up;
+    motionButton.hidden = foldButton.hidden = !up;
+    if (!up) setFolded(false); // nothing to watch
     setIcon(motionButton, moving ? "pause" : "play", moving ? "Pause the background" : "Play the background");
     // Gentle motion is suggested only where drawing the picture has been too slow, and never when it is already what
     // the person wants (chosen, or asked for by the computer) or paused.
@@ -383,10 +401,22 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   root.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      hide();
+      if (folded) unfold();
+      else hide();
     }
     e.stopPropagation();
   });
+  /** Back from folded, the focus on the icon that folds it again (a press on the picture leaves it nowhere). */
+  const unfold = () => (setFolded(false), foldButton.focus());
+  // Folded, a press anywhere but on a button brings the screen back (the picture itself takes no press: it lands here).
+  // Heard on its way down, before any button acts: a press on an icon's drawing swaps that drawing out of its button.
+  root.addEventListener(
+    "click",
+    (e) => {
+      if (folded && !(e.target as Element | null)?.closest?.("button")) unfold();
+    },
+    { capture: true },
+  );
 
   /** What this screen made inert while it is up (the page behind it: Tab and screen readers stay on the screen). */
   let inerted: Element[] = [];
@@ -396,6 +426,7 @@ export function homeScreen(doc: Document, parts: HomeParts): HomeScreen {
   };
   function hide() {
     ticket++; // a list still being read is not put in a hidden screen
+    setFolded(false); // it opens unfolded next time
     root.hidden = true;
     backdrop.stop();
     release();
