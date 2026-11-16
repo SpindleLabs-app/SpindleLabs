@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, orbitSafeOffset, refitScale, planeSeenAs, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
+import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, keepAngleBasis, orbitSafeOffset, refitScale, planeSeenAs, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
 
 type Vec3 = [number, number, number];
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -394,4 +394,34 @@ test("hand-worked: planeSeenAs from behind on side and tilted planes, and agreei
     }
   }
   assert.ok(planes > 60, `${planes} planes`);
+});
+
+// Fit keeps the angle (Home turns it).
+test("keepAngleBasis: hand-worked: a camera looking from +X at a unit sphere stays on +X, r=1 fov 90 → √2 away", () => {
+  // fitDistance(1, 90°, 1) = 1 / sin(45°) = √2, so the camera sits at centre + (√2, 0, 0).
+  const r = keepAngleBasis([5, 0, 0], { centre: [1, 2, 3], radius: 1 }, 90, 1);
+  assert.deepEqual(r.target, [1, 2, 3]);
+  assert.ok(Math.abs(r.position[0] - (1 + Math.SQRT2)) < 1e-12);
+  assert.ok(Math.abs(r.position[1] - 2) < 1e-12 && Math.abs(r.position[2] - 3) < 1e-12);
+});
+
+test("keepAngleBasis: the direction is unchanged for any view, unlike home", () => {
+  for (const dir of [[0.3, -0.9, 0.2], [0, 0, 1], [-2, 1, -1]] as Vec3[]) {
+    const r = keepAngleBasis(dir, box, 45, 1);
+    const back = unit(r.position.map((p, i) => p - r.target[i]) as Vec3);
+    const want = unit(dir);
+    for (let i = 0; i < 3; i++) assert.ok(Math.abs(back[i] - want[i]) < 1e-12);
+  }
+  // Home from the same body gives its own fixed direction, not the one passed in.
+  const home = viewBasis("home", box, 45, 1);
+  const kept = keepAngleBasis([-2, 1, -1], box, 45, 1);
+  assert.notDeepEqual(unit(home.position.map((p, i) => p - home.target[i]) as Vec3), unit(kept.position.map((p, i) => p - kept.target[i]) as Vec3));
+});
+
+test("keepAngleBasis: distance equals fitDistance (the sphere just fits) and a zero direction falls back to home's", () => {
+  const r = keepAngleBasis([0, 0, 7], box, 45, 1);
+  assert.ok(Math.abs(Math.hypot(...(r.position.map((p, i) => p - r.target[i]) as Vec3)) - fitDistance(box.radius, 45, 1)) < 1e-9);
+  const z = keepAngleBasis([0, 0, 0], box, 45, 1);
+  const h = viewBasis("home", box, 45, 1);
+  for (let i = 0; i < 3; i++) assert.ok(Math.abs(z.position[i] - h.position[i]) < 1e-12);
 });

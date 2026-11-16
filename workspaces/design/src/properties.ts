@@ -283,14 +283,33 @@ export interface PropertiesPanel {
   markStale(stale: boolean, failed: boolean): void;
   /** The verbs the action registry offers for the selection, as buttons (none hides the row). */
   showActions(verbs: readonly Verb[], onRun: (id: string) => void): void;
-  /** What the last action said: a warning or an error, or "" for nothing. */
-  showActionNote(text: string, bad: boolean): void;
+  /**
+   * What the last action said: a warning or an error, or "" for nothing. A `passing` note (a refusal, such as an export
+   * asked while a tool was open) goes away after 20 s and at `clearPassingNote`; any other stays until replaced.
+   */
+  showActionNote(text: string, bad: boolean, passing?: boolean): void;
+  /** Takes the passing note away, if that is what shows (a tool closed, or the selection changed). */
+  clearPassingNote(): void;
   /** What other workspaces make from the design, one chip each; a click opens the chip's workspace. None hides the whole section. */
   showDownstream(chips: readonly ChipInfo[], onOpen: (target: string) => void): void;
 }
 
+const PASSING_NOTE_SECONDS = 20;
+
 /** Fills the properties slot and returns the handle that updates it. */
 export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
+  let passingText: string | null = null; // the passing note showing now (a refusal), if one is
+  let passingTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearPassing = () => {
+    if (passingTimer !== null) clearTimeout(passingTimer);
+    passingTimer = null;
+    const note = slot.querySelector<HTMLElement>("#action-note");
+    if (passingText !== null && note && note.textContent === passingText) {
+      note.textContent = "";
+      note.className = "";
+    }
+    passingText = null;
+  };
   slot.innerHTML = HTML;
   const $ = <T extends HTMLElement>(id: string) => slot.querySelector<T>(`#${id}`)!;
   /** New words the user must see (an action's note, a rebuild's error): a folded panel opens for them (U0b, `WORDS_EVENT`). */
@@ -453,12 +472,20 @@ export function propertiesPanel(slot: HTMLElement): PropertiesPanel {
         }),
       );
     },
-    showActionNote(text, bad) {
+    showActionNote(text, bad, passing = false) {
       const note = $("action-note");
+      if (passingTimer !== null) clearTimeout(passingTimer);
+      passingTimer = null;
+      passingText = null;
       note.textContent = text;
       note.className = bad ? "bad" : "";
       if (text !== "") said();
+      if (passing && text !== "") {
+        passingText = text;
+        passingTimer = setTimeout(clearPassing, PASSING_NOTE_SECONDS * 1000);
+      }
     },
+    clearPassingNote: () => clearPassing(),
     showDownstream(chips, onOpen) {
       $("downstream").hidden = chips.length === 0;
       const box = $("downstream-chips");
