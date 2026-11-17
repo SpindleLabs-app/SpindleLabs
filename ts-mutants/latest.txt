@@ -1,4 +1,4 @@
-tested commit 901478c on main, 2026-11-16 18:17 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/43891741372)
+tested commit 901478c on main, 2026-11-17 17:21 UTC (https://github.com/SpindleLabs-app/SpindleLabs/actions/runs/44109311693)
 UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | ConditionalExpression | at < 0 => false
 UNEXPLAINED survivor at packages/core/src/model/history.ts:220: packages/core/src/model/history.ts | EqualityOperator | at < 0 => at <= 0
 UNEXPLAINED survivor at packages/core/src/model/history.ts:226: packages/core/src/model/history.ts | ConditionalExpression | entries[at].id === fenced.floor => true
@@ -22,13 +22,13 @@ UNEXPLAINED survivor at workspaces/design/src/document.ts:1625: workspaces/desig
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null && there === undefined && ID_SHAPE.test(maker) => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | ConditionalExpression | maker !== null => true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1645: workspaces/design/src/document.ts | EqualityOperator | maker !== null => maker === null
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined || there.at >= byId.get(f.id)!.at => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | LogicalOperator | there === undefined || there.at >= byId.get(f.id)!.at => there === undefined && there.at >= byId.get(f.id)!.at
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there === undefined => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | ConditionalExpression | there.at >= byId.get(f.id)!.at => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1646: workspaces/design/src/document.ts | EqualityOperator | there.at >= byId.get(f.id)!.at => there.at > byId.get(f.id)!.at
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | "edges" => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | `${at} names` => ``
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1648: workspaces/design/src/document.ts | StringLiteral | "edges" => ""
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1651: workspaces/design/src/document.ts | ConditionalExpression | typeof e !== "string" => false
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1657: workspaces/design/src/document.ts | ConditionalExpression | typeof p.flip === "string" => true
 UNEXPLAINED survivor at workspaces/design/src/document.ts:1658: workspaces/design/src/document.ts | LogicalOperator | f.dependsOn.length !== 1 || f.dependsOn[0] !== maker => f.dependsOn.length !== 1 && f.dependsOn[0] !== maker
@@ -41,11 +41,11 @@ account: 26 survivors, all explained: true
 model: 52 survivors, all explained: true
 svg: 5 survivors, all explained: true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | !(Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by)) => false
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) || Number.isFinite(by)
+UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) && Number.isFinite(by) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => true
-UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(bx) => Number.isFinite(ax) && Number.isFinite(ay) || Number.isFinite(bx)
+UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | ConditionalExpression | Number.isFinite(ax) && Number.isFinite(ay) => true
 UNEXPLAINED survivor at packages/viewport/src/picking.ts:128: packages/viewport/src/picking.ts | LogicalOperator | Number.isFinite(ax) && Number.isFinite(ay) => Number.isFinite(ax) || Number.isFinite(ay)
 explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | ConditionalExpression | ![ax, ay, bx, by].every(Number.isFinite) => false
 explained.json lists a mutant that no longer survives (remove it): packages/viewport/src/picking.ts | MethodExpression | [ax, ay, bx, by].every(Number.isFinite) => [ax, ay, bx, by].some(Number.isFinite)
