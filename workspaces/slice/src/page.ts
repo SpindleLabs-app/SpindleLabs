@@ -132,6 +132,10 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
 
   const show = async () => {
     const mine = ++reading;
+    // Design's list is the truth only once that very design has been rebuilt: after a reload, an Open or an Undo here,
+    // Design is not on screen (app bug hunt 2026-11-18, C-1), so the registry is asked to bring it up to date first.
+    await ctx.representations.settled("design", ctx.project);
+    if (!live || mine !== reading) return;
     const { bodies, failed } = await readPlate(ctx.representations, ctx.representations.objectsOf("design", ctx.project));
     if (!live || mine !== reading) return;
     items.replaceChildren(

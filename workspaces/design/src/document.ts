@@ -1464,6 +1464,7 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
     if (isCombineItem(f)) return "Combine";
     if (isDuplicateItem(f)) return "Copy";
     if (isSketchExtrude(f)) return "Extrude";
+    if (isChamferItem(f)) return "Chamfer";
     const kind = kindOf(f);
     return kind === null ? "Item" : SHAPE_LABELS[kind];
   };

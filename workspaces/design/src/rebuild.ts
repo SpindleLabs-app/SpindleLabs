@@ -1697,7 +1697,12 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
  * kernel's store holds it): each face kept from the body keeps the names,
  * frame and turn it had there, and the new face of the k-th edge listed is
  * `face:<the Chamfer>/chamfer:<k>`, counted from 1, made after every name
- * before it. The Chamfer holds the body as it was (`holds`).
+ * before it; two held edges an edit before the Chamfer made one are
+ * chamfered once, the face named after the first. The chamfered body is
+ * made `by` the Chamfer, as a Combine's result is by the Combine, so a pin
+ * or projection on it depends on the Chamfer and a sketch before the
+ * Chamfer is offered none of it (app bug hunt 2026-11-18). The Chamfer holds
+ * the body as it was (`holds`).
  */
 async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   const [maker] = f.dependsOn;
@@ -1717,13 +1722,19 @@ async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, 
   const list = await Promise.all(ids.map((k) => namedOf(k, bodies[k], cache, 0)));
   const names = designNames(list);
   const on = ids.indexOf(c.body);
+  // `edges` the kernel's edges, each once; `ks` where each comes first among the held names. An edit
+  // before the Chamfer can make two held edges one (the halves of a notched edge when the notch goes):
+  // that edge is chamfered once, its face named after the first of them (app bug hunt 2026-11-18, A-3).
   const edges: number[] = [];
+  const ks: number[] = [];
   for (const [k, held] of c.edges.entries()) {
     const now = heldEdgeAt(held, names);
     const nth = c.edges.length === 1 ? "its edge" : `its edge ${k + 1}`;
     if ("cause" in now) return { status: "failed", cause: "error", message: now.cause === "point-lost" ? `${label} can't find ${nth} on ${what} any more: an edit before it changed or removed that edge` : `${label} can't tell which edge of ${what} is ${nth} any more: an edit before it made two edges alike` };
     if (now.body !== on) return { status: "failed", cause: "error", message: `${label}'s ${nth.slice(4)} is no longer on ${what}: an edit before it moved that edge onto another body` };
+    if (edges.includes(now.edge)) continue;
     edges.push(now.edge);
+    ks.push(k);
   }
   const out = await cache.chamfered(b.handle, edges, c.size, c.flip);
   const input = list[on];
@@ -1731,8 +1742,9 @@ async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, 
   const made = new Map(input.made);
   const faces = out.faces.map((from) => {
     if (from.from === "face") return input.faces[from.face];
-    const fresh = `face:${encodeURIComponent(f.id)}/chamfer:${edges.indexOf(from.edge) + 1}`;
-    made.set(fresh, [place, edges.indexOf(from.edge)]);
+    const k = ks[edges.indexOf(from.edge)];
+    const fresh = `face:${encodeURIComponent(f.id)}/chamfer:${k + 1}`;
+    made.set(fresh, [place, k]);
     return { names: [fresh] };
   });
   const frames = out.faces.map((from) => (from.from === "face" ? frameOfFace(b, from.face) : null));
@@ -1744,7 +1756,7 @@ async function chamferRun(doc: DesignDocument, f: Feature, done: Record<string, 
     named: { faces, made },
     ...(frames.some((x) => x !== null) && { frames }),
     ...(reversed && { reversed }),
-    ...(b.by !== undefined && { by: b.by }),
+    by: f.id,
     ...(b.from !== undefined && { from: b.from }),
   };
   return { status: "built", holds: [b.handle], chamfered: { edges, body: out.body } };
