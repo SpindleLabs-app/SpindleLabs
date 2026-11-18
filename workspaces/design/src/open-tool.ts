@@ -26,13 +26,15 @@ export interface ToolsOpen {
   combine: { editing: string | null } | null;
   /** Chamfer's panel (44a-app3, which previews the cut): the item it edits (null for a new one). Left out: none open. */
   chamfer?: { editing: string | null } | null;
+  /** Shell's panel (35h2c-app2, which previews the hollow): the item it edits (null for a new one). Left out: none open. */
+  shell?: { editing: string | null } | null;
   /** A sketch: picking its plane, or being drawn (the sketch's id when known). */
   sketch: { kind: "pick" } | { kind: "edit"; id: string | null } | null;
 }
 
 /** The open tool (which panel, to say the words in), its name as its panel shows it, and what finishes it. */
 export interface OpenTool {
-  tool: "move" | "extrude" | "edit" | "combine" | "chamfer" | "pick" | "sketch";
+  tool: "move" | "extrude" | "edit" | "combine" | "chamfer" | "shell" | "pick" | "sketch";
   name: string;
   finish: string;
 }
@@ -46,6 +48,7 @@ export function openTool(open: ToolsOpen, name: (id: string) => string): OpenToo
   if (open.edit !== null) return { tool: "edit", name: `Edit ${name(open.edit)}`, finish: OK_OR_CANCEL };
   if (open.combine) return { tool: "combine", name: open.combine.editing === null ? "Combine" : `Edit ${name(open.combine.editing)}`, finish: OK_OR_CANCEL };
   if (open.chamfer) return { tool: "chamfer", name: open.chamfer.editing === null ? "Chamfer" : `Edit ${name(open.chamfer.editing)}`, finish: OK_OR_CANCEL };
+  if (open.shell) return { tool: "shell", name: open.shell.editing === null ? "Shell" : `Edit ${name(open.shell.editing)}`, finish: OK_OR_CANCEL };
   if (open.sketch?.kind === "pick") return { tool: "pick", name: "Sketch", finish: "pick its plane or press Cancel" };
   if (open.sketch?.kind === "edit") return { tool: "sketch", name: open.sketch.id === null ? "The sketch" : name(open.sketch.id), finish: "press Finish sketch" };
   return null;
