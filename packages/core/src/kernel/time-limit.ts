@@ -453,6 +453,11 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       const other = second === null ? one : sizeOf(second.body);
       return one && other ? booleanUnits(one, [other]) : 0;
     }
+    case "body_construct": {
+      // Reading a pick costs at most a look over its body (a face's centroid sums its triangles): each picked body's mesh.
+      const given = Object.values(a[0] as Record<string, unknown>).flatMap((g) => (typeof g === "object" && g !== null && Object.hasOwn(g, "pick") ? [(g as { pick: MeasurePick }).pick.body] : []));
+      return given.reduce((sum, h) => sum + (sizeOf(h)?.mesh ?? 0), 0);
+    }
     case "sketch_outline":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
     case "sketch_regions":

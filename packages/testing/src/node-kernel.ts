@@ -49,6 +49,7 @@ export function nodeKernel(): KernelCalls {
     pattern_motions: (pattern) => entry.pattern_motions(pattern),
     body_count: () => entry.body_count(),
     body_measure: (first, second) => entry.body_measure(first, second),
+    body_construct: (make) => entry.body_construct(make),
     slice_stl: (stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip),
     print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip),
     wasm_bytes: () => loaded!.memory.buffer.byteLength,

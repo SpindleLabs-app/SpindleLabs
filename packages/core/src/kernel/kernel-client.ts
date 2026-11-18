@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, PatternSpec, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, ConstructGiven, ConstructMade, ConstructMake, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle, PatternSpec } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -57,6 +57,12 @@ export interface KernelOps {
   pattern_motions: { args: [pattern: PatternSpec]; result: Motion[] };
   /** Measures one pick, or two (step 35e2l): their facts, the least distance with its two points, the angle and centre to centre. */
   body_measure: { args: [first: MeasurePick, second: MeasurePick | null]; result: Measured };
+  /**
+   * A construction plane, axis or point (step 59) from picks on kept bodies
+   * (named by the app's handles) and planes, axes and points given as values;
+   * refused in the kernel's words naming the slot at fault.
+   */
+  body_construct: { args: [make: ConstructMake]; result: ConstructMade };
   /** How many bodies the kernel keeps: tests check what they build they free. */
   body_count: { args: []; result: number };
   /** Slices one or more binary STL files (back to back, a body each) with the beginner's choices: layer height (mm), wall count, infill (%), supports under overhangs (off, normal or tree), the warm-up loop (two loops round the first layer, printed first) and Better grip (a 5 mm brim, and a slower, 5 °C hotter first layer). */
@@ -496,6 +502,15 @@ export class KernelClient implements KernelCalls {
       if (unknown) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
       return this.send(op, picks.map((p) => (p === null ? null : { ...p.pick, body: p.held!.body })) as KernelOps[K]["args"], units) as Promise<KernelOps[K]["result"]>;
     }
+    // A construction's picks name bodies by the app's handles too: each sent as the kernel's number (step 59).
+    if (op === "body_construct") {
+      const [make] = args as KernelOps["body_construct"]["args"];
+      const slots = Object.entries(make).filter(([key]) => key !== "kind") as [string, unknown][];
+      const picks = slots.flatMap(([, g]) => (isPickGiven(g) ? [g.pick.body] : []));
+      if (picks.some((h) => !this.bodies.has(h))) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
+      const sent = Object.fromEntries(Object.entries(make).map(([key, g]) => [key, isPickGiven(g) ? { pick: { ...g.pick, body: this.bodies.get(g.pick.body)!.body } } : g]));
+      return this.send(op, [sent] as KernelOps[K]["args"], units) as Promise<KernelOps[K]["result"]>;
+    }
     if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide") {
       const handle = args[0] as BodyHandle;
       const held = this.bodies.get(handle);
@@ -618,4 +633,9 @@ export function latestOnly<A extends unknown[], R>(fn: (...args: A) => Promise<R
     const value = await fn(...args);
     return { current: ticket === latest, value };
   };
+}
+
+/** Whether a construction's slot is a pick on a body (`{ pick }`), not a value. */
+function isPickGiven(g: unknown): g is Extract<ConstructGiven, { pick: unknown }> {
+  return typeof g === "object" && g !== null && Object.hasOwn(g, "pick");
 }
