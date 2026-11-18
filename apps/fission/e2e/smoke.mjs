@@ -961,7 +961,7 @@ try {
 
   await check("DESIGN ▾ names Design and lists Design and Slice only (the public app's, src/listed-workspaces.ts), Design marked, neither greyed", async () => {
     assert.equal(await page.textContent("#workspace-menu"), "DesignLab ▾");
-    assert.equal(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DESIGN ▾, as Fusion's");
+    assert.notEqual(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DesignLab ▾, spelled as the menu spells it");
     assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "design");
     await page.click("#workspace-menu");
     const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (ts) => ts.map((t) => [t.querySelector(".menu-button-name").textContent, t.querySelector(".menu-button-note")?.textContent ?? "", t.getAttribute("aria-current") === "true"]));

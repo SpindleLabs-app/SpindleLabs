@@ -392,7 +392,7 @@ body { display: flex; flex-direction: column; }
 #properties { grid-column: 3; grid-row: 2; width: 300px; border-left: 1px solid var(--line); }
 /* A Coming-soon page or the Image panel in it is a floating card (placeholder.css, the Image workspace's image.css; the page is found by its class name in an attribute selector so the base theme names no feature): the panel itself is then just room round the card. */
 @media (min-width: 641px) {
-  #workspace:not([data-split="on"]) #properties:has(> :is([class~="placeholder"], .image)) { background: transparent; border-left: none; padding: 8px 8px 8px 0; overflow: visible; }
+  #workspace:not([data-split="on"]) #properties:has(> :is([class~="placeholder"], [class~="laser-page"], [class~="testlab-page"], .image)) { background: transparent; border-left: none; padding: 8px 8px 8px 0; overflow: visible; }
 }
 #assistant { grid-column: 4; grid-row: 2; }
 #browser, #properties, #split-browser, #split-properties { padding: 16px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
