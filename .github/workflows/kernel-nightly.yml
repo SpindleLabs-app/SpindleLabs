@@ -13,6 +13,11 @@ name: Kernel random testing
 # first; the whole kernel no longer fits in one night, so each night carries
 # on where the last stopped and a new cycle starts when every mutant has been
 # tested). Every job is cut off at 22:35 UTC however late it started.
+# Once a week (the night starting on a Saturday, UTC) 12 more jobs run every
+# planted bug of the kernel's ci/plants.json (each must still be caught by
+# its test); a pull request runs only the plants its changed files choose,
+# so a change that loses a catch some other way is found within a week
+# (test audit E-2, 2026-11-18). `plants` runs them by hand on any branch.
 #
 # Round the clock (Ben, 2026-11-09): while .github/scripts/round_the_clock.txt
 # on main says `on`, the clock also starts daytime runs (`day`) between
@@ -84,6 +89,10 @@ on:
         description: "Also run the next slice of the whole-kernel mutation rotation (main only)"
         type: boolean
         default: false
+      plants:
+        description: "Also run every planted bug (ci/plants.json; the night does on Saturdays)"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -145,12 +154,14 @@ jobs:
       jobs: ${{ steps.plan.outputs.jobs }}
       second_leg: ${{ steps.plan.outputs.second_leg }}
       shards: ${{ steps.plan.outputs.shards }}
+      plants: ${{ steps.plan.outputs.plants }}
     steps:
       - id: plan
         env:
           NIGHTLY: ${{ env.NIGHT }}
           MINUTES: ${{ inputs.minutes || '290' }}
           MUTANTS: ${{ inputs.mutants }}
+          PLANTS: ${{ inputs.plants }}
           KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
         run: |
           case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
@@ -196,10 +207,15 @@ jobs:
           # leg runs when the first can't reach the deadline.
           second_leg=false
           [ $(( deadline - now )) -gt $(( 330 * 60 )) ] && second_leg=true
+          # Every planted bug: weekly on the night starting on a Saturday
+          # (UTC), or when asked (not in the daytime runs).
+          plants=0
+          if [ "$NIGHTLY" = true ] && [ "$(date -u +%u)" = 6 ]; then plants=12; fi
+          if [ "$NIGHTLY" != true ] && [ "$DAY" != true ] && [ "$PLANTS" = true ]; then plants=12; fi
           # Mutation shards: at most 330 minutes, and never past the night's deadline.
           mutants_deadline=$(( now + 330 * 60 ))
           [ "$NIGHTLY" = true ] && [ $deadline -lt $mutants_deadline ] && mutants_deadline=$deadline
-          echo "Testing kernel $REF at $sha until $(date -u -d "@$deadline" '+%F %H:%M UTC'); second leg: $second_leg; mutation shards: $shards"
+          echo "Testing kernel $REF at $sha until $(date -u -d "@$deadline" '+%F %H:%M UTC'); second leg: $second_leg; mutation shards: $shards; plant shards: $plants"
           {
             echo "sha=$sha"
             echo "deadline=$deadline"
@@ -207,6 +223,7 @@ jobs:
             echo "jobs=$jobs"
             echo "second_leg=$second_leg"
             echo "shards=$(if [ $shards -gt 0 ]; then seq -s, 0 $((shards - 1)) | sed 's/.*/[&]/'; else echo '[]'; fi)"
+            echo "plants=$(if [ $plants -gt 0 ]; then seq -s, 0 $((plants - 1)) | sed 's/.*/[&]/'; else echo '[]'; fi)"
           } >>"$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -474,8 +491,63 @@ jobs:
           path: ${{ runner.temp }}/sealed
           retention-days: 1
 
+  # Every planted bug (the kernel's ci/plants.py), a round-robin share per
+  # job: about 410 plants of 2 to 3 minutes over 12 jobs is under 2 hours.
+  # The verdict lines name kernel code: they go to plants.txt, never this log.
+  plants:
+    needs: plan
+    if: ${{ needs.plan.outputs.plants != '[]' }}
+    runs-on: ubuntu-latest
+    environment: kernel
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.plants) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: This job's share of the planted bugs (verdicts in kernel-results)
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+          CARGO_INCREMENTAL: "0"
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          code=0
+          .github/scripts/kernel_ci.sh run plants "$out" bash -c \
+            "cd k && python3 ci/plants.py --shard $SHARD/$SHARDS --log '$out/plants-detail.log' >'$out/plants.txt'" || code=$?
+          echo $code >"$out/exit-code.txt"
+          exit $code
+      - name: Seal the results (only collect can open them)
+        if: always()
+        env:
+          PUBLIC: ${{ needs.plan.outputs.public }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed results on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-plants-${{ matrix.shard }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
+
   collect:
-    needs: [plan, test, test-second-leg, mutants]
+    needs: [plan, test, test-second-leg, mutants, plants]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     environment: kernel
