@@ -181,6 +181,27 @@ test("Escape goes back to the project and the key never reaches the app's shortc
   assert.equal(s.home.shown, false);
 });
 
+test("a key typed after a press on an empty part of the screen (the focus on the page's body) never reaches the design behind it", async () => {
+  // Bug hunt 2026-11-18 D-1: a press on the picture or empty space moves the focus to <body>, so Ctrl+Z, Delete or E went to
+  // the app's document shortcuts behind the screen (a step undone or a body deleted unseen, and autosaved).
+  const s = setup();
+  const app = s.doc.createElement("main");
+  s.doc.body.prepend(app);
+  await s.home.show();
+  const reached: string[] = [];
+  s.doc.addEventListener("keydown", (e) => reached.push((e as KeyboardEvent).key));
+  const Event = (s.doc.defaultView as any).KeyboardEvent;
+  for (const key of ["z", "Delete", "e"]) s.doc.body.dispatchEvent(new Event("keydown", { key, ctrlKey: key === "z", bubbles: true }));
+  app.dispatchEvent(new Event("keydown", { key: "Delete", bubbles: true })); // aimed at the inert page itself: stopped too
+  assert.deepEqual(reached, [], "no key reached the app's shortcuts");
+  assert.equal(s.home.shown, true);
+  s.doc.body.dispatchEvent(new Event("keydown", { key: "Escape", bubbles: true })); // Escape still goes back to the project
+  assert.equal(s.home.shown, false);
+  // Control: once the screen is gone, keys reach the app again.
+  s.doc.body.dispatchEvent(new Event("keydown", { key: "z", ctrlKey: true, bubbles: true }));
+  assert.deepEqual(reached, ["z"]);
+});
+
 test("while the screen is shown the rest of the page can't be reached by Tab (inert), and is again once it goes", async () => {
   const s = setup();
   const app = s.doc.createElement("main");
