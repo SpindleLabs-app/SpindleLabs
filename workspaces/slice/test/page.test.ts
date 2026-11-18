@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RepresentationRegistry, type WorkspaceContext } from "@fission/core";
 import { leftOutWords, mountSlicePage, plateFiles, plateMesh, plateWords, printPanel, readPlate, sliceWords, slicePageWorkspace } from "../src/index.ts";
-import { PRINT_DEFAULTS } from "@fission/print";
+import { PRINT_DEFAULTS, SUPPORT_OPTIONS } from "@fission/print";
 
 const { Window } = await import("happy-dom");
 
@@ -406,4 +406,54 @@ test("leftOutWords names the failed items and the hidden bodies, and says nothin
   assert.equal(leftOutWords({ failed: [], hidden: ["Body 2"] }), "Body 2 is hidden in Design, so it is not on the plate.");
   assert.equal(leftOutWords({ failed: [], hidden: ["Body 1", "Body 3"] }), "Body 1 and Body 3 are hidden in Design, so they are not on the plate.");
   assert.equal(leftOutWords({ failed: ["Extrude 2"], hidden: ["Body 1"] }).endsWith("Body 1 is hidden in Design, so it is not on the plate."), true);
+});
+
+// The supports hint after a slice (the dialog's, brought to the page, SP5): recommended or not by the overhang area, with one
+// button that flips the Supports choice when it disagrees. Hand working: a floor triangle at z 0 and a triangle at z 20 with
+// corners (0,0), (0,10), (10,0): u = (0,10,0), v = (10,0,0), u × v z = 0·0 − 10·10 = −100, so it faces straight down and its
+// area is 100 / 2 = 50 mm², over the 5 mm² limit: supports recommended.
+function overhangStl(): Uint8Array {
+  const bytes = new Uint8Array(84 + 100);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(80, 2, true);
+  const tris = [[[0, 0, 0], [10, 0, 0], [0, 10, 0]], [[0, 0, 20], [0, 10, 20], [10, 0, 20]]];
+  tris.forEach((t, n) => t.forEach((c, i) => c.forEach((v, k) => view.setFloat32(84 + n * 50 + 12 + i * 12 + k * 4, v, true))));
+  return bytes;
+}
+const hangingRegistry = () => {
+  const r = new RepresentationRegistry();
+  r.registerProducer("fake.body", "data", () => ({ kind: "data", values: { format: "stl", bytes: overhangStl() } }));
+  return r;
+};
+
+test("after a slice the supports hint says whether supports are recommended and its button flips the choice; it goes when a slice starts", async () => {
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0 };
+  const { doc, panel } = panelIn(async () => result, objects.slice(0, 1), { registry: hangingRegistry() });
+  const hint = doc.querySelector(".slice-page-supports-hint") as unknown as HTMLElement;
+  const flip = doc.querySelector(".slice-page-supports-flip") as unknown as HTMLButtonElement;
+  assert.equal(hint.hidden, true, "no hint before a slice");
+  await panel.slice();
+  assert.equal(hint.hidden, false);
+  assert.match(hint.textContent!, /Supports recommended: part of it hangs out more than 45° with nothing under it\./);
+  assert.equal(flip.textContent, "Turn supports on");
+  flip.click();
+  assert.equal(panel.choices().supports, "normal", "the button turns supports on");
+  assert.match(doc.querySelector(".slice-page-slice-words")!.textContent!, /Supports turned on \(Normal\)\. Slice again to make the file with them\./);
+  assert.equal(flip.hidden, true, "with supports on the recommendation already agrees, so no button");
+  assert.equal(choiceSelects(doc)[3].value, String(SUPPORT_OPTIONS.findIndex((o) => o.value === "normal")), "and the Supports box shows it");
+});
+
+test("a part with nothing hanging says supports are not needed, and offers to turn them off only when they are on", async () => {
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0 };
+  const { doc, panel } = panelIn(async () => result, objects.slice(0, 1));
+  const hint = doc.querySelector(".slice-page-supports-hint") as unknown as HTMLElement;
+  const flip = doc.querySelector(".slice-page-supports-flip") as unknown as HTMLButtonElement;
+  await panel.slice();
+  assert.match(hint.textContent!, /Supports not needed: nothing hangs out more than 45°\./);
+  assert.equal(flip.hidden, true, "supports are off, so they already agree");
+  const select = choiceSelects(doc)[3];
+  select.value = String(SUPPORT_OPTIONS.findIndex((o) => o.value === "normal"));
+  select.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  assert.equal(flip.hidden, false, "turning them on makes the hint offer to turn them off");
+  assert.equal(flip.textContent, "Turn supports off");
 });
