@@ -13,8 +13,8 @@
 // next). Behind the `?pattern` flag until Ben says it goes public.
 
 import type { Feature } from "@fission/core";
-import { bodyItem, counted, freshName, insertAt, insertItem, isPiece, makesBody, shown, takenNames, type DesignDocument } from "./document.ts";
-import { patternProblem, patternSummary, savedValues, type PatternValues } from "./pattern-values.ts";
+import { bodyItem, counted, freshName, insertAt, insertItem, isPatternItem, isPiece, makesBody, shown, takenNames, type DesignDocument } from "./document.ts";
+import { patternProblem, patternSummary, patternValuesOf, savedValues, type PatternValues } from "./pattern-values.ts";
 
 export * from "./pattern-values.ts";
 
@@ -55,4 +55,50 @@ export function insertPattern(doc: DesignDocument, bodies: readonly string[], va
     suppressed: false,
   };
   return { id, doc: { ...doc, nextId: counted(doc.nextId + 1), timeline: insertItem(doc, feature) } };
+}
+
+/** A Pattern as Edit feature opens it (step 61c): its id, name, bodies (body ids, as picked) and values. */
+export interface EditablePattern {
+  id: string;
+  name: string;
+  bodies: string[];
+  values: PatternValues;
+}
+
+/** Pattern `id`'s values for Edit feature; refused in words for anything that is no Pattern in the timeline. */
+export function editablePattern(doc: DesignDocument, id: string): EditablePattern {
+  const f = doc.timeline.features.find((x) => x.id === id);
+  if (f === undefined || !isPatternItem(f)) throw new Error(`${shown(id)} is not a Pattern in the timeline`);
+  return { id, name: f.provenance.self.label, bodies: [...(f.intent.parameters.bodies as string[])], values: savedValues(patternValuesOf(f.intent.parameters)) };
+}
+
+/** The words over an edited Pattern's bodies: they stay as picked (as an edited Combine's do). */
+export const EDIT_BODIES_NOTE = "Its bodies stay as they were picked: to pattern other bodies, make another Pattern.";
+
+/**
+ * The design with Pattern `id` given `values` (Edit feature, step 61c): the
+ * same item, keeping its id, place, bodies, name and flags; its summary
+ * said again with the names it holds. The document itself comes back when
+ * the saved values are unchanged (a leftover second count with no second
+ * direction is no change), so nothing is recorded. Refused, changing
+ * nothing, for values `patternProblem` refuses.
+ */
+export function changedPattern(doc: DesignDocument, id: string, values: PatternValues): DesignDocument {
+  const at = doc.timeline.features.findIndex((x) => x.id === id);
+  const f = doc.timeline.features[at];
+  if (f === undefined || !isPatternItem(f)) throw new Error(`${shown(id)} is not a Pattern in the timeline`);
+  const problem = patternProblem(values);
+  if (problem !== null) throw new Error(problem);
+  const saved = savedValues(values);
+  const bodies = [...(f.intent.parameters.bodies as string[])];
+  if (JSON.stringify(savedValues(patternValuesOf(f.intent.parameters))) === JSON.stringify(saved)) return doc;
+  const names = bodies.map((b) => {
+    const maker = bodyItem(b);
+    const label = f.provenance.from.find((r) => r.id === maker)?.label ?? b;
+    return isPiece(b) ? `a piece of ${label}` : label;
+  });
+  const changed: Feature = { ...f, intent: { ...f.intent, parameters: { bodies, ...saved } as unknown as Feature["intent"]["parameters"], summary: patternSummary(names, saved) } };
+  const features = [...doc.timeline.features];
+  features[at] = changed;
+  return { ...doc, timeline: { ...doc.timeline, features } };
 }

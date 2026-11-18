@@ -213,3 +213,21 @@ test("without WebGL the preview says so instead of a blank view", async () => {
   assert.equal(t.disposed(), 0);
   await t.window.happyDOM.close();
 });
+
+test("closing the preview puts focus where the caller says (the Slice page's Preview button), else on File ▾ as before", async () => {
+  for (const named of [true, false]) {
+    const window = new Window();
+    const doc = window.document as unknown as Document;
+    const slot = doc.createElement("div");
+    const fileMenu = doc.createElement("button");
+    fileMenu.id = "file-menu";
+    const previewButton = doc.createElement("button");
+    previewButton.id = "slice-page-preview";
+    doc.body.append(fileMenu, previewButton, slot);
+    const make = (): PreviewView => ({ setTime() {}, setShown() {}, frame() {}, resize() {}, dispose() {} });
+    openPrintPreview(slot, playback(TWO_LAYERS), "words", make, undefined, named ? () => doc.getElementById("slice-page-preview") : undefined);
+    (doc.getElementById("print-preview-close") as HTMLElement).click();
+    assert.equal(doc.activeElement?.id, named ? "slice-page-preview" : "file-menu");
+    await window.happyDOM.close();
+  }
+});

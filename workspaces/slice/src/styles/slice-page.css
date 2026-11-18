@@ -58,3 +58,8 @@
 .slice-page .slice-page-settings[open] > summary .slice-page-settings-words {
   display: none; /* open, the choices say it themselves */
 }
+
+/* A finger needs 44 px (as the dialog's supports switch had): the hint's button on a phone or tablet. */
+@media (max-width: 640px), ((pointer: coarse) and (max-width: 1199px)) {
+  .slice-page .slice-page-supports-flip { min-height: 44px; padding: 0 var(--look-space-3, 12px); }
+}
