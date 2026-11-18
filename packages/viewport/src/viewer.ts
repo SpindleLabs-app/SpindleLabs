@@ -1962,8 +1962,10 @@ export class Viewer implements SharedViewport {
     clearGroup(this.originPlanes);
     const half = Math.max(10, 0.8 * this.bodyFraming().radius);
     const behindBody = { transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false, depthWrite: false };
-    for (const { plane } of shown.planes) {
-      const world = ([[0, 0], [2 * half, 0], [2 * half, 2 * half], [0, 2 * half]] as SketchXY[]).map((c) => toWorld(plane, c));
+    for (const { plane, centred } of shown.planes) {
+      const lo = centred === true ? -half : 0;
+      const hi = centred === true ? half : 2 * half;
+      const world = ([[lo, lo], [hi, lo], [hi, hi], [lo, hi]] as SketchXY[]).map((c) => toWorld(plane, c));
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
       g.setIndex([0, 1, 2, 0, 2, 3]);
