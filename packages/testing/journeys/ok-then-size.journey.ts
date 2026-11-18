@@ -5,7 +5,7 @@
 // OK made the new extrude 20 mm; Cylinder chosen for Box 1 added a new cylinder.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addSketch, designWorkspace, drawRectangle, insertMove, insertPreset, NO_MOVE, partDocument, type DesignDocument } from "@fission/design";
+import { addSketch, designWorkspace, drawRectangle, insertMove, insertPreset, NO_MOVE, partDocument, setCombineShown, type DesignDocument } from "@fission/design";
 import { app } from "./design-app.ts";
 
 type App = Awaited<ReturnType<typeof app>>;
@@ -115,5 +115,39 @@ test("Box 1 suppressed from its menu while the Move's OK is checked, then Width 
   assert.equal(params(a, b.id).width, 8, "Box 2, which the boxes show now, keeps its 8");
 
   assert.match(a.$("#action-note")!.textContent!, /The size typed was for Box 1/);
+  await a.close();
+});
+
+test("Depth typed for Box 2, the Cut's tool, right after the Combine's OK changes Box 2, not Box 3 (app bug hunt 2026-11-18, B-3)", async () => {
+  setCombineShown(true);
+  // Box 1 10×4×2 at the origin; Box 2 2×6×4 moved (4, −1, −1); Box 3 2×2×2 moved (1, 1, 1).
+  let doc = partDocument("box", 10, 4, 2);
+  const b2 = insertPreset(doc, "box", 2, 6, 4);
+  doc = insertMove(b2.doc, [`body:${b2.id}`], { ...NO_MOVE, x: 4, y: -1, z: -1 }).doc;
+  const b3 = insertPreset(doc, "box", 2, 2, 2);
+  doc = insertMove(b3.doc, [`body:${b3.id}`], { ...NO_MOVE, x: 1, y: 1, z: 1 }).doc;
+  const a = await app(doc, designWorkspace);
+  a.$("#modify-menu")!.click();
+  await a.settle();
+  a.$("#modify-menu-combine")!.click();
+  await a.settle();
+  a.selection.set([{ kind: "body", id: "body:feature-1" } as never]);
+  await a.settle();
+  a.selection.set([{ kind: "body", id: "body:feature-1" } as never, { kind: "body", id: `body:${b2.id}` } as never]);
+  await a.settle();
+  const select = a.$("#combine-operation") as HTMLSelectElement;
+  select.value = "cut";
+  select.dispatchEvent(new a.window.Event("change") as never);
+  const keep = a.$("#combine-keep") as HTMLInputElement;
+  if (keep.checked) (keep.checked = false), keep.dispatchEvent(new a.window.Event("change") as never);
+  await a.settle();
+  assert.equal(["#width", "#depth", "#height"].map((x) => (a.$(x) as HTMLInputElement).value).join("x"), "2x6x4", "the boxes show Box 2");
+  (a.$("#combine-ok") as HTMLButtonElement).click();
+  type(a, "#depth", "3");
+  for (let i = 0; i < 5; i++) await a.settle();
+  assert.equal(params(a, b2.id).depth, 3, "Box 2 is made 3 deep");
+  assert.equal(params(a, b3.id).depth, 2, "Box 3 keeps its 2");
+  // Box 2 now spans y −1..2, so the Cut takes x 4..6, y 0..2, z 0..2 from Box 1: 80 − 8 = 72; with Box 3's 8: 80 mm³.
+  assert.ok(Math.abs(a.volume() - 80) < 1e-6, `${a.volume()}`);
   await a.close();
 });
