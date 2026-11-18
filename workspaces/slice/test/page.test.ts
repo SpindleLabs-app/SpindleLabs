@@ -199,6 +199,22 @@ test("Slice and download makes the P1S's file for the plate and nozzle chosen, s
   assert.match(cancelled.doc.querySelector(".slice-page-slice-words")!.textContent!, /^Sliced, but not saved: 5 layers/);
 });
 
+test("a second press of Slice and download within a burst of the first saves nothing more; a changed choice lets the next press through (clumsy-user hunt)", async () => {
+  const saved: unknown[] = [];
+  const { doc, panel } = panelIn(
+    async () => ({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: new Uint8Array([1]) }),
+    objects,
+    { save: async (r) => (saved.push(r), { status: "saved", name: "x.gcode.3mf" }) },
+  );
+  await panel.download();
+  await panel.download(); // the impatient second press, straight after the first finished
+  assert.equal(saved.length, 1, "the repeat does nothing");
+  choiceSelect(doc, "walls").value = "1";
+  choiceSelect(doc, "walls").dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  await panel.download();
+  assert.equal(saved.length, 2, "a changed choice asks for something new");
+});
+
 test("Slice and download: an empty plate never asks the engine or saves, a failed save is said, and a refusal leaves the buttons working", async () => {
   let asked = 0;
   let saves = 0;

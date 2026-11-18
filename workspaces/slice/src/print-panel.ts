@@ -3,7 +3,7 @@
 // Design's Slice for printing dialog does. The bodies' exact STL files come through the representation registry (Design
 // hands them out as data), never from Design's code; the engine calls are @fission/print's. Styles: src/styles/slice-page.css.
 
-import { GCODE_KIND } from "@fission/ui";
+import { GCODE_KIND, repeatGuard } from "@fission/ui";
 import type { BuildPlate, KernelCalls, SliceProgress, SupportStyle, ListedObject, RepresentationRegistry } from "@fission/core";
 import {
   costWords,
@@ -175,6 +175,9 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   /** Marks the preset picked as changed (set once the presets bar exists). */
   let presetsChanged = () => {};
   /** A result stays next to choices it no longer matches: any change clears the words, the cost line and the hint (as the dialog did). */
+  // Presses that come too quickly to be meant (a double-click, a held Enter) save or preview once; a changed choice lets the next through.
+  const downloadRepeats = repeatGuard();
+  const previewRepeats = repeatGuard();
   let clearResult = () => {};
   const addChoice = <T>(c: Choice<T>, id: string, into: HTMLElement = element): HTMLSelectElement => {
     const label = doc.createElement("label");
@@ -192,6 +195,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.current)));
     select.addEventListener("change", () => {
       c.pick(c.options[Number(select.value)].value);
+      downloadRepeats.reset();
+      previewRepeats.reset();
       if (id !== "slice-page-supports") clearResult(); // Supports keeps the result: its hint offers the other way as it changes
       presetsChanged();
       showSettings();
@@ -277,6 +282,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     syncs.push(() => (box.checked = read()));
     box.addEventListener("change", () => {
       pick(box.checked);
+      downloadRepeats.reset();
+      previewRepeats.reset();
       clearResult();
       presetsChanged();
       try {
@@ -491,7 +498,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     button.textContent = on ? "Slicing…" : "Slice";
   };
   const previewPrint = async () => {
-    if (running || !live) return;
+    if (previewRepeats() || running || !live) return;
     const objects = parts.objects();
     if (objects.length === 0) {
       status.textContent = "Nothing to slice: make or show a body in Design first.";
@@ -516,10 +523,11 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
+      previewRepeats();
     }
   };
   const downloadFile = async () => {
-    if (running || !live) return;
+    if (downloadRepeats() || running || !live) return;
     const objects = parts.objects();
     if (objects.length === 0) {
       status.textContent = "Nothing to slice: make or show a body in Design first.";
@@ -549,6 +557,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
+      downloadRepeats();
     }
   };
   const slice = async () => {
