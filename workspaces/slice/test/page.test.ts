@@ -487,3 +487,39 @@ test("picking walls changes the closed line, and a fold left open is remembered 
   const again = panelIn(async () => ({}), objects, { storage: storage as never });
   assert.equal((again.doc.getElementById("slice-page-settings") as unknown as HTMLDetailsElement).open, true, "a new page opens as left");
 });
+
+test("a changed choice or tick (not Supports, whose hint follows it) clears the last result's words, cost line and hint, so a result never sits beside choices it no longer matches", async () => {
+  const result = { layers: 12, filamentMm: 1000, filamentG: 40, printTimeS: 4800, unprintedVolume: 0 };
+  const { doc, panel } = panelIn(async () => result);
+  const words = () => doc.querySelector(".slice-page-slice-words")!.textContent!;
+  const cost = doc.getElementById("slice-page-cost") as unknown as HTMLElement;
+  const change = (el: HTMLElement) => el.dispatchEvent(new (doc.defaultView as unknown as { Event: typeof Event }).Event("change"));
+  for (const how of ["walls", "grip"]) {
+    await panel.slice();
+    assert.match(words(), /^12 layers, /, "a result to clear");
+    assert.equal(cost.hidden, false);
+    if (how === "walls") {
+      const walls = choiceSelect(doc, "walls");
+      walls.value = "0";
+      change(walls as unknown as HTMLElement);
+    } else {
+      const grip = doc.getElementById("slice-page-grip") as unknown as HTMLInputElement;
+      grip.checked = !grip.checked;
+      change(grip as unknown as HTMLElement);
+    }
+    assert.equal(words(), "", `${how}: the words go`);
+    assert.equal(cost.hidden, true, `${how}: the cost line goes`);
+  }
+});
+
+test("a preset picked last time is put back when the page opens, with its settings shown (it once crashed the page: the preset was applied before the rest of the panel existed)", () => {
+  const kept = new Map<string, string>([
+    ["spindlelabs.slice.presets", JSON.stringify({ version: 1, presets: [{ id: "p1", name: "home P1S", printer: "bambu-p1s", updatedAt: 1, settings: { layerHeight: 0.16, walls: 3, infill: 25, format: "p1s", plate: "smooth", nozzle: "high-flow" } }] })],
+    ["spindlelabs.slice.preset", "p1"],
+  ]);
+  const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) } as unknown as Storage;
+  const { doc, panel } = panelIn(async () => ({}), objects, { storage });
+  assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.16, walls: 3, infill: 25 });
+  assert.deepEqual(panel.file(), { format: "p1s", plate: "smooth", nozzle: "high-flow" });
+  assert.match(doc.querySelector(".slice-page-settings-words")!.textContent!, /0\.16 mm layers · 3 walls · 25 % infill$/);
+});
