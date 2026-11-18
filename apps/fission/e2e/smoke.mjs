@@ -984,8 +984,8 @@ try {
     await page.waitForTimeout(300); // let orbit damping settle
     const radius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
     const before = await pixel(0.5, 0.5);
-    // Each opened by its link: none is listed in the public app, and Slice's item opens Slice for printing (src/listed-workspaces.ts).
-    for (const [id, title] of [["render", "RenderLab"], ["simulate", "TestLab"], ["manufacture", "CNCLab"], ["laser", "LaserLab"], ["slice", "SliceLab"], ["circuit", "PCBLab"], ["vector", "VectorLab"], ["layout", "LayoutLab"]]) {
+    // Each opened by its link: none is listed in the public app, and Slice is the Slice page, not a placeholder (src/listed-workspaces.ts).
+    for (const [id, title] of [["render", "RenderLab"], ["simulate", "TestLab"], ["manufacture", "CNCLab"], ["laser", "LaserLab"], ["circuit", "PCBLab"], ["vector", "VectorLab"], ["layout", "LayoutLab"]]) {
       await page.evaluate((hash) => (location.hash = hash), `#${id}`);
       await page.waitForFunction((want) => document.body.dataset.activeWorkspace === want, id);
       assert.equal(await page.textContent(".placeholder h2"), title);
@@ -1765,12 +1765,12 @@ try {
       // A placeholder in the second pane: its name, Coming soon and what it
       // will do in the middle of the pane, and no 3D view: the view stops
       // drawing, its canvas, cube and bar are hidden, its properties column too.
-      await wide.selectOption("#split-choice", "slice");
-      await wide.waitForFunction(() => document.body.dataset.split === "slice");
-      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "SliceLab");
+      await wide.selectOption("#split-choice", "render");
+      await wide.waitForFunction(() => document.body.dataset.split === "render");
+      assert.equal(await wide.textContent("#split-viewport .split-soon h2"), "RenderLab");
       assert.match(await wide.textContent("#split-viewport .split-soon .coming-soon"), /^Expected (early |mid |late )?20\d\d$/);
       assert.equal(await wide.isVisible("#split-viewport .split-soon"), true);
-      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "SliceLab", "the workspace's own page, where the card comes from");
+      assert.equal(await wide.textContent("#split-properties .placeholder h2"), "RenderLab", "the workspace's own page, where the card comes from");
       assert.equal(await wide.isVisible("#split-properties"), false, "no second copy beside the card");
       assert.equal(await wide.$eval("#split-viewport", (el) => el.dataset.drawing), "off");
       for (const part of ["canvas", ".view-cube", ".view-controls"]) assert.equal(await wide.isVisible(`#split-viewport > ${part}`), false, `no ${part} in the placeholder's pane`);
@@ -1835,7 +1835,7 @@ try {
       await wide.click("#workspace-menu");
       const titles = Object.fromEntries(await wide.$$eval("#workspace-menu-menu [data-workspace]", (items) => items.map((t) => [t.dataset.workspace, t.querySelector(".menu-button-name").textContent.trim()])));
       await wide.keyboard.press("Escape");
-      const placeholders = ["render", "simulate", "manufacture", "laser", "slice", "circuit", "vector", "layout"];
+      const placeholders = ["render", "simulate", "manufacture", "laser", "circuit", "vector", "layout"];
 
       /** What the layout checks read, in page pixels. */
       const measure = () =>

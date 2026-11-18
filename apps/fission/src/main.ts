@@ -605,7 +605,8 @@ if (everyWorkspace) {
   toggle.setAttribute("aria-pressed", "false");
   toggle.addEventListener("click", () => {
     if (split) return closeSplit();
-    const id = defaultSplit(splitEntries, shownWorkspace())?.id;
+    // Split opens beside Design with Image, as before the Slice page was a working workspace; Slice is one pick away in the choice.
+    const id = (defaultSplit(splitEntries.filter((e) => e.id !== "slice"), shownWorkspace()) ?? defaultSplit(splitEntries, shownWorkspace()))?.id;
     if (id) mountSplit(id);
   });
   $("viewport").append(toggle);
@@ -1833,8 +1834,10 @@ phone.addEventListener("change", () => {
       // Combine's operation and OK once its target and a tool are picked (or an edited Combine's), its hint over the view gone (35f1d).
       (props.querySelector("#combine-panel:not([hidden])") !== null && document.querySelector("#combine-hint[hidden]") !== null) ||
       // Chamfer's size boxes and OK once an edge is picked, its hint over the view gone (44a-app2).
-      (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null);
-    const again = props.querySelector<HTMLElement>("#combine-panel:not([hidden])")?.dataset.shows ?? "";
+      (props.querySelector("#chamfer-panel:not([hidden])") !== null && document.querySelector("#chamfer-hint[hidden]") !== null) ||
+      // Construct's rows, lists and number (step 59a2): the sheet opens with it, a tap on the view puts it away to pick.
+      props.querySelector("#construct-panel:not([hidden])") !== null;
+    const again = (props.querySelector<HTMLElement>("#combine-panel:not([hidden])") ?? props.querySelector<HTMLElement>("#construct-panel:not([hidden])"))?.dataset.shows ?? "";
     const restarted = now && again !== "" && again !== shows;
     shows = again;
     if (now === wanted && !(turned && now) && !restarted) return;

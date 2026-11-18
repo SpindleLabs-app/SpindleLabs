@@ -44,6 +44,8 @@ export const ENDERS: readonly Ender[] = [
   { kind: "combine", panel: "#combine-panel", ok: "#combine-ok", cancel: "#combine-cancel", label: "Finish Combine", errors: ["#combine-error"], status: null },
   // Chamfer (step 44a-app2): the edges are tapped on the view with the sheet shut, so Finish and Cancel stay in reach here.
   { kind: "chamfer", panel: "#chamfer-panel", ok: "#chamfer-ok", cancel: "#chamfer-cancel", label: "Finish Chamfer", errors: ["#chamfer-error"], status: null },
+  // Construct (step 59a2): faces, edges and corners are tapped on the view with the sheet shut, so Finish and Cancel stay in reach here.
+  { kind: "construct", panel: "#construct-panel", ok: "#construct-ok", cancel: "#construct-cancel", label: "Finish Construct", errors: ["#construct-error"], status: null },
   { kind: "edit", panel: "#feature-edit", ok: "#feature-edit-ok", cancel: "#feature-edit-cancel", label: "Finish Edit", errors: ["#feature-edit-error"], status: null },
   // Extrude beside Finish Sketch (UI audit 2026-11-12): the sketch toolbar's Extrude sits past the screen's right edge at
   // phone width, so a box took Finish Sketch then Extrude along the main toolbar. It presses the toolbar's own Extrude,

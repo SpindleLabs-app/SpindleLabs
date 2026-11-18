@@ -18,6 +18,7 @@
 
 import { boxShown, summaryInUnit, type Feature, type Unit } from "@fission/core";
 import { currentUnit } from "@fission/ui";
+import { CONSTRUCT_KINDS, isConstructKind } from "./construct-data.ts";
 import { bodyIdOf, isSketchExtrude, type DesignDocument, type Sketch, type SketchPoint } from "./document.ts";
 import { isFlipped } from "./extrude.ts";
 import { moveKindOf, MOVE_VERBS } from "./move.ts";
@@ -97,6 +98,11 @@ export function cardFacts(doc: DesignDocument, f: Feature, item: TimelineBarItem
   } else if (type === "pattern") {
     // "3 of Box 1 in a row along X, 10 mm apart": its summary, the copies being new bodies (step 61b).
     kind = "Pattern";
+    details = [summary];
+  } else if (type === "construct") {
+    // "Offset plane, 5 mm": its summary; the kind says what it makes (step 59a2).
+    const makes = isConstructKind(p.make) ? CONSTRUCT_KINDS[p.make].makes : null;
+    kind = makes === null ? "Construction" : { plane: "Construction plane", axis: "Construction axis", point: "Construction point" }[makes];
     details = [summary];
   } else if (type === "chamfer") {
     // "1 edge of Box 1, 2 mm": its summary without the verb the kind says (44a-app3).
@@ -416,7 +422,7 @@ export function ownBodies(scene: Scene, f: Feature): Set<number> {
   } else if (f.intent.type === "chamfer") {
     // A Chamfer's own body is the one it cuts back (44a-app3), made by another item.
     wanted = (b) => b.body === f.intent.parameters.body;
-  } else if (f.intent.type === "sketch") return own;
+  } else if (f.intent.type === "sketch" || f.intent.type === "construct") return own; // a construction has no body
   scene.bodies.forEach((b, i) => wanted(b) && own.add(i));
   return own;
 }

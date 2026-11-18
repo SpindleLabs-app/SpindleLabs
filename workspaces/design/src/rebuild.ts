@@ -2023,7 +2023,7 @@ async function shellRun(doc: DesignDocument, f: Feature, done: Record<string, Fe
 }
 
 /** The origin's planes, axes and point as the kernel takes them: the planes facing as the sketch planes do (sketch.ts `planeOf`). */
-const ORIGIN_GIVEN: Record<string, ConstructGiven> = {
+export const ORIGIN_GIVEN: Record<string, ConstructGiven> = {
   XY: { plane: { point: [0, 0, 0], normal: [0, 0, 1] } },
   XZ: { plane: { point: [0, 0, 0], normal: [0, -1, 0] } },
   YZ: { plane: { point: [0, 0, 0], normal: [1, 0, 0] } },
