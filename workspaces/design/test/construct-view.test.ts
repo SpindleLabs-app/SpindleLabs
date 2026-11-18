@@ -13,11 +13,17 @@ import { checkedItem } from "../src/cut-ask.ts";
 import { isConstructItem, partDocument, type DesignDocument } from "../src/document.ts";
 import { constructOf } from "../src/document.ts";
 import type { ConstructAnswer } from "../src/construct-data.ts";
+import type { BodyHandle } from "@fission/core";
+import { changePreset } from "../src/document.ts";
+import { BodyCache, rebuildTimeline, type TimelineBuild } from "../src/rebuild.ts";
+import { joinBodies, sceneHit, shownBodies, type Scene } from "../src/scene.ts";
+import { heldNamesOf } from "../src/chamfer-tool.ts";
+import { sceneCorners } from "../src/measure-view.ts";
 
 const kernel = nodeKernel();
 const { Window } = await import("happy-dom");
 
-function setup(doc0: DesignDocument = partDocument("box", 40, 30, 20)) {
+function setup(doc0: DesignDocument = partDocument("box", 40, 30, 20), world?: { scene: () => Scene | null; handle: (b: number) => BodyHandle | null; heldNames: ConstructDeps["heldNames"] }) {
   const window = new Window({ width: 1280, height: 800 });
   (window as unknown as { matchMedia: (q: string) => { matches: boolean } }).matchMedia = () => ({ matches: false });
   const dom = window.document as unknown as Document;
@@ -32,9 +38,9 @@ function setup(doc0: DesignDocument = partDocument("box", 40, 30, 20)) {
     slot,
     over,
     doc: () => doc,
-    scene: () => null,
-    handle: () => null,
-    heldNames: async () => [],
+    scene: world?.scene ?? (() => null),
+    handle: world?.handle ?? (() => null),
+    heldNames: world?.heldNames ?? (async () => []),
     ask: (make) => kernel.call("body_construct", make),
     check: (next, id) => checkedItem(kernel, next, id),
     record: (step, next) => (recorded.push({ step, doc: next }), (doc = next)),
@@ -182,4 +188,113 @@ test("a rebuild keeps what was chosen from the list; a corner is offered only wh
   view.open("offset_plane"); // no point wanted: no corners offered (a click near one must pick the edge or face there)
   assert.equal(corners.at(-1), null);
   assert.equal($("construct-hint").hidden, false);
+});
+
+/** The design built on `cache` and joined into the scene the view shows, as the workspace makes it. */
+async function sceneOf(doc: DesignDocument, cache: BodyCache): Promise<{ build: TimelineBuild; scene: Scene }> {
+  const build = await rebuildTimeline(doc, cache, kernel);
+  return { build, scene: joinBodies(await shownBodies(doc, build, cache), build) };
+}
+
+/** The joined face of `scene` facing `n` whose centroid has coordinate `k` at `v`. */
+function faceAt(scene: Scene, n: readonly number[], k: number, v: number): number {
+  for (let face = 0; ; face++) {
+    const hit = sceneHit(scene, "face", face);
+    if (hit === null) throw new Error("no such face");
+    const b = scene.bodies[hit.body].view;
+    const m = b.face_normals[hit.index]!;
+    const c = b.face_centroids[hit.index]!;
+    if (m.every((x, i) => Math.abs(x - n[i]) < 1e-9) && Math.abs(c[k] - v) < 1e-9) return face;
+  }
+}
+
+test("59a3: a pick on a body is found again by its name after a rebuild (the box made 35 high: the plane 5 mm above its top is z = 40); one gone is let go", async () => {
+  const cache = new BodyCache(kernel);
+  let doc = partDocument("box", 40, 30, 20);
+  let now = await sceneOf(doc, cache);
+  const world = {
+    scene: () => now.scene,
+    handle: (b: number) => now.build.bodies[now.scene.bodies[b].body]?.handle ?? null,
+    heldNames: (edges: readonly { body: string; edge: number }[]) => heldNamesOf(now.build.bodies, (b) => cache.view(b.handle), edges),
+  };
+  const { view, previews, setDoc, $, type } = setup(doc, world);
+  view.open("offset_plane");
+  type("construct-number", "5");
+  view.pick({ face: faceAt(now.scene, [0, 0, 1], 2, 20), shift: false } as never);
+  await new Promise((r) => setTimeout(r, 50));
+  await view.settled;
+  assert.deepEqual(view.filled, { plane: "face:feature-1/top" });
+  // The top is z = 20: 5 mm above it, z = 25.
+  assert.ok(Math.abs((previews.at(-1) as { point: number[] }).point[2] - 25) < 1e-9, JSON.stringify(previews.at(-1)));
+  // The box made 35 high and rebuilt: the top found again by its name on the new body, z = 35 + 5 = 40.
+  doc = changePreset(doc, "feature-1", "box", 40, 30, 35);
+  setDoc(doc);
+  now = await sceneOf(doc, cache);
+  view.rebuilt();
+  await view.settled;
+  assert.deepEqual(view.filled, { plane: "face:feature-1/top" });
+  assert.ok(Math.abs((previews.at(-1) as { point: number[] }).point[2] - 40) < 1e-9, JSON.stringify(previews.at(-1)));
+  assert.equal(($("construct-ok") as HTMLButtonElement).disabled, false);
+  // A sphere has no top: the pick is let go, never moved onto another face.
+  doc = changePreset(doc, "feature-1", "sphere", 40, 40, 40);
+  setDoc(doc);
+  now = await sceneOf(doc, cache);
+  view.rebuilt();
+  await view.settled;
+  assert.deepEqual(view.filled, {});
+  assert.equal(($("construct-ok") as HTMLButtonElement).disabled, true);
+  view.close();
+  await cache.close();
+});
+
+test("59a3: an edge and a corner picked on the box are found again after it is made wider (an axis along its top back edge; a point at its top back right corner, x = 60 then 80)", async () => {
+  const cache = new BodyCache(kernel);
+  let doc = partDocument("box", 40, 30, 20);
+  let now = await sceneOf(doc, cache);
+  const world = {
+    scene: () => now.scene,
+    handle: (b: number) => now.build.bodies[now.scene.bodies[b].body]?.handle ?? null,
+    heldNames: (edges: readonly { body: string; edge: number }[]) => heldNamesOf(now.build.bodies, (b) => cache.view(b.handle), edges),
+  };
+  const { view, previews, setDoc } = setup(doc, world);
+  // The edge along x at y = 30, z = 20 (the top's back edge), by its ends.
+  const edgeAt = () => {
+    const v = now.scene.bodies[0].view;
+    const e = v.edge_vertices.findIndex(([a, b]) => [a, b].every((k) => Math.abs(v.vertex_points[k][1] - 30) < 1e-9 && Math.abs(v.vertex_points[k][2] - 20) < 1e-9));
+    return e;
+  };
+  view.open("axis_along");
+  view.pick({ face: null, edge: edgeAt(), shift: false } as never);
+  await new Promise((r) => setTimeout(r, 50));
+  await view.settled;
+  const named = view.filled.line;
+  assert.ok(named !== undefined && named.startsWith("design:"), JSON.stringify(view.filled));
+  const axis = () => previews.at(-1) as { point: number[]; direction: number[] };
+  // An axis along the edge: the foot of the origin on the line y = 30, z = 20 along x is (0, 30, 20).
+  assert.deepEqual(axis().point.map((x) => Math.round(x * 1e9) / 1e9 + 0), [0, 30, 20]);
+  doc = changePreset(doc, "feature-1", "box", 60, 30, 20);
+  setDoc(doc);
+  now = await sceneOf(doc, cache);
+  view.rebuilt();
+  await view.settled;
+  assert.deepEqual(view.filled, { line: named });
+  assert.deepEqual(axis().point.map((x) => Math.round(x * 1e9) / 1e9 + 0), [0, 30, 20]);
+  // A point at the box's top back right corner, (60, 30, 20) now; made 80 wide it is found again at (80, 30, 20).
+  view.open("point_at");
+  const cornerAt = (x: number) => sceneCorners(now.scene).findIndex((c) => [x, 30, 20].every((w, i) => Math.abs(c.at[i] - w) < 1e-9));
+  view.pick({ face: null, vertex: cornerAt(60), shift: false } as never);
+  await new Promise((r) => setTimeout(r, 50));
+  await view.settled;
+  const corner = view.filled.point;
+  assert.ok(corner !== undefined && corner.startsWith("corner:"), JSON.stringify(view.filled));
+  assert.deepEqual((previews.at(-1) as { point: number[] }).point, [60, 30, 20]);
+  doc = changePreset(doc, "feature-1", "box", 80, 30, 20);
+  setDoc(doc);
+  now = await sceneOf(doc, cache);
+  view.rebuilt();
+  await view.settled;
+  assert.deepEqual(view.filled, { point: corner });
+  assert.deepEqual((previews.at(-1) as { point: number[] }).point, [80, 30, 20]);
+  view.close();
+  await cache.close();
 });

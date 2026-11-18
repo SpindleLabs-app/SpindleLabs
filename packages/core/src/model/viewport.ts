@@ -142,6 +142,8 @@ export interface OriginPlane {
   id: string;
   plane: Plane;
   offered: boolean;
+  /** Drawn round `plane.origin` (a construction plane offered for a sketch, step 59a3), else from it as the origin planes are. */
+  centred?: boolean;
 }
 
 /** What the origin draws in the view (showOrigin): each axis shown or not, X, Y, Z, and the planes shown, by id ("origin-xy") with where each lies. */
