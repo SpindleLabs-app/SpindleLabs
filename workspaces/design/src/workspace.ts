@@ -43,6 +43,7 @@ import { constructView } from "./construct-view.ts";
 import { KIND_GROUPS, kindTitle } from "./construct-tool.ts";
 import { KIND_WORDS as CONSTRUCT_WORDS } from "./construct.ts";
 import { CONSTRUCT_OVERLAY, constructOverlay, constructPlanes, drawnConstructs } from "./construct-draw.ts";
+import { constructSnapPoints } from "./construct-snap.ts";
 import { CONSTRUCT_REF, type ConstructAnswer, type ConstructKind } from "./construct-data.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
@@ -1579,7 +1580,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const bodySnaps = (id: string): BodySnaps => {
     const plane = sketchPlane(designDoc(), id, placedNow);
     const scene = sceneFor(id);
-    return { curves: sketchEdgeCurves(designDoc(), id, scene, plane), corners: sketchPlaneCorners(designDoc(), id, scene, plane) };
+    // 59a3b2: every construction point drawn (showOrigin draws them, flag or not) and made before the sketch.
+    return { curves: sketchEdgeCurves(designDoc(), id, scene, plane), corners: sketchPlaneCorners(designDoc(), id, scene, plane), constructs: constructSnapPoints(designDoc(), id, plane) };
   };
   /** Ctrl (Cmd on a Mac) held over the view: snapping and the grid are off while it is (snap.ts `snapsNow`). */
   let modHeld = false;
