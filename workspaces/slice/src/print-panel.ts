@@ -172,6 +172,8 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   const syncs: (() => void)[] = [];
   /** Marks the preset picked as changed (set once the presets bar exists). */
   let presetsChanged = () => {};
+  /** A result stays next to choices it no longer matches: any change clears the words, the cost line and the hint (as the dialog did). */
+  let clearResult = () => {};
   const addChoice = <T>(c: Choice<T>, id: string, into: HTMLElement = element): HTMLSelectElement => {
     const label = doc.createElement("label");
     label.className = "slice-page-choice";
@@ -188,6 +190,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     select.value = String(Math.max(0, c.options.findIndex((o) => o.value === c.current)));
     select.addEventListener("change", () => {
       c.pick(c.options[Number(select.value)].value);
+      if (id !== "slice-page-supports") clearResult(); // Supports keeps the result: its hint offers the other way as it changes
       presetsChanged();
       showSettings();
     });
@@ -272,6 +275,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     syncs.push(() => (box.checked = read()));
     box.addEventListener("change", () => {
       pick(box.checked);
+      clearResult();
       presetsChanged();
       try {
         (parts.storage as Storage | null)?.setItem?.(key, box.checked ? "on" : "off"); // remembered like the dialog's
@@ -286,13 +290,16 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   addCheck("slice-page-warm-up", "Warm-up loop", "Prints two loops round the part's first layer before the part, so the nozzle's first, uneven plastic goes on a line you peel off afterwards instead of on the part. Helps when the start of the first layer doesn't stick. Your choice is remembered.", WARM_UP_KEY, choices.warmUp, () => choices.warmUp, (v) => (choices = { ...choices, warmUp: v }));
   addCheck("slice-page-grip", "Better grip", "Prints a 5 mm brim round the part's first layer, and prints that layer slower and 5 °C hotter, so parts whose first layer lifts or comes loose hold on to the plate. Peel the brim off afterwards. Your choice is remembered.", GRIP_KEY, choices.betterGrip, () => choices.betterGrip, (v) => (choices = { ...choices, betterGrip: v }));
   const status = doc.createElement("p");
+  status.id = "slice-page-status";
   status.className = "slice-page-slice-words";
   status.setAttribute("role", "status");
   // The weight and cost line after a slice (print-cost.ts): plastic, money and time, with the price per kg the user's to change.
   const cost = doc.createElement("div");
+  cost.id = "slice-page-cost";
   cost.className = "slice-page-cost";
   cost.hidden = true;
   const costText = doc.createElement("span");
+  costText.id = "slice-page-cost-words";
   costText.className = "slice-page-cost-words";
   const priceWrap = doc.createElement("label");
   priceWrap.className = "slice-page-price";
@@ -309,11 +316,14 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   // The supports hint after a slice (the dialog's, Ben 2026-11-04): recommended or not by the overhangs, and one button that
   // flips the Supports choice when it disagrees. It shows with the cost line and goes with it.
   const hint = doc.createElement("div");
+  hint.id = "slice-page-supports-hint";
   hint.className = "slice-page-supports-hint";
   hint.hidden = true;
   const hintWords = doc.createElement("span");
+  hintWords.id = "slice-page-supports-hint-words";
   hintWords.className = "slice-page-supports-hint-words";
   const flip = doc.createElement("button");
+  flip.id = "slice-page-supports-flip";
   flip.className = "slice-page-supports-flip";
   flip.type = "button";
   hint.append(hintWords, flip);
@@ -334,6 +344,10 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     const words = print === null ? null : costWords(print, pricePerKg);
     cost.hidden = words === null;
     costText.textContent = words ?? "";
+  };
+  clearResult = () => {
+    status.textContent = "";
+    showCost(null);
   };
   price.addEventListener("input", () => {
     const p = readPrice(price.value);
@@ -362,6 +376,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   element.append(button, previewButton, download, bar, status, hint, cost);
   // Printer presets: the settings saved under a name in this browser (slice-presets.ts, shared with the dialog), picked
   // in the heading's line; picking one puts its settings in, and any change marks it changed.
+  let fitsShown = false; // the bar applies the preset picked last time while it is made, before the fits line below exists
   const applyPreset = (v: Parameters<typeof presetSettingsOf>[0] & object) => {
     const x = presetSettingsOf(v);
     if (!x) return;
@@ -376,7 +391,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     }
     for (const sync of syncs) sync();
     plateAndNozzleMatter();
-    showFits();
+    if (fitsShown) showFits();
     showCost(null);
   };
   const presets = presetBar(doc, parts.storage as Storage | null, {
@@ -402,6 +417,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     fitsWords.textContent = fitsLine(parts.storage, nozzle);
   }
   showFits();
+  fitsShown = true;
   nozzleSelect.el?.addEventListener("change", showFits);
   const fits = parts.testPiece
     ? fitCalibration(element, parts.storage as Storage | null, {
