@@ -32,6 +32,7 @@ import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { chooseFile, startWithBox } from "./start.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
 import { HOME, screenPoint } from "./sketch-screen.mjs";
 
 const server = await preview({ build: { outDir: process.env.E2E_DIST || "dist" }, preview: { port: 4260, strictPort: true }, logLevel: "error" });
@@ -154,9 +155,8 @@ console.log("checked - sideways: Move, Extrude, Edit and the plane picker reacha
 // 2. The print preview sideways.
 for (const [width, height] of [[852, 393], [667, 375]]) {
   const { page, context } = await open(width, height);
-  await chooseFile(page, "file-slice-print", true);
-  await page.waitForSelector("#slice-print-dialog[open]");
-  await page.tap("#slice-print-preview");
+  await openSlice(page, true);
+  await page.tap("#slice-page-preview");
   await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
   await page.waitForTimeout(300);
   const r = await page.evaluate(() => {
@@ -179,25 +179,16 @@ for (const [width, height] of [[852, 393], [667, 375]]) {
 }
 console.log("checked - sideways print preview: the Show card clear of the play bar, every choice tappable");
 
-// 4. Slice for printing at 320, 340 and 375 px: every button inside the dialog's box, and the sticky row of buttons no
-// taller than the status's scroll margin, so advice scrolled into view is never under them (the buttons wrapped onto two
-// rows, 122 px, under a 76 px margin: slice-print-fixes.mjs's floating part at 375 px, merge queue 11-01).
+// 4. The Slice page at 320, 340 and 375 px: every button and choice of the print panel inside the screen's width (the
+// dialog's buttons used to wrap onto a second row, merge queue 11-01).
 for (const width of [320, 340, 375]) {
   const { page, context } = await open(width, 640);
-  await chooseFile(page, "file-slice-print", true);
-  await page.waitForSelector("#slice-print-dialog[open]");
-  const { out, bar, margin } = await page.$eval("#slice-print-dialog", (d) => {
-    const box = d.getBoundingClientRect();
-    const out = [...d.querySelectorAll(".slice-print-actions button")].filter((b) => { const r = b.getBoundingClientRect(); return r.left < box.left || r.right > box.right; }).map((b) => b.id);
-    const bar = d.querySelector(".slice-print-actions").getBoundingClientRect().height;
-    const margin = parseFloat(getComputedStyle(d.querySelector("#slice-print-status")).scrollMarginBottom);
-    return { out, bar, margin };
-  });
-  check(out.length === 0, `${width} px: Slice for printing's buttons out of the dialog: ${out.join(", ")}`);
-  check(bar <= margin, `${width} px: Slice for printing's buttons ${bar} px tall, over the status's ${margin} px scroll margin`);
+  await openSlice(page, true);
+  const out = await page.evaluate(() => [...document.querySelectorAll("#properties button, #properties select, #properties input")].filter((e) => e.getClientRects().length).filter((e) => { const r = e.getBoundingClientRect(); return r.left < 0 || r.right > innerWidth; }).map((e) => e.id || e.textContent.trim()));
+  check(out.length === 0, `${width} px: the Slice page's buttons and choices off the side: ${out.join(", ")}`);
   await context.close();
 }
-console.log("checked - 320, 340 and 375 px: Slice for printing's Close inside the dialog, its buttons within the status's scroll margin");
+console.log("checked - 320, 340 and 375 px: the Slice page's buttons and choices inside the screen");
 
 // 5 and 6. Upright: the timeline's tap areas, and pinch-proof bars.
 {

@@ -21,6 +21,7 @@ import { preview } from "vite";
 import { EMPTY_TOP, clickPlane } from "./sketch-screen.mjs";
 import { pinProperties } from "./properties.mjs";
 import { chooseFile, closePanels, gridSnapOn, insertPreset, openPanel, startWithBox } from "./start.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
 
 const server = await preview({ preview: { port: 4242, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4242/";
@@ -297,7 +298,7 @@ try {
   });
   // SL #675 item 3: Slice for printing leaves the hidden body out as the STL does, and says so as its dialog opens.
   for (const [width, touch] of [[1280, false], [375, true]]) {
-    await check(`Slice for printing says which hidden body it leaves out (${width} px${touch ? ", taps" : ""})`, async () => {
+    await check(`The Slice page says which hidden body it leaves out (${width} px${touch ? ", taps" : ""})`, async () => {
       const page = await fresh(width, touch);
       const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
       await startWithBox(page);
@@ -307,10 +308,11 @@ try {
       await press('#browser [data-eye="body-2"]');
       await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "Body 2 hidden");
       await closePanels(page);
-      await chooseFile(page, "file-slice-print", touch);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      assert.equal(await text(page, "#slice-print-missing"), "Body 2 is hidden, so it is not in the print: show it with its eye in the browser to include it.");
-      assert.ok(await page.isVisible("#slice-print-missing"));
+      await openSlice(page, touch);
+      await openPanel(page, "browser", touch); // the plate's words are in the browser, a sheet on a phone
+      await until(page, () => /hidden in Design/.test(document.querySelector(".slice-page-words")?.textContent ?? ""), null, "the page names the hidden body");
+      assert.ok((await text(page, ".slice-page-words")).includes("Body 2 is hidden in Design, so it is not on the plate."), await text(page, ".slice-page-words"));
+      assert.ok(await page.isVisible(".slice-page-words"));
       await page.context().close();
     });
   }
