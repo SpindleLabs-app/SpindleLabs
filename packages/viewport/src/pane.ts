@@ -50,6 +50,7 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
     return {
       element: view.element,
       showBody: (mesh: DisplayMesh) => scene.showBody(mesh),
+      showColourMap: (colours: readonly number[] | null) => scene.showColourMap?.(colours),
       bodyFraming: () => scene.bodyFraming(),
       fit: () => view.fit(),
       // The picture is this pane's view, as the camera methods are (split view: the pane the File menu is for).
