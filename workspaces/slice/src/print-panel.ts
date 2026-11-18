@@ -117,6 +117,8 @@ export interface PrintPanel {
   preview(): Promise<void>;
   /** Slices the plate into the P1S's print file and saves it; resolves when its words are on screen. */
   download(): Promise<void>;
+  /** Stops a slice under way and drops its file (nothing is saved or previewed); the panel is ready again at once. */
+  stop(): void;
   destroy(): void;
 }
 
@@ -470,8 +472,11 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
   };
 
   let endProgress: (() => void) | null = null;
+  /** Set by stop(): the slice under way is dropped, whatever it comes back with. */
+  let stopped = false;
   const busy = (on: boolean) => {
     running = on;
+    if (on) stopped = false;
     if (on) endProgress = showProgress();
     else {
       endProgress?.();
@@ -503,11 +508,11 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       const file = format === "p1s" ? await printFileOfStls(parts.kernel, files, choices, plate, nozzle) : null;
       const moves = file ? printMovesOf(gcodeOfPackage(file.package) ?? "") : null;
       const done = file && moves !== null ? { ...file, gcode: moves } : await sliceStls(parts.kernel, files, choices);
-      if (!live) return;
+      if (!live || stopped) return;
       status.textContent = "";
       parts.openPreview(done.gcode, sliceWords(done));
     } catch (e) {
-      if (live && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
+      if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
     }
@@ -530,17 +535,17 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
       const files = () => plateFiles(parts.registry, objects);
       const p1s = format === "p1s";
       const done = p1s ? await printFileOfStls(parts.kernel, files, choices, plate, nozzle) : await sliceStls(parts.kernel, files, choices);
-      if (!live) return;
+      if (!live || stopped) return;
       const suggestedName = p1s ? printFileName(choices, plate, nozzle, parts.projectName?.()) : gcodeName(choices, parts.projectName?.());
       const bytes = p1s ? (done as { package: Uint8Array<ArrayBuffer> }).package : (new TextEncoder().encode((done as { gcode: string }).gcode) as Uint8Array<ArrayBuffer>);
       const r = await parts.save({ suggestedName, kind: p1s ? P1S_KIND : GCODE_KIND, bytes });
-      if (!live) return;
+      if (!live || stopped) return;
       const saved = r.status === "saved" ? `Saved ${r.name}:` : r.status === "failed" ? `Sliced, but not saved (${r.message}):` : "Sliced, but not saved:";
       const logged = r.status === "saved" && parts.log?.({ name: parts.projectName?.() ?? "", settings: settingsWords(choices, nozzle), grams: done.filamentG, seconds: done.printTimeS });
       status.textContent = [saved, sliceWords(done), ...(logged ? [PRINT_LOGGED_WORDS] : [])].join(" ");
       showCost(done);
     } catch (e) {
-      if (live && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
+      if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
     }
@@ -557,12 +562,12 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     showCost(null);
     try {
       const done = await sliceStls(parts.kernel, () => plateFiles(parts.registry, objects), choices);
-      if (live) {
+      if (live && !stopped) {
         status.textContent = sliceWords(done);
         showCost(done);
       }
     } catch (e) {
-      if (live && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
+      if (live && !stopped && !(e instanceof SliceDropped)) status.textContent = refusalOf(e);
     } finally {
       if (live) busy(false);
     }
@@ -575,6 +580,7 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     for (const sync of syncs) sync();
     presetsChanged();
     showHint();
+    hint.hidden = true; // the old result's hint goes: the file made before the switch is not the one it was about
     status.textContent = to !== "off" ? "Supports turned on (Normal). Slice again to make the file with them." : "Supports turned off. Slice again to make the file without them.";
   });
   button.addEventListener("click", () => void slice());
@@ -587,6 +593,11 @@ export function printPanel(doc: Document, parts: PrintPanelParts): PrintPanel {
     slice,
     preview: previewPrint,
     download: downloadFile,
+    stop() {
+      if (!running) return;
+      stopped = true;
+      stopSlices();
+    },
     destroy() {
       live = false;
       endProgress?.();
