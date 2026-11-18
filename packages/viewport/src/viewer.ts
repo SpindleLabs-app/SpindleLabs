@@ -2135,6 +2135,11 @@ export class Viewer implements SharedViewport {
     return this.main.fit();
   }
 
+  /** Frames the current body in the main view from the direction it already looks from; returns what it framed (null if none). */
+  fitKeepAngle(): Framing | null {
+    return this.main.fitKeepAngle();
+  }
+
   /** A picture of the main view as on screen, without the view cube (File > Save picture). */
   picture(): Promise<Blob | null> {
     return this.main.picture();

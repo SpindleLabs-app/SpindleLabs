@@ -1995,7 +1995,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         const newPart = kind !== framedKind && !keepCamera;
         keepCamera = false;
         if (!empty && (newPart || needsRefit(framed, viewport.bodyFraming()))) {
-          framed = viewport.fit();
+          // A new part is framed from the home view; a part that outgrew the view keeps the angle the person looks
+          // from, as the Fit button does (SL #819 D-10: a person working in Top was spun round).
+          framed = newPart || viewport.fitKeepAngle === undefined ? viewport.fit() : viewport.fitKeepAngle();
           viewport.element.dataset.framedRadius = String(framed?.radius); // read by the e2e test
           viewport.element.dataset.fits = String(++fits);
         }
