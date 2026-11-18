@@ -1,0 +1,17 @@
+Timeline sessions, seed 11116828921063044366, 500 steps: 1 kind(s) of failure
+failure: the rebuild differs from the model | step 179 {"op":"delete-curve","pick":0.7575337231834928}: the rebuild differs from the model: sketch-159: at z 5 along (1, 0) from (-30, 0), plane-split vs at z 5 along (1, 0) from (-30, 0) | replay: cd packages/testing && FISSION_SEED=11116828921063044366 FISSION_TIMELINE_STEPS=500 node --experimental-strip-types --no-warnings --test journeys/timeline.journey.ts
+shrunk to 14 step(s) (1-minimal):
+  0. {"op":"add-duplicate","pick":0.722055066611098}
+  1. {"op":"add-duplicate","pick":0.2385660479030759}
+  2. {"op":"add-preset","kind":"box","sizes":[4,13,39]}
+  3. {"op":"undo"}
+  4. {"op":"undo"}
+  5. {"op":"add-preset","kind":"box","sizes":[27,16,5]}
+  6. {"op":"reorder","pick":0.4535573328728595,"to":0.7949234693553399}
+  7. {"op":"add-duplicate","pick":0.6348815731674915}
+  8. {"op":"add-sketch","shape":{"kind":"polygon","corners":[[-4,28],[-7,35],[-45,6],[-1,-14],[5,-4]]}}
+  9. {"op":"add-move","pick":0.6745559801440558,"other":null,"shift":[0,0,-35],"turnZ":180,"pivot":[-11,-28]}
+  10. {"op":"delete-item","pick":0.35190847839358597}
+  11. {"op":"add-combine","target":0.8092471537941757,"tool":0.38479631510737566,"operation":"intersect","keep":true}
+  12. {"op":"add-face-sketch","pick":0.11711825592999303,"shape":{"kind":"circle","centre":[33,6],"radius":10}}
+  13. {"op":"suppress","pick":0.03694863909060642}

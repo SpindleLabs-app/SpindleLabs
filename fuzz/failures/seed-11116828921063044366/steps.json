@@ -1,0 +1,117 @@
+{
+ "seed": "11116828921063044366",
+ "check": "the rebuild differs from the model",
+ "steps": [
+  {
+   "op": "add-duplicate",
+   "pick": 0.722055066611098
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.2385660479030759
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    4,
+    13,
+    39
+   ]
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "undo"
+  },
+  {
+   "op": "add-preset",
+   "kind": "box",
+   "sizes": [
+    27,
+    16,
+    5
+   ]
+  },
+  {
+   "op": "reorder",
+   "pick": 0.4535573328728595,
+   "to": 0.7949234693553399
+  },
+  {
+   "op": "add-duplicate",
+   "pick": 0.6348815731674915
+  },
+  {
+   "op": "add-sketch",
+   "shape": {
+    "kind": "polygon",
+    "corners": [
+     [
+      -4,
+      28
+     ],
+     [
+      -7,
+      35
+     ],
+     [
+      -45,
+      6
+     ],
+     [
+      -1,
+      -14
+     ],
+     [
+      5,
+      -4
+     ]
+    ]
+   }
+  },
+  {
+   "op": "add-move",
+   "pick": 0.6745559801440558,
+   "other": null,
+   "shift": [
+    0,
+    0,
+    -35
+   ],
+   "turnZ": 180,
+   "pivot": [
+    -11,
+    -28
+   ]
+  },
+  {
+   "op": "delete-item",
+   "pick": 0.35190847839358597
+  },
+  {
+   "op": "add-combine",
+   "target": 0.8092471537941757,
+   "tool": 0.38479631510737566,
+   "operation": "intersect",
+   "keep": true
+  },
+  {
+   "op": "add-face-sketch",
+   "pick": 0.11711825592999303,
+   "shape": {
+    "kind": "circle",
+    "centre": [
+     33,
+     6
+    ],
+    "radius": 10
+   }
+  },
+  {
+   "op": "suppress",
+   "pick": 0.03694863909060642
+  }
+ ]
+}
