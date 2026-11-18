@@ -1956,7 +1956,10 @@ async function start() {
       opened = newest;
       // A first visit's empty design is kept from its first change, as every new one is: kept at once, a New project
       // or a file opened left it behind as an empty "Untitled" (a second design tab; app bug hunt 2026-11-18, D-4).
-    } else keepOnFirstChange();
+    } else {
+      keepOnFirstChange();
+      saveStatus({ state: "saved" }); // nothing of the person's to keep yet, as after New project: the bar says Saved as it did
+    }
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
     keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)
