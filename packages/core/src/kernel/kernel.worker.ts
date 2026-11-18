@@ -9,7 +9,7 @@ import { startKernel } from "./handshake.ts";
 import type { ProgressCallback } from "./kernel-client.ts";
 import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, progressPoster, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import { calibrate } from "./time-limit.ts";
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, Measured, MeasurePick, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, Measured, MeasurePick, NozzleType, Outline, PatternSpec, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't take the app's key keeps
@@ -86,6 +86,7 @@ const ops = {
   body_boolean: (target: BodyHandle, tools: BodyHandle[], op: BooleanOp): BooleanResult => kernel.body_boolean(target, tools, op),
   body_move: (body: BodyHandle, moves: Motion[]): BodyHandle => kernel.body_move(body, moves),
   body_chamfer: (body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean): ChamferResult => kernel.body_chamfer(body, edges, size, flip),
+  pattern_motions: (pattern: PatternSpec): Motion[] => kernel.pattern_motions(pattern),
   body_measure: (first: MeasurePick, second: MeasurePick | null): Measured => kernel.body_measure(first, second),
   body_count: () => kernel.body_count(),
   slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, warmUp: boolean, betterGrip: boolean, told?: ProgressCallback) =>
