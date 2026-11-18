@@ -493,11 +493,12 @@ try {
     await page.keyboard.press("Escape");
     await points(page, "0,0");
     assert.equal(await data(page, "sketchPreview"), "");
-    // A rectangle beside it: the status counts both, and the kernel says why it doesn't close.
+    // A rectangle beside it, clear of the circle (its nearest corner (30, 30) is 42.4 mm from the centre, past the radius
+    // 20): the status counts both and says Extrude offers each as a region (SL #820 D-5; it said "not closed").
     await page.keyboard.press("r");
     await at(page, [30, 30], TOP);
     await at(page, [40, 40], TOP);
-    await statusStarts(page, "4 lines and 1 circle, not closed: ");
+    await status(page, "4 lines and 1 circle, closed: 2 regions to extrude.");
     await page.keyboard.press("Control+z");
     await status(page, "1 circle, a closed outline.");
     // Extruded 10 mm: π · 20² · 10 = 4000π = 12,566.3706143… mm³, shown to ten figures.
