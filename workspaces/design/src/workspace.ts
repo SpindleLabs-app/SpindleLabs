@@ -6235,6 +6235,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       toolsChanged();
       listen();
       showStart();
+      // The Slice page may have ticked or unticked the warm-up loop or Better grip meanwhile: what is remembered counts again.
+      printExtras = null;
+      refreshArea();
       showBuildAreaWords();
       showRefusals();
       showPrintCheck();
