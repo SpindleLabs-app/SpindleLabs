@@ -100,7 +100,7 @@ export const faceLabel = (featureLabel: string) => `Face of ${featureLabel}`;
  */
 export function faceProfile(doc: DesignDocument, scene: Scene | null, face: number): FaceProfile | { refused: string } | null {
   const spot = sketchSpot({ face, shift: false }, scene);
-  if (spot === null || spot.kind === "plane") return null;
+  if (spot === null || spot.kind === "plane" || spot.kind === "construct") return null;
   if (spot.kind === "refused") return { refused: spot.message.startsWith("Sketches go on flat faces") ? CURVED_EXTRUDE : spot.message.replace("a sketch on it could not follow it: pick another face or a plane", "an extrude of it could not follow it: pick another face or a closed sketch") };
   let made: { doc: DesignDocument; id: string };
   try {

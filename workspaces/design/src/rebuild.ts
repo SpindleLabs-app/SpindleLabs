@@ -37,7 +37,7 @@
 import { extrudeSketches, hasMoreProfiles, moreProfiles, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 import { contactGroups, mergedOutline } from "./extrude-merge.ts";
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type ChamferResult, type ChamferSize, type ConstructGiven, type ConstructMake, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { CONSTRUCT_KINDS, readConstructRef, sameAnswer, type ConstructAnswer } from "./construct-data.ts";
+import { CONSTRUCT_KINDS, constructPlaneItem, isConstructPlane, readConstructRef, sameAnswer, type ConstructAnswer } from "./construct-data.ts";
 import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, constructOf, isChamferItem, isConstructItem, isPatternItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { isThroughParams, throughDistance, throughWords, withDistance } from "./extrude-through.ts";
@@ -905,7 +905,7 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
         // lost before it: the shape it keeps.
         else if (was !== undefined && (await makesOutline(kernel, before, sketch, regionOf(f)))) {
           const item = beforeItems.get(sketch)!;
-          const placement = isFaceSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
+          const placement = isPlacedSketch(item) ? await wasAt(sketch) : (originPlacement(item) ?? undefined);
           const shape = keptCurves(was);
           next[f.id] = placement ? { ...shape, placement } : shape;
         } else if (had !== undefined) next[f.id] = had;
@@ -1098,7 +1098,7 @@ function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls
     if (!ownShape(f) || !building.has(f) || skipped.has(f) || profileSizeRefused(doc, f) !== null) continue;
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
-    if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
+    if (on !== undefined && (isPlacedSketch(on) || follows(index.sketches.get(on.id)))) continue;
     // Through all (version 23): its length is the bodies' before it, known only in the loop.
     if (isThroughParams(f.intent.parameters)) continue;
     const ask = isSketchExtrude(f)
@@ -1108,6 +1108,9 @@ function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls
   }
   return slow;
 }
+
+/** Whether sketch item `f` is placed by the rebuild: on a face (26c) or on a construction plane (59a3), never on an origin plane. */
+export const isPlacedSketch = (f: Feature): boolean => isFaceSketch(f) || (isSketchItem(f) && isConstructPlane(f.intent.parameters.plane));
 
 /** Where a sketch on an origin plane lies; null for XY, where an extrude is built as before 26c, with no frame. */
 const originPlacement = (item: Feature): SketchPlacement | null => (item.intent.parameters.plane === "XY" ? null : { plane: planeOf(item.intent.parameters.plane as SketchPlane), side: 1 });
@@ -1191,6 +1194,11 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodi
     const on = done[id];
     if (on?.status === "suppressed") return { status: "greyed", by: id };
     if (on?.status === "greyed") return { status: "greyed", by: on.by };
+  }
+  const construct = constructPlaneItem(f.intent.parameters.plane);
+  if (construct !== null) {
+    const placement = constructPlacement(f, content, construct, done, index);
+    return { status: "built", ...placement, ...(await follow(f, index, done, bodies, cache, placement.placement.plane, null, kernel)) };
   }
   if (featureId === null) {
     const placement = originPlacement(f) ?? XY_PLACEMENT;
@@ -1349,6 +1357,28 @@ function withAnswers(doc: DesignDocument, build: TimelineBuild): DesignDocument 
     return { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, answer: { ...r.construct } } } };
   });
   return changed ? { ...doc, timeline: { ...doc.timeline, features } } : doc;
+}
+
+/**
+ * Where a sketch on construction plane `construct` lies (step 59a3), its
+ * greying already decided by its inputs: the frame it was drawn with laid
+ * on the plane as the construction answers in this build (face-sketch.ts
+ * `frameNow`: its side kept, x turned the shortest way, the origin the
+ * plane's nearest point to the world's origin), held answers included (the
+ * construction warns of its own). One not built in this build (failed, or
+ * past the marker) lies on the plane the design keeps for it, and one
+ * deleted where it was drawn, each with its plane lost, never moved onto
+ * anything else.
+ */
+function constructPlacement(f: Feature, content: Sketch, construct: string, done: Record<string, FeatureResult>, index: DocIndex): { placement: SketchPlacement; plane?: PlaneWarning } {
+  const drawn = squared(content.drawn ?? XY_PLACEMENT.plane)!;
+  const r = done[construct];
+  const on = (a: ConstructAnswer | undefined) => (a?.kind === "plane" ? frameNow(drawn, a.normal, a.point) : drawn);
+  if (r?.status === "built" && r.construct?.kind === "plane") return { placement: { plane: on(r.construct), side: 1 } };
+  const item = index.items.get(construct);
+  const plane = f.intent.parameters.plane as string;
+  const message = `${f.provenance.self.label}'s construction plane ${item === undefined ? "was deleted" : "is not built"}, so its plane is lost: it stays where it was`;
+  return { placement: { plane: item === undefined ? drawn : on(constructOf(item).answer), side: 1 }, plane: { cause: "plane-lost", face: plane, message } };
 }
 
 /**
@@ -1551,8 +1581,8 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
       if (item !== undefined && input?.status === "suppressed") return { status: "greyed", by: sketchId };
       if (item !== undefined && input?.status === "greyed") return { status: "greyed", by: input.by };
       if (item !== undefined && input?.status !== "built") return { status: "failed", cause: "failed-input", input: sketchId, message: `${item.provenance.self.label} is not built` };
-      // A face sketch's placement is the rebuild's; an origin plane's, extrudeSpec's own.
-      const placed = item !== undefined && isFaceSketch(item) && input?.status === "built" ? input.placement : undefined;
+      // A face sketch's placement is the rebuild's (a construction plane's too, 59a3); an origin plane's, extrudeSpec's own.
+      const placed = item !== undefined && isPlacedSketch(item) && input?.status === "built" ? input.placement : undefined;
       const asked = await extrudeSpec(kernel, doc, part, index, placed);
       if ("status" in asked) return asked;
       // Through all (version 23): as long as the bodies it works on reach now, worked out on every rebuild, never stored.
@@ -1709,18 +1739,31 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
   if (b === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't copy ${name}: an earlier Combine used it up or left no such piece` };
   const id = bodyIdOf(f.id);
   const plane = mirrorOf(f);
+  // 59a3: across a construction plane, as the rebuild answered it (held at its last answer too); greyed with it, failed
+  // in words when it is deleted or not built.
+  const across = plane === undefined ? null : constructPlaneItem(plane);
+  let answer: ConstructAnswer | undefined;
+  if (across !== null) {
+    const c = done[across];
+    const called = f.provenance.from.find((x) => x.id === across)?.label ?? across;
+    if (c?.status === "suppressed") return { status: "greyed", by: across };
+    if (c?.status === "greyed") return { status: "greyed", by: c.by };
+    if (c === undefined) return { status: "failed", cause: "deleted-input", input: across, message: `${called} was deleted, so ${label} has no plane to mirror across` };
+    if (c.status !== "built" || c.construct?.kind !== "plane") return { status: "failed", cause: "failed-input", input: across, message: `${called} is not built, so ${label} has no plane to mirror across` };
+    answer = c.construct;
+  }
   if (b.spec === null) {
     // 35f1f2c: a Combine's result copied as it is (the same kernel body), or mirrored by the kernel's body_move; its faces the
     // Duplicate's, each keeping its role with the feature it came from (built-body.ts `copiedFaceName`; the source's own as a
     // plain copy's, SL #538 item 5), in the same order
     // (a move or a mirror keeps every face and its order), each frame carried across the plane with it.
-    const motions = plane === undefined ? [] : [mirrorMotion(plane)];
+    const motions = plane === undefined ? [] : [mirrorMotion(plane, answer)];
     const handle = motions.length === 0 ? b.handle : await cache.moved(b.handle, motions);
     const frames = motions.length === 0 ? b.frames : b.named!.faces.map((_, k) => movedFrame(b.frames?.[k] ?? null, motions));
     bodies[id] = { feature: f.id, handle, spec: null, named: copiedNames(b.named!, f.id, b.feature, (id) => Object.hasOwn(done, id)), ...(frames && { frames }), ...(b.reversed && { reversed: b.reversed }) };
     return { status: "built", bodies: [id] };
   }
-  const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane)]);
+  const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane, answer)]);
   bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };
   return { status: "built", bodies: [id] };
 }
@@ -2516,7 +2559,7 @@ export async function extrudeSpec(
     o.refused ? o.message : o.message === REGION_GONE ? `${name} ${REGION_GONE}` : region !== undefined && o.lost === "invalid-outline" ? `${name}'s region can't be extruded: ${refusalReason(o.message)}` : `${name} has no closed outline: ${o.message}`;
   if (!("outline" in out)) return await lost(out.lost, said(out), out.curves);
   // Where the sketch lies: given by the rebuild, an origin plane's, or (asked from outside a rebuild) its face's as the timeline builds it.
-  const at = placed !== undefined ? placed : isFaceSketch(item) ? await placementOf(kernel, doc, sketchId) : originPlacement(item);
+  const at = placed !== undefined ? placed : isPlacedSketch(item) ? await placementOf(kernel, doc, sketchId) : originPlacement(item);
   return { spec: placedSpec(out.outline, distance, at, flip, both), curves: idsOf(content) };
 }
 

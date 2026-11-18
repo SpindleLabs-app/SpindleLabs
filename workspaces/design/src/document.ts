@@ -17,7 +17,7 @@ import { isFit, type Fit } from "@fission/print";
 import { NewerFormatError, XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, worldFrame, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import { isHeldDesignName, ruleFiveName } from "./design-edges.ts";
-import { answerProblem, CONSTRUCT_ANGLE_MAX, CONSTRUCT_DISTANCE_MAX, CONSTRUCT_KINDS, constructInputs, isConstructKind, kindNumber, readConstructRef, type ConstructAnswer, type ConstructKind } from "./construct-data.ts";
+import { answerProblem, constructPlaneItem, CONSTRUCT_ANGLE_MAX, CONSTRUCT_DISTANCE_MAX, CONSTRUCT_KINDS, constructInputs, isConstructKind, kindNumber, readConstructRef, type ConstructAnswer, type ConstructKind } from "./construct-data.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
@@ -171,6 +171,15 @@ export interface Sketch {
   /** Only for a sketch on a face (step 26c). */
   face?: SketchFace;
   /**
+   * Only for a sketch on a construction plane (step 59a3): the frame it was
+   * drawn with, squared (face-sketch.ts `squared`). The rebuild lays it on
+   * the plane as the construction answers now (`frameNow`: its normal kept
+   * on the side drawn, x turned the shortest way, the origin the plane's
+   * nearest point to the world's origin), so the sketch never spins when
+   * the plane tilts.
+   */
+  drawn?: Plane;
+  /**
    * Its points pinned to a body's edges (face-edges.ts): to the face's
    * (step 26f), from 27c to any body's before it, on any plane; each point
    * once; left out when none are.
@@ -312,7 +321,7 @@ export const ORIGIN_AXES = ["origin-x", "origin-y", "origin-z"] as const;
 /** The origin's planes with an eye: hidden at first (Fusion's). */
 export const ORIGIN_PLANES = ["origin-xy", "origin-xz", "origin-yz"] as const;
 /** The browser's folders with an eye: shut, it hides every row in it (the Timeline lists items, not things drawn; the Profiles are drawn by nothing). */
-export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches", origin: "folder-origin" } as const;
+export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches", origin: "folder-origin", constructions: "folder-constructions" } as const;
 /** Every id `hidden` may list that is not a timeline item's, in the order it lists them. */
 export const EYE_ROWS: readonly string[] = [...ORIGIN_AXES, ...Object.values(EYE_FOLDERS)];
 
@@ -338,6 +347,8 @@ export function eyeOrder(doc: Pick<DesignDocument, "timeline" | "bodies">, shut:
   const listed = doc.timeline.features.flatMap((f) => [f.id, bodyIdOf(f.id), ...(pieces.get(f.id) ?? [])]);
   return [...listed, ...EYE_ROWS].filter((id) => shut.has(id));
 }
+/** Whether construction `id` is hidden (59a3): its own eye shut, or the Construction folder's. */
+export const constructHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.constructions);
 /** Whether sketch `id` is hidden: its own eye shut (an extrude of it shuts it, as Fusion does), or the Sketches folder's. */
 export const sketchHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.sketches);
 /** Whether an origin axis or plane is drawn: an axis unless its eye is shut, a plane only once its eye is opened; neither while the Origin folder's is shut. */
@@ -1285,6 +1296,24 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
 }
 
 /**
+ * A sketch on a construction plane, checked (step 59a3): the frame it was
+ * drawn with and no face's; its construction a plane made before it in the
+ * timeline (or gone: deleted, the sketch is held where it was drawn, as a
+ * face sketch with its face lost), and depended on.
+ */
+function checkConstructSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design sketch ${f.id}`;
+  const item = constructPlaneItem(f.intent.parameters.plane)!;
+  if (Object.hasOwn(content, "face")) throw new Error(`${at} is on a construction plane but keeps a face's frame`);
+  if (!Object.hasOwn(content, "drawn")) throw new Error(`${at} is on a construction plane but has no frame it was drawn with`);
+  checkPlane(content.drawn, `${at}'s frame`);
+  const there = byId.get(item);
+  if (there === undefined ? !ID_SHAPE.test(item) : there.at > byId.get(f.id)!.at || !isConstructItem(there.item) || CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes !== "plane")
+    throw new Error(`${at} is on ${JSON.stringify(f.intent.parameters.plane)}, which is not a construction plane before it in the timeline`);
+  if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(item)) throw new Error(`${at} is on construction ${item} but does not depend on it`);
+}
+
+/**
  * A sketch's pins, checked (step 26f; on any sketch from 27c): a list of
  * at least one, each one of the sketch's points (each point once), what on
  * the edge (an endpoint, a middle or a centre), a name (a vertex's for an
@@ -1638,15 +1667,25 @@ function checkDuplicate(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMa
   const at = `Design duplicate ${f.id}`;
   const p = f.intent.parameters;
   for (const key of Object.keys(p)) if (key !== "body" && key !== "mirror") throw new Error(`${at} has a parameter ${JSON.stringify(key)} a duplicate doesn't have`);
-  // Mirror body (step 35e2): the origin plane its copy is mirrored across, when it is a Mirror.
-  if (Object.hasOwn(p, "mirror") && !(SKETCH_PLANES as readonly unknown[]).includes(p.mirror)) throw new Error(`${at} mirrors across ${typeof p.mirror === "string" ? JSON.stringify(p.mirror) : shown(p.mirror)}, which is not an origin plane (XY, XZ or YZ)`);
+  // Mirror body (step 35e2): the origin plane its copy is mirrored across, when it is a Mirror; from 59a3 a construction
+  // plane's name, a plane made before it in the timeline (or deleted since: the rebuild fails it in words), depended on after
+  // the body's item.
+  const across = Object.hasOwn(p, "mirror") ? constructPlaneItem(p.mirror) : null;
+  if (Object.hasOwn(p, "mirror") && across === null && !(SKETCH_PLANES as readonly unknown[]).includes(p.mirror)) throw new Error(`${at} mirrors across ${typeof p.mirror === "string" ? JSON.stringify(p.mirror) : shown(p.mirror)}, which is not an origin plane (XY, XZ or YZ) or a construction plane`);
+  if (across !== null) {
+    const there = byId.get(across);
+    if (there === undefined ? !ID_SHAPE.test(across) : there.at >= byId.get(f.id)!.at || !isConstructItem(there.item) || CONSTRUCT_KINDS[there.item.intent.parameters.make as ConstructKind]?.makes !== "plane")
+      throw new Error(`${at} mirrors across ${JSON.stringify(p.mirror)}, which is not a construction plane before it in the timeline`);
+  }
   const id: unknown = p.body;
   const maker = typeof id === "string" ? bodyItem(id) : null;
   const there = maker === null ? undefined : byId.get(maker);
   // A piece of a Combine deleted since is allowed too, as a Move's or a Combine's pick of one (Combine bug hunt 11-08: the file would not open).
   const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
   if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} copies ${shown(id)}, which is not a body made before it in the timeline`);
-  if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it copies (${maker})`);
+  if (across !== null) {
+    if (f.dependsOn.length !== 2 || f.dependsOn[0] !== maker || f.dependsOn[1] !== across) throw new Error(`${at} must depend on exactly the item that made the body it mirrors (${maker}), then the construction it mirrors across (${across})`);
+  } else if (f.dependsOn.length !== 1 || f.dependsOn[0] !== maker) throw new Error(`${at} must depend on exactly the item that made the body it copies (${maker})`);
 }
 
 /**
@@ -2259,9 +2298,11 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of items) {
     const content = sketchIds.get(f.id);
     if (content === undefined) throw new Error(`Design timeline item ${f.id} is a sketch with no content in the sketches list`);
-    if (isFacePlane(f.intent.parameters.plane)) checkFaceSketch(f, content, byId);
+    if (constructPlaneItem(f.intent.parameters.plane) !== null) checkConstructSketch(f, content, byId);
+    else if (Object.hasOwn(content, "drawn")) throw new Error(`Design sketch ${f.id} is on ${typeof f.intent.parameters.plane === "string" ? JSON.stringify(f.intent.parameters.plane) : shown(f.intent.parameters.plane)} but keeps a construction plane's frame`);
+    else if (isFacePlane(f.intent.parameters.plane)) checkFaceSketch(f, content, byId);
     else if (Object.hasOwn(content, "face")) throw new Error(`Design sketch ${f.id} is on the ${shown(f.intent.parameters.plane)} plane but keeps a face's frame`);
-    else if (!(SKETCH_PLANES as readonly unknown[]).includes(f.intent.parameters.plane)) throw new Error(`Design sketch ${f.id} is on ${shown(f.intent.parameters.plane)}, not a plane this SpindleLabs knows (XY, XZ, YZ or a face)`);
+    else if (!(SKETCH_PLANES as readonly unknown[]).includes(f.intent.parameters.plane)) throw new Error(`Design sketch ${f.id} is on ${shown(f.intent.parameters.plane)}, not a plane this SpindleLabs knows (XY, XZ, YZ, a face or a construction plane)`);
     // Any sketch's points may be pinned to an earlier body's edges (27c), checked once its plane is.
     if (Object.hasOwn(content, "pins")) checkPins(f, content, byId);
     // And its projections (27d).
@@ -2313,14 +2354,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
     }
   }
-  // What the eyes hide (U0f3): each a body of the design by its body id (version 6), a sketch in the timeline, an origin axis or a folder, once.
+  // What the eyes hide (U0f3): each a body of the design by its body id (version 6), a sketch (or from 59a3 a construction) in the timeline, an origin axis or a folder, once.
   if (Object.hasOwn(d, "hidden")) {
     const hidden: unknown = (d as { hidden?: unknown }).hidden;
     if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden list is not a list of ids (left out when everything shows)");
     const once = new Set<string>();
     for (const id of hidden) {
       const at = byId.get(id as string);
-      if (typeof id !== "string" || !((at && isSketchItem(at.item)) || EYE_ROWS.includes(id) || isBodyOf(d, byId, id))) throw new Error(`Design data hides ${shown(id)}, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder`);
+      if (typeof id !== "string" || !((at && (isSketchItem(at.item) || isConstructItem(at.item))) || EYE_ROWS.includes(id) || isBodyOf(d, byId, id))) throw new Error(`Design data hides ${shown(id)}, which is not a body (by its body id), a sketch or construction in the timeline, an origin axis or a folder`);
       if (once.has(id)) throw new Error(`Design data hides ${id} twice`);
       once.add(id);
     }
@@ -2405,13 +2446,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
 
 /**
  * What a sketch is built on, by id, each once: the feature whose face it is
- * drawn on (26c), then each feature its points are pinned to (27c, the
+ * drawn on (26c) or the construction whose plane it is on (59a3), then each feature its points are pinned to (27c, the
  * naming model's rule 13), then each an edge is projected from (27d); none
  * on an origin plane with no pins or projections.
  */
 export function sketchInputs(f: Feature, content: Pick<Sketch, "pins" | "projected"> | undefined): string[] {
   const plane = f.intent.parameters.plane;
-  const face = isFacePlane(plane) ? faceFeature(plane) : null;
+  const face = isFacePlane(plane) ? faceFeature(plane) : constructPlaneItem(plane);
   return [...new Set([...(face === null ? [] : [face]), ...(content?.pins ?? []).flatMap((p) => p.feature ?? []), ...(content?.projected ?? []).map((p) => p.feature)])];
 }
 

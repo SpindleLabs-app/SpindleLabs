@@ -1932,7 +1932,8 @@ export class Viewer implements SharedViewport {
     // own blending when it is not `transparent` only for CustomBlending, so the alpha is mixed by hand.
     const behindBody = { transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false, depthWrite: false };
     for (const p of planes) {
-      const corners: SketchXY[] = [[0, 0], [2 * half, 0], [2 * half, 2 * half], [0, 2 * half]];
+      const from = p.centred ? -half : 0;
+      const corners: SketchXY[] = [[from, from], [from + 2 * half, from], [from + 2 * half, from + 2 * half], [from, from + 2 * half]];
       const world = corners.map((c) => toWorld(p.plane, c));
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));

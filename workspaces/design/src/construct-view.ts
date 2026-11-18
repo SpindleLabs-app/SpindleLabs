@@ -5,8 +5,12 @@
 // a corner of a body shown (the name it keeps and the kernel's pick, made
 // at once), or by its list: the origin's planes, axes and point, and the
 // constructions made earlier. The row pressed, else the first empty one, is
-// the one the next click fills. A rebuild lets the picks on bodies go (the
-// bodies may have changed); the origin's and earlier constructions' stay.
+// the one the next click fills. A rebuild finds each pick on a body again by
+// the name it keeps (59a3: a face by its shown name, an edge by its held
+// design-wide name, a corner by its edges' names), on the bodies as built
+// now, with the kernel's pick made anew; one found nowhere or on two is let
+// go (never moved onto something else). The origin's and earlier
+// constructions' stay.
 // The workspace makes one and hands it the view's picks.
 
 import { kernelFailure, type BodyHandle, type ConstructGiven, type ConstructMade, type ConstructMake, type ViewportPick } from "@fission/core";
@@ -65,7 +69,7 @@ export interface ConstructView {
   readonly shown: boolean;
   /** A click on the view while open. */
   pick(pick: ViewportPick): void;
-  /** A new build on screen: the picks on bodies go. */
+  /** A new build on screen: each pick on a body found again by its name, or let go. */
   rebuilt(): void;
   /** The unit changed: the preview's words in it. */
   dispose(): void;
@@ -231,6 +235,45 @@ export function constructView(d: ConstructDeps): ConstructView {
     return { ref: String(ref.id), given: { pick: { body: handle, face: hit.index } }, words: `${WHAT.face} of ${place(hit.body)}`, onBody: true };
   }
 
+  /**
+   * Each name in `refs` (a face's shown name, an edge's held name or a
+   * corner's) found again on the bodies on screen: exactly one face, edge or
+   * corner carrying it now, with the kernel's pick on it; null for a name
+   * found nowhere or on two.
+   */
+  async function refound(refs: readonly string[]): Promise<(Filled | null)[]> {
+    const scene = d.scene();
+    if (scene === null) return refs.map(() => null);
+    const place = (body: number) => `Body ${scene.bodies[body]?.place ?? body + 1}`;
+    const only = <T>(list: readonly T[]): T | null => (list.length === 1 ? list[0] : null);
+    const faces = scene.bodies.flatMap((b, body) => b.view.face_types.map((_, index) => ({ body, index, name: String(shownReference(scene, body, "face", index)?.id ?? "") })));
+    const edges = scene.bodies.flatMap((b, body) => b.view.edge_vertices.map((_, index) => ({ body, index })));
+    const wanted = refs.some((r) => !r.startsWith("face:"));
+    const names = wanted ? await d.heldNames(edges.map((e) => ({ body: scene.bodies[e.body].body, edge: e.index }))) : [];
+    const edgeNamed = edges.map((e, k) => ({ ...e, name: names[k] ?? null }));
+    return refs.map((ref): Filled | null => {
+      if (ref.startsWith("face:")) {
+        const f = only(faces.filter((x) => x.name === ref));
+        const handle = f && d.handle(f.body);
+        return f && handle ? { ref, given: { pick: { body: handle, face: f.index } }, words: `${WHAT.face} of ${place(f.body)}`, onBody: true } : null;
+      }
+      if (!ref.startsWith("corner:")) {
+        const e = only(edgeNamed.filter((x) => x.name === ref));
+        const handle = e && d.handle(e.body);
+        return e && handle ? { ref, given: { pick: { body: handle, edge: e.index } }, words: `${WHAT.edge} of ${place(e.body)}`, onBody: true } : null;
+      }
+      // A corner: every corner of a body shown whose edges' names make this name.
+      const corners = scene.bodies.flatMap((b, body) => {
+        const ends = new Map<number, (string | null)[]>();
+        for (const e of edgeNamed) if (e.body === body) for (const v of b.view.edge_vertices[e.index] ?? []) ends.set(v, [...(ends.get(v) ?? []), e.name]);
+        return [...ends].flatMap(([vertex, named]) => (named.every((n) => n !== null) && cornerRef(named as string[]) === ref ? [{ body, vertex }] : []));
+      });
+      const c = only(corners);
+      const handle = c && d.handle(c.body);
+      return c && handle ? { ref, given: { pick: { body: handle, vertex: c.vertex } }, words: `${WHAT.vertex} of ${place(c.body)}`, onBody: true } : null;
+    });
+  }
+
   async function finish() {
     if (!panel.shown || !panel.ready) return;
     const opened = openings;
@@ -308,9 +351,23 @@ export function constructView(d: ConstructDeps): ConstructView {
     },
     rebuilt() {
       if (!panel.shown) return;
-      for (const s of Object.keys(filled)) if (filled[s].onBody) delete filled[s]; // the bodies they were on may have changed
+      const onBody = Object.keys(filled).filter((s) => filled[s].onBody);
+      if (onBody.length === 0) return;
+      const at = openings;
+      const was = asked;
+      const before = filled;
+      // Until found again, the picks on bodies are taken out (their kernel picks name bodies that may be gone).
+      filled = Object.fromEntries(Object.entries(filled).filter(([, f]) => !f.onBody));
       if (active === "" || filled[active] !== undefined) active = nextEmpty();
-      refresh();
+      refresh(false);
+      settled = refound(onBody.map((s) => before[s].ref)).then((found) => {
+        if (openings !== at || asked !== was) return; // closed, or picked or changed meanwhile: what is there now stands
+        onBody.forEach((s, k) => {
+          if (found[k] !== null && filled[s] === undefined) filled[s] = found[k]!;
+        });
+        if (active === "" || filled[active] !== undefined) active = nextEmpty();
+        refresh();
+      });
     },
     dispose() {
       hint.remove();

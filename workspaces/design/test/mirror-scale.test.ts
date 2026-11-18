@@ -226,7 +226,7 @@ test("Mirror body by hand: a Duplicate across an origin plane, named Mirror n, i
   assert.equal(duplicateSummary("Box 1"), "Copy of Box 1");
   assert.deepEqual(roundTrip(doc), doc);
   assert.throws(() => insertDuplicates(d, [], "XY"), { message: "pick at least one body to mirror" });
-  assert.throws(() => insertDuplicates(d, ["body:feature-1"], "AB" as never), { message: "AB is not an origin plane (XY, XZ or YZ)" });
+  assert.throws(() => insertDuplicates(d, ["body:feature-1"], "AB" as never), { message: "AB is not an origin plane (XY, XZ or YZ) or a construction plane" });
   // No longer listed as coming soon.
   assert.equal(comingItems("Modify").some((i) => i.label === "Mirror body"), false);
 });
@@ -239,9 +239,9 @@ test("the reader takes a Mirror as written and refuses its plane broken in each 
     d.timeline.features[1].intent.parameters.mirror = mirror;
     return d;
   };
-  assert.throws(() => readDesignDocument(broken("xy")), { message: 'Design duplicate feature-2 mirrors across "xy", which is not an origin plane (XY, XZ or YZ)' });
-  assert.throws(() => readDesignDocument(broken(3)), { message: "Design duplicate feature-2 mirrors across 3, which is not an origin plane (XY, XZ or YZ)" });
-  assert.throws(() => readDesignDocument(broken(null)), { message: "Design duplicate feature-2 mirrors across null, which is not an origin plane (XY, XZ or YZ)" });
+  assert.throws(() => readDesignDocument(broken("xy")), { message: 'Design duplicate feature-2 mirrors across "xy", which is not an origin plane (XY, XZ or YZ) or a construction plane' });
+  assert.throws(() => readDesignDocument(broken(3)), { message: "Design duplicate feature-2 mirrors across 3, which is not an origin plane (XY, XZ or YZ) or a construction plane" });
+  assert.throws(() => readDesignDocument(broken(null)), { message: "Design duplicate feature-2 mirrors across null, which is not an origin plane (XY, XZ or YZ) or a construction plane" });
 });
 
 test("hand-worked on the real kernel: the mirrored copy is the box's mirror image, not inside out, named by the Mirror, following its sizes", async () => {

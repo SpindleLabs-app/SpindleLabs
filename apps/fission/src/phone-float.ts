@@ -55,6 +55,8 @@ export const ENDERS: readonly Ender[] = [
 
 /** The sketch's three planes, by the sketch panel's button ids. */
 const PLANES = ["XY", "XZ", "YZ"] as const;
+/** The sketch panel's construction plane buttons (59a3, behind ?construct), proxied after the three. */
+const CONSTRUCT_PLANES = "[id^='sketch-plane-construct-']";
 
 /** An element in the page and on show: connected (a sleeping workspace's slots are taken out) with no hidden ancestor. */
 function shown(el: Element | null): el is HTMLElement {
@@ -111,7 +113,9 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     const okButton = state?.kind === "end" ? workspace.querySelector<HTMLButtonElement>(state.ender.ok) : null;
     // The key: what is shown and whether OK is on, so the bar is rebuilt only when that changes.
     const why = state?.kind === "end" ? floatWhy(workspace, state.ender, okButton?.disabled ?? false) : "";
-    const key = state === null ? "" : state.kind === "pick" ? "pick" : `${state.ender.kind}:${okButton?.disabled ? "off" : "on"}:${why}`;
+    // 59a3: the construction planes the panel offers too, each pressed by its own panel button (a plane may be off screen).
+    const constructs = state?.kind === "pick" ? [...workspace.querySelectorAll<HTMLButtonElement>(CONSTRUCT_PLANES)].filter(shown) : [];
+    const key = state === null ? "" : state.kind === "pick" ? `pick:${constructs.map((b) => `${b.id}=${b.textContent}`).join(",")}` : `${state.ender.kind}:${okButton?.disabled ? "off" : "on"}:${why}`;
     if (key === last) return;
     last = key;
     // A tool ended (Finish, OK, Cancel, Escape, Undo): the Properties sheet goes too, so the whole view is back.
@@ -123,6 +127,7 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     if (state.kind === "pick") {
       const words = Object.assign(document.createElement("span"), { className: "phone-float-words", textContent: "Tap a plane or face" });
       const planes = PLANES.map((p) => proxy(`float-plane-${p}`, p, `#sketch-plane-${p}`, "phone-float-plane"));
+      for (const b of constructs) planes.push(proxy(`float-${b.id.slice("sketch-".length)}`, b.textContent ?? "", `#${CSS.escape(b.id)}`, "phone-float-plane"));
       return bar.replaceChildren(words, ...planes, proxy("float-cancel", "Cancel", "#sketch-cancel"));
     }
     const finish = withIcon(proxy("float-finish", state.ender.label, state.ender.ok, "phone-float-finish"), "finish");
