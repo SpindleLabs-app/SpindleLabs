@@ -6,7 +6,7 @@
 //   a project with none says so; at 375 px with touch the dialog fills the screen with 44 px buttons and restores by tap.
 // Screenshots (SHOTS=<dir>) at 1280 and 375 px. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { chooseFile, openPanel, startWithBox } from "./start.mjs";
@@ -21,7 +21,7 @@ const MIN = 60_000;
 
 let failed = 0;
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);

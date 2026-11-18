@@ -74,3 +74,81 @@ test("a module other checks import is a helper, so it is not run as a check by m
     }
   }
 });
+
+// Test audit 2026-11-18 E-7: page errors collected and never read, or never listened for, let an uncaught exception after
+// the feature's visible part pass. browser.mjs's watchErrors records them and assertNoErrors fails on them.
+/** A file's source with every ./*.mjs file it imports, and theirs (a check may listen through a helper). */
+function withImports(file, seen = new Set()) {
+  // browser.mjs defines the watcher (its own "pageerror" listener), so importing it alone is not listening.
+  if (seen.has(file) || !(file in sources) || file === "browser.mjs") return "";
+  seen.add(file);
+  let all = sources[file];
+  for (const m of sources[file].matchAll(/from\s*["']\.\/([a-z0-9_-]+\.mjs)["']/g)) all += "\n" + withImports(m[1], seen);
+  return all;
+}
+
+test("every check listens for page errors, and every file that watches them with watchErrors asserts on them", () => {
+  for (const f of allChecks().map(fileOf)) {
+    const src = withImports(f);
+    assert.ok(/watchErrors\(|["']pageerror["']/.test(src), `${f} never listens for page errors: use watchErrors(page) and assertNoErrors() from browser.mjs`);
+  }
+  for (const [f, src] of Object.entries(sources)) {
+    if (f === "browser.mjs" || f === "checks.test.mjs" || !/\bwatchErrors\(/.test(src)) continue;
+    assert.ok(/\bassertNoErrors\(\)/.test(src), `${f} calls watchErrors but never assertNoErrors(): what it records is never read`);
+  }
+  // The files the audit found blind, held to the shared helper by name.
+  for (const f of ["copy-svg-face.mjs", "extrude-several-curved.mjs", "phone-sketch-touch.mjs", "lost-work.mjs", "browser-tabs.mjs", "copy-svg-hole.mjs", "motion.mjs", "select-lists.mjs", "slice-settings-fold.mjs", "styles.mjs", "closed-views.mjs"])
+    assert.ok(/\bwatchErrors\(/.test(sources[f]) && /\bassertNoErrors\(\)/.test(sources[f]), `${f} no longer uses watchErrors and assertNoErrors`);
+});
+
+test("hand-worked: watchErrors records each kind of error but the allowed and the aborted, and assertNoErrors fails, then starts afresh", async () => {
+  const { watchErrors, assertNoErrors, errorsSeen } = await import("./browser.mjs");
+  const { EventEmitter } = await import("node:events");
+  assertNoErrors(); // nothing recorded yet by this process
+  const page = new EventEmitter();
+  const context = Object.assign(new EventEmitter(), { newPage() {}, pages: () => [page] });
+  assert.equal(watchErrors(context, ["planted on purpose", /^Not saved/]), context);
+  page.emit("pageerror", new Error("boom"));
+  page.emit("pageerror", new Error("planted on purpose: a crash"));
+  page.emit("console", { type: () => "error", text: () => "Not saved: storage full" });
+  page.emit("console", { type: () => "warning", text: () => "a warning is not an error" });
+  page.emit("console", { type: () => "error", text: () => "late rejection" });
+  page.emit("requestfailed", { url: () => "http://x/kernel.wasm", failure: () => ({ errorText: "net::ERR_FAILED" }) });
+  page.emit("requestfailed", { url: () => "http://x/a.js", failure: () => ({ errorText: "net::ERR_ABORTED" }) });
+  // A page the context opens later is watched too.
+  const later = new EventEmitter();
+  context.emit("page", later);
+  later.emit("pageerror", new Error("in a second tab"));
+  // Recorded: boom, late rejection, the .wasm and the second tab; not the two allowed, the warning or the aborted request.
+  assert.deepEqual(errorsSeen(), ["uncaught: boom", "console.error: late rejection", "request failed: http://x/kernel.wasm net::ERR_FAILED", "uncaught: in a second tab"]);
+  assert.throws(() => assertNoErrors(), /but 4:\n {2}uncaught: boom\n/);
+  assertNoErrors(); // the list was emptied by the failure: a later check is not failed again by the same errors
+});
+
+// Test audit 2026-11-18 E-11: a check that skips by ONLY goes through browser.mjs's chosen(), so a file where ONLY matched
+// nothing fails instead of printing "all passed" having run no check.
+test("every check that reads ONLY does it through chosen()", () => {
+  for (const [f, src] of Object.entries(sources)) {
+    if (f === "browser.mjs" || f === "checks.test.mjs" || !allChecks().map(fileOf).includes(f)) continue;
+    assert.ok(!/process\.env\.ONLY/.test(src), `${f} reads ONLY itself: use chosen(name) from browser.mjs`);
+  }
+});
+
+test("hand-worked: ONLY matching no check fails the file as it exits; matching one, or unset, does not", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const browser = new URL("./browser.mjs", import.meta.url).href;
+  // A file of two checks, "alpha one" and "beta two", that prints what it ran and exits 0 itself.
+  const file = `import { chosen } from ${JSON.stringify(browser)};
+    for (const n of ["alpha one", "beta two"]) if (chosen(n)) console.log("ran " + n);
+    process.exit(0);`;
+  const run = (only) => spawnSync(process.execPath, ["--input-type=module", "-e", file], { env: { ...process.env, ONLY: only }, encoding: "utf8" });
+  const none = run("gamma");
+  assert.equal(none.status, 1, "ONLY=gamma: no check chosen, so the file fails");
+  assert.match(none.stdout, /not ok - ONLY="gamma" matched no check in this file/);
+  const one = run("beta");
+  assert.equal(one.status, 0);
+  assert.equal(one.stdout, "ran beta two\n");
+  const all = run("");
+  assert.equal(all.status, 0);
+  assert.equal(all.stdout, "ran alpha one\nran beta two\n");
+});

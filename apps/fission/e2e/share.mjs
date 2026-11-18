@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, preview } from "vite";
-import { launch } from "./browser.mjs";
+import { chosen, launch } from "./browser.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 
 const SERVICE = "https://test-accounts.supabase.co";
@@ -29,7 +29,7 @@ const errors = [];
 let failed = false;
 
 async function check(name, fn) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!chosen(name)) return;
   try {
     await fn();
     console.log(`PASS ${name}`);

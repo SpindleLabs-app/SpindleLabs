@@ -56,6 +56,23 @@ async function fresh(width, tap) {
  */
 const canvasPicture = (page) => page.$eval("#print-preview-view canvas", (c) => c.toDataURL("image/png"));
 
+/** Frames the view has drawn (print-view.ts counts them on its canvas). */
+const frames = (page) => page.$eval("#print-preview-view canvas", (c) => Number(c.dataset.frames ?? 0));
+/**
+ * Does `act`, then waits until the view has drawn a frame after it, so the pixels read next are the changed picture (test
+ * audit 2026-11-18 E-8: fixed 150 and 200 ms sleeps, while a frame drawn without a graphics card takes up to 2 s on CI).
+ * A change that draws nothing fails here, by name.
+ */
+async function drawnAfter(page, act, what) {
+  const f = await frames(page);
+  await act();
+  await page
+    .waitForFunction((f) => Number(document.querySelector("#print-preview-view canvas")?.dataset.frames ?? 0) > f, f, { timeout: 30000 })
+    .catch(() => assert.fail(`${what}: no frame drawn after it within 30 s`));
+}
+/** Waits for the view's first frame. */
+const firstFrame = (page) => page.waitForFunction(() => Number(document.querySelector("#print-preview-view canvas")?.dataset.frames ?? 0) > 0, null, { timeout: 30000 });
+
 /** How many of the view's pixels are not its background (#1b1e23) or the plate's greys: the plastic and the nozzle. */
 async function coloured(page) {
   const png = await canvasPicture(page);
@@ -123,7 +140,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
         const r = await page.$eval(sel, (e) => e.getBoundingClientRect().toJSON());
         assert.ok(r.left >= 0 && r.right <= width + 0.5 && r.width > 0, `${sel} on screen: ${JSON.stringify(r)}`);
       }
-      await page.waitForTimeout(200);
+      await firstFrame(page);
       const whole = await coloured(page);
       assert.ok(whole > 2000, `the finished box is drawn: ${whole} coloured pixels`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-done.png` });
@@ -134,26 +151,21 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       // Infill off: the top's pink solid infill goes (the walls stay, so plenty is still drawn).
       const pink = await hued(page, 330, 359);
       assert.ok(pink > 2000, `the top's solid infill is in view: ${pink}`);
-      for (const k of ["solid-infill", "sparse-infill"]) await press(`#print-preview-show-${k}`);
-      await page.waitForTimeout(200);
+      await drawnAfter(page, async () => { for (const k of ["solid-infill", "sparse-infill"]) await press(`#print-preview-show-${k}`); }, "infill off");
       const walls = await coloured(page);
       const pinkLeft = await hued(page, 330, 359);
       assert.ok(pinkLeft < pink * 0.05 && walls > 2000, `walls alone: ${pinkLeft} pink of ${pink}, ${walls} coloured`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-walls.png` });
       // Every kind off: next to nothing left (the nozzle).
-      for (const id of await page.$$eval("#print-preview-legend button[aria-pressed='true']", (bs) => bs.map((b) => b.id))) await press(`#${id}`);
-      await page.waitForTimeout(200);
+      await drawnAfter(page, async () => { for (const id of await page.$$eval("#print-preview-legend button[aria-pressed='true']", (bs) => bs.map((b) => b.id))) await press(`#${id}`); }, "every kind off");
       const none = await coloured(page);
       assert.ok(none < whole * 0.1, `everything off: ${none} vs ${whole}`);
       // Travel on: its lines appear.
-      await press("#print-preview-show-travel");
-      await page.waitForTimeout(200);
+      await drawnAfter(page, () => press("#print-preview-show-travel"), "travel on");
       const travel = await coloured(page);
       assert.ok(travel > none, `travel lines drawn: ${travel} vs ${none}`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-travel.png` });
-      await press("#print-preview-show-travel");
-      await press("#print-preview-preset-all");
-      await page.waitForTimeout(200);
+      await drawnAfter(page, async () => { await press("#print-preview-show-travel"); await press("#print-preview-preset-all"); }, "Everything");
       const back = await coloured(page);
       assert.ok(Math.abs(back - whole) < whole * 0.02, `Everything brings it all back: ${back} vs ${whole}`);
       // The Show card on a phone is one strip, never most of the view.
@@ -161,8 +173,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       if (tap) assert.ok(card.height <= 60, `the Show strip is one row: ${card.height}px`);
 
       // Layer 1 alone: far less plastic in view than the whole box.
-      await setRange(page, "#print-preview-layers", 1);
-      await page.waitForTimeout(200);
+      await drawnAfter(page, () => setRange(page, "#print-preview-layers", 1), "layer 1 alone");
       assert.equal(await page.textContent("#print-preview-layer-words"), "Layer 1 of 100 · 0.20 mm");
       const first = await coloured(page);
       assert.ok(first < whole * 0.8, `layer 1 shows less than the whole box: ${first} vs ${whole}`);
@@ -176,7 +187,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(await page.textContent("#print-preview-play"), "Pause");
       // Waits for the clock to move rather than a fixed time: a browser drawing without a graphics card (as here) takes
       // up to a second a frame, and the clock moves on from the second frame.
-      await page.waitForFunction((b) => Number(document.getElementById("print-preview-scrub").value) > b, before, { timeout: 15000 }).catch(() => {});
+      await page.waitForFunction((b) => Number(document.getElementById("print-preview-scrub").value) > b, before, { timeout: 15000 }).catch(() => assert.fail(`the time-lapse never moved on from ${before} in 15 s`));
       const after = Number(await page.inputValue("#print-preview-scrub"));
       assert.ok(after > before, `the time-lapse moved on: ${before} -> ${after}`);
       // While it plays, a browser drawing without a graphics card takes about a second a frame (twice that on a busy
@@ -184,18 +195,18 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       // ran out on a slow run (1 run in 3 on main). The button itself is steady; only the wait gets room.
       await press("#print-preview-play", 120000);
       assert.equal(await page.textContent("#print-preview-play"), "Play");
-      await page.waitForTimeout(150);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-playing.png` });
 
       // A drag orbits the view: the picture changes, the clock does not.
       const box = await page.locator("#print-preview-view canvas").boundingBox();
       const stillAt = await page.inputValue("#print-preview-scrub");
       const shot = await page.locator("#print-preview-view canvas").screenshot();
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 30, { steps: 8 });
-      await page.mouse.up();
-      await page.waitForTimeout(150);
+      await drawnAfter(page, async () => {
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 30, { steps: 8 });
+        await page.mouse.up();
+      }, "the drag");
       assert.ok(!shot.equals(await page.locator("#print-preview-view canvas").screenshot()), "the view turned");
       assert.equal(await page.inputValue("#print-preview-scrub"), stillAt);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-orbited.png` });
@@ -242,21 +253,19 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.ok(legend.includes("Support"), `legend has Support: ${legend}`);
       assert.equal(await page.$eval("#print-preview-show-support", (b) => b.disabled), false);
       assert.equal(await page.$("#print-preview-no-supports"), null, "no 'no supports' note");
-      await page.waitForTimeout(200);
+      await firstFrame(page);
       // Supports are drawn green (0x3fbf7f: hue (2 + (127 − 63) / 128) × 60 = 150°); the plate over them hides some, so count from the side it's seen from.
       const green = await hued(page, 140, 160);
       assert.ok(green > 500, `supports drawn: ${green} green pixels`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports.png` });
       // No supports: the green goes, the part stays.
-      await press("#print-preview-preset-no-supports");
-      await page.waitForTimeout(200);
+      await drawnAfter(page, () => press("#print-preview-preset-no-supports"), "No supports");
       const greenGone = await hued(page, 140, 160);
       const part = await coloured(page);
       assert.ok(greenGone < green * 0.05 && part > 2000, `no supports: ${greenGone} green of ${green}, ${part} coloured`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-no-supports.png` });
       // Only supports: the green alone (nothing but it and the nozzle).
-      await press("#print-preview-preset-only-supports");
-      await page.waitForTimeout(200);
+      await drawnAfter(page, () => press("#print-preview-preset-only-supports"), "Only supports");
       const only = await coloured(page);
       const onlyGreen = await hued(page, 140, 160);
       assert.ok(onlyGreen >= green && onlyGreen > only * 0.8, `only supports: ${onlyGreen} green of ${only} coloured (was ${green} under the plate)`);
@@ -272,12 +281,11 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
       assert.equal(await page.getAttribute("#print-preview-layers", "max"), "60");
       assert.ok((await page.$$eval("#print-preview-legend li", (ls) => ls.map((l) => l.textContent))).includes("Support"), "tree legend has Support");
-      await page.waitForTimeout(200);
+      await firstFrame(page);
       const treeGreen = await hued(page, 140, 160);
       assert.ok(treeGreen > 200, `tree supports drawn: ${treeGreen} green pixels`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-tree.png` });
-      await press("#print-preview-preset-only-supports");
-      await page.waitForTimeout(200);
+      await drawnAfter(page, () => press("#print-preview-preset-only-supports"), "Only supports");
       const treeOnly = await hued(page, 140, 160);
       // Branches, not a block: less green seen alone than the columns showed alone.
       assert.ok(treeOnly > 200 && treeOnly < onlyGreen, `only tree supports: ${treeOnly} green, columns ${onlyGreen}`);

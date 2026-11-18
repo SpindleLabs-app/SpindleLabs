@@ -5,7 +5,7 @@
 // Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4192, strictPort: true }, logLevel: "error" });
@@ -27,6 +27,7 @@ async function check(name, fn) {
 for (const [width, tap] of [[1280, false], [375, true]]) {
   await check(`${width} px${tap ? ", taps" : ""}: printer settings start folded to a line; Supports and the ticks stay out and never mark a preset changed; open or closed is remembered`, async () => {
     const context = await browser.newContext({ viewport: { width, height: tap ? 667 : 800 }, hasTouch: tap, isMobile: tap, deviceScaleFactor: 2 });
+    watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
     const page = await context.newPage();
     await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
@@ -76,6 +77,12 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
   });
 }
 
+try {
+  assertNoErrors();
+} catch (e) {
+  failed++;
+  console.log(`not ok - ${e.message}`);
+}
 await browser.close();
 await server.close();
 if (failed) process.exit(1);
