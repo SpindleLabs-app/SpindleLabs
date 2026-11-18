@@ -1,6 +1,5 @@
-/* TestLab's results (results.ts) and Run's progress line (page.ts), in the study's panel. Colours are tokens, except the
+/* TestLab's results (results.ts), in the study's panel. Colours are tokens, except the
    colour scale's bar, which is drawn from the same stops as the part (run.ts SCALE_COLOURS) so the two always agree. */
-.testlab-page .testlab-page-progress { margin: var(--look-space-2) 0; font-size: 13px; font-weight: 600; }
 .testlab-results { margin: var(--look-space-3) 0 0; padding: var(--look-space-2); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); font-size: 13px; }
 .testlab-results[data-stale="true"] { border-style: dashed; color: var(--text-dim); }
 .testlab-results h3 { margin: 0 0 var(--look-space-2); font-size: 13px; }
