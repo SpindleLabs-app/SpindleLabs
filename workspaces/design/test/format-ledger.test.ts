@@ -69,7 +69,9 @@ export function propertyNames(source: string, name: string): string[] {
 // faces left open by name and the wall thickness), which a version 26 reader would refuse as an unknown feature.
 // Design data version 28 (step 59a3): a sketch may be on a construction plane (`plane` "construct:<id>", its content keeping
 // `drawn`), a Duplicate may mirror across one, and the hidden list may name a construction or "folder-constructions".
-const LEDGER_VERSION = 28;
+// Design data version 29 (step 59a3b): a circular Pattern's axis may be a construction axis ("construct:<id>"), with no
+// centre, depending on it after its bodies' items.
+const LEDGER_VERSION = 29;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
   { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "drawn", "pins", "projected"] },

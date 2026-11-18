@@ -62,7 +62,7 @@ test("every limit in plain words, either side of it", () => {
   assert.equal(patternProblem(round({ angle: 360.5 })), "The angle can be at most 360°, a full turn.");
   assert.equal(patternProblem(round({ angle: 0 })), "Type the angle in degrees, above 0 (negative turns the other way).");
   assert.equal(patternProblem(round({ centre: [0, Number.POSITIVE_INFINITY, 0] })), "Type the centre in mm.");
-  assert.equal(patternProblem(round({ axis: "W" as "X" })), "W is not X, Y or Z.");
+  assert.equal(patternProblem(round({ axis: "W" as "X" })), "W is not X, Y, Z or a construction axis.");
 });
 
 test("summaries in words", () => {

@@ -51,7 +51,7 @@ import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
-import { copyIds, CURVED_JOIN, KERNEL_INPUT_WORDS, patternRequest, patternValuesOf, type PatternRequest } from "./pattern-values.ts";
+import { copyIds, CURVED_JOIN, KERNEL_INPUT_WORDS, patternRequest, patternValuesOf, turnAxisItem, type PatternRequest } from "./pattern-values.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
@@ -1799,8 +1799,9 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
 }
 
 /**
- * A Pattern's result (step 61b): greyed while an item whose body it copies
- * is suppressed or greyed (Q3); failed naming the first of its bodies that
+ * A Pattern's result (step 61b): greyed while an item whose body it copies,
+ * or the construction axis it turns round (59a3b), is suppressed or greyed
+ * (Q3); failed in words when that axis was deleted or isn't built; failed naming the first of its bodies that
  * was deleted, isn't built or is gone (used up by an earlier Combine or
  * extrude), so no copy is made; failed in plain words when the kernel
  * refuses the pattern (`KERNEL_INPUT_WORDS`: the input it names, never its
@@ -1835,9 +1836,19 @@ async function patternRun(doc: DesignDocument, f: Feature, done: Record<string, 
     if (bodies[body] === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't copy ${what}: an earlier Combine or extrude used it up or left no such piece` };
   }
   const values = patternValuesOf(f.intent.parameters);
+  // 59a3b: round a construction axis, as the rebuild answered it (held at its last answer too); greyed with it above,
+  // failed in words when it is deleted or not built.
+  const around = values.kind === "circular" ? turnAxisItem(values.axis) : null;
+  let axis: ConstructAnswer | undefined;
+  if (around !== null) {
+    const c = done[around];
+    if (c === undefined) return { status: "failed", cause: "deleted-input", input: around, message: `${nameOf(around)} was deleted, so ${label} has no axis to turn round` };
+    if (c.status !== "built" || c.construct?.kind !== "axis") return { status: "failed", cause: "failed-input", input: around, message: `${nameOf(around)} is not built, so ${label} has no axis to turn round` };
+    axis = c.construct;
+  }
   let motions: Motion[];
   try {
-    motions = await cache.patternMotions(patternRequest(values));
+    motions = await cache.patternMotions(patternRequest(values, axis));
   } catch (e) {
     if (!(e instanceof KernelError) || e.kind !== "invalid-input") throw e;
     const named = e.inputs.flatMap((x) => (x.input === "param" && Object.hasOwn(KERNEL_INPUT_WORDS, x.name) ? [KERNEL_INPUT_WORDS[x.name]] : []));
