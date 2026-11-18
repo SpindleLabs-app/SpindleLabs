@@ -544,12 +544,12 @@ export function mountTestLabPage(ctx: WorkspaceContext): MountedWorkspace {
         const test = stressTestOf(s, on, mechanical);
         if ("refused" in test) return test;
         if (run.cancelled) return { stopped: true as const };
-        return { answer: await ctx.kernel.call("stress_test", lent.handle, test) };
+        return { answer: await ctx.kernel.call("stress_test", lent.handle, test), strength: test.strength };
       });
       if (run.cancelled || "stopped" in out) said = STOPPED;
       else if ("refused" in out) said = `Not run: ${out.refused}`;
       else {
-        const wrong = answerProblem(out.answer);
+        const wrong = answerProblem(out.answer, out.strength);
         if (wrong !== null) said = wrong;
         else {
           got = resultOf(out.answer, { name: material.name, mechanical });

@@ -146,10 +146,13 @@ const finite = (xs: readonly number[]) => xs.every((x) => typeof x === "number" 
 /**
  * Why the kernel's answer can't be shown, in words; null when it passes
  * every check: its lists fit together and hold numbers, the largest bend and
- * stress are at least those listed, the solver converged (MAX_RESIDUAL) and
- * the holds' reactions balance the loads (MAX_IMBALANCE).
+ * stress are at least those listed, the safety factor is the strength
+ * (MPa, as sent) over that largest stress (so it is measured against the
+ * highest stress found anywhere, the safe side, never a lower one), the
+ * solver converged (MAX_RESIDUAL) and the holds' reactions balance the loads
+ * (MAX_IMBALANCE).
  */
-export function answerProblem(r: StressTestResult): string | null {
+export function answerProblem(r: StressTestResult, strength: number): string | null {
   const bad = (why: string) => `TestLab's answer didn't check out (${why}), so it is not shown. Please report this.`;
   const n = r.points.length / 3;
   if (!Number.isInteger(n) || n === 0 || r.displacement.length !== r.points.length || r.vonMises.length !== n) return bad("its lists don't fit together");
@@ -160,6 +163,8 @@ export function answerProblem(r: StressTestResult): string | null {
   let bend = 0;
   for (let i = 0; i < n; i++) bend = Math.max(bend, length(r.displacement.slice(3 * i, 3 * i + 3)));
   if (most > r.maxVonMises * (1 + 1e-12) || bend > r.maxDisplacement * (1 + 1e-12)) return bad("a point bends or is stressed more than its largest");
+  const factorOff = r.maxVonMises > 0 ? r.safetyFactor === null || Math.abs(r.safetyFactor * r.maxVonMises - strength) > 1e-12 * strength : r.safetyFactor !== null;
+  if (factorOff) return bad("its safety factor isn't measured against its biggest stress");
   if (!(r.relativeResidual <= MAX_RESIDUAL)) return bad("the solver didn't settle on an answer");
   const applied = length(r.applied);
   const off = length([r.applied[0] + r.reaction[0], r.applied[1] + r.reaction[1], r.applied[2] + r.reaction[2]]);

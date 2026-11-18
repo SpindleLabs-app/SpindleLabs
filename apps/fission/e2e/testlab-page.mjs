@@ -158,7 +158,7 @@ async function shownResult(page) {
   assert.ok(factor > 20 && factor < 1000, `safety factor ${factor} (about 100 by hand)`);
   const facts = await page.locator(".testlab-results-facts dd").allTextContents();
   assert.match(facts[0], /^\d[\d.,]* mm$/);
-  assert.match(facts[1], /^\d[\d.,]* MPa \(PLA/);
+  assert.match(facts[1], /^\d[\d.,]* MPa, the highest found anywhere in the part \(PLA/);
   await until(page, () => Number(document.querySelector("[data-colour-map]")?.getAttribute("data-colour-map") ?? 0) > 0, null, "the colour map drawn");
   assert.equal(await page.locator("[data-testlab=cancel]").count(), 0);
 }

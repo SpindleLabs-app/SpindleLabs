@@ -441,7 +441,7 @@ test("Run: the result drawn bent and coloured by stress, the numbers and the saf
   assert.equal(last(c, ".testlab-results-factor")!.getAttribute("data-band"), "safe");
   assert.equal(last(c, ".testlab-results-factor-value")!.textContent, "3.5");
   assert.match(box.textContent!, /Biggest bend0\.002 mm/);
-  assert.match(box.textContent!, /Biggest stress10 MPa \(PLA's breaking strength: 35 MPa, across the layers\)/);
+  assert.match(box.textContent!, /Biggest stress10 MPa, the highest found anywhere in the part \(PLA's breaking strength: 35 MPa, across the layers\)/);
   assert.match(box.textContent!, /An estimate, not a promise: real prints are weaker across their layers/);
   // The stand-in's box diagonal is √2 mm and its bend 0.002 mm: a twentieth of √2 is 0.0707 mm, 35.4 times the bend,
   // rounded down to 1, 2 or 5 times a power of ten: 20.
