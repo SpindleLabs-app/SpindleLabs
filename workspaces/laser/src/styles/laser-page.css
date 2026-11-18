@@ -25,3 +25,12 @@
 /* A part's layer (L1c): under its name in its row, in the app's field look; 32 px tall (44 on a touch screen). */
 .laser-page .laser-page-op { display: block; margin: 4px 0 0 26px; min-height: 32px; padding: 2px 6px; background: var(--look-field); color: var(--text-body); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); font: inherit; font-size: 13px; }
 @media (pointer: coarse) { .laser-page .laser-page-op { min-height: 44px; font-size: 16px; } }
+/* The long help is folded under a one-line heading, like the TestLab's sources (UI review 2026-11-18, finding 4). */
+.laser-page details.laser-page-note summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; color: var(--text-body); }
+.laser-page details.laser-page-note p { margin: var(--look-space-1) 0; }
+
+/* The laser-page panel in the properties as a rounded floating card like Design's, on wide screens (UI review 2026-11-18, finding 2): it was a flat grey column docked down the right edge. theme.css makes the room round it. Tokens only. */
+@media (min-width: 641px) {
+  .laser-page:is(#workspace:not([data-split="on"]) #properties > .laser-page) { align-self: flex-start; box-sizing: border-box; max-height: 100%; overflow-y: auto; padding: 16px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .laser-page:is(#workspace:not([data-split="on"]) #properties > .laser-page):is(:hover, :focus-within) { scrollbar-color: var(--line-4a515c) transparent; }
+}

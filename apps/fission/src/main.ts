@@ -428,6 +428,8 @@ function showPage(page: Page) {
   // sheet over Design's box (SL #522 item 4, styles/placeholder-page.css). Only Community: a workspace still marked
   // "placeholder" (Laser, TestLab…) mounts a real page of its own, which the words' sheet would cover.
   document.body.classList.toggle("placeholder-page", !workspace);
+  // A page that is only its words (Community, and every workspace not built yet) is one centred page on wide screens (styles/placeholder-centred.css).
+  document.body.classList.toggle("placeholder-centred", !!$("properties").querySelector(":scope > .placeholder"));
   $("community").setAttribute("aria-pressed", String(page === "community"));
   document.body.dataset.activeWorkspace = page; // read by the e2e test
   current = page;
