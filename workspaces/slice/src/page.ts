@@ -114,7 +114,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
   const panel: PrintPanel = printPanel(doc, { kernel: ctx.kernel, registry: ctx.representations, objects: objectsNow,
     storage,
     save: (request) => saveFile(doc, request),
-    openPreview: (gcode, words) => void openPrintPreview(ctx.toolbar, playback(gcode), words, (host, p) => printView(host, p)),
+    openPreview: (gcode, words) => void openPrintPreview(ctx.toolbar, playback(gcode), words, (host, p) => printView(host, p), undefined, () => doc.getElementById("slice-page-preview")),
     // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
     testPiece: async (choices, file, alive) => {
       const print = await testPieceFile(ctx.kernel, choices, file.plate, file.nozzle);
@@ -156,6 +156,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
     ready,
     sleep() {
       awake = false;
+      panel.stop(); // a slice under way is dropped, as the dialog's Close did: no name box or download appears over another workspace
     },
     wake() {
       awake = true;

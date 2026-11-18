@@ -441,6 +441,7 @@ test("after a slice the supports hint says whether supports are recommended and 
   assert.equal(panel.choices().supports, "normal", "the button turns supports on");
   assert.match(doc.querySelector(".slice-page-slice-words")!.textContent!, /Supports turned on \(Normal\)\. Slice again to make the file with them\./);
   assert.equal(flip.hidden, true, "with supports on the recommendation already agrees, so no button");
+  assert.equal(hint.hidden, true, "and the old result's hint goes until the next slice");
   assert.equal(choiceSelect(doc, "supports").value, String(SUPPORT_OPTIONS.findIndex((o) => o.value === "normal")), "and the Supports box shows it");
 });
 
@@ -522,4 +523,20 @@ test("a preset picked last time is put back when the page opens, with its settin
   assert.deepEqual(panel.choices(), { ...PRINT_DEFAULTS, layerHeight: 0.16, walls: 3, infill: 25 });
   assert.deepEqual(panel.file(), { format: "p1s", plate: "smooth", nozzle: "high-flow" });
   assert.match(doc.querySelector(".slice-page-settings-words")!.textContent!, /0\.16 mm layers · 3 walls · 25 % infill$/);
+});
+
+test("stop() drops a slice under way: nothing is saved, no words appear, and the panel is ready again (the page calls it when another workspace is shown)", async () => {
+  let release: (v: unknown) => void = () => undefined;
+  const saves: unknown[] = [];
+  const { doc, panel } = panelIn(() => new Promise((resolve) => (release = resolve)), objects, { save: async (r) => (saves.push(r), { status: "saved", name: "x.gcode.3mf" }) });
+  const button = doc.getElementById("slice-page-download") as unknown as HTMLButtonElement;
+  const running = panel.download();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(button.disabled, true, "slicing");
+  panel.stop();
+  release({ layers: 5, filamentMm: 1, filamentG: 1, printTimeS: 60, unprintedVolume: 0, package: new Uint8Array(1) });
+  await running;
+  assert.deepEqual(saves, [], "nothing saved");
+  assert.equal(doc.getElementById("slice-page-status")!.textContent, "", "no words");
+  assert.equal(button.disabled, false, "ready again");
 });

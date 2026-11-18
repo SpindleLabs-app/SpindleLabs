@@ -22,6 +22,7 @@ export const HELPERS = [
   "sketch-screen.mjs",
   "soak-judge.mjs",
   "soak-model.mjs",
+  "slice-page-lib.mjs",
   "start.mjs",
   "toolbar-swipe.mjs",
 ];
