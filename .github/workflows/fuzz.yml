@@ -7,8 +7,9 @@ name: Fuzzing
 # (packages/testing/fuzz/sketch-extrude.ts, rounds of 50 sessions × 40
 # steps against the sessions' own model), then up to 20,000 of the extrudes
 # they built compared with exact values and OpenCascade (the private kernel
-# repo's prototypes/oracle/sketch_extrude.py; a disagreement is a failure
-# folder with oracle-disagreements.txt), which also has OpenCascade read
+# repo's oracle; a disagreement is a failure folder with
+# oracle-disagreements.txt, the shapes and the checks' names only, the full
+# text in kernel-results), which also has OpenCascade read
 # every body from its STEP file as the kernel wrote it (step 29b3), and then
 # plants a flipped face in every file of a short run (FISSION_STEP_FAULT),
 # which must be caught in every body (`--planted`). Design's timeline on the
@@ -218,14 +219,47 @@ jobs:
           path: ${{ runner.temp }}/fuzz/
           if-no-files-found: ignore
 
+  # This run's key pair for the oracle's full findings (H3c): holds
+  # RESULTS_WRITE and runs no kernel code, like kernel-fuzz.yml's plan; the
+  # private half goes only to kernel-results (seal/<run>-<attempt>/key).
+  oracle-key:
+    needs: idle
+    if: github.ref == 'refs/heads/main'
+    environment: kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      public: ${{ steps.keys.outputs.public }}
+      key_folder: ${{ steps.keys.outputs.folder }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: A key pair for this run (the private half only in kernel-results)
+        id: keys
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          .github/scripts/kernel_ci.sh keygen "$RUNNER_TEMP/keys"
+          mkdir -p "$RUNNER_TEMP/private"
+          mv "$RUNNER_TEMP/keys/private.pem" "$RUNNER_TEMP/private/"
+          folder="seal/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          RESULTS_PATH="$folder" .github/scripts/kernel_ci.sh save key "$RUNNER_TEMP/private"
+          echo "public=$(base64 -w0 "$RUNNER_TEMP/keys/public.pem")" >> "$GITHUB_OUTPUT"
+          echo "folder=$folder/key" >> "$GITHUB_OUTPUT"
+
   # The sessions' extrudes compared with exact values and OpenCascade by the
   # private kernel's oracle. Main only, in the "kernel" environment (main
   # only too), so no branch's workflow can read the key that clones the
   # kernel; no npm code runs beside it. Its findings go into a fuzz-*
-  # artifact, which collect reads like the others.
+  # artifact, which collect reads like the others, reduced to the shapes and
+  # the checks' names (oracle_public.py: the details say how the kernel
+  # judges a body, which never goes public); the full text is sealed for
+  # oracle-save, which puts it in kernel-results.
   sessions-oracle:
-    needs: sessions
-    if: always() && needs.sessions.result != 'skipped' && github.ref == 'refs/heads/main'
+    needs: [sessions, oracle-key]
+    if: always() && needs.sessions.result != 'skipped' && needs.oracle-key.result == 'success' && github.ref == 'refs/heads/main'
     environment: kernel
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -258,12 +292,15 @@ jobs:
           # The oracle is private kernel code: its errors (a traceback names its
           # files and lines) and its disagreements (they name its checks) go to
           # files of the runner's, never this public log; only the count is shown.
+          # The full findings go to the sealed folder only; the public one gets oracle_public.py's reduction.
           code=0
-          python3 sketch_extrude.py "$IN/fuzz/oracle.jsonl" "$OUT/disagreements.txt" >"$RUNNER_TEMP/oracle.txt" 2>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
-          head -1 "$RUNNER_TEMP/oracle.txt"
+          private="$RUNNER_TEMP/private-out"
+          mkdir -p "$private"
+          python3 sketch_extrude.py "$IN/fuzz/oracle.jsonl" "$private/oracle-disagreements.txt" >"$private/oracle.txt" 2>"$private/oracle-errors.txt" || code=$?
+          head -1 "$private/oracle.txt"
           if [ "$code" -ne 0 ]; then
             mkdir -p "$OUT/seed-oracle-${{ github.run_id }}"
-            mv "$OUT/disagreements.txt" "$OUT/seed-oracle-${{ github.run_id }}/oracle-disagreements.txt"
+            python3 "$GITHUB_WORKSPACE/.github/scripts/oracle_public.py" sessions "$private/oracle-disagreements.txt" "$OUT/seed-oracle-${{ github.run_id }}/oracle-disagreements.txt"
             exit 1
           fi
       - name: The oracle catches a planted flipped face in every session's STEP file
@@ -273,8 +310,10 @@ jobs:
         working-directory: k/prototypes/oracle
         run: |
           code=0
-          python3 sketch_extrude.py "$IN/planted/oracle.jsonl" "$RUNNER_TEMP/planted-disagreements.txt" --planted >"$RUNNER_TEMP/oracle-planted.txt" 2>>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
-          head -1 "$RUNNER_TEMP/oracle-planted.txt"
+          private="$RUNNER_TEMP/private-out"
+          mkdir -p "$private"
+          python3 sketch_extrude.py "$IN/planted/oracle.jsonl" "$private/planted-disagreements.txt" --planted >"$private/oracle-planted.txt" 2>>"$private/oracle-errors.txt" || code=$?
+          head -1 "$private/oracle-planted.txt"
           exit $code
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -282,9 +321,61 @@ jobs:
           name: fuzz-sessions-oracle
           path: ${{ runner.temp }}/fuzz/seed-*/
           if-no-files-found: ignore
+      - name: Seal the full findings (only oracle-save can open them)
+        if: always()
+        env:
+          PUBLIC: ${{ needs.oracle-key.outputs.public }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/private-out"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/private-out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed findings on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-sessions-oracle
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
+
+  # Opens the oracle's sealed findings (untrusted data: HMAC checked, files
+  # and folders only) and saves them to kernel-results'
+  # runs/<run>-<attempt>/sessions-oracle/. Holds RESULTS_WRITE and runs no
+  # kernel code.
+  oracle-save:
+    needs: [oracle-key, sessions-oracle]
+    if: always() && needs.oracle-key.result == 'success' && needs.sessions-oracle.result != 'skipped'
+    environment: kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Take the sealed findings
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sealed-*
+          path: ${{ runner.temp }}/sealed
+      - name: Open them and save them to kernel-results
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          KEY_FOLDER: ${{ needs.oracle-key.outputs.key_folder }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          ci=.github/scripts/kernel_ci.sh
+          out="$RUNNER_TEMP/opened"
+          mkdir -p "$out" "$RUNNER_TEMP/sealed"
+          code=0
+          $ci fetch "$KEY_FOLDER" "$RUNNER_TEMP/private" || exit 1
+          $ci open-sealed "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/private/private.pem" "$out" || code=1
+          rm -rf "$RUNNER_TEMP/private"
+          if [ -n "$(ls -A "$out")" ]; then RESULTS_PATH=runs $ci save "$RUN" "$out" || code=1; else echo "no findings to save"; fi
+          exit $code
 
   collect:
-    needs: [project, sessions, sessions-oracle, timeline, stack]
+    needs: [project, sessions, oracle-key, sessions-oracle, oracle-save, timeline, stack]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -295,8 +386,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # Only the public folders: the sealed findings are kernel-results' alone.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          pattern: fuzz-*
           path: ${{ runner.temp }}/incoming
       - name: Add this run to the test-results branch and file issues
         env:
