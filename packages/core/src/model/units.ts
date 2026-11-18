@@ -111,14 +111,16 @@ export const boxShown = (mm: number, unit: Unit): string => (unit === "in" ? pla
 
 /**
  * Words that give lengths in millimetres, said in `unit`: every "N mm" becomes the same length in the unit
- * ("0.001 mm" is "0.0000394 in"), and "in mm" ("Type the width in mm.") becomes "in inches". Areas and volumes
+ * ("0.001 mm" is "0.0000394 in"), a kernel refusal's points in brackets ("[0, 0, 40]") are too, and "in mm" ("Type the width in mm.") becomes "in inches". Areas and volumes
  * (mm² and mm³) are left alone: they are never in a refusal's words. Millimetres leave the text exactly as it was.
  */
 export function wordsInUnit(text: string, unit: Unit): string {
   if (unit === "mm") return text;
   return text
     .replace(/\bin mm\b/g, "in inches")
-    .replace(/(\d+(?:\.\d+)?(?:e[+-]?\d+)?) mm(?![²³\w])/gi, (_, n: string) => `${plain(fromMm(Number(n), unit))} in`);
+    .replace(/(\d+(?:\.\d+)?(?:e[+-]?\d+)?) mm(?![²³\w])/gi, (_, n: string) => `${plain(fromMm(Number(n), unit))} in`)
+    // A kernel refusal's points, "[x, y, z]" or "[x, y]", are millimetres printed unrounded: said in the unit, rounded.
+    .replace(/\[(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?(?:, -?\d+(?:\.\d+)?(?:e[+-]?\d+)?){1,2})\](?! in)/gi, (_, list: string) => `[${list.split(", ").map((n) => plain(fromMm(Number(n), unit))).join(", ")}] in`);
 }
 
 /** The shortest and longest length the kernel works with, in millimetres: 1 µm to 1 km (a typed length, a grid size). */

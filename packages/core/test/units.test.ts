@@ -89,6 +89,19 @@ test("refusal words said in inches; millimetres are left exactly as they were", 
   assert.equal(wordsInUnit("A length must be more than 0 mm.", "in"), "A length must be more than 0 in.");
 });
 
+test("a kernel refusal's points in brackets are millimetres too: said in inches, rounded (bug hunt 2026-11-18 D-3)", () => {
+  // The kernel's words for a 0.7874 in chamfer (19.99996 mm): its points [x, y, z] are millimetres, printed unrounded.
+  const said = "an edge 0.00004 mm long, from [0, 0, 0] to [0, 0, 0.00003999999999848569] (and in 3 more places)";
+  // 0.00004 mm / 25.4 = 0.00000157 in (3 significant digits); 0.00003999999999848569 mm the same; 0 stays 0.
+  assert.equal(wordsInUnit(said, "in"), "an edge 0.00000157 in long, from [0, 0, 0] in to [0, 0, 0.00000157] in (and in 3 more places)");
+  // 40 mm = 1.575 in, -12.7 mm = -0.5 in, 25.4 mm = 1 in; a two-number point too.
+  assert.equal(wordsInUnit("at [40, -12.7, 25.4]", "in"), "at [1.575, -0.5, 1] in");
+  assert.equal(wordsInUnit("at [40, 1e-3]", "in"), "at [1.575, 0.0000394] in");
+  // Millimetres are left exactly as they were; brackets holding words or one number are not points.
+  assert.equal(wordsInUnit(said, "mm"), said);
+  assert.equal(wordsInUnit("see [note] and [3]", "in"), "see [note] and [3]");
+});
+
 test("hand-worked: what a number box shows in inches", () => {
   // 40 / 25.4 = 1.5748 → 1.575; 30 / 25.4 = 1.1811 → 1.181; 20 / 25.4 = 0.7874 → 0.787 (3 significant digits under an inch).
   assert.deepEqual([40, 30, 20].map((mm) => boxShown(mm, "in")), ["1.575", "1.181", "0.787"]);
