@@ -198,11 +198,11 @@ test("a real version 1 file (saved by the SpindleLabs before 21b) opens as versi
   const p = projectFromJson(REAL_V1, DESIGN);
   const doc = p.workspaces.design as DesignDocument;
   v1.timeline.features[0].provenance.self.label = "L-bracket 1";
-  assert.deepEqual(doc, { ...v1, version: 27, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
+  assert.deepEqual(doc, { ...v1, version: 28, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
   assert.deepEqual(partOf(doc), { shape: "l-bracket", sizes: { width: 40, depth: 30, height: 20 } });
   // Saved, it is version 6; opened and saved again, byte-identical.
   const saved = projectToJson(p);
-  assert.equal(JSON.parse(saved).workspaces.design.version, 27);
+  assert.equal(JSON.parse(saved).workspaces.design.version, 28);
   assert.equal(projectToJson(projectFromJson(saved, DESIGN)), saved);
 });
 
@@ -240,7 +240,7 @@ test("a file with sketches that breaks a rule is refused when it is opened, each
     [(d) => ((d.sketches[0].curves[0] as { id: unknown }).id = undefined), /^Error: Design sketch sketch-2: curve 1 has no id$/],
     [(d) => d.timeline.features.pop(), /^Error: Design sketch sketch-2 has no place in the timeline$/],
     [(d) => (d.sketches = []), /^Error: Design timeline item sketch-2 is a sketch with no content in the sketches list$/],
-    [(d) => (d.timeline.features[1].intent.parameters.plane = "AB"), /sketch-2 is on AB, not a plane this SpindleLabs knows \(XY, XZ, YZ or a face\)/],
+    [(d) => (d.timeline.features[1].intent.parameters.plane = "AB"), /sketch-2 is on AB, not a plane this SpindleLabs knows \(XY, XZ, YZ, a face or a construction plane\)/],
     [(d) => d.sketches[0].points.push({ id: "point-3", x: 1, y: 1 }), /^Error: Design id point-3 is used twice$/],
     [(d) => (d.sketches[0].curves[0].id = "feature-1"), /^Error: Design id feature-1 is used twice$/],
   ];

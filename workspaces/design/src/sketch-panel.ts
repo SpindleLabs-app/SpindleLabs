@@ -12,6 +12,8 @@ import { followUnit, sizeBox, type SizeBox } from "./properties.ts";
 
 export interface SketchPanelEvents {
   pickPlane(id: SketchPlane): void;
+  /** A construction plane's button pressed (59a3): its timeline item's id. */
+  pickConstruct(item: string): void;
   cancel(): void;
   /** The grid size typed, as millimetres (a bare number in the unit chosen in Settings); text that is no number as typed. */
   grid(typed: string): void;
@@ -53,8 +55,13 @@ export const TOOL_HELP: Record<ToolKind, string> = {
 };
 
 export interface SketchPanel {
-  /** The prompt: the offered planes as buttons too (the view's planes are the same choice), and Cancel. */
-  showPick(): void;
+  /**
+   * The prompt: the offered planes as buttons too (the view's planes are the
+   * same choice), and Cancel. `constructs` (59a3) are the construction planes
+   * offered, each a button after the origin's: on a phone one may be off
+   * screen, so the panel is the way to it that always works.
+   */
+  showPick(constructs?: readonly { item: string; label: string }[]): void;
   /** The sketch being edited, its grid as typed, whether points snap to it, the tool in use. */
   showEditing(name: string, grid: string, gridSnap: boolean, tool: ToolKind): void;
   /** The tool in use: its help shown. */
@@ -101,11 +108,12 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
     if (help) help.textContent = TOOL_HELP[kind];
   };
   return {
-    showPick() {
+    showPick(constructs = []) {
       const planes = el("div", { className: "sketch-planes" });
       planes.setAttribute("role", "group");
       planes.setAttribute("aria-label", "Planes");
       for (const p of ORIGIN_PLANES) planes.append(button(p.label, `sketch-plane-${p.id}`, () => on.pickPlane(p.id)));
+      for (const c of constructs) planes.append(button(c.label, `sketch-plane-construct-${c.item}`, () => on.pickConstruct(c.item)));
       // Why a face picked in the view can't be sketched on (26d: a curved one, Q5).
       const refused = el("p", { id: "sketch-pick-error", className: "bad" });
       refused.hidden = true;
