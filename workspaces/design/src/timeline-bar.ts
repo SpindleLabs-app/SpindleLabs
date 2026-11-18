@@ -10,6 +10,7 @@
 // (`barEdit`). Behaviour copied from the reference app's timeline.
 
 import type { Feature } from "@fission/core";
+import { CONSTRUCT_KINDS, isConstructKind } from "./construct-data.ts";
 import { buildingItems, duplicatedBody, greyedBy, greyedItems, isChamferItem, isCombineItem, isDuplicateItem, isMoveItem, isPiece, isSketchItem, type DesignDocument } from "./document.ts";
 import { canEditFeature } from "./feature-edit.ts";
 import { moveKindOf } from "./move.ts";
@@ -19,7 +20,7 @@ import { dragItem } from "./timeline-reorder.ts";
 import { hideCard, showCard } from "./timeline-card.ts";
 import type { Scene } from "./scene.ts";
 
-export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "scale" | "mirror" | "chamfer" | "feature";
+export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" | "move" | "combine" | "duplicate" | "scale" | "mirror" | "chamfer" | "plane" | "axis" | "point" | "feature";
 
 export interface TimelineBarItem {
   id: string;
@@ -47,10 +48,14 @@ export interface TimelineBarItem {
 
 const ICON_OF: Record<string, TimelineIcon> = { sketch: "sketch", extrude: "extrude", box: "box", cylinder: "cylinder", sphere: "sphere", move: "move", combine: "combine", duplicate: "duplicate", chamfer: "chamfer" };
 
+/** A construction's icon by what its kind makes (step 59a2). */
+const CONSTRUCT_ICON = { plane: "plane", axis: "axis", point: "point" } as const;
+
 /** An item's icon by its type; a Scale (a Move that opens as Scale) and a Mirror (a Duplicate across a plane) get their own (step 35e2). */
 function iconOf(f: Feature): TimelineIcon {
   if (isMoveItem(f) && moveKindOf(f) === "scale") return "scale";
   if (isDuplicateItem(f) && mirrorOf(f) !== undefined) return "mirror";
+  if (f.intent.type === "construct") return isConstructKind(f.intent.parameters.make) ? CONSTRUCT_ICON[CONSTRUCT_KINDS[f.intent.parameters.make].makes] : "feature";
   return Object.hasOwn(ICON_OF, f.intent.type) ? ICON_OF[f.intent.type] : "feature";
 }
 
@@ -390,6 +395,10 @@ const ICONS: Record<TimelineIcon, string> = {
   mirror: '<path d="M3 19l6-14v14zM21 19l-6-14v14zM12 2v20"/>',
   // A Chamfer (44a-app3): a block with its top right corner cut off flat, the cut's line run on past it.
   chamfer: '<path d="M4 20V4h10l6 6v10z"/><path d="M12 2l10 10"/>',
+  // Constructions (step 59a2): a plane as a slanted square, an axis a dashed line with an arrowhead, a point a dot with crosshairs.
+  plane: '<path d="M3 17 8 7h13l-5 10z"/>',
+  axis: '<path d="M4 20 18 6" stroke-dasharray="3 2.5"/><path d="M12 5h7v7"/>',
+  point: '<circle cx="12" cy="12" r="2.5"/><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/>',
   feature: '<circle cx="12" cy="12" r="7"/>',
 };
 
