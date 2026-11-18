@@ -16,6 +16,8 @@ SCRIPT = os.path.join(HERE, "install-browser.sh")
 
 # /etc/apt/apt-mirrors.txt on GitHub's ubuntu-24.04 image: the Azure mirror first.
 MIRRORS = "http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://security.ubuntu.com/ubuntu/\tpriority:3\n"
+# The same file on the image GitHub moved to around 2026-11-18: an EC2 regional mirror first.
+EC2_MIRRORS = MIRRORS.replace("azure.archive.ubuntu.com", "us-east-2.ec2.archive.ubuntu.com")
 # Its sources point at that list, so a sed over sources.list alone changes nothing.
 SOURCES = "Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble noble-updates noble-backports\nComponents: main universe restricted multiverse\n"
 # An older image (ubuntu-22.04) named the mirror here instead.
@@ -30,7 +32,7 @@ def fake(bin_dir, name, body):
 
 
 class InstallBrowser(unittest.TestCase):
-    def run_script(self, plan, env=None, browser="firefox"):
+    def run_script(self, plan, env=None, browser="firefox", mirrors=MIRRORS, old_sources=OLD_SOURCES_LIST):
         """Runs the script with `npx` following `plan` (one entry per call: an exit code, or "sleep N" which
         sleeps N seconds then exits 0 if not killed first). Returns (exit code, stderr, apt dir contents, npx calls)."""
         with tempfile.TemporaryDirectory() as d:
@@ -39,11 +41,11 @@ class InstallBrowser(unittest.TestCase):
             os.makedirs(os.path.join(apt, "apt.conf.d"))
             os.makedirs(os.path.join(apt, "sources.list.d"))
             with open(os.path.join(apt, "apt-mirrors.txt"), "w") as f:
-                f.write(MIRRORS)
+                f.write(mirrors)
             with open(os.path.join(apt, "sources.list.d", "ubuntu.sources"), "w") as f:
                 f.write(SOURCES)
             with open(os.path.join(apt, "sources.list"), "w") as f:
-                f.write(OLD_SOURCES_LIST)
+                f.write(old_sources)
             plan_file, log = os.path.join(d, "plan"), os.path.join(d, "npx.log")
             with open(plan_file, "w") as f:
                 f.write("\n".join(plan) + "\n")
@@ -55,14 +57,19 @@ class InstallBrowser(unittest.TestCase):
                 bins,
                 "npx",
                 f'echo "npx $*" >> "{log}"\n'
+                f'if [ -f "{apt}/apt.conf.d/81-cache" ]; then cat "{apt}/apt.conf.d/81-cache" >> "{log}"; fi\n'
                 f'step=$(head -n 1 "{plan_file}"); tail -n +2 "{plan_file}" > "{plan_file}.next"; mv "{plan_file}.next" "{plan_file}"\n'
                 'case "$step" in sleep\\ *) sleep "${step#sleep }"; exit 0;; "") exit 99;; *) exit "$step";; esac\n',
             )
+            self.apt_cache = os.path.join(d, "apt-cache")
+            self.cache_listing = None
             run_env = {**os.environ, "PATH": bins + os.pathsep + os.environ["PATH"], "APT_DIR": apt, "RETRY_SLEEP": "0", "MIRROR_PROBE": "true"}
-            run_env.update(env or {})
+            run_env.update({k: v.replace("{cache}", self.apt_cache) for k, v in (env or {}).items()})
             started = time.monotonic()
             p = subprocess.run([SCRIPT, browser], env=run_env, capture_output=True, text=True, timeout=120)
             self.elapsed = time.monotonic() - started
+            if os.path.isdir(self.apt_cache):
+                self.cache_listing = sorted(os.listdir(self.apt_cache))
             files = {}
             for root, _, names in os.walk(apt):
                 for n in names:
@@ -154,6 +161,49 @@ class InstallBrowser(unittest.TestCase):
         self.assertIn("out of time", err)
         self.assertEqual(len([c for c in calls if c.startswith("npx")]), 1)
         self.assertLess(self.elapsed, 20)
+
+    def test_after_a_failed_try_an_ec2_mirror_is_switched_to_archive_ubuntu_com(self):
+        # 2026-11-18, #823's phone job: the image's list now leads with us-east-2.ec2.archive.ubuntu.com, which took
+        # 5 to 60 s a package. The old switch only knew Azure's name, so tries 2 and 3 stayed on the slow mirror.
+        old_ec2 = "deb http://us-east-2.ec2.archive.ubuntu.com/ubuntu/ noble main\n"
+        code, err, files, calls = self.run_script(["1", "0", "0"], mirrors=EC2_MIRRORS, old_sources=old_ec2)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("ec2", files["apt-mirrors.txt"])
+        self.assertTrue(files["apt-mirrors.txt"].startswith("http://archive.ubuntu.com/ubuntu/\tpriority:1\n"), files["apt-mirrors.txt"])
+        self.assertIn("http://security.ubuntu.com/ubuntu/\tpriority:3\n", files["apt-mirrors.txt"], "security.ubuntu.com is not a regional mirror")
+        self.assertEqual(files["sources.list"], "deb http://archive.ubuntu.com/ubuntu/ noble main\n")
+
+    def test_try_3_moves_to_the_fallback_mirror_when_it_resolves(self):
+        # Tries 1 and 2 fail (the runner's mirror, then archive.ubuntu.com); try 3 runs on mirrors.edge.kernel.org.
+        old_ec2 = "deb http://us-east-2.ec2.archive.ubuntu.com/ubuntu/ noble main\n"
+        code, err, files, calls = self.run_script(["1", "1", "0", "0"], mirrors=EC2_MIRRORS, old_sources=old_ec2)
+        self.assertEqual(code, 0, err)
+        self.assertIn("try 3 uses mirrors.edge.kernel.org", err)
+        self.assertEqual(files["apt-mirrors.txt"], "http://mirrors.edge.kernel.org/ubuntu/\tpriority:1\n")
+        self.assertEqual(files["sources.list"], "deb http://mirrors.edge.kernel.org/ubuntu/ noble main\n")
+        self.assertEqual(len([c for c in calls if "install-deps" in c]), 3)
+
+    def test_try_3_stays_on_archive_ubuntu_com_when_the_fallback_does_not_resolve(self):
+        code, err, files, calls = self.run_script(["1", "1", "0", "0"], env={"MIRROR_PROBE": "probe", "PROBE_OK": "archive.ubuntu.com"})
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("try 3 uses", err)
+        self.assertTrue(files["apt-mirrors.txt"].startswith("http://archive.ubuntu.com/ubuntu/\tpriority:1\n"), files["apt-mirrors.txt"])
+
+    def test_with_apt_cache_set_apt_keeps_its_packages_there(self):
+        code, err, files, calls = self.run_script(["0", "0"], env={"APT_CACHE": "{cache}"})
+        self.assertEqual(code, 0, err)
+        # apt sees the setting while the packages install (and while the browser downloads, which ignores it) ...
+        setting = 'Dir::Cache::Archives "%s/";' % self.apt_cache
+        self.assertEqual(calls, ["npx playwright install-deps firefox", setting, "npx playwright install firefox", setting])
+        # ... and it is gone afterwards, so a later apt-get in the job doesn't write root-only files into the cache.
+        self.assertNotIn("apt.conf.d/81-cache", files)
+        self.assertEqual(self.cache_listing, ["partial"], "apt needs partial/ to download into")
+
+    def test_without_apt_cache_apt_keeps_its_own_folder(self):
+        code, err, files, calls = self.run_script(["0", "0"])
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("apt.conf.d/81-cache", files)
+        self.assertIsNone(self.cache_listing)
 
 
 if __name__ == "__main__":
