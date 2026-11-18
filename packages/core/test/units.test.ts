@@ -163,3 +163,14 @@ test("hand-worked: a decimal comma is a point, a comma that could separate thous
   assert.deepEqual(readSizeText("2.5 mm mm", "mm"), { why: "unreadable" });
   assert.match(commaWords(" 1,000 "), /^"1,000" could mean thousands or a decimal/);
 });
+
+test("summaryInUnit: a Chamfer's sizes in inches (bug hunt 2026-11-18 D-7: they stayed mm beside inch sizes)", async () => {
+  const { summaryInUnit } = await import("../src/model/units.ts");
+  // 2.54 mm = 0.1 in; 3 mm × 5.08 mm = 0.118 × 0.2 in; 2 mm at 30° = 0.0787 in at 30° (the angle left alone).
+  assert.equal(summaryInUnit("Chamfer 1 edge of Box 1, 2.54 mm", "in"), "Chamfer 1 edge of Box 1, 0.1 in");
+  assert.equal(summaryInUnit("Chamfer 2 edges of Box 1, 3 mm × 5.08 mm, flipped", "in"), "Chamfer 2 edges of Box 1, 0.118 in × 0.2 in, flipped");
+  assert.equal(summaryInUnit("Chamfer 1 edge of Plate 2, 2 mm at 30°", "in"), "Chamfer 1 edge of Plate 2, 0.0787 in at 30°");
+  // Millimetres as they were; a name holding "mm" words is not a size.
+  assert.equal(summaryInUnit("Chamfer 1 edge of Box 1, 2.54 mm", "mm"), "Chamfer 1 edge of Box 1, 2.54 mm");
+  assert.equal(summaryInUnit("Rename of 5 mm stuff", "in"), "Rename of 5 mm stuff");
+});

@@ -148,7 +148,7 @@ const convertRun = (run: string, unit: Unit): string => run.replace(new RegExp(N
 /**
  * An item's summary (the intent's words, always saved in millimetres: "Box: 40 × 30 × 20 mm", "Extrude Sketch 1 by 10 mm",
  * "Move Box 1 by (10, 0, 0) mm, turned 90° about Z") said in `unit` for the browser, the timeline and the Feature line
- * (U2c3). Only the places the summaries put a length are touched (a part's sizes at the start, ` by N mm`, ` by (a, b, c) mm`),
+ * (U2c3). Only the places the summaries put a length are touched (a part's sizes at the start, ` by N mm`, ` by (a, b, c) mm`, a Chamfer's size),
  * never a name that happens to hold a number and "mm"; the angle (°) is left alone. Millimetres give the text back as it was.
  */
 export function summaryInUnit(text: string, unit: Unit): string {
@@ -157,5 +157,8 @@ export function summaryInUnit(text: string, unit: Unit): string {
     .replace(new RegExp(String.raw`^(Box|Cylinder|Sphere): (${RUN}) mm`), (_, kind: string, run: string) => `${kind}: ${convertRun(run, unit)} in`)
     .replace(new RegExp(String.raw`^(Extrude: .*?) (${RUN}) mm, by (${NUM}) mm$`), (_, head: string, run: string, by: string) => `${head} ${convertRun(run, unit)} in, by ${inUnit(by, unit)} in`)
     .replace(new RegExp(String.raw` by \((${NUM}), (${NUM}), (${NUM})\) mm`), (_, x: string, y: string, z: string) => ` by (${inUnit(x, unit)}, ${inUnit(y, unit)}, ${inUnit(z, unit)}) in`)
-    .replace(new RegExp(String.raw`^(Extrude .*) by (${NUM}) mm(, flipped)?$`), (_, head: string, by: string, flip: string | undefined) => `${head} by ${inUnit(by, unit)} in${flip ?? ""}`);
+    .replace(new RegExp(String.raw`^(Extrude .*) by (${NUM}) mm(, flipped)?$`), (_, head: string, by: string, flip: string | undefined) => `${head} by ${inUnit(by, unit)} in${flip ?? ""}`)
+    // A Chamfer's size (Design chamfer.ts chamferSummary): ", 2 mm", ", 2 mm × 3 mm" or ", 2 mm at 45°", maybe ", flipped".
+    .replace(new RegExp(String.raw`^(Chamfer \d+ edges? of .*), (${NUM}) mm(?: × (${NUM}) mm)?( at [^,]*°)?(, flipped)?$`), (_, head: string, a: string, b: string | undefined, at: string | undefined, flip: string | undefined) =>
+      `${head}, ${inUnit(a, unit)} in${b === undefined ? "" : ` × ${inUnit(b, unit)} in`}${at ?? ""}${flip ?? ""}`);
 }
