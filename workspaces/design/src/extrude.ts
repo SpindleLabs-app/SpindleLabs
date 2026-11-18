@@ -52,6 +52,12 @@ export const DISTANCE_STEP = "Change extrude distance";
 
 const summary = (sketchLabel: string, distance: number, flip: boolean, f: Feature) => `Extrude ${sketchLabel}${profilesWords(f)} ${isThrough(f) ? "through all" : `by ${distance} mm`}${flip ? ", flipped" : ""}${isSymmetric(f) ? ", symmetric" : ""}${operationWords(f)}`;
 
+/** An extrude of a sketch's summary from its parameters, its sketch named as its provenance names it (rename, SL #819). */
+export const extrudeSummaryOf = (f: Feature): string => {
+  const sketch = f.intent.parameters.sketch as string;
+  return summary(f.provenance.from.find((p) => p.id === sketch)?.label ?? sketch, f.intent.parameters.distance as number, isFlipped(f), f);
+};
+
 /** After the first sketch's name in an extrude's summary, its other profiles (version 18): " and 2 more profiles"; nothing for one profile. */
 function profilesWords(f: Feature): string {
   const n = Array.isArray(f.intent.parameters.more) ? f.intent.parameters.more.length : 0;

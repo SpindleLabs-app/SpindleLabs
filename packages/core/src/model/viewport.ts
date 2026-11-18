@@ -319,6 +319,11 @@ export interface SharedViewport {
   bodyFraming(): Framing;
   /** Frames the current body; returns what it framed (null if none). */
   fit(): Framing | null;
+  /**
+   * Frames the current body from the direction the camera already looks from (only pan and zoom change), as the Fit
+   * button does; Design's own refit when a part outgrows the view uses it (SL #819 D-10). Left out, `fit` is used.
+   */
+  fitKeepAngle?(): Framing | null;
   /** A picture of the main view as it is on screen, without the view cube, as a PNG (File > Save picture); null when the browser can't make one. */
   picture?(): Promise<Blob | null>;
   /** Turns the camera to a standard view framing the current body; returns what it framed (null if none). */

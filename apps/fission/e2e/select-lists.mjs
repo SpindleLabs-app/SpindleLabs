@@ -6,7 +6,7 @@
 // was dark). The rule the app keeps (styles/dark-select.css): every select
 // asks for a dark list (color-scheme: dark) and gives its options a solid
 // dark background with light words. So here, with the box built, the
-// Slice dialog, its print preview, the Properties panel and the AI panel
+// Slice page (moved from the dialog, SP5b2b), its print preview, the Properties panel and the AI panel
 // open, every select on the page is read: its color-scheme has dark, and
 // every option's background is opaque, dark and at least 4.5:1 against
 // its words (WCAG AA). A planted list with light words and no background
@@ -16,7 +16,8 @@
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
-import { chooseFile, startWithBox } from "./start.mjs";
+import { openSlice } from "./slice-page-lib.mjs";
+import { startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4199, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4199/";
@@ -102,16 +103,16 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
       await page.goto(url);
       await startWithBox(page, tap);
-      await chooseFile(page, "file-slice-print", tap);
-      await page.waitForSelector("#slice-print-dialog[open]");
-      const inDialog = await readSelects(page);
-      await press("#slice-print-preview");
+      const inDesign = await readSelects(page); // Properties' Shape is only in the page while Design is shown
+      await openSlice(page, tap);
+      const onPage = await readSelects(page);
+      await press("#slice-page-preview");
       await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
       if (shots) await page.screenshot({ path: `${shots}/select-lists-${width}-preview.png` });
-      const all = new Map([...inDialog, ...(await readSelects(page))].map((s) => [s.id, s]));
+      const all = new Map([...inDesign, ...onPage, ...(await readSelects(page))].map((s) => [s.id, s]));
       // The AI panel's selects are in the page from the start (its settings), as is Properties' Shape.
       for (const id of ["print-preview-speed", "shape", "ai-provider", "ai-vendor"]) assert.ok(all.has(id), `#${id} found: ${[...all.keys()]}`);
-      assert.ok([...all.keys()].some((id) => id.startsWith("slice-print")), `the Slice dialog's selects found: ${[...all.keys()]}`);
+      assert.ok([...all.keys()].some((id) => id.startsWith("slice-page")), `the Slice page's selects found: ${[...all.keys()]}`);
       for (const s of all.values()) if (s.options.length) assertReadable(s);
       console.log(`  ${all.size} selects read: ${[...all.keys()].join(", ")}`);
     } finally {

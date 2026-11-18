@@ -11,8 +11,8 @@
 //   the view shows the part as it is now, not the colour map. The box made a sphere: both faces
 //   lost, said in words; Undo brings them back.
 // - At 375 px with taps: picking puts the Properties sheet away so the body can be tapped; Run shows the result; nothing
-//   runs off the side.
-// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png.
+//   runs off the side. The picking hint over the view (T5c5) shows inside the window, uncovered, at both widths.
+// Screenshots: E2E_SHOTS=<dir> saves testlab-1280.png, testlab-taller-1280.png, testlab-lost-1280.png, testlab-375.png, and the picking hint over the view as testlab-hint-1280.png and testlab-hint-375.png.
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
@@ -91,14 +91,40 @@ const press = async (page, sel, tap) => {
   else await page.click(sel);
 };
 
+/**
+ * T5c5: the picking hint over the view says `words`, wholly inside the window and on top at its middle (on a phone the
+ * Properties sheet is put away while picking, so this is the only place the words can be seen).
+ */
+async function hintShows(page, words, shot) {
+  await until(page, (w) => { const h = document.querySelector("#testlab-view-hint"); return h !== null && !h.hidden && h.textContent === w; }, words, `the hint "${words}" over the view`);
+  const box = await page.evaluate(() => {
+    const h = document.querySelector("#testlab-view-hint");
+    const r = h.getBoundingClientRect();
+    // The hint takes no presses (pointer-events: none), so elementFromPoint skips it: let it take them while asked.
+    h.style.pointerEvents = "auto";
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    h.style.pointerEvents = "";
+    // The overlays' legend ("Held here") is never under it.
+    const legend = document.querySelector(".overlay-legend:not([hidden])")?.getBoundingClientRect();
+    const overLegend = legend !== undefined && legend.height > 0 && r.left < legend.right && legend.left < r.right && r.top < legend.bottom && legend.top < r.bottom;
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: innerWidth, height: innerHeight, onTop: top === h || h.contains(top), overLegend };
+  });
+  assert.ok(!box.overLegend, `the hint lies over the overlays' legend: ${JSON.stringify(box)}`);
+  assert.ok(box.left >= 0 && box.right <= box.width && box.top >= 0 && box.bottom <= box.height, `the hint is inside the window: ${JSON.stringify(box)}`);
+  assert.ok(box.onTop, "nothing covers the hint");
+  if (shots && shot) await page.screenshot({ path: `${shots}/${shot}-${box.width}.png` });
+}
+
 /** Holds the front face, adds a 5 kg load on the top, all by clicks or taps on the body. */
 async function setUpStudy(page, tap) {
   await until(page, () => document.querySelector("section[aria-label='TestLab study'] h2")?.textContent === "Study 1: static stress", null, "Study 1 set up");
   await press(page, "[data-testlab=pick-held]", tap);
+  await hintShows(page, "Tap the faces to hold. Tap a held face to let it go.", "testlab-hint");
   await at(page, [20, 0, 10], tap); // the front face's middle
   await until(page, () => document.querySelector(".testlab-page-held li")?.textContent?.startsWith("Front face"), null, "the front held");
   await press(page, "[data-testlab=add-load]", tap);
   if (tap) await page.waitForTimeout(300); // the sheet sliding away
+  await hintShows(page, "Tap the faces Load 1 pushes. Tap a pushed face to let it go.");
   await at(page, [20, 15, 20], tap); // the top's middle
   await until(page, () => document.querySelector(".testlab-page-load li")?.textContent?.startsWith("Top face"), null, "the top pushed");
   await openPanel(page, "properties", tap);
@@ -132,7 +158,7 @@ async function shownResult(page) {
   assert.ok(factor > 20 && factor < 1000, `safety factor ${factor} (about 100 by hand)`);
   const facts = await page.locator(".testlab-results-facts dd").allTextContents();
   assert.match(facts[0], /^\d[\d.,]* mm$/);
-  assert.match(facts[1], /^\d[\d.,]* MPa \(PLA/);
+  assert.match(facts[1], /^\d[\d.,]* MPa, the highest found anywhere in the part \(PLA/);
   await until(page, () => Number(document.querySelector("[data-colour-map]")?.getAttribute("data-colour-map") ?? 0) > 0, null, "the colour map drawn");
   assert.equal(await page.locator("[data-testlab=cancel]").count(), 0);
 }

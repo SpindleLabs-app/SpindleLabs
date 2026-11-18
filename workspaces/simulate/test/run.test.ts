@@ -124,14 +124,23 @@ function sound(): StressTestResult {
 }
 
 test("an answer is checked before it is shown: each check broken alone, and the limits at 0.9× and 1.1×", () => {
-  assert.equal(answerProblem(sound()), null);
-  const broken = (change: Partial<StressTestResult>) => answerProblem({ ...sound(), ...change });
+  // The sound answer's strength: safety factor 25 against its biggest stress 10 MPa is 25 × 10 = 250 MPa.
+  assert.equal(answerProblem(sound(), 250), null);
+  const broken = (change: Partial<StressTestResult>) => answerProblem({ ...sound(), ...change }, 250);
   assert.match(broken({ vonMises: [10, 10] })!, /its lists don't fit together/);
   assert.match(broken({ triangles: [0, 1, 3] })!, /its surface doesn't fit together/);
   assert.match(broken({ displacement: [0, 0, 0, NaN, 0, 0, 0, 0, 0] })!, /a number in it isn't one/);
   assert.match(broken({ safetyFactor: -1 })!, /its safety factor isn't a number above 0/);
   assert.match(broken({ vonMises: [10, 11, 10] })!, /a point bends or is stressed more than its largest/);
   assert.match(broken({ applied: [0, 0, 0], reaction: [0, 0, 0] })!, /don't balance/);
+  // The safety factor must be measured against the biggest stress shown (the safe side): 250 / 10 = 25. One
+  // measured against a lower stress inside the part (C-1: about 14% under the surface on bending, 250 / 8.6 = 29.1)
+  // is refused, as is a factor with nothing stressed or none with something stressed.
+  assert.match(broken({ safetyFactor: 250 / 8.6 })!, /its safety factor isn't measured against its biggest stress/);
+  assert.match(broken({ safetyFactor: 25 * (1 + 1e-9) })!, /its safety factor isn't measured against its biggest stress/);
+  assert.match(broken({ safetyFactor: null })!, /its safety factor isn't measured against its biggest stress/);
+  assert.match(broken({ maxVonMises: 0, vonMises: [0, 0, 0] })!, /its safety factor isn't measured against its biggest stress/);
+  assert.equal(broken({ maxVonMises: 0, vonMises: [0, 0, 0], safetyFactor: null }), null);
   // Residual: 0.9 × 1e-6 shown, 1.1 × 1e-6 refused.
   assert.equal(broken({ relativeResidual: 0.9 * MAX_RESIDUAL }), null);
   assert.match(broken({ relativeResidual: 1.1 * MAX_RESIDUAL })!, /the solver didn't settle on an answer/);

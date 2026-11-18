@@ -231,13 +231,13 @@ test("insertShell's refusals and its undo step's name", () => {
   assert.throws(() => insertShell(doc, "body:feature-2", [], 1), /body:feature-2 is not a body in the design/);
 });
 
-test("Edit feature on a Shell says plainly it can't be edited yet; the AI's view and the change notes name it", async () => {
+test("Edit feature on a Shell opens its panel (35h2c-app2: Edit is on); the AI's view and the change notes name it", async () => {
   const { editOff } = await import("../src/timeline-bar.ts");
   const { itemCalled } = await import("../src/graph.ts");
   const { bodiesUsed, bodiesChanged } = await import("../src/body-uses.ts");
   const { doc, id } = insertShell(cube().doc, "body:feature-1", [], 1);
   const f = doc.timeline.features.find((x) => x.id === id)!;
-  assert.equal(editOff(f), "Shell 1 can't be edited yet: its panel comes with the Shell tool");
+  assert.equal(editOff(f), null);
   assert.equal(itemCalled(f), "Shell 1");
   assert.deepEqual(bodiesUsed(f), ["body:feature-1"]);
   assert.deepEqual(bodiesChanged(f), ["body:feature-1"]);
