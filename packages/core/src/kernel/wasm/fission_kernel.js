@@ -251,6 +251,14 @@ export function vye52n(p0) {
     return takeFromExternrefTable0(ret[0]);
 }
 
+export function w3hx8e(p0, p1, p2) {
+    const ret = wasm.w3hx8e(p0, p1, isLikeNone(p2) ? 0 : addToExternrefTable0(p2));
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function xqg0dt(p0, p1) {
     const ret = wasm.xqg0dt(p0, p1);
     if (ret[2]) {
@@ -362,6 +370,10 @@ function __wbg_get_imports() {
         },
         __wbg_apply_a910804df6e1e433: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.apply(arg1, arg2);
+            return ret;
+        }, arguments); },
+        __wbg_call_187d372bd5fdd4aa: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = arg0.call(arg1, arg2);
             return ret;
         }, arguments); },
         __wbg_call_6137034ef55c9d0f: function() { return handleError(function (arg0, arg1) {
