@@ -67,6 +67,28 @@ const lineNear = (img, x, y) => {
   return false;
 };
 
+/**
+ * The Horizontal and Vertical marks the Line tool gives the lines it draws exactly level or upright (SL #630, as the
+ * Rectangle tool's sides get), on screen: a CONSTRAINT_MARK_PIXELS (10 px) bar beside each such line's middle, half
+ * that long, above a level line (sketch +y is up on screen) and right of an upright one (sketch-tool.ts
+ * `sketchDrawings`, constraint-tool.ts `constraintMarks`). As canvas points every px along the bar.
+ */
+function marks(box, shift = 0) {
+  const toCanvas = ([x, y]) => {
+    const p = screenPoint(box, [x, y, 0], TOP);
+    return [p.x - box.x, p.y - box.y];
+  };
+  const [a, c] = RECT;
+  const rect = [a, [c[0], a[1]], c, [a[0], c[1]]];
+  const lines = [...rect.map((p, i) => [p, rect[(i + 1) % 4]]), [CHAIN[0], CHAIN[1]], [CHAIN[1], CHAIN[2]]];
+  return lines.flatMap(([p, q]) => {
+    const [mx, my] = toCanvas([(p[0] + q[0]) / 2 + shift, (p[1] + q[1]) / 2]);
+    if (p[1] === q[1]) return [{ name: `the Horizontal mark of ${p} → ${q}`, at: Array.from({ length: 11 }, (_, i) => [mx - 5 + i, my - 10]) }];
+    if (p[0] === q[0]) return [{ name: `the Vertical mark of ${p} → ${q}`, at: Array.from({ length: 11 }, (_, i) => [mx + 10, my - 5 + i]) }];
+    return [];
+  });
+}
+
 /** The probes' failures for the drawing as `curves(shift)` places it: lines missing where they should be, or found where none should be. */
 function probe(img, box, shift = 0) {
   const toCanvas = ([x, y]) => {
@@ -74,8 +96,9 @@ function probe(img, box, shift = 0) {
     return [p.x - box.x, p.y - box.y];
   };
   const all = curves(shift);
-  // Every curve's points on screen, finely, to keep the "none here" probes away from all of them.
-  const dense = all.flatMap((c) => Array.from({ length: 200 }, (_, i) => toCanvas(c.at(i / 199))));
+  // Every curve's points on screen, finely, and the Horizontal and Vertical marks beside them, to keep the "none here"
+  // probes away from all of them (the marks are checked on their own, below).
+  const dense = [...all.flatMap((c) => Array.from({ length: 200 }, (_, i) => toCanvas(c.at(i / 199)))), ...marks(box, shift).flatMap((m) => m.at)];
   const misses = [];
   for (const c of all)
     for (const t of c.ts) {
@@ -157,8 +180,9 @@ try {
   // Each tool's clicks are waited for before the next key: a key pressed while a click is still being
   // snapped would take that click (see the TC2 finding in docs/progress/cad.md).
   const segments = (n) => page.waitForFunction((k) => document.querySelector("#viewport").dataset.sketchLines === k, String(n), { timeout: 5000 });
-  // The rectangle drawn as four lines: the Rectangle tool adds its Horizontal and Vertical marks beside the sides (the solver
-  // bug hunt, 2026-11-06), and these probes and images are of the curves alone. (sketch-tool.mjs checks the Rectangle tool.)
+  // The rectangle drawn as four lines. Since SL #630 the Line tool, like the Rectangle tool, keeps a line drawn exactly
+  // level or upright so, and draws its Horizontal or Vertical mark beside it: the probes keep away from the marks and
+  // check them on their own; the golden image has them. (sketch-tool.mjs checks the Rectangle tool.)
   await page.keyboard.press("l");
   const [[x0, y0], [x1, y1]] = RECT;
   for (const p of [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]) await clickPlane(page, p);
@@ -183,6 +207,15 @@ try {
   await check(`${browserName}: every line and the circle are drawn where the maths puts them, and nothing beside them`, () => {
     const misses = probe(editing, box);
     assert.deepEqual(misses, [], `${misses.length} probe(s) failed:\n${misses.slice(0, 10).join("\n")}`);
+  });
+  await check(`${browserName}: each line drawn level or upright has its Horizontal or Vertical mark beside its middle (SL #630)`, () => {
+    // Five marks: the rectangle's four sides and the chain's level first line; its slanted second line has none.
+    const all = marks(box);
+    assert.equal(all.length, 5);
+    const missing = all.filter((m) => !lineNear(editing, ...m.at[5])).map((m) => m.name);
+    assert.deepEqual(missing, [], `no mark drawn where the maths puts it: ${missing.join("; ")}`);
+    // And none 4 mm off, where no line, mark or circle is (it can fail).
+    assert.equal(marks(box, 4).filter((m) => lineNear(editing, ...m.at[5])).length < 5, true, "the mark check finds marks everywhere");
   });
   await check(`${browserName}: the probes catch the same drawing moved 1 mm (they can fail)`, () => {
     const misses = probe(editing, box, 1);

@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spindlelabs.app/open-format/0.1/design-17.schema.json",
+  "title": "SpindleLabs project JSON (outer format 2) with Design data version 17",
+  "description": "The history part of a package, and the whole of a plain .spindle file, when its Design data is version 17 (docs/open-format/spec.md, section 'The history part'). Drawn from the app's reader (workspaces/design/src/document.ts readDesignDocument, packages/core/src/model/project.ts readProject). Lengths are mm, angles degrees.",
+  "$comment": "Rules this schema cannot express, all refused by the app's reader: duplicate keys; ids unique across profiles, timeline items, sketch points, curves, constraints and projections (a sketch shares its id with its timeline item); nextId above the number in every id (kept shapes and the items Moves, Combines and operation extrudes depend on included); every point or curve a curve, constraint, pin, projection or region names exists in the same sketch; each sketch has exactly one sketch item and the other way round; dependsOn lists exactly the items the parameters name, in order (see the spec); every item depends only on items before it; a diameter's circle has radius = value / 2 exactly, one per circle; a constraint naming a pinned or projected point also names one of the sketch's own points, and a Fix never names such a point; body ids name a body made before the item; bodies numbers unique and below nextBody; the content limits (5,000 items, 5,000 profiles, 20,000 points and curves in one sketch, 500,000 in all, 8,000 constraints in one sketch, 500,000 piece face names in all); the whole file at most 64 MiB and nested at most 256 deep; frames that can be squared up (a normal that is not zero, an xAxis not along it).",
+  "type": "object",
+  "required": ["formatVersion", "name", "units", "materials", "links", "workspaces"],
+  "properties": {
+    "formatVersion": { "const": 2 },
+    "name": { "type": "string" },
+    "units": {
+      "type": "object",
+      "required": ["length"],
+      "properties": { "length": { "enum": ["mm", "cm", "m", "in"] } },
+      "$comment": "Stored and checked but not read by the app today: every stored number is mm whatever this says, and the display unit is a browser setting."
+    },
+    "materials": { "type": "array", "items": { "type": "object" }, "$comment": "Draft: no workspace makes one yet. The reader checks only that each entry is an object." },
+    "links": { "type": "array", "items": { "type": "object" }, "$comment": "Live links and frozen copies between workspaces. The data shape is real but no workspace makes one yet; the reader checks only that each entry is an object." },
+    "workspaces": {
+      "type": "object",
+      "properties": { "design": { "$ref": "#/$defs/design" } },
+      "additionalProperties": { "$comment": "Another workspace's data, with its own version inside. A reader that does not know the workspace keeps it byte for byte." }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z]+(-[0-9]+)?$", "$comment": "A lower-case word and the counter's number (sketch-2, line-4). The word alone appears only in data migrated from Design version 1." },
+    "bodyId": { "type": "string", "pattern": "^body:[^:/]+(/piece:[1-9][0-9]*)?$", "$comment": "body:<item that first made it>, or body:<item that split it>/piece:<k>." },
+    "faceName": { "type": "string", "pattern": "^face:" },
+    "mm": { "type": "number" },
+    "vec3": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }, { "type": "number" }], "minItems": 3, "maxItems": 3 },
+    "frame": {
+      "type": "object",
+      "required": ["origin", "xAxis", "normal"],
+      "properties": { "origin": { "$ref": "#/$defs/vec3" }, "xAxis": { "$ref": "#/$defs/vec3" }, "normal": { "$ref": "#/$defs/vec3" } },
+      "$comment": "World mm and unit vectors. The reader does not refuse other keys here."
+    },
+    "side": { "enum": [1, -1] },
+    "origin": {
+      "type": "object",
+      "required": ["workspace", "id", "label"],
+      "properties": { "workspace": { "type": "string" }, "id": { "type": "string" }, "label": { "type": "string" } }
+    },
+    "design": {
+      "type": "object",
+      "required": ["version", "nextId", "profiles", "sketches", "timeline"],
+      "properties": {
+        "version": { "const": 17 },
+        "nextId": { "type": "integer", "minimum": 1, "maximum": 4503599627370496 },
+        "profiles": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/profile" } },
+        "sketches": { "type": "array", "items": { "$ref": "#/$defs/sketch" } },
+        "timeline": {
+          "type": "object",
+          "required": ["features"],
+          "properties": {
+            "features": { "type": "array", "maxItems": 5000, "items": { "$ref": "#/$defs/item" } },
+            "marker": { "type": "string", "$comment": "\"start\" or the id of an item in the timeline. Absent: everything is built." }
+          }
+        },
+        "kept": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/kept" },
+          "$comment": "By the id of an extrude of a sketch. Left out when empty (the reader does not refuse an empty object)."
+        },
+        "bodies": { "type": "array", "items": { "$ref": "#/$defs/bodyRecord" } },
+        "nextBody": { "type": "integer", "minimum": 1 },
+        "hidden": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              { "$ref": "#/$defs/bodyId" },
+              { "$ref": "#/$defs/id", "$comment": "A sketch item's id." },
+              { "enum": ["origin-x", "origin-y", "origin-z", "folder-bodies", "folder-sketches", "folder-origin"] }
+            ]
+          },
+          "$comment": "View state: what the eyes hide. A reader that only rebuilds geometry may ignore it."
+        },
+        "shownPlanes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["origin-xy", "origin-xz", "origin-yz"] },
+          "$comment": "View state: the origin planes shown. Written in this order; any order opens."
+        }
+      },
+      "$comment": "The reader does not refuse unknown top-level keys in Design data today; a writer MUST NOT add any (they would be lost on the app's next save)."
+    },
+    "profile": {
+      "type": "object",
+      "required": ["id", "kind", "width", "depth", "plane"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["l-bracket", "plate", "slot", "star"] },
+        "width": { "$ref": "#/$defs/mm" },
+        "depth": { "$ref": "#/$defs/mm" },
+        "plane": { "$ref": "#/$defs/frame" }
+      }
+    },
+    "point": {
+      "type": "object",
+      "required": ["id", "x", "y"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "x": { "$ref": "#/$defs/mm" }, "y": { "$ref": "#/$defs/mm" } },
+      "$comment": "Sketch mm, in the sketch plane's own 2D frame."
+    },
+    "construction": { "const": true, "$comment": "Only ever true; an ordinary curve leaves the key out." },
+    "fit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["role", "kind"],
+          "properties": { "role": { "const": "hole" }, "kind": { "enum": ["bolt-normal", "bolt-close", "screw-thread"] } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["role", "kind", "partner"],
+          "properties": { "role": { "enum": ["hole", "peg"] }, "kind": { "enum": ["press", "slide", "loose"] }, "partner": { "enum": ["bought", "printed"] } },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "curve": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "kind": { "enum": ["line", "circle", "arc"] } },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "line" } } },
+          "then": {
+            "required": ["start", "end"],
+            "properties": { "id": true, "kind": true, "start": { "$ref": "#/$defs/id" }, "end": { "$ref": "#/$defs/id" }, "construction": { "$ref": "#/$defs/construction" } },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "circle" } } },
+          "then": {
+            "required": ["centre", "radius"],
+            "properties": {
+              "id": true, "kind": true,
+              "centre": { "$ref": "#/$defs/id" },
+              "radius": { "type": "number", "exclusiveMinimum": 0 },
+              "construction": { "$ref": "#/$defs/construction" },
+              "fit": { "$ref": "#/$defs/fit" }
+            },
+            "additionalProperties": false,
+            "not": { "required": ["construction", "fit"] }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "arc" } } },
+          "then": {
+            "required": ["start", "end", "centre"],
+            "properties": { "id": true, "kind": true, "start": { "$ref": "#/$defs/id" }, "end": { "$ref": "#/$defs/id" }, "centre": { "$ref": "#/$defs/id" }, "construction": { "$ref": "#/$defs/construction" } },
+            "additionalProperties": false
+          }
+        }
+      ],
+      "$comment": "additionalProperties false is stricter than the app's reader, which ignores unknown keys on a curve except fit and construction; writers MUST NOT add others."
+    },
+    "constraint": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "kind": { "enum": ["horizontal", "vertical", "coincident", "fix", "distance", "diameter"] } },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["horizontal", "vertical", "coincident"] } } },
+          "then": { "required": ["a", "b"], "properties": { "a": { "$ref": "#/$defs/id" }, "b": { "$ref": "#/$defs/id" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "fix" } } },
+          "then": { "required": ["point"], "properties": { "point": { "$ref": "#/$defs/id" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "distance" } } },
+          "then": { "required": ["a", "b", "value"], "properties": { "a": { "$ref": "#/$defs/id" }, "b": { "$ref": "#/$defs/id" }, "value": { "$ref": "#/$defs/dimension" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "diameter" } } },
+          "then": { "required": ["circle", "value"], "properties": { "circle": { "$ref": "#/$defs/id" }, "value": { "$ref": "#/$defs/dimension" } } }
+        }
+      ],
+      "$comment": "a and b are two different points of the same sketch. Unknown keys are not refused by the app's reader today."
+    },
+    "dimension": { "type": "number", "minimum": 0.001, "maximum": 200000000 },
+    "pin": {
+      "type": "object",
+      "required": ["point", "kind", "name"],
+      "properties": {
+        "point": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["endpoint", "midpoint", "centre"] },
+        "name": { "type": "string", "minLength": 1, "$comment": "endpoint: a vertex name (edge names joined by &). midpoint and centre: one edge name, no &. Either may be a design: name." },
+        "feature": { "$ref": "#/$defs/id" }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "required": ["id", "feature", "edge", "made"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^projection-[0-9]+$" },
+        "feature": { "$ref": "#/$defs/id" },
+        "edge": { "type": "string", "minLength": 1, "pattern": "^(design:[^/]*|[^/]+)$", "$comment": "The edge's name after edge:<feature>/, or a design: name (escaped, so it holds no /)." },
+        "made": { "$ref": "#/$defs/id", "$comment": "One of the sketch's curves, or one of its points for an edge seen end on." }
+      }
+    },
+    "sketchFace": {
+      "type": "object",
+      "required": ["frame", "side"],
+      "properties": { "frame": { "$ref": "#/$defs/frame" }, "side": { "$ref": "#/$defs/side" }, "held": { "$ref": "#/$defs/frame" }, "body": { "$ref": "#/$defs/frame" } }
+    },
+    "sketch": {
+      "type": "object",
+      "required": ["id", "points", "curves", "constraints"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "points": { "type": "array", "items": { "$ref": "#/$defs/point" } },
+        "curves": { "type": "array", "items": { "$ref": "#/$defs/curve" } },
+        "constraints": { "type": "array", "maxItems": 8000, "items": { "$ref": "#/$defs/constraint" } },
+        "face": { "$ref": "#/$defs/sketchFace" },
+        "pins": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/pin" } },
+        "projected": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/projection" } }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "required": ["plane", "side"],
+      "properties": { "plane": { "$ref": "#/$defs/frame" }, "side": { "$ref": "#/$defs/side" }, "body": { "$ref": "#/$defs/frame" } }
+    },
+    "kept": {
+      "type": "object",
+      "required": ["points", "curves"],
+      "properties": {
+        "points": { "type": "array", "items": { "$ref": "#/$defs/point" } },
+        "curves": { "type": "array", "items": { "$ref": "#/$defs/curve" } },
+        "placement": { "$ref": "#/$defs/placement" }
+      }
+    },
+    "bodyRecord": {
+      "type": "object",
+      "required": ["id", "number"],
+      "properties": {
+        "id": { "$ref": "#/$defs/bodyId" },
+        "number": { "type": "integer", "minimum": 1 },
+        "faces": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/faceName" }, "$comment": "Only on a piece or an Extrude Join's own body. Sorted when written." }
+      }
+    },
+    "region": {
+      "type": "object",
+      "required": ["outer", "centroid"],
+      "properties": {
+        "outer": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20000,
+          "items": {
+            "type": "object",
+            "required": ["curve", "reversed"],
+            "properties": { "curve": { "$ref": "#/$defs/id" }, "reversed": { "type": "boolean" } },
+            "additionalProperties": false
+          }
+        },
+        "centroid": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }], "minItems": 2, "maxItems": 2 }
+      },
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "required": ["id", "intent", "provenance", "dependsOn", "suppressed"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "intent": {
+          "type": "object",
+          "required": ["type", "parameters", "summary"],
+          "properties": {
+            "type": { "enum": ["box", "cylinder", "sphere", "extrude", "sketch", "move", "duplicate", "combine"] },
+            "parameters": { "type": "object" },
+            "summary": { "type": "string", "$comment": "Text for people, lengths always in mm. Never read to build anything." },
+            "purpose": { "type": "string" }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["self", "from"],
+          "properties": { "self": { "$ref": "#/$defs/origin" }, "from": { "type": "array", "items": { "$ref": "#/$defs/origin" } } },
+          "$comment": "self.label is the item's name as people read it (Box 1, Extrude 2): unique ignoring case, at most 40 characters."
+        },
+        "dependsOn": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "suppressed": { "type": "boolean" }
+      },
+      "allOf": [
+        { "if": { "$ref": "#/$defs/isType/box" }, "then": { "properties": { "intent": { "properties": { "parameters": { "$ref": "#/$defs/params/box" } } } } } },
+        { "if": { "$ref": "#/$defs/isType/cylinder" }, "then": { "properties": { "intent": { "properties": { "parameters": { "$ref": "#/$defs/params/cylinder" } } } } } },
+        { "if": { "$ref": "#/$defs/isType/sphere" }, "then": { "properties": { "intent": { "properties": { "parameters": { "$ref": "#/$defs/params/sphere" } } } } } },
+        { "if": { "$ref": "#/$defs/isType/extrude" }, "then": { "properties": { "intent": { "properties": { "parameters": { "oneOf": [{ "$ref": "#/$defs/params/profileExtrude" }, { "$ref": "#/$defs/params/sketchExtrude" }] } } } } } },
+        { "if": { "$ref": "#/$defs/isType/sketch" }, "then": { "properties": { "intent": { "properties": { "parameters": { "$ref": "#/$defs/params/sketch" } } } } } },
+        { "if": { "$ref": "#/$defs/isType/move" }, "then": { "properties": { "intent": { "properties": { "parameters": { "$ref": "#/$defs/params/move" } } } } } },
+        { "if": { "$ref": "#/$defs/isType/duplicate" }, "then": { "properties": { "intent": { "properties": { "parameters": { "$ref": "#/$defs/params/duplicate" } } } } } },
+        { "if": { "$ref": "#/$defs/isType/combine" }, "then": { "properties": { "intent": { "properties": { "parameters": { "$ref": "#/$defs/params/combine" } } } } } }
+      ]
+    },
+    "isType": {
+      "box": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "box" } } } } },
+      "cylinder": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "cylinder" } } } } },
+      "sphere": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "sphere" } } } } },
+      "extrude": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "extrude" } } } } },
+      "sketch": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "sketch" } } } } },
+      "move": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "move" } } } } },
+      "duplicate": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "duplicate" } } } } },
+      "combine": { "required": ["intent"], "properties": { "intent": { "required": ["type"], "properties": { "type": { "const": "combine" } } } } }
+    },
+    "params": {
+      "box": {
+        "type": "object",
+        "required": ["width", "depth", "height"],
+        "properties": { "width": { "$ref": "#/$defs/mm" }, "depth": { "$ref": "#/$defs/mm" }, "height": { "$ref": "#/$defs/mm" } },
+        "additionalProperties": false,
+        "$comment": "The reader checks these are numbers; the size limits (1 µm to 1 km) are held when it builds. additionalProperties false is stricter than the reader."
+      },
+      "cylinder": {
+        "type": "object",
+        "required": ["diameter", "height"],
+        "properties": { "diameter": { "$ref": "#/$defs/mm" }, "height": { "$ref": "#/$defs/mm" } },
+        "additionalProperties": false
+      },
+      "sphere": {
+        "type": "object",
+        "required": ["diameter"],
+        "properties": { "diameter": { "$ref": "#/$defs/mm" }, "centreZ": { "$ref": "#/$defs/mm" } },
+        "additionalProperties": false
+      },
+      "profileExtrude": {
+        "type": "object",
+        "required": ["profile", "distance"],
+        "properties": { "profile": { "$ref": "#/$defs/id" }, "distance": { "$ref": "#/$defs/mm" } },
+        "additionalProperties": false
+      },
+      "sketchExtrude": {
+        "type": "object",
+        "required": ["sketch", "distance"],
+        "properties": {
+          "sketch": { "$ref": "#/$defs/id" },
+          "distance": { "$ref": "#/$defs/mm" },
+          "flip": { "const": true },
+          "region": { "$ref": "#/$defs/region" },
+          "operation": { "enum": ["join", "cut", "intersect"] },
+          "bodies": { "type": "array", "minItems": 1, "maxItems": 5000, "uniqueItems": true, "items": { "$ref": "#/$defs/bodyId" } }
+        },
+        "dependentRequired": { "operation": ["bodies"], "bodies": ["operation"] },
+        "additionalProperties": false,
+        "$comment": "Design data version 18 adds more: [{ sketch, region? }] (design-18.schema.json)."
+      },
+      "sketch": {
+        "type": "object",
+        "required": ["plane"],
+        "properties": {
+          "plane": { "anyOf": [{ "enum": ["XY", "XZ", "YZ"] }, { "$ref": "#/$defs/faceName" }] }
+        },
+        "additionalProperties": false
+      },
+      "move": {
+        "type": "object",
+        "required": ["x", "y", "z", "turnX", "turnY", "turnZ", "pivotX", "pivotY", "pivotZ", "bodies"],
+        "properties": {
+          "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" },
+          "turnX": { "type": "number" }, "turnY": { "type": "number" }, "turnZ": { "type": "number" },
+          "pivotX": { "type": "number" }, "pivotY": { "type": "number" }, "pivotZ": { "type": "number" },
+          "scale": { "type": "number", "exclusiveMinimum": 0, "not": { "const": 1 } },
+          "bodies": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/bodyId" } }
+        },
+        "additionalProperties": false
+      },
+      "duplicate": {
+        "type": "object",
+        "required": ["body"],
+        "properties": { "body": { "$ref": "#/$defs/bodyId" }, "mirror": { "enum": ["XY", "XZ", "YZ"] } },
+        "additionalProperties": false
+      },
+      "combine": {
+        "type": "object",
+        "required": ["target", "tools", "operation", "keepTools"],
+        "properties": {
+          "target": { "$ref": "#/$defs/bodyId" },
+          "tools": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/bodyId" } },
+          "operation": { "enum": ["join", "cut", "intersect"] },
+          "keepTools": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

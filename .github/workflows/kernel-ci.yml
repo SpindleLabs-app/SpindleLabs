@@ -10,14 +10,17 @@ name: Kernel CI
 # (its ci/quiet.sh), every line also passes .github/scripts/kernel_ci.sh
 # filter here, the full logs go only to the private kernel-results repo,
 # nothing is cached (a pull request from a fork can read main's caches) and
-# nothing is uploaded as an artifact (public too). The verdicts go back to the
+# nothing is uploaded as an artifact (public too) except a job's files sealed
+# with a per-run public key (kernel_ci.sh seal; only the keyed job opens them). The verdicts go back to the
 # kernel commit as statuses kernel-ci/checks and kernel-ci/mutants, which the
 # kernel repo's auto-merge waits for.
 #
 # Secrets, in the "kernel" environment, which only main may use (Ben adds
 # them; every job that needs them names it, so no other branch's workflow
 # and no fork can read them; test_kernel_ci.py checks): KERNEL_READ, a fine-grained key with
-# read-only contents and read-write commit statuses on SpindleLabs-app/kernel;
+# read-only contents and read-write commit statuses on SpindleLabs-app/kernel
+# (being split into KERNEL_SOURCE, contents read-only, for the jobs that run
+# the kernel's code, and KERNEL_STATUS, commit statuses only);
 # RESULTS_WRITE, contents and issues read-write on SpindleLabs-app/kernel-results.
 # The title names the label, so the kernel repo's ci.yml can find and cancel
 # a pull request's run when it goes back to draft.
@@ -37,7 +40,7 @@ on:
         required: false
         default: ""
       label:
-        description: "pr-<number> or main"
+        description: "pr-<number>, train-<number> or main"
         required: true
 
 # A newer push to the same pull request cancels the older run; main's finish.
@@ -59,6 +62,55 @@ jobs:
   # ci/parts.sh names them): one after another they took 65 to 115 minutes
   # (2026-11-06), in parts about as long as the slowest part. A kernel commit
   # from before the parts runs them all in one part, "all".
+  # The jobs below are split so that no job holds a key that writes anything
+  # beside the kernel's code (security hunt H3: code a job runs on a runner can
+  # change what that job's later steps run, and read the keys they hold):
+  #   keys: makes a key pair for this run (the private half only in
+  #     kernel-results, the public half handed on), marks the statuses pending.
+  #   checks-plan, checks, mutants-plan, mutants-shard, coverage: run the
+  #     kernel's code holding only KERNEL_SOURCE (read-only on the kernel,
+  #     which that code can read anyway), then seal their files with the public
+  #     key and upload them: an encrypted artifact, 1 day.
+  #   checks-report, mutants, coverage-save: hold RESULTS_WRITE and
+  #     KERNEL_STATUS, never run kernel code; take the artifacts as untrusted
+  #     data (HMAC checked, then opened only into files and folders), save them
+  #     to kernel-results and set the statuses.
+  # A job that was itself compromised can still lie about its own run's
+  # files and result; it can't reach a key or another job's files.
+  keys:
+    runs-on: ubuntu-24.04
+    environment: kernel
+    timeout-minutes: 10
+    outputs:
+      public: ${{ steps.keys.outputs.public }}
+      folder: ${{ steps.keys.outputs.folder }}
+    steps:
+      - name: Inputs are commit ids and a label, nothing else
+        run: |
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Mark the kernel commit pending
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_STATUS }}
+        run: |
+          .github/scripts/kernel_ci.sh status kernel-ci/checks pending "Running on SpindleLabs' runners"
+          [ -z "$BASE" ] || .github/scripts/kernel_ci.sh status kernel-ci/mutants pending "Counting the mutants in the changed lines"
+      - name: A key pair for this run (the private half only in kernel-results)
+        id: keys
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          .github/scripts/kernel_ci.sh keygen "$RUNNER_TEMP/keys"
+          mkdir -p "$RUNNER_TEMP/private"
+          mv "$RUNNER_TEMP/keys/private.pem" "$RUNNER_TEMP/private/"
+          folder="seal/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          RESULTS_PATH="$folder" .github/scripts/kernel_ci.sh save key "$RUNNER_TEMP/private"
+          echo "public=$(base64 -w0 "$RUNNER_TEMP/keys/public.pem")" >> "$GITHUB_OUTPUT"
+          echo "folder=$folder/key" >> "$GITHUB_OUTPUT"
+
   checks-plan:
     runs-on: ubuntu-latest
     environment: kernel
@@ -68,18 +120,14 @@ jobs:
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - name: Mark the kernel commit pending
-        env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
-        run: .github/scripts/kernel_ci.sh status kernel-ci/checks pending "Running on SpindleLabs' runners"
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ inputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
       - name: The parts
@@ -95,7 +143,7 @@ jobs:
           echo "parts=$(echo "$parts" | sed 's/\([a-z][a-z]*\)/"\1"/g')" >>"$GITHUB_OUTPUT"
 
   checks:
-    needs: checks-plan
+    needs: [checks-plan, keys]
     # Pinned to the image the oracles were pinned on: ubuntu-latest moved to a
     # newer one on 2026-11-11 (compiler defaulting to C23, PrusaSlicer 2.9.4
     # instead of the 2.7.2 the slicer oracle's settings are pinned to), which
@@ -116,14 +164,14 @@ jobs:
     steps:
       - name: Inputs are commit ids, a label and a part, nothing else
         run: |
-          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ && $PART =~ ^[a-z]+$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ inputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -164,6 +212,8 @@ jobs:
       # 1, 2, then 4 minutes before the next of four (up to 10 minutes each).
       - if: contains(fromJSON('["release","rest","all"]'), matrix.part)
         run: |
+          # Ubuntu's mirrors stopped resolving on 2026-11-11: see the script.
+          .github/scripts/apt-mirror.sh
           apt=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq)
           for try in 1 2 3 4; do
             sudo timeout 600 apt-get "${apt[@]}" update >/dev/null 2>&1 && sudo timeout 600 apt-get "${apt[@]}" install -y valgrind prusa-slicer >/dev/null 2>&1 && exit 0
@@ -183,53 +233,80 @@ jobs:
           if [ "$PART" != all ]; then export CHECKS_PART=$PART; fi
           k/ci/checks.sh full "$RUNNER_TEMP/logs" 2>/dev/null | .github/scripts/kernel_ci.sh filter | tee "$RUNNER_TEMP/results.txt"
           grep -qx "RESULT all PASS [0-9]*" "$RUNNER_TEMP/results.txt"
-      - name: Save the logs to kernel-results
+      - name: Seal the logs (only the keyed job can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          PUBLIC: ${{ needs.keys.outputs.public }}
         run: |
           mkdir -p "$RUNNER_TEMP/logs"
           cp "$RUNNER_TEMP/results.txt" "$RUNNER_TEMP/logs/" 2>/dev/null || true
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/logs" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
           name=checks; [ "$PART" = all ] || name=checks-$PART
-          .github/scripts/kernel_ci.sh save "$name" "$RUNNER_TEMP/logs"
-      # A failing part reports at once, naming its failed checks; success
-      # waits for every part (checks-report below).
-      - name: Report a failure to the kernel commit
-        if: always() && steps.run.outcome != 'success'
-        env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
-          OUTCOME: ${{ steps.run.outcome }}
-        run: |
-          # skipped: a setup step failed, so no check ran.
-          [ "$OUTCOME" = skipped ] && OUTCOME="setup failed, no check ran"
-          .github/scripts/kernel_ci.sh status kernel-ci/checks failure "$PART: $(.github/scripts/kernel_ci.sh describe "$RUNNER_TEMP/results.txt" "$OUTCOME")"
+          echo "ARTIFACT=sealed-$name" >> "$GITHUB_ENV"
+      - name: Hand the sealed logs on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
-  # kernel-ci/checks passes only when every part passed. A part that failed
-  # has already reported; a plan or part that never got to report (cancelled,
-  # timed out) is reported here.
+  # kernel-ci/checks passes only when every part passed. Every part's logs are
+  # saved here (opened from the sealed artifacts), and a part that failed, never
+  # reported (cancelled, timed out) or whose files could not be opened is named
+  # in the failure. A failing part now reports when all parts are done, not at
+  # once: the job that ran the kernel's code holds no key to report with.
   checks-report:
-    needs: [checks-plan, checks]
+    needs: [keys, checks-plan, checks]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: kernel
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - name: Inputs are commit ids and a label, nothing else
+        run: |
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - name: Report to the kernel commit
+      - name: Take the sealed logs
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sealed-checks*
+          path: ${{ runner.temp }}/sealed
+      - name: Open them, save them to kernel-results, report to the kernel commit
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          KERNEL_READ: ${{ secrets.KERNEL_STATUS }}
+          KEYS: ${{ needs.keys.result }}
+          KEY_FOLDER: ${{ needs.keys.outputs.folder }}
           PLAN: ${{ needs.checks-plan.result }}
           PARTS: ${{ needs.checks.result }}
+          PART_LIST: ${{ needs.checks-plan.outputs.parts }}
         run: |
-          if [ "$PLAN" = success ] && [ "$PARTS" = success ]; then
-            .github/scripts/kernel_ci.sh status kernel-ci/checks success "Every part passed"
-          elif [ "$PARTS" != failure ]; then
-            .github/scripts/kernel_ci.sh status kernel-ci/checks failure "plan $PLAN, parts $PARTS"
-            exit 1
+          ci=.github/scripts/kernel_ci.sh
+          out="$RUNNER_TEMP/opened"
+          if [ "$KEYS" = success ] && [ -d "$RUNNER_TEMP/sealed" ]; then
+            $ci fetch "$KEY_FOLDER" "$RUNNER_TEMP/private" || true
+            $ci save-sealed "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/private/private.pem" "$out" || true
+          fi
+          failed=""
+          if [ "$KEYS" = success ] && [ "$PLAN" = success ]; then
+            for p in $(python3 -c 'import json,sys; print(" ".join(json.loads(sys.argv[1])))' "$PART_LIST"); do
+              name=checks; [ "$p" = all ] || name=checks-$p
+              if grep -qx "RESULT all PASS [0-9]*" "$out/$name/results.txt" 2>/dev/null; then continue; fi
+              failed="$p: $($ci describe "$out/$name/results.txt" "no result from this part")"
+              break
+            done
+          fi
+          if [ "$KEYS" = success ] && [ "$PLAN" = success ] && [ "$PARTS" = success ] && [ -z "$failed" ]; then
+            $ci status kernel-ci/checks success "Every part passed"
           else
+            [ -n "$failed" ] || failed="keys $KEYS, plan $PLAN, parts $PARTS"
+            $ci status kernel-ci/checks failure "$failed"
             exit 1
           fi
 
@@ -238,7 +315,12 @@ jobs:
   # status, so it never holds a merge. Only for main's runs, after each merge
   # (Ben, 2026-10-29: about 790 runner minutes a day went on every pull
   # request push's copy).
+  #
+  #
+  # Split like the other jobs here (see keys above): coverage runs the kernel's code
+  # with only KERNEL_SOURCE, coverage-save holds RESULTS_WRITE.
   coverage:
+    needs: keys
     if: inputs.label == 'main'
     runs-on: ubuntu-latest
     environment: kernel
@@ -250,7 +332,7 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ inputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -263,13 +345,59 @@ jobs:
         run: |
           [ -x k/ci/coverage.sh ] || { echo "this kernel commit has no ci/coverage.sh yet"; exit 0; }
           .github/scripts/kernel_ci.sh run coverage "$RUNNER_TEMP/logs" k/ci/coverage.sh "$RUNNER_TEMP/logs"
-      - name: Save the report to kernel-results
+      - name: Seal the report (only the keyed job can open it)
         if: always()
         env:
+          PUBLIC: ${{ needs.keys.outputs.public }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/logs" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed report on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-coverage
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
+  coverage-save:
+    needs: [keys, coverage]
+    if: always() && inputs.label == 'main' && needs.keys.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: kernel
+    timeout-minutes: 15
+    steps:
+      - name: Inputs are commit ids and a label, nothing else
+        run: |
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Take the sealed report
+        id: sealed
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sealed-coverage
+          path: ${{ runner.temp }}/sealed
+      - name: Open it and save it to kernel-results
+        env:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-        run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save coverage "$RUNNER_TEMP/logs"
+          KEY_FOLDER: ${{ needs.keys.outputs.folder }}
+          COVERAGE: ${{ needs.coverage.result }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          if [ "${{ steps.sealed.outcome }}" = success ]; then
+            .github/scripts/kernel_ci.sh fetch "$KEY_FOLDER" "$RUNNER_TEMP/private"
+            .github/scripts/kernel_ci.sh unseal "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/logs" "$RUNNER_TEMP/private/private.pem"
+          else
+            echo "the coverage job handed on no files (its result: $COVERAGE)" > "$RUNNER_TEMP/logs/not-run.txt"
+          fi
+          .github/scripts/kernel_ci.sh save coverage "$RUNNER_TEMP/logs"
 
   mutants-plan:
+    needs: keys
     if: inputs.base != ''
     runs-on: ubuntu-latest
     environment: kernel
@@ -282,13 +410,9 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - name: Mark the kernel commit pending
-        env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
-        run: .github/scripts/kernel_ci.sh status kernel-ci/mutants pending "Counting the mutants in the changed lines"
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ inputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -304,14 +428,24 @@ jobs:
           [ -n "$count" ] && [ -n "$shards" ] || { echo "the plan failed"; exit 1; }
           echo "count=$count" >>"$GITHUB_OUTPUT"
           echo "shards=$shards" >>"$GITHUB_OUTPUT"
-      - name: Save the logs to kernel-results
+      - name: Seal the logs (only the keyed job can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-        run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save mutants-plan "$RUNNER_TEMP/logs"
+          PUBLIC: ${{ needs.keys.outputs.public }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/logs" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed logs on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-mutants-plan
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
   mutants-shard:
-    needs: mutants-plan
+    needs: [keys, mutants-plan]
     if: needs.mutants-plan.outputs.count != '0'
     runs-on: ubuntu-latest
     environment: kernel
@@ -327,7 +461,7 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ inputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -341,33 +475,61 @@ jobs:
         run: |
           k/ci/mutants.sh shard ${{ matrix.shard }} "$SHARDS" "$BASE" "$RUNNER_TEMP/logs" 2>/dev/null | .github/scripts/kernel_ci.sh filter | tee "$RUNNER_TEMP/shard.txt"
           grep -qx "RESULT mutants-shard-${{ matrix.shard }} PASS [0-9]*" "$RUNNER_TEMP/shard.txt"
-      - name: Save the logs to kernel-results
+      - name: Seal the logs (only the keyed job can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-        run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save mutants-shard-${{ matrix.shard }} "$RUNNER_TEMP/logs"
+          PUBLIC: ${{ needs.keys.outputs.public }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          cp "$RUNNER_TEMP/shard.txt" "$RUNNER_TEMP/logs/" 2>/dev/null || true
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/logs" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed logs on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-mutants-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
   mutants:
-    needs: [mutants-plan, mutants-shard]
+    needs: [keys, mutants-plan, mutants-shard]
     if: always() && inputs.base != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: kernel
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - name: Inputs are commit ids and a label, nothing else
+        run: |
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|train-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - name: Report to the kernel commit
+      - name: Take the sealed logs
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sealed-mutants*
+          path: ${{ runner.temp }}/sealed
+      - name: Open them, save them to kernel-results, report to the kernel commit
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          KERNEL_READ: ${{ secrets.KERNEL_STATUS }}
+          KEYS: ${{ needs.keys.result }}
+          KEY_FOLDER: ${{ needs.keys.outputs.folder }}
           PLAN: ${{ needs.mutants-plan.result }}
           SHARD: ${{ needs.mutants-shard.result }}
           COUNT: ${{ needs.mutants-plan.outputs.count }}
         run: |
-          if [ "$PLAN" = success ] && { [ "$COUNT" = 0 ] || [ "$SHARD" = success ]; }; then
-            .github/scripts/kernel_ci.sh status kernel-ci/mutants success "$COUNT mutants in the changed lines, all caught"
+          ci=.github/scripts/kernel_ci.sh
+          if [ "$KEYS" = success ] && [ -d "$RUNNER_TEMP/sealed" ]; then
+            $ci fetch "$KEY_FOLDER" "$RUNNER_TEMP/private" || true
+            $ci save-sealed "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/private/private.pem" "$RUNNER_TEMP/opened" || true
+          fi
+          if [ "$KEYS" = success ] && [ "$PLAN" = success ] && { [ "$COUNT" = 0 ] || [ "$SHARD" = success ]; }; then
+            $ci status kernel-ci/mutants success "$COUNT mutants in the changed lines, all caught"
           else
-            .github/scripts/kernel_ci.sh status kernel-ci/mutants failure "plan $PLAN, shards $SHARD ($COUNT mutants)"
+            $ci status kernel-ci/mutants failure "keys $KEYS, plan $PLAN, shards $SHARD ($COUNT mutants)"
             exit 1
           fi

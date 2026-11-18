@@ -12,12 +12,29 @@ name: Kernel fuzzing
 # kernel branch (`ref`) for `minutes`.
 #
 # This log is public: every kernel command runs through kernel_ci.sh run (one
-# RESULT line, the output in a log), nothing is cached and nothing is
-# uploaded as an artifact. Each job pushes its results and logs to the
-# private kernel-results repo (runs/<run>-<attempt>/<job>/); the collect job
-# adds them to kernel-results' test-results branch with this repo's
-# collect-fuzz.sh (fuzz/log.csv, fuzz/summary.txt, fuzz/failures/) and files
-# one issue per kind of problem there (file_issues.py).
+# RESULT line, the output in a log), nothing is cached, and the only
+# artifacts are sealed (encrypted for this run's collect job, 1 day). The
+# collect job saves every job's results and logs to the private
+# kernel-results repo (runs/<run>-<attempt>/<job>/), adds them to its
+# test-results branch with this repo's collect-fuzz.sh (fuzz/log.csv,
+# fuzz/summary.txt, fuzz/failures/) and files one issue per kind of problem
+# there (file_issues.py).
+#
+# Secrets, in the main-only "kernel" environment: KERNEL_SOURCE (kernel:
+# contents read-only) and RESULTS_WRITE (kernel-results: contents and issues
+# read-write). The jobs are split like kernel-nightly.yml's (security hunt
+# H3: code a job runs can change what its later steps run and read the keys
+# they hold):
+#   plan: holds RESULTS_WRITE, runs no kernel code: picks the commit and
+#     makes this run's key pair (the private half only in kernel-results).
+#   stl, kernel: run the kernel's code holding only KERNEL_SOURCE (read-only
+#     on the kernel, which that code can read anyway), seal their files with
+#     the public key and upload them.
+#   collect: holds RESULTS_WRITE, never runs kernel code: opens the artifacts
+#     (HMAC checked, then files and folders only), saves them to
+#     kernel-results in one push and adds them to test-results.
+# A job that was itself compromised can still lie about its own files and
+# result; it can't reach a writing key or another job's files.
 run-name: ${{ github.event_name == 'schedule' && 'Kernel fuzzing, nightly' || format('Kernel fuzzing on {0}', inputs.ref) }}
 
 on:
@@ -69,10 +86,12 @@ jobs:
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
+      public: ${{ steps.keys.outputs.public }}
+      key_folder: ${{ steps.keys.outputs.folder }}
     steps:
       - id: plan
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
         run: |
           case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
           [[ $REF =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] || { echo "bad branch name"; exit 1; }
@@ -80,6 +99,22 @@ jobs:
           [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "no kernel branch $REF"; exit 1; }
           echo "Fuzzing kernel $REF at $sha for $MINUTES minutes a job"
           echo "sha=$sha" >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: A key pair for this run (the private half only in kernel-results)
+        id: keys
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          .github/scripts/kernel_ci.sh keygen "$RUNNER_TEMP/keys"
+          mkdir -p "$RUNNER_TEMP/private"
+          mv "$RUNNER_TEMP/keys/private.pem" "$RUNNER_TEMP/private/"
+          folder="seal/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          RESULTS_PATH="$folder" .github/scripts/kernel_ci.sh save key "$RUNNER_TEMP/private"
+          echo "public=$(base64 -w0 "$RUNNER_TEMP/keys/public.pem")" >> "$GITHUB_OUTPUT"
+          echo "folder=$folder/key" >> "$GITHUB_OUTPUT"
 
   stl:
     needs: plan
@@ -93,7 +128,7 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ needs.plan.outputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -105,12 +140,21 @@ jobs:
         run: |
           .github/scripts/kernel_ci.sh run fuzz-stl "$FISSION_FUZZ_OUT" bash -c \
             "cd k/kernel && cargo test --test fuzz_stl --no-run && FISSION_FUZZ_SECONDS=$(( MINUTES * 60 )) cargo test --test fuzz_stl fuzz_stl_random -- --nocapture"
-      - name: Save the results to kernel-results
+      - name: Seal the results (only collect can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
-        run: mkdir -p "$RUNNER_TEMP/out" && .github/scripts/kernel_ci.sh save fuzz-stl "$RUNNER_TEMP/out"
+          PUBLIC: ${{ needs.plan.outputs.public }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed results on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-fuzz-stl
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
   kernel:
     # Coverage-guided fuzzing (libFuzzer via cargo-fuzz) of the kernel's
@@ -134,7 +178,7 @@ jobs:
           persist-credentials: false
       - name: Check out the kernel (quietly, the log is public)
         env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_READ: ${{ secrets.KERNEL_SOURCE }}
           REF: ${{ needs.plan.outputs.sha }}
         run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@2c76c034f9e32a5d6e2c104dc4df23a22476db04 # nightly
@@ -195,19 +239,27 @@ jobs:
         run: |
           .github/scripts/kernel_ci.sh run "oracle-planted-$TARGET" "$RUNNER_TEMP/logs" bash -c \
             'cd k/kernel && cargo test --test fuzz_corpus oracle_cases && python3 ../prototypes/oracle/fuzz_shapes.py "$FISSION_ORACLE_OUT" "$RUNNER_TEMP/planted.txt" --planted'
-      - name: Save the results to kernel-results
+      # This leg's files and its own result (the job's is one for every leg:
+      # file_issues.py counts a leg that passed as clean beside one that
+      # failed), sealed so only collect opens them.
+      - name: Seal the results (only collect can open them)
         if: always()
         env:
-          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
-          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
-          # This leg's own result (the job's is one for every leg): file_issues.py
-          # counts a leg that passed as clean beside one that failed.
+          PUBLIC: ${{ needs.plan.outputs.public }}
           JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           echo "$JOB_STATUS" >"$RUNNER_TEMP/out/job-status.txt"
           cp -R "$RUNNER_TEMP/logs" "$RUNNER_TEMP/out/logs" 2>/dev/null || true
-          .github/scripts/kernel_ci.sh save fuzz-kernel-${{ matrix.target }} "$RUNNER_TEMP/out"
+          printf %s "$PUBLIC" | base64 -d > "$RUNNER_TEMP/public.pem"
+          .github/scripts/kernel_ci.sh seal "$RUNNER_TEMP/out" "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/public.pem"
+      - name: Hand the sealed results on
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-fuzz-kernel-${{ matrix.target }}
+          path: ${{ runner.temp }}/sealed
+          retention-days: 1
 
   collect:
     needs: [plan, stl, kernel]
@@ -220,13 +272,45 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
+      # The jobs that ran the kernel's code hold no key to kernel-results:
+      # their sealed results are opened here (untrusted data: HMAC checked,
+      # files and folders only) and saved in one push to runs/<run>-<attempt>/.
+      # One that can't be opened is named and left out; its job's red result
+      # still files an issue.
+      - name: Take the sealed results
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sealed-*
+          path: ${{ runner.temp }}/sealed
+      - name: Open them and save them to kernel-results
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          KEY_FOLDER: ${{ needs.plan.outputs.key_folder }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          ci=.github/scripts/kernel_ci.sh
+          out="$RUNNER_TEMP/opened"
+          mkdir -p "$out" "$RUNNER_TEMP/sealed"
+          code=0
+          $ci fetch "$KEY_FOLDER" "$RUNNER_TEMP/private" || exit 1
+          $ci open-sealed "$RUNNER_TEMP/sealed" "$RUNNER_TEMP/private/private.pem" "$out" || code=1
+          rm -rf "$RUNNER_TEMP/private"
+          if [ -n "$(ls -A "$out")" ]; then RESULTS_PATH=runs $ci save "$RUN" "$out" || code=1; else echo "no results to save"; fi
+          exit $code
+      # Even when a folder could not be opened or saved: the rest still count,
+      # and a red job without its folder files an issue.
       - name: Add this run to kernel-results' test-results branch and file issues there
+        if: ${{ !cancelled() }}
         env:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           GH_TOKEN: ${{ secrets.RESULTS_WRITE }}
           GH_REPO: SpindleLabs-app/kernel-results
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ needs.plan.outputs.sha }}
+          # The tested code's repository: a closed issue seen again on code older than its closing is not reopened (file_issues.py).
+          CODE_REPO: SpindleLabs-app/kernel
+          CODE_TOKEN: ${{ secrets.KERNEL_SOURCE }}
           # Each job's result: a red one with no failure folder (a fuzzer or an
           # oracle run that crashed or ran out of time) files an issue too.
           JOBS: ${{ toJSON(needs) }}
@@ -235,9 +319,10 @@ jobs:
           export BRANCH=$REF
           r="$RUNNER_TEMP/results"
           git clone -q "https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git" "$r" 2>/dev/null
-          # Copied out first: collect-fuzz.sh switches the clone to test-results.
-          export IN="$RUNNER_TEMP/incoming"
-          cp -R "$r/runs/$RUN" "$IN" 2>/dev/null || mkdir -p "$IN"
+          # The folders opened above (the same as runs/$RUN, saved from them),
+          # outside the clone: collect-fuzz.sh switches it to test-results.
+          export IN="$RUNNER_TEMP/opened"
+          mkdir -p "$IN"
           cp .github/scripts/collect-fuzz.sh .github/scripts/file_issues.py .github/scripts/sim_numbers.py .github/scripts/dump_pictures.sh "$RUNNER_TEMP/"
           cd "$r" && GITHUB_STEP_SUMMARY='' "$GITHUB_WORKSPACE/.github/scripts/kernel_ci.sh" run collect "$RUNNER_TEMP/logs" bash "$RUNNER_TEMP/collect-fuzz.sh"
       - name: Save the collect log to kernel-results

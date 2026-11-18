@@ -40,6 +40,7 @@ async function fresh(width, tap) {
   const page = await context.newPage();
   await page.addInitScript(() => {
     indexedDB.deleteDatabase("fission");
+    localStorage.setItem("spindlelabs.slice.settings-open", "open"); // the printer settings start closed; this check uses them
     Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
     delete window.showSaveFilePicker;
     window.__ctx = [];

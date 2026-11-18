@@ -120,11 +120,15 @@ test("forget refuses an id that isn't stored and leaves its journal entry", asyn
 });
 
 test("forget on full storage: a delete is a write too; refused, everything stays", async () => {
-  // memoryKeyValue's delete never fails, so a store whose delete throws stands in for IndexedDB refusing.
+  // memoryKeyValue's writes never fail, so a store whose writes throw stands in for IndexedDB refusing. A delete is
+  // one update since save/load hunt C3 (its deletion mark and both entries in one step), so it is the update that fails.
   const kv = memoryKeyValue();
-  const store = projectStore({ ...kv, delete: () => Promise.reject(new Error("storage failing")) }, [design], ticking());
+  let fail = false;
+  const failing: KeyValue = { ...kv, delete: (k) => (fail ? Promise.reject(new Error("storage failing")) : kv.delete(k)), update: (k, c) => (fail ? Promise.reject(new Error("storage failing")) : kv.update(k, c)) };
+  const store = projectStore(failing, [design], ticking());
   const { journal, items } = memoryJournal();
   await store.save("a", part("A", 10));
+  fail = true;
   items.set(unsavedKey("a"), "@1\n{}");
   await assert.rejects(forget(store, journal, "a"), /storage failing/);
   assert.equal(items.size, 1, "the journal entry stays with the project it belongs to");

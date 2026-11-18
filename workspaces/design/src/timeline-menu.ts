@@ -46,6 +46,11 @@ export interface MenuHost {
   editSketch(id: string): void;
   /** Opens the box that names item `id` (U0e2); its save is `renameEntry`. */
   rename(id: string): void;
+  /**
+   * Holds `work`, a delete the kernel still plans, in the undo history (core's `History.hold`) and returns it, so Undo
+   * pressed meanwhile waits and takes back the delete, not the step before it (#537); none: nothing waits for it.
+   */
+  hold?<T>(work: Promise<T>): Promise<T>;
 }
 
 /**
@@ -53,7 +58,8 @@ export interface MenuHost {
  * delete, `planDelete`'s document recorded at once when nothing is built
  * from the item, else after `ask`. Nothing is recorded when the entry is
  * off (refused with its words), when it changes nothing, or when the
- * design changed while the delete was planned or asked.
+ * design changed while the delete was planned or asked. The delete is held
+ * in the undo history (`MenuHost.hold`) while the kernel plans it.
  */
 export async function chooseEntry(host: MenuHost, id: string, action: MenuEntry["action"], editing: string | null = null): Promise<void> {
   const before = host.current();
@@ -65,13 +71,18 @@ export async function chooseEntry(host: MenuHost, id: string, action: MenuEntry[
   if (r.kind === "open") return host.edit(r.id);
   if (r.kind === "sketch") return host.editSketch(r.id);
   if (r.kind === "rename") return host.rename(r.id);
-  const plan = await planDelete(host.kernel, before, id, host.bodies);
-  if (host.current() !== before) return;
-  const go = () => {
-    if (host.current() === before) host.record(r.step, plan.next);
-  };
-  if (plan.ask) host.ask(plan.ask, go);
-  else go();
+  // Held until the delete is recorded or its question is open, not only while the kernel plans it: Undo pressed
+  // meanwhile then finds the delete made (hunt 2026-11-11 D2: it took back the step before, and the delete was dropped).
+  const planned = (async () => {
+    const plan = await planDelete(host.kernel, before, id, host.bodies);
+    if (host.current() !== before) return;
+    const go = () => {
+      if (host.current() === before) host.record(r.step, plan.next);
+    };
+    if (plan.ask) host.ask(plan.ask, go);
+    else go();
+  })();
+  await (host.hold?.(planned) ?? planned);
 }
 
 /** The menu entry a double-click on item `id` runs (25a3): Edit Sketch for a sketch, Edit feature for a solid. */

@@ -31,7 +31,7 @@ function design(distance: number, cuts: number[]): { doc: DesignDocument; id: st
 
 const listed = (a: App) => [...a.window.document.querySelectorAll("#edit-bodies input[type=checkbox]")].map((e) => `${e.parentElement!.textContent!.trim()}:${(e as unknown as HTMLInputElement).checked}`);
 async function typeDistance(a: App, text: string) {
-  const box = a.$("#feature-edit input[type=number]") as HTMLInputElement;
+  const box = a.$("#feature-edit input[inputmode=decimal]") as HTMLInputElement;
   box.value = text;
   box.dispatchEvent(new a.window.Event("input", { bubbles: true }) as unknown as Event);
   await a.settle();
@@ -66,6 +66,10 @@ test("hand-worked: an extrude cutting both boxes keeps Box 2 on Edit's list thou
   await typeDistance(a, "20");
   assert.deepEqual(listed(a), ["Body 1:true", "Body 2:true"]);
   (a.$("#feature-edit-ok") as HTMLButtonElement).click();
+  await a.settle();
+  // #521: at 20 mm the cut removes nothing from Box 2, so OK asks first; Cut anyway records it as listed.
+  assert.match(a.$("#cut-ask-words")?.textContent ?? "", /doesn't reach Body 2/);
+  (a.$("#cut-ask-go") as HTMLButtonElement).click();
   await a.settle();
   const f = a.doc().timeline.features.find((x) => x.id === id)!;
   assert.equal(f.intent.parameters.distance, 20);

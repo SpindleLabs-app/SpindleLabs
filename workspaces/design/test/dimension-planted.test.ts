@@ -34,7 +34,7 @@ const PLANTS: Plant[] = [
   { name: "sized-circle-still-free", find: 'c.kind === "circle" && !sized.has(c.id)).length', replace: 'c.kind === "circle").length', caught: "diameter" },
   { name: "a-set-size-added-again", find: "AXES[made.kind].every((axis) => redundantAxes.has(axis))", replace: "AXES[made.kind].length === 0", caught: "redundant" },
   { name: "smallest-dimension-halved", find: "value < DIMENSION_LIMITS.min ||", replace: "value < DIMENSION_LIMITS.min / 2 ||", caught: "limits" },
-  { name: "change-holds-nothing", find: 'made.kind === "distance" ? [made.a] : []', replace: "[]", caught: "change" },
+  { name: "change-holds-nothing", find: 'made.kind === "distance" ? [heldEnd(sketch, made.a, made.b)] : []', replace: "[]", caught: "change" },
   { name: "change-keeps-the-old-value", find: "const made: SketchConstraint = { ...old, value };", replace: "const made: SketchConstraint = { ...old };", caught: "change" },
 ];
 

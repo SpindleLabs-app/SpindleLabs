@@ -2,7 +2,7 @@
 // everything from that list except design and slice. everything else can
 // still silently exist but shouldnt be on the public app"; and Slice showed
 // greyed as "Coming soon" although slicing works). DESIGN ▾ lists Design and
-// Slice only, neither greyed nor "Coming soon"; Slice opens Slice for
+// Slice only, neither greyed nor marked with a date; Slice opens Slice for
 // printing on the design (with a box: its dialog; on an empty design: the
 // reason why there is nothing to slice, in the file message line). There is
 // no Split, as there is no second workspace to put beside Design. The other
@@ -68,12 +68,12 @@ try {
   ]) {
     const press = (page, sel) => (touch ? page.tap(sel) : page.click(sel));
 
-    await check(`${width} px: DESIGN ▾ lists Design and Slice only, neither greyed nor "Coming soon"; no Split`, async () => {
+    await check(`${width} px: DESIGN ▾ lists Design and Slice only, neither greyed nor marked with a date; no Split`, async () => {
       const page = await fresh(width, touch);
       await page.locator("#start-hint").waitFor();
       assert.deepEqual(await rows(page, touch), [
-        ["design", "Design", "", false],
-        ["slice", "Slice", "", false],
+        ["design", "DesignLab", "", false],
+        ["slice", "SliceLab", "", false],
       ]);
       await press(page, "#workspace-menu");
       await shot(page, `workspace-list-${width}`);
@@ -90,7 +90,7 @@ try {
       await press(page, '#workspace-menu-menu [data-workspace="slice"]');
       await page.waitForSelector("#slice-print-dialog[open]");
       assert.equal(await page.$eval("body", (b) => b.dataset.activeWorkspace), "design", "Design stays on screen under the dialog");
-      assert.equal(await page.textContent("#workspace-menu"), "Design ▾");
+      assert.equal(await page.textContent("#workspace-menu"), "DesignLab ▾");
       await shot(page, `workspace-list-slice-${width}`);
       await press(page, "#slice-print-close");
       assert.equal(await page.$eval("#slice-print-dialog", (d) => d.open), false);
@@ -150,7 +150,7 @@ try {
   await check("the other workspaces still open by their links, unlisted: #image shows Image, named on the button", async () => {
     const page = await fresh(1280, false, "#image");
     await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
-    assert.equal(await page.textContent("#workspace-menu"), "Image ▾");
+    assert.equal(await page.textContent("#workspace-menu"), "ImageLab ▾");
     assert.equal(await page.isVisible("#image-open"), true);
     assert.deepEqual(
       (await rows(page, false)).map((r) => r[0]),
@@ -163,18 +163,18 @@ try {
   await check("?all-workspaces (developers) lists all ten as before, with Split; Slice still opens Slice for printing", async () => {
     const page = await fresh(1280, false, "?all-workspaces#design");
     await page.locator("#start-hint").waitFor();
-    const soon = "Coming soon";
+    const late = "Late 2027", later = "2028";
     assert.deepEqual(await rows(page, false), [
-      ["design", "Design", "", false],
-      ["render", "Render", soon, true],
-      ["simulate", "Simulate", soon, true],
-      ["manufacture", "Manufacture", soon, true],
-      ["laser", "Laser", soon, true],
-      ["slice", "Slice", "", false],
-      ["circuit", "Circuit", soon, true],
-      ["vector", "Vector", soon, true],
-      ["image", "Image", "", false],
-      ["layout", "Layout", soon, true],
+      ["design", "DesignLab", "", false],
+      ["render", "RenderLab", late, true],
+      ["simulate", "TestLab", later, true],
+      ["manufacture", "CNCLab", later, true],
+      ["laser", "LaserLab", late, true],
+      ["slice", "SliceLab", "", false],
+      ["circuit", "PCBLab", later, true],
+      ["vector", "VectorLab", late, true],
+      ["image", "ImageLab", "", false],
+      ["layout", "LayoutLab", later, true],
     ]);
     assert.equal(await page.isVisible("#split-toggle"), true);
     await page.context().close();

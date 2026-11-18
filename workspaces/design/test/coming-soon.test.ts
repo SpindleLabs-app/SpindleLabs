@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { COMING_NOTE, COMING_SOON, comingItems, type ComingTool } from "../src/coming-soon.ts";
+import { COMING_SOON, comingNote, comingItems, type ComingTool } from "../src/coming-soon.ts";
 
 const repo = new URL("../../../", import.meta.url);
 const roadmap = readFileSync(new URL("docs/roadmap.md", repo), "utf8");
@@ -26,8 +26,8 @@ test("hand-checked: Modify ▾ lists Combine, Chamfer, Fillet, Shell and Draft, 
   const items = comingItems("Modify");
   assert.deepEqual(items.map((i) => i.label), ["Combine", "Chamfer", "Fillet", "Shell", "Draft"]);
   const fillet = items.find((i) => i.id === "coming-fillet")!;
-  assert.equal(fillet.off, "Fillet is coming soon: it will round the edges you pick.");
-  assert.equal(fillet.note, "Coming soon");
+  assert.equal(fillet.off, "Fillet is expected mid 2027: it will round the edges you pick.");
+  assert.equal(fillet.note, "Mid 2027");
   assert.deepEqual(fillet.data, { step: "45" });
   assert.deepEqual(comingItems("Construct").map((i) => i.label), ["Construction plane", "Construction axis", "Construction point"]);
   assert.deepEqual(comingItems("Inspect").map((i) => i.label), ["Section view"]);
@@ -37,8 +37,9 @@ test("hand-checked: Modify ▾ lists Combine, Chamfer, Fillet, Shell and Draft, 
 test("every coming tool is off with the note, its tooltip a sentence naming it, and choosing it does nothing", () => {
   for (const group of ["Create", "Modify", "Construct", "Inspect"] as const)
     for (const item of comingItems(group)) {
-      assert.equal(item.note, COMING_NOTE, item.id);
-      assert.match(item.off ?? "", new RegExp(`^${item.label.replace(/[/]/g, "\\/")} is coming soon: it will [a-z][^.]*\\.$`), item.id);
+      assert.equal(item.note, comingNote(COMING_SOON.find((t) => `coming-${t.id}` === item.id)!), item.id);
+      assert.match(item.note ?? "", /^(Early |Mid |Late )?20\d\d$/, `${item.id}: a rough window, not "Coming soon"`);
+      assert.match(item.off ?? "", new RegExp(`^${item.label.replace(/[/]/g, "\\/")} is expected (early |mid |late )?20\\d\\d: it will [a-z][^.]*\\.$`), item.id);
       assert.equal(item.run(), undefined, item.id);
       assert.equal(item.key, undefined, `${item.id}: no key for a tool that isn't there`);
     }
@@ -54,7 +55,7 @@ test("every coming tool waits on a step still to do (none outlives its tool)", (
 });
 
 test("the step check can fail: a step done, an unknown step, a done substep", () => {
-  const tool = (step: string): ComingTool => ({ id: "x", label: "Box", group: "Create", step, does: "make a box" });
+  const tool = (step: string): ComingTool => ({ id: "x", label: "Box", group: "Create", step, does: "make a box", eta: "mid 2027" });
   // Step 7 (box primitive in the viewer) is ticked in docs/roadmap.md.
   assert.equal(stale(tool("7")), "Box: step 7 is done, so switch the tool on and take its line out of COMING_SOON");
   assert.equal(stale(tool("999")), "Box: step 999 is in neither docs/roadmap.md nor docs/progress/cad.md");

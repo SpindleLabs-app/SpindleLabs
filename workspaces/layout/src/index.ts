@@ -11,7 +11,7 @@
 // 33, once Vector (V1–V2) and Image (G1) work: a page is mostly their content.
 
 import type { WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 
 const summary = "Graphic design and layout: posters, social posts and slides, built from live-linked artwork, photos and renders.";
 
@@ -41,24 +41,25 @@ export function exportPng(_doc: LayoutDocument, _page: number, _pixelsPerMm: num
 
 export const layoutWorkspace: WorkspacePlugin = {
   id: "layout",
-  title: "Layout",
+  title: "LayoutLab",
   summary,
   status: "placeholder",
   representations: { produces: [], accepts: [] },
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
-      title: "Layout",
+      eta: workspaceEta("layout"),
+      title: "LayoutLab",
       summary,
       plans: [
         "Pages for posters, social posts and slides, with our own templates and preset sizes",
         "Text, shapes, grids, guides and snapping",
-        "Place Vector artwork, Image photos, Render images and Design views, live-linked so edits flow through",
-        "Design parameters as text that follows the design",
+        "Place VectorLab artwork, ImageLab photos, RenderLab images and DesignLab views, live-linked so edits flow through",
+        "DesignLab parameters as text that follows the design",
         "PDF, PNG and SVG export, print at real size, and full-screen slides",
-        "Send a page to Laser to engrave or cut it",
+        "Send a page to LaserLab to engrave or cut it",
       ],
-      startsAfter: "after CAD step 25, once Vector (V1–V2) and Image (G1) work",
+      startsAfter: "after CAD step 25, once VectorLab (V1–V2) and ImageLab (G1) work",
     });
     return { unmount: () => ctx.properties.replaceChildren() };
   },

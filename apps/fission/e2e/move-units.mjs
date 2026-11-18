@@ -51,7 +51,7 @@ async function pickBox(page) {
   await page.mouse.click(s.x, s.y);
   await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked");
 }
-const boxes = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#move-panel input[type=number]")].map((i) => [i.id.slice(5), i.value])));
+const boxes = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#move-panel input[inputmode=decimal]")].map((i) => [i.id.slice(5), i.value])));
 const legends = (page) => page.$$eval("#move-panel .move-panel-legend", (e) => e.map((x) => x.textContent));
 async function stlX(page) {
   await closePanels(page, false);

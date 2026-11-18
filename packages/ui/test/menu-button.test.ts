@@ -158,3 +158,20 @@ test("sweep bug 21: a menu left open is placed again when the window changes siz
   window.happyDOM.setViewport({ width: 375, height: 667 });
   assert.equal(m.menu.style.left, "463px");
 });
+
+test("keyboard focus (accessibility pass 2026-11-11): Enter on the button opens on the first item; choosing an item gives the focus back to the button", () => {
+  const ran: string[] = [];
+  const { doc, m, window } = made(() => [{ items: [{ id: "new", label: "New", run: () => ran.push("new") }, { id: "open", label: "Open…", run: () => ran.push("open") }] }]);
+  m.button.focus();
+  // A click from Enter or Space carries detail 0 (no pointer): the menu opens with its first item focused, as ArrowDown does.
+  m.button.dispatchEvent(new window.MouseEvent("click", { bubbles: true, detail: 0 }) as unknown as Event);
+  assert.equal(m.isOpen, true);
+  assert.equal(doc.activeElement?.id, "new", "the first item has the focus");
+  (doc.getElementById("open") as HTMLElement).click();
+  assert.deepEqual(ran, ["open"]);
+  assert.equal(m.isOpen, false);
+  assert.equal(doc.activeElement, m.button, "the hidden item never keeps the focus: it goes back to the menu's button");
+  // A mouse click (detail 1) opens it leaving the focus where the click put it.
+  m.button.dispatchEvent(new window.MouseEvent("click", { bubbles: true, detail: 1 }) as unknown as Event);
+  assert.equal(doc.activeElement, m.button, "a mouse click does not move the focus into the menu");
+});

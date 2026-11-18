@@ -270,22 +270,22 @@ test("a rectangle drawn with the tool comes level and upright: a size on one sid
   assert.equal(two.doc.nextId, one.doc.nextId + 4 + 4 + 4);
 });
 
-test("a rectangle drawn onto a corner that follows a body leaves that side unconstrained; one over an existing rectangle adds nothing twice", () => {
+test("a rectangle drawn onto a corner that follows a body keeps every side squared (#517); one over an existing rectangle adds nothing twice", () => {
   const s0 = addSketch(partDocument("box", 40, 30, 20));
   const one = clickAt(s0.doc, startTool("rectangle", s0.id), [0, 0]);
   const two = clickAt(one.doc, one.tool, [30, 20]);
   // The same rectangle again: every side a line already there, nothing drawn and no constraint twice.
   const again = clickAt(clickAt(two.doc, startTool("rectangle", s0.id), [0, 0]).doc, clickAt(two.doc, startTool("rectangle", s0.id), [0, 0]).tool, [30, 20]);
   assert.equal(sketchOf(again.doc, s0.id).constraints.length, 4);
-  // A pinned corner: the two sides through it get none (constraints can't name a point that follows a body).
+  // A pinned corner: the two sides through it still get theirs, each with a free end (#517: before, they got none).
   const pinned = { ...two.doc, sketches: two.doc.sketches.map((s) => (s.id === s0.id ? { ...s, constraints: [], pins: [{ point: (s.curves[0] as { start: string }).start, kind: "endpoint" as const, name: "x", feature: "feature-1" }] } : s)) };
   const over = clickAt(clickAt(pinned, startTool("rectangle", s0.id), [0, 0]).doc, clickAt(pinned, startTool("rectangle", s0.id), [0, 0]).tool, [10, 5]);
   const s = sketchOf(over.doc, s0.id);
   const corner = (s.curves[0] as { start: string }).start;
-  assert.ok(s.constraints.length === 2 && s.constraints.every((c) => c.kind !== "fix" && c.kind !== "diameter" && c.a !== corner && c.b !== corner), JSON.stringify(s.constraints));
+  assert.ok(s.constraints.length === 4 && s.constraints.filter((c) => c.kind !== "fix" && c.kind !== "diameter" && (c.a === corner || c.b === corner)).length === 2, JSON.stringify(s.constraints));
 });
 
-test("a rectangle drawn from a point that gets pinned to a body keeps no constraint on that corner, so the design still opens", async () => {
+test("a rectangle drawn from a point that gets pinned to a body keeps its constraints, and the design still opens", async () => {
   // Found by the browser check: a rectangle from the origin had its corner pinned there after its Horizontal and Vertical
   // were made, and the design then refused to open ("names point-3, which follows a body's edge"), so Undo and Redo failed.
   const s0 = addSketch(partDocument("box", 40, 30, 20));
@@ -294,9 +294,10 @@ test("a rectangle drawn from a point that gets pinned to a body keeps no constra
   const pinned = pinNewPoints(s0.doc, two.doc, s0.id, [{ at: [0, 0], kind: "endpoint", name: "origin", feature: "feature-1" }]);
   const s = sketchOf(pinned, s0.id);
   const corner = s.pins![0].point;
-  // The bottom (corner to (30, 0)) and the left side ((0, 20) to the corner) lose theirs; the right side and the top keep theirs.
-  assert.deepEqual(s.constraints.map((c) => c.kind), ["vertical", "horizontal"]);
-  assert.ok(s.constraints.every((c) => c.kind !== "fix" && c.kind !== "diameter" && c.a !== corner && c.b !== corner));
+  // Every side has a free end, so all four keep theirs (#517: the bottom and the left side, through the corner, lost theirs
+  // and a typed size then bent the rectangle); the solver fixes the corner where the body puts it.
+  assert.deepEqual(s.constraints.map((c) => c.kind), ["horizontal", "vertical", "horizontal", "vertical"]);
+  assert.equal(s.constraints.filter((c) => c.kind !== "fix" && c.kind !== "diameter" && (c.a === corner || c.b === corner)).length, 2);
   assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(pinned))), pinned, "it saves and opens as it is");
 });
 

@@ -1,8 +1,10 @@
 """Earlier versions in the account (supabase/migrations/20261105180000_design_versions.sql), on a real PostgreSQL.
 
 Same throwaway cluster, roles and helpers as test_designs.py. The points: a save keeps the copy it replaces as a
-version at most every 10 minutes (0.9x not kept, 1.1x kept), the newest 20 of each design; versions never cost a
-save (the oldest go first when the space is full); and nobody can list, read or delete another person's versions.
+version at most every 10 minutes of the server's clock (0.9x not kept, 1.1x kept; the server's clock is moved on in
+step with the save times, see history_in_time; test_design_versions_time.py has devices whose clocks are wrong), the
+newest 20 of each design; versions never cost a save (the oldest go first when the space is full); and nobody can
+list, read or delete another person's versions.
 Run: python3 -m unittest discover -s supabase/test
 """
 
@@ -50,6 +52,24 @@ class DesignVersionsDatabase(unittest.TestCase):
             rev = answer["revision"]
         return did
 
+    def pass_time(self, seconds):
+        """The server's clock moving on `seconds`: now() can't be moved, so every server time already written (designs'
+        updated_at, versions' kept_at) moves back by that much instead."""
+        self.owner(f"update designs set updated_at = updated_at - make_interval(secs => {seconds}); "
+                   f"update design_versions set kept_at = kept_at - make_interval(secs => {seconds});")
+
+    def history_in_time(self, uid, bodies_and_times):
+        """As history, from a device whose clock is right: between saves the server's clock moves on as much as the
+        save times do. Returns the design's id and its revision."""
+        first = self.save(uid, *bodies_and_times[0])
+        did, rev, before = first["id"], first["revision"], bodies_and_times[0][1]
+        for body, when in bodies_and_times[1:]:
+            self.pass_time(self.owner(f"select extract(epoch from '{when}'::timestamptz - '{before}'::timestamptz);"))
+            answer = self.save(uid, body, when, did, rev)
+            self.assertEqual(answer["status"], "saved", answer)
+            rev, before = answer["revision"], when
+        return did, rev
+
     def kept(self, uid, did):
         """The design's version times as minutes:seconds after 09:00, newest first."""
         ok, out = self.as_user(uid, f"select string_agg(to_char(saved_at at time zone 'UTC', 'HH24:MI:SS'), ',') from design_versions('{did}');")
@@ -63,7 +83,8 @@ class DesignVersionsDatabase(unittest.TestCase):
         # Saving B replaces A (09:00): no version yet, so A is kept.
         # Saving C replaces B (09:05): the newest version is 09:00, only 5 min older: not kept.
         # Saving D replaces C (09:12): 12 min after 09:00, at least 10: kept. So 09:12 and 09:00, newest first.
-        did = self.history(ADA, [("'A'", at(0)), ("'B'", at(5)), ("'C'", at(12)), ("'D'", at(20))])
+        # (Each save reaches the server as many minutes after the one before as its device time says.)
+        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(5)), ("'C'", at(12)), ("'D'", at(20))])
         self.assertEqual(self.kept(ADA, did), ["09:12:00", "09:00:00"])
         # Each is the text it had then.
         self.assertEqual(self.as_user(ADA, f"select get_design_version('{did}', '{at(12)}')->>'body';"), (True, "C"))
@@ -71,11 +92,13 @@ class DesignVersionsDatabase(unittest.TestCase):
         self.assertEqual(self.as_user(ADA, f"select get_design_version('{did}', '{at(5)}') is null;"), (True, "t"), "B was never kept")
 
     def test_the_ten_minute_gap_at_0_9x_and_1_1x(self):
-        # Versions at 09:00 then a replaced copy saved 540 s later (0.9 x 600 s): not kept.
-        did = self.history(ADA, [("'A'", at(0)), ("'B'", at(9)), ("'C'", at(30))])
+        # Versions at 09:00 then a replaced copy that reached the server 540 s later (0.9 x 600 s): not kept. (Each
+        # replaced copy here stood 8 minutes, under 10, so only the gap after the newest version decides; how long a
+        # copy stood is test_design_versions_session.py's.)
+        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(9)), ("'C'", at(17))])
         self.assertEqual(self.kept(ADA, did), ["09:00:00"])
         # 660 s later (1.1 x 600 s): kept.
-        did = self.history(ADA, [("'A'", at(0)), ("'B'", at(11)), ("'C'", at(30))])
+        did, _ = self.history_in_time(ADA, [("'A'", at(0)), ("'B'", at(11)), ("'C'", at(19))])
         self.assertEqual(self.kept(ADA, did), ["09:11:00", "09:00:00"])
 
     def test_a_save_of_the_same_text_keeps_no_version(self):
@@ -84,7 +107,7 @@ class DesignVersionsDatabase(unittest.TestCase):
 
     def test_the_newest_20_of_each_design(self):
         # 26 saves 11 minutes apart replace 25 copies, each kept; only the newest 20 stay (the 6th to the 25th).
-        did = self.history(ADA, [(f"'v{i}'", at(11 * i)) for i in range(26)])
+        did, _ = self.history_in_time(ADA, [(f"'v{i}'", at(11 * i)) for i in range(26)])
         times = self.kept(ADA, did)
         self.assertEqual(len(times), 20)
         self.assertEqual(times[0], at(11 * 24)[11:19])
@@ -106,14 +129,17 @@ class DesignVersionsDatabase(unittest.TestCase):
     def test_versions_count_in_the_space_and_the_oldest_go_first_worked_by_hand(self):
         # One design saved four times 11 min apart at 4 MiB each: the design (4) and three versions (12) = 16 MiB.
         big = lambda c: f"repeat('{c}', {4 * MIB})"
-        did = self.history(ADA, [(big("a"), at(0)), (big("b"), at(11)), (big("c"), at(22)), (big("d"), at(33))])
+        did, rev = self.history_in_time(ADA, [(big("a"), at(0)), (big("b"), at(11)), (big("c"), at(22)), (big("d"), at(33))])
         space = json.loads(self.as_user(ADA, "select my_design_space();")[1])
         self.assertEqual((space["bytes"], space["version_bytes"]), (16 * MIB, 12 * MIB))
         # A second design of 3 MiB: designs alone 7 MiB fit, but with the versions 19 MiB, still under 20.
+        self.pass_time(7 * 60)  # 09:33 to 09:40
         self.assertEqual(self.save(ADA, f"repeat('z', {3 * MIB})", at(40))["status"], "saved")
         self.assertEqual(self.kept(ADA, did), ["09:22:00", "09:11:00", "09:00:00"])
         # Saving the first design again keeps 09:33 as a version: designs 7 + versions 16 = 23 MiB, over 20. The oldest
         # (09:00, 4 MiB) goes: 19 MiB, under 20, so it is the only one to go.
+        self.pass_time(4 * 60)  # 09:40 to 09:44
+        self.assertEqual(rev, 4)
         self.assertEqual(self.save(ADA, big("e"), at(44), did, 4)["status"], "saved")
         self.assertEqual(self.kept(ADA, did), ["09:33:00", "09:22:00", "09:11:00"])
         space = json.loads(self.as_user(ADA, "select my_design_space();")[1])
@@ -136,8 +162,8 @@ class DesignVersionsDatabase(unittest.TestCase):
         did = self.history(ADA, [("'secret A'", at(0)), ("'B'", at(20))])
         self.assertEqual(self.kept(BO, did), [])
         self.assertEqual(self.as_user(BO, f"select get_design_version('{did}', '{at(0)}') is null;"), (True, "t"))
-        self.assertNotIn("secret A", self.as_user(BO, "select my_data()::text;")[1])
-        self.assertIn("secret A", self.as_user(ADA, "select my_data()::text;")[1])
+        self.assertNotIn("secret A", self.as_role("postgres", "select my_data()::text;", BO)[1])
+        self.assertIn("secret A", self.as_role("postgres", "select my_data()::text;", ADA)[1])
 
     def test_the_table_and_the_part_are_closed_to_the_browser(self):
         self.history(ADA, [("'A'", at(0)), ("'B'", at(20))])
@@ -168,9 +194,9 @@ class DesignVersionsDatabase(unittest.TestCase):
 
     def test_download_my_data_holds_every_version_whole(self):
         did = self.history(ADA, [("'{\"v\":1}'", at(0)), ("'{\"v\":2}'", at(20))])
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual([(v["design_id"], v["file"]) for v in data["design_versions"]], [(did, '{"v":1}')])
-        self.assertEqual(json.loads(self.as_user(BO, "select my_data();")[1])["design_versions"], [])
+        self.assertEqual(json.loads(self.as_role("postgres", "select my_data();", BO)[1])["design_versions"], [])
 
 
 if __name__ == "__main__":

@@ -67,11 +67,11 @@ test("a print plate links to a part, gets its STL, and follows an edit", async (
   assert.equal(graph.isStale("plate-1"), true);
   // …and a change note in Slice names the cause, with the chain back to it.
   const [note] = notes.current(graph);
-  assert.equal(note.text, "Print plate updating: you changed the box in Design.");
-  assert.deepEqual(note.chain, ["Box: 50 × 30 × 20 mm in Design", "Print plate in Slice"]);
+  assert.equal(note.text, "Print plate updating: you changed the box in DesignLab.");
+  assert.deepEqual(note.chain, ["Box: 50 × 30 × 20 mm in DesignLab", "Print plate in SliceLab"]);
   close(await stl(), 30000); // 50 · 30 · 20
   graph.markFresh("plate-1");
-  assert.equal(notes.current(graph)[0].text, "Print plate updated: you changed the box in Design.");
+  assert.equal(notes.current(graph)[0].text, "Print plate updated: you changed the box in DesignLab.");
 
   // The whole project, links and all, saves and reads back unchanged.
   const reread = readProject(JSON.parse(JSON.stringify(project)));
@@ -107,7 +107,7 @@ test("a frozen copy stays put, and a link whose source goes away warns", async (
   edit(partDocument("box", 40, 30, 20));
   const status = resolveLink(cut, lookup);
   assert.equal(status.state, "unresolved");
-  assert.match((status as { warning: string }).warning, /L-bracket profile in Design, which can't be found after the last edit/);
+  assert.match((status as { warning: string }).warning, /L-bracket profile in DesignLab, which can't be found after the last edit/);
   // The frozen copy still has the bracket's outline: 6 corners.
   assert.equal(frozen.representation.kind, "outline");
   assert.equal((frozen.representation as { outline: { outer: { path: { corners: number[] } } } }).outline.outer.path.corners.length, 12);

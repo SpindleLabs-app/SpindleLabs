@@ -295,6 +295,25 @@ try {
     assert.equal(await text(page, "#action-note"), "Exported spindlelabs-box.stl. Checked solid. Body 2 is hidden, so it is not in the STL: show it with its eye in the browser to include it.");
     await page.context().close();
   });
+  // SL #675 item 3: Slice for printing leaves the hidden body out as the STL does, and says so as its dialog opens.
+  for (const [width, touch] of [[1280, false], [375, true]]) {
+    await check(`Slice for printing says which hidden body it leaves out (${width} px${touch ? ", taps" : ""})`, async () => {
+      const page = await fresh(width, touch);
+      const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
+      await startWithBox(page);
+      await insertPreset(page, "cylinder");
+      await openPanel(page, "browser");
+      await until(page, () => document.querySelectorAll('#browser [data-eye^="body-"]').length === 2, null, "two bodies");
+      await press('#browser [data-eye="body-2"]');
+      await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "Body 2 hidden");
+      await closePanels(page);
+      await chooseFile(page, "file-slice-print", touch);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      assert.equal(await text(page, "#slice-print-missing"), "Body 2 is hidden, so it is not in the print: show it with its eye in the browser to include it.");
+      assert.ok(await page.isVisible("#slice-print-missing"));
+      await page.context().close();
+    });
+  }
 } finally {
   await browser.close();
   server.httpServer.close();

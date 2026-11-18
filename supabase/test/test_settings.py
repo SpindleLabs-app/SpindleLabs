@@ -181,10 +181,10 @@ class SettingsDatabase(unittest.TestCase):
         self.assertEqual(self.mine(BO)["settings"], {"spindlelabs.a": "y"})
 
     def test_my_data_holds_the_settings_and_the_keep_choice(self):
-        self.assertIsNone(json.loads(self.as_user(ADA, "select my_data();")[1])["settings"], "none kept: null")
+        self.assertIsNone(json.loads(self.as_role("postgres", "select my_data();", ADA)[1])["settings"], "none kept: null")
         self.save(ADA, {"spindlelabs-settings": '{"theme":"dark"}'})
         self.save(BO, {"spindlelabs.a": "Bo's"})
-        data = json.loads(self.as_user(ADA, "select my_data();")[1])
+        data = json.loads(self.as_role("postgres", "select my_data();", ADA)[1])
         self.assertEqual((data["settings"]["settings"], data["settings"]["revision"]), ({"spindlelabs-settings": '{"theme":"dark"}'}, 1))
         self.assertTrue(data["profile"]["keep_settings"])
         self.assertNotIn("Bo's", json.dumps(data))

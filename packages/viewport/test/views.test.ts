@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, orbitSafeOffset, refitScale, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
+import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, keepAngleBasis, orbitSafeOffset, refitScale, planeSeenAs, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
 
 type Vec3 = [number, number, number];
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -339,4 +339,89 @@ test("refitScale: a round trip of shapes comes back to 1 (self-consistency)", ()
     const k = refitScale(45, a, b) * refitScale(45, b, c) * refitScale(45, c, a);
     assert.ok(Math.abs(k - 1) < 1e-12, `${a} -> ${b} -> ${c}: ${k}`);
   }
+});
+
+test("hand-worked: how a sketch's x and y run on screen from each side of its plane (planeSeenAs)", () => {
+  // From the normal's side: x right, y up, whatever the plane.
+  const xy = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] } as const;
+  assert.deepEqual(planeSeenAs(xy), { right: 1, up: 1 });
+  assert.deepEqual(planeSeenAs(xy, 1), { right: 1, up: 1 });
+  // A bottom face (frame XY, seen from −Z): the bottom view has −Y up, the plane's y = Z × X = +Y, so y runs
+  // down the screen; looking up from below with −Y up, +X is to the right.
+  assert.deepEqual(planeSeenAs(xy, -1), { right: 1, up: -1 });
+  // A back face (frame XZ: normal −Y, x +X, so y = −Y × X = +Z), seen from +Y: the back view keeps Z up, and
+  // from behind +X runs to the left.
+  assert.deepEqual(planeSeenAs({ origin: [0, 30, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] }, -1), { right: -1, up: 1 });
+  // A left face (frame YZ: normal +X, x +Y, y = X × Y = +Z), seen from −X: Z up, and +Y runs to the left.
+  assert.deepEqual(planeSeenAs({ origin: [0, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] }, -1), { right: -1, up: 1 });
+  // Either way from behind it is a mirror image: exactly one axis is turned.
+  for (const p of [xy, { origin: [0, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] } as const]) {
+    const s = planeSeenAs(p, -1);
+    assert.equal(s.right * s.up, -1);
+  }
+});
+
+test("hand-worked: planeSeenAs from behind on side and tilted planes, and agreeing with the camera Look At sets up", () => {
+  // y = n × x = (n1 x2 − n2 x1, n2 x0 − n0 x2, n0 x1 − n1 x0).
+  // A right face whose x runs along −Y: n = +X, x = −Y, y = (0·0 − 0·(−1), 0·0 − 1·0, 1·(−1) − 0·0) = (0, 0, −1).
+  // From −X (the left view, Z up) y points down the screen, so Look At turns −y = +Z up: y runs down (up −1).
+  // The camera looks along +X with Z up, so screen right is (1, 0, 0) × (0, 0, 1) = (0, −1, 0) = x: right +1.
+  assert.deepEqual(planeSeenAs({ origin: [0, 0, 0], xAxis: [0, -1, 0], normal: [1, 0, 0] }, -1), { right: 1, up: -1 });
+  // A left face with a tilted x: n = −X, x = (0, −0.6, −0.8), y = (0·(−0.8) − 0·(−0.6), 0·0 − (−1)(−0.8), (−1)(−0.6) − 0·0)
+  // = (0, −0.8, 0.6). From +X (the right view, Z up) y·Z = 0.6 > 0, so y stays up (up +1). The camera looks along −X
+  // with up y: right = (−1, 0, 0) × (0, −0.8, 0.6) = (0, 0.6, 0.8), and x · right = −0.36 − 0.64 = −1: right −1.
+  assert.deepEqual(planeSeenAs({ origin: [0, 0, 0], xAxis: [0, -0.6, -0.8], normal: [-1, 0, 0] }, -1), { right: -1, up: 1 });
+  // A bottom face turned in its plane: n = −Z, x = (−0.6, −0.8, 0), y = (0·0 − (−1)(−0.8), (−1)(−0.6) − 0·0, 0) = (−0.8, 0.6, 0).
+  // From +Z (the top view, +Y up) y·Y = 0.6 > 0, so y stays up (up +1); right = (0, 0, −1) × (−0.8, 0.6, 0) = (0.6, 0.8, 0),
+  // and x · right = −0.36 − 0.64 = −1: right −1.
+  assert.deepEqual(planeSeenAs({ origin: [0, 0, 0], xAxis: [-0.6, -0.8, 0], normal: [0, 0, -1] }, -1), { right: -1, up: 1 });
+  // Every plane, tilted or not: right and up are the signs of x and y along the screen's right and up that Look At
+  // from behind sets up (right = looking direction × up).
+  const dirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1], [0.6, 0.8, 0], [0.8, -0.6, 0], [0, 0.6, 0.8], [0, 0.8, -0.6], [0.6, 0, 0.8], [-0.8, 0, 0.6], [0.36, 0.48, 0.8], [0.48, 0.64, -0.6], [-0.6, -0.8, 0], [0, -0.6, -0.8], [-0.36, -0.48, -0.8], [0.64, -0.48, 0.6]];
+  const dot = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a: readonly number[], b: readonly number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  let planes = 0;
+  for (const normal of dirs) {
+    for (const xAxis of dirs) {
+      if (Math.abs(dot(normal, xAxis)) > 1e-12) continue;
+      const plane = { origin: [0, 0, 0], xAxis, normal } as const;
+      const view = planeViewBasis(plane, { centre: [0, 0, 0], radius: 1 }, 45, 1, -1);
+      const looking = view.target.map((v, i) => v - view.position[i]);
+      const right = cross(looking, view.up);
+      const y = cross(normal, xAxis);
+      assert.deepEqual(planeSeenAs(plane, -1), { right: dot(xAxis, right) > 0 ? 1 : -1, up: dot(y, view.up) > 0 ? 1 : -1 }, `normal ${normal}, x ${xAxis}`);
+      planes++;
+    }
+  }
+  assert.ok(planes > 60, `${planes} planes`);
+});
+
+// Fit keeps the angle (Home turns it).
+test("keepAngleBasis: hand-worked: a camera looking from +X at a unit sphere stays on +X, r=1 fov 90 → √2 away", () => {
+  // fitDistance(1, 90°, 1) = 1 / sin(45°) = √2, so the camera sits at centre + (√2, 0, 0).
+  const r = keepAngleBasis([5, 0, 0], { centre: [1, 2, 3], radius: 1 }, 90, 1);
+  assert.deepEqual(r.target, [1, 2, 3]);
+  assert.ok(Math.abs(r.position[0] - (1 + Math.SQRT2)) < 1e-12);
+  assert.ok(Math.abs(r.position[1] - 2) < 1e-12 && Math.abs(r.position[2] - 3) < 1e-12);
+});
+
+test("keepAngleBasis: the direction is unchanged for any view, unlike home", () => {
+  for (const dir of [[0.3, -0.9, 0.2], [0, 0, 1], [-2, 1, -1]] as Vec3[]) {
+    const r = keepAngleBasis(dir, box, 45, 1);
+    const back = unit(r.position.map((p, i) => p - r.target[i]) as Vec3);
+    const want = unit(dir);
+    for (let i = 0; i < 3; i++) assert.ok(Math.abs(back[i] - want[i]) < 1e-12);
+  }
+  // Home from the same body gives its own fixed direction, not the one passed in.
+  const home = viewBasis("home", box, 45, 1);
+  const kept = keepAngleBasis([-2, 1, -1], box, 45, 1);
+  assert.notDeepEqual(unit(home.position.map((p, i) => p - home.target[i]) as Vec3), unit(kept.position.map((p, i) => p - kept.target[i]) as Vec3));
+});
+
+test("keepAngleBasis: distance equals fitDistance (the sphere just fits) and a zero direction falls back to home's", () => {
+  const r = keepAngleBasis([0, 0, 7], box, 45, 1);
+  assert.ok(Math.abs(Math.hypot(...(r.position.map((p, i) => p - r.target[i]) as Vec3)) - fitDistance(box.radius, 45, 1)) < 1e-9);
+  const z = keepAngleBasis([0, 0, 0], box, 45, 1);
+  const h = viewBasis("home", box, 45, 1);
+  for (let i = 0; i < 3; i++) assert.ok(Math.abs(z.position[i] - h.position[i]) < 1e-12);
 });

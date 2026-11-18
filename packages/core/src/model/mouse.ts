@@ -2,7 +2,10 @@
 // when no navigation tool is lit on the bottom bar (the other buttons are the same in both), and its table of gestures
 // is what Settings shows. The viewport, the Settings page and the page's storage all read this one list.
 
-export type MousePreset = "spindle" | "fusion";
+export type MousePreset = "spindle" | "shift-to-look";
+
+/** The id an earlier version stored for the "Shift to look" preset; still read, and rewritten to the new id (see `startMouse`). */
+export const LEGACY_SHIFT_TO_LOOK = "fusion";
 
 /** What a left-button drag does at rest: turn the view, or nothing (it selects; Orbit, Pan and Zoom on the bar give it a job). */
 export type LeftDrag = "orbit" | "select";
@@ -40,9 +43,9 @@ export const MOUSE_PRESETS: readonly MousePresetInfo[] = [
     ],
   },
   {
-    id: "fusion",
-    label: "Fusion-style",
-    summary: "The left button only picks; turn the view with Shift + middle drag, the view cube or the bar's Orbit.",
+    id: "shift-to-look",
+    label: "Shift to look",
+    summary: "The left button only picks; turn the view with Shift + middle drag, the orientation cube or the bar's Orbit.",
     leftDrag: "select",
     rows: [
       { gesture: "Left click", does: "Picks what is under the pointer" },
@@ -52,11 +55,11 @@ export const MOUSE_PRESETS: readonly MousePresetInfo[] = [
   },
 ];
 
-/** The preset kept in Settings: SpindleLabs's own unless "fusion" is stored. */
-export const readMousePreset = (raw: unknown): MousePreset => (raw === "fusion" ? "fusion" : "spindle");
+/** The preset kept in Settings: SpindleLabs's own unless "shift-to-look" (or the id it had before, "fusion") is stored. */
+export const readMousePreset = (raw: unknown): MousePreset => (raw === "shift-to-look" || raw === LEGACY_SHIFT_TO_LOOK ? "shift-to-look" : "spindle");
 
 /** What a left drag does at rest in `preset`. */
-export const leftDragOf = (preset: MousePreset): LeftDrag => (preset === "fusion" ? "select" : "orbit");
+export const leftDragOf = (preset: MousePreset): LeftDrag => (preset === "shift-to-look" ? "select" : "orbit");
 
 /** The event the page sends on its document when the preset changes, and the root attribute that says which is worn. */
 export const MOUSE_EVENT = "mousechange";

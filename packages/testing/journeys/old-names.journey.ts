@@ -302,7 +302,10 @@ async function sweep(faults: OldNameFault[] = []): Promise<Tally & { bodies: num
   let held = 0;
   const unchecked: string[] = [];
   const docs = [...savedDocuments(), ...madeDocuments()];
-  for (const { label, doc, json } of docs) {
+  for (const { label, doc: saved0, json } of docs) {
+    // Every body, the ones the eye hides too: a body's names don't depend on whether it is shown, and a hidden one's
+    // names in its file (a Join's own body remembers its faces, old-files/later/v15-join-piece) are checked like any.
+    const { hidden: _hidden, ...doc } = saved0;
     const cache = new BodyCache(kernel);
     try {
       const build = await rebuildTimeline(doc, cache, kernel);

@@ -68,9 +68,11 @@ test("hidden until shown; shown, the Create group comes first, then the modellin
   t.show("line");
   const groups = [...slot.children].map((g) => (g as HTMLElement).getAttribute("aria-label") ?? g.id);
   assert.deepEqual(groups, ["Create", "modelling", "Snapping", "Finish"]);
-  // Select, Delete and Construction (47f), then the constraint tools (47d2) and Dimension (47e), end the Create group's row of tools (so at phone width they wrap with them, app hunt 2026-11-04).
+  // Select, Delete and Construction (47f), then the constraint tools (47d2) and Dimension (47e), end the Create group's row of tools (at phone width one row scrolled sideways, UI audit 2026-11-12).
   const row = [...$("sketch-tool-line").parentElement!.querySelectorAll("button")].map((b) => b.id);
-  assert.deepEqual(row.slice(-9), ["sketch-tool-select", "sketch-delete", "sketch-construction", "sketch-tool-horizontal", "sketch-tool-vertical", "sketch-tool-coincident", "sketch-tool-fix", "sketch-tool-dimension", "sketch-type"]);
+  assert.deepEqual(row.slice(-8), ["sketch-tool-select", "sketch-delete", "sketch-construction", "sketch-tool-horizontal", "sketch-tool-vertical", "sketch-tool-coincident", "sketch-tool-fix", "sketch-tool-dimension"]);
+  // Type starts the row (UI audit 2026-11-12: at phone width the row is one line scrolled sideways, so Type stays in sight).
+  assert.equal(row[0], "sketch-type");
   assert.equal($("sketch-tool-select").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-snap").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-create").closest<HTMLElement>(".tool-group")!.hidden, false);

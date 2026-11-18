@@ -235,7 +235,7 @@ test("signing out works offline at once, and online also ends the session at the
     const { svc, client } = setup();
     await client.finishSignIn(await signInPage(client, svc));
     svc.mode = "down";
-    assert.deepEqual(await client.signOut(), { ended: false });
+    assert.deepEqual(await client.signOut(), { ended: false, reason: "offline" });
     assert.equal(client.state().kind, "signed-out");
   }
   {

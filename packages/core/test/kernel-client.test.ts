@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_SLICE_STOPPED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, UNKNOWN_BODY_WORDS, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -208,7 +208,7 @@ test("a worker that throws while it starts says what it threw, for this call and
   withFakeWorker(async (client, worker) => {
     const waiting = client.call("kernel_version");
     assert.equal(worker.fail("SyntaxError: unexpected token"), true);
-    const words = /The geometry kernel stopped \(kernel worker crashed: SyntaxError: unexpected token\)\. Reload the page to try again\.$/;
+    const words = /The geometry kernel stopped unexpectedly\. Reload the page to try again\.$/;
     await assert.rejects(waiting, words);
     await assert.rejects(client.call("body_count"), words);
     // An empty message is no message: the same words as a worker that didn't load.
@@ -689,8 +689,28 @@ test("body_boolean with the app's handles: the kernel's numbers sent, the result
     await hidden;
     // An unknown input is refused before anything is sent.
     const sent = worker.posted.length;
-    await assert.rejects(client.call("body_boolean", 1, [9], "subtract"), (e: KernelError) => e.kind === "unknown-body" && /body 9 /.test(e.message));
+    await assert.rejects(client.call("body_boolean", 1, [9], "subtract"), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
     assert.equal(worker.posted.length, sent);
+  }));
+
+test("body_boolean keeps a merged face's other origins (also), named by the app's handles (SL #502)", () =>
+  withFakeWorker(async (client, worker) => {
+    // Regression: two joined blocks whose tops are level give one top (kernel 36c1) lying on both inputs' tops; the
+    // kernel lists the second in `also`, and the client dropped it, so the merged top answered to one block's name only.
+    worker.ready(1);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    const b = client.call("body_build", CUBE_MOVED);
+    worker.answer(2, 12);
+    await Promise.all([a, b]);
+    const joined = client.call("body_boolean", 1, [2], "union");
+    const top = (body: number) => ({ body, face: 5, whole: false, turned: false });
+    worker.answer(3, { bodies: [13], history: [{ faces: [top(11), top(12)], also: [[top(12)], []], edges: [] }] });
+    assert.deepEqual((await joined).history[0].also, [[top(2)], []]);
+    // A kernel answer with no `also` (nothing merged) gives none.
+    const plain = client.call("body_boolean", 1, [2], "subtract");
+    worker.answer(4, { bodies: [14], history: [{ faces: [top(11)], edges: [] }] });
+    assert.equal("also" in (await plain).history[0], false);
   }));
 
 test("body_measure with the app's handles: the kernel's numbers sent for each pick, the answer as it came; an unknown body refused before sending", () =>
@@ -714,8 +734,8 @@ test("body_measure with the app's handles: the kernel's numbers sent for each pi
     await one;
     // An unknown body, first or second, is refused in the kernel's words before anything is sent.
     const sent = worker.posted.length;
-    await assert.rejects(client.call("body_measure", { body: 9, face: 0 }, null), (e: KernelError) => e.kind === "unknown-body" && /body 9 /.test(e.message));
-    await assert.rejects(client.call("body_measure", { body: 1, face: 0 }, { body: 8 }), (e: KernelError) => e.kind === "unknown-body" && /body 8 /.test(e.message));
+    await assert.rejects(client.call("body_measure", { body: 9, face: 0 }, null), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
+    await assert.rejects(client.call("body_measure", { body: 1, face: 0 }, { body: 8 }), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
     assert.equal(worker.posted.length, sent);
   }));
 
@@ -746,7 +766,37 @@ test("body_move refuses a body the kernel doesn't hold before sending anything",
   withFakeWorker(async (client, worker) => {
     worker.ready(1);
     const sent = worker.posted.length;
-    await assert.rejects(client.call("body_move", 7, [{ move: [1, 0, 0] }]), (e: KernelError) => e.kind === "unknown-body" && /body 7 /.test(e.message));
+    await assert.rejects(client.call("body_move", 7, [{ move: [1, 0, 0] }]), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
+    assert.equal(worker.posted.length, sent);
+  }));
+
+test("body_chamfer with the app's handles (step 44a): the kernel's number sent, the chamfered body given a handle of its own, sized by its faces", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    worker.ready(100);
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    assert.equal(await a, 1);
+    // Sent as the kernel holds it: body 11, the edges and size as given; timed as a move of the box is (its mesh,
+    // 44 units: 44 × 100 × 4 = 17,600 ms, kept at 0.9 ×).
+    const chamfered = client.call("body_chamfer", 1, [3], { equal: 2 }, false);
+    assert.deepEqual(worker.posted.at(-1), { id: 2, op: "body_chamfer", args: [11, [3], { equal: 2 }, false] });
+    assert.equal(keptAfter(t, worker, 17_600 * 0.9), true, "the chamfer at 0.9 ×");
+    const faces = [...[0, 1, 2, 3, 4, 5].map((face) => ({ from: "face" as const, face })), { from: "edge" as const, edge: 3 }];
+    worker.answer(2, { body: 12, faces });
+    // The app's own handle, 2, for the kernel's 12; the faces' origins as the kernel gave them.
+    assert.deepEqual(await chamfered, { body: 2, faces });
+    const view = client.call("body_view", 2);
+    assert.deepEqual(worker.posted.at(-1), { id: 3, op: "body_view", args: [12] });
+    worker.answer(3, { faces: 7 });
+    await view;
+  }));
+
+test("body_chamfer refuses a body the kernel doesn't hold before sending anything", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    const sent = worker.posted.length;
+    await assert.rejects(client.call("body_chamfer", 7, [0], { equal: 1 }, false), (e: KernelError) => e.kind === "unknown-body" && e.message === UNKNOWN_BODY_WORDS);
     assert.equal(worker.posted.length, sent);
   }));
 

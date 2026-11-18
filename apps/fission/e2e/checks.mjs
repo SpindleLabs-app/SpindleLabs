@@ -10,6 +10,7 @@ import { readdirSync, readFileSync } from "node:fs";
 /** Files other checks import, never run on their own (e2e/checks.test.mjs checks each is still imported). */
 export const HELPERS = [
   "backdrop.mjs",
+  "big-project.mjs",
   "browser.mjs",
   "kernel-cap.mjs",
   "live-site.mjs",
@@ -17,10 +18,12 @@ export const HELPERS = [
   "monkey-units.mjs",
   "png.mjs",
   "properties.mjs",
+  "save-picker-lib.mjs",
   "sketch-screen.mjs",
   "soak-judge.mjs",
   "soak-model.mjs",
   "start.mjs",
+  "toolbar-swipe.mjs",
 ];
 
 /** Files run somewhere else, or by hand. */

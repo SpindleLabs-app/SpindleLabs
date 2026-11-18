@@ -1,12 +1,12 @@
 // The mouse preset (U2d): which buttons turn, move and zoom the 3D view, a Settings choice kept with the other
 // settings. The page wears it as `data-mouse` on the root, and a `mousechange` event on the document tells the
 // viewports (the viewport reads the same attribute and event, so it needs nothing from here).
-import { MOUSE_ATTRIBUTE, MOUSE_EVENT, readMousePreset, type MousePreset } from "@fission/core";
+import { LEGACY_SHIFT_TO_LOOK, MOUSE_ATTRIBUTE, MOUSE_EVENT, readMousePreset, type MousePreset } from "@fission/core";
 import type { SettingsStore } from "./settings.ts";
 
 export const MOUSE_SETTING = "mouse";
 
-/** The stored preset: SpindleLabs's own unless "fusion" is stored. */
+/** The stored preset: SpindleLabs's own unless "shift-to-look" is stored (the old id "fusion" counts as that). */
 export const readMouseChoice = (settings: SettingsStore): MousePreset => readMousePreset(settings.get(MOUSE_SETTING, "spindle"));
 
 /** The preset the page wears now. */
@@ -21,6 +21,8 @@ function apply(doc: Document, preset: MousePreset): void {
 
 /** Wear the stored preset now; returns `choose` (store and wear a new choice). */
 export function startMouse(doc: Document, settings: SettingsStore): (preset: MousePreset) => void {
+  // Migration: the preset used to be stored under another id; keep the person's choice under the new one.
+  if (settings.get<string>(MOUSE_SETTING, "") === LEGACY_SHIFT_TO_LOOK) settings.set(MOUSE_SETTING, "shift-to-look");
   apply(doc, readMouseChoice(settings));
   return (preset) => {
     settings.set(MOUSE_SETTING, preset);

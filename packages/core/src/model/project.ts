@@ -124,6 +124,30 @@ export function projectToJson(project: Project): string {
 }
 
 /**
+ * `snapshot`, a project as `projectToJson` writes it, with workspace `id`'s document `was` put right as `now`: the text
+ * `projectToJson` writes for that project, so an undo step recorded with `was` can hold `now` instead (Design's settle
+ * answered after the next action was recorded, `History.amendStep`). Null when the snapshot doesn't hold exactly `was`
+ * there, or doesn't read.
+ */
+export function withWorkspaceDocument(snapshot: string, id: WorkspaceId, was: unknown, now: unknown): string | null {
+  const text = (x: unknown) => projectToJson(x as Project);
+  let data: unknown;
+  try {
+    data = JSON.parse(snapshot);
+  } catch {
+    return null;
+  }
+  if (!isObject(data) || !isObject(data.workspaces) || !Object.hasOwn(data.workspaces, id)) return null;
+  if (text(data.workspaces[id]) !== text(was)) return null;
+  data.workspaces[id] = now;
+  try {
+    return text(data);
+  } catch {
+    return null; // `now` holds a number no file can (as `projectToJson` refuses it)
+  }
+}
+
+/**
  * Refuses what JSON.parse lets through but a file can't hold again: a
  * number too big for a double (1e400 reads as Infinity) and nesting past
  * MAX_NESTING (which saving could not write back). Walks with its own stack,
@@ -141,6 +165,19 @@ function checkValues(data: unknown) {
   }
 }
 
+/**
+ * A project file's bytes as text. Projects are saved as UTF-8; bytes that aren't (an editor that saved it as
+ * Latin-1) are refused, never decoded with a replacement character, which would change the text and be kept by the
+ * next save (#511 item 5). A byte order mark in front is dropped.
+ */
+function utf8(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("can't open this project: its text isn't saved as UTF-8, so some letters would change. Save it as UTF-8 in the editor that changed it, then open it again.");
+  }
+}
+
 /** The part of a workspace plugin that reads its own data (WorkspacePlugin.readData). */
 export interface DataReader {
   id: WorkspaceId;
@@ -148,15 +185,16 @@ export interface DataReader {
 }
 
 /**
- * Opens the text of a .spindlelabs.json file: parses it, upgrades the outer
+ * Opens a .spindlelabs.json file, as text or as its bytes (utf8): parses it, upgrades the outer
  * layout (readProject), then hands each workspace its own part to read and
  * upgrade. Data of a workspace this build has no reader for is kept as it
  * is. Any failure throws one message saying what is wrong; nothing is
  * returned half-read.
  */
-export function projectFromJson(text: string, readers: readonly DataReader[]): Project {
-  const big = tooBig(text.length); // before parsing, which is the slow part
+export function projectFromJson(file: string | Uint8Array, readers: readonly DataReader[]): Project {
+  const big = tooBig(file.length); // before decoding and parsing, which are the slow parts
   if (big) throw new Error(`can't open this project: ${big}`);
+  const text = typeof file === "string" ? file : utf8(file);
   let data: unknown;
   try {
     data = JSON.parse(text);

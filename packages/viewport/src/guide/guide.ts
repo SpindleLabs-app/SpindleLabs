@@ -158,7 +158,6 @@ export function openGuide(opener?: HTMLElement | null): GuideDialog {
   let leads: number[] = [];
   let glide: { from: number; to: number; start: number; duration: number; index: number } | null = null;
   let play: { y: number; last: number } | null = null; // a steady play (Space): where it has got to (unrounded) and when
-  const started = performance.now();
   const current = () => layers[incoming].scene;
   const blendNow = (now: number) => blendAt(now - blendStart, reduced ? 0 : BLEND_MS);
   const narrow = () => stageLayout(innerWidth, innerHeight).centreX === 0.5;
@@ -333,7 +332,10 @@ export function openGuide(opener?: HTMLElement | null): GuideDialog {
     const h = scroller.clientHeight;
     if (w === 0 || h === 0) return;
     if (!reduced && !dragging) yaw += SPIN / 60;
-    spin.rotation.set(pitch, yaw + (reduced ? 0 : 0.08 * Math.sin((now - started) / 2400)), 0);
+    // The sway is tied to the frames drawn, as the turn is (60 a second's worth each): on the clock, a machine
+    // drawing few frames a second swayed back faster than it turned on, and the picture stood still (SpindleLabs#804).
+    const turn = yaw + (reduced ? 0 : 0.08 * Math.sin((frames * (1000 / 60)) / 2400));
+    spin.rotation.set(pitch, turn, 0);
     const e = blendNow(now);
     if (e >= 1 && layers[1 - incoming].scene) dropOutgoing();
     const shown = [0, 0];
@@ -357,6 +359,8 @@ export function openGuide(opener?: HTMLElement | null): GuideDialog {
     frames++;
     dialog.dataset.frames = String(frames);
     dialog.dataset.blend = e.toFixed(3);
+    // The picture's turn (radians), for the browser check that it only ever turns one way.
+    dialog.dataset.turn = turn.toFixed(6);
   }
 
   // Dragging with a mouse turns the picture (touch keeps scrolling).

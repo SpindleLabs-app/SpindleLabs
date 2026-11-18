@@ -1,9 +1,13 @@
 // The Slice page (Slice as its own page, step 1; behind the app's SLICE_PAGE switch, off until released): the design's
 // bodies laid on the plate in the shared view, listed on the left, read through the representation registry (Design's
-// lister and mesh producer), never from Design's own code. Print choices, slicing and the preview arrive in the next steps;
-// until then Design's File ▾ Slice for printing still does the slicing. Styles: src/styles/slice-page.css.
+// lister and mesh producer), never from Design's own code. The properties hold the print choices and a Slice button (print-panel.ts, step 4b1); the download and the preview
+// arrive in the next steps (the download is the panel's Slice and download), and until then Design's File ▾ Slice for printing is the way to a file. Styles: src/styles/slice-page.css.
 
-import type { DisplayMesh, ListedObject, MountedWorkspace, RepresentationRegistry, WorkspaceContext, WorkspacePlugin } from "@fission/core";
+import { saveFile } from "@fission/ui";
+import { logPrint, openPrintPreview, P1S_KIND, printFileName, printLead, SliceDropped, testPieceFile } from "@fission/print";
+import { printView } from "@fission/viewport";
+import { printPanel, type PrintPanel } from "./print-panel.ts";
+import { playback, type DisplayMesh, type LeftOut, type ListedObject, type MountedWorkspace, type RepresentationRegistry, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 
 /** One body as the page shows it: its name and its triangles (mm). */
 export interface PlateBody {
@@ -44,6 +48,26 @@ export function plateWords(count: number, failed: number): string {
   return `${count} ${count === 1 ? "body" : "bodies"} on the plate.${unread}`;
 }
 
+/** "Extrude 1", "Extrude 1 and Combine 2", "Extrude 1, Extrude 2 and 2 more". */
+const nameList = (names: readonly string[]): string => {
+  const shown = names.length > 3 ? [...names.slice(0, 2), `${names.length - 2} more`] : [...names];
+  return shown.length === 1 ? shown[0] : `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}`;
+};
+
+/**
+ * What the page says the plate leaves out (SL #761): the Design items that failed to build, so the print is without
+ * what they would make, and the bodies Design hides. Empty when nothing is left out.
+ */
+export function leftOutWords(left: LeftOut): string {
+  const parts: string[] = [];
+  if (left.failed.length > 0) {
+    const them = left.failed.length === 1 ? "it" : "them";
+    parts.push(`${nameList(left.failed)} failed in Design, so the print is without ${left.failed.length === 1 ? "what it makes" : "what they make"}. Fix ${them} in the Design timeline (red) to include ${them}.`);
+  }
+  if (left.hidden.length > 0) parts.push(`${nameList(left.hidden)} ${left.hidden.length === 1 ? "is" : "are"} hidden in Design, so ${left.hidden.length === 1 ? "it is" : "they are"} not on the plate.`);
+  return parts.join(" ");
+}
+
 /** Reads every body the design shows as a triangle mesh, through the registry; a body that can't be read is counted, not thrown. */
 export async function readPlate(registry: RepresentationRegistry, objects: readonly ListedObject[]): Promise<{ bodies: PlateBody[]; failed: number }> {
   const bodies: PlateBody[] = [];
@@ -80,10 +104,31 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
   list.append(heading, items, words);
   ctx.browser.append(list);
 
-  const note = doc.createElement("section");
-  note.className = "slice-page";
-  note.innerHTML = `<h2>Slice</h2><p>This page shows the bodies of your design on the print plate. Print choices and slicing come to it in the next steps; until then, slice from Design: File ▾ Slice for printing.</p>`;
-  ctx.properties.append(note);
+  const objectsNow = () => ctx.representations.objectsOf("design", ctx.project);
+  let storage: Storage | null = null;
+  try {
+    storage = doc.defaultView?.localStorage ?? null;
+  } catch {
+    storage = null; // storage off: the choices start from their defaults
+  }
+  const panel: PrintPanel = printPanel(doc, { kernel: ctx.kernel, registry: ctx.representations, objects: objectsNow,
+    storage,
+    save: (request) => saveFile(doc, request),
+    openPreview: (gcode, words) => void openPrintPreview(ctx.toolbar, playback(gcode), words, (host, p) => printView(host, p)),
+    // Printer fits (P13): the fit test piece's P1S print file, saved like a slice's.
+    testPiece: async (choices, file, alive) => {
+      const print = await testPieceFile(ctx.kernel, choices, file.plate, file.nozzle);
+      if (!alive()) throw new SliceDropped();
+      const suggestedName = printFileName({ ...choices, supports: "off" }, file.plate, file.nozzle, "fit-test-piece");
+      const r = await saveFile(doc, { suggestedName, kind: P1S_KIND, bytes: print.package });
+      if (r.status === "failed") throw new Error(r.message);
+      return { saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
+    },
+    onProgress: (listener) => ctx.kernel.onProgress?.(listener) ?? (() => {}),
+    log: (made) => logPrint(doc, made),
+    projectName: () => printLead(ctx.project.name, ctx.fileName?.()),
+  });
+  ctx.properties.append(panel.element);
 
   const show = async () => {
     const mine = ++reading;
@@ -96,7 +141,7 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
         return li;
       }),
     );
-    words.textContent = plateWords(bodies.length, failed);
+    words.textContent = [plateWords(bodies.length, failed), leftOutWords(ctx.representations.leftOutOf("design", ctx.project))].filter(Boolean).join(" ");
     if (awake) {
       ctx.viewport.showBody(plateMesh(bodies));
       ctx.viewport.fit();
@@ -115,17 +160,17 @@ export function mountSlicePage(ctx: WorkspaceContext): MountedWorkspace {
     unmount() {
       live = false;
       list.remove();
-      note.remove();
+      panel.destroy();
     },
   };
 }
 
 export const slicePageWorkspace: WorkspacePlugin = {
   id: "slice",
-  title: "Slice",
+  title: "SliceLab",
   summary: "A 3D printing slicer for any printer, fed directly by the design.",
   status: "working",
-  representations: { produces: [], accepts: ["mesh"] },
+  representations: { produces: [], accepts: ["mesh", "data"] },
   commands: [],
   mount: mountSlicePage,
 };

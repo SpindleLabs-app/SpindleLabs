@@ -2,7 +2,7 @@
 // suppress, typed sizes, undo and redo against a model written apart.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { app } from "./design-app.ts";
+import { app, rebuildChanges } from "./design-app.ts";
 import { empty, insert, type, row, panel } from "./selection-hunt-helpers.ts";
 import { seeded } from "../src/index.ts";
 
@@ -112,7 +112,10 @@ async function session(seed: bigint, steps: number, checkGhost: boolean) {
     const pt = focusF && !focusF.suppressed ? focusF : lv[lv.length - 1];
     if (pt) assert.equal((a.$("#width") as HTMLInputElement).value, String(pt.w), `width box shows ${pt.id}'s width, ${where}`);
   }
+  const ended = a.doc();
   assert.ok(await a.close());
+  // The rule for every seeded session (SL #641): the design it ended with, opened again, rebuilds to itself.
+  assert.equal(await rebuildChanges(ended), null, `seed ${seed}`);
 }
 
 // FISSION_SESSIONS seeds (default 20) of 60 steps, each checking no gone body stays selected (fixed 2026-11-01).

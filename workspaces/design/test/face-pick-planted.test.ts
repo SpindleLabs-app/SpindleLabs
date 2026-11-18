@@ -30,8 +30,8 @@ export const FACE_PICK_PLANTS: Plant[] = [
   {
     name: "shared-name-taken",
     file: "face-pick",
-    find: '  const ref = shownReference(scene, hit.body, "face", hit.index);',
-    replace: '  const ref = shownReference(scene, hit.body, "face", hit.index) ?? { kind: "face" as const, id: `face:${body.names.feature}/${body.view.face_roles[hit.index]?.role}` as never };',
+    find: '?? shownReference(scene, hit.body, "face", hit.index);',
+    replace: '?? shownReference(scene, hit.body, "face", hit.index) ?? { kind: "face" as const, id: `face:${body.names.feature}/${body.view.face_roles[hit.index]?.role}` as never };',
     caught: "differs from the model",
   },
   // The pick's joined number read as the body's own (the second body's faces land on the first's).

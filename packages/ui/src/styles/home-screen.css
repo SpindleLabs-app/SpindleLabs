@@ -29,7 +29,7 @@
 .home-screen .home-chip { font-size: 11px; padding: 1px 8px; color: var(--text-dim); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); }
 .home-screen .home-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--look-space-2); }
 .home-screen .home-row-question { flex-basis: 100%; font-size: 13px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
-.home-screen .home-links { margin: 0; }
+.home-screen .home-links { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--look-space-2); }
 .home-screen .home-button:not(#none) { font: inherit; min-height: var(--look-target); padding: 0 var(--look-space-4); color: inherit; background: var(--look-field); border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); cursor: pointer; }
 .home-screen .home-button:not(#none):hover { border-color: var(--look-accent); color: var(--look-accent-text); }
 .home-screen .home-primary:not(#none) { border-color: var(--look-accent); }
@@ -43,4 +43,50 @@
   .home-screen .home-row-actions { justify-content: flex-start; }
   .home-screen .home-row-question { text-align: left; }
   .home-screen .home-button:not(#none) { min-height: var(--look-target-touch); }
+}
+
+/* The living background (home-backdrop.ts): a canvas and a scrim behind the screen's words, both fixed to the
+   window so they stay put while the list scrolls. Behind everything (z-index -1 in the screen's own stacking context), never
+   caught by a press, never read out. The scrim keeps the words readable over the lines: the title, the status and the guide
+   link sit straight on it (the card and the rows have their own solid backgrounds). Colours are tokens only. */
+.home-screen > .home-backdrop, .home-screen > .home-scrim { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; z-index: -1; pointer-events: none; }
+/* Unseen until it is ready (the list painted and the design here), then faded in already in place: it never shows at one
+   size and jumps to another. */
+.home-screen > .home-backdrop { display: block; opacity: 0; transition: opacity 0.9s ease-out; }
+.home-screen > .home-backdrop[data-ready] { opacity: 1; }
+.home-screen > .home-scrim { background: radial-gradient(ellipse 50% 32% at 50% 12%, color-mix(in srgb, var(--surface) 70%, transparent), transparent 100%); }
+.home-screen > .home-backdrop[data-backdrop="off"] { display: none; }
+/* Cards float above the picture, a little see-through, so the design turning behind them shows faintly through. */
+.home-screen .home-card, .home-screen .home-row { background: color-mix(in srgb, var(--surface-raised) 86%, transparent); box-shadow: var(--look-shadow-1); }
+.home-screen .home-card { box-shadow: var(--look-shadow-2), 0 0 0 1px color-mix(in srgb, var(--look-accent) 35%, transparent), 0 0 28px color-mix(in srgb, var(--look-accent) 18%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .home-screen > .home-backdrop { transition: none; }
+  .home-screen > .home-backdrop[data-ready] { opacity: 0.8; }
+}
+/* Words that sit straight on the picture get a plate of their own, so a line passing behind never takes their contrast
+   (the browser check reads the worst pixel behind them). */
+.home-screen .home-status:not(:empty) { justify-self: start; width: fit-content; max-width: 100%; padding: 2px 8px; margin-left: -8px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
+/* The message sits straight in the screen's grid, whose column is the whole window: kept to the 720 px column's left edge. */
+.home-screen .home-status:not(:empty) { max-width: min(736px, 100%); margin-left: calc(max(0px, (100% - 720px) / 2) - 8px); }
+/* The title too: a plate just round its words at the column's left edge (on a phone the scrim is narrow, and a point of
+   light on a line behind the title's right end took its contrast). */
+.home-screen .home-title { justify-self: start; width: fit-content; max-width: min(736px, 100%); padding: 0 8px; margin-left: calc(max(0px, (100% - 720px) / 2) - 8px); background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
+/* Under the list (home-screen.ts): the guide's book and the picture's Pause or Play, small square icon buttons, and the
+   gentle motion suggestion where the picture was slowing the computer down, on a plate of its own. */
+.home-screen .home-icon:not(#none) { display: inline-flex; align-items: center; justify-content: center; width: var(--look-target); min-height: var(--look-target); padding: 0; }
+.home-screen .home-motion-tip { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px var(--look-space-3); padding: 2px 8px; font-size: 13px; background: color-mix(in srgb, var(--surface) 94%, transparent); border-radius: var(--look-radius-s); }
+.home-screen .home-motion-tip .home-link:not(#none) { font-size: inherit; }
+.home-screen .home-links [hidden]:not(#none) { display: none; }
+@media (max-width: 640px) {
+  .home-screen .home-icon:not(#none) { width: var(--look-target-touch); min-height: var(--look-target-touch); }
+}
+/* Folded (home-screen.ts, Ben 2026-11-16): everything but the picture and the Pause and fold icons fades away, the icons
+   staying where they were (hidden things keep their room), so the same press brings the screen back. Hidden, never just
+   see-through: no press, Tab or screen reader finds them. */
+/* Back at once (visible from the press, then fading in), hidden only once faded out. */
+.home-screen > :not(.home-backdrop):not(.home-links), .home-screen .home-links > :not(#home-motion):not(#home-fold) { transition: opacity 0.3s ease-out, visibility 0s; }
+.home-screen.home-folded > :not(.home-backdrop):not(.home-links), .home-screen.home-folded .home-links > :not(#home-motion):not(#home-fold) { opacity: 0; visibility: hidden; transition: opacity 0.3s ease-out, visibility 0s linear 0.3s; }
+@media (prefers-reduced-motion: reduce) {
+  .home-screen > :not(.home-backdrop):not(.home-links), .home-screen .home-links > :not(#home-motion):not(#home-fold),
+  .home-screen.home-folded > :not(.home-backdrop):not(.home-links), .home-screen.home-folded .home-links > :not(#home-motion):not(#home-fold) { transition: none; }
 }

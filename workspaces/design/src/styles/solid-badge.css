@@ -12,9 +12,12 @@
 .solid-badge .solid-badge-mark { position: absolute; left: 12px; top: 12px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 700; color: var(--on-accent); background: var(--text-dim); }
 .solid-badge[data-state="solid"] .solid-badge-mark { background: var(--ok); }
 .solid-badge[data-state="problems"] .solid-badge-mark { background: var(--danger); }
+/* Milder (amber): bodies each solid that touch, or a solid file missing a failed timeline item. */
+.solid-badge[data-state="touching"] .solid-badge-mark, .solid-badge[data-state="missing"] .solid-badge-mark { background: var(--warn); }
 .solid-badge h2 { margin: 4px 0 6px; font-size: 15px; font-weight: 600; }
 .solid-badge[data-state="solid"] h2 { color: var(--ok); }
 .solid-badge[data-state="problems"] h2 { color: var(--danger); }
+.solid-badge[data-state="touching"] h2, .solid-badge[data-state="missing"] h2 { color: var(--warn); }
 .solid-badge .solid-badge-detail { margin: 0; color: var(--text-soft); line-height: 1.4; }
 .solid-badge .solid-badge-list { margin: 8px 0 0; padding-left: 18px; color: var(--text-soft); line-height: 1.4; }
 .solid-badge .solid-badge-list[hidden] { display: none; }

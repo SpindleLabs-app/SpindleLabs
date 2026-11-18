@@ -1,4 +1,5 @@
-// Earlier versions (versions.ts, missing basics 3b): which states are kept, worked by hand on a fake clock; the
+// Earlier versions (versions.ts, missing basics 3b): which states are kept, worked by hand on a fake clock (one
+// every ten minutes at most while the work goes on, and always a state that stood for ten minutes); the
 // newest twenty only; a save of the same state keeps none; versions never cost a save (one that can't be written is
 // passed over, and storage full gives them up for the save); deleting a project deletes them; and seeded sessions
 // against a plain model of the rule.
@@ -36,16 +37,17 @@ test("hand-worked: saves at 0, 1, 5, 11, 20 and 31 minutes keep the states of 0,
   await store.save("p", part(11)); // replaces the 0-minute state; no version yet, so it is kept
   assert.deepEqual(await kept(), [0]);
   at(5);
-  await store.save("p", part(12)); // replaces the 1-minute state: 1 − 0 = 1 < 10 minutes after the newest version, not kept
+  await store.save("p", part(12)); // replaces the 1-minute state: 1 − 0 = 1 < 10 minutes after the newest version, and it stood 5 − 1 = 4 < 10: not kept
   at(11);
-  await store.save("p", part(13)); // replaces the 5-minute state: 5 − 0 = 5 < 10, not kept
+  await store.save("p", part(13)); // replaces the 5-minute state: 5 − 0 = 5 < 10, and it stood 11 − 5 = 6 < 10: not kept
   assert.deepEqual(await kept(), [0]);
   at(20);
   await store.save("p", part(14)); // replaces the 11-minute state: 11 − 0 = 11 ≥ 10, kept
   assert.deepEqual(await kept(), [11, 0]);
   at(31);
-  await store.save("p", part(15)); // replaces the 20-minute state: 20 − 11 = 9 < 10, not kept
-  assert.deepEqual(await kept(), [11, 0]);
+  await store.save("p", part(15)); // replaces the 20-minute state: 20 − 11 = 9 < 10, but it stood 31 − 20 = 11 ≥ 10: kept
+  assert.deepEqual(await kept(), [20, 11, 0]);
+  assert.deepEqual(await store.openVersion("p", new Date(T0 + 20 * MIN)), part(14));
   // Each version is the state as it was then: at 11 minutes the width was 13, at 0 it was 10.
   assert.deepEqual(await store.openVersion("p", new Date(T0 + 11 * MIN)), part(13));
   assert.deepEqual(await store.openVersion("p", new Date(T0)), part(10));
@@ -59,30 +61,68 @@ test("boundary: a state exactly ten minutes after the newest version is kept, 59
   at(0.5);
   await store.save("p", part(2)); // keeps 0
   at(9.99998);
-  await store.save("p", part(3)); // replaces 0.5: not kept
+  await store.save("p", part(3)); // replaces 0.5: 0.5 after the newest version, stood 9.49998, both under 10: not kept
   at(10.5);
-  await store.save("p", part(4)); // replaces 9.99998 min (599,998.8 ms after 0, under 600,000): not kept
+  await store.save("p", part(4)); // replaces 9.99998 min (599,998.8 ms after 0, under 600,000; stood 0.5): not kept
   assert.deepEqual(await kept(), [0]);
   at(11);
   await store.save("p", part(5)); // replaces 10.5 min: kept
-  at(21);
-  await store.save("p", part(6)); // replaces 11 min: 11 − 10.5 = 0.5 < 10 after the newest version, not kept
+  at(20.5);
+  await store.save("p", part(6)); // replaces 11 min: 11 − 10.5 = 0.5 < 10 after the newest version, stood 20.5 − 11 = 9.5 < 10: not kept
   assert.deepEqual(await kept(), [10.5, 0]);
   at(30);
-  await store.save("p", part(7)); // replaces 21: 21 − 10.5 = 10.5 ≥ 10, kept
-  at(40);
-  await store.save("p", part(8)); // replaces 30: 30 − 21 = 9, not kept
-  assert.deepEqual(await kept(), [21, 10.5, 0]);
+  await store.save("p", part(7)); // replaces 20.5: 20.5 − 10.5 = 10 ≥ 10, kept
+  at(39);
+  await store.save("p", part(8)); // replaces 30: 30 − 20.5 = 9.5 < 10, stood 39 − 30 = 9 < 10: not kept
+  assert.deepEqual(await kept(), [20.5, 10.5, 0]);
   const exact = setup();
   exact.at(0);
   await exact.store.save("p", part(1));
   exact.at(1);
   await exact.store.save("p", part(2)); // keeps 0
   exact.at(10);
-  await exact.store.save("p", part(3)); // replaces 1: 1 < 10
+  await exact.store.save("p", part(3)); // replaces 1: 1 < 10, stood 9 < 10
   exact.at(12);
   await exact.store.save("p", part(4)); // replaces 10: exactly 10 minutes after 0, kept
   assert.deepEqual(await exact.kept(), [10, 0]);
+});
+
+test("hand-worked: the state a session ended in is kept when the next session, a week later, saves over it (issue #628, item 3)", async () => {
+  const { store, at, kept } = setup();
+  const WEEK = 7 * 24 * 60;
+  // Monday: a save a minute from 09:00 to 09:09, widths 50 to 59. The 09:00 state is the first version (kept when
+  // 09:01 replaces it, none before); the states of 09:01 to 09:08 are each 1 to 8 minutes after it (under 10) and
+  // each stood for 1 minute (under 10): not kept.
+  for (let m = 0; m < 10; m++) {
+    at(m);
+    await store.save("p", part(50 + m));
+  }
+  assert.deepEqual(await kept(), [0]);
+  // The Monday after, a wrong edit: it replaces the 09:09 state, which is only 9 minutes after the newest version
+  // but stood for 7 days − 9 minutes = 10,071 minutes, 10 or more: kept.
+  at(WEEK);
+  await store.save("p", part(1));
+  assert.deepEqual(await kept(), [9, 0]);
+  assert.deepEqual(await store.openVersion("p", new Date(T0 + 9 * MIN)), part(59), "the state Monday's session ended in");
+  // A minute later another: the first wrong state is 10,071 minutes after the newest version: kept as before.
+  at(WEEK + 1);
+  await store.save("p", part(2));
+  assert.deepEqual(await kept(), [WEEK, 9, 0]);
+});
+
+test("boundary: a replaced state that stood for 0.9 × ten minutes is not kept for that, one that stood for 1.1 × is, and exactly ten minutes is", async () => {
+  // Each case: version at 0 (kept when 1 replaces it), then the 1-minute state, 1 < 10 minutes after the newest
+  // version, is replaced after standing 9, 11 or exactly 10 minutes.
+  for (const [stood, expected] of [[9, [0]], [11, [1, 0]], [10, [1, 0]], [9.99998, [0]]] as const) {
+    const { store, at, kept } = setup();
+    at(0);
+    await store.save("p", part(1));
+    at(1);
+    await store.save("p", part(2));
+    at(1 + stood);
+    await store.save("p", part(3));
+    assert.deepEqual(await kept(), expected, `stood ${stood} minutes`);
+  }
 });
 
 test("only the newest twenty are kept, the oldest given up first", async () => {
@@ -234,7 +274,7 @@ for (const seed of [1, 2, 3, 4, 5]) {
       at(minutes);
       await store.save(id, part(width));
       const versions = was?.versions ?? [];
-      if (was !== undefined && was.width !== width && (versions.length === 0 || was.at - versions[0][0] >= 10)) versions.unshift([was.at, was.width]);
+      if (was !== undefined && was.width !== width && versions[0]?.[0] !== was.at && (versions.length === 0 || was.at - versions[0][0] >= 10 || minutes - was.at >= 10)) versions.unshift([was.at, was.width]);
       model.set(id, { at: minutes, width, versions: versions.slice(0, 20) });
       if (step % 100 === 99 || step === 999) {
         for (const [pid, m] of model) {

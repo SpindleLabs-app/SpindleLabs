@@ -2,7 +2,7 @@
 // (happy-dom). The real app in Chromium: apps/fission/e2e/home.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { carryOnRow, filterRows, homeRows, homeScreen, workspacesIn, type HomeParts, type HomeProject } from "../src/home-screen.ts";
+import { carryOnRow, filterRows, homeRows, homeScreen, SHAPE_WAIT_MS, workspacesIn, type HomeParts, type HomeProject } from "../src/home-screen.ts";
 
 const { Window } = await import("happy-dom");
 const NOW = new Date(Date.UTC(2026, 10, 6, 12, 0, 0));
@@ -87,7 +87,7 @@ test("the screen shows the card, the list and the filter; search and filter narr
   assert.match(q("#home-status").textContent!, /No project matches/);
 });
 
-test("the card on the open project just goes back; New, Open file, Upload STL and the guide each do their one thing", async () => {
+test("the card on the open project just goes back; New, Open file and the guide each do their one thing", async () => {
   const s = setup();
   await s.home.show();
   await s.click("#home-carry-on");
@@ -100,10 +100,11 @@ test("the card on the open project just goes back; New, Open file, Upload STL an
   await s.home.show();
   await s.click("#home-open-file");
   await s.home.show();
-  await s.click("#home-upload-stl");
   await s.home.show();
+  // Upload STL is not offered: STL files can't be opened yet, and a button that opens the file picker only to refuse the file would pretend.
+  assert.equal(s.doc.querySelector("#home-upload-stl"), null);
   await s.click("#home-guide");
-  assert.deepEqual(s.calls, ["new", "choose", "choose", "guide"]);
+  assert.deepEqual(s.calls, ["new", "choose", "guide"]);
 });
 
 test("Open on another project opens it and closes the screen; a refusal says why and stays", async () => {
@@ -201,4 +202,40 @@ test("while the screen is shown the rest of the page can't be reached by Tab (in
   await s.home.show();
   s.home.hide();
   assert.equal(already.hasAttribute("inert"), true);
+});
+
+test("the picture behind waits for the open project to be shown, then appears once, in place (Ben: no jump a second later)", async () => {
+  // Ben, 2026-11-16: the picture loaded bigger and shrank a second later. It now waits for the list and for the open
+  // project's body, and only then is marked ready (the page fades it in).
+  let shown!: () => void;
+  let outlines = 0;
+  const s = setup({ shown: () => new Promise<void>((r) => (shown = r)), outline: () => (outlines++, [0, 0, 0, 1, 1, 1]), surface: () => null });
+  await s.home.show();
+  const canvas = s.q<HTMLCanvasElement>(".home-backdrop");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(canvas.dataset.ready, undefined); // the list is up, the body not yet: nothing shown
+  assert.equal(outlines, 0);
+  shown();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(canvas.dataset.ready, "yes");
+  assert.ok(outlines > 0); // read once it was there
+  s.home.hide();
+  assert.equal(canvas.dataset.ready, undefined);
+  // The card on another project (not the open one): no body to wait for, so ready as soon as the list is painted.
+  const other = setup({ openId: () => "b", shown: () => new Promise<void>(() => {}) });
+  await other.home.show();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(other.q<HTMLCanvasElement>(".home-backdrop").dataset.ready, "yes");
+});
+
+test("a project that never finishes showing holds the picture back SHAPE_WAIT_MS at most", async () => {
+  assert.equal(SHAPE_WAIT_MS, 4000);
+  const s = setup({ shown: () => new Promise<void>(() => {}) });
+  await s.home.show();
+  const canvas = s.q<HTMLCanvasElement>(".home-backdrop");
+  await new Promise((r) => setTimeout(r, SHAPE_WAIT_MS * 0.9));
+  assert.equal(canvas.dataset.ready, undefined);
+  await new Promise((r) => setTimeout(r, SHAPE_WAIT_MS * 0.2));
+  assert.equal(canvas.dataset.ready, "yes");
+  s.home.hide();
 });

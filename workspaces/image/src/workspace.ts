@@ -4,7 +4,7 @@
 // viewport, seen from above. The open image is kept
 // while other workspaces are shown, but not saved with the project yet (G6).
 
-import type { MountedWorkspace, WorkspaceContext } from "@fission/core";
+import { MAX_IMAGE_BYTES, type MountedWorkspace, type WorkspaceContext } from "@fission/core";
 import { setBrightness, setDpi, setLayerVisible, setMmPerPixel, toImageRep, type ImageDocument, type Pixels } from "./document.ts";
 import { openImage } from "./open.ts";
 import { imageObjects } from "./representations.ts";
@@ -51,6 +51,14 @@ export async function openImageFile(name: string, bytes: Uint8Array, decode = br
   } catch (e) {
     message = (e as Error).message;
   }
+}
+
+/** Megabytes to a tenth, rounded up, as the shell writes them (core's project.ts megabytes). */
+const megabytes = (bytes: number): string => `${Math.ceil((bytes / (1024 * 1024)) * 10) / 10} MB`;
+
+/** Why the Open button won't read a file of this size, in the shell's words for a dropped one (core's files.ts), or null when it reads it. */
+export function imageFileTooBig(name: string, size: number): string | null {
+  return size > MAX_IMAGE_BYTES ? `Couldn't open “${name}”: it is ${megabytes(size)}, and an image may be at most ${megabytes(MAX_IMAGE_BYTES)}.` : null;
 }
 
 /** The open image's layers as live handles other workspaces can take (representations.ts). */
@@ -223,6 +231,8 @@ export function mountImage(ctx: WorkspaceContext, decode = browserDecode): Mount
     input.value = ""; // the same file can be opened again
     if (!file) return;
     try {
+      const refused = imageFileTooBig(file.name, file.size);
+      if (refused) throw new Error(refused); // refused by its size, before the whole file is read (audit L8)
       const doc = await openImage(new Uint8Array(await file.arrayBuffer()), file.name, decode);
       if (!live) return;
       current = doc;

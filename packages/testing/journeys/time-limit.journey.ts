@@ -25,6 +25,20 @@ function grating(n: number): BodySpec {
   return { extrude: { profile: { outer: rect(0, 0, 100, 100), holes }, distance: 2 } };
 }
 
+/** A comb 249.5 mm long: 499 teeth 0.25 mm wide and 8 mm tall on a 2 mm spine, 3 mm thick; 4 × 499 + 3 = 1,999 corners. */
+function comb(): BodySpec {
+  const corners = [0, 0];
+  for (let i = 0; i < 499; i++) corners.push(i * 0.5, 10, (i + 0.5) * 0.5, 10, (i + 0.5) * 0.5, 2, (i + 1) * 0.5, 2);
+  corners.push(249.5, 0);
+  return { extrude: { profile: { outer: { path: { corners, bulges: [] } }, holes: [] }, distance: 3 } };
+}
+
+/** A 250 × 10 × 2 mm strip with 499 slots 0.25 × 6 mm: 4 + 4 × 499 = 2,000 corners. */
+const slotted = (): BodySpec => ({ extrude: { profile: { outer: rect(0, 0, 250, 10), holes: Array.from({ length: 499 }, (_, i) => rect(0.3 + 0.5 * i, 2, 0.55 + 0.5 * i, 8)) }, distance: 2 } });
+
+/** A strip 5n mm long, 5 mm wide and 2 mm thick with `n` round holes of radius 1.5 in a row. */
+const holed = (n: number): BodySpec => ({ extrude: { profile: { outer: rect(0, 0, 5 * n, 5), holes: Array.from({ length: n }, (_, i) => ({ circle: { center: [2.5 + 5 * i, 2.5] as [number, number], radius: 1.5 } })) }, distance: 2 } });
+
 /** How long `f` takes, in ms. */
 function timed<T>(f: () => T): [number, T] {
   const start = performance.now();
@@ -111,6 +125,20 @@ test("legal calls of each size take less than their units × the calibration, wi
     const bigStl = entry.body_stl(big, "box").bytes;
     check(`a ${w} × ${d} × ${h} mm box sliced at 100 % infill`, callUnits("slice_stl", [bigStl, 0.2, 2, 100, "off"], () => undefined), () => timed(() => entry.slice_stl(bigStl, 0.2, 2, 100, "off"))[0], 2);
     entry.body_free(big);
+  }
+  // Export STL's "this is solid" check of long, many-toothed parts (hunt B2, 2026-11-12: priced at a thousandth of a unit
+  // a triangle, the comb took about 150 times its units and the 10 s floor hid it on a fast machine, while the browser
+  // took 14.5 s and was stopped). Each a legal extrude under the 2,000 profile corners, its STL checked as Download STL does.
+  for (const [what, spec] of [["a 249.5 mm comb of 499 teeth", comb()], ["a 250 mm strip with 499 slots", slotted()], ["a 3 m strip with 600 round holes", holed(600)]] as const) {
+    const file = entry.export_stl(spec, "part").bytes;
+    // 50 bytes a triangle after the 84-byte header.
+    const triangles = (file.length - 84) / 50;
+    check(`${what} (${triangles} triangles) checked solid`, callUnits("check_solid", [file], () => undefined), () => {
+      const [ms, report] = timed(() => entry.check_solid(file));
+      // A sound part is never called broken; the check may stop at its own budget and say "unfinished" (these do today).
+      assert.notEqual(report.verdict, "problems", what);
+      return ms;
+    }, 1);
   }
   // A 300-hole plate (304 corners), built with its view: make_extrude.
   const side = 18;

@@ -331,7 +331,9 @@ async function session(seed) {
       assert.fail(`${where()}: after the reload ${await page.evaluate(() => document.querySelector("#viewport").dataset.sketchLines)} segments drawn, expected ${finished}`),
     );
     assert.equal(await page.evaluate(() => document.querySelector("#viewport").dataset.sketching), "false");
+    // Its row by name, not only some row with its id: sketch-2 (the counter's first id after the part's) is named Sketch 1.
     assert.ok(await page.isVisible('[data-node="sketches/sketch-2"]'), "Sketch 1 is listed after the reload");
+    assert.equal(await page.textContent('#browser .tree-row[data-node="sketches/sketch-2"]'), "Sketch 1", "Sketch 1 is listed after the reload, by name");
 
     // The saved file opened in a fresh tab of a fresh browser shows the same.
     const other = await browser.newContext({ viewport: { width: 1280, height: 800 } });

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHistory } from "@fission/core";
 import { memoryKeyValue, stepsStore } from "@fission/storage";
-import { keptSteps } from "../src/kept-steps.ts";
+import { keptSteps, LEFT_LABEL } from "../src/kept-steps.ts";
 
 const tick = () => new Promise((r) => setImmediate(r));
 function setup(kv = memoryKeyValue(), extra = {}) {
@@ -178,5 +178,81 @@ test("a late read for a project no longer followed changes nothing", async () =>
   answer();
   await tick();
   await tick();
+  assert.equal(s.history.canUndo(), false);
+});
+
+// Lost-work hunt 2026-11-12 (issue #627 items 6 and 7).
+test("steps kept by an older SpindleLabs are brought up to date and put back; without that they never fit", async () => {
+  // The older build wrote its snapshots in capitals; today's reader writes them small. The project opens as "w=20".
+  const old = { kept: [{ snapshot: "W=10", label: "", mergeKey: undefined, at: 0 }, { snapshot: "W=20", label: "Width 20", mergeKey: undefined, at: 1 }, { snapshot: "W=30", label: "Width 30", mergeKey: undefined, at: 2 }], index: 1 };
+  const kv = memoryKeyValue();
+  await stepsStore(kv).write("p", old, 1);
+  const plain = setup(kv);
+  plain.app.project = "w=20";
+  plain.history.reset();
+  plain.kept.follow("p");
+  await plain.kept.settled();
+  assert.equal(plain.history.canUndo(), false, "compared as text, the old steps don't fit (the bug)");
+
+  const s = setup(kv, { upgrade: (text) => text.toLowerCase() });
+  s.app.project = "w=20";
+  s.history.reset();
+  s.kept.follow("p");
+  await s.kept.settled();
+  assert.deepEqual(s.history.steps().map((e) => e.label), ["", "Width 20", "Width 30"]);
+  s.history.undo();
+  assert.equal(s.app.project, "w=10", "Undo restores the step as today's readers write it");
+  s.history.redo();
+  s.history.redo();
+  assert.equal(s.app.project, "w=30", "the step that was a Redo away is still there");
+  s.history.undo();
+  // Written again as put back, so the next visit reads today's text.
+  s.kept.saved();
+  await tick();
+  assert.deepEqual((await s.steps.read("p")).kept.map((e) => e.snapshot), ["w=10", "w=20", "w=30"]);
+});
+
+test("a kept snapshot today's readers refuse: the history starts afresh, nothing thrown", async () => {
+  const kv = memoryKeyValue();
+  await stepsStore(kv).write("p", { kept: [{ snapshot: "W=10", label: "", mergeKey: undefined, at: 0 }, { snapshot: "W=20", label: "Width 20", mergeKey: undefined, at: 1 }], index: 1 }, 1);
+  const s = setup(kv, { upgrade: () => { throw new Error("can't be read"); } });
+  s.app.project = "w=20";
+  s.history.reset();
+  s.kept.follow("p", true);
+  await s.kept.settled();
+  assert.equal(s.history.canUndo(), false);
+});
+
+test("a change that came back from the journal: steps one change short get it as a step; the redo steps go", async () => {
+  const kv = memoryKeyValue();
+  // Kept: w=10, w=20 (the present), w=30 a redo away. The page went 200 ms after w was typed 40: the project opens as w=40.
+  await stepsStore(kv).write("p", { kept: [...two.kept, { snapshot: "w=30", label: "Width 30", mergeKey: undefined, at: 2 }], index: 1 }, 1);
+  const s = setup(kv, { now: () => 7 });
+  s.app.project = "w=40";
+  s.history.reset();
+  s.kept.follow("p", true);
+  await s.kept.settled();
+  // By hand: steps up to the present (w=10, w=20), then the change put back; Width 30 is dropped as a new change drops it.
+  assert.deepEqual(s.history.steps().map((e) => e.label), ["", "Width 20", LEFT_LABEL]);
+  assert.equal(s.history.canRedo(), false);
+  s.history.undo();
+  assert.equal(s.app.project, "w=20", "Undo takes back exactly the change made before leaving");
+  s.history.undo();
+  assert.equal(s.app.project, "w=10", "and the steps from before are still there");
+  s.history.redo();
+  s.history.redo();
+  s.kept.saved();
+  await tick();
+  assert.deepEqual((await s.steps.read("p")).kept.map((e) => e.snapshot), ["w=10", "w=20", "w=40"], "kept as put back");
+});
+
+test("steps that don't end at the project, and no change came back from the journal: afresh, as before", async () => {
+  const kv = memoryKeyValue();
+  await stepsStore(kv).write("p", two, 1);
+  const s = setup(kv);
+  s.app.project = "w=40"; // changed in another tab, or on another device
+  s.history.reset();
+  s.kept.follow("p");
+  await s.kept.settled();
   assert.equal(s.history.canUndo(), false);
 });

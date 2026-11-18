@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "e2e:tabs": "SPINDLE_HOME=1 vite build --outDir dist-home && E2E_DIST=$PWD/dist-home node e2e/tabs.mjs",
+    "e2e:tabs": "SPINDLE_TABS=1 vite build --outDir dist-tabs && E2E_DIST=$PWD/dist-tabs node e2e/tabs.mjs",
     "e2e:slice-page": "SPINDLE_SLICE_PAGE=1 vite build --outDir dist-slice && E2E_DIST=$PWD/dist-slice node e2e/slice-page.mjs",
     "e2e:home": "SPINDLE_HOME=1 vite build --outDir dist-home && E2E_DIST=$PWD/dist-home node e2e/home.mjs",
     "e2e:offline": "SPINDLE_OFFLINE=1 vite build --outDir dist-offline && E2E_DIST=$PWD/dist-offline node e2e/offline.mjs",
@@ -22,8 +22,10 @@
     "@fission/community": "*",
     "@fission/storage": "*",
     "@fission/account": "*",
+    "@fission/open-format": "*",
     "@fission/ai": "*",
     "@fission/design": "*",
+    "@fission/print": "*",
     "@fission/render": "*",
     "@fission/simulate": "*",
     "@fission/manufacture": "*",
@@ -33,11 +35,11 @@
     "@fission/vector": "*",
     "@fission/image": "*",
     "@fission/layout": "*",
-    "three": "^0.186.1"
+    "three": "^0.187.0"
   },
   "devDependencies": {
-    "@types/three": "^0.186.0",
-    "playwright": "^1.64.1",
+    "@types/three": "^0.187.0",
+    "playwright": "1.65.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
   }

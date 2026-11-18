@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
+import { insertDuplicates } from "../src/duplicate.ts";
+import { insertMove, NO_MOVE } from "../src/move.ts";
+import { insertCombine } from "../src/combine.ts";
+import { renameItem } from "../src/timeline-edits.ts";
 import { addSketch } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -445,4 +449,54 @@ test("saved failing sessions replay clean", () => {
     const { steps } = JSON.parse(readFileSync(new URL(name, REGRESSIONS), "utf8"));
     assert.equal(runBarSession(bar, steps)?.message ?? null, null, name);
   }
+});
+
+// #505: a failed row says why, in the rebuild's own words.
+test("hand-worked: a failed item carries the rebuild's reason, only while it is failed", () => {
+  const doc = threeItems();
+  const failed = new Set(["feature-3"]);
+  const reasons = new Map([["feature-3", "The bodies don't overlap, so they have nothing in common."], ["feature-1", "left over"]]);
+  const items = timelineBarItems(doc, failed, new Map(), (s) => s, reasons).items;
+  // Worked by hand: only feature-3 is failed and has words, so only it carries them; feature-1 has words but built.
+  assert.deepEqual(items.map((i) => i.reason), [null, null, "The bodies don't overlap, so they have nothing in common."]);
+  // Rolled back: greyed, not red, so no reason either.
+  assert.equal(timelineBarItems(withMarker(doc, "sketch-2"), failed, new Map(), (s) => s, reasons).items[2].reason, null);
+  // Failed with no words known (the data's own failure): no reason, still failed.
+  const bare = timelineBarItems(doc, failed).items[2];
+  assert.deepEqual([bare.failed, bare.reason], [true, null]);
+});
+
+// Timeline and rebuild hunt 2026-11-11 (E2): Edit feature was on for every item that is not a sketch, so a Copy's or a
+// Mirror's led to "Copy 1 is a sketch: it has no sizes to edit" after shutting whatever tool was open.
+test("Edit feature is off for a Copy and a Mirror, which have nothing of their own to edit, with words true of the item; on for every item with an editor", () => {
+  // Box 1 (feature-1), Box 2 (feature-2), Copy 1 of Box 1 (feature-3), Mirror 1 of Box 1 across YZ (feature-4),
+  // Move 1 of Box 1 (feature-5), Scale 1 of Box 2 (feature-6), Combine 1 joining Box 2 into Box 1 (feature-7).
+  let doc = insertPreset(partDocument("box", 40, 30, 20), "box", 10, 10, 10).doc;
+  doc = insertDuplicates(doc, ["body:feature-1"]).doc;
+  doc = insertDuplicates(doc, ["body:feature-1"], "YZ").doc;
+  doc = insertMove(doc, ["body:feature-1"], { ...NO_MOVE, x: 5 }).doc;
+  doc = insertMove(doc, ["body:feature-2"], { ...NO_MOVE, scale: 2 }, "scale").doc;
+  doc = insertCombine(doc, "body:feature-1", ["body:feature-2"], "join").doc;
+  assert.deepEqual(doc.timeline.features.map((f) => f.provenance.self.label), ["Box 1", "Box 2", "Copy 1", "Mirror 1", "Move 1", "Scale 1", "Combine 1"]);
+  const edit = (d: DesignDocument, id: string) => itemMenu(d, id)[0];
+  const copyOff = "Copy 1 is a copy of Box 1: it follows that body and has nothing of its own to edit";
+  const mirrorOff = "Mirror 1 is a mirror image of Box 1: it follows that body and has nothing of its own to edit";
+  assert.deepEqual(edit(doc, "feature-3"), { action: "edit", label: "Edit feature", off: copyOff });
+  assert.deepEqual(edit(doc, "feature-4"), { action: "edit", label: "Edit feature", off: mirrorOff });
+  // Chosen anyway (a double-click runs the entry): refused in the same words, nothing opened.
+  assert.deepEqual(barEdit(doc, { kind: "menu", id: "feature-3", action: "edit" }), { kind: "refused", message: copyOff });
+  assert.deepEqual(barEdit(doc, { kind: "menu", id: "feature-4", action: "edit" }), { kind: "refused", message: mirrorOff });
+  // The rest of a Copy's menu is as any item's.
+  assert.deepEqual(itemMenu(doc, "feature-3").slice(1).map((e) => [e.action, e.off]), [["marker", null], ["suppress", null], ["rename", null], ["delete", null]]);
+  // Every item with an editor keeps Edit feature on: a solid's sizes, a Move's and a Scale's panel, a Combine's.
+  for (const id of ["feature-1", "feature-2", "feature-5", "feature-6", "feature-7"]) {
+    assert.deepEqual(edit(doc, id), { action: "edit", label: "Edit feature", off: null }, id);
+    assert.deepEqual(barEdit(doc, { kind: "menu", id, action: "edit" }), { kind: "open", id });
+  }
+  // The words name the body by its name now, and the copy by its own.
+  const plate = renameItem(doc, "feature-1", "Plate");
+  assert.ok("doc" in plate);
+  const spare = renameItem(plate.doc, "feature-3", "Spare");
+  assert.ok("doc" in spare);
+  assert.equal(edit(spare.doc, "feature-3").off, "Spare is a copy of Plate: it follows that body and has nothing of its own to edit");
 });

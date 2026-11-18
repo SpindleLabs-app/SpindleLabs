@@ -71,7 +71,8 @@ function screenPoint(box, [px, py, pz], view) {
 }
 
 const data = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
-const undoTitle = (page) => page.evaluate(() => document.getElementById("undo").title);
+// What Undo says of the project's steps: with a tool open its title says it cancels the tool (issue #520).
+const undoTitle = (page) => page.evaluate(() => document.getElementById("undo").dataset.projectStep);
 const until = (page, fn, arg, what) =>
   page.waitForFunction(fn, arg, { timeout: 5000 }).catch(async () => assert.fail(`${what}: timed out`));
 /** Waits until the edited sketch shows these points (the kernel snaps each click first). */
@@ -182,7 +183,9 @@ try {
     // A new part: framed again in the 3D view, not left looking straight down.
     assert.equal(Number(await data(page, "fits")), fitsBefore + 1, "framed once");
     assert.equal(await data(page, "shape"), "sketch-extrude");
+    // The row by name (the extrude's intent above says Sketch 1), not only some row with its id.
     assert.ok(await page.isVisible('[data-node="sketches/sketch-2"]'), "the sketch stays in the browser");
+    assert.equal(await page.textContent('#browser .tree-row[data-node="sketches/sketch-2"]'), "Sketch 1", "the sketch stays in the browser, by name");
     if (shots) await page.screenshot({ path: `${shots}/extrude-done-1280.png` });
 
     // A typed distance rebuilds it: 1200 · 25 = 30,000 mm³, one "Change extrude distance" step.
@@ -373,14 +376,18 @@ try {
       };
       const state = async () => ({ volume: await page.textContent("#volume"), sketches: await sketchRows(), warning: await warning(), red: await red(), undo: await undoTitle(page), open: await open() });
 
-      // Sketch 1 (sketch-2): a 40 × 30 rectangle, extruded by the default 10: 40 · 30 · 10 = 12,000 mm³ (Extrude 1, feature-11).
+      // Sketch 1 (sketch-2): a 40 × 30 rectangle on the box's bottom corners, extruded by the default 10: 40 · 30 · 10 =
+      // 12,000 mm³. The ids: point-3, point-4, line-5 and constraint-6 (Horizontal, SL #630: the Line tool keeps a level
+      // line level); point-7, line-8, constraint-9 (Vertical); point-10, line-11, constraint-12 (Horizontal); line-13 back
+      // to point-3, no constraint (both its ends are pinned to the box's corners by then, as the Rectangle tool skips such a
+      // side). Extrude 1 is feature-14.
       await drawn(page, [[0, 0], [40, 0], [40, 30], [0, 30], [0, 0]], tap);
       await status(page, "4 lines, a closed outline.");
       await openPanel(page, "properties", tap); // the sketch's Extrude button is in the Properties sheet on a phone (U5)
       await press("#sketch-extrude");
       await extrudeEnter(page);
       await volume(page, "12,000 mm³");
-      // Sketch 2 (sketch-12), left empty: nothing is built from it.
+      // Sketch 2 (sketch-15), left empty: nothing is built from it.
       await top();
       await press("#create-sketch");
       await pickPlane(page, "XY");
@@ -389,13 +396,13 @@ try {
       await press("#finish-sketch");
       await until(page, () => document.querySelector("#viewport").dataset.sketching !== "true", null, "finished");
       await browserOpen();
-      assert.deepEqual(await sketchRows(), ["sketches/sketch-2 Sketch 1", "sketches/sketch-12 Sketch 2"]);
+      assert.deepEqual(await sketchRows(), ["sketches/sketch-2 Sketch 1", "sketches/sketch-15 Sketch 2"]);
 
       // The unused sketch: Delete in its menu takes it at once, no box, one undo step.
-      await menu("sketches/sketch-12");
+      await menu("sketches/sketch-15");
       assert.equal(await page.getAttribute("#row-menu-delete", "aria-label"), "Delete Sketch 2");
       await press("#row-menu-delete");
-      await until(page, () => !document.querySelector('#browser [data-node="sketches/sketch-12"]'), null, "Sketch 2 gone");
+      await until(page, () => !document.querySelector('#browser [data-node="sketches/sketch-15"]'), null, "Sketch 2 gone");
       assert.deepEqual(await open(), { menu: false, ask: false }, "nothing asked");
       assert.equal(await undoTitle(page), "Undo Delete Sketch 2 (Ctrl+Z)");
       const before = await state();
@@ -437,7 +444,7 @@ try {
       await volume(page, "12,000 mm³");
       await browserOpen();
       const after = await state();
-      assert.deepEqual(after, { volume: "12,000 mm³", sketches: [], warning: "Extrude 1 keeps its last shape. Sketch 1 was deleted.", red: ["feature-11"], undo: "Undo Delete Sketch 1 (Ctrl+Z)", open: { menu: false, ask: false } });
+      assert.deepEqual(after, { volume: "12,000 mm³", sketches: [], warning: "Extrude 1 keeps its last shape. Sketch 1 was deleted.", red: ["feature-14"], undo: "Undo Delete Sketch 1 (Ctrl+Z)", open: { menu: false, ask: false } });
       assert.equal(await page.textContent("#error"), "");
       await top();
       await openPanel(page, "properties", tap); // phone: the warning is in the Properties sheet (U5)
@@ -513,9 +520,9 @@ try {
       await until(page, () => document.body.dataset.selection?.split(" ").length === 2, null, "both bodies selected");
       await openPanel(page, "properties", tap);
       assert.deepEqual(await stl(verb), ["spindlelabs-2-bodies.stl", 12 + tris, 24000 + vol]);
-      // The extrude sits inside the box (both from 0, not combined), so the file's surfaces cross: the export badge says
-      // so, and the file is still saved, with the note on what touching bodies do.
-      assert.match(await page.textContent("#action-note"), /^Exported spindlelabs-2-bodies\.stl\. Not solid: [^.]*crossings\. The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe\.$/);
+      // The extrude sits inside the box (both from 0, not combined), so the file's surfaces cross; each body alone is
+      // solid, so the note says they overlap and offers Combine > Join, never "Not solid" (export hunt 2026-11-12 D).
+      assert.equal(await page.textContent("#action-note"), "Exported spindlelabs-2-bodies.stl. The 2 bodies touch or overlap: each body is solid on its own, but where they meet their surfaces cross, and some slicers refuse such a file (Slice for printing sends them one by one, which is safe). Combine > Join makes them one part.");
       if (shots) await page.screenshot({ path: `${shots}/two-body-stl-${width}.png`, fullPage: true });
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
       await page.context().close();
@@ -573,13 +580,14 @@ try {
       let pts = await corners(page, tap);
       near(bounds(pts, (p) => p[2] < -1e-3), [[0, 40], [0, 30], [-10, -10]], "the end cap's corners, below z = 0");
       near(bounds(pts).slice(2), [[-10, 20]], "z from the flipped end to the box's top");
-      // Edit feature (the bar's menu) shows Flip ticked; unticked, the body goes back up: z 0 to 10.
+      // Edit feature (the bar's menu) shows Flip ticked; unticked, the body goes back up: z 0 to 10. Extrude 1 is feature-14,
+      // after the rectangle's lines and their three constraints (the deleting-a-sketch check above counts them).
       await closePanels(page, tap); // the Properties sheet would cover the timeline
-      const item = page.locator('#timeline [data-item="feature-11"]');
+      const item = page.locator('#timeline [data-item="feature-14"]');
       await item.scrollIntoViewIfNeeded();
       if (tap) {
-        if (!(await page.isVisible('#timeline [data-more="feature-11"]'))) await item.tap();
-        await page.tap('#timeline [data-more="feature-11"]');
+        if (!(await page.isVisible('#timeline [data-more="feature-14"]'))) await item.tap();
+        await page.tap('#timeline [data-more="feature-14"]');
       } else await item.click({ button: "right" });
       await until(page, () => document.getElementById("row-menu").open, null, "the item's menu");
       await press("#row-menu-edit");

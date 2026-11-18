@@ -84,10 +84,13 @@ export function historyPanel(doc: Document, parts: HistoryPanelParts): HistoryPa
   panel.id = "history-panel";
   panel.className = "history-panel";
   panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-label", "History");
+  panel.setAttribute("aria-labelledby", "history-title"); // named by its heading
   panel.hidden = true;
-  const head = doc.createElement("header");
+  // A plain div, not <header>: a header outside any section's landmark would be read as a second banner beside the top bar.
+  const head = doc.createElement("div");
+  head.className = "history-head";
   const title = doc.createElement("h2");
+  title.id = "history-title";
   title.textContent = "History";
   const close = doc.createElement("button");
   close.type = "button";

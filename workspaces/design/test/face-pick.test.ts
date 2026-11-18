@@ -38,7 +38,7 @@ test("hand-worked: the box's top gets the ground plane's frame lifted to z = 20,
   // the origin is the plane z = 20's nearest point to the world's origin, (0, 0, 20).
   assert.deepEqual(sketchSpot(pick(1), scene), {
     kind: "face",
-    face: { plane: "face:feature-1/top", feature: "feature-1" },
+    face: { plane: "face:feature-1/top", feature: "feature-1", reversed: false }, // a plain body's own face: never turned round
     drawn: { plane: { origin: [0, 0, 20], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1, body: UNMOVED },
   });
 });
@@ -46,23 +46,23 @@ test("hand-worked: the box's top gets the ground plane's frame lifted to z = 20,
 test("hand-worked: the bottom and back faces keep the world's axes and face against the frame's normal (side −1)", () => {
   // Bottom: outward −Z; XY's normal +Z is the nearest (|−1|), against it, so side −1 and the normal stays +Z
   // (into the box): x is still +X, so the sketch's coordinates are the world's x and y; origin (0, 0, 0).
-  assert.deepEqual(sketchSpot(pick(0), scene), { kind: "face", face: { plane: "face:feature-1/bottom", feature: "feature-1" }, drawn: { plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: -1, body: UNMOVED } });
+  assert.deepEqual(sketchSpot(pick(0), scene), { kind: "face", face: { plane: "face:feature-1/bottom", feature: "feature-1", reversed: false }, drawn: { plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: -1, body: UNMOVED } });
   // Back (y = 30): outward +Y against XZ's normal −Y: side −1, normal −Y, x +X; the origin is −Y × (point · −Y) = (0, 30, 0).
-  assert.deepEqual(sketchSpot(pick(3), scene), { kind: "face", face: { plane: "face:feature-1/back", feature: "feature-1" }, drawn: { plane: { origin: [0, 30, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] }, side: -1, body: UNMOVED } });
+  assert.deepEqual(sketchSpot(pick(3), scene), { kind: "face", face: { plane: "face:feature-1/back", feature: "feature-1", reversed: false }, drawn: { plane: { origin: [0, 30, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] }, side: -1, body: UNMOVED } });
   // Left (x = 0): outward −X against YZ's normal +X: side −1, normal +X, x along +Y, origin (0, 0, 0).
-  assert.deepEqual(sketchSpot(pick(4), scene), { kind: "face", face: { plane: "face:feature-1/left", feature: "feature-1" }, drawn: { plane: { origin: [0, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] }, side: -1, body: UNMOVED } });
+  assert.deepEqual(sketchSpot(pick(4), scene), { kind: "face", face: { plane: "face:feature-1/left", feature: "feature-1", reversed: false }, drawn: { plane: { origin: [0, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] }, side: -1, body: UNMOVED } });
 });
 
 test("hand-worked: the front and right faces are the front and side planes moved onto them, facing out (side +1)", () => {
   // Front (y = 0): outward −Y is XZ's normal: side +1, origin (0, 0, 0) (−0 written as 0).
-  assert.deepEqual(sketchSpot(pick(2), scene), { kind: "face", face: { plane: "face:feature-1/front", feature: "feature-1" }, drawn: { plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] }, side: 1, body: UNMOVED } });
+  assert.deepEqual(sketchSpot(pick(2), scene), { kind: "face", face: { plane: "face:feature-1/front", feature: "feature-1", reversed: false }, drawn: { plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] }, side: 1, body: UNMOVED } });
   // Right (x = 40): outward +X is YZ's normal: side +1, x along +Y, origin (40, 0, 0).
-  assert.deepEqual(sketchSpot(pick(5), scene), { kind: "face", face: { plane: "face:feature-1/right", feature: "feature-1" }, drawn: { plane: { origin: [40, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] }, side: 1, body: UNMOVED } });
+  assert.deepEqual(sketchSpot(pick(5), scene), { kind: "face", face: { plane: "face:feature-1/right", feature: "feature-1", reversed: false }, drawn: { plane: { origin: [40, 0, 0], xAxis: [0, 1, 0], normal: [1, 0, 0] }, side: 1, body: UNMOVED } });
 });
 
 test("hand-worked: the second body's faces come after the first's; its round side is refused in words (Q5)", () => {
   // Joined face 7 is the cylinder's face 1 (7 − 6), its top at z = 10.
-  assert.deepEqual(sketchSpot(pick(7), scene), { kind: "face", face: { plane: "face:feature-4/top", feature: "feature-4" }, drawn: { plane: { origin: [0, 0, 10], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1, body: UNMOVED } });
+  assert.deepEqual(sketchSpot(pick(7), scene), { kind: "face", face: { plane: "face:feature-4/top", feature: "feature-4", reversed: false }, drawn: { plane: { origin: [0, 0, 10], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1, body: UNMOVED } });
   assert.deepEqual(sketchSpot(pick(8), scene), { kind: "refused", message: CURVED_FACE });
   assert.match(CURVED_FACE, /curved/);
 });
@@ -96,7 +96,7 @@ test("a feature id with characters a name escapes still names its own feature", 
   const s = joinBodies([shown("feature:2/b", box, 1)]);
   const spot = sketchSpot(pick(1), s);
   assert.equal(spot?.kind, "face");
-  assert.deepEqual(spot?.kind === "face" && spot.face, { plane: "face:feature%3A2%2Fb/top", feature: "feature:2/b" });
+  assert.deepEqual(spot?.kind === "face" && spot.face, { plane: "face:feature%3A2%2Fb/top", feature: "feature:2/b", reversed: false });
 });
 
 test("a body named as another feature's (names out of step with the body) is refused rather than sketched on the wrong one", () => {

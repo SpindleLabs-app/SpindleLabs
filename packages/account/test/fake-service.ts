@@ -16,6 +16,8 @@ export interface FakeService {
   approve(challenge: string): string;
   /** "up" answers; "down" throws as fetch does with no network; a number answers every request with that status. */
   mode: "up" | "down" | number;
+  /** When true, a sign-in code sent with the wrong secret is refused but stays usable (by default a code works once, whatever happens). */
+  keepCodeOnWrongSecret?: boolean;
   /** When set, the next successful reply's body is this instead. */
   nextBody?: unknown;
   /** Refresh tokens the service still accepts. */
@@ -27,6 +29,10 @@ export interface FakeService {
   profile?: { email_opt_in: boolean };
   /** When set, the next data request's reply body is this instead. */
   nextData?: unknown;
+  /** A service from before Download my data's limit: no download_my_data (a 404). */
+  oldData?: boolean;
+  /** The time download_my_data says to wait until, once; the next call answers again. */
+  dataWait?: string;
 }
 
 export const USER = { id: "7f3c2a10-0000-4000-8000-000000000001", email: "maker@example.com", user_metadata: { full_name: "Ada Maker", avatar_url: "https://lh3.example/a.png" } };
@@ -68,8 +74,8 @@ export function fakeService(nowS: () => number): FakeService {
       if (url.includes("/token?") && "authorization" in headers) return new Response('{"error":"unexpected token"}', { status: 400 });
       if (url === `${SERVICE}/auth/v1/token?grant_type=pkce`) {
         const challenge = codes.get(body.auth_code);
-        codes.delete(body.auth_code); // a code works once
         const hashed = createHash("sha256").update(String(body.code_verifier)).digest("base64url");
+        if (!(svc.keepCodeOnWrongSecret && challenge !== undefined && hashed !== challenge)) codes.delete(body.auth_code); // a code works once
         if (challenge === undefined || hashed !== challenge) return new Response('{"error":"invalid_grant"}', { status: 400 });
         return issue();
       }
@@ -118,7 +124,15 @@ export function fakeService(nowS: () => number): FakeService {
     }
     // PostgREST leaves the body out when asked for return=minimal.
     if (init.method === "POST" && path === "rpc/my_data" && headers.prefer === "return=minimal") return reply(null, 204);
-    if (init.method === "POST" && path === "rpc/my_data") return reply({ account: { id: USER.id, email: USER.email }, profile: svc.profile, plan: { plan: "free" } });
+    if (init.method === "POST" && path === "rpc/download_my_data" && !svc.oldData) {
+      if (svc.dataWait) {
+        const at = svc.dataWait;
+        svc.dataWait = undefined;
+        return reply({ status: "wait", retry_at: at });
+      }
+      return reply({ account: { id: USER.id, email: USER.email }, profile: svc.profile, plan: { plan: "free" }, data_downloads: [] });
+    }
+    if (init.method === "POST" && path === "rpc/my_data" && svc.oldData) return reply({ account: { id: USER.id, email: USER.email }, profile: svc.profile, plan: { plan: "free" } });
     if (init.method === "POST" && path === "rpc/delete_my_account") {
       svc.profile = undefined;
       svc.liveRefresh.clear();

@@ -1,7 +1,9 @@
 // U0e2: Rename in an item's menu. `renameItem` (timeline-edits.ts) names
 // an item, refusing an empty name, one over NAME_LIMIT characters, one
 // with a control character and another item's (ignoring case); its
-// copies in other items' provenance follow and no description changes.
+// copies in other items' provenance follow, and so does the name in the
+// descriptions of the items made from it (SL #524 item 1, Fusion's way: it
+// said no description changes, so a Mirror still said "Mirror of Box 1").
 // `renameEntry` (timeline-menu.ts) records it as one undo step "Rename
 // <old name>". The box (rename-box.ts) in a real DOM: Enter saves, Escape
 // cancels, a refusal stays in the box, keys never reach the shortcuts.
@@ -30,21 +32,22 @@ function design(): DesignDocument {
   return extrudeSketch(drawCircle(s.doc, s.id, [20, 15], 5).doc, s.id, 8).doc;
 }
 
-test("hand-worked: a rename changes the name and its copies, nothing else", () => {
+test("hand-worked: a rename changes the name, its copies and the descriptions naming it, nothing else", () => {
   const doc = design();
   assert.deepEqual(names(doc), ["Box 1", "Sketch 1", "Extrude 1"]);
   const base = renamed(doc, "feature-1", "Base");
   assert.deepEqual(names(base), ["Base", "Sketch 1", "Extrude 1"]);
-  // The sketch on its face remembers it by its new name; its description, made with the old one, stays.
+  // The sketch on its face remembers it by its new name, and its description, made with the old one, says it.
   assert.deepEqual(base.timeline.features[1].provenance.from, [{ workspace: "design", id: "feature-1", label: "Base" }]);
-  assert.equal(base.timeline.features[1].intent.summary, "Sketch 1 on a face of Box 1");
-  // Sketch 1 renamed: Extrude 1's copy follows, its description stays "Extrude Sketch 1 by 8 mm".
+  assert.equal(base.timeline.features[1].intent.summary, "Sketch 1 on a face of Base");
+  // Sketch 1 renamed: Extrude 1's copy follows, its description "Extrude Sketch 1 by 8 mm" too.
   const outline = renamed(base, "sketch-2", "Boss outline");
   assert.deepEqual(outline.timeline.features[2].provenance.from, [{ workspace: "design", id: "sketch-2", label: "Boss outline" }]);
-  assert.equal(outline.timeline.features[2].intent.summary, "Extrude Sketch 1 by 8 mm");
+  assert.equal(outline.timeline.features[2].intent.summary, "Extrude Boss outline by 8 mm");
   // Nothing else in the document changed.
-  const strip = (d: DesignDocument) => JSON.stringify(d, (k, v) => (k === "label" ? undefined : v));
+  const strip = (d: DesignDocument) => JSON.stringify(d, (k, v) => (k === "label" || k === "summary" ? undefined : v));
   assert.equal(strip(outline), strip(doc));
+  assert.deepEqual(outline.timeline.features.map((f) => f.intent.summary).slice(0, 1), doc.timeline.features.map((f) => f.intent.summary).slice(0, 1), "Box 1's own words unchanged");
   // The deleted sketch is remembered by its new name: the extrude keeps it in its provenance.
   assert.equal(deleteItem(outline, "sketch-2").timeline.features[1].provenance.from[0].label, "Boss outline");
 });

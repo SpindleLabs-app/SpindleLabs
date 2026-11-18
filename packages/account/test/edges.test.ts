@@ -44,12 +44,12 @@ test("a started sign-in whose time is a string is refused", async () => {
   assert.equal(r.kind === "failed" && r.reason, "expired");
 });
 
-test("an empty code, or a code together with an error, is a cancelled sign-in and sends nothing", async () => {
-  for (const q of ["code=", "code=abc&error=server_error"]) {
+test("an empty code is a cancelled sign-in, a code together with a server error is the service's trouble, and both send nothing", async () => {
+  for (const [q, reason] of [["code=", "cancelled"], ["code=abc&error=server_error", "unavailable"]] as const) {
     const c = setup();
     await c.client.beginSignIn();
     const r = await c.client.finishSignIn(`${APP}?${q}`);
-    assert.equal(r.kind === "failed" && r.reason, "cancelled", q);
+    assert.equal(r.kind === "failed" && r.reason, reason, q);
     assert.equal(c.svc.calls.length, 0);
   }
 });

@@ -5,7 +5,7 @@ import { MOUSE_PRESETS } from "@fission/core";
 import { SETTINGS_KEY, SettingsStore, type SettingsStorage } from "../src/settings.ts";
 import { currentMouse, readMouseChoice, startMouse } from "../src/mouse-choice.ts";
 
-// U2d: the mouse preset setting. Stored with the other settings; anything but "fusion" is SpindleLabs's own.
+// U2d: the mouse preset setting. Stored with the other settings; anything but "shift-to-look" is SpindleLabs's own.
 
 const memory = (initial?: string): SettingsStorage & { data: Map<string, string> } => {
   const data = new Map<string, string>(initial === undefined ? [] : [[SETTINGS_KEY, initial]]);
@@ -15,9 +15,10 @@ const memory = (initial?: string): SettingsStorage & { data: Map<string, string>
 test("nothing stored, damaged or unknown storage is SpindleLabs's own; only \"fusion\" is Fusion-style", () => {
   for (const [stored, expected] of [
     [undefined, "spindle"],
-    ['{"mouse":"fusion"}', "fusion"],
+    ['{"mouse":"shift-to-look"}', "shift-to-look"],
+    ['{"mouse":"fusion"}', "shift-to-look"], // the id an earlier version stored
     ['{"mouse":"spindle"}', "spindle"],
-    ['{"mouse":"blender"}', "spindle"],
+    ['{"mouse":"unknown-style"}', "spindle"],
     ['{"mouse":1}', "spindle"],
     ["{not json", "spindle"],
   ] as const) assert.equal(readMouseChoice(new SettingsStore(memory(stored))), expected, String(stored));
@@ -27,15 +28,15 @@ test("starting wears the stored preset; choosing stores it, wears it and says so
   const window = new Window();
   const doc = window.document as unknown as Document;
   assert.equal(currentMouse(doc), "spindle", "a page that never started the mouse preset has SpindleLabs's own");
-  const storage = memory('{"mouse":"fusion"}');
+  const storage = memory('{"mouse":"shift-to-look"}');
   const heard: string[] = [];
   doc.addEventListener("mousechange", (e) => heard.push((e as CustomEvent).detail));
   const choose = startMouse(doc, new SettingsStore(storage));
-  assert.equal(currentMouse(doc), "fusion");
-  assert.equal(doc.documentElement.dataset.mouse, "fusion");
+  assert.equal(currentMouse(doc), "shift-to-look");
+  assert.equal(doc.documentElement.dataset.mouse, "shift-to-look");
   choose("spindle");
   assert.equal(currentMouse(doc), "spindle");
-  assert.deepEqual(heard, ["fusion", "spindle"]);
+  assert.deepEqual(heard, ["shift-to-look", "spindle"]);
   assert.equal(JSON.parse(storage.data.get(SETTINGS_KEY)!).mouse, "spindle");
 });
 
@@ -50,14 +51,23 @@ test("Settings > General shows the Mouse choice and the chosen preset's table; p
   const radio = (id: string) => dialog.querySelector<HTMLElement>(`[data-section=general] [data-mouse=${id}]`)!;
   const rows = () => [...dialog.querySelectorAll(".settings-mouse-table tr")].map((tr) => [tr.querySelector("th")!.textContent, tr.querySelector("td")!.textContent]);
   assert.equal(radio("spindle").getAttribute("aria-checked"), "true");
-  assert.equal(radio("fusion").getAttribute("aria-checked"), "false");
+  assert.equal(radio("shift-to-look").getAttribute("aria-checked"), "false");
   assert.deepEqual(rows(), MOUSE_PRESETS[0].rows.map((r) => [r.gesture, r.does]));
-  radio("fusion").click();
-  assert.deepEqual(picked, ["fusion"]);
-  assert.equal(radio("fusion").getAttribute("aria-checked"), "true");
+  radio("shift-to-look").click();
+  assert.deepEqual(picked, ["shift-to-look"]);
+  assert.equal(radio("shift-to-look").getAttribute("aria-checked"), "true");
   assert.deepEqual(rows(), MOUSE_PRESETS[1].rows.map((r) => [r.gesture, r.does]));
   assert.equal(dialog.querySelector(".settings-mouse-summary")!.textContent, MOUSE_PRESETS[1].summary);
   // Without the parts, no Mouse row is drawn (nothing pretends).
   fillSettings(dialog, { version: "", onShortcuts: () => {} });
   assert.equal(dialog.querySelector("[data-mouse]"), null);
+});
+
+test("migration: a choice stored under the old id is kept and rewritten to the new one (hand-worked: stored \"fusion\" -> \"shift-to-look\", other entries untouched)", () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const storage = memory('{"mouse":"fusion","theme":"dark"}');
+  startMouse(doc, new SettingsStore(storage));
+  assert.equal(currentMouse(doc), "shift-to-look");
+  assert.deepEqual(JSON.parse(storage.data.get(SETTINGS_KEY)!), { mouse: "shift-to-look", theme: "dark" });
 });

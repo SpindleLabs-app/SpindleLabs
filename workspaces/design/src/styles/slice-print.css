@@ -11,8 +11,11 @@
 .slice-print h2 { margin: 0; font-size: 1.1em; font-weight: 600; white-space: nowrap; }
 .slice-print p { margin: 0 0 8px; line-height: 1.4; font-size: 0.92em; color: var(--text-soft); }
 /* The first-version note: amber words on a faint amber card with an amber edge, as a note, not a shout. */
-.slice-print #slice-print-untested, .slice-print #slice-print-status.slice-print-bad { padding: 6px 10px; color: var(--text-f3b77a); background: var(--fill-240-163-94-008); border: 1px solid var(--line-240-163-94-022); border-left: 3px solid var(--text-f0a35e); border-radius: var(--look-radius-s); }
+.slice-print #slice-print-untested, .slice-print #slice-print-missing, .slice-print #slice-print-status.slice-print-bad { padding: 6px 10px; color: var(--text-f3b77a); background: var(--fill-240-163-94-008); border: 1px solid var(--line-240-163-94-022); border-left: 3px solid var(--text-f0a35e); border-radius: var(--look-radius-s); }
 .slice-print #slice-print-untested { margin-bottom: 12px; }
+/* Failed timeline items the print leaves out (slice-print.ts `missing`). */
+.slice-print #slice-print-missing { margin: 0 0 12px; }
+.slice-print #slice-print-missing[hidden] { display: none; }
 
 /* The choices: two columns where there is room, the name over its list. The two tick boxes share the last row's right
    half, so the dialog is one row shorter than with a row each (it must fit a 470 px laptop window). */

@@ -9,7 +9,7 @@ import { startKernel } from "./handshake.ts";
 import type { ProgressCallback } from "./kernel-client.ts";
 import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, progressPoster, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import { calibrate } from "./time-limit.ts";
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, Measured, MeasurePick, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, Measured, MeasurePick, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't take the app's key keeps
@@ -62,7 +62,10 @@ ready.then(
 const loose = (f: unknown) => f as (...args: unknown[]) => unknown;
 
 const ops = {
-  kernel_version: () => kernel.kernel_version(),
+  // The release's own version (kernel.json, written with the build by the kernel's Release workflow and checked
+  // against it by CI), not the kernel crate's, which is never bumped from 0.1.0 (bug-reports #1, #2). The call
+  // still goes to the kernel, so an answer still means the kernel is up.
+  kernel_version: () => (kernel.kernel_version(), release.version),
   make_box: (w: number, d: number, h: number) => kernel.make_box(w, d, h),
   make_cylinder: (r: number, h: number) => kernel.make_cylinder(r, h),
   make_sphere: (r: number) => kernel.make_sphere(r),
@@ -82,6 +85,7 @@ const ops = {
   body_hide: (body: BodyHandle) => kernel.body_hide(body),
   body_boolean: (target: BodyHandle, tools: BodyHandle[], op: BooleanOp): BooleanResult => kernel.body_boolean(target, tools, op),
   body_move: (body: BodyHandle, moves: Motion[]): BodyHandle => kernel.body_move(body, moves),
+  body_chamfer: (body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean): ChamferResult => kernel.body_chamfer(body, edges, size, flip),
   body_measure: (first: MeasurePick, second: MeasurePick | null): Measured => kernel.body_measure(first, second),
   body_count: () => kernel.body_count(),
   slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, warmUp: boolean, betterGrip: boolean, told?: ProgressCallback) =>

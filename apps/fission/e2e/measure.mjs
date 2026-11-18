@@ -140,7 +140,8 @@ try {
         await press(page, '[data-view="top"]', tap);
         await settle(page);
         await page.evaluate(() => document.activeElement?.blur());
-        const undoBefore = await page.getAttribute("#undo", "title");
+        // What Undo says of the project's steps (its title says it cancels Measure while open: issue #520).
+        const undoBefore = await page.getAttribute("#undo", "data-project-step");
         await measureTool(page, tap);
         await until(page, () => document.getElementById("measure-panel")?.hidden === false, null, "the panel open");
         assert.equal(await page.getAttribute("#inspect-measure", "aria-pressed"), "true");
@@ -173,7 +174,7 @@ try {
           assert.ok(covered < view.height / 2, `the sheet covers ${covered} of the view's ${view.height} px: under half`);
         }
         if (shots) await page.screenshot({ path: `${shots}/measure-${width}.png` });
-        assert.equal(await page.getAttribute("#undo", "title"), undoBefore, "measuring records no undo step");
+        assert.equal(await page.getAttribute("#undo", "data-project-step"), undoBefore, "measuring records no undo step");
         if (!tap) {
           // Settings ▸ Units: inches. 20 / 25.4 = 0.787; 400 / 645.16 = 0.62 in².
           await page.click("#settings-open");

@@ -144,7 +144,8 @@ export class ExtrudeLayer {
 
   private paint() {
     for (const [id, mesh] of this.fillMeshes) {
-      (mesh.material as THREE.MeshBasicMaterial).opacity = id === this.shown?.chosen ? FILL_OPACITY.chosen : id === this.hover ? FILL_OPACITY.hover : this.faces.has(id) ? FILL_OPACITY.faceOffered : FILL_OPACITY.offered;
+      const chosen = id === this.shown?.chosen || (this.shown?.alsoChosen?.includes(id) ?? false);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = chosen ? FILL_OPACITY.chosen : id === this.hover ? FILL_OPACITY.hover : this.faces.has(id) ? FILL_OPACITY.faceOffered : FILL_OPACITY.offered;
     }
     this.arrowMaterial.color.setHex(this.arrowHot ? EXTRUDE_COLOURS.arrowHot : EXTRUDE_COLOURS.arrow);
   }

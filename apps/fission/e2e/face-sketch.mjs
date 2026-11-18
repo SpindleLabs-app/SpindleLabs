@@ -377,7 +377,8 @@ try {
     await chooseShape(page, "cylinder");
     await until(page, () => document.querySelector("#viewport").dataset.shape === "cylinder", null, "a cylinder");
     await settle(page);
-    const undoBefore = await page.evaluate(() => document.getElementById("undo").title);
+    // What Undo says of the project's steps: with the plane prompt open its title says it cancels it (issue #520).
+    const undoBefore = await page.evaluate(() => document.getElementById("undo").dataset.projectStep);
     await createSketch(page);
     // Kernel faces bottom 0, top 1, side 2: only the caps are offered.
     assert.equal(await data(page, "pickFaces"), "0 1");
@@ -392,7 +393,7 @@ try {
     assert.match(await page.textContent("#sketch-pick-error"), /curved/);
     assert.equal(await data(page, "sketching"), "false");
     assert.equal(await data(page, "planes"), "XY, XZ, YZ", "the planes stay");
-    assert.equal(await page.evaluate(() => document.getElementById("undo").title), undoBefore, "nothing recorded");
+    assert.equal(await page.evaluate(() => document.getElementById("undo").dataset.projectStep), undoBefore, "nothing recorded");
     await shot(page, "curved-refused-1280");
     await hover(page, [0, 0, h]);
     assert.equal(await data(page, "hover"), "face 1", "the top lights");
@@ -506,7 +507,7 @@ try {
       await until(page, () => document.querySelector("#volume")?.textContent === "2,000 mm³", null, "built again");
 
       // 2. The sketch dragged before the box: refused while held and let go, in the face's words; nothing recorded.
-      const undoBefore = await page.evaluate(() => document.getElementById("undo").title);
+      const undoBefore = await page.evaluate(() => document.getElementById("undo").dataset.projectStep);
       const WORDS = "Sketch 1 can't go before Box 1: it is drawn on a face of Box 1";
       const b = await page.locator(`#timeline [data-item="${sketch}"]`).boundingBox();
       const to = await page.locator(`#timeline [data-item="${box}"]`).boundingBox();
@@ -517,19 +518,19 @@ try {
       await shot(page, `face-drag-refused-${width}`);
       await page.mouse.up();
       await until(page, (w) => document.querySelector("#error")?.textContent === w, WORDS, "the refusal shown");
-      assert.equal(await page.evaluate(() => document.getElementById("undo").title), undoBefore, "nothing recorded");
+      assert.equal(await page.evaluate(() => document.getElementById("undo").dataset.projectStep), undoBefore, "nothing recorded");
       assert.deepEqual(await page.$$eval("#timeline [data-item]", (lis) => lis.map((li) => li.dataset.item)), ids, "nothing moved");
 
       // 2b. Delete on the keyboard with the box's bar item focused (round 2 hunt E5) asks the same; Cancel changes nothing.
       if (!tap) {
-        const undoNow = await page.evaluate(() => document.getElementById("undo").title);
+        const undoNow = await page.evaluate(() => document.getElementById("undo").dataset.projectStep);
         await page.focus(`#timeline [data-item="${box}"]`);
         await page.keyboard.press("Delete");
         await until(page, () => document.getElementById("delete-ask").open, null, "Delete on the keyboard asks");
         assert.equal(await page.textContent("#delete-ask-heading"), "Delete Box 1?");
         await page.click("#delete-ask-cancel");
         await until(page, () => !document.getElementById("delete-ask").open, null, "Cancel closes it");
-        assert.equal(await page.evaluate(() => document.getElementById("undo").title), undoNow, "nothing recorded");
+        assert.equal(await page.evaluate(() => document.getElementById("undo").dataset.projectStep), undoNow, "nothing recorded");
         assert.equal(await page.$$eval("#timeline [data-item]", (lis) => lis.length), 3, "nothing deleted");
       }
       // 3. The box deleted: asked first, naming what stays; then the block stays at z 20 to 30, the sketch and the extrude warned red.

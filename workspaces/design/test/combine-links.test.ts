@@ -143,7 +143,9 @@ test("a design with no Combine hands its bodies over as before: by their item, a
   const doc = partDocument("box", 10, 10, 10);
   const r = registry();
   const [o] = r.objectsOf("design", projectWith(doc));
-  assert.deepEqual(Object.keys(o).sort(), ["document", "id", "label", "type"]);
+  // TestLab T1 added `ref`, the body reference a link keeps: the box's only body is its own feature's.
+  assert.deepEqual(Object.keys(o).sort(), ["document", "id", "label", "ref", "type"]);
+  assert.deepEqual(o.ref, { kind: "body", id: `body:${o.id}` });
   const { representation } = await r.deliver(o, ["solid"]);
   assert.deepEqual(representation, { kind: "solid", spec: { box: { width: 10, depth: 10, height: 10 } } });
 });

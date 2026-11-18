@@ -133,9 +133,12 @@ test("points it can't name are refused before any solve", async () => {
   const { doc, id } = oneLine();
   assert.match(no(await addConstraint(kernel, doc, id, { kind: "fix", point: "point-99" })).refused, /no point point-99/);
   assert.match(no(await addConstraint(kernel, doc, id, { kind: "coincident", a: "point-3", b: "point-3" })).refused, /two different points/);
-  // A point pinned to a body's edge (26f) follows the body.
+  // A point pinned to a body's edge (26f) follows the body: a Fix on it, or a constraint between it and another followed
+  // point, is refused (#517: one between it and a free point is solved with it fixed, constraints.test and followed-constraints.test).
   const pinned: DesignDocument = { ...doc, sketches: doc.sketches.map((s) => (s.id === id ? { ...s, pins: [{ point: "point-3", kind: "corner", name: "x" } as never] } : s)) };
-  assert.match(no(await addConstraint(kernel, pinned, id, { kind: "horizontal", a: "point-3", b: "point-4" })).refused, /follows a body's edge/);
+  assert.match(no(await addConstraint(kernel, pinned, id, { kind: "fix", point: "point-3" })).refused, /follows a body's edge/);
+  const both: DesignDocument = { ...doc, sketches: doc.sketches.map((s) => (s.id === id ? { ...s, pins: [{ point: "point-3", kind: "corner", name: "x" }, { point: "point-4", kind: "corner", name: "y" }] as never } : s)) };
+  assert.match(no(await addConstraint(kernel, both, id, { kind: "horizontal", a: "point-3", b: "point-4" })).refused, /Both points follow a body's edge/);
 });
 
 test("an arc's ends stay on its circle when a constraint moves one", async () => {
@@ -207,14 +210,15 @@ test("constraints are saved and read back; a file's bad constraints are refused 
   // An id another object has (Select's Delete took the line with it), and ids no Design object has.
   assert.throws(withList(fix("line-5")), /Design id line-5 is used twice/);
   for (const bad of ["__proto__", ""]) assert.throws(withList(fix(bad)), /is not shaped like Design's ids/);
-  // On a point pinned to a body's edge, or made by a projection: a body's edit moves it without a solve.
+  // Only points pinned to a body's edge, or made by a projection: the body holds them (#517: one beside a free point is read).
   const pinned = (raw: DesignDocument) => {
     raw.sketches.find((s) => s.id === id)!.pins = [{ point: "point-3", kind: "endpoint", name: "v1", feature: "feature-1" } as never];
     const item = raw.timeline.features.find((f) => f.id === id)!;
     item.dependsOn = [...new Set([...item.dependsOn, "feature-1"])];
   };
   assert.doesNotThrow(withList([], pinned), "the pinned file itself opens");
-  assert.throws(withList(fix("constraint-100"), pinned), /constraint constraint-100 names point-3, which follows a body's edge/);
+  assert.throws(withList(fix("constraint-100"), pinned), /constraint constraint-100 names only points that follow a body's edge \(point-3\)/);
+  assert.doesNotThrow(withList([{ id: "constraint-100", kind: "horizontal", a: "point-3", b: "point-4" }], pinned), "a pinned point beside a free one (#517)");
   // A projected line (27d), made by projectEdges, and a constraint on its end.
   const projected = projectEdges(h.doc, id, [{ feature: "feature-1", edge: "front+top", shape: { kind: "line", a: [0, 10], b: [10, 10] } }]).doc;
   const made = sketchOf(projected, id).points.at(-1)!.id;
@@ -222,7 +226,7 @@ test("constraints are saved and read back; a file's bad constraints are refused 
   assert.doesNotThrow(() => readDesignDocument(JSON.parse(JSON.stringify(raw))), "the projected file itself opens");
   raw.sketches.find((s: Sketch) => s.id === id).constraints.push({ id: `constraint-${raw.nextId}`, kind: "fix", point: made });
   raw.nextId++;
-  assert.throws(() => readDesignDocument(raw), new RegExp(`names ${made}, which follows a body's edge`));
+  assert.throws(() => readDesignDocument(raw), new RegExp(`names only points that follow a body's edge \\(${made}\\)`));
 });
 
 /** Every constraint of the sketch holds at its points: horizontal and vertical exactly (one group), coincident exactly, fix where it was fixed. */

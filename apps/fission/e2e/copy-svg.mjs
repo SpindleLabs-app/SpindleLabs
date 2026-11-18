@@ -130,7 +130,7 @@ try {
       await clearClipboard(page);
       const note = await page.textContent("#action-note");
       await page.keyboard.press("Control+c");
-      assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^SpindleLabs bodies [a-z0-9]+: body:feature-1$/);
+      assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^SpindleLabs bodies [a-z0-9]+: body:feature-1=extrude%20Slot%201$/);
       await page.waitForTimeout(100); // a verb run by mistake would answer in the note by now
       assert.equal(await page.textContent("#action-note"), note, "no verb ran");
     } finally {

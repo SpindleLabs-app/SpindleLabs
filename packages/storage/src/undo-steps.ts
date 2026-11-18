@@ -84,6 +84,16 @@ export function alignSteps(saved: SavedHistory, present: string): SavedHistory |
   return null;
 }
 
+/**
+ * `saved` with one more step after its present: `present`, the project as it opened, made at `at` and called `label`;
+ * the steps that were a redo away are dropped, as any new change drops them. For steps that stop one change short of
+ * the project: the page went while that change was only in the unsaved-changes journal, and the steps' own write did
+ * not outlive it (lost-work hunt 2026-11-12, issue #627 item 7: the whole history was dropped for it).
+ */
+export function extendSteps(saved: SavedHistory, present: string, at: number, label: string): SavedHistory {
+  return { kept: [...saved.kept.slice(0, saved.index + 1), { snapshot: present, label, mergeKey: undefined, at }], index: saved.index + 1 };
+}
+
 /** Undo steps kept per project in `kv`. */
 export interface StepsStore {
   /** The steps kept for `id`, or null when there are none to read (none written, damaged, or the store failing). Never throws. */

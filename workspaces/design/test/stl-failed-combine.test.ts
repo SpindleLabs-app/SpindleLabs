@@ -60,7 +60,9 @@ test("a failed Combine uses up nothing: both of its bodies are in the STL", asyn
   const d = await download(c.doc);
   assert.deepEqual([...d.failed], [c.id]);
   assert.deepEqual(d.targets.map((t) => t.id), [b1, b2]);
-  assert.equal(d.outcome.bad ?? false, false, d.outcome.message);
+  // Both boxes are in the file, but the failed Combine is not (export hunt 2026-11-12 D): said, and so a warning.
+  assert.match(d.outcome.message, /^Exported spindlelabs-2-bodies\.stl\. Combine 1 failed, so it is not in the STL: /);
+  assert.equal(d.outcome.bad, true, d.outcome.message);
   assert.equal(d.saved.length, 1);
   // 40 · 30 · 20 = 24,000 each: 48,000 mm³ (single-precision corners at whole millimetres are exact).
   assert.equal(Math.round(stlVolume(d.saved[0])), 48000);

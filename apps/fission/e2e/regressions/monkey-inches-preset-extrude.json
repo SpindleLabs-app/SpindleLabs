@@ -1,0 +1,33 @@
+{
+  "seed": 0,
+  "what": "Inches chosen in Settings, then an L-bracket inserted: the Body panel rightly showed 0.747 in\u00b3 (612 mm\u00b2 by 20 mm), and the selection check said the body was 0 in\u00b3, since a volume the monkey's model can't work out (null) came out of the inch conversion as 0 instead of not judged (nightly 2026-11-10 and 11-11, issues #474, #483, #485, #486)",
+  "actions": [
+    {
+      "do": "click",
+      "sel": "#settings-open"
+    },
+    {
+      "do": "click",
+      "sel": "button:text-is(\"Inches (in)\")"
+    },
+    {
+      "do": "click",
+      "sel": "#settings button.close"
+    },
+    {
+      "do": "click",
+      "sel": "#insert"
+    },
+    {
+      "do": "click",
+      "sel": "#insert-l-bracket"
+    },
+    {
+      "do": "click",
+      "sel": "#move-ok"
+    },
+    {
+      "do": "select-bodies"
+    }
+  ]
+}

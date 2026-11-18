@@ -5,7 +5,8 @@
 // clicked, and Escape or a press outside closes it. A command that is off
 // stays in the list, dimmed, saying why, and can't be run, so the box never
 // does anything the toolbar could not. The workspace gives the commands as
-// they are now (read each time the box opens). Styles:
+// they are now (read each time the box opens), then the shell's own (Undo,
+// Save, Settings…: shellCommands, issue #523). Styles:
 // src/styles/command-search.css.
 
 export interface Command {
@@ -31,6 +32,14 @@ export function matchCommands(commands: readonly Command[], query: string): Comm
   return hits.map((c, i) => ({ c, i })).sort((a, b) => starts(a.c) - starts(b.c) || a.i - b.i).map((x) => x.c);
 }
 
+/** The shell's commands for each page (issue #523): listed after the workspace's in every box opened there. */
+const shellLists = new WeakMap<Document, () => readonly Command[]>();
+
+/** Lists `commands()` (the shell's own: Undo, Redo, File ▾'s entries, Settings), read at each open, in every command search box in `doc`. */
+export function shellCommands(doc: Document, commands: () => readonly Command[]): void {
+  shellLists.set(doc, commands);
+}
+
 export interface CommandSearch {
   readonly isOpen: boolean;
   /** Opens the box over `doc`'s page with the commands as they are now; the focus goes to the box. */
@@ -51,7 +60,7 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
   const open = () => {
     if (root) return;
     previous = doc.activeElement;
-    const all = commands();
+    const all = [...commands(), ...(shellLists.get(doc)?.() ?? [])];
     root = doc.createElement("div");
     root.className = "command-search";
     const box = doc.createElement("div");
@@ -67,6 +76,7 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
     const list = doc.createElement("ul");
     list.id = "command-search-list";
     list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Commands");
     const empty = doc.createElement("p");
     empty.className = "command-search-none";
     empty.textContent = "No command by that name.";
@@ -113,7 +123,8 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
             why.textContent = c.off;
             li.append(why);
           }
-          li.addEventListener("click", () => run(c));
+          // An off one does nothing, and the focus stays in the box, so Escape still closes it (issue #523).
+          li.addEventListener("click", () => (c.off ? input.focus() : run(c)));
           return li;
         }),
       );
@@ -133,9 +144,15 @@ export function commandSearch(doc: Document, commands: () => readonly Command[])
       } else if (e.key === "Escape") {
         e.preventDefault();
         close();
+      } else if (e.key === "Tab") {
+        e.preventDefault(); // the box is modal (aria-modal): Tab never leaves it for the page behind; Escape or a press outside closes it
       }
       // No key in the box reaches the app's shortcuts (S, M, ? typed as words).
       e.stopPropagation();
+    });
+    // A press on the list keeps the focus in the box (a row is not a place to type), so its keys stay the box's.
+    box.addEventListener("mousedown", (e) => {
+      if (e.target !== input) e.preventDefault();
     });
     root.addEventListener("pointerdown", (e) => {
       if (e.target === root) close();

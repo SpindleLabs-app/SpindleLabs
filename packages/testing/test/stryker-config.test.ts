@@ -161,7 +161,8 @@ function unrunImporters(dir: string, target: string, folder: string, read: Read)
     if (command.split(" ").includes(`test/${f}`)) continue;
     const used = new Set<string>();
     for (const [, names, from] of (read(join(root, folder, "test", f)) ?? "").matchAll(/import\s*(?:type\s+)?\{([^}]*)\}\s*from\s*"\.\.\/(src\/[^"]+)"/g)) {
-      const exported = mutated.get(from);
+      // A name imported through the package's src/index.ts barrel comes from whichever mutated file exports it.
+      const exported = from === "src/index.ts" ? new Set([...mutated.values()].flatMap((s) => [...s])) : mutated.get(from);
       if (!exported) continue;
       for (const n of names.split(",").map((n) => n.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0])) if (exported.has(n)) used.add(n);
     }

@@ -7,6 +7,13 @@
 //   so one user unit is one mm.
 // - SVG's y points down, so every point is written as (x, −y): x stays as
 //   in the model and the shape is not mirrored.
+// - That is the outline seen from the side its plane's normal points to.
+//   A sketch on a back or bottom face is drawn and seen from the other
+//   side, where the same numbers look mirrored; `seen` says how the
+//   outline's x and y run on that viewer's screen (right, up: each +1 or
+//   −1), and the outline is turned to that picture first: a point becomes
+//   (right·x, up·y) and, when right·up = −1 (a mirror), every bulge
+//   changes sign, since a mirror turns counter-clockwise into clockwise.
 // - A corner's bulge b shapes the piece to the next corner (as the kernel's
 //   ProfileIn): the arc turns 4·atan b, counter-clockwise for b > 0, round
 //   a centre the chord's midpoint moved c(1 − b²)/(4b) along its left normal.
@@ -142,19 +149,40 @@ function loopPath(loop: Loop, box: Box): string {
   return `${d}Z`;
 }
 
+/** How an outline's axes run on the screen of the person looking at it: x to the right (+1) or left (−1), y up (+1) or down (−1). */
+export interface SeenAs {
+  right: 1 | -1;
+  up: 1 | -1;
+}
+
+/** The loop as that viewer sees it, in a frame with x to the right and y up. */
+function seenLoop(loop: Loop, seen: SeenAs): Loop {
+  if ("circle" in loop) {
+    const [cx, cy] = loop.circle.center;
+    return { circle: { center: [seen.right * cx, seen.up * cy], radius: loop.circle.radius } };
+  }
+  const turn = seen.right * seen.up;
+  return { path: { corners: loop.path.corners.map((v, i) => (i % 2 === 0 ? seen.right : seen.up) * v), bulges: loop.path.bulges.map((b) => turn * b) } };
+}
+
 /** Escapes text for an SVG element's content. */
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
  * The outline as an SVG file, sized in mm. `title` (e.g. "L-bracket
- * profile") becomes the file's <title>. A malformed outline throws an
- * Error saying what is wrong; nothing is written for it.
+ * profile") becomes the file's <title>. `seen` is how the outline's axes
+ * run for the person who drew it (left out: x right, y up, the view from
+ * the side the plane's normal points to), so the file is the picture they
+ * saw and never its mirror image. A malformed outline throws an Error
+ * saying what is wrong; nothing is written for it.
  */
-export function outlineToSvg(outline: Outline, title?: string): SvgFile {
+export function outlineToSvg(outline: Outline, title?: string, seen?: SeenAs): SvgFile {
   check(outline.outer, "outline");
   outline.holes.forEach((h, i) => check(h, `hole ${i + 1}`));
+  if (seen && !([1, -1].includes(seen.right) && [1, -1].includes(seen.up))) throw new Error(`the outline can't be written as SVG: it is seen with x ${seen.right} and y ${seen.up}, and each must be 1 or -1`);
   const box: Box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  const data = [outline.outer, ...outline.holes].map((l) => loopPath(l, box)).join("");
+  const loops = [outline.outer, ...outline.holes].map((l) => (seen ? seenLoop(l, seen) : l));
+  const data = loops.map((l) => loopPath(l, box)).join("");
   const width = box.maxX - box.minX;
   const height = box.maxY - box.minY;
   const [w, h] = [svgNumber(width), svgNumber(height)];

@@ -306,7 +306,7 @@ try {
     assert.equal(new URL(tab.url()).pathname, "/privacy.html");
     const headings = await tab.$$eval("h1, h2, h3", (hs) => hs.map((h) => h.textContent));
     await tab.close();
-    assert.deepEqual(headings, ["Privacy and terms", "Privacy", "Who we are", "What is kept on your device", "Your account, if you make one", "My designs", "Settings that follow you", "Emails", "Payments", "What leaves your device", "Children and students", "Seeing, changing and deleting your data", "Terms of use", "Questions"]);
+    assert.deepEqual(headings, ["Privacy and terms", "Privacy", "Who we are", "What is kept on your device", "Your account, if you make one", "My designs", "Settings that follow you", "Print log", "Sharing links", "Friends", "Emails", "Payments", "What leaves your device", "Children and students", "Seeing, changing and deleting your data", "Terms of use", "Questions"]);
     // The words must match the app: the assistant's Remove key button, the providers it offers, and the licences file it links.
     const words = await (await page.request.get(`${url}privacy.html`)).text();
     const assistant = await import("node:fs").then((fs) => fs.readFileSync(new URL("../src/assistant.ts", import.meta.url), "utf8"));
@@ -408,6 +408,33 @@ try {
     await framesPass(moving, TURN_FRAMES);
     const d = await shot(moving, WIDE_STAGE);
     assert.ok(compareImages(c, d, { channel: 24, maxPixels: 0 }).differing > 500, "the scene should turn when motion is allowed");
+  });
+
+  await check("with motion allowed the picture only ever turns one way, however slowly the machine draws", async () => {
+    // SpindleLabs#804: the turn is a step per drawn frame, but its gentle sway was on the clock, so on a machine drawing
+    // few frames a second the sway swung back faster than the frames turned it on, and the picture stood still or turned
+    // back (the "turns slowly" check above then saw no change). Stepped on the hand-turned clock at 100 ms a frame
+    // (10 frames a second, a busy runner with software drawing) for 200 frames: 20 s, more than one whole sway
+    // (2π × 2.4 s = 15.1 s), so the sway's fastest swing back is inside. By hand: each frame turns 0.07 / 60 =
+    // 0.00117 rad on; a sway of 0.08 × sin(t / 2400 ms) swings back at most 0.08 × 100 / 2400 = 0.0033 rad in a
+    // 100 ms frame, more than the turn, if it is on the clock; tied to the frames (16.7 ms each) it swings at most
+    // 0.08 × 16.7 / 2400 = 0.00056 rad a frame, less than the turn, so every frame turns on.
+    const page = await fresh({ query: "?guide", clock: true });
+    await page.waitForSelector("dialog.guide[data-frames]");
+    await settled(page);
+    await page.evaluate(() => window.stepper.hold());
+    const turns = await page.evaluate(() => {
+      const d = document.querySelector("dialog.guide");
+      const out = [];
+      for (let k = 0; k < 200; k++) {
+        window.stepper.step(100);
+        out.push(Number(d.dataset.turn));
+      }
+      return out;
+    });
+    await page.evaluate(() => window.stepper.release());
+    const back = turns.findIndex((t, k) => k > 0 && !(t > turns[k - 1]));
+    assert.equal(back, -1, `frame ${back} turned from ${turns[back - 1]} to ${turns[back]}: the picture stood still or turned back`);
   });
 
   for (const [width, height] of [[1280, 800], [375, 667]]) {

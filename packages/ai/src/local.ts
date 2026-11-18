@@ -10,6 +10,21 @@ import type { AIProvider, AIRequest } from "./providers.ts";
 /** The default in-browser model until the A10 check picks one. */
 export const IN_BROWSER_MODEL = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 
+/** Where the pinned runner (WebLLM 0.2.86) downloads the default model's files from; its test fails if a runner update moves them. */
+export const IN_BROWSER_FILES = "https://huggingface.co/mlc-ai/Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+
+/**
+ * Download sizes known ahead, in MB rounded to the nearest 100, so the
+ * download can be offered without asking huggingface.co anything before
+ * the user says yes (audit S13). Only for the files at `IN_BROWSER_FILES`.
+ */
+const KNOWN_DOWNLOAD_MB: Readonly<Record<string, number>> = { [IN_BROWSER_MODEL]: 900 };
+
+/** The download size of an in-browser model known without asking its site, or undefined when this build doesn't know it. */
+export function inBrowserDownloadMB(model: string): number | undefined {
+  return Object.hasOwn(KNOWN_DOWNLOAD_MB, model) ? KNOWN_DOWNLOAD_MB[model] : undefined;
+}
+
 /** WebGPU's guaranteed minimum storage buffer (128 MiB): WebLLM's small ("low resource") models fit in it. */
 export const LOW_RESOURCE_BUFFER = 128 * 1024 * 1024;
 /** Larger models need 1 GiB buffers. */

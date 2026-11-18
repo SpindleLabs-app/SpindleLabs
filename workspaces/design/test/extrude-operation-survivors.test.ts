@@ -108,7 +108,7 @@ test("an extrude with an operation has faces of its own: sketched on, projected;
   // A Combine makes no faces of its own.
   const { doc: two, bodies: b2 } = boxes([[10, 10, 10], [0, 0, 0]], [[10, 10, 10], [5, 0, 0]]);
   const c = insertCombine(two, b2[0], [b2[1]], "join");
-  assert.throws(() => addFaceSketch(c.doc, { plane: facePlane(c.id, "top"), feature: c.id }, drawnFrame([0, 0, 1], [4, 4, 10])), { message: `there is no solid item ${c.id} to sketch on` });
+  assert.throws(() => addFaceSketch(c.doc, { plane: facePlane(c.id, "top"), feature: c.id }, drawnFrame([0, 0, 1], [4, 4, 10])), { message: "Combine 1 has no faces of its own to sketch on: pick a face of a body, or a plane." });
   const s2 = addSketch(c.doc);
   assert.throws(() => projectEdges(s2.doc, s2.id, [{ feature: c.id, edge: "a+b", shape: { kind: "line", a: [0, 0], b: [1, 0] } }]), /is not a solid item before Sketch 1 in the timeline, so its edges can't be projected into it$/);
 });

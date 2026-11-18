@@ -43,7 +43,7 @@ function linked() {
       notes
         .current(g)
         .filter((n) => n.state !== "updated")
-        .map((n) => [n.node, n.text.replace(/^[^:]*: /, "").replace(/ in Design\..*$/, "")]),
+        .map((n) => [n.node, n.text.replace(/^[^:]*: /, "").replace(/ in DesignLab\..*$/, "")]),
     );
     for (const id of g.stale()) g.markFresh(id);
     for (const n of notes.current(g)) notes.dismiss(n.id);
@@ -242,7 +242,7 @@ test("seeded: random timeline edits put out of date exactly what the model says,
       doc = after;
       const stale = new Set(g.stale().filter((id) => id.startsWith("r-")));
       assert.deepEqual([...stale].sort(), [...out].sort(), `${at}: ${kind}`);
-      for (const n of notes.current(g)) assert.equal(n.text.replace(/^[^:]*: /, "").replace(/ in Design\..*$/, ""), words, `${at}: ${kind}, ${n.node}`);
+      for (const n of notes.current(g)) assert.equal(n.text.replace(/^[^:]*: /, "").replace(/ in DesignLab\..*$/, ""), words, `${at}: ${kind}, ${n.node}`);
       if (out.size > 0) reached.set(kind, (reached.get(kind) ?? 0) + 1);
       for (const id of g.stale()) g.markFresh(id);
       for (const n of notes.current(g)) notes.dismiss(n.id);

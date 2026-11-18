@@ -72,6 +72,48 @@ class Pending(unittest.TestCase):
         self.assertEqual(shares[0][:2], [self.UNITS[0], self.UNITS[3]])
 
 
+class DoneHandOver(unittest.TestCase):
+    """The keyless mutants jobs get the state as done_of()'s hand-over (security hunt H3): the same plan as from
+    the whole state, and no kernel file's name in it."""
+    UNITS = mr.units_of(COUNTS, FIRST, 40)
+    STATE = {"cycle": 2, "units": {"src/warm/b.rs#0/1": {"cycle": 2, "missed": ["src/warm/b.rs:3:1: replace x"]},
+                                   "src/hot/a.rs#0/1": {"cycle": 1}}}
+
+    def test_hand_worked_hash(self):
+        # sha256("s" + "src/a.rs#0/1"), first 16 hex digits, worked out with
+        # `printf %s 'ssrc/a.rs#0/1' | sha256sum` (no use of the code).
+        self.assertEqual(mr.hashed("src/a.rs#0/1", "s"), "d66704c90f69dc32")
+
+    def test_only_this_cycles_units_hashed_and_no_file_named(self):
+        h = mr.done_of(self.STATE, "salt1")
+        self.assertEqual(h, {"cycle": 2, "salt": "salt1", "done": [mr.hashed("src/warm/b.rs#0/1", "salt1")]})
+        self.assertNotIn("src/", json.dumps(h))
+        self.assertNotIn("replace", json.dumps(h))
+
+    def test_the_plan_matches_the_whole_states(self):
+        for state in ({}, self.STATE, {"cycle": 4, "units": {mr.unit_id(u): {"cycle": 4} for u in self.UNITS}}):
+            self.assertEqual(mr.pending_hashed(self.UNITS, mr.done_of(state, "r9")), mr.pending(self.UNITS, state))
+
+    def test_a_different_salt_matches_nothing(self):
+        # A hand-over read with the wrong salt must not skip anything: every unit is due.
+        h = dict(mr.done_of(self.STATE, "a"), salt="b")
+        self.assertEqual(mr.pending_hashed(self.UNITS, h), (2, self.UNITS))
+
+    def test_done_prints_one_json_line(self):
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "state.json"), "w") as f:
+            json.dump(self.STATE, f)
+        p = subprocess.run([sys.executable, os.path.join(HERE, "mutant_rotation.py"), "done", "--state", os.path.join(d, "state.json"),
+                            "--salt", "x"], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual(p.stdout.count("\n"), 1)
+        self.assertEqual(json.loads(p.stdout), mr.done_of(self.STATE, "x"))
+        # A missing state (the first night) is cycle 1 with nothing done.
+        p = subprocess.run([sys.executable, os.path.join(HERE, "mutant_rotation.py"), "done", "--state", os.path.join(d, "none.json"),
+                            "--salt", "x"], capture_output=True, text=True)
+        self.assertEqual(json.loads(p.stdout), {"cycle": 1, "salt": "x", "done": []})
+
+
 def result(uid, cycle=1, exit=0, caught=3, missed=(), timeout=0, unviable=1):
     return {"id": uid, "cycle": cycle, "exit": exit, "caught": caught, "missed": sorted(missed), "timeout": timeout, "unviable": unviable}
 
@@ -199,7 +241,7 @@ esac
 
 
 class Run(unittest.TestCase):
-    def run_job(self, job, jobs, seconds_left, state=None, baseline="0", unit_seconds="0", first="src/hot/\n", unit_exit="0"):
+    def run_job(self, job, jobs, seconds_left, state=None, baseline="0", unit_seconds="0", first="src/hot/\n", unit_exit="0", handover=False):
         d = tempfile.mkdtemp()
         os.makedirs(os.path.join(d, "bin"))
         os.makedirs(os.path.join(d, "kernel", ".cargo"))
@@ -209,11 +251,11 @@ class Run(unittest.TestCase):
             f.write(FAKE_CARGO)
         os.chmod(os.path.join(d, "bin", "cargo"), 0o755)
         with open(os.path.join(d, "state.json"), "w") as f:
-            json.dump(state or {}, f)
+            json.dump(mr.done_of(state or {}, "salt") if handover else (state or {}), f)
         env = dict(os.environ, PATH=os.path.join(d, "bin") + os.pathsep + os.environ["PATH"], FAKE_LOG=os.path.join(d, "log"),
                    FAKE_BASELINE=baseline, FAKE_UNIT_SECONDS=unit_seconds, FAKE_UNIT_EXIT=unit_exit)
         p = subprocess.run([sys.executable, os.path.join(HERE, "mutant_rotation.py"), "run", "--job", str(job), "--jobs", str(jobs),
-                            "--deadline", str(time.time() + seconds_left), "--state", os.path.join(d, "state.json"),
+                            "--deadline", str(time.time() + seconds_left), "--done" if handover else "--state", os.path.join(d, "state.json"),
                             "--out", os.path.join(d, "out"), "--scratch", os.path.join(d, "scratch")],
                            cwd=os.path.join(d, "kernel"), env=env, capture_output=True, text=True)
         units = []
@@ -236,6 +278,8 @@ class Run(unittest.TestCase):
     def test_done_units_are_not_tested_again(self):
         state = {"cycle": 1, "units": {"src/hot/a.rs#0/1": {"cycle": 1}}}
         self.assertEqual(self.run_job(0, 1, 3600, state)[1], ["src/b.rs#0/1", "src/c.rs#0/1"])
+        # The same from the keyless jobs' hand-over.
+        self.assertEqual(self.run_job(0, 1, 3600, state, handover=True)[1], ["src/b.rs#0/1", "src/c.rs#0/1"])
 
     def test_a_failing_baseline_tests_nothing(self):
         code, units, log = self.run_job(0, 1, 3600, baseline="101")

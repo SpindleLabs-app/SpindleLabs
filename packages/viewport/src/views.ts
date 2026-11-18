@@ -72,6 +72,21 @@ export function viewBasis(name: ViewName, framing: Framing, fovDeg = 45, aspect 
 }
 
 /**
+ * Fit: the camera for framing a sphere from the direction the camera already looks from. The target moves to the
+ * sphere's centre and the camera to `fitDistance` away along `towardCamera` (current position minus current target;
+ * not normalised), so the viewing angle is unchanged and only the pan and zoom change. A zero direction has no angle
+ * to keep, so it falls back to the home view's.
+ */
+export function keepAngleBasis(towardCamera: readonly number[], framing: Framing, fovDeg = 45, aspect = 1): { position: Vec3; target: Vec3 } {
+  const n = Math.hypot(towardCamera[0], towardCamera[1], towardCamera[2]);
+  const d = n > 0 && Number.isFinite(n) ? towardCamera : VIEWS.home.towardCamera;
+  const m = Math.hypot(d[0], d[1], d[2]);
+  const dist = fitDistance(framing.radius, fovDeg, aspect);
+  const target: Vec3 = [...framing.centre];
+  return { position: target.map((c, i) => c + (d[i] / m) * dist) as Vec3, target };
+}
+
+/**
  * Look At: the camera square onto a plane, on the side its normal points
  * to (`side` +1) or the other (−1: a sketch on a back or bottom face, whose
  * frame keeps the world's axes so its normal points into the body; step
@@ -106,6 +121,24 @@ export function planeViewBasis(plane: Plane, framing: Framing, fovDeg = 45, aspe
   const dist = fitDistance(framing.radius, fovDeg, aspect) + Math.max(0, d);
   const position = target.map((v, i) => v + dist * t[i]) as Vec3;
   return { position, target, up };
+}
+
+/**
+ * How a plane's own x and y run on screen in Look At from `side`
+ * (planeViewBasis): each to the right or up (+1) or the other way (−1).
+ * From the normal's side both are +1. From the other side the picture is a
+ * mirror image, so exactly one is −1: y when Look At turns the plane's −y
+ * up (a bottom face), else x (a back or left face, where up stays y and x
+ * runs to the left).
+ */
+export function planeSeenAs(plane: Plane, side: 1 | -1 = 1): { right: 1 | -1; up: 1 | -1 } {
+  if (side !== -1) return { right: 1, up: 1 };
+  const n = plane.normal;
+  const x = plane.xAxis;
+  const y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
+  const up = planeViewBasis(plane, { centre: plane.origin, radius: 1 }, 45, 1, -1).up;
+  // Seen from behind with the plane's y up, x runs to the left; with −y up, x runs to the right.
+  return up[0] * y[0] + up[1] * y[1] + up[2] * y[2] < 0 ? { right: 1, up: -1 } : { right: -1, up: 1 };
 }
 
 /** The face views of the cube, in the order a tie is broken. */

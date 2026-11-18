@@ -12,8 +12,9 @@
 // one before, or the start; a reorder is refused when the item would come
 // before an item it is built from, or after one built from it.
 
+import { bodyWords, readings, shapings } from "./body-uses.ts";
 import type { Feature } from "@fission/core";
-import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, combineBodies, isCombineItem, EYE_ROWS, eyeOrder, isExtrudeJoin, isHidden, isOperationExtrude, isPiece, isDuplicateItem, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, numberedWhenBuilt, operationMakers, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -31,8 +32,11 @@ export const TIMELINE_STEPS = {
   showAll: "Show all bodies",
 } as const;
 
-/** Why a reorder is refused: the item would come before an item it is built from, or after one built from it. */
-export type ReorderCause = "before-dependency" | "after-dependent";
+/**
+ * Why a reorder is refused: the item would come before an item it is built from, or after one built from it, or
+ * (SL #538 item 3) past the maker of another body an Extrude Join joins with one of its own.
+ */
+export type ReorderCause = "before-dependency" | "after-dependent" | "join-order";
 
 export type Reordered = { doc: DesignDocument } | { refused: ReorderCause; message: string };
 
@@ -79,8 +83,10 @@ function deletedItem(doc: DesignDocument, id: string): DesignDocument {
   const pieces = (doc.hidden ?? []).filter((h) => isPiece(h) && bodyItem(h) === id);
   const left = withoutHidden(next, id, bodyIdOf(id), ...pieces);
   const { kept: old, ...rest } = left;
-  if (old === undefined || !Object.hasOwn(old, id)) return { ...left, profiles, sketches };
-  const { [id]: _, ...kept } = old;
+  // Its own kept shape, and (version 18) those of its other profiles, "<id>/profile:k" (version 20, SL #632; SL #611 C5).
+  const mine = (k: string) => k === id || k.startsWith(`${id}/`);
+  if (old === undefined || !Object.keys(old).some(mine)) return { ...left, profiles, sketches };
+  const kept = Object.fromEntries(Object.entries(old).filter(([k]) => !mine(k)));
   return Object.keys(kept).length === 0 ? { ...rest, profiles, sketches } : { ...rest, profiles, sketches, kept };
 }
 
@@ -186,6 +192,12 @@ function link(doc: DesignDocument, f: Feature, on: Feature): string {
  * the item would come before an item it is built from, or after one built
  * from it; a sketch's words name the face it is drawn on (answer 7), the
  * body it has a point snapped to (27c), or the one it projects (27d).
+ * Refused too (SL #538 item 3) when it would pass another item whose body
+ * an Extrude Join joins with one of its own: the joined body keeps the id
+ * of the one made first (docs/document-model.md section 8, rule 1), so the
+ * swap would quietly make it the other body, and a later Move or Combine
+ * of it would find its body gone. The same under a Combine's Join (SL #760
+ * item 2), for the items that made its target and its tools.
  */
 export function reorderItem(doc: DesignDocument, id: string, to: number): Reordered {
   const item = itemIn(doc, id);
@@ -197,6 +209,30 @@ export function reorderItem(doc: DesignDocument, id: string, to: number): Reorde
   if (from) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(from)}: it is ${link(doc, item, from)} ${itemName(from)}` };
   const user = features.find((f, j) => j < to && f.dependsOn.includes(id));
   if (user) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(user)}: ${itemName(user)} is ${link(doc, user, item)} it` };
+  const was = (x: string) => doc.timeline.features.findIndex((f) => f.id === x);
+  // SL #760 item 2: a Combine's Join too. Its body keeps the target's id, but once a later Cut splits it, the piece
+  // that keeps that id is the one holding the input made first, so the swap would make "Body 1" the other piece.
+  for (const join of features.filter((f) => isExtrudeJoin(f) || (isCombineItem(f) && combineBodies(f).operation === "join"))) {
+    const makers = isCombineItem(join) ? [...new Set([combineBodies(join).target, ...combineBodies(join).tools].flatMap((body) => bodyItem(body) ?? []))] : operationMakers(join).filter((m) => m !== join.id);
+    if (!makers.includes(id)) continue;
+    const passed = makers.find((m) => m !== id && was(m) >= 0 && was(m) < was(id) !== place(m) < to);
+    if (passed !== undefined) {
+      const other = itemIn(doc, passed);
+      return { refused: "join-order", message: `${itemName(item)} can't go ${place(passed) > to ? "before" : "after"} ${itemName(other)}: ${itemName(join)} joins their bodies, and the joined body is the one made first` };
+    }
+  }
+  // SL #506 item 1: nor past an item that placed or changed a body it works on, or one that works on a body it placed or
+  // changed (body-uses.ts): the Combine would silently use the body as it was before (or after) that item.
+  for (const s of shapings(doc.timeline.features)) {
+    if (s.of === item && place(s.by.id) > to) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(s.by)}: it uses ${bodyWords(doc, s.body)} as ${itemName(s.by)} leaves it` };
+    if (s.by === item && place(s.of.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(s.of)}: ${itemName(s.of)} uses ${bodyWords(doc, s.body)} as ${itemName(item)} leaves it` };
+  }
+  // SL #676 item 1: nor the other way round. An item that works on a body (a Copy, a Mirror, a Combine keeping its tools)
+  // stays before a later item that changes that body, or it would silently work on the changed body.
+  for (const r of readings(doc.timeline.features)) {
+    if (r.then === item && place(r.first.id) > to) return { refused: "before-dependency", message: `${itemName(item)} can't go before ${itemName(r.first)}: ${itemName(r.first)} uses ${bodyWords(doc, r.body)} as it is before ${itemName(item)}` };
+    if (r.first === item && place(r.then.id) < to) return { refused: "after-dependent", message: `${itemName(item)} can't go after ${itemName(r.then)}: it uses ${bodyWords(doc, r.body)} as it is before ${itemName(r.then)}` };
+  }
   const k = doc.timeline.features.indexOf(item);
   if (k === to) return { doc };
   // The marker stays in its gap (Fusion's rule, owner's decision 2026-11-04): the item it is on, dragged away, leaves
@@ -262,5 +298,19 @@ export function renameItem(doc: DesignDocument, id: string, typed: string): Rena
     const other = doc.timeline.features.find((f) => f.id !== id && nameKey(itemName(f)) === nameKey(name))!;
     return { refused: "taken", message: `${itemName(other)} is already the name of another item: each item needs its own name, since messages name items by them` };
   }
-  return { doc: withTimeline(doc, relabelled(doc.timeline.features, id, name), doc.timeline.marker) };
+  return { doc: withTimeline(doc, renamedInWords(relabelled(doc.timeline.features, id, name), id, old, name), doc.timeline.marker) };
+}
+
+/**
+ * The features with the old name `old` of item `id` said as `name` in the descriptions of the items made from it (their
+ * provenance names it): "Mirror of Base across the YZ plane", "Move Base by …", "Cut Box 2 from Base" (SL #524 item 1, as
+ * Fusion names an item by its name now). Only the whole name: renaming "Box 1" leaves "Box 10" alone.
+ */
+function renamedInWords(features: readonly Feature[], id: string, old: string, name: string): Feature[] {
+  const whole = new RegExp(`(?<![\\p{L}\\p{N}])${old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "gu");
+  return features.map((f) => {
+    if (f.id === id || !f.provenance.from.some((p) => p.workspace === "design" && p.id === id)) return f;
+    const summary = f.intent.summary.replace(whole, () => name);
+    return summary === f.intent.summary ? f : { ...f, intent: { ...f.intent, summary } };
+  });
 }

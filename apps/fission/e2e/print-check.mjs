@@ -95,6 +95,21 @@ for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
       const redOn = await redPixels(page);
       assert.ok(redOn > redOff + 2000, `the underside turns red: ${redOff} red pixels off, ${redOn} on`);
       if (shots) await page.screenshot({ path: `${shots}/print-check-${width}-supports.png` });
+      // Issue #519: with inches chosen in Settings the words follow at once: 800 mm² / 645.16 = 1.24 in², about 1.2 in².
+      if (!tap) {
+        const unit = async (u) => {
+          await page.click("#settings-open");
+          await page.click(`#settings [data-unit=${u}]`);
+          await page.click("#settings .close");
+        };
+        await unit("in");
+        await page.waitForFunction(() => [...document.querySelectorAll(".overlay-legend:not([hidden]) li")].some((l) => l.textContent.includes("in²")), null, { timeout: 5000 }).catch(() => {});
+        assert.deepEqual(await legend(page), ["Needs supports: about 1.2 in²"]);
+        if (shots) await page.screenshot({ path: `${shots}/print-check-${width}-supports-inches.png` });
+        await unit("mm");
+        await page.waitForFunction(() => [...document.querySelectorAll(".overlay-legend:not([hidden]) li")].some((l) => l.textContent.includes("mm²")), null, { timeout: 5000 }).catch(() => {});
+        assert.deepEqual(await legend(page), ["Needs supports: about 800 mm²"]);
+      }
       // Hide the plate: the column alone prints as it is, said at once.
       await openPanel(page, "browser", tap);
       await press('#browser [data-eye="body-2"]');

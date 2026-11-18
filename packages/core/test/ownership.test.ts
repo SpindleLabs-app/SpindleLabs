@@ -33,8 +33,8 @@ function proposal(): ProposedEdit {
 }
 
 test("the UI says who owns a value", () => {
-  assert.equal(ownedBy(spacing()), "Owned by Design");
-  assert.equal(ownedBy(linkedValue("t", "Sheet thickness", 3, "mm", "laser")), "Owned by Laser");
+  assert.equal(ownedBy(spacing()), "Owned by DesignLab");
+  assert.equal(ownedBy(linkedValue("t", "Sheet thickness", 3, "mm", "laser")), "Owned by LaserLab");
 });
 
 test("an edit by the owner runs now; the same edit from the other side becomes a proposal for the owner", () => {
@@ -49,7 +49,7 @@ test("an edit by the owner runs now; the same edit from the other side becomes a
     basedOn: 40,
     proposed: 45,
     command: to45,
-    summary: "Circuit suggests Hole spacing 45 mm (now 40 mm). Owned by Design.",
+    summary: "PCBLab suggests Hole spacing 45 mm (now 40 mm). Owned by DesignLab.",
     state: "pending",
   });
 });
@@ -58,7 +58,7 @@ test("a proposal is never applied by itself: the value only moves when the owner
   const v = spacing();
   proposal();
   assert.equal(v.value, 40, "proposing changed nothing");
-  assert.throws(() => setOwnedValue(v, "circuit", 45), /^Error: Hole spacing is owned by Design; Circuit can only suggest a change$/);
+  assert.throws(() => setOwnedValue(v, "circuit", 45), /^Error: Hole spacing is owned by DesignLab; PCBLab can only suggest a change$/);
   assert.equal(setOwnedValue(v, "design", 45).value, 45);
 });
 
@@ -86,7 +86,7 @@ test("a proposal overtaken by an edit or a hand-over is refused, never applied o
   assert.ok(handed.ok);
   assert.deepEqual(acceptProposal(p, handed.value), {
     ok: false,
-    error: "Hole spacing is now owned by Circuit, not Design; suggest the change again",
+    error: "Hole spacing is now owned by PCBLab, not DesignLab; suggest the change again",
   });
   const other = linkedValue("enclosure/wall", "Wall", 40, "mm", "design");
   assert.deepEqual(acceptProposal(p, other), { ok: false, error: "this suggestion is for enclosure/hole-spacing, not enclosure/wall" });
@@ -108,16 +108,16 @@ test("each bad edit is refused with its own reason", () => {
   assert.equal(refused("circuit", "45", to45), "Hole spacing is a number, got a string");
   assert.equal(refused("circuit", 40, to45), "Hole spacing is already 40 mm");
   // The non-owner's own command is not the owner's: it can't be smuggled through.
-  assert.equal(refused("circuit", 45, { op: "set_board_holes", pitch: 45 }), 'not a Design command: unknown command "set_board_holes"; known: set_hole_spacing');
-  assert.equal(refused("circuit", 45, { op: "set_hole_spacing", spacing: -1 }), "not a Design command: set_hole_spacing: spacing must be a length in mm greater than 0, got -1");
-  assert.equal(refused("design", 45, { op: "set_hole_spacing" }), "not a Design command: set_hole_spacing needs spacing");
+  assert.equal(refused("circuit", 45, { op: "set_board_holes", pitch: 45 }), 'not a DesignLab command: unknown command "set_board_holes"; known: set_hole_spacing');
+  assert.equal(refused("circuit", 45, { op: "set_hole_spacing", spacing: -1 }), "not a DesignLab command: set_hole_spacing: spacing must be a length in mm greater than 0, got -1");
+  assert.equal(refused("design", 45, { op: "set_hole_spacing" }), "not a DesignLab command: set_hole_spacing needs spacing");
 });
 
 test("handing a value over records it, gives the owner's label, and comes with the command that undoes it", () => {
   const r = transferOwnership(spacing(), "circuit");
   assert.ok(r.ok);
   assert.equal(r.value.owner, "circuit");
-  assert.equal(ownedBy(r.value), "Owned by Circuit");
+  assert.equal(ownedBy(r.value), "Owned by PCBLab");
   assert.deepEqual(r.value.ownership, [{ from: "design", to: "circuit" }]);
   assert.deepEqual(r.command, { op: "transfer_ownership", value: "enclosure/hole-spacing", to: "circuit" });
   assert.deepEqual(r.inverse, { op: "transfer_ownership", value: "enclosure/hole-spacing", to: "design" });
@@ -131,7 +131,7 @@ test("handing a value over records it, gives the owner's label, and comes with t
   const back = transferOwnership(r.value, "design");
   assert.ok(back.ok);
   assert.deepEqual(back.value.ownership, [{ from: "design", to: "circuit" }, { from: "circuit", to: "design" }]);
-  assert.equal(back.label, "Hand Hole spacing to Design");
+  assert.equal(back.label, "Hand Hole spacing to DesignLab");
 });
 
 test("hand-worked: a hand-over stored inside history.step is one undo step named for it, and Undo gives the value back", () => {
@@ -141,7 +141,7 @@ test("hand-worked: a hand-over stored inside history.step is one undo step named
   const h = createHistory({ capture: () => JSON.stringify({ held, notes }), restore: (s) => ({ held, notes } = JSON.parse(s)) });
   const r = transferOwnership(held, "circuit");
   assert.ok(r.ok);
-  assert.equal(r.label, "Hand Hole spacing to Circuit");
+  assert.equal(r.label, "Hand Hole spacing to PCBLab");
   // The hand-over and the note it leaves are two changes, each reported as the shell's projectChanged would.
   h.step(r.label, () => {
     held = r.value;
@@ -150,18 +150,18 @@ test("hand-worked: a hand-over stored inside history.step is one undo step named
     h.record("Edit");
   });
   // One step: one undo goes from (Circuit, 1 note) straight back to (Design, no notes).
-  assert.equal(h.undoLabel(), "Hand Hole spacing to Circuit");
-  assert.equal(h.undo(), "Hand Hole spacing to Circuit");
+  assert.equal(h.undoLabel(), "Hand Hole spacing to PCBLab");
+  assert.equal(h.undo(), "Hand Hole spacing to PCBLab");
   assert.equal(held.owner, "design");
   assert.deepEqual(held.ownership, []);
   assert.deepEqual(notes, []);
   assert.equal(h.canUndo(), false);
-  assert.equal(h.redo(), "Hand Hole spacing to Circuit");
-  assert.equal(ownedBy(held), "Owned by Circuit");
+  assert.equal(h.redo(), "Hand Hole spacing to PCBLab");
+  assert.equal(ownedBy(held), "Owned by PCBLab");
 });
 
 test("a hand-over to the current owner or an unknown workspace is refused", () => {
-  assert.deepEqual(transferOwnership(spacing(), "design"), { ok: false, error: "Hole spacing is already owned by Design" });
+  assert.deepEqual(transferOwnership(spacing(), "design"), { ok: false, error: "Hole spacing is already owned by DesignLab" });
   assert.deepEqual(transferOwnership(spacing(), "cad" as WorkspaceId), { ok: false, error: 'unknown workspace "cad"' });
   assert.equal(parseCommand({ op: "transfer_ownership", value: "x", to: "cad" }, [TRANSFER_OWNERSHIP]).ok, false);
 });

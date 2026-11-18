@@ -13,6 +13,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
+import { swipeIntoSight } from "./toolbar-swipe.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { closePanels, pickPlane, sheetsClearFor } from "./start.mjs";
@@ -157,10 +158,11 @@ try {
     const page = await fresh(375, true);
     await sketchOnXY(page, true);
     await drawBoth(page, true);
-    // 44 px tall to tap, measured before the tap (a pressed button shrinks a little while held), and on screen without
-    // a sideways swipe of the toolbar (app hunt 2026-11-04: page.tap scrolls a button into view, a finger doesn't).
+    // 44 px tall to tap, measured before the tap (a pressed button shrinks a little while held), and on screen once a
+    // finger swipes the toolbar to it (app hunt 2026-11-04: page.tap scrolls a button into view, a finger doesn't; since
+    // the UI audit 2026-11-12 the toolbar is one row a finger swipes, Ben's choice).
     for (const id of ["#sketch-tool-select", "#sketch-delete"]) {
-      const box = await page.locator(id).boundingBox();
+      const box = await swipeIntoSight(page, id);
       assert.ok(box && box.height >= 44, `${id} is ${box?.height} px tall, under 44`);
       assert.ok(box.x >= 0 && box.x + box.width <= 375, `${id} is off screen at x ${box.x}..${box.x + box.width}`);
     }

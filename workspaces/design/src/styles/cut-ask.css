@@ -1,0 +1,14 @@
+/* The question a Cut or Join that changes nothing asks (cut-ask.ts): Start
+   fresh's box, its record button the warning red of something that
+   deletes or records a no-op; Cancel keeps the plain look and has the
+   focus. ":not(#none)" lifts a rule over "#workspace button". */
+.cut-ask { max-width: min(420px, calc(100vw - 32px)); padding: 16px 18px; background: var(--surface); color: var(--text); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.cut-ask::backdrop { background: var(--shade-black-05); }
+.cut-ask h2 { margin: 0 0 8px; font-size: 1.1em; }
+.cut-ask p { margin: 0 0 14px; line-height: 1.45; color: var(--text-c4cbd5); }
+.cut-ask .cut-ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cut-ask #cut-ask-go:not(#none) { background: var(--fill-6b2328); border-color: var(--line-e0656d); font-weight: 600; }
+.cut-ask #cut-ask-go:not(#none):hover { background: var(--fill-82292f); }
+@media (max-width: 640px) {
+  .cut-ask button:not(#none) { min-height: 44px; }
+}

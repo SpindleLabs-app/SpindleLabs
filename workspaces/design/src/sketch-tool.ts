@@ -21,8 +21,9 @@
 // with the sketch constraints (29).
 
 import type { Fit } from "@fission/print";
-import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
+import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, Unit, ViewName } from "@fission/core";
 import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
+import { SketchFull } from "./sketch-room.ts";
 import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, lonePoints, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
@@ -271,6 +272,16 @@ function whereIs(sketch: Sketch, end: LineEnd): SketchXY {
  * the new point. A click on the chain's last point draws nothing.
  */
 export function clickAt<T extends SketchTool>(doc: DesignDocument, tool: T, at: SketchXY): { doc: DesignDocument; tool: T; drew: boolean; note?: string } {
+  // A sketch at the reader's limits (#641 item 2) draws nothing, and the click says why; the tool stays where it was.
+  try {
+    return clickIn(doc, tool, at);
+  } catch (e) {
+    if (e instanceof SketchFull) return { doc, tool, drew: false, note: e.message };
+    throw e;
+  }
+}
+
+function clickIn<T extends SketchTool>(doc: DesignDocument, tool: T, at: SketchXY): { doc: DesignDocument; tool: T; drew: boolean; note?: string } {
   if (tool.kind === "rectangle") return rectangleClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "circle") return circleClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
   if (tool.kind === "arc") return arcClick(doc, tool, at) as { doc: DesignDocument; tool: T; drew: boolean; note?: string };
@@ -291,7 +302,8 @@ export function clickAt<T extends SketchTool>(doc: DesignDocument, tool: T, at: 
  * from the report list): on top of the other, three line ends would meet
  * at both points and the outline would break ("3 ends meet"). A line that
  * only partly overlaps another still gets the kernel's warning; two
- * regions from overlapping curves come with step 48.
+ * regions from overlapping curves come with step 48. A construction line
+ * there doesn't count: it is left out of the outline (hunt 2026-11-12).
  */
 export const SAME_LINE = "There is a line between these two points already: a second one on top of it would break the outline.";
 
@@ -304,10 +316,12 @@ function lineClick(doc: DesignDocument, tool: LineTool, at: SketchXY): { doc: De
   if ((fx === at[0] && fy === at[1]) || there === tool.from) return { doc, tool, drew: false };
   const from = tool.from;
   if (underMin(distance([fx, fy], at), Math.max(Math.abs(fx), Math.abs(fy), Math.abs(at[0]), Math.abs(at[1])), true)) return { doc, tool, drew: false, note: SHORT_LINE };
-  if (there !== null && sketch.curves.some((c) => c.kind === "line" && ((c.start === from && c.end === there) || (c.start === there && c.end === from)))) return { doc, tool, drew: false, note: SAME_LINE };
+  if (there !== null && sketch.curves.some((c) => c.kind === "line" && c.construction !== true && ((c.start === from && c.end === there) || (c.start === there && c.end === from)))) return { doc, tool, drew: false, note: SAME_LINE };
   const drawn = drawLine(doc, tool.sketch, tool.from, end);
   const line = sketchOf(drawn.doc, tool.sketch).curves.find((c) => c.id === drawn.id) as SketchLineCurve;
-  return { doc: drawn.doc, tool: { ...tool, from: there ? null : line.end }, drew: true };
+  // A line drawn exactly level gets Horizontal, one exactly upright Vertical, as the Rectangle tool's sides do (SL #630):
+  // a rectangle drawn line by line, or a side drawn again, then stays square when a size is typed on it.
+  return { doc: squaredRectangle(drawn.doc, tool.sketch, [drawn.id]), tool: { ...tool, from: there ? null : line.end }, drew: true };
 }
 
 /** A rectangle's two clicks, the second at the opposite corner, sharing points; `note` says why a second click on the first corner's row or column, or one making it under MIN_SIZE wide or high (`SMALL_RECTANGLE`), draws nothing. */
@@ -697,7 +711,7 @@ export function previewSegments(doc: DesignDocument, tool: SketchTool | null, po
  * the Project tool the viewport is asked which edge or face is under the
  * pointer (`picks`).
  */
-export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool; grid: number; pointer: SketchXY | null; gridSnap?: boolean; pixel?: number } | null, placed?: ReadonlyMap<string, Plane>, lost: ReadonlySet<string> = new Set()): SketchDrawing[] {
+export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool; grid: number; pointer: SketchXY | null; gridSnap?: boolean; pixel?: number; unit?: Unit } | null, placed?: ReadonlyMap<string, Plane>, lost: ReadonlySet<string> = new Set()): SketchDrawing[] {
   // Each sketch's plane from its item, found by id once (security audit S2: a search per sketch took the timeline's length squared).
   const items = new Map<string, Feature>();
   for (const f of doc.timeline.features) if (!items.has(f.id)) items.set(f.id, f);
@@ -736,7 +750,7 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
     const lit = (ids: readonly string[]) => [...segmentsOf(curvesOf(s.points, s.curves.filter((c) => ids.includes(c.id)))), ...s.points.filter((p) => ids.includes(p.id)).flatMap((p) => circleSegments([p.x, p.y], ring / 2))];
     // With Select a press on any of its points drags it (47d3, point-drag.ts; one that can't be dragged says why).
     const select = tool.kind !== "select" ? {} : { ...(tool.picked.length > 0 ? { picked: lit(tool.picked) } : {}), ...(tool.hover !== null && !tool.picked.includes(tool.hover) ? { hover: lit([tool.hover]) } : {}), ...(s.points.length > 0 ? { grab: s.points.map((p): SketchXY => [p.x, p.y]) } : {}) };
-    return { plane, ...side, lines, ...construction, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit) } };
+    return { plane, ...side, lines, ...construction, ...projected, editing: { grid: editing.grid, gridSnap: editing.gridSnap ?? false, points, preview: previewSegments(doc, tool, editing.pointer), ...(tool.kind === "project" ? { picks: true as const } : {}), ...select, ...constraintDrawing(s, tool, editing.pixel, lit, editing.unit) } };
   });
 }
 
@@ -780,9 +794,9 @@ export const CONSTRAINT_MARK_PIXELS = 10;
  * The edited sketch's constraint marks (step 47d2), `pixel` mm a screen
  * pixel (1 mm when not known), and with a constraint tool, the point or line
  * it is over lit and the first point picked lit as picked; after a refusal
- * the constraints and arcs that fought red.
+ * the constraints and arcs that fought red. The labels' values are in `unit` (SL #519).
  */
-function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefined, lit: (ids: readonly string[]) => (readonly [SketchXY, SketchXY])[]) {
+function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefined, lit: (ids: readonly string[]) => (readonly [SketchXY, SketchXY])[], unit: Unit = "mm") {
   const size = CONSTRAINT_MARK_PIXELS * (pixel !== undefined && pixel > 0 ? pixel : 0.1);
   const marks = constraintMarks(s, size);
   const fighting = new Set(isConstraintTool(tool) ? tool.fighting : []);
@@ -793,7 +807,7 @@ function constraintDrawing(s: Sketch, tool: SketchTool, pixel: number | undefine
   const ring = (p: SketchXY | null): (readonly [SketchXY, SketchXY])[] => (p ? circleSegments(p, size / 2) : []);
   const out: { constraints?: (readonly [SketchXY, SketchXY])[]; fighting?: (readonly [SketchXY, SketchXY])[]; constraintCount?: number; hover?: (readonly [SketchXY, SketchXY])[]; picked?: (readonly [SketchXY, SketchXY])[]; labels?: { id: string; at: SketchXY; text: string; fighting?: boolean }[] } = {};
   // The dimensions' values (47e), red with the marks of the ones that fought.
-  const labels = dimensionLabels(s, size).map((l) => (fighting.has(l.id) ? { ...l, fighting: true } : l));
+  const labels = dimensionLabels(s, size, unit).map((l) => (fighting.has(l.id) ? { ...l, fighting: true } : l));
   if (labels.length > 0) out.labels = labels;
   // With Select (47d2), a constraint's mark is picked like a curve: lit with the picks, and lighter under the pointer.
   const select = tool.kind === "select" ? tool : null;

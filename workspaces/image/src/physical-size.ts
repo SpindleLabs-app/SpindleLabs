@@ -93,14 +93,14 @@ function readPng(b: Uint8Array): PhysicalSize {
     if (length > 0x7fffffff || data + length + 4 > b.length) {
       throw new ImageError("truncated", `This PNG's ${JSON.stringify(type)} chunk runs past the end of the file: the file is cut off.`);
     }
-    if (size === null && type !== "IHDR") throw new ImageError("damaged", "This PNG does not start with its IHDR header.");
+    if (size === null && type !== "IHDR") throw new ImageError("damaged", "This PNG file is damaged: it doesn't start the way a PNG should.");
     if (type === "IHDR" || type === "pHYs") {
       if (crc32(b, pos + 4, data + length) !== u32(b, data + length)) {
         throw new ImageError("damaged", `This PNG's ${type} chunk is damaged: its checksum is wrong.`);
       }
     }
     if (type === "IHDR") {
-      if (size !== null) throw new ImageError("damaged", "This PNG has two IHDR headers.");
+      if (size !== null) throw new ImageError("damaged", "This PNG file is damaged: it describes its size twice.");
       if (length !== 13) throw new ImageError("damaged", `This PNG's IHDR header is ${length} bytes long instead of 13.`);
       size = { width: u32(b, data), height: u32(b, data + 4) };
       checkPixelSize(size.width, size.height);

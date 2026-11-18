@@ -169,7 +169,9 @@ try {
     await untilNode(() => ui(svc).theme === "light" && svc.row.settings["spindlelabs.slice.nozzle"] === "high-flow", "sent");
     assert.equal(await a.page.evaluate(() => document.documentElement.dataset.theme), "light");
     assert.ok(!JSON.stringify(svc.saves).includes("sk-ant-secret"), "the AI key is never sent");
-    assert.deepEqual(Object.keys(svc.row.settings).sort(), ["spindlelabs-settings", "spindlelabs.slice.nozzle"]);
+    // Only the listed settings, and the history id the copy is given when it is made (packages/account settings.ts).
+    assert.deepEqual(Object.keys(svc.row.settings).sort(), ["spindlelabs-settings", "spindlelabs.account.history", "spindlelabs.slice.nozzle"]);
+    assert.match(svc.row.settings["spindlelabs.account.history"], /^[0-9a-f-]{36}$/);
   });
 
   const b = await device(svc);

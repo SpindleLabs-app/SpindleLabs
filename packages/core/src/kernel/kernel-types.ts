@@ -364,6 +364,25 @@ export interface BooleanResult {
   history: { faces: FaceFrom[]; also?: FaceFrom[][]; edges: EdgeFrom[] }[];
 }
 
+/**
+ * A chamfer's size as the kernel takes it (step 44a): `{ equal: d }` the same
+ * distance back along both faces, `{ two: [d1, d2] }` d1 along the first face
+ * and d2 along the second, `{ angle: [d, degrees] }` d along the first face,
+ * leaning that many degrees off it. Millimetres and degrees.
+ */
+export type ChamferSize = { equal: number } | { two: [number, number] } | { angle: [number, number] };
+
+/**
+ * body_chamfer's answer: the new kept body and where each of its faces came
+ * from, indexed as its BodyView numbers them: a face of the body given (by
+ * that body's face index), or the chamfer of one of its edges (by that body's
+ * edge index).
+ */
+export interface ChamferResult {
+  body: BodyHandle;
+  faces: ({ from: "face"; face: number } | { from: "edge"; edge: number })[];
+}
+
 /** What kind of failure a kernel call had. */
 export type KernelErrorKind =
   /** The kernel refuses an input; the user's to fix. */
@@ -399,7 +418,11 @@ export type KernelInput =
   | { input: "sketch" }
   | { input: "line"; index: number }
   | { input: "arc"; index: number }
-  | { input: "circle"; index: number };
+  | { input: "circle"; index: number }
+  /** A vertex, edge or face of a body the call was given (`body` 0 the first, a boolean's target; 1 its tool), by kernel index: Chamfer's refusals name the edge they are about. */
+  | { input: "vertex"; body: number; vertex: number }
+  | { input: "edge"; body: number; edge: number }
+  | { input: "face"; body: number; face: number };
 
 /** A failed kernel call in plain data, as it crosses from the worker. */
 export interface KernelFailure {

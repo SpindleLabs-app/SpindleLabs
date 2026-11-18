@@ -37,6 +37,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     const context = await browser.newContext({ viewport: { width, height: tap ? 667 : 800 }, hasTouch: tap, isMobile: tap, acceptDownloads: true });
     const page = await context.newPage();
     await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    await page.addInitScript(() => localStorage.setItem("spindlelabs.slice.settings-open", "open")); // the printer settings start closed; these checks use them
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("console", (m) => {
       if (m.type() === "error") errors.push(m.text());

@@ -36,6 +36,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     const page = await context.newPage();
     // A new design each load; the browser's other storage (the presets) is kept across the reload.
     await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    await page.addInitScript(() => localStorage.setItem("spindlelabs.slice.settings-open", "open")); // the printer settings start closed; these checks use them
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("console", (m) => {
       if (m.type() === "error") errors.push(m.text());
@@ -86,7 +87,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(await status(), "Saved the preset home P1S.");
       assert.deepEqual(await list(), ["No preset", "home P1S"]);
       const home = (await kept()).presets[0];
-      assert.deepEqual(home.settings, { layerHeight: 0.16, walls: 3, infill: 25, supports: "off", warmUp: true, betterGrip: false, format: "p1s", plate: "smooth", nozzle: "standard" });
+      assert.deepEqual(home.settings, { layerHeight: 0.16, walls: 3, infill: 25, format: "p1s", plate: "smooth", nozzle: "standard" }, "a preset holds the printer's settings only: no supports, warm-up loop or Better grip");
       assert.equal(home.printer, "bambu-p1s");
 
       // work P2S: Fast, tree supports, Better grip, the textured plate. A repeated name is refused first.
@@ -103,10 +104,10 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       const work = (await kept()).presets.find((p) => p.name === "work P2S");
       if (shots) await page.screenshot({ path: `${shots}/presets-${width}-saved.png` });
 
-      // Picking home puts its settings back, and Slice and download uses them.
+      // Picking home puts the printer's settings back and leaves the per-print ones (tree supports, Better grip) as they are; Slice and download uses them.
       await page.selectOption("#slice-presets-list", home.id);
-      assert.deepEqual(await shown(), ["p1s", "smooth", "standard", "0.16", "3", "25", "off", true, false]);
-      assert.equal(await download(), "spindlelabs-0.16mm-3w-25pc-smooth.gcode.3mf");
+      assert.deepEqual(await shown(), ["p1s", "smooth", "standard", "0.16", "3", "25", "tree", true, true]);
+      assert.equal(await download(), "spindlelabs-0.16mm-3w-25pc-tree-supports-grip-smooth.gcode.3mf");
       await page.selectOption("#slice-presets-list", work.id);
       assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "25", "tree", true, true]);
       assert.equal(await download(), "spindlelabs-0.28mm-3w-25pc-tree-supports-grip-textured.gcode.3mf");
@@ -130,7 +131,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await open();
       assert.equal(await page.$eval("#slice-presets-list", (s) => s.value), work.id);
       assert.deepEqual(await list(), ["No preset", "garage P1S", "home P1S"]);
-      assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "40", "tree", true, true]);
+      assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "40", "off", true, true], "supports are per print: back to off after a reload; the ticks are remembered");
       if (shots) await page.screenshot({ path: `${shots}/presets-${width}-reloaded.png` });
 
       // Delete it: asked first (Keep keeps it), then gone; the settings stay.
@@ -144,7 +145,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await press("#slice-presets-delete-yes");
       assert.deepEqual(await list(), ["No preset", "home P1S"]);
       assert.deepEqual((await kept()).presets.map((p) => p.name), ["home P1S"]);
-      assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "40", "tree", true, true]);
+      assert.deepEqual(await shown(), ["p1s", "textured", "standard", "0.28", "3", "40", "off", true, true], "supports are per print: back to off after a reload; the ticks are remembered");
       // Escape in the name box leaves naming, not the dialog.
       await press("#slice-presets-save-as");
       await page.press("#slice-presets-name", "Escape");

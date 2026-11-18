@@ -42,7 +42,7 @@ export type Status = "built" | "partly" | "planned";
 
 export interface Chapter {
   id: string;
-  part: "Using Design" | "Inside the kernel" | "Around the kernel" | "Words";
+  part: "Using DesignLab" | "Inside the kernel" | "Around the kernel" | "Words";
   title: string;
   /** built: works today; partly: some of it works ("being built" or "not built yet" says which); planned: "not built yet". */
   status: Status;
@@ -56,7 +56,7 @@ export interface Chapter {
 export const CHAPTERS: Chapter[] = [
   {
     id: "welcome",
-    part: "Using Design",
+    part: "Using DesignLab",
     title: "How SpindleLabs works",
     status: "built",
     text: [
@@ -73,7 +73,7 @@ export const CHAPTERS: Chapter[] = [
   },
   {
     id: "parametric",
-    part: "Using Design",
+    part: "Using DesignLab",
     title: "A part is a recipe",
     status: "built",
     text: [
@@ -89,7 +89,7 @@ export const CHAPTERS: Chapter[] = [
   },
   {
     id: "sketch",
-    part: "Using Design",
+    part: "Using DesignLab",
     title: "Sketches: drawing on a flat sheet",
     status: "built",
     text: [
@@ -110,7 +110,7 @@ export const CHAPTERS: Chapter[] = [
   },
   {
     id: "extrude",
-    part: "Using Design",
+    part: "Using DesignLab",
     title: "Extrude: from flat to solid",
     status: "built",
     text: [
@@ -123,7 +123,7 @@ export const CHAPTERS: Chapter[] = [
   },
   {
     id: "timeline",
-    part: "Using Design",
+    part: "Using DesignLab",
     title: "The timeline: the recipe, in order",
     status: "partly",
     text: [
@@ -141,7 +141,7 @@ export const CHAPTERS: Chapter[] = [
   },
   {
     id: "history",
-    part: "Using Design",
+    part: "Using DesignLab",
     title: "Undo and your project file",
     status: "built",
     text: [
@@ -154,7 +154,7 @@ export const CHAPTERS: Chapter[] = [
   },
   {
     id: "constraints",
-    part: "Using Design",
+    part: "Using DesignLab",
     title: "Constraints and dimensions",
     status: "planned",
     text: [
@@ -393,10 +393,10 @@ export const CHAPTERS: Chapter[] = [
     title: "One project, ten workspaces",
     status: "partly",
     text: [
-      "Design is where parts are made. Around it sit Render, Simulate, Manufacture, Laser, Slice, Circuit, Vector, Image and Layout, all reading the same project, so a change in Design shows up everywhere with no exporting.",
-      "Design is real today and Image has its first tools. The other workspaces are placeholders that say so; they are being built one at a time.",
+      "DesignLab is where parts are made. Around it sit RenderLab, TestLab, CNCLab, LaserLab, SliceLab, PCBLab, VectorLab, ImageLab and LayoutLab, all reading the same project, so a change in DesignLab shows up everywhere with no exporting.",
+      "DesignLab is real today and ImageLab has its first tools. The other workspaces are placeholders that say so; they are being built one at a time.",
     ],
-    terms: [{ term: "workspace", meaning: "One area of the app for one kind of work, like Design or Slice; all share the same project." }],
+    terms: [{ term: "workspace", meaning: "One area of the app for one kind of work, like DesignLab or SliceLab; all share the same project." }],
     scene: "workspaces",
     tint: "#4338ca",
   },
@@ -407,7 +407,7 @@ export const CHAPTERS: Chapter[] = [
     status: "partly",
     text: [
       "The assistant is off unless you turn it on, and you choose what runs it: Chrome's built-in model, one downloaded into the browser, Ollama on your computer, or your own key for an AI company.",
-      "It can only use the same commands you can. It shows a preview of what would change; you accept or reject, and an accepted change is one undo step. It never controls a printer, laser or CNC machine. Today it can change Design's starting shape; more is not built yet.",
+      "It can only use the same commands you can. It shows a preview of what would change; you accept or reject, and an accepted change is one undo step. It never controls a printer, laser or CNC machine. Today it can change DesignLab's starting shape; more is not built yet.",
     ],
     terms: [{ term: "preview", meaning: "A see-through picture of what a change would do, before anything changes." }],
     scene: "assistant",

@@ -190,10 +190,13 @@ test("an upstream edit that stops the split, then undoes it: Combine 2 on the pi
 
 test("reorder the Combine above the Move of its tool: it cuts the tool where it was made", async () => {
   const { doc, id, bodies, moves } = slotted();
-  // Timeline: Box 1, Box 2, Move 1 (of Box 2), Combine 1. Combine 1 to place 2 (before Move 1): allowed (it depends on the boxes).
+  // Timeline: Box 1, Box 2, Move 1 (of Box 2), Combine 1. Combine 1 to place 2 (before Move 1): refused since SL #506
+  // item 1, since Combine 1 cuts Box 2 as Move 1 leaves it and the drag would change the cut with no warning.
   const r = reorderItem(doc, id, 2);
-  assert.ok("doc" in r, JSON.stringify(r));
-  const b = await built(r.doc);
+  assert.deepEqual(r, { refused: "before-dependency", message: "Combine 1 can't go before Move 1: it uses Box 2 as Move 1 leaves it" });
+  // A file saved before #506 may hold that order (the drag was allowed then): it still builds as it says.
+  const [box1, box2, move1, combine1] = doc.timeline.features;
+  const b = await built({ ...doc, timeline: { ...doc.timeline, features: [box1, box2, combine1, move1] } });
   // Box 2 at the origin: x 0..10, y 0..40, z 0..20; bar's part in it x 0..10, y 0..20, z 0..10 = 2,000. Bar: 18,000, one piece.
   assert.equal(b.build.results[id].status, "built");
   near(await b.volume(bodies[0]), 18000);
@@ -214,7 +217,10 @@ test("Keep tools on, a second Combine uses the kept tool, then Keep tools turned
   assert.equal(a.build.results[c2.id].status, "built");
   near(await a.volume(bodies[1]), 8000);
   await a.cache.close();
-  const off = changedCombine(a.doc, c1, bodies[0], [bodies[1]], "cut", false);
+  // Turning Keep tools off would use up Box 2, which Combine 2 cuts: refused since SL #506 item 3.
+  assert.throws(() => changedCombine(a.doc, c1, bodies[0], [bodies[1]], "cut", false), { message: "Combine 2 uses Body 2, which Combine 1 would use up: change or delete Combine 2 first" });
+  // A file saved before #506 may hold it (the edit was allowed then): Combine 2 fails in words and the file reopens.
+  const off: DesignDocument = { ...a.doc, timeline: { ...a.doc.timeline, features: a.doc.timeline.features.map((f) => (f.id === c1 ? { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, keepTools: false } } } : f)) } };
   const b = await built(off);
   assert.equal(b.build.results[c2.id].status, "failed");
   assert.doesNotThrow(() => reopen(b.doc));

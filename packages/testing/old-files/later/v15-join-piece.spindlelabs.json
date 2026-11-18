@@ -1,0 +1,359 @@
+{
+  "formatVersion": 2,
+  "links": [],
+  "materials": [],
+  "name": "Join pieces",
+  "units": {
+    "length": "mm"
+  },
+  "workspaces": {
+    "design": {
+      "bodies": [
+        {
+          "id": "body:feature-1",
+          "number": 1
+        },
+        {
+          "faces": [
+            "face:feature-11/end",
+            "face:feature-11/side:line-10",
+            "face:feature-11/side:line-5",
+            "face:feature-11/side:line-7",
+            "face:feature-11/side:line-9",
+            "face:feature-11/start"
+          ],
+          "id": "body:feature-11/piece:1",
+          "number": 2
+        },
+        {
+          "id": "body:feature-23",
+          "number": 3
+        }
+      ],
+      "hidden": [
+        "body:feature-11/piece:1"
+      ],
+      "nextBody": 4,
+      "nextId": 24,
+      "profiles": [],
+      "sketches": [
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "end": "point-4",
+              "id": "line-5",
+              "kind": "line",
+              "start": "point-3"
+            },
+            {
+              "end": "point-6",
+              "id": "line-7",
+              "kind": "line",
+              "start": "point-4"
+            },
+            {
+              "end": "point-8",
+              "id": "line-9",
+              "kind": "line",
+              "start": "point-6"
+            },
+            {
+              "end": "point-3",
+              "id": "line-10",
+              "kind": "line",
+              "start": "point-8"
+            }
+          ],
+          "id": "sketch-2",
+          "points": [
+            {
+              "id": "point-3",
+              "x": 20,
+              "y": 0
+            },
+            {
+              "id": "point-4",
+              "x": 24,
+              "y": 0
+            },
+            {
+              "id": "point-6",
+              "x": 24,
+              "y": 4
+            },
+            {
+              "id": "point-8",
+              "x": 20,
+              "y": 4
+            }
+          ]
+        },
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "end": "point-14",
+              "id": "line-15",
+              "kind": "line",
+              "start": "point-13"
+            },
+            {
+              "end": "point-16",
+              "id": "line-17",
+              "kind": "line",
+              "start": "point-14"
+            },
+            {
+              "end": "point-18",
+              "id": "line-19",
+              "kind": "line",
+              "start": "point-16"
+            },
+            {
+              "end": "point-13",
+              "id": "line-20",
+              "kind": "line",
+              "start": "point-18"
+            }
+          ],
+          "id": "sketch-12",
+          "points": [
+            {
+              "id": "point-13",
+              "x": 8,
+              "y": 2
+            },
+            {
+              "id": "point-14",
+              "x": 12,
+              "y": 2
+            },
+            {
+              "id": "point-16",
+              "x": 12,
+              "y": 6
+            },
+            {
+              "id": "point-18",
+              "x": 8,
+              "y": 6
+            }
+          ]
+        }
+      ],
+      "timeline": {
+        "features": [
+          {
+            "dependsOn": [],
+            "id": "feature-1",
+            "intent": {
+              "parameters": {
+                "depth": 10,
+                "height": 10,
+                "width": 10
+              },
+              "summary": "Box: 10 × 10 × 10 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-1",
+                "label": "Box 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "sketch-2",
+            "intent": {
+              "parameters": {
+                "plane": "XY"
+              },
+              "summary": "Sketch 1 on the XY plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-2",
+                "label": "Sketch 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-2",
+              "feature-1"
+            ],
+            "id": "feature-11",
+            "intent": {
+              "parameters": {
+                "bodies": [
+                  "body:feature-1"
+                ],
+                "distance": 10,
+                "operation": "join",
+                "sketch": "sketch-2"
+              },
+              "summary": "Extrude Sketch 1 by 10 mm, joined to Box 1",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-2",
+                  "label": "Sketch 1",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-1",
+                  "label": "Box 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-11",
+                "label": "Extrude 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "sketch-12",
+            "intent": {
+              "parameters": {
+                "plane": "XY"
+              },
+              "summary": "Sketch 2 on the XY plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-12",
+                "label": "Sketch 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-12",
+              "feature-1"
+            ],
+            "id": "feature-21",
+            "intent": {
+              "parameters": {
+                "bodies": [
+                  "body:feature-1"
+                ],
+                "distance": 5,
+                "operation": "join",
+                "sketch": "sketch-12"
+              },
+              "summary": "Extrude Sketch 2 by 5 mm, joined to Box 1",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-12",
+                  "label": "Sketch 2",
+                  "workspace": "design"
+                },
+                {
+                  "id": "feature-1",
+                  "label": "Box 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-21",
+                "label": "Extrude 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-11"
+            ],
+            "id": "feature-22",
+            "intent": {
+              "parameters": {
+                "bodies": [
+                  "body:feature-11/piece:1"
+                ],
+                "pivotX": 0,
+                "pivotY": 0,
+                "pivotZ": 0,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": 100,
+                "y": 0,
+                "z": 0
+              },
+              "summary": "Move Extrude 1 by (100, 0, 0) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-11",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-22",
+                "label": "Move 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-11"
+            ],
+            "id": "feature-23",
+            "intent": {
+              "parameters": {
+                "body": "body:feature-11/piece:1"
+              },
+              "summary": "Copy of a piece of Extrude 1",
+              "type": "duplicate"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-11",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-23",
+                "label": "Copy 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          }
+        ]
+      },
+      "version": 15
+    }
+  }
+}

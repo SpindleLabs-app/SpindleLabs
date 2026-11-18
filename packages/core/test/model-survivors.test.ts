@@ -117,9 +117,9 @@ test("a suggestion shows the unit only for a number with a unit (worked by hand)
     assert.equal(r.kind, "proposed", JSON.stringify(r));
     return r.kind === "proposed" ? r.proposal.summary : "";
   };
-  assert.equal(summary(spacing, 45), "Circuit suggests Hole spacing 45 mm (now 40 mm). Owned by Design.");
-  assert.equal(summary(count, 3), "Circuit suggests Holes 3 (now 2). Owned by Design.");
-  assert.equal(summary(finish, "gloss"), "Circuit suggests Finish gloss (now matte). Owned by Design.");
+  assert.equal(summary(spacing, 45), "PCBLab suggests Hole spacing 45 mm (now 40 mm). Owned by DesignLab.");
+  assert.equal(summary(count, 3), "PCBLab suggests Holes 3 (now 2). Owned by DesignLab.");
+  assert.equal(summary(finish, "gloss"), "PCBLab suggests Finish gloss (now matte). Owned by DesignLab.");
 });
 
 test("the hand-over command takes a value id as text of at most 200 characters", () => {

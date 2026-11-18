@@ -34,6 +34,8 @@ export const ICONS = {
   rotate: [tone("M10 12A2 2 0 1 0 14 12A2 2 0 1 0 10 12Z"), line("M19 12A7 7 0 1 1 15.5 5.94M15.5 2.5 15.5 5.94 19 6.5")],
   // Two overlapping blocks, where they overlap in the second tone: Combine (35f1c; Join, Cut or Intersect bodies).
   combine: [tone("M9 9H15V15H9Z"), line("M4 4H15V15H4ZM9 9H20V20H9Z")],
+  // A block with one corner cut off flat, the cut face in the second tone: Chamfer (step 44a-app2).
+  chamfer: [tone("M13 4 20 11 17.5 13.5 10.5 6.5Z"), line("M4 20V4H13L20 11V20ZM10.5 6.5 17.5 13.5")],
   // A block in front, its copy behind it and up to the right in outline only: Duplicate body (step 35e2).
   duplicate: [tone("M4 9H15V20H4Z"), line("M4 9H15V20H4ZM9 9V4H20V15H15")],
   // A small block in the corner of a bigger one in outline, an arrow out along the diagonal: Scale (step 35e2).
@@ -42,6 +44,8 @@ export const ICONS = {
   mirror: [tone("M4 18 10 6V18Z"), line("M4 18 10 6V18ZM20 18 14 6V18ZM12 3V21")],
   insert: [tone("M4 4H20V20H4Z"), line("M4 4H20V20H4ZM12 8V16M8 12H16")],
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
+  // A lens with two lines of text inside it: the command search button (the S key's box, for a touch screen).
+  search: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20M7.5 9H13.5M7.5 12H11.5")],
   // The print check (Inspect ▾, H1): a nozzle over printed layers.
   "print-check": [tone("M4 15H20V20H4Z"), line("M9 3H15V7L13 10H11L9 7ZM12 10V12.5M4 15H20V20H4ZM4 17.5H20")],
   // A dimension between two upright ticks, an arrow at each end over a ruler: Measure (Inspect ▾, 35e2l).
@@ -87,7 +91,8 @@ export const ICONS = {
   undo: [line("M9 5 4 10 9 15M4 10H14.5A5.5 5.5 0 0 1 14.5 21H11")],
   redo: [line("M15 5 20 10 15 15M20 10H9.5A5.5 5.5 0 0 0 9.5 21H13")],
   settings: [tone("M9 12A3 3 0 1 0 15 12A3 3 0 1 0 9 12Z"), line("M12 3V5.5M12 18.5V21M3 12H5.5M18.5 12H21M5.6 5.6 7.4 7.4M16.6 16.6 18.4 18.4M5.6 18.4 7.4 16.6M16.6 7.4 18.4 5.6M6.5 12A5.5 5.5 0 1 0 17.5 12A5.5 5.5 0 1 0 6.5 12Z")],
-  guide: [tone("M4 5H11V19H4Z"), line("M4 5H11V19H4ZM13 5H20V19H13ZM11 19H13")],
+  // An open book (the guide), its pages curving down to the spine: the left page in the second tone.
+  guide: [tone("M12 7C10 5.5 7 5 3 5.5V18.5C7 18 10 18.5 12 20Z"), line("M12 7C10 5.5 7 5 3 5.5V18.5C7 18 10 18.5 12 20C14 18.5 17 18 21 18.5V5.5C17 5 14 5.5 12 7ZM12 7V20")],
   ai: [tone("M10 4 11.75 9.25 17 11 11.75 12.75 10 18 8.25 12.75 3 11 8.25 9.25Z"), line("M10 4 11.75 9.25 17 11 11.75 12.75 10 18 8.25 12.75 3 11 8.25 9.25ZM18 3V7M16 5H20")],
   // One person: the account button (optional sign-in).
   account: [tone("M6 20A6 6 0 0 1 18 20Z"), line("M9 8A3 3 0 1 0 15 8A3 3 0 1 0 9 8ZM6 20A6 6 0 0 1 18 20")],
@@ -113,6 +118,12 @@ export const ICONS = {
   dimension: [tone("M9 4H15V8H9Z"), line("M4 10V20M20 10V20M4 15H20M7 12.5 4 15 7 17.5M17 12.5 20 15 17 17.5")],
   // The menus' own mark.
   chevron: [line("M7 10 12 15 17 10")],
+  // Pausing and playing a moving picture (the home screen's background).
+  pause: [tone("M7 5H10V19H7ZM14 5H17V19H14Z"), line("M7 5H10V19H7ZM14 5H17V19H14Z")],
+  play: [tone("M7 4.5 19 12 7 19.5Z"), line("M7 4.5 19 12 7 19.5Z")],
+  // Folding the home screen away to watch the background, and bringing it back: two arrowheads pointing in to a line, and out from it.
+  fold: [tone("M7 4 12 9 17 4ZM7 20 12 15 17 20Z"), line("M7 4 12 9 17 4ZM7 20 12 15 17 20ZM4 12H20")],
+  unfold: [tone("M7 9 12 4 17 9ZM7 15 12 20 17 15Z"), line("M7 9 12 4 17 9ZM7 15 12 20 17 15ZM4 12H20")],
 } satisfies Record<string, readonly IconPart[]>;
 
 export type IconName = keyof typeof ICONS;

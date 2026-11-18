@@ -5,7 +5,7 @@ export { browserKeyStore, checkApiKey, memoryKeyStore, MAX_KEY_LENGTH, type ApiK
 export { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, streamLines, type Fetch } from "./http.ts";
 export { apiOrigin, DEFAULT_MODELS, listHostedModels, otherEndpoint, vendorFromKey, VENDOR_ORIGINS } from "./hosted.ts";
 export { isThisComputer, OLLAMA_ENDPOINT, ollamaModels } from "./ollama.ts";
-export { gpuCanRun, IN_BROWSER_MODEL, inBrowserDownloadBytes, type BuiltInModelLike, type GpuLike, type WebLLMChunk, type WebLLMLike, type WebLLMModel, type WebLLMReply } from "./local.ts";
+export { gpuCanRun, IN_BROWSER_FILES, IN_BROWSER_MODEL, inBrowserDownloadBytes, inBrowserDownloadMB, type BuiltInModelLike, type GpuLike, type WebLLMChunk, type WebLLMLike, type WebLLMModel, type WebLLMReply } from "./local.ts";
 export { askForCommands, saysCannot, SHORTER_RULE, type AskResult } from "./commands.ts";
 export { AIError, kindOf, STALL_MS, troubleWords, type TroubleKind } from "./trouble.ts";
 export { ASKING, CHECKING, partialString, PREVIEWING, progressOf, TYPICAL_ANSWER, waiting, type Progress, type Stage } from "./progress.ts";

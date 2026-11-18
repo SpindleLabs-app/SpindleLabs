@@ -134,6 +134,35 @@ test("the action note shows a warning in red and clears", () => {
   assert.equal($("action-note").className, "");
 });
 
+test("a passing note (a refusal) goes away after 20 s or when the tool it names closes; a sticky warning stays", () => {
+  const { p, $ } = panel();
+  const real = globalThis.setTimeout;
+  const timers: { f: () => void; ms: number }[] = [];
+  (globalThis as { setTimeout: unknown }).setTimeout = ((f: () => void, ms: number) => (timers.push({ f, ms }), timers.length)) as unknown;
+  try {
+    p.showActionNote("Sketch is still open", true, true);
+    assert.equal($("action-note").textContent, "Sketch is still open");
+    assert.equal(timers.at(-1)!.ms, 20_000);
+    p.clearPassingNote(); // the sketch was cancelled
+    assert.equal($("action-note").textContent, "");
+    assert.equal($("action-note").className, "");
+    p.showActionNote("Sketch is still open", true, true);
+    timers.at(-1)!.f(); // 20 s later
+    assert.equal($("action-note").textContent, "");
+    p.showActionNote("Too big for an accurate STL", true); // a warning the person must read
+    p.clearPassingNote();
+    assert.equal($("action-note").textContent, "Too big for an accurate STL", "a sticky note is not a passing one");
+    // An old timer must not wipe a newer note.
+    p.showActionNote("first", true, true);
+    const old = timers.at(-1)!;
+    p.showActionNote("second", false);
+    old.f();
+    assert.equal($("action-note").textContent, "second");
+  } finally {
+    (globalThis as { setTimeout: unknown }).setTimeout = real;
+  }
+});
+
 test("the selection's verbs are buttons that run their action; none hides the row", () => {
   const { p, $ } = panel();
   assert.equal($("selection-actions").hidden, true);
@@ -180,4 +209,16 @@ test("the Downstream section: hidden with no chips, one button per chip, a click
   p.showDownstream([], (t) => opened.push(t));
   assert.equal($("downstream").hidden, true, "hidden again when the last chip goes");
   assert.deepEqual(shown(), []);
+});
+
+// #505: the Feature section says why the selected item failed, in visible text (a phone has no tooltips).
+test("the Feature section shows why the selected item failed, and clears it", () => {
+  const { p, $ } = panel();
+  assert.equal($("feature-failure").hidden, true);
+  p.showFeatureFailure("Box 2 doesn't reach Body 1.");
+  assert.equal($("feature-failure").hidden, false);
+  assert.equal($("feature-failure").textContent, "Couldn't be made: Box 2 doesn't reach Body 1.");
+  p.showFeatureFailure("");
+  assert.equal($("feature-failure").hidden, true);
+  assert.equal($("feature-failure").textContent, "");
 });

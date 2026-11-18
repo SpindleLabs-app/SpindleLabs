@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -41,6 +41,13 @@ export interface KernelOps {
    * one given left as it was. Refused as a moved spec's moves are.
    */
   body_move: { args: [body: BodyHandle, moves: Motion[]]; result: BodyHandle };
+  /**
+   * The kept body `body` with each of `edges` (its BodyView's edge indices)
+   * chamfered at `size`; `flip` measures from the other face first (step
+   * 44a): a new kept body, the one given left as it was. A refusal keeps
+   * nothing; its words name the edge or the size.
+   */
+  body_chamfer: { args: [body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean]; result: ChamferResult };
   /** Measures one pick, or two (step 35e2l): their facts, the least distance with its two points, the angle and centre to centre. */
   body_measure: { args: [first: MeasurePick, second: MeasurePick | null]; result: Measured };
   /** How many bodies the kernel keeps: tests check what they build they free. */
@@ -108,6 +115,9 @@ export function progressPoster(id: number, post: (message: KernelProgress) => vo
 export const isTrap = (e: unknown): boolean => typeof WebAssembly !== "undefined" && e instanceof WebAssembly.RuntimeError;
 
 /** What the call that stopped the kernel answers (and every call still waiting on it): the app then starts a fresh kernel and builds again. */
+/** What a call about a body the kernel no longer holds says (no internal number: nobody can act on one). */
+export const UNKNOWN_BODY_WORDS = "That body is no longer there (it was removed, or the design was rebuilt). Reload the design and try again.";
+
 export const KERNEL_RESTARTED = "The geometry kernel ran out of memory or stopped on an internal error, so it was started again.";
 
 /**
@@ -373,7 +383,7 @@ export class KernelClient implements KernelCalls {
       event.preventDefault();
       if (worker !== this.worker) return;
       if (this.started && event.message) return this.restart();
-      const why = event.message ? `stopped (kernel worker crashed: ${event.message})` : "didn't start (its worker didn't load)";
+      const why = event.message ? "stopped unexpectedly" : "didn't start (its worker didn't load)";
       this.failed = new KernelError({ kind: "internal", inputs: [], message: `The geometry kernel ${why}. Reload the page to try again.` });
       this.pending.forEach((p) => p.reject(this.failed!));
       this.pending.clear();
@@ -470,12 +480,13 @@ export class KernelClient implements KernelCalls {
       });
     }
     if (op === "body_move") return this.move(...(args as KernelOps["body_move"]["args"]), units) as Promise<KernelOps[K]["result"]>;
+    if (op === "body_chamfer") return this.chamfer(...(args as KernelOps["body_chamfer"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     if (op === "body_boolean") return this.boolean(...(args as KernelOps["body_boolean"]["args"]), units) as Promise<KernelOps[K]["result"]>;
     // Measure's picks name bodies by the app's handles: each sent as the kernel's number (35e2l2).
     if (op === "body_measure") {
       const picks = (args as KernelOps["body_measure"]["args"]).map((p) => (p === null ? null : { pick: p, held: this.bodies.get(p.body) }));
       const unknown = picks.find((p) => p !== null && !p.held);
-      if (unknown) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${unknown.pick.body} is not in the kernel (it was freed, or never made)` }));
+      if (unknown) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
       return this.send(op, picks.map((p) => (p === null ? null : { ...p.pick, body: p.held!.body })) as KernelOps[K]["args"], units) as Promise<KernelOps[K]["result"]>;
     }
     if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide") {
@@ -484,7 +495,7 @@ export class KernelClient implements KernelCalls {
       if (!held) {
         // A body that went with its kernel is gone already: freeing it is done. Anything else asked of it is refused, in the kernel's words.
         if (op === "body_free" && this.retired.delete(handle)) return Promise.resolve() as Promise<KernelOps[K]["result"]>;
-        return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${handle} is not in the kernel (it was freed, or never made)` }));
+        return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
       }
       const sent = this.send(op, [held.body, ...args.slice(1)] as KernelOps[K]["args"], units);
       if (op === "body_free") void sent.then(() => this.bodies.get(handle) === held && this.bodies.delete(handle) && this.sizes.delete(handle), () => {});
@@ -511,7 +522,7 @@ export class KernelClient implements KernelCalls {
     const inputs = [target, ...tools];
     const held = inputs.map((handle) => this.bodies.get(handle));
     const unknown = inputs.find((_, k) => !held[k]);
-    if (unknown !== undefined) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${unknown} is not in the kernel (it was freed, or never made)` }));
+    if (unknown !== undefined) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
     const worker = this.worker;
     const app = new Map(held.map((h, k) => [h!.body, inputs[k]]));
     return this.send("body_boolean", [held[0]!.body, held.slice(1).map((h) => h!.body), op], units).then((reply) => {
@@ -527,8 +538,10 @@ export class KernelClient implements KernelCalls {
       const named = (body: BodyHandle) => app.get(body) ?? body;
       return {
         bodies: handles,
-        history: history.map(({ faces, edges }) => ({
+        history: history.map(({ faces, also, edges }) => ({
           faces: faces.map((f) => ({ ...f, body: named(f.body) })),
+          // A face merged from several input faces lying level (kernel 36c1): the others it lies on (SL #502: dropped before).
+          ...(also !== undefined ? { also: also.map((list) => list.map((f) => ({ ...f, body: named(f.body) }))) } : {}),
           edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
         })),
       };
@@ -542,7 +555,7 @@ export class KernelClient implements KernelCalls {
    */
   private move(body: BodyHandle, moves: Motion[], units: number): Promise<BodyHandle> {
     const held = this.bodies.get(body);
-    if (!held) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${body} is not in the kernel (it was freed, or never made)` }));
+    if (!held) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
     const worker = this.worker;
     const size = this.sizes.get(body);
     return this.send("body_move", [held.body, moves], units).then((reply) => {
@@ -552,6 +565,25 @@ export class KernelClient implements KernelCalls {
         if (size) this.sizes.set(handle, size);
       } else this.retired.add(handle);
       return handle;
+    });
+  }
+
+  /**
+   * body_chamfer with the app's handles (step 44a): the body's kernel number
+   * sent, the chamfered body given a handle of its own, sized by its faces.
+   */
+  private chamfer(body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean, units: number): Promise<ChamferResult> {
+    const held = this.bodies.get(body);
+    if (!held) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: UNKNOWN_BODY_WORDS }));
+    const worker = this.worker;
+    return this.send("body_chamfer", [held.body, edges, size, flip], units).then((reply) => {
+      const { body: kept, faces } = reply as ChamferResult;
+      const handle = this.nextBody++;
+      if (worker === this.worker) {
+        this.bodies.set(handle, { worker, body: kept });
+        this.sizes.set(handle, facesSize(faces.length));
+      } else this.retired.add(handle);
+      return { body: handle, faces };
     });
   }
 

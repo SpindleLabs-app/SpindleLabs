@@ -136,12 +136,13 @@ test("a click on a face of a Combine's result puts a sketch on it by its full na
   const nearTop = faceAt(scene, "body:feature-1", [0, 0, 1]);
   const spot = sketchSpot({ face: nearTop, shift: false }, scene);
   assert.equal(spot?.kind, "face");
-  assert.deepEqual(spot?.kind === "face" && spot.face, { plane: "face:feature-1/top#face:feature-1/left,face:feature-2/left", feature: "feature-1" });
+  assert.deepEqual(spot?.kind === "face" && spot.face, { plane: "face:feature-1/top#face:feature-1/left,face:feature-2/left", feature: "feature-1", reversed: false });
   // The far piece's x = 40 wall came from the tool (feature-2), whose own body the Cut used up: before 35f1e the click
   // was refused as a face with no name of its own.
   const wall = faceAt(scene, "body:feature-4/piece:1", [-1, 0, 0], 40);
   const onWall = sketchSpot({ face: wall, shift: false }, scene);
-  assert.deepEqual(onWall?.kind === "face" && onWall.face, { plane: "face:feature-2/right", feature: "feature-2" });
+  // SL #583 item 3: the wall faces −x, into the slot, where the tool's own right face faced +x: its name's face turned round.
+  assert.deepEqual(onWall?.kind === "face" && onWall.face, { plane: "face:feature-2/right", feature: "feature-2", reversed: true });
   await cache.clear();
 });
 

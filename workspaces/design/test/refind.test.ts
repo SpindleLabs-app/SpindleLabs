@@ -220,7 +220,7 @@ test("a link another workspace holds finds its face by name: the solid it is on,
   );
   assert.deepEqual(resolveLink(front, designLookup(doc, scene, kernel)), {
     state: "unresolved",
-    warning: "Linked to Left face in Design, which can't be found after the last edit. Pick a new source or break the link to keep the last copy.",
+    warning: "Linked to Left face in DesignLab, which can't be found after the last edit. Pick a new source or break the link to keep the last copy.",
   });
   // Two faces carrying its name: said so, never one of them.
   const right = linkTo(
@@ -234,7 +234,7 @@ test("a link another workspace holds finds its face by name: the solid it is on,
   );
   assert.deepEqual(resolveLink(right, designLookup(doc, scene, kernel)), {
     state: "unresolved",
-    warning: "Linked to Right face in Design, which now matches more than one face after the last edit, so it was not moved to any of them. Pick a new source or break the link to keep the last copy.",
+    warning: "Linked to Right face in DesignLab, which now matches more than one face after the last edit, so it was not moved to any of them. Pick a new source or break the link to keep the last copy.",
   });
   // Before the first build there are no bodies to find it on; another workspace's source is not Design's to find.
   assert.equal(designLookup(doc, null, kernel)(top.source), null);

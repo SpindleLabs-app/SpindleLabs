@@ -43,7 +43,7 @@ try {
       const page = await fresh(width, phone ? 852 : 800, phone);
       await openSettings(page, phone);
       const titles = await page.$$eval("#settings .settings-card h3", (h) => h.map((x) => x.textContent));
-      assert.deepEqual(titles, ["General", "Design", "Phone", "Printing", "Privacy and data", "About"]);
+      assert.deepEqual(titles, ["General", "DesignLab", "Phone", "Printing", "Privacy and data", "About"]);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "no sideways scroll");
       const close = await page.locator("#settings .close").boundingBox();
       assert.ok(close.y >= 0 && close.x + close.width <= width, "Close is on screen");

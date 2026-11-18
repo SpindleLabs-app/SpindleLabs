@@ -5,8 +5,8 @@
 // recorded, and the view's volume the one first drawn for that state.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { designWorkspace, partDocument } from "@fission/design";
-import { app, chooseShape } from "./design-app.ts";
+import { designWorkspace, partDocument, type DesignDocument } from "@fission/design";
+import { app, chooseShape, rebuildChanges } from "./design-app.ts";
 
 const SEEDS = Number(process.env.HUNT_SESSIONS ?? 6);
 const STEPS = Number(process.env.HUNT_STEPS ?? 60);
@@ -25,6 +25,9 @@ const canon = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof 
 
 let clock = 1_000_000;
 const realNow = Date.now;
+
+/** The design the last session ended with (`session`), for the rebuild rule. */
+let ended: DesignDocument | undefined;
 
 async function session(seed: number) {
   const r = rng(seed);
@@ -172,6 +175,7 @@ async function session(seed: number) {
     if (held) await a.release();
     await a.settle();
     check("the end");
+    ended = a.doc();
     if (seed === FIRST) console.log(done.join(" | "), "depth", ix, es.length);
     return restoredThenAmended;
   } catch (e) {
@@ -184,6 +188,10 @@ async function session(seed: number) {
 
 test("seeded undo sessions: Undo and Redo reach the states recorded, drawn as first drawn", async () => {
   const amended: string[] = [];
-  for (let s = FIRST; s < FIRST + SEEDS; s++) amended.push(...(await session(s)).map((l) => `seed ${s}: ${l}`));
+  for (let s = FIRST; s < FIRST + SEEDS; s++) {
+    amended.push(...(await session(s)).map((l) => `seed ${s}: ${l}`));
+    // The rule for every seeded session (SL #641): the design it ended with, opened again, rebuilds to itself.
+    assert.equal(await rebuildChanges(ended!), null, `seed ${s}`);
+  }
   if (amended.length) console.log("steps rewritten by an amend after Undo/Redo:", amended);
 });

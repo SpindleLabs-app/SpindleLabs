@@ -30,7 +30,7 @@ interface Plant {
 }
 
 const PLANTS: Plant[] = [
-  { name: "drag-holds-nothing", file: "point-drag.ts", find: "const request = solverRequest(moved, [pointId]);", replace: "const request = solverRequest(moved, []);", caught: "pointer" },
+  { name: "drag-holds-nothing", file: "point-drag.ts", find: "const request = solverRequest(moved, [pointId], [pointId]);", replace: "const request = solverRequest(moved, [], [pointId]);", caught: "pointer" },
   { name: "last-step-short-of-the-pointer", file: "point-drag.ts", find: "  steps.push([to[0], to[1]]);", replace: "  steps.push([to[0] + 1e-9, to[1]]);", caught: "pointer" },
   { name: "drag-keeps-unsolved-points", file: "point-drag.ts", find: "    const [x, y] = solved.get(p.id)!;\n    return x === p.x && y === p.y ? p : { ...p, x, y };\n  });\n  return { doc:", replace: "    const [x, y] = p.id === pointId ? solved.get(p.id)! : [p.x, p.y];\n    return x === p.x && y === p.y ? p : { ...p, x, y };\n  });\n  return { doc:", caught: "circle" },
   { name: "drag-lets-a-line-shrink", file: "point-drag.ts", find: "  if (tiny !== null) return", replace: "  if (false) return", caught: "size" },

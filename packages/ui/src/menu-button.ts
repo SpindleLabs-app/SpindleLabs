@@ -151,7 +151,9 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
         } else if (item.title) b.title = item.title;
         b.addEventListener("click", () => {
           if (item.off) return;
-          close(false);
+          // The focus goes back to the menu's button first, so a dialog or tool the item opens returns it there when it
+          // closes, and the next Tab carries on from the menu rather than from the top of the page (the item is hidden now).
+          close(true);
           item.run();
         });
         group.append(b);
@@ -193,7 +195,8 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
   function outside(e: Event) {
     if (!element.contains(e.target as Node)) close(false);
   }
-  button.addEventListener("click", () => (isOpen ? close(false) : open(false)));
+  // Enter or Space on the button is a click with no pointer (detail 0): it opens on the first item, as ArrowDown does.
+  button.addEventListener("click", (e) => (isOpen ? close(false) : open(e.detail === 0)));
   element.addEventListener("keydown", (e) => {
     const list = usable();
     const at = list.indexOf(doc.activeElement as HTMLButtonElement);

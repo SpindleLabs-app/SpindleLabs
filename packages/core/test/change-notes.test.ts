@@ -29,15 +29,15 @@ test("an edit in Design, worked out by hand: who gets a note, what it says, and 
   // Print plate is cheap, so it is being rebuilt in the background: "updating".
   // Stress is expensive and waits for a rerun, which happens in Simulate.
   assert.deepEqual(view(notes, g), [
-    ["plate", "updating", "Print plate updating: you changed wall thickness in Design."],
-    ["stress", "needs-rerun", "Stress out of date: you changed wall thickness in Design. Rerun it in Simulate."],
+    ["plate", "updating", "Print plate updating: you changed wall thickness in DesignLab."],
+    ["stress", "needs-rerun", "Stress out of date: you changed wall thickness in DesignLab. Rerun it in TestLab."],
   ]);
   // The chain: Print plate reads Part, which reads Wall thickness.
-  assert.deepEqual(notes.current(g)[0].chain, ["Wall thickness in Design", "Part in Design", "Print plate in Slice"]);
-  assert.deepEqual(notes.current(g)[1].chain, ["Wall thickness in Design", "Part in Design", "Stress in Simulate"]);
+  assert.deepEqual(notes.current(g)[0].chain, ["Wall thickness in DesignLab", "Part in DesignLab", "Print plate in SliceLab"]);
+  assert.deepEqual(notes.current(g)[1].chain, ["Wall thickness in DesignLab", "Part in DesignLab", "Stress in TestLab"]);
   // The rebuild finishes and the graph marks the plate fresh: the same note now says "updated".
   g.markFresh("plate");
-  assert.deepEqual(view(notes, g)[0], ["plate", "updated", "Print plate updated: you changed wall thickness in Design."]);
+  assert.deepEqual(view(notes, g)[0], ["plate", "updated", "Print plate updated: you changed wall thickness in DesignLab."]);
   // Dismissed notes go; dismissing twice, or a made-up id, reports false.
   const plateNote = notes.current(g)[0].id;
   assert.equal(notes.dismiss(plateNote), true);
@@ -54,7 +54,7 @@ test("a change made in a downstream workspace notes results elsewhere, including
   g.set({ id: "pcb-route", label: "Routing", workspace: "circuit", cost: "expensive" }, ["board"]);
   const notes = new ChangeNotes();
   notes.record({ node: "board", label: "Board outline", workspace: "circuit", change: "you moved a mounting hole" }, g.changed("board"), g);
-  assert.deepEqual(view(notes, g), [["hole", "updating", "Mounting holes updating: you moved a mounting hole in Circuit."]]);
+  assert.deepEqual(view(notes, g), [["hole", "updating", "Mounting holes updating: you moved a mounting hole in PCBLab."]]);
 });
 
 test("one note per result: a newer cause replaces the old note with a new id", () => {
@@ -68,8 +68,8 @@ test("one note per result: a newer cause replaces the old note with a new id", (
   const now = notes.current(g).filter((n) => n.node === "plate2");
   assert.equal(now.length, 1);
   assert.notEqual(now[0].id, old);
-  assert.equal(now[0].text, "Plate 2 updating: you changed infill in Design.");
-  assert.deepEqual(now[0].chain, ["Infill in Design", "Plate 2 in Slice"]);
+  assert.equal(now[0].text, "Plate 2 updating: you changed infill in DesignLab.");
+  assert.deepEqual(now[0].chain, ["Infill in DesignLab", "Plate 2 in SliceLab"]);
   // The old id is gone, so dismissing it can't hide the newer note.
   assert.equal(notes.dismiss(old), false);
   assert.equal(notes.current(g).filter((n) => n.node === "plate2").length, 1);
@@ -83,8 +83,8 @@ test("removing the cause: the note keeps its name, and the chain still reaches i
   notes.record({ ...thickness, change: "you deleted wall thickness" }, g.remove("thickness"), g);
   assert.equal(g.has("thickness"), false);
   const plate = notes.current(g)[0];
-  assert.equal(plate.text, "Print plate updating: you deleted wall thickness in Design.");
-  assert.deepEqual(plate.chain, ["Wall thickness in Design", "Part in Design", "Print plate in Slice"]);
+  assert.equal(plate.text, "Print plate updating: you deleted wall thickness in DesignLab.");
+  assert.deepEqual(plate.chain, ["Wall thickness in DesignLab", "Part in DesignLab", "Print plate in SliceLab"]);
 });
 
 test("a note about a result that left the project is dropped", () => {
@@ -114,9 +114,9 @@ test("refusals: a cause with no words, and a staleness list that isn't this grap
 test("noteText for each state", () => {
   const r = { label: "Toolpath", workspace: "manufacture" as const };
   const c: ChangeCause = { node: "p", label: "P", workspace: "design", change: "you made the pocket deeper" };
-  assert.equal(noteText(r, c, "updated"), "Toolpath updated: you made the pocket deeper in Design.");
-  assert.equal(noteText(r, c, "updating"), "Toolpath updating: you made the pocket deeper in Design.");
-  assert.equal(noteText(r, c, "needs-rerun"), "Toolpath out of date: you made the pocket deeper in Design. Rerun it in Manufacture.");
+  assert.equal(noteText(r, c, "updated"), "Toolpath updated: you made the pocket deeper in DesignLab.");
+  assert.equal(noteText(r, c, "updating"), "Toolpath updating: you made the pocket deeper in DesignLab.");
+  assert.equal(noteText(r, c, "needs-rerun"), "Toolpath out of date: you made the pocket deeper in DesignLab. Rerun it in CNCLab.");
 });
 
 test("graph.path: the shortest chain, ties to the first input, worked out by hand", () => {

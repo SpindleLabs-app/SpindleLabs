@@ -7,6 +7,13 @@
 // it folds again once those end. The button opens and keeps it open
 // (pinned) until the user folds it. Phones and split view keep their own
 // panel layout (theme.css); the CSS is src/styles/properties-fold.css.
+// Where the open card would cover a big share of the view (a phone held
+// sideways, a touch tablet up to 820 px in portrait: CROWDED, issue #522,
+// the owner's rule that one tap never covers most of the view) it opens by
+// itself only for a tool whose boxes are needed (Extrude, Move, Edit,
+// Combine, the sketch's plane picker) and for words the user asked for or
+// must see; a selection, an inserted body's sizes and a sketch being drawn
+// leave it folded, one tap on its button away, as a phone's sheet does.
 
 import { WORDS_EVENT } from "./properties.ts";
 
@@ -27,8 +34,11 @@ export interface FoldState extends FoldReasons {
 
 export const FOLDED_AT_START: FoldState = { pinned: false, selected: false, tool: false, dismissed: false, revealed: false };
 
-/** Whether the panel shows in this state. */
-export const panelShown = (s: FoldState): boolean => s.pinned || s.revealed || ((s.selected || s.tool) && !s.dismissed);
+/** The screens where the open card would cover a big share of the view: a phone held sideways, a touch tablet in portrait. */
+export const CROWDED = "(min-width: 641px) and (max-height: 500px), (min-width: 641px) and (max-width: 820px) and (orientation: portrait) and (pointer: coarse)";
+
+/** Whether the panel shows in this state; on a `crowded` screen a selection alone doesn't open it. */
+export const panelShown = (s: FoldState, crowded = false): boolean => s.pinned || s.revealed || (((s.selected && !crowded) || s.tool) && !s.dismissed);
 
 /**
  * The state after the selection or the tool changes: a change of either
@@ -43,12 +53,12 @@ export function withReasons(s: FoldState, next: Partial<Pick<FoldReasons, "selec
 }
 
 /** The state after the user presses the panel's button: a folded panel opens and stays (pinned); an open one folds, whatever held it. */
-export function pressed(s: FoldState): FoldState {
-  return panelShown(s) ? { ...s, pinned: false, revealed: false, dismissed: true } : { ...s, pinned: true, dismissed: false };
+export function pressed(s: FoldState, crowded = false): FoldState {
+  return panelShown(s, crowded) ? { ...s, pinned: false, revealed: false, dismissed: true } : { ...s, pinned: true, dismissed: false };
 }
 
 /** The state after words the user must see land in a folded panel: it opens until the user moves on. */
-export const revealed = (s: FoldState): FoldState => (panelShown(s) ? s : { ...s, revealed: true });
+export const revealed = (s: FoldState, crowded = false): FoldState => (panelShown(s, crowded) ? s : { ...s, revealed: true });
 
 /**
  * The state after the press that opened a folded panel is pressed again (Body facts as a toggle, Ben 2026-11-11): the panel
@@ -89,6 +99,8 @@ export function writePinned(pinned: boolean, storage: PinStorage | null = browse
 }
 
 export const HANDLE_ID = "properties-handle";
+/** The sketch's panel (sketch-panel.ts): past its plane picker it doesn't open the card on a crowded screen. */
+const SKETCH_PANEL_ID = "sketch-panel";
 const OPEN_WORDS = "Properties ‹";
 const FOLD_WORDS = "Fold ›";
 
@@ -96,8 +108,11 @@ export interface PropertiesFold {
   readonly state: FoldState;
   /** The selection or the tool changed. */
   update(next: Partial<Pick<FoldReasons, "selected" | "tool">>): void;
-  /** Opens a folded panel until the user moves on (`revealed`): a body just inserted shows its sizes (U0d). */
-  reveal(): void;
+  /**
+   * Opens a folded panel until the user moves on (`revealed`): a body just inserted shows its sizes (U0d). An `optional`
+   * reveal (the inserted body's sizes) leaves it folded on a crowded screen.
+   */
+  reveal(optional?: boolean): void;
   /** Folds the panel again unless the user pinned it (`concealed`). */
   conceal(): void;
   /** Calls `listener` after every change of the state. */
@@ -123,20 +138,30 @@ export function propertiesFold(slot: HTMLElement, toolBoxes: readonly HTMLElemen
   handle.className = "properties-fold-handle";
   handle.setAttribute("aria-controls", slot.id);
   slot.prepend(handle);
+  const crowdedQuery = document.defaultView?.matchMedia?.(CROWDED) ?? null;
+  const crowded = () => crowdedQuery?.matches ?? false;
   function draw() {
-    const shown = panelShown(state);
+    const shown = panelShown(state, crowded());
     if (shown) delete slot.dataset.folded;
     else slot.dataset.folded = "";
     handle.textContent = shown ? FOLD_WORDS : OPEN_WORDS;
     handle.setAttribute("aria-expanded", String(shown));
     handle.title = shown ? "Fold the properties away, giving the view the whole width" : "Show the properties (the selection, the part's sizes, the body's numbers) and keep them shown";
   }
-  const toolShown = () => toolBoxes.some((b) => !b.hidden);
+  // A sketch being drawn (its panel past the plane picker) holds only notes and its grid on a crowded screen: the sketch's
+  // own toolbar has its tools and Finish, so the drawing area stays clear.
+  const toolShown = () => toolBoxes.some((b) => !b.hidden && !(crowded() && b.id === SKETCH_PANEL_ID && !b.querySelector(".sketch-planes")));
   // The slot's own page's MutationObserver (a test's DOM has its own).
   const Observer = document.defaultView?.MutationObserver ?? MutationObserver;
   const watch = new Observer(() => set(withReasons(state, { tool: toolShown() })));
-  for (const box of toolBoxes) watch.observe(box, { attributes: true, attributeFilter: ["hidden"] });
+  for (const box of toolBoxes) watch.observe(box, { attributes: true, attributeFilter: ["hidden"], childList: true });
   const listeners: ((state: FoldState) => void)[] = [];
+  // Turned sideways or upright: the reasons are read again for the new screen.
+  const onScreen = () => {
+    state = withReasons(state, { tool: toolShown() });
+    draw();
+  };
+  crowdedQuery?.addEventListener?.("change", onScreen);
   function set(next: FoldState) {
     if (next === state) return;
     state = next;
@@ -144,10 +169,10 @@ export function propertiesFold(slot: HTMLElement, toolBoxes: readonly HTMLElemen
     for (const listener of listeners) listener(state);
   }
   handle.addEventListener("click", () => {
-    set(pressed(state));
+    set(pressed(state, crowded()));
     writePinned(state.pinned, storage);
   });
-  const onWords = () => set(revealed(state));
+  const onWords = () => set(revealed(state, crowded()));
   slot.addEventListener(WORDS_EVENT, onWords);
   state = withReasons(state, { tool: toolShown() });
   draw();
@@ -156,12 +181,15 @@ export function propertiesFold(slot: HTMLElement, toolBoxes: readonly HTMLElemen
       return state;
     },
     update: (next) => set(withReasons(state, next)),
-    reveal: onWords,
+    reveal: (optional = false) => {
+      if (!(optional && crowded())) onWords();
+    },
     conceal: () => set(concealed(state)),
     onChange: (listener) => void listeners.push(listener),
     // The slot is shared with the next workspace (Image shows its page in it): leave it as it was found.
     close: () => {
       watch.disconnect();
+      crowdedQuery?.removeEventListener?.("change", onScreen);
       slot.removeEventListener(WORDS_EVENT, onWords);
       slot.classList.remove("properties-fold");
       delete slot.dataset.folded;

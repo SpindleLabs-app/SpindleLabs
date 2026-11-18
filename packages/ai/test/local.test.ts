@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createProvider, gpuCanRun, IN_BROWSER_MODEL, inBrowserDownloadBytes, inBrowserDownloadSize, pickLocal, type BuiltInModelLike, type WebLLMLike, type WebLLMModel } from "../src/index.ts";
-import { LOW_RESOURCE_BUFFER, FULL_BUFFER } from "../src/local.ts";
+import { LOW_RESOURCE_BUFFER, FULL_BUFFER, IN_BROWSER_FILES, inBrowserDownloadMB } from "../src/local.ts";
 import { fakeServer } from "./fakes.ts";
 
 const small: WebLLMModel = { model_id: "Small-q4f16_1-MLC", model: "https://models.test/Small", low_resource_required: true };
@@ -176,4 +176,20 @@ test("in the browser: a runner that can't be loaded (the page is from before an 
 test("the in-browser model's download size: a runner that can't be loaded says to reload too", async () => {
   const gone = async (): Promise<WebLLMLike> => Promise.reject(new TypeError("Importing a module script failed."));
   await assert.rejects(inBrowserDownloadSize(small.model_id, { loadWebLLM: gone }), (e: Error) => /^the in-browser model's code couldn't be loaded: .* Reload the page to try again$/.test(e.message));
+});
+
+test("the default in-browser model's download size is known ahead, so huggingface.co is asked nothing before the user agrees (audit S13)", async () => {
+  // Worked by hand: Qwen2.5-1.5B has 1.54 billion weights (its model card). The q4f16_1 build keeps
+  // each weight in 4 bits plus one 16-bit scale per group of 32 weights: 4 + 16/32 = 4.5 bits.
+  // 1.54e9 x 4.5 / 8 = 866 million bytes = 866 MB, said as "about 900 MB" (to the nearest 100 MB).
+  assert.equal(inBrowserDownloadMB(IN_BROWSER_MODEL), Math.round((1.54e9 * 4.5) / 8 / 1e6 / 100) * 100);
+  assert.equal(inBrowserDownloadMB(IN_BROWSER_MODEL), 900);
+  // A model whose size this build doesn't know has none: the panel asks before looking it up.
+  assert.equal(inBrowserDownloadMB("Qwen2.5-0.5B-Instruct-q4f16_1-MLC"), undefined);
+  assert.equal(inBrowserDownloadMB(""), undefined);
+  // The size belongs to the files the pinned runner downloads: a runner update that moves the
+  // default model to other files makes this fail, so the size is checked again before it ships.
+  const webllm = (await import("@mlc-ai/web-llm")) as unknown as WebLLMLike;
+  const entry = webllm.prebuiltAppConfig.model_list.find((m) => m.model_id === IN_BROWSER_MODEL);
+  assert.equal(entry?.model, IN_BROWSER_FILES);
 });

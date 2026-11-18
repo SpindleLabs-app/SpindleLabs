@@ -13,7 +13,7 @@ import type { BuildPlate, Feature, KernelCalls, SliceProgress, StlFile, SupportS
 import { repeatGuard } from "@fission/ui";
 import { bodyIdOf, type DesignDocument } from "./document.ts";
 import { endStls } from "./move-tool.ts";
-import { costWords, FILE_DEFAULTS, type FileChoices, fileCrawl, type FirstLayerExtras, fitCalibration, fitsLine, FORMAT_OPTIONS, GRIP_KEY, INFILL_OPTIONS, NOZZLE_KEY, NOZZLE_OPTIONS, type NozzleType, PLATE_OPTIONS, presetBar, type PresetSettings, presetSettingsOf, PRICE_KEY, PRINT_DEFAULTS, type PrintChoices, type PrintFacts, printFileOfStls, printWords, progressWords, QUALITY_OPTIONS, readPrice, refusalOf, rememberedBetterGrip, rememberedNozzle, rememberedPrice, rememberedWarmUp, SLICE_EARLIER, SliceDropped, sliceStls, stopSlices, SUPPORT_OPTIONS, supportsHint, supportStyle, unprintedWords, WALL_OPTIONS, WARM_UP_KEY } from "@fission/print";
+import { costWords, FILE_DEFAULTS, type FileChoices, fileCrawl, type FirstLayerExtras, fitCalibration, fitsLine, FORMAT_OPTIONS, GRIP_KEY, INFILL_OPTIONS, NOZZLE_KEY, NOZZLE_OPTIONS, type NozzleType, PLATE_OPTIONS, presetBar, type PresetSettings, presetSettingsOf, PRICE_KEY, PRINT_DEFAULTS, type PrintChoices, type PrintFacts, printFileOfStls, printWords, progressWords, QUALITY_OPTIONS, readPrice, refusalOf, rememberedBetterGrip, rememberedNozzle, rememberedSettingsOpen, SETTINGS_OPEN_KEY, settingsLine, rememberedPrice, rememberedWarmUp, SLICE_EARLIER, SliceDropped, sliceStls, stopSlices, SUPPORT_OPTIONS, supportsHint, supportStyle, unprintedWords, WALL_OPTIONS, WARM_UP_KEY } from "@fission/print";
 
 
 /** The bodies' STL files from the kernel, one per body (the design's own export, in build order). */
@@ -36,13 +36,20 @@ export const printFileOf = (kernel: KernelCalls, doc: DesignDocument, features: 
 
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
-  slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
+  slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string; logged?: boolean }>;
+  // `logged`: the file saved was added to the print log (print-logged.ts), which the result then says.
   /**
    * Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b,
    * H2c); nothing is saved. `changed()` turns true once a choice is changed while it slices: the preview then says it
    * shows the earlier choices (PREVIEW_EARLIER).
    */
   preview(choices: PrintChoices, file: FileChoices, alive: () => boolean, changed: () => boolean): Promise<void>;
+  /**
+   * What the print leaves out of the design, in plain words: the timeline items the last rebuild failed and the bodies
+   * hidden by their eyes (actions.ts `printMissingNote`, SL #675 item 3), or "" when nothing is left out. Said on its own line as the dialog opens, and again with each
+   * slice's result, as a warning (export hunt 2026-11-12 D: a failed hole was printed away without a word). Left out: nothing.
+   */
+  missing?(): string;
   /** Calls `listener` as a slice reports how far it has got (KernelCalls.onProgress); returns the way to stop. Left out: the bar just says it is slicing. */
   onProgress?(listener: (progress: SliceProgress) => void): () => void;
   /** Called when the warm-up loop or Better grip is ticked or unticked (the build area counts them). */
@@ -66,7 +73,10 @@ export interface SlicePrint {
  * view) with a new dialog in it, so the new dialog starts from these instead of the defaults. A page loaded again
  * starts fresh, and a slot with no id keeps nothing.
  */
-const keptChoices = new WeakMap<Document, Map<string, PresetSettings>>();
+const keptChoices = new WeakMap<Document, Map<string, PresetSettings & PrintChoices>>();
+
+/** Said after a saved file's result when it went into the print log. */
+export const PRINT_LOGGED = "Added to your print log: say how it printed from File, Print log….";
 
 export const SLICE_PRINT_TITLE = "Slice for printing: turn the bodies shown into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA).";
 
@@ -90,7 +100,16 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const heading = el("h2", "slice-print-heading", "Slice for printing");
   const printer = el("p", "slice-print-printer", "For a Bambu Lab P1S with a 0.4 mm nozzle and PLA. Every body shown is printed, placed in the middle of the plate.");
   // Placeholders never pretend to work: until a real test print passes (H3a), the dialog says so.
-  const untested = el("p", "slice-print-untested", "First version: these files haven't been test-printed yet, so open one in Bambu Studio or a G-code viewer to check it before printing it.");
+  const untested = el("p", "slice-print-untested", "First version: these files haven't been test-printed yet, so open one in your printer's slicer or a G-code viewer to check it before printing it.");
+  // What the print leaves out (failed timeline items): filled each time the dialog opens, hidden when nothing.
+  const missingNote = el("p", "slice-print-missing");
+  missingNote.hidden = true;
+  const showMissing = () => {
+    const words = events.missing?.() ?? "";
+    missingNote.textContent = words;
+    missingNote.hidden = words === "";
+    return words;
+  };
   const choice = <T extends string | number>(id: string, label: string, options: readonly { label: string; value: T }[], value: T) => {
     const wrap = document.createElement("label");
     wrap.className = "slice-print-choice";
@@ -125,7 +144,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     }
   })();
   const nozzle = choice("slice-print-nozzle", "Nozzle", NOZZLE_OPTIONS, rememberedNozzle(storage));
-  nozzle.wrap.title = "The nozzle on your P1S. Bambu Studio won't send a file made for the other kind (Standard is the one it comes with; High Flow is Bambu's faster hotend). Your choice is remembered.";
+  nozzle.wrap.title = "The nozzle on your P1S. The printer won't take a file made for the other kind (Standard is the one it comes with; High Flow is the faster hotend). Your choice is remembered.";
   // The warm-up loop: a tick box, on unless turned off here before (remembered like the nozzle).
   const warmUpWrap = document.createElement("label");
   warmUpWrap.className = "slice-print-choice slice-print-check";
@@ -273,7 +292,28 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   fitsOpen.addEventListener("click", () => fits?.ask());
   const choices6 = document.createElement("div");
   choices6.className = "slice-print-choices";
-  choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap, warmUpWrap, gripWrap);
+  // The printer's settings (file, plate, nozzle, quality, walls, infill, fits) fold into one section, closed to a line
+  // of words unless left open (remembered); Supports, Warm-up loop and Better grip are per print, so they stay out of
+  // it and out of the presets (Ben, 2026-11-16).
+  const settings = document.createElement("details");
+  settings.className = "slice-print-settings";
+  const settingsSummary = document.createElement("summary");
+  const settingsName = el("span", "", "Printer settings");
+  const settingsWords = el("span", "slice-print-settings-words");
+  settingsSummary.append(settingsName, settingsWords);
+  choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap);
+  settings.append(settingsSummary, choices6, fitsRow);
+  settings.open = rememberedSettingsOpen(storage);
+  settings.addEventListener("toggle", () => {
+    try {
+      storage?.setItem(SETTINGS_OPEN_KEY, settings.open ? "open" : "closed");
+    } catch {
+      // Storage blocked: it still stays as left for this dialog.
+    }
+  });
+  const perPrint = document.createElement("div");
+  perPrint.className = "slice-print-choices";
+  perPrint.append(supports.wrap, warmUpWrap, gripWrap);
 
   const say = (text: string, bad: boolean) => {
     status.textContent = text;
@@ -285,17 +325,15 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: PLATE_OPTIONS.find((o) => o.value === plate.select.value)?.value ?? "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
   // Presets (Ben, 2026-11-04): the settings saved under a name, picked in the heading line (slice-presets.ts). Putting
   // one in goes through each choice's own change, so the nozzle, warm-up loop and Better grip are remembered as if picked.
-  const inputs = { layerHeight: quality.select, walls: walls.select, infill: infill.select, supports: supports.select, format: format.select, plate: plate.select, nozzle: nozzle.select };
+  const inputs = { layerHeight: quality.select, walls: walls.select, infill: infill.select, format: format.select, plate: plate.select, nozzle: nozzle.select };
+  // What a preset holds: the printer's settings only. Supports, warm-up loop and Better grip are per print (Ben, 2026-11-16).
+  const printerSettings = (): PresetSettings => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), ...file() });
   const presets = presetBar(document, storage, {
-    current: () => ({ ...choices(), ...file() }),
+    current: printerSettings,
     apply(s) {
       for (const [k, select] of Object.entries(inputs)) {
         select.value = String(s[k as keyof typeof inputs]);
         select.dispatchEvent(new (document.defaultView?.Event ?? Event)("change"));
-      }
-      for (const [box, on] of [[warmUp, s.warmUp], [grip, s.betterGrip]] as const) {
-        box.checked = on;
-        box.dispatchEvent(new (document.defaultView?.Event ?? Event)("change"));
       }
     },
     say,
@@ -307,6 +345,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const kept = keptHere?.get(slot.id);
   if (kept) {
     for (const [k, select] of Object.entries(inputs)) select.value = String(kept[k as keyof typeof inputs]);
+    supports.select.value = kept.supports;
     warmUp.checked = kept.warmUp;
     grip.checked = kept.betterGrip;
     plateFor();
@@ -314,11 +353,13 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   }
   const keep = () => keptHere?.set(slot.id, { ...choices(), ...file() });
   keep();
+  const showSettings = () => (settingsWords.textContent = settingsLine(printerSettings()));
+  showSettings();
   // The heading and the presets share one line where there is room, so the dialog grows no taller.
   const top = document.createElement("div");
   top.className = "slice-print-top";
   top.append(heading, presets.element);
-  dialog.append(top, printer, untested, choices6, fitsRow, bar, status, cost, hint, actions);
+  dialog.append(top, printer, untested, missingNote, settings, perPrint, bar, status, cost, hint, actions);
   slot.append(dialog);
   let busy = false;
   /** Shows the bar from now until `end` is called, following the engine's reports. */
@@ -402,6 +443,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
         showCost(null);
       }
       presets.changed();
+      showSettings();
       keep();
     });
   // A double press, or presses while it slices and just after, are one slice and one file (clumsy-user hunt 11-04).
@@ -431,11 +473,12 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     showCost(null);
     const end = showProgress();
     try {
-      const { print, saved, name } = await events.slice(choices(), file(), mine);
+      const { print, saved, name, logged } = await events.slice(choices(), file(), mine);
       end();
       const earlier = changedWhileBusy ? SLICE_EARLIER : null;
-      const warnings = [unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
-      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
+      const missing = showMissing() || null;
+      const warnings = [missing, unprintedWords(print), print.levelNote || null, earlier].filter((w): w is string => w !== null);
+      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings, ...(logged ? [PRINT_LOGGED] : [])].join(" "), warnings.length > 0);
       showHint(print.overhangMm2);
       showCost(print);
     } catch (e) {
@@ -484,6 +527,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
         showCost(null);
       }
       presets.refresh(); // another tab may have changed them
+      showMissing(); // the design may have changed since it last opened
       dialog.showModal();
       go.focus();
     },

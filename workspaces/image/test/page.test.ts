@@ -2,7 +2,7 @@
 // a fake viewport that records what it was asked to show and a fake decoder.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSelection, DependencyGraph, emptyProject, historyNotBuilt, RepresentationRegistry, type ImageRep, type KernelCalls, type SharedViewport, type WorkspaceContext } from "@fission/core";
+import { createSelection, DependencyGraph, emptyProject, historyNotBuilt, MAX_IMAGE_BYTES, RepresentationRegistry, type ImageRep, type KernelCalls, type SharedViewport, type WorkspaceContext } from "@fission/core";
 import { mountImage, openImageFile, resetImageWorkspace } from "../src/workspace.ts";
 import { imageWorkspace } from "../src/index.ts";
 import type { Decoder } from "../src/open.ts";
@@ -429,4 +429,37 @@ test("a dropped file opens through the importer: the page shows it once mounted;
   assert.equal(text(g.ctx, "image-error"), "The file's header says 200 × 100 pixels but it decoded to 100 × 200.");
   assert.equal(g.shown.length, 1);
   view2.unmount();
+});
+
+// Audit L8: the Open button read the whole file before any size check, so a huge file could freeze the tab.
+test("Open refuses an image file over MAX_IMAGE_BYTES by its size, before reading it (boundary at 0.9×, 1×, 1× + 1 byte and 1.1×)", async () => {
+  resetImageWorkspace();
+  const f = fake();
+  const view = mountImage(f.ctx, decodeAs(200, 100));
+  let reads = 0;
+  const input = f.ctx.toolbar.querySelector("#image-file") as HTMLInputElement;
+  const pickSized = async (size: number) => {
+    Object.defineProperty(input, "files", { configurable: true, value: [{ name: "big.png", size, arrayBuffer: async () => (reads++, plate.slice().buffer) }] });
+    input.dispatchEvent(new (f.ctx.toolbar.ownerDocument.defaultView as unknown as typeof globalThis).Event("change"));
+    for (let i = 0; i < 5; i++) await settle();
+  };
+  assert.equal(MAX_IMAGE_BYTES, 512 * 1024 * 1024);
+  // 0.9× and exactly the limit are read and opened.
+  for (const size of [Math.round(0.9 * MAX_IMAGE_BYTES), MAX_IMAGE_BYTES]) {
+    const before = reads;
+    await pickSized(size);
+    assert.equal(reads, before + 1, `${size} bytes is read`);
+    assert.equal(text(f.ctx, "image-error"), "");
+  }
+  // One byte over: 536870913 B / 1048576 = 512.00000095 MB, rounded up to a tenth: 512.1 MB; never read.
+  const before = reads;
+  await pickSized(MAX_IMAGE_BYTES + 1);
+  assert.equal(reads, before, "never read");
+  assert.equal(text(f.ctx, "image-error"), "Couldn't open “big.png”: it is 512.1 MB, and an image may be at most 512 MB.");
+  assert.equal(text(f.ctx, "image-pixels"), "200 × 100 px", "the open image stays");
+  // 1.1×: 1.1 × 512 = 563.2 MB.
+  await pickSized(Math.round(1.1 * MAX_IMAGE_BYTES));
+  assert.equal(reads, before, "never read");
+  assert.equal(text(f.ctx, "image-error"), "Couldn't open “big.png”: it is 563.2 MB, and an image may be at most 512 MB.");
+  view.unmount();
 });

@@ -26,8 +26,10 @@ export interface RegionPiece {
  * The region an extrude of a sketch extrudes (Design data version 9): the
  * curves round its outside, counter-clockwise, as the kernel names them
  * (a curve that runs on through several corners named once), and its
- * centroid when it was picked (sketch mm), which tells two regions with
- * the same name apart.
+ * centroid (sketch mm), which tells two regions with the same name apart:
+ * both as when it was picked, then as the sketch makes the region after
+ * each settled edit that leaves it found (rebuild.ts `settleKept`,
+ * `regionNow`).
  */
 export interface RegionRef {
   outer: RegionPiece[];
@@ -115,6 +117,24 @@ export function pickRegion<T>(items: readonly T[], nameOf: (t: T) => readonly Re
 /** The region `ref` names among `regions` (the kernel's answer for curves `ids`), by `pickRegion`'s rule; undefined when none is (the sketch changed round it). */
 export function findRegion(regions: readonly SketchRegion[], ids: CurveIds, ref: RegionRef): SketchRegion | undefined {
   return pickRegion(regions, (r) => regionName(r, ids), (r) => r.centroid, ref);
+}
+
+/**
+ * Region `ref` as it is among `regions` now (the kernel's answer for curves
+ * `ids`): the curves round the one `findRegion` finds and its centroid
+ * today, to save in `ref`'s place once the sketch is reshaped (timeline hunt
+ * 2026-11-11: the centroid stayed where the region was picked, so a side
+ * drawn again between the same corners of a dragged region was measured from
+ * the wrong place; and a region found again by its shape kept its old
+ * curves' names, so the next drag lost it). `ref` itself when it says
+ * exactly that already; undefined when the region is not there.
+ */
+export function regionNow(regions: readonly SketchRegion[], ids: CurveIds, ref: RegionRef): RegionRef | undefined {
+  const found = findRegion(regions, ids, ref);
+  const outer = found && regionName(found, ids);
+  if (!found || !outer) return undefined;
+  const same = outer.length === ref.outer.length && outer.every((p, k) => samePiece(p, ref.outer[k])) && found.centroid[0] === ref.centroid[0] && found.centroid[1] === ref.centroid[1];
+  return same ? ref : { outer, centroid: [found.centroid[0], found.centroid[1]] };
 }
 
 /** A region's profile as an extrude's outline: what make_extrude takes, with its holes' pieces kept for the side faces' names. */

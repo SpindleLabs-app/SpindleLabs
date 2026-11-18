@@ -7,6 +7,8 @@ import type { AuthClient, PersonReply, SmallStore } from "./auth.ts";
 
 type Failed = Exclude<PersonReply, { kind: "ok" }>;
 export type DataResult<T> = { readonly kind: "ok"; readonly value: T } | Failed;
+/** Download my data asked again too soon: the time it may be asked again. */
+export type DataWait = { readonly kind: "wait"; readonly retryAt: Date };
 
 /** Where a choice made before signing in waits for the return from the sign-in page. */
 export const PENDING_EMAIL_KEY = "spindle.account.email-choice";
@@ -76,11 +78,21 @@ export function accountData(client: AuthClient, store?: SmallStore) {
       return { kind: "ok", value: yes };
     },
 
-    /** Everything the service keeps about the person, as JSON text to save. */
-    async myData(): Promise<DataResult<string>> {
-      const r = await client.asPerson("POST", "rpc/my_data");
+    /**
+     * Everything the service keeps about the person, as JSON text to save; or, past the service's limit (once a
+     * minute, 5 times a day), when they may download it again. A service from before that limit (no
+     * download_my_data yet: a 404) is asked the old way.
+     */
+    async myData(): Promise<DataResult<string> | DataWait> {
+      let r = await client.asPerson("POST", "rpc/download_my_data");
+      if (r.kind === "failed" && r.reason === "rejected") r = await client.asPerson("POST", "rpc/my_data");
       if (r.kind !== "ok") return r;
-      if (typeof r.body !== "object" || r.body === null) return { kind: "failed", reason: "malformed" };
+      if (typeof r.body !== "object" || r.body === null || Array.isArray(r.body)) return { kind: "failed", reason: "malformed" };
+      const b = r.body as Record<string, unknown>;
+      if (b.status === "wait") {
+        const at = typeof b.retry_at === "string" ? new Date(b.retry_at) : null;
+        return at && !Number.isNaN(at.getTime()) && Object.keys(b).length === 2 ? { kind: "wait", retryAt: at } : { kind: "failed", reason: "malformed" };
+      }
       return { kind: "ok", value: JSON.stringify(r.body, null, 2) };
     },
 

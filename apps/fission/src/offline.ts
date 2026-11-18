@@ -1,16 +1,37 @@
-// Offline mode: registers the service worker (sw.js, written into the built
-// app by offline.mjs), which keeps the app and its kernel so it opens with no
-// connection. A new version installs in the background and waits; this
+// Offline mode: registers the service worker (offline-sw.js, written into the
+// built app by offline.mjs), which keeps the app and its kernel so it opens
+// with no connection: for everyone once offline mode is released
+// (offline.config.mjs), and before then in a browser that chose it with
+// `?offline` and then Keep (offline-switch.ts: the address only asks), which
+// also gets the manifest link here, so it can be installed as an app. A new version installs in the background and waits; this
 // shows "A new version of SpindleLabs is ready" with Reload, which tells the
 // waiting worker to take over and reloads once it has, so the page and
 // the kernel always come from one build. A tab still on the old version
 // when another tab updates says so too. Only in the built app (the dev
-// server has no sw.js), and never in a frame: main.ts imports this after
+// server has no worker), and never in a frame: main.ts imports this after
 // frame-guard.ts, which stops a framed page first.
 import { hideNotice, showNotice as show } from "./app-notice.ts";
+import { type OfflineAsk, forgetOffline, keepOffline, OFFLINE_SWITCH, pageOfflineSwitch, pageStore } from "./offline-switch.ts";
+import "./styles/offline-status.css";
 
-/** Offline mode's switch, from offline.config.mjs (set in vite.config.ts). Off: nothing is kept for offline use, and an earlier install is removed. */
+/** Offline mode's switch, from offline.config.mjs (set in vite.config.ts). Off: nothing is kept for offline use unless this browser chose it with `?offline`, and an earlier install is removed. */
 declare const __OFFLINE_MODE__: boolean;
+
+/** Set once this browser has been told the app is kept for offline use, so it is said once. */
+export const TOLD_KEY = "spindlelabs.offline.told";
+
+/** What a page under offline mode says about itself (shown only when no other notice is up: an update or a lost kernel matters more). */
+export const OFFLINE_WORDS = {
+  kept: "SpindleLabs is now kept on this device, so it opens without internet. To add it as an app, choose Install in the browser's address bar or menu.",
+  offline: "You're offline. SpindleLabs still works, and your designs save on this device. Signing in and your account's copies wait until you're back online.",
+  blocked: "This browser won't keep SpindleLabs for offline use (its settings block it), so it still needs the internet to open.",
+} as const;
+
+/** What `?offline` and `?offline=off` ask; nothing changes until the person presses (security hunt 2026-11-13 G2). */
+export const ASK_WORDS = {
+  keep: "Keep SpindleLabs on this device so it opens without internet? It uses a few MB of storage.",
+  remove: "Stop keeping SpindleLabs on this device? It will need the internet to open again.",
+} as const;
 
 const PREFIX = "spindlelabs-"; // the caches sw.js makes
 
@@ -50,6 +71,55 @@ function nameLoadedFiles(reg: ServiceWorkerRegistration) {
   watch.observe({ type: "resource" });
 }
 
+/** Shows `kind` with an OK that hides it, unless another notice is up. */
+function sayOnce(kind: keyof typeof OFFLINE_WORDS) {
+  if (document.getElementById("app-update")) return;
+  show(kind, OFFLINE_WORDS[kind], { label: "OK", title: "Hide this notice", press: () => hideNotice(kind) });
+}
+
+/** The first time this browser has the app kept (a person who just chose `?offline`), says so once. */
+function tellKept() {
+  try {
+    if (localStorage.getItem(TOLD_KEY)) return;
+    localStorage.setItem(TOLD_KEY, "1");
+  } catch {
+    return; // no storage: never risk saying it on every visit
+  }
+  sayOnce("kept");
+}
+
+/**
+ * While the device has no connection, a small "Offline" mark beside the save status (gone once back online); pressed,
+ * it says what still works. Never a notice over the view on its own: on a phone that covers the buttons people tap.
+ */
+function followConnection() {
+  const now = () => {
+    const mark = document.getElementById("offline-status");
+    if (navigator.onLine) {
+      mark?.remove();
+      hideNotice("offline");
+      return;
+    }
+    if (mark) return;
+    const button = Object.assign(document.createElement("button"), { type: "button", id: "offline-status", className: "offline-status", textContent: "Offline" });
+    button.title = OFFLINE_WORDS.offline;
+    button.setAttribute("aria-label", OFFLINE_WORDS.offline);
+    button.addEventListener("click", () => sayOnce("offline")); // never over an update's or a lost kernel's notice
+    const status = document.getElementById("save-status");
+    if (status) status.after(button);
+    else document.body.append(button);
+  };
+  now();
+  addEventListener("online", now);
+  addEventListener("offline", now);
+}
+
+/** The manifest link the build leaves out while offline mode is off for everyone: added for a browser that chose offline, so it can be installed. */
+function linkManifest() {
+  if (document.querySelector('link[rel="manifest"]')) return;
+  document.head.append(Object.assign(document.createElement("link"), { rel: "manifest", href: "./manifest.webmanifest" }));
+}
+
 /** Shows the update notice (one at a time) with its Reload button. */
 function showNotice(kind: Shown, reload: () => void) {
   show(kind, WORDS[kind], { label: "Reload", title: "Reload to use the new version; your design is kept", press: reload });
@@ -81,12 +151,54 @@ async function removeOffline() {
   }
 }
 
+/** Takes the switch out of the address, so a reload or a bookmark doesn't ask again. */
+function dropSwitch() {
+  // By hand rather than URLSearchParams, which would rewrite the other switches (`?test-hooks` as `?test-hooks=`).
+  const kept = location.search.slice(1).split("&").filter((part) => part !== "" && new URLSearchParams(part).has(OFFLINE_SWITCH) === false);
+  history.replaceState(history.state, "", `${location.pathname}${kept.length ? `?${kept.join("&")}` : ""}${location.hash}`);
+}
+
+/** Asks whether to keep the app (or stop keeping it); only a press here changes anything. */
+function askFirst(ask: Exclude<OfflineAsk, null>) {
+  const kind = `ask-${ask}`;
+  const notNow = { label: "Not now", title: "Change nothing", press: () => (hideNotice(kind), dropSwitch()) };
+  if (ask === "keep")
+    show(kind, ASK_WORDS.keep, {
+      label: "Keep",
+      title: "Keep SpindleLabs on this device for offline use",
+      press: () => {
+        hideNotice(kind);
+        dropSwitch();
+        if (keepOffline(pageStore())) startOffline();
+        else sayOnce("blocked");
+      },
+    }, notNow);
+  else
+    show(kind, ASK_WORDS.remove, {
+      label: "Remove",
+      title: "Remove the copy kept on this device",
+      press: () => {
+        hideNotice(kind);
+        dropSwitch();
+        forgetOffline(pageStore());
+        startOffline();
+      },
+    }, notNow);
+}
+
 export function startOffline() {
-  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
-  if (!__OFFLINE_MODE__) {
+  if (!import.meta.env.PROD) return;
+  const { chosen, ask } = __OFFLINE_MODE__ ? { chosen: false, ask: null } : pageOfflineSwitch();
+  if (!("serviceWorker" in navigator)) {
+    if (chosen || ask === "keep") sayOnce("blocked");
+    return;
+  }
+  if (ask) askFirst(ask);
+  if (!__OFFLINE_MODE__ && !chosen) {
     void removeOffline();
     return;
   }
+  if (chosen) linkManifest();
   const sw = navigator.serviceWorker;
   let updating = false; // this tab pressed Reload
   const hadController = sw.controller !== null;
@@ -105,9 +217,14 @@ export function startOffline() {
     if (event.data?.type === "no-room") showNoRoom();
   });
   sw.startMessages();
-  sw.register("./sw.js", { scope: "./" })
+  sw.register("./offline-sw.js", { scope: "./" })
     .then((reg) => {
-      if (!sw.controller) void sw.ready.then(nameLoadedFiles);
+      if (!sw.controller)
+        void sw.ready.then((ready) => {
+          nameLoadedFiles(ready);
+          if (chosen) tellKept();
+        });
+      followConnection();
       // A version already waiting (found on an earlier visit), one still
       // installing (the browser may have started looking before this ran),
       // or one found by the look below or later.
@@ -118,11 +235,14 @@ export function startOffline() {
       if (reg.waiting && sw.controller) offer(reg.waiting);
       else follow(reg.installing);
       reg.addEventListener("updatefound", () => follow(reg.installing));
-      // Look for a new sw.js on every page load (one small request; browsers
+      // Look for a new worker on every page load (one small request; browsers
       // don't always look on a reload), and again on coming back online.
       const look = () => void reg.update().catch(() => {}); // offline: nothing to find
       look();
       addEventListener("online", look);
     })
-    .catch(() => {}); // no service workers here (blocked, private mode): the app works as before, online only
+    .catch(() => {
+      // no service workers here (blocked, private mode): the app works as before, online only
+      if (chosen) sayOnce("blocked");
+    });
 }

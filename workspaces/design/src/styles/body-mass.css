@@ -1,0 +1,3 @@
+/* Body facts' Material choice beside the mass (step 66a): as wide as the value column, never past the panel's edge,
+   on a phone too, and drawn like the panel's other boxes. */
+.body-mass:not(#none) { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding: 3px 6px; background: var(--page); border: 1px solid var(--line); color: inherit; border-radius: var(--look-radius-s); font: 14px system-ui, sans-serif; }

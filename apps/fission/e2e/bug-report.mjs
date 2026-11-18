@@ -12,6 +12,12 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
+import { readFileSync } from "node:fs";
+
+// The version line names the app's own version and the kernel release the app ships (kernel.json, written by the
+// kernel's Release workflow), never the kernel crate's unbumped 0.1.0 (bug-reports #1 and #2 both said "kernel v0.1.0").
+const KERNEL = JSON.parse(readFileSync(new URL("../../../packages/core/src/kernel/wasm/kernel.json", import.meta.url), "utf8")).version;
+const VERSION_LINE = new RegExp(`- Version: (\\d+\\.\\d+\\.\\d+|unknown) \\(kernel v${KERNEL.replaceAll(".", "\\.")}\\)\n`);
 
 const server = await preview({ preview: { port: 4303, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4303/";
@@ -85,6 +91,7 @@ try {
         assert.equal(u.searchParams.get("title"), "Bug report from design");
         let body = u.searchParams.get("body");
         for (const part of ["### What happened\n\n(not given)", "- Workspace: design", `- Screen: ${width} × ${height}`, "Your design was downloaded as Untitled.spindle.json (", "KB): drag it into this issue"]) assert.ok(body.includes(part), `the body lacks ${JSON.stringify(part)}`);
+        assert.match(body, VERSION_LINE, "the app's version and the shipped kernel's");
         assert.equal(await page.evaluate(() => document.getElementById("bug-report").open), false, "the form closes");
         // Again with words: the title is their first line.
         if (tap) await press("#menu-toggle");
@@ -110,11 +117,12 @@ try {
     const page = await fresh(1280, 800, false, FAKE);
     const sent = [];
     let down = false;
-    await page.context().route(FAKE, (route) => {
+    await page.context().route(FAKE, async (route) => {
       const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" };
       if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
       if (down) return route.abort();
       sent.push(JSON.parse(route.request().postData()));
+      await new Promise((r) => setTimeout(r, 1500)); // a slow service, as the real one can be (Ben saw 5 s)
       return route.fulfill({ status: 200, headers: { ...cors, "content-type": "application/json" }, body: JSON.stringify({ issue: 9 }) });
     });
     try {
@@ -127,7 +135,14 @@ try {
       assert.equal(await page.textContent("#bug-report-go"), "Send");
       assert.ok((await page.textContent("#bug-report-note")).includes("privately"), "the note says it goes privately");
       await page.click("#bug-report-go");
+      // While it sends, a moving bar under the note, on screen and wide enough to see.
+      await page.waitForSelector("#bug-report-progress", { state: "visible" });
+      const bar = await page.locator("#bug-report-progress").boundingBox();
+      assert.ok(bar.width > 200 && bar.height >= 4, `the bar at ${JSON.stringify(bar)}`);
+      assert.equal(await page.textContent("#bug-report-status"), "Sending… this can take a few seconds.");
+      if (process.env.BUG_REPORT_SHOTS) await page.waitForTimeout(500).then(() => page.screenshot({ path: `${process.env.BUG_REPORT_SHOTS}/sending-1280.png` }));
       await page.waitForFunction(() => document.getElementById("bug-report-status").textContent.startsWith("Sent"));
+      assert.equal(await page.isHidden("#bug-report-progress"), true, "the bar goes once sent");
       assert.equal(await page.textContent("#bug-report-status"), "Sent as report 9. Thank you!");
       assert.equal(sent.length, 1);
       assert.equal(sent[0].title, "Bug report from design");

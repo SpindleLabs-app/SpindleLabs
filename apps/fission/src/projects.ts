@@ -12,6 +12,8 @@ export interface ListedProjectsParts {
   /** The project open now, when it is kept (null while a new one waits for its first change, or a file opens). */
   openId(): string | null;
   open(id: string, modified: Date | null): Promise<void>;
+  /** Called once project `id` is deleted (the design tabs close its tab, tabs hunt B3). */
+  removed?(id: string): void;
 }
 
 /** The dialog, in `doc`. The open project is never deleted, even if the list was read before it opened. */
@@ -23,6 +25,7 @@ export function listedProjects(doc: Document, parts: ListedProjectsParts): Proje
     remove: async (id) => {
       if (id === parts.openId()) throw new Error("the open project can't be deleted here");
       await forget(parts.store, parts.journal, id);
+      parts.removed?.(id);
     },
   });
 }

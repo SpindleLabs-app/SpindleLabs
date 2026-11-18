@@ -28,6 +28,7 @@
     "@fission/manufacture": "*",
     "@fission/render": "*",
     "@fission/simulate": "*",
+    "@fission/storage": "*",
     "@fission/slice": "*",
     "@fission/vector": "*",
     "happy-dom": "21.0.4"

@@ -5,7 +5,7 @@
 // design change flows straight through. Work starts after CAD step 52 (it slices a mesh of each body).
 
 import type { BodyReference, WorkspacePlugin } from "@fission/core";
-import { showPlaceholder } from "@fission/ui";
+import { showPlaceholder, workspaceEta } from "@fission/ui";
 
 /** DRAFT: one build plate. Models are design bodies by reference. */
 export interface Plate {
@@ -21,14 +21,15 @@ export function slicePlate(_plate: Plate): string {
 
 export const sliceWorkspace: WorkspacePlugin = {
   id: "slice",
-  title: "Slice",
+  title: "SliceLab",
   summary: "A 3D printing slicer for any printer, fed directly by the design.",
   status: "placeholder",
   representations: { produces: [], accepts: [] },
   commands: [],
   mount(ctx) {
     showPlaceholder(ctx.properties, {
-      title: "Slice",
+      eta: workspaceEta("slice"),
+      title: "SliceLab",
       summary: "A 3D printing slicer for any printer, fed directly by the design.",
       plans: ["Printer profiles for any printer, not tied to one brand", "Supports, infill and walls", "Several plates per project; a plate updates when the design changes", "Layer preview and G-code export"],
       startsAfter: "after CAD step 52",
@@ -37,4 +38,5 @@ export const sliceWorkspace: WorkspacePlugin = {
   },
 };
 
-export { mountSlicePage, plateMesh, plateWords, readPlate, slicePageWorkspace, type PlateBody } from "./page.ts";
+export { leftOutWords, mountSlicePage, plateMesh, plateWords, readPlate, slicePageWorkspace, type PlateBody } from "./page.ts";
+export { plateFiles, printPanel, sliceWords, type PrintPanel, type PrintPanelParts } from "./print-panel.ts";
