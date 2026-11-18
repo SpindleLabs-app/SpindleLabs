@@ -4,7 +4,7 @@
 // 40 mm, the hole as four quarter arcs of radius 10. Chromium only (the clipboard is read back).
 // Needs `?test-hooks` for the camera. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
-import { browserName, launch } from "./browser.mjs";
+import { assertNoErrors, browserName, launch, watchErrors } from "./browser.mjs";
 import { preview } from "vite";
 import { gridSnapOn, pickPlane } from "./start.mjs";
 
@@ -18,6 +18,7 @@ const browser = await launch();
 let failed = 0;
 try {
   const context = await browser.newContext({ viewport: { width: 1000, height: 640 }, permissions: ["clipboard-read", "clipboard-write"] });
+  watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   await page.goto(`http://localhost:${PORT}/?test-hooks`);
@@ -62,6 +63,12 @@ try {
   } catch (e) {
     failed++;
     console.log(`not ok - a rectangle with a circle inside copies as SVG, with its hole\n  ${e.message}`);
+  }
+  try {
+    assertNoErrors();
+  } catch (e) {
+    failed++;
+    console.log(`not ok - ${e.message}`);
   }
 } finally {
   await browser.close();

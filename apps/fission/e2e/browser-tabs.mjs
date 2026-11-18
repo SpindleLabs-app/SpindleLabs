@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { boot, check, fails, savedMark, storedProjects, volumeIs } from "./save-picker-lib.mjs";
 import { startWithBox } from "./start.mjs";
 import { pinProperties } from "./properties.mjs";
-import { browserName } from "./browser.mjs";
+import { assertNoErrors, browserName, watchErrors } from "./browser.mjs";
 
 const b = await boot(4798);
 const only = process.env.ONLY;
@@ -20,6 +20,7 @@ const show = (page, state) => page.evaluate((s) => { Object.defineProperty(docum
 const REFUSED = /^Not saved: This project was changed in another tab/;
 async function twoTabs() {
   const context = await b.browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
+  watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
   const first = await context.newPage();
   await first.goto(b.url + "#design");
   await startWithBox(first);
@@ -99,6 +100,7 @@ try {
     assert.match(await mark(first), REFUSED);
     await context.close();
   });
+  await check("no page errors, console errors or failed requests", async () => assertNoErrors());
 } finally {
   await b.close();
 }

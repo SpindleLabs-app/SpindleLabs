@@ -15,7 +15,7 @@
 // SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { preview } from "vite";
-import { launch } from "./browser.mjs";
+import { assertNoErrors, launch, watchErrors } from "./browser.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4199, strictPort: true }, logLevel: "error" });
@@ -95,6 +95,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
   const at = `${width} px${tap ? ", taps" : ""}`;
   await check(`${at}: every drop-down list opens dark and readable`, async () => {
     const context = await browser.newContext({ viewport: { width, height: tap ? 667 : 800 }, hasTouch: tap, isMobile: tap });
+    watchErrors(context); // every uncaught exception, console.error and failed request fails the run (test audit E-7)
     const page = await context.newPage();
     const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
     try {
@@ -119,6 +120,12 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
   });
 }
 
+try {
+  assertNoErrors();
+} catch (e) {
+  failed++;
+  console.log(`not ok - ${e.message}`);
+}
 await browser.close();
 await server.close();
 if (failed) {
