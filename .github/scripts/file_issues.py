@@ -61,6 +61,35 @@ def numbers_out(text):
     return NUMBER.sub("#", text)
 
 
+# A kind names no sizes, so a kind closed as not planned (OpenCascade's own
+# rounding, say) would also hide a later error of the same shape and check
+# a thousand times bigger, for ever (test audit E-9). Such an error is its
+# own kind: more than FAR_MM apart, or more than FAR_TIMES its allowance.
+FAR_MM = 1.0
+FAR_TIMES = 1e4
+FAR = " (far off: over 1 mm or 10,000 times its allowance)"
+PAIRS = (r"fission (\S+?),? occ (\S+?)(?:,|$)", r"read (\S+?) from the file, exact (\S+?),", r"occ (\S+?), exact (\S+?)(?:,|$)",
+         r"changed (\S+) → (\S+)")
+
+
+def far_off(line):
+    """Whether a reported error is far off: the first pair of values it
+    compares (fission/occ, OpenCascade's reading/exact, before → after) more
+    than FAR_MM apart, or more than FAR_TIMES the allowance it states."""
+    allowed = re.search(r"allowed (\S+?)(?:[,)\s]|$)", line)
+    for pattern in PAIRS:
+        m = re.search(pattern, line)
+        if not m:
+            continue
+        try:
+            gap = abs(float(m.group(1)) - float(m.group(2)))
+            limit = min(FAR_MM, FAR_TIMES * float(allowed.group(1))) if allowed else FAR_MM
+        except ValueError:
+            return False
+        return gap > limit
+    return False
+
+
 def harness_kinds(report):
     """Kinds of the failures in a harness report.txt: one per failing seed,
     from lines like '  seed 0x..: step 3 (Rotate { .. }): message (minimal
@@ -78,7 +107,7 @@ def harness_kinds(report):
             shape = re.search(r"shape: (\w+)", op)
             name = f"Add {shape.group(1)}" if shape else name
         msg = re.sub(r"\s*\(minimal chain: \d+ ops?\)\s*$", "", msg)
-        kinds.append((f"harness, {name}: {numbers_out(msg).strip()[:120]}", line.strip()))
+        kinds.append((f"harness, {name}: {numbers_out(msg).strip()[:120]}{FAR if far_off(msg) else ''}", line.strip()))
     return kinds
 
 
@@ -113,7 +142,7 @@ def oracle_kinds(disagreements):
             check = line.strip().split(":", 1)[0]
             # "bounds x" (older runs) or "bounds highest x": one check.
             check = re.sub(r"^bounds ((lowest|highest) )?[xyz]$", "bounds", check)
-            kinds.append((f"OpenCascade disagrees, {shape}: {check}", f"{first[:300]}\n  {line.strip()}"))
+            kinds.append((f"OpenCascade disagrees, {shape}: {check}{FAR if far_off(line) else ''}", f"{first[:300]}\n  {line.strip()}"))
     return kinds
 
 
@@ -274,7 +303,7 @@ def kinds_of(folder_files):
 JOB_DIRS = {
     "journeys": ("journeys",), "golden": ("golden",), "golden-step": ("golden",), "monkey": ("monkey",), "ts-mutants": ("ts-mutants-",),
     "project": ("fuzz-project",), "sessions": ("fuzz-sessions",), "sessions-oracle": ("fuzz-sessions-oracle",), "timeline": ("fuzz-timeline",), "stack": ("fuzz-stack",),
-    "test": ("endless-a-",), "test-second-leg": ("endless-b-",), "mutants": ("mutants-",),
+    "test": ("endless-a-",), "test-second-leg": ("endless-b-",), "mutants": ("mutants-",), "plants": ("plants-",),
     "stl": ("fuzz-stl",), "kernel": ("fuzz-kernel-",),
 }
 
@@ -285,6 +314,25 @@ def job_dir(d, prefixes):
 # cargo mutants: 0 all caught, 2 some missed (filed as new survivors), 3
 # some timed out; 124/130 the shard was cut off at the deadline (expected).
 MUTANTS_FINE = {"0", "2", "3", "124", "130"}
+# The kernel's ci/plants.py: each problem line's verdict, as it prints it.
+PLANT_PROBLEMS = ("MISSED", "DOES NOT BUILD", "WRONG FAILURE", "NO LONGER APPLIES", "RED UNPLANTED", "NOT JUDGED")
+
+
+def plant_kinds(text):
+    """One kind per problem line of the weekly planted-bugs run (test audit
+    E-2), named by its verdict and plant (or test), the reason after it
+    left out: "MISSED         a: b" -> "check planted bugs: missed: a: b"."""
+    found = []
+    for line in text.splitlines():
+        for verdict in PLANT_PROBLEMS:
+            if line.startswith(verdict + " "):
+                what = line[len(verdict):].strip()
+                if verdict == "NO LONGER APPLIES":
+                    what = what.rpartition(": its text is found")[0] or what
+                else:
+                    what = re.sub(r" \((red, but without|the planted text|its test is red).*\)$", "", what)
+                found.append((f"check planted bugs: {verdict.lower()}: {what[:150]}", line))
+    return found
 
 
 def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
@@ -341,6 +389,10 @@ def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
                 found.append((f"check whole-kernel mutants: {why}", f"{top}: exit code {code}"))
             else:
                 clean_dirs.add(top)
+        elif top.startswith("plants-") and path.endswith("/plants.txt"):
+            found += plant_kinds(text)
+            if not found and re.search(r"^\d+ plants run, 0 problems$", text, re.M):
+                clean_dirs.add(top)
         elif path.endswith("/job-status.txt") and path.count("/") == 1:
             # A matrix leg's own result, written by its save step (the job's result in JOBS is one for every leg):
             # a leg that passed is clean beside a sibling leg that failed (kernel-results #25).
@@ -380,6 +432,8 @@ def read_checks(incoming):
             names = [f for f in sorted(os.listdir(d)) if f.endswith(".txt")]
         elif run.startswith("mutants-"):
             names = ["exit-code.txt"]
+        elif run.startswith("plants-"):
+            names = ["plants.txt"]
         names = names + ["job-status.txt"]
         for f in names:
             p = os.path.join(d, f)
@@ -595,7 +649,7 @@ def texts(action, kind, hits, run_url, commit, branch):
             "the model is wrong, and keep the case as a test first.\n\n"
             "Close this issue as completed once it is fixed (with a regression test), or as not planned "
             "if it is not a SpindleLabs bug (say why in a comment): a kind closed as fixed that comes back on "
-            "main reopens it; one closed as not planned is not reported again."
+            "main reopens it; one closed as not planned is not reported again, unless it comes back far bigger (over 1 mm or 10,000 times its allowance: a new kind)."
         )
         return f"Random testing (booleans): {kind.removeprefix('boolean ')}"[:250], body
     if action == "create" and kind.startswith("check "):
@@ -629,7 +683,7 @@ def texts(action, kind, hits, run_url, commit, branch):
             "stateful_random_chains -- --nocapture` in kernel/.\n\n"
             "Close this issue as completed once it is fixed (with a regression test), or as not planned "
             "if it is not a SpindleLabs bug (say why in a comment): a kind closed as fixed that comes back on "
-            "main reopens it; one closed as not planned is not reported again."
+            "main reopens it; one closed as not planned is not reported again, unless it comes back far bigger (over 1 mm or 10,000 times its allowance: a new kind)."
         )
         return f"Random testing: {kind}"[:250], body
     head = {"reopen": "Seen again after this issue was closed",

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from file_issues import MARK, MAX_NEW, OVERFLOW, boolean_kinds, cap, check_kinds, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, judge_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
+from file_issues import MARK, MAX_NEW, OVERFLOW, boolean_kinds, cap, check_kinds, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, judge_kinds, key, kinds_of, oracle_kinds, far_off, FAR, plan, read_checks, read_folders, texts, MAX_EXAMPLE  # noqa: E402
 
 # Lines copied from real reports on the test-results branch.
 ROTATE_A = ("  seed 0x12849982fbf1: step 3 (Rotate { target: 1, pivot: [0.0, 0.0, 0.0], axis: [1.0, 0.0, 0.0], "
@@ -56,6 +56,31 @@ class Kinds(unittest.TestCase):
         # An unreadable shape is still reported.
         self.assertEqual(oracle_kinds("line 1: {nonsense\n  faces: fission 6, occ 5\n")[0][0],
                          "OpenCascade disagrees, ?: faces")
+
+    def test_test_audit_e9_a_far_bigger_error_is_its_own_kind(self):
+        # A kind closed as not planned at OpenCascade's rounding (3e-5 mm)
+        # must not hide the same shape's check 2 mm off: that is a new kind,
+        # so it is filed ('create'), while the small one stays silenced.
+        shape = 'line 9: {"Extrude": {"dist": "1.0", "expect": null, "holes": [], "outer": {"Path": {"bulges": [], "pts": [["0", "0"], ["1", "0"], ["1", "1"]]}}}}\n'
+        small = oracle_kinds(shape + "  bounds highest y: fission 1.0, occ 1.00003\n")
+        big = oracle_kinds(shape + "  bounds highest y: fission 1.0, occ 3.0\n")
+        self.assertEqual(small[0][0], "OpenCascade disagrees, Extrude: bounds")
+        self.assertEqual(big[0][0], "OpenCascade disagrees, Extrude: bounds" + FAR)
+        closed = [issue(4, small[0][0], "CLOSED", "NOT_PLANNED")]
+        self.assertEqual(plan({small[0][0]: [("s", "x")]}, closed, "main"), [])
+        self.assertEqual(plan({big[0][0]: [("s", "x")]}, closed, "main"), [("create", big[0][0], None)])
+        # Against a stated allowance, by hand: 1e-7 allowed, 1e-4 off is 1,000 times (same kind), 2e-3 off is
+        # 20,000 times (far): limit = min(1 mm, 10,000 x 1e-7 = 1e-3 mm).
+        self.assertFalse(far_off("exact volume: fission 1.0, occ 1.0001, allowed 1e-07"))
+        self.assertTrue(far_off("exact volume: fission 1.0, occ 1.002, allowed 1e-07"))
+        # The boundary itself: 0.9 mm and 1.1 mm apart with no allowance.
+        self.assertFalse(far_off("bounds x: fission 0.0, occ 0.9"))
+        self.assertTrue(far_off("bounds x: fission 0.0, occ 1.1"))
+        self.assertTrue(far_off("step volume: OpenCascade read 12.5 from the file, exact 10.0, allowed 1e-06 (as written)"))
+        self.assertFalse(far_off("step validity: BRepCheck: invalid (faces [3], counted in file order)"))
+        # The harness's own numbers: a vertex moved 0.4 nm stays the old kind, one moved 2 mm is far.
+        self.assertEqual(harness_kinds(ROTATE_A)[0][0], "harness, Rotate: a vertex's distance to the pivot changed # → #")
+        self.assertTrue(harness_kinds(ROTATE_A.replace("→ 0.7070990047468506", "→ 2.7070990047468506"))[0][0].endswith(FAR))
 
     def test_step_file_kinds(self):
         # Step 29b2's checks of each body's STEP file are kinds of their own
@@ -444,6 +469,41 @@ class Checks(unittest.TestCase):
                          [("check whole-kernel mutants: the unmutated tests failed", "mutants-1: exit code 4")])
         self.assertEqual(check_kinds({"mutants-0/exit-code.txt": "1"}, {}, set()),
                          [("check whole-kernel mutants: cargo mutants stopped with exit code 1", "mutants-0: exit code 1")])
+
+    def test_a_plant_no_longer_caught_is_a_kind_per_plant(self):
+        # The weekly run of every planted kernel bug (test audit E-2): each
+        # problem line of plants.py is its own kind, named by the plant, so a
+        # second plant lost is a new issue, not a comment on the first.
+        text = ("caught         plant one\n"
+                "MISSED         plant two\n"
+                "DOES NOT BUILD plant three (the planted text no longer compiles; it tests nothing)\n"
+                "WRONG FAILURE  plant four (red, but without 'words')\n"
+                "NO LONGER APPLIES  plant five: its text is found 0 times in src/x.rs, not once\n"
+                "RED UNPLANTED  --test t\n"
+                "NOT JUDGED     plant six (its test is red without it)\n"
+                "35 plants run, 6 problems\n")
+        lines = text.splitlines()
+        self.assertEqual(check_kinds({"plants-3/plants.txt": text}, {}, set()), [
+            ("check planted bugs: missed: plant two", lines[1]),
+            ("check planted bugs: does not build: plant three", lines[2]),
+            ("check planted bugs: wrong failure: plant four", lines[3]),
+            ("check planted bugs: no longer applies: plant five", lines[4]),
+            ("check planted bugs: red unplanted: --test t", lines[5]),
+            ("check planted bugs: not judged: plant six", lines[6]),
+        ])
+        # Every plant caught: nothing to file, and the leg is clean beside a red sibling.
+        clean = "caught         a\n1 plants run, 0 problems\n"
+        self.assertEqual(check_kinds({"plants-0/plants.txt": clean}, {}, set()), [])
+        got = check_kinds({"plants-0/plants.txt": clean, "plants-1/plants.txt": ""}, {"plants": "failure"}, set(), ["plants-0", "plants-1"])
+        self.assertEqual(got, [("check the plants job failed with nothing more specific reported", "job plants: failure (no kind from plants-1)")])
+
+    def test_plants_folders_are_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "plants-2"))
+            with open(os.path.join(d, "plants-2", "plants.txt"), "w") as f:
+                f.write("MISSED         a\n")
+            reports, _ = read_checks(d)
+            self.assertEqual(reports, {"plants-2/plants.txt": "MISSED         a\n"})
 
     def test_a_red_job_with_nothing_more_specific_is_a_kind(self):
         red = "check the sessions job failed with nothing more specific reported"
