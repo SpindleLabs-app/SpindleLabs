@@ -1857,6 +1857,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */
   /** The design last shown and built: a sketch left after edits to it differs, and is rebuilt (25a3). */
   let shownDoc: DesignDocument | null = null;
+  /** The design the line after a Combine's OK speaks of (`sayCombineDone`), null while it is not shown. */
+  let combineDoneFor: DesignDocument | null = null;
   /** Counts show() calls: one overtaken while its settle waited on the kernel draws nothing (app hunt 2026-11-04). */
   let showing = 0;
   /** Set once unmounted: a show() still waiting on the kernel then draws nothing. */
@@ -1875,6 +1877,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return ctx.history.hold(work.finally(told), true); // nothing recorded yet: leaving now asks first (SL #708 item 1)
   }
   async function show(doc: DesignDocument, kind: PartKind) {
+    if (combineDoneFor !== null && doc !== combineDoneFor) sayCombineDone(null); // Undo, Redo or any later step: the Combine's line no longer holds (SL #820 D-8)
     shownDoc = doc;
     const n = ++showing;
     const view = viewport.element;
@@ -4643,6 +4646,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sayCombineDone(words: string | null) {
     if (combineDoneTimer !== null) clearTimeout(combineDoneTimer);
     combineDoneTimer = null;
+    combineDoneFor = words === null ? null : designDoc();
     combineDone.textContent = words ?? "";
     combineDone.hidden = words === null;
     if (words !== null) combineDoneTimer = setTimeout(() => sayCombineDone(null), COMBINE_DONE_MS);
@@ -4729,6 +4733,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * calls this as it starts, so Measure (35e2l2) is put away here too: one tool at a time.
    */
   function leaveCombine() {
+    sayCombineDone(null); // its "Undo puts it back" stops being true once anything else is opened or recorded (SL #820 D-8)
     measureBox.close();
     constructBox.close(); // Construct (59a2) is put away by every other tool the same way
     leaveChamfer(); // Chamfer (44a-app2) is put away by every other tool the same way
