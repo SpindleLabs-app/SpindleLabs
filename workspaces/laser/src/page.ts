@@ -299,7 +299,7 @@ export function mountLaserPage(ctx: WorkspaceContext, save?: SaveText, relate?: 
 <div class="laser-page-turns"><button type="button" data-turn="90">Turn left</button><button type="button" data-turn="-90">Turn right</button><button type="button" data-flip>Flip</button><button type="button" data-rows>Back in the rows</button></div>
 </fieldset>
 <div class="laser-page-files"><button type="button" data-save="svg">Save SVG</button><button type="button" data-save="dxf">Save DXF</button></div>
-<p class="laser-page-note">Drag a part on the bed to move it; X and Y are its lower-left corner from the bed's. Sizes are exact, in mm, with arcs kept as arcs. Each part is cut, scored or engraved: in the files cut is red, score blue and engrave black, done in the order engrave, score, cut. A DXF can't hold a filled shape, so an engraving is its outline on the ENGRAVE layer: set that layer to fill in your laser program. Kerf, power and speed are set in your laser program for now.</p>`;
+<details class="laser-page-note"><summary>How parts and files work</summary><p>Drag a part on the bed to move it; X and Y are its lower-left corner from the bed's. Sizes are exact, in mm, with arcs kept as arcs. Each part is cut, scored or engraved: in the files cut is red, score blue and engrave black, done in the order engrave, score, cut. A DXF can't hold a filled shape, so an engraving is its outline on the ENGRAVE layer: set that layer to fill in your laser program. Kerf, power and speed are set in your laser program for now.</p></details>`;
   ctx.properties.append(panel);
   const input = (name: string) => panel.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
   const words = panel.querySelector<HTMLElement>(".laser-page-words")!;

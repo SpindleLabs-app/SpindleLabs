@@ -1,6 +1,0 @@
-/* The testlab-page panel in the properties as a rounded floating card like Design's, on wide screens (UI review 2026-11-18, finding 2): it was a flat grey column docked down the right edge. theme.css leaves just room round it for the Image panel and the Coming-soon page; the same room is made here. Tokens only. */
-@media (min-width: 641px) {
-  #workspace:not([data-split="on"]) #properties:has(> .testlab-page) { background: transparent; border-left: none; padding: 8px 8px 8px 0; overflow: visible; }
-  .testlab-page:is(#workspace:not([data-split="on"]) #properties > .testlab-page) { align-self: flex-start; box-sizing: border-box; max-height: 100%; overflow-y: auto; padding: 16px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); scrollbar-width: thin; scrollbar-color: transparent transparent; }
-  .testlab-page:is(#workspace:not([data-split="on"]) #properties > .testlab-page):is(:hover, :focus-within) { scrollbar-color: var(--line-4a515c) transparent; }
-}
