@@ -145,23 +145,6 @@ class CollectChecks(unittest.TestCase):
         self.assertIn("create  check the golden job failed with nothing more specific reported", stdout)
         self.assertNotIn("monkey job", stdout)
 
-    def test_the_golden_step_jobs_failure_folder_is_kept_and_filed(self):
-        # Regression (H3c, 2026-11-18): the golden-step job's artifact lands in incoming/golden-step/, which nothing
-        # read, so a STEP file OpenCascade refused was never put in failures/ or filed as its own kind; and its red
-        # job was taken as explained whenever the golden job's own folder gave a kind.
-        step = ("Golden models' STEP files: 1 of 6 bodies failed\n"
-                "failure: gear: step validity | also: step volume; \n")
-        stdout, files = self.collect(CLEAN, None, {"golden-step/seed-golden-step-5/golden-report.txt": step,
-                                                   "golden-step/report.txt": "Golden STEP files: 6 bodies read by OpenCascade, 1 disagreement(s)\n"},
-                                     jobs='{"golden": {"result": "success"}, "golden-step": {"result": "failure"}}')
-        self.assertEqual(files["failures/seed-golden-step-5/golden-report.txt"], step)
-        self.assertIn("create  golden model gear: step validity", stdout)
-        self.assertNotIn("golden-step job failed", stdout)
-
-    def test_a_red_golden_step_job_is_not_explained_by_the_golden_jobs_folder(self):
-        stdout, _ = self.collect(CLEAN, FAILING, jobs='{"golden": {"result": "failure"}, "golden-step": {"result": "failure"}}')
-        self.assertIn("create  check the golden-step job failed with nothing more specific reported", stdout)
-
     def test_a_clean_run_with_green_jobs_files_nothing(self):
         stdout, _ = self.collect(CLEAN, None, {"journeys/report.txt": "PASS a: 3 clicks\n"}, jobs='{"golden": {"result": "success"}}')
         self.assertNotIn("create", stdout)

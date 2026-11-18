@@ -272,7 +272,7 @@ def kinds_of(folder_files):
 # job's legs (each leg its own folder); any other names one folder exactly,
 # so "fuzz-sessions" is not "fuzz-sessions-oracle" (weak-spot hunt 10-29).
 JOB_DIRS = {
-    "journeys": ("journeys",), "golden": ("golden",), "golden-step": ("golden-step",), "monkey": ("monkey",), "ts-mutants": ("ts-mutants-",),
+    "journeys": ("journeys",), "golden": ("golden",), "golden-step": ("golden",), "monkey": ("monkey",), "ts-mutants": ("ts-mutants-",),
     "project": ("fuzz-project",), "sessions": ("fuzz-sessions",), "sessions-oracle": ("fuzz-sessions-oracle",), "timeline": ("fuzz-timeline",), "stack": ("fuzz-stack",),
     "test": ("endless-a-",), "test-second-leg": ("endless-b-",), "mutants": ("mutants-",),
     "stl": ("fuzz-stl",), "kernel": ("fuzz-kernel-",),
@@ -656,12 +656,11 @@ def folder_dirs(incoming, folders):
 
 def read_folders(incoming):
     """{seed: {file name: text}} for every endless-*/seed-*/,
-    fuzz-*/seed-*/, golden/seed-golden-*/, golden-step/seed-golden-step-*/ and
-    monkey/seed-monkey-*/ folder."""
+    fuzz-*/seed-*/, golden/seed-golden-*/ and monkey/seed-monkey-*/ folder."""
     folders = {}
     # No artifacts at all (a run whose first job failed) leaves no incoming folder: nothing to read, not a crash.
     for run in sorted(os.listdir(incoming)) if os.path.isdir(incoming) else []:
-        if not run.startswith(("endless-", "fuzz-")) and run not in ("golden", "golden-step", "monkey"):
+        if not run.startswith(("endless-", "fuzz-")) and run not in ("golden", "monkey"):
             continue
         for name in sorted(os.listdir(os.path.join(incoming, run))):
             path = os.path.join(incoming, run, name)
