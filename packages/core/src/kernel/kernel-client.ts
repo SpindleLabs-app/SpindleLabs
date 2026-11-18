@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, ConstructGiven, ConstructMade, ConstructMake, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, Motion, BooleanResult, BuildPlate, ChamferResult, ChamferSize, BodyView, ConstructGiven, ConstructMade, ConstructMake, KernelErrorKind, KernelFailure, KernelInput, KernelThin, KernelTouch, Measured, MeasurePick, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SketchRegions, SlicedPrint, SolidReport, SliceProgress, SliceStage, StlFile, SupportStyle, PatternSpec } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -48,6 +48,13 @@ export interface KernelOps {
    * nothing; its words name the edge or the size.
    */
   body_chamfer: { args: [body: BodyHandle, edges: number[], size: ChamferSize, flip: boolean]; result: ChamferResult };
+  /**
+   * Every copy's motion of a pattern (step 61), the original left out, in the
+   * kernel's order: each a move or a turn, as body_move and a moved spec take
+   * them. Refused naming the input at fault (along, spacing, count, across,
+   * spacing2, count2, pivot, axis, angle).
+   */
+  pattern_motions: { args: [pattern: PatternSpec]; result: Motion[] };
   /** Measures one pick, or two (step 35e2l): their facts, the least distance with its two points, the angle and centre to centre. */
   body_measure: { args: [first: MeasurePick, second: MeasurePick | null]; result: Measured };
   /**

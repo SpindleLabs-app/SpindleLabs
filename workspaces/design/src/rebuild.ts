@@ -37,9 +37,8 @@
 import { extrudeSketches, hasMoreProfiles, moreProfiles, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 import { contactGroups, mergedOutline } from "./extrude-merge.ts";
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type BooleanOp, type BooleanResult, type ChamferResult, type ChamferSize, type ConstructGiven, type ConstructMake, type Motion, type KernelTouch, type KernelThin, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { constructOf, isConstructItem } from "./document.ts";
 import { CONSTRUCT_KINDS, readConstructRef, sameAnswer, type ConstructAnswer } from "./construct-data.ts";
-import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, isChamferItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, bodyNumbers, buildingItems, chamferOf, constructOf, isChamferItem, isConstructItem, isPatternItem, isPiece, numberPieces, combineBodies, duplicatedBody, extrudeOperation, isCombineItem, isDuplicateItem, isOperationExtrude, isMoveItem, isSketchExtrude, isSketchItem, keptOf, ownShape, profileSizeRefused, sketchInputs, specOf, type CombineOperation, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { centredSpec, isSymmetricParams } from "./extrude-symmetric.ts";
 import { isThroughParams, throughDistance, throughWords, withDistance } from "./extrude-through.ts";
 import { carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, movedFrame, planeWords, sketchMiddle, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
@@ -52,6 +51,7 @@ import { pieceIds } from "./boolean-names.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, madePoints, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { changedMove, movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { mirrorMotion, mirrorOf } from "./duplicate.ts";
+import { copyIds, CURVED_JOIN, KERNEL_INPUT_WORDS, patternRequest, patternValuesOf, type PatternRequest } from "./pattern-values.ts";
 import { readDesignReference, resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 import { curveWord, readAnswer, shrunk, solvedPoints, solverRequest } from "./constraints.ts";
@@ -284,6 +284,8 @@ export class BodyCache {
   private booleans = new Map<string, BooleanResult>();
   /** Each body_chamfer's answer by its input, edges, size and flip (`chamfered`, step 44a): the body given and the answer, kept in `bodies` like built ones. */
   private chamfers = new Map<string, { from: BodyHandle; to: ChamferResult }>();
+  /** Each pattern_motions answer by its request (`patternMotions`, step 61b): no body, so kept for the cache's life. */
+  private patterns = new Map<string, Motion[]>();
   /** Each body_move's answer by its input and moves (`moved`, 35f1f2a): the body it moved and the one it made, kept in `bodies` like built ones. */
   private moves = new Map<string, { from: BodyHandle; to: BodyHandle }>();
   /**
@@ -425,6 +427,22 @@ export class BodyCache {
       this.keep(key, to);
       this.moves.set(key, { from: handle, to });
       return to;
+    });
+  }
+
+  /**
+   * The kernel's `pattern_motions` for `request` once (step 61b): every
+   * copy's move or turn, the original left out. A refusal is not kept.
+   */
+  async patternMotions(request: PatternRequest): Promise<Motion[]> {
+    if (this.closed) throw new Error(CLOSED);
+    const key = JSON.stringify(["pattern", request]);
+    const hit = this.patterns.get(key);
+    if (hit !== undefined) return hit;
+    return this.once(key, async () => {
+      const motions = await this.kernel.call("pattern_motions", request);
+      this.patterns.set(key, motions);
+      return motions;
     });
   }
 
@@ -1515,6 +1533,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (isDuplicateItem(f)) return await copyBody(f, done, bodies, cache);
     if (isChamferItem(f)) return await chamferRun(doc, f, done, bodies, cache);
     if (isConstructItem(f)) return await constructRun(f, done, bodies, cache, kernel);
+    if (isPatternItem(f)) return await patternRun(doc, f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
       // Save-load hunt B4: failed in words as a size the kernel refuses is, never built (a negative one came out mirrored).
       const refused = profileSizeRefused(doc, f);
@@ -1704,6 +1723,100 @@ async function copyBody(f: Feature, done: Record<string, FeatureResult>, bodies:
   const spec = plane === undefined ? b.spec : movedSpec(b.spec, [mirrorMotion(plane)]);
   bodies[id] = { feature: f.id, handle: spec === b.spec ? b.handle : await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}) };
   return { status: "built", bodies: [id] };
+}
+
+/**
+ * A Pattern's result (step 61b): greyed while an item whose body it copies
+ * is suppressed or greyed (Q3); failed naming the first of its bodies that
+ * was deleted, isn't built or is gone (used up by an earlier Combine or
+ * extrude), so no copy is made; failed in plain words when the kernel
+ * refuses the pattern (`KERNEL_INPUT_WORDS`: the input it names, never its
+ * sentence). Else every copy, each body's in turn, in the kernel's order
+ * (`pattern_motions`, asked once): built as a Move builds a moved body (a
+ * spec moved, `movedSpec`; a body only the kernel holds moved by
+ * `body_move`, its faces' names, frames and turned faces carried as a
+ * Duplicate's are), its faces named by the Pattern, held as
+ * `body:<the Pattern>/piece:<k>` (`copyIds`). The bodies themselves are
+ * left as they were. With Join, each body's copies are joined to it by
+ * Combine's booleans (`booleanSteps`: the joined body keeps the body's id,
+ * a copy meeting nothing stays a piece of the Pattern, all or none); a body
+ * with a curved face is refused in `CURVED_JOIN`'s words until curved
+ * booleans join it. A copy put out past model space fails the Pattern in
+ * the kernel's words, as a Move's would.
+ */
+async function patternRun(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
+  for (const id of f.dependsOn) {
+    const r = done[id];
+    if (r?.status === "suppressed") return { status: "greyed", by: id };
+    if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  }
+  const label = f.provenance.self.label;
+  const nameOf = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const sources = [...(f.intent.parameters.bodies as string[])];
+  for (const body of sources) {
+    const maker = bodyItem(body)!;
+    const r = done[maker];
+    const what = isPiece(body) ? `a piece of ${nameOf(maker)}` : nameOf(maker);
+    if (r === undefined) return { status: "failed", cause: "deleted-input", input: maker, message: `${nameOf(maker)} was deleted, so ${label} has nothing to copy` };
+    if (r.status !== "built") return { status: "failed", cause: "failed-input", input: maker, message: `${nameOf(maker)} is not built, so ${label} can't copy it` };
+    if (bodies[body] === undefined) return { status: "failed", cause: "failed-input", input: maker, message: `${label} can't copy ${what}: an earlier Combine or extrude used it up or left no such piece` };
+  }
+  const values = patternValuesOf(f.intent.parameters);
+  let motions: Motion[];
+  try {
+    motions = await cache.patternMotions(patternRequest(values));
+  } catch (e) {
+    if (!(e instanceof KernelError) || e.kind !== "invalid-input") throw e;
+    const named = e.inputs.flatMap((x) => (x.input === "param" && Object.hasOwn(KERNEL_INPUT_WORDS, x.name) ? [KERNEL_INPUT_WORDS[x.name]] : []));
+    return { status: "failed", cause: "error", message: `${label} can't be made: ${named.length > 0 ? `the kernel can't use ${named[0]}` : "the kernel can't make this pattern"}. Edit ${label} to change it.` };
+  }
+  // Each body's copies, built before any is kept, so a refusal (a copy out past model space) changes nothing; said
+  // as the Pattern's, with the kernel's words for where.
+  const made: { source: string; copies: Omit<BuiltBody, "feature">[] }[] = [];
+  try {
+  for (const body of sources) {
+    const b = bodies[body];
+    const copies: Omit<BuiltBody, "feature">[] = [];
+    for (const motion of motions) {
+      if (b.spec !== null) {
+        const spec = movedSpec(b.spec, [motion]);
+        copies.push({ handle: await cache.body(spec), spec, ...(b.curves ? { curves: b.curves } : {}), ...(b.profile !== undefined ? { profile: b.profile } : {}) });
+        continue;
+      }
+      // A body only the kernel holds (a Combine's result, a Chamfer's): moved by the kernel, each face keeping its place,
+      // its names the Pattern's as a Duplicate's are (`copiedNames`), each frame carried by the motion.
+      const handle = await cache.moved(b.handle, [motion]);
+      const frames = (b.named?.faces ?? []).map((_, k) => movedFrame(b.frames?.[k] ?? null, [motion]));
+      copies.push({ handle, spec: null, named: copiedNames(b.named!, f.id, b.feature, (id) => Object.hasOwn(done, id)), frames, ...(b.reversed && { reversed: b.reversed }) });
+    }
+    made.push({ source: body, copies });
+  }
+  } catch (e) {
+    if (e instanceof KernelError && e.kind === "invalid-input") return { status: "failed", cause: "error", message: `${label} can't be made: ${e.message}` };
+    throw e;
+  }
+  if (!values.join) {
+    const ids = copyIds(f.id, sources.length, motions.length);
+    made.flatMap((m) => m.copies).forEach((c, k) => (bodies[ids[k]] = { feature: f.id, ...c }));
+    return { status: "built", bodies: ids };
+  }
+  // Join: each body's copies are tools of one Join of it, under ids of their own until the Join numbers what is left.
+  const temp = made.map((m, i) => m.copies.map((_, k) => `${bodyIdOf(f.id)}#copy:${i + 1}:${k + 1}`));
+  made.forEach((m, i) => m.copies.forEach((c, k) => (bodies[temp[i][k]] = { feature: f.id, ...c })));
+  const r = await booleanSteps(doc, f, made.map((m, i) => ({ target: m.source, tools: temp[i], keepTools: false })), "join", "join", done, bodies, cache);
+  for (const id of temp.flat()) delete bodies[id];
+  if (r.status !== "built") {
+    // A round face anywhere among the inputs: the kernel's booleans don't join curved bodies yet, said in the Pattern's words.
+    const round = await Promise.all(sources.map(async (b) => (await cache.view(bodies[b].handle)).face_types.some((t) => t !== "plane")));
+    return r.status === "failed" && r.cause === "error" && round.some(Boolean) ? { ...r, message: `${label} can't be made: ${CURVED_JOIN}` } : r;
+  }
+  // A copy is no piece split from its body: a Move holding the body never takes it (`moveBodies`' `from`).
+  for (const id of r.bodies ?? [])
+    if (bodies[id]?.from !== undefined && bodyItem(id) === f.id) {
+      const { from: _from, ...copy } = bodies[id];
+      bodies[id] = copy;
+    }
+  return r;
 }
 
 /**

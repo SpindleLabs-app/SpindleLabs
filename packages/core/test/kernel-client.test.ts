@@ -826,6 +826,18 @@ test("body_chamfer refuses a body the kernel doesn't hold before sending anythin
     assert.equal(worker.posted.length, sent);
   }));
 
+test("pattern_motions (step 61b) is sent as given and answered as the kernel gave it, holding no body", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    const request = { linear: { along: [1, 0, 0] as [number, number, number], spacing: 10, count: 3 } };
+    const motions = client.call("pattern_motions", request);
+    const sent = worker.posted.at(-1) as { id: number };
+    assert.deepEqual(sent, { id: sent.id, op: "pattern_motions", args: [request] });
+    // A row of 3 along X, 10 apart: the original left out, the copies moved 10 and 20.
+    worker.answer(sent.id, [{ move: [10, 0, 0] }, { move: [20, 0, 0] }]);
+    assert.deepEqual(await motions, [{ move: [10, 0, 0] }, { move: [20, 0, 0] }]);
+  }));
+
 const CUBE_MOVED: BodySpec = { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [5, 5, 5] }] } };
 
 test("a boolean's limit grows with its inputs' faces; its result's view with the result's faces", (t) =>

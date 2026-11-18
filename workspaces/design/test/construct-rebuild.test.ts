@@ -1,6 +1,6 @@
 // Step 59a1: construction planes, axes and points as timeline items, built by
 // the real rebuild on the real kernel (rebuild.ts `constructRun`), their data
-// (document.ts `checkConstruct`, Design data version 25) and `insertConstruct`
+// (document.ts `checkConstruct`, Design data version 26) and `insertConstruct`
 // (construct.ts). Every place is worked out by hand from the box's corners:
 // `partDocument("box", w, d, h)` is x 0..w, y 0..d, z 0..h.
 
@@ -186,21 +186,21 @@ test("a construction the kernel can't make fails in its words: the top and the b
   assert.ok(r.status === "failed" && r.message.length > 0 && r.cause === "error", JSON.stringify(r));
 });
 
-test("the data: a construction saves and reads back as version 25; every break of it is refused in words", () => {
+test("the data: a construction saves and reads back as version 26; every break of it is refused in words", () => {
   const { doc } = insertConstruct(partDocument("box", 40, 30, 20), "offset_plane", { plane: TOP }, 5, { kind: "plane", point: [0, 0, 25], normal: [0, 0, 1], near: [20, 15, 25] });
-  assert.equal(DESIGN_VERSION, 25);
+  assert.equal(DESIGN_VERSION, 26);
   const json = JSON.parse(JSON.stringify(doc));
   assert.deepEqual(readDesignDocument(json), doc);
   assert.equal(doc.timeline.features[1].provenance.self.label, "Plane 1");
   assert.equal(doc.timeline.features[1].intent.summary, "Offset plane, 5 mm");
-  const broken = (change: (p: Record<string, unknown>, f: Record<string, unknown>) => void, version = 25) => () => {
+  const broken = (change: (p: Record<string, unknown>, f: Record<string, unknown>) => void, version = 26) => () => {
     const d = JSON.parse(JSON.stringify(doc));
     d.version = version;
     change(d.timeline.features[1].intent.parameters, d.timeline.features[1]);
     readDesignDocument(d);
   };
   const at = "Design construction feature-2";
-  assert.throws(broken(() => {}, 24), { message: "Design data says version 24 but has a construction plane, axis or point, which version 25 brought" });
+  assert.throws(broken(() => {}, 25), { message: "Design data says version 25 but has a construction plane, axis or point, which version 26 brought" });
   assert.throws(broken((p) => (p.make = "fillet")), { message: `${at} makes "fillet", which is not a construction this SpindleLabs makes` });
   assert.throws(broken((p) => (p.extra = 1)), { message: `${at} has a parameter "extra" a construction doesn't have` });
   assert.throws(broken((p) => (p.inputs = { plane: TOP, line: "X" })), { message: `${at} has an input "line", which offset_plane doesn't take` });

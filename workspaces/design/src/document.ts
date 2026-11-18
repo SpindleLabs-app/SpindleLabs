@@ -21,6 +21,7 @@ import { answerProblem, CONSTRUCT_ANGLE_MAX, CONSTRUCT_DISTANCE_MAX, CONSTRUCT_K
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
 import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
+import { patternParamsProblem } from "./pattern-values.ts";
 import { extrudeSketches, hasMoreProfiles, isMoreKeptKey, keptKey, MORE_PROFILES_LIMIT, profileParts, sameProfile, type ProfileRef } from "./extrude-profiles.ts";
 
 /** A ready-made outline on a plane (until the sketcher, step 21, adds sketches next to these). */
@@ -272,7 +273,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 25;
+  version: 26;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -621,11 +622,24 @@ export function chamferOf(f: Feature): { body: string; edges: string[]; size: Ch
   return { body: p.body as string, edges: [...(p.edges as string[])], size, flip: p.flip === true };
 }
 
+/**
+ * A Pattern (step 61; Design data version 25): copies of bodies made before
+ * it (`bodies`, by body id, in the order picked) in a row, a grid or round an
+ * axis (pattern-values.ts `PatternValues`; counts include the original). The
+ * bodies stay as they were; the copies are its pieces, `body:<the
+ * Pattern>/piece:<k>` (each body's copies in turn, in the kernel's order),
+ * numbered when first built. With `join`, each body's copies are joined to
+ * it as a Combine's Join does: the joined body keeps the body's id, a copy
+ * that meets nothing stays a piece. It depends on the items that made its
+ * bodies, as a Move does, and makes no body under its own id.
+ */
+export const isPatternItem = (f: Feature) => f.intent.type === "pattern";
+
 /** Whether an item leaves a body that only the kernel holds, with no spec to build it from (a Combine's or operation extrude's pieces, a Chamfer's body): its files are asked of the kernel by body. */
 export const kernelHeld = (f: Feature) => makesPieces(f) || isChamferItem(f);
 
 /** Whether an item works on bodies other items made (a Move, a Combine, a Chamfer), depending on those items, rather than making one of its own. */
-export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f) || isChamferItem(f);
+export const actsOnBodies = (f: Feature) => isMoveItem(f) || isCombineItem(f) || isChamferItem(f) || isPatternItem(f);
 
 /**
  * An extrude of a sketch with an operation (Fusion's Join, Cut and
@@ -656,8 +670,8 @@ export function extrudeOperation(f: Feature): { operation: CombineOperation; bod
 /** The items that made an operation extrude's bodies, each once, in the order picked. */
 export const operationMakers = (f: Feature): string[] => [...new Set((extrudeOperation(f)?.bodies ?? []).map((b) => bodyItem(b)!))];
 
-/** Whether an item can leave pieces (`body:<it>/piece:<k>`): a Combine, or an extrude with an operation. */
-export const makesPieces = (f: Feature) => isCombineItem(f) || isOperationExtrude(f) || (isSketchExtrude(f) && hasMoreProfiles(f));
+/** Whether an item can leave pieces (`body:<it>/piece:<k>`): a Combine, an extrude with an operation or of several profiles, or a Pattern (its copies). */
+export const makesPieces = (f: Feature) => isCombineItem(f) || isPatternItem(f) || isOperationExtrude(f) || (isSketchExtrude(f) && hasMoreProfiles(f));
 
 /** Whether an item is an Extrude Join (version 10), whose own body (version 16) is the piece of its result holding only the extrude. */
 export const isExtrudeJoin = (f: Feature) => isOperationExtrude(f) && f.intent.parameters.operation === "join";
@@ -671,7 +685,7 @@ export const isExtrudeJoin = (f: Feature) => isOperationExtrude(f) && f.intent.p
 export const numberedWhenBuilt = (bodyId: string, item: Feature | undefined): boolean => isPiece(bodyId) || (item !== undefined && bodyId === bodyIdOf(item.id) && isExtrudeJoin(item));
 
 /**
- * A construction plane, axis or point (step 59a1; Design data version 25):
+ * A construction plane, axis or point (step 59a1; Design data version 26):
  * `make` a kind of construct-data.ts `CONSTRUCT_KINDS`, `inputs` what it is
  * made from by slot, each a name (construct-data.ts: an origin plane, axis or
  * point, a face, an edge, a corner or an earlier construction), the number
@@ -1485,6 +1499,7 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
     if (isConstructItem(f)) return constructBase(f);
     if (isMoveItem(f)) return "Move";
     if (isCombineItem(f)) return "Combine";
+    if (isPatternItem(f)) return "Pattern";
     if (isDuplicateItem(f)) return "Copy";
     if (isSketchExtrude(f)) return "Extrude";
     const kind = kindOf(f);
@@ -1734,6 +1749,36 @@ function checkConstruct(f: Feature, byId: ReadonlyMap<string, { item: Feature; a
   if (f.dependsOn.length !== inputs.length || inputs.some((id, k) => f.dependsOn[k] !== id)) throw new Error(`${at} must depend on exactly the items it is made from (${inputs.length === 0 ? "none" : inputs.join(", ")})`);
 }
 
+/**
+ * A Pattern, checked (step 61): its values (pattern-values.ts
+ * `patternParamsProblem`: exactly its kind's keys, every limit the tool
+ * keeps); at least one body, each once, each a body made before it (one
+ * deleted since is allowed, as a Move's: the rebuild fails or warns naming
+ * it); and `dependsOn` exactly the items that made them, each once, in the
+ * order first picked.
+ */
+function checkPattern(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design pattern ${f.id}`;
+  const p = f.intent.parameters;
+  const problem = patternParamsProblem(p);
+  if (problem !== null) throw new Error(`${at}: ${problem}`);
+  const bodies: unknown = p.bodies;
+  if (!Array.isArray(bodies) || bodies.length === 0) throw new Error(`${at} patterns no body`);
+  notTooMany(bodies.length, DESIGN_LIMITS.items, `${at} names`, "bodies");
+  const once = new Set<unknown>();
+  const makers: string[] = [];
+  for (const id of bodies as unknown[]) {
+    const maker = typeof id === "string" ? bodyItem(id) : null;
+    const there = maker === null ? undefined : byId.get(maker);
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker);
+    if (!deleted && (there === undefined || there.at >= byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} patterns ${shown(id)}, which is not a body made before it in the timeline`);
+    if (once.has(id)) throw new Error(`${at} patterns ${id} twice`);
+    once.add(id);
+    if (!makers.includes(maker!)) makers.push(maker!);
+  }
+  if (f.dependsOn.length !== makers.length || f.dependsOn.some((x, i) => x !== makers[i])) throw new Error(`${at} must depend on exactly the items that made the bodies it patterns (${makers.join(", ")}), in that order`);
+}
+
 function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>, id: string): boolean {
   const maker = bodyItem(id);
   if (maker === null) return false;
@@ -1851,10 +1896,16 @@ function hasVersion21Fields(d: Record<string, unknown>): boolean {
 }
 
 /** Whether version 22 data has a Through all extrude (Ben 2026-11-14), which only version 23 holds. */
-/** Whether version 24 data has a construction (step 59a1), which only version 25 brought. */
-function hasVersion25Fields(d: Record<string, unknown>): boolean {
+/** Whether version 25 data has a construction (step 59a1), which only version 26 brought. */
+function hasVersion26Fields(d: Record<string, unknown>): boolean {
   const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
   return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "construct");
+}
+
+/** Whether version 24 data has a Pattern (step 61), which only version 25 brought. */
+function hasVersion25Fields(d: Record<string, unknown>): boolean {
+  const features = isRecord(d.timeline) && Array.isArray(d.timeline.features) ? d.timeline.features : [];
+  return features.some((f) => isRecord(f) && isRecord(f.intent) && f.intent.type === "pattern");
 }
 
 /** Whether version 23 data has a Chamfer (step 44a), which only version 24 brought. */
@@ -2063,7 +2114,7 @@ function checkMore(more: unknown, f: Feature, i: number, byId: ReadonlyMap<strin
 }
 
 /** The Design data version this SpindleLabs writes; readDesignDocument upgrades older data to it. */
-export const DESIGN_VERSION = 25;
+export const DESIGN_VERSION = 26;
 
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
@@ -2149,12 +2200,15 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Version 24 (step 44a) brings the Chamfer, which no version 23 reader builds; other version 23 data is read as it is.
   if (v23.version === 23 && hasVersion24Fields(v23)) throw new Error(`Design data says version ${shown(given)} but has a Chamfer, which version 24 brought`);
   const v24 = v23.version === 23 ? { ...v23, version: 24 } : v23;
-  // Version 25 (step 59a1) brings construction planes, axes and points, which no version 24 reader builds; other version 24 data is read as it is.
-  if (v24.version === 24 && hasVersion25Fields(v24)) throw new Error(`Design data says version ${shown(given)} but has a construction plane, axis or point, which version 25 brought`);
-  const d = (v24.version === 24 ? { ...v24, version: 25 } : v24) as Partial<DesignDocument>;
+  // Version 25 (step 61) brings the Pattern, which no version 24 reader builds; other version 24 data is read as it is.
+  if (v24.version === 24 && hasVersion25Fields(v24)) throw new Error(`Design data says version ${shown(given)} but has a Pattern, which version 25 brought`);
+  const v25 = v24.version === 24 ? { ...v24, version: 25 } : v24;
+  // Version 26 (step 59a1) brings construction planes, axes and points, which no version 25 reader builds; other version 25 data is read as it is.
+  if (v25.version === 25 && hasVersion26Fields(v25)) throw new Error(`Design data says version ${shown(given)} but has a construction plane, axis or point, which version 26 brought`);
+  const d = (v25.version === 25 ? { ...v25, version: 26 } : v25) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
   // A whole number above DESIGN_VERSION is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
-  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 or 25)`);
+  if (d.version !== DESIGN_VERSION) throw new (Number.isSafeInteger(d.version) && d.version! > DESIGN_VERSION ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25 or 26)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -2328,6 +2382,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (isDuplicateItem(f)) checkDuplicate(d, f, byId);
     else if (isChamferItem(f)) checkChamfer(d, f, byId);
     else if (isConstructItem(f)) checkConstruct(f, byId);
+    else if (isPatternItem(f)) checkPattern(d, f, byId);
   }
   // An extrude's operation and its bodies (Design data version 10).
   for (const f of d.timeline.features) if (isOperationExtrude(f)) checkOperation(d, f, byId);
