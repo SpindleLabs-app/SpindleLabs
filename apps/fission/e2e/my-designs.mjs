@@ -297,6 +297,9 @@ try {
 
   await check("375 px with touch: the dialog fills the screen, buttons are 44 px, nothing runs off the side", async () => {
     const p = await device(svc, 375, true);
+    // A project kept here, so signing in asks: a first visit's empty design is kept only once changed (#820 D-4).
+    await startWithBox(p.page, true);
+    await until(p.page, () => document.getElementById("save-status")?.dataset.state === "saved", undefined, "saved");
     await signIn(p.page, true);
     await until(p.page, () => document.getElementById("my-designs")?.open, undefined, "asks");
     const box = await p.page.locator("#my-designs").boundingBox();
